@@ -45,21 +45,27 @@ function OpsBox() {
   );
 }
 
-type Part = { type: string; state?: string; output?: unknown; text?: string };
+type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string };
 
-function EditStep({ name, output }: { name: string; output: unknown }) {
-  const r = output as { applied?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
-  const failed = r?.applied === false || r?.ok === false;
+// One line per tool call: what ran, and whether it changed the board. An
+// argument the model got wrong (errorText) is shown too, not swallowed.
+function EditStep({ name, part }: { name: string; part: Part }) {
+  const r = part.output as { applied?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
+  const failed = part.errorText !== undefined || r?.applied === false || r?.ok === false;
   return (
     <div className={`chat-step ${failed ? "chat-step-failed" : ""}`}>
       <span className="mono">{name}</span>
-      {failed ? (
+      {part.errorText ? (
+        <span>{part.errorText.slice(0, 160)}</span>
+      ) : failed ? (
         <span>
           {r?.error}
           {r?.didYouMean && ` — retrying with “${r.didYouMean}”`}
         </span>
-      ) : r?.version ? (
+      ) : r?.applied ? (
         <span>saved as v{r.version}</span>
+      ) : part.state && part.state !== "output-available" ? (
+        <span>…</span>
       ) : null}
     </div>
   );
@@ -100,7 +106,7 @@ function ChatPanel({ base, suggestions, onTurnEnd }: { base: string; suggestions
           <div key={m.id} className="chat-msg">
             <div className="chat-role">{m.role === "user" ? "You" : "lenspack"}</div>
             {(m.parts as Part[]).filter((p) => p.type.startsWith("tool-")).map((p, i) => (
-              <EditStep key={i} name={p.type.slice(5)} output={p.output} />
+              <EditStep key={i} name={p.type.slice(5)} part={p} />
             ))}
             {(m.parts as Part[]).filter((p) => p.type === "text" && p.text?.trim()).map((p, i) => (
               <p key={i} className="chat-text">{p.text}</p>
