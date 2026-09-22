@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
+import { Chat, useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+
 import { Board, BoardProvider, FilterBar, VersionHistory, useBoardOps, type BoardHost } from "@lenspack/react";
 import "@lenspack/react/styles.css";
 import "react-grid-layout/css/styles.css";
@@ -42,9 +45,89 @@ function OpsBox() {
   );
 }
 
+type Part = { type: string; state?: string; output?: unknown; text?: string };
+
+function EditStep({ name, output }: { name: string; output: unknown }) {
+  const r = output as { applied?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
+  const failed = r?.applied === false || r?.ok === false;
+  return (
+    <div className={`chat-step ${failed ? "chat-step-failed" : ""}`}>
+      <span className="mono">{name}</span>
+      {failed ? (
+        <span>
+          {r?.error}
+          {r?.didYouMean && ` — retrying with “${r.didYouMean}”`}
+        </span>
+      ) : r?.version ? (
+        <span>saved as v{r.version}</span>
+      ) : null}
+    </div>
+  );
+}
+
+// Chat beside the thing it edits. The model only ever calls the board tools;
+// when its turn ends, the board is fetched again and re-rendered.
+function ChatPanel({ base, suggestions, onTurnEnd }: { base: string; suggestions: string[]; onTurnEnd: () => void }) {
+  const chat = React.useMemo(() => new Chat({ transport: new DefaultChatTransport({ api: `/api${base}/chat` }) }), [base]);
+  const { messages, sendMessage, status, error } = useChat({ chat });
+  const busy = status === "submitted" || status === "streaming";
+  const [input, setInput] = React.useState("");
+  const wasBusy = React.useRef(false);
+  React.useEffect(() => {
+    if (wasBusy.current && !busy) onTurnEnd();
+    wasBusy.current = busy;
+  }, [busy, onTurnEnd]);
+  const ask = (text: string) => {
+    if (!text.trim() || busy) return;
+    void sendMessage({ text });
+    setInput("");
+  };
+  return (
+    <aside className="chat" data-testid="chat">
+      <div className="chat-head">Build with chat</div>
+      <div className="chat-log">
+        {messages.length === 0 && (
+          <div>
+            <p className="desc">Describe what belongs on this board. Every change is a version, so nothing is hard to undo.</p>
+            {suggestions.map((s) => (
+              <button key={s} className="chat-suggest" onClick={() => ask(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+        {messages.map((m) => (
+          <div key={m.id} className="chat-msg">
+            <div className="chat-role">{m.role === "user" ? "You" : "lenspack"}</div>
+            {(m.parts as Part[]).filter((p) => p.type.startsWith("tool-")).map((p, i) => (
+              <EditStep key={i} name={p.type.slice(5)} output={p.output} />
+            ))}
+            {(m.parts as Part[]).filter((p) => p.type === "text" && p.text?.trim()).map((p, i) => (
+              <p key={i} className="chat-text">{p.text}</p>
+            ))}
+          </div>
+        ))}
+        {busy && <p className="desc">Working…</p>}
+        {error && <p className="err">{error.message}</p>}
+      </div>
+      <form
+        className="chat-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          ask(input);
+        }}
+      >
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Add a chart…" disabled={busy} />
+        <button type="submit" disabled={busy || !input.trim()}>Send</button>
+      </form>
+    </aside>
+  );
+}
+
 function App() {
   const params = new URLSearchParams(location.search);
   const [catalog, setCatalog] = React.useState<{ example: string; description?: string; boards: { id: string; title: string }[] }[]>([]);
+  const [chatEnabled, setChatEnabled] = React.useState(false);
   const [example, setExample] = React.useState<string>(params.get("example") ?? "");
   const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? "");
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue } | null>(null);
@@ -52,6 +135,7 @@ function App() {
   React.useEffect(() => {
     void api("/").then((r) => {
       setCatalog(r.examples);
+      setChatEnabled(!!r.chat);
       if (!example && r.examples[0]) {
         setExample(r.examples[0].example);
         setBoardId(r.examples[0].boards[0]?.id ?? "");
@@ -89,6 +173,21 @@ function App() {
   );
 
   const current = catalog.find((c) => c.example === example);
+  const reloadBoard = React.useCallback(() => {
+    void api(base).then((r) => setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue }));
+  }, [base]);
+  const suggestions = React.useMemo(() => {
+    if (!state) return [];
+    const m = state.catalogue.measures;
+    const d = state.catalogue.dimensions.filter((x) => x.type !== "time");
+    const timed = m.find((x) => state.catalogue.entities.find((e) => e.key === x.entity)?.hasTime) ?? m[0];
+    return [
+      `Add a KPI for ${m[0]?.label.toLowerCase()} across the top`,
+      d[0] && m[1] ? `Show ${m[1].label.toLowerCase()} by ${d[0].label.toLowerCase()} as a bar chart` : "",
+      timed ? `Plot ${timed.label.toLowerCase()} per week for the last 12 weeks` : "",
+      "Make the first chart full width",
+    ].filter(Boolean);
+  }, [state]);
   if (!state) return <div className="wrap">Loading…</div>;
   return (
     <div className="wrap">
@@ -123,9 +222,14 @@ function App() {
             <VersionHistory />
           </div>
         </header>
-        <OpsBox />
-        <FilterBar />
-        <Board />
+        <div className={chatEnabled ? "split" : ""}>
+          {chatEnabled && <ChatPanel base={base} suggestions={suggestions} onTurnEnd={reloadBoard} />}
+          <div className="main">
+            <OpsBox />
+            <FilterBar />
+            <Board />
+          </div>
+        </div>
         <footer>
           <a href="https://github.com/theflywheel/lenspack">lenspack</a> — a dashboard is data, not code. Four synthetic packs; edit any board with the ops box, drag widgets, restore versions.
         </footer>

@@ -6,7 +6,11 @@ import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { type ToolSet, type UIMessage, convertToModelMessages, stepCountIs, streamText } from "ai";
+
 import { type BoardOp, opSchema } from "@lenspack/core";
+import { boardTools, fileProposals, toVercelAI } from "@lenspack/mcp";
 import { catalogueFrom } from "@lenspack/spec";
 import { type Executor, type Writer, checkOps, dimensionValues, resolveBoard, sqlStore } from "@lenspack/sql";
 
@@ -14,6 +18,24 @@ import { type ExampleName, buildBoard, contextFor, examples } from "../index";
 
 const dataDir = process.env.LENSPACK_DATA_DIR ?? ".";
 const port = Number(process.env.PORT ?? 8787);
+
+// Chat is optional: any OpenAI-compatible endpoint. Without a key the demo
+// still runs, and the client hides the chat panel.
+const llm =
+  process.env.LENSPACK_LLM_API_KEY && process.env.LENSPACK_LLM_BASE_URL
+    ? createOpenAICompatible({ name: "lenspack-llm", baseURL: process.env.LENSPACK_LLM_BASE_URL, apiKey: process.env.LENSPACK_LLM_API_KEY }).chatModel(
+        process.env.LENSPACK_LLM_MODEL ?? "gpt-4o-mini",
+      )
+    : null;
+
+const SYSTEM = (pack: string, grain: string) => `You build and edit a dashboard ("board") over the "${pack}" data pack. ${grain}
+
+Rules:
+- Call get_board before editing so you use the widget ids that exist. Call list_metrics before naming any dimension or measure; only ever use keys it returns.
+- Every edit is a tool call. Never describe an edit you did not make. Do not ask permission for straightforward edits; just make them and say what changed.
+- If a tool returns applied:false with didYouMean, retry once with that key. If a query is refused for fan-out, use a measure on the other entity instead (list_metrics hints say which).
+- Prefer: KPIs across the top (width third or quarter, place top); charts below, half width; a breakdown for "by X", a series for "over time", a value for a single number.
+- Reply in one or two plain sentences. No markdown headings, no bullet lists of what you did.`;
 
 type Db = { dialect: "postgres" | "duckdb"; executor: Executor; writer: Writer };
 const hosts = new Map<ExampleName, { db: Db; store: ReturnType<typeof sqlStore>; catalogue: ReturnType<typeof catalogueFrom> }>();
@@ -56,7 +78,7 @@ createServer(async (req, res) => {
       const list = await Promise.all(
         [...hosts.entries()].map(async ([name, h]) => ({ example: name, description: examples[name].pack.description, boards: await h.store.list() })),
       );
-      return json(res, 200, { examples: list });
+      return json(res, 200, { examples: list, chat: !!llm });
     }
     const h = hosts.get(exampleName as ExampleName);
     const ex = examples[exampleName as ExampleName];
@@ -91,6 +113,34 @@ createServer(async (req, res) => {
       case "POST revert": {
         const body = (await read(req)) as { version: number };
         return json(res, 200, await h.store.revertTo(boardId, body.version));
+      }
+      case "POST chat": {
+        if (!llm) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_BASE_URL / LENSPACK_LLM_API_KEY)" });
+        const body = (await read(req)) as { messages: UIMessage[] };
+        const tools = toVercelAI(
+          boardTools({
+            pack: ex.pack,
+            executor: h.db.executor,
+            store: h.store,
+            boardId,
+            ctx,
+            proposals: fileProposals(join(dataDir, `${exampleName}.proposals.json`)),
+          }),
+        );
+        const grains = Object.entries(ex.pack.entities).map(([k, e]) => `${k}: ${e.grain ?? ""}`).join("; ");
+        const result = streamText({
+          model: llm,
+          system: SYSTEM(ex.pack.pack, `Entities — ${grains}.`),
+          messages: await convertToModelMessages(body.messages),
+          tools: tools as unknown as ToolSet,
+          stopWhen: stepCountIs(10),
+        });
+        const response = result.toUIMessageStreamResponse();
+        const headers: Record<string, string> = {};
+        response.headers.forEach((v, k) => (headers[k] = v));
+        res.writeHead(response.status, headers);
+        if (response.body) for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
+        return res.end();
       }
     }
     return json(res, 404, { error: "not found" });
