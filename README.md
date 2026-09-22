@@ -2,6 +2,8 @@
 
 **A dashboard is data, not code.** A language model edits a validated document; the server compiles it against a declared metric catalogue; the renderer is the only code.
 
+**Live demo:** https://lenspack.proto.theflywheel.in — four synthetic packs, editable boards, version history.
+
 lenspack is that idea as a library. You describe your data once in a *pack* — entities, dimensions, measures, joins — and any model, any chat, any MCP client can build and edit boards over it without ever writing SQL, JSX or a colour value. What the model cannot express, it cannot break.
 
 ```
