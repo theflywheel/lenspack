@@ -17,7 +17,8 @@ pack.yaml  ──►  catalogue  ──►  the model names keys  ──►  ops
 ```bash
 git clone https://github.com/theflywheel/lenspack && cd lenspack && pnpm install
 pnpm seed commerce ./commerce.duckdb          # 5,000 synthetic orders into a DuckDB file
-pnpm demo commerce ./commerce.duckdb          # http://localhost:5173 — a board you can edit
+pnpm demo                                     # http://localhost:5173 — a board you can edit
+                                              # (seed more packs; the demo serves every <name>.duckdb it finds)
 ```
 
 Or point an MCP client at it and let the model build the board:

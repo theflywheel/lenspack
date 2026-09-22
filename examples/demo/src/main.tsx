@@ -43,53 +43,78 @@ function OpsBox() {
 }
 
 function App() {
-  const [boards, setBoards] = React.useState<{ id: string; title: string }[]>([]);
-  const [boardId, setBoardId] = React.useState<string>(new URLSearchParams(location.search).get("board") ?? "");
+  const params = new URLSearchParams(location.search);
+  const [catalog, setCatalog] = React.useState<{ example: string; description?: string; boards: { id: string; title: string }[] }[]>([]);
+  const [example, setExample] = React.useState<string>(params.get("example") ?? "");
+  const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? "");
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue } | null>(null);
 
   React.useEffect(() => {
     void api("/").then((r) => {
-      setBoards(r.boards);
-      if (!boardId && r.boards[0]) setBoardId(r.boards[0].id);
+      setCatalog(r.examples);
+      if (!example && r.examples[0]) {
+        setExample(r.examples[0].example);
+        setBoardId(r.examples[0].boards[0]?.id ?? "");
+      }
     });
   }, []);
   React.useEffect(() => {
-    if (!boardId) return;
-    void api(`/${boardId}`).then((r) => setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue }));
-  }, [boardId]);
+    if (!example || !boardId) return;
+    history.replaceState(null, "", `?example=${example}&board=${boardId}`);
+    void api(`/${example}/${boardId}`).then((r) => setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue }));
+  }, [example, boardId]);
 
+  const base = `/${example}/${boardId}`;
   const host = React.useMemo<BoardHost>(
     () => ({
-      loadBoardData: (_config, selections) => api(`/${boardId}/data?${new URLSearchParams(Object.fromEntries(Object.entries(selections).map(([k, v]) => [`f_${k}`, v])))}`),
+      loadBoardData: (_config, selections) => api(`${base}/data?${new URLSearchParams(Object.fromEntries(Object.entries(selections).map(([k, v]) => [`f_${k}`, v])))}`),
       applyOps: async (ops) => {
-        const r = await api(`/${boardId}/ops`, { method: "POST", body: JSON.stringify({ ops }) });
+        const r = await api(`${base}/ops`, { method: "POST", body: JSON.stringify({ ops }) });
         if (r.ok) r.board.updatedAt = new Date(r.board.updatedAt);
         return r;
       },
       saveLayout: async (layout) => {
-        const b = await api(`/${boardId}/layout`, { method: "POST", body: JSON.stringify({ layout }) });
+        const b = await api(`${base}/layout`, { method: "POST", body: JSON.stringify({ layout }) });
         return { ...b, updatedAt: new Date(b.updatedAt) };
       },
-      loadFilterOptions: (field) => api(`/${boardId}/options?field=${encodeURIComponent(field)}`),
-      loadVersions: async () => (await api(`/${boardId}/versions`)).map((v: { createdAt: string }) => ({ ...v, createdAt: new Date(v.createdAt) })),
+      loadFilterOptions: (field) => api(`${base}/options?field=${encodeURIComponent(field)}`),
+      loadVersions: async () => (await api(`${base}/versions`)).map((v: { createdAt: string }) => ({ ...v, createdAt: new Date(v.createdAt) })),
       revertTo: async (version) => {
-        const b = await api(`/${boardId}/revert`, { method: "POST", body: JSON.stringify({ version }) });
+        const b = await api(`${base}/revert`, { method: "POST", body: JSON.stringify({ version }) });
         if (b) setState((s) => (s ? { ...s, board: { ...b, updatedAt: new Date(b.updatedAt) } } : s));
         return b;
       },
     }),
-    [boardId],
+    [base],
   );
 
+  const current = catalog.find((c) => c.example === example);
   if (!state) return <div className="wrap">Loading…</div>;
   return (
     <div className="wrap">
-      <BoardProvider key={`${boardId}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host}>
+      <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host}>
         <header>
-          <h1>{state.board.config.title}</h1>
+          <div>
+            <h1>{state.board.config.title}</h1>
+            {current?.description && <p className="desc">{current.description}</p>}
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
+            <select
+              value={example}
+              onChange={(e) => {
+                const next = catalog.find((c) => c.example === e.target.value);
+                setExample(e.target.value);
+                setBoardId(next?.boards[0]?.id ?? "");
+              }}
+            >
+              {catalog.map((c) => (
+                <option key={c.example} value={c.example}>
+                  {c.example}
+                </option>
+              ))}
+            </select>
             <select value={boardId} onChange={(e) => setBoardId(e.target.value)}>
-              {boards.map((b) => (
+              {(current?.boards ?? []).map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.title}
                 </option>
@@ -101,6 +126,9 @@ function App() {
         <OpsBox />
         <FilterBar />
         <Board />
+        <footer>
+          <a href="https://github.com/theflywheel/lenspack">lenspack</a> — a dashboard is data, not code. Four synthetic packs; edit any board with the ops box, drag widgets, restore versions.
+        </footer>
       </BoardProvider>
     </div>
   );
