@@ -189,51 +189,53 @@ function App() {
     ].filter(Boolean);
   }, [state]);
   if (!state) return <div className="wrap">Loading…</div>;
+  // The chat sits outside the keyed provider: a new board version re-mounts
+  // the board, and the conversation must survive that.
   return (
     <div className="wrap">
-      <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host}>
-        <header>
-          <div>
-            <h1>{state.board.config.title}</h1>
-            {current?.description && <p className="desc">{current.description}</p>}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <select
-              value={example}
-              onChange={(e) => {
-                const next = catalog.find((c) => c.example === e.target.value);
-                setExample(e.target.value);
-                setBoardId(next?.boards[0]?.id ?? "");
-              }}
-            >
-              {catalog.map((c) => (
-                <option key={c.example} value={c.example}>
-                  {c.example}
-                </option>
-              ))}
-            </select>
-            <select value={boardId} onChange={(e) => setBoardId(e.target.value)}>
-              {(current?.boards ?? []).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.title}
-                </option>
-              ))}
-            </select>
-            <VersionHistory />
-          </div>
-        </header>
-        <div className={chatEnabled ? "split" : ""}>
-          {chatEnabled && <ChatPanel base={base} suggestions={suggestions} onTurnEnd={reloadBoard} />}
-          <div className="main">
+      <div className={chatEnabled ? "split" : ""}>
+        {chatEnabled && <ChatPanel key={base} base={base} suggestions={suggestions} onTurnEnd={reloadBoard} />}
+        <div className="main">
+          <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host}>
+            <header>
+              <div>
+                <h1>{state.board.config.title}</h1>
+                {current?.description && <p className="desc">{current.description}</p>}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <select
+                  value={example}
+                  onChange={(e) => {
+                    const next = catalog.find((c) => c.example === e.target.value);
+                    setExample(e.target.value);
+                    setBoardId(next?.boards[0]?.id ?? "");
+                  }}
+                >
+                  {catalog.map((c) => (
+                    <option key={c.example} value={c.example}>
+                      {c.example}
+                    </option>
+                  ))}
+                </select>
+                <select value={boardId} onChange={(e) => setBoardId(e.target.value)}>
+                  {(current?.boards ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.title}
+                    </option>
+                  ))}
+                </select>
+                <VersionHistory />
+              </div>
+            </header>
             <OpsBox />
             <FilterBar />
             <Board />
-          </div>
+          </BoardProvider>
         </div>
-        <footer>
-          <a href="https://github.com/theflywheel/lenspack">lenspack</a> — a dashboard is data, not code. Four synthetic packs; edit any board with the ops box, drag widgets, restore versions.
-        </footer>
-      </BoardProvider>
+      </div>
+      <footer>
+        <a href="https://github.com/theflywheel/lenspack">lenspack</a> — a dashboard is data, not code. Four synthetic packs; build boards with the chat, edit with the ops box, drag widgets, restore versions.
+      </footer>
     </div>
   );
 }
