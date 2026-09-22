@@ -41,6 +41,9 @@ importers:
       '@lenspack/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@lenspack/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@lenspack/react':
         specifier: workspace:*
         version: link:../../packages/react
