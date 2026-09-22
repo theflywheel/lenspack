@@ -2,7 +2,7 @@
 
 **A dashboard is data, not code.** A language model edits a validated document; the server compiles it against a declared metric catalogue; the renderer is the only code.
 
-**Live demo:** https://lenspack.proto.theflywheel.in — four synthetic packs, editable boards, version history.
+**Live demo:** https://lenspack.proto.theflywheel.in — four synthetic packs, a chat that builds the board, drag-and-drop editing, version history.
 
 lenspack is that idea as a library. You describe your data once in a *pack* — entities, dimensions, measures, joins — and any model, any chat, any MCP client can build and edit boards over it without ever writing SQL, JSX or a colour value. What the model cannot express, it cannot break.
 
@@ -21,6 +21,12 @@ git clone https://github.com/theflywheel/lenspack && cd lenspack && pnpm install
 pnpm seed commerce ./commerce.duckdb          # 5,000 synthetic orders into a DuckDB file
 pnpm demo                                     # http://localhost:5173 — a board you can edit
                                               # (seed more packs; the demo serves every <name>.duckdb it finds)
+```
+
+To get the chat panel locally, give the demo any OpenAI-compatible endpoint (the library itself never touches a model key):
+
+```bash
+LENSPACK_LLM_BASE_URL=https://openrouter.ai/api/v1 LENSPACK_LLM_API_KEY=… LENSPACK_LLM_MODEL=z-ai/glm-4.5 pnpm demo
 ```
 
 Or point an MCP client at it and let the model build the board:
