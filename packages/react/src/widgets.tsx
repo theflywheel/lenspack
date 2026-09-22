@@ -61,14 +61,14 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
 
   const { rows: wide, keys } = pivot(rows);
   const common = { data: wide, margin: { top: 6, right: 10, bottom: 0, left: 0 } };
-  const axes = (
-    <>
-      <XAxis dataKey="group" {...axis} />
-      <YAxis {...axis} width={48} tickFormatter={(v: number) => fmt(v)} />
-      <Tooltip formatter={(value: number) => fmt(value)} />
-      {widget.options.legend && keys.length > 1 && <Legend />}
-    </>
-  );
+  // An array, not a fragment: recharts finds axes and tooltips by walking its
+  // direct children, and React.Children flattens arrays but not fragments.
+  const axes = [
+    <XAxis key="x" dataKey="group" {...axis} />,
+    <YAxis key="y" {...axis} width={48} tickFormatter={(v: number) => fmt(v)} />,
+    <Tooltip key="t" formatter={(value: number) => fmt(value)} />,
+    ...(widget.options.legend && keys.length > 1 ? [<Legend key="l" />] : []),
+  ];
 
   if (widget.chart === "line")
     return (
