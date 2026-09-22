@@ -1,0 +1,13 @@
+{
+  "title": "SLA",
+  "ops": [
+    { "op": "add_widget", "id": "breach_by_priority", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "SLA breach rate by priority", "query": { "kind": "breakdown", "dimension": "priority", "measure": "sla_breach_rate", "limit": 3, "sort": "asc" } } },
+    { "op": "add_widget", "id": "breach_trend", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "area", "title": "Weekly SLA breach rate", "query": { "kind": "series", "measure": "sla_breach_rate", "grain": "week", "time": { "last": "12w" } } } },
+    { "op": "add_widget", "id": "first_response", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "table", "title": "First response by channel", "query": { "kind": "breakdown", "dimension": "channel", "measure": "mean_first_response_min", "limit": 6 }, "pageSize": 10 } },
+    { "op": "add_widget", "id": "recent_p1", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "table", "title": "Recent P1 tickets", "query": { "kind": "rows", "entity": "tickets", "columns": ["team", "status", "channel"], "limit": 10, "filters": [{ "dimension": "priority", "op": "eq", "value": "p1" }] }, "pageSize": 10 } }
+  ]
+}

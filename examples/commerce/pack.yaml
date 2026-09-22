@@ -1,0 +1,43 @@
+pack: commerce
+version: 1
+description: A small online shop — a classic star schema with money, ratios and a fan-out trap.
+
+entities:
+  orders:
+    source: orders
+    grain: one row per order
+    time: placed_at
+    joins:
+      - { to: customers, on: orders.customer_id = customers.id, type: many_to_one }
+      - { to: order_items, on: order_items.order_id = orders.id, type: one_to_many }
+  customers:
+    source: customers
+    grain: one row per customer
+    time: signed_up_at
+  products:
+    source: products
+    grain: one row per product
+  order_items:
+    source: order_items
+    grain: one row per line on an order
+    joins:
+      - { to: orders, on: order_items.order_id = orders.id, type: many_to_one }
+      - { to: products, on: order_items.product_id = products.id, type: many_to_one }
+
+dimensions:
+  - { key: country,  entity: customers, sql: country,  label: Country, synonyms: [market, region], hint: ISO-3166 alpha-2 of the shipping address. }
+  - { key: segment,  entity: customers, sql: segment,  label: Customer segment, type: enum }
+  - { key: status,   entity: orders,    sql: status,   label: Order status, type: enum }
+  - { key: channel,  entity: orders,    sql: channel,  label: Sales channel, type: enum, synonyms: [source] }
+  - { key: category, entity: products,  sql: category, label: Product category }
+  - { key: placed,   entity: orders,    sql: placed_at, label: Order date, type: time, grains: [day, week, month, quarter] }
+
+measures:
+  - { key: orders,      entity: orders, agg: count, label: Orders }
+  - { key: revenue,     entity: orders, agg: sum, sql: total_cents / 100.0, format: currency, label: Revenue, synonyms: [sales, gmv] }
+  - { key: aov,         entity: orders, derived: revenue / orders, format: currency, label: Average order value, hint: Revenue divided by orders. }
+  - { key: refund_rate, entity: orders, agg: avg, sql: "(status = 'refunded')::int", format: percent, label: Refund rate }
+  - { key: p90_order,   entity: orders, agg: p90, sql: total_cents / 100.0, format: currency, label: 90th percentile order value }
+  - { key: customers,   entity: customers, agg: count, label: Customers }
+  - { key: units,       entity: order_items, agg: sum, sql: qty, label: Units sold }
+  - { key: item_revenue, entity: order_items, agg: sum, sql: qty * unit_cents / 100.0, format: currency, label: Line revenue, hint: Revenue at line level; use this to break revenue down by product category. }

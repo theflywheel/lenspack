@@ -1,0 +1,20 @@
+{
+  "title": "Support desk",
+  "ops": [
+    { "op": "add_widget", "id": "backlog", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Open tickets", "query": { "kind": "value", "measure": "open" } } },
+    { "op": "add_widget", "id": "median", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Median hours to resolve (30d)", "query": { "kind": "value", "measure": "median_hours_to_resolve", "time": { "last": "30d" } } } },
+    { "op": "add_widget", "id": "breach", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "SLA breach rate (30d)", "query": { "kind": "value", "measure": "sla_breach_rate", "compare": "previous_period", "time": { "last": "30d" } } } },
+    { "op": "add_widget", "id": "resolution", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Resolution rate", "query": { "kind": "value", "measure": "resolution_rate" } } },
+    { "op": "add_widget", "id": "weekly", "placement": { "place": "bottom", "width": "full", "height": 7 },
+      "widget": { "kind": "chart", "chart": "line", "title": "Weekly tickets by priority", "query": { "kind": "series", "measure": "tickets", "grain": "week", "by": "priority" } } },
+    { "op": "add_widget", "id": "funnel", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Status funnel", "query": { "kind": "breakdown", "dimension": "transition", "measure": "transitions", "limit": 6 } } },
+    { "op": "add_widget", "id": "p90_team", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "P90 hours to resolve by team", "query": { "kind": "breakdown", "dimension": "team", "measure": "p90_hours_to_resolve", "limit": 6 } } },
+    { "op": "add_filter", "filter": { "id": "filter_team", "type": "select", "label": "Team", "field": "team", "applies": ["*"] } }
+  ]
+}

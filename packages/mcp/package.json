@@ -1,0 +1,23 @@
+{
+  "name": "@lenspack/mcp",
+  "version": "0.1.0",
+  "description": "Provider-agnostic tools for editing a lenspack board with a language model, plus an MCP server over any pack.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": { "lenspack-mcp": "./dist/cli.js" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": { "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
+  "dependencies": {
+    "@lenspack/core": "workspace:*",
+    "@lenspack/spec": "workspace:*",
+    "@lenspack/sql": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.76"
+  },
+  "peerDependencies": { "@duckdb/node-api": "*", "pg": ">=8.11.0" },
+  "peerDependenciesMeta": { "@duckdb/node-api": { "optional": true }, "pg": { "optional": true } },
+  "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/mcp" }
+}

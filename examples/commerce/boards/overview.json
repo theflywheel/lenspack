@@ -1,0 +1,18 @@
+{
+  "title": "Shop overview",
+  "ops": [
+    { "op": "add_widget", "id": "revenue_30d", "placement": { "place": "top", "width": "third", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Revenue, last 30 days", "query": { "kind": "value", "measure": "revenue", "compare": "previous_period", "time": { "last": "30d" } } } },
+    { "op": "add_widget", "id": "orders_30d", "placement": { "place": "top", "width": "third", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Orders, last 30 days", "query": { "kind": "value", "measure": "orders", "compare": "previous_period", "time": { "last": "30d" } } } },
+    { "op": "add_widget", "id": "refunds", "placement": { "place": "top", "width": "third", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Refund rate", "query": { "kind": "value", "measure": "refund_rate" } } },
+    { "op": "add_widget", "id": "revenue_trend", "placement": { "place": "bottom", "width": "full", "height": 7 },
+      "widget": { "kind": "chart", "chart": "area", "title": "Weekly revenue", "query": { "kind": "series", "measure": "revenue", "grain": "week", "time": { "last": "26w" } } } },
+    { "op": "add_widget", "id": "by_country", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Revenue by country", "query": { "kind": "breakdown", "dimension": "country", "measure": "revenue", "limit": 10 } } },
+    { "op": "add_widget", "id": "by_category", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "pie", "title": "Line revenue by category", "query": { "kind": "breakdown", "dimension": "category", "measure": "item_revenue", "limit": 8 } } },
+    { "op": "add_filter", "filter": { "id": "filter_country", "type": "select", "label": "Country", "field": "country", "applies": ["*"] } }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@lenspack/sql",
+  "version": "0.1.0",
+  "description": "Compiles lenspack's closed query IR against a pack into parameterised SQL for Postgres and DuckDB, and runs it read-only.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./pg": { "types": "./dist/executors/pg.d.ts", "import": "./dist/executors/pg.js" },
+    "./duckdb": { "types": "./dist/executors/duckdb.d.ts", "import": "./dist/executors/duckdb.js" }
+  },
+  "files": ["dist"],
+  "scripts": { "build": "tsup src/index.ts src/executors/pg.ts src/executors/duckdb.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
+  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/spec": "workspace:*" },
+  "peerDependencies": { "@duckdb/node-api": "*", "pg": ">=8.11.0" },
+  "peerDependenciesMeta": { "@duckdb/node-api": { "optional": true }, "pg": { "optional": true } },
+  "devDependencies": { "@duckdb/node-api": "^1.4.0-r.1", "@types/pg": "^8.11.10", "pg": "^8.13.1" },
+  "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/sql" }
+}

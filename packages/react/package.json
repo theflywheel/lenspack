@@ -1,0 +1,28 @@
+{
+  "name": "@lenspack/react",
+  "version": "0.1.0",
+  "description": "React renderer for lenspack boards: grid, widgets, filter bar, version history. The board is data; this is the only code.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": ["dist"],
+  "sideEffects": ["*.css"],
+  "scripts": { "build": "tsup src/index.tsx --format esm --dts --clean --tsconfig tsconfig.build.json && cp src/styles.css dist/styles.css" },
+  "dependencies": { "@lenspack/core": "workspace:*", "react-grid-layout": "^1.5.4", "recharts": "^2.13.3" },
+  "peerDependencies": { "react": ">=18", "react-dom": ">=18" },
+  "devDependencies": {
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/react-grid-layout": "^1.3.5",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/react" }
+}

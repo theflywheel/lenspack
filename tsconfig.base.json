@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@lenspack/core": ["packages/core/src/index.ts"],
+      "@lenspack/spec": ["packages/spec/src/index.ts"],
+      "@lenspack/sql": ["packages/sql/src/index.ts"],
+      "@lenspack/sql/pg": ["packages/sql/src/executors/pg.ts"],
+      "@lenspack/sql/duckdb": ["packages/sql/src/executors/duckdb.ts"],
+      "@lenspack/mcp": ["packages/mcp/src/index.ts"],
+      "@lenspack/react": ["packages/react/src/index.tsx"]
+    }
+  }
+}

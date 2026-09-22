@@ -1,0 +1,20 @@
+{
+  "title": "Traffic",
+  "ops": [
+    { "op": "add_widget", "id": "views", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Page views, 7d", "query": { "kind": "value", "measure": "pageviews", "compare": "previous_period", "time": { "last": "7d" } } } },
+    { "op": "add_widget", "id": "sessions", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Sessions, 7d", "query": { "kind": "value", "measure": "sessions", "compare": "previous_period", "time": { "last": "7d" } } } },
+    { "op": "add_widget", "id": "bounce", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Bounce rate", "query": { "kind": "value", "measure": "bounce_rate", "time": { "last": "7d" } } } },
+    { "op": "add_widget", "id": "vps", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Views per session", "query": { "kind": "value", "measure": "views_per_session", "time": { "last": "7d" } } } },
+    { "op": "add_widget", "id": "daily", "placement": { "place": "bottom", "width": "full", "height": 7 },
+      "widget": { "kind": "chart", "chart": "line", "title": "Daily sessions by device", "query": { "kind": "series", "measure": "sessions", "grain": "day", "by": "device", "time": { "last": "30d" } } } },
+    { "op": "add_widget", "id": "top_paths", "placement": { "place": "bottom", "width": "half", "height": 8 },
+      "widget": { "kind": "table", "title": "Top pages", "query": { "kind": "breakdown", "dimension": "path", "measure": "pageviews", "limit": 10 }, "pageSize": 10 } },
+    { "op": "add_widget", "id": "hourly", "placement": { "place": "bottom", "width": "half", "height": 8 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Views by hour of day", "query": { "kind": "breakdown", "dimension": "hour_of_day", "measure": "pageviews", "limit": 24, "sort": "asc" } } },
+    { "op": "add_filter", "filter": { "id": "filter_country", "type": "select", "label": "Country", "field": "country", "applies": ["*"] } }
+  ]
+}

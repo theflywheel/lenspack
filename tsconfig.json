@@ -1,0 +1,1 @@
+{ "extends": "./tsconfig.base.json", "compilerOptions": { "noEmit": true }, "include": ["scripts", "examples/index.ts", "examples/*/index.ts", "examples/*/seed.ts", "examples/_shared", "examples/test"] }

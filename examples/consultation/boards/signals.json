@@ -1,0 +1,13 @@
+{
+  "title": "Consultation — signals",
+  "ops": [
+    { "op": "add_widget", "id": "wait_by_district", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Mean months waiting, by district", "query": { "kind": "breakdown", "dimension": "district", "measure": "mean_wait_months", "limit": 12 } } },
+    { "op": "add_widget", "id": "human_by_channel", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Wants a human, by channel", "query": { "kind": "breakdown", "dimension": "channel", "measure": "wants_human_rate", "limit": 6 } } },
+    { "op": "add_widget", "id": "severity_by_age", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "table", "title": "Severity by age band", "query": { "kind": "breakdown", "dimension": "age_band", "measure": "mean_severity", "limit": 6 }, "pageSize": 10 } },
+    { "op": "add_widget", "id": "flagged_lang", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Flagged rate by language", "query": { "kind": "breakdown", "dimension": "language", "measure": "flagged_rate", "limit": 5 } } }
+  ]
+}

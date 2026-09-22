@@ -1,0 +1,21 @@
+{
+  "title": "Consultation — committee view",
+  "ops": [
+    { "op": "add_widget", "id": "total", "placement": { "place": "top", "width": "third", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Responses", "query": { "kind": "value", "measure": "responses" } } },
+    { "op": "add_widget", "id": "flagged", "placement": { "place": "top", "width": "third", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Flagged rate", "query": { "kind": "value", "measure": "flagged_rate" } } },
+    { "op": "add_widget", "id": "redacted", "placement": { "place": "top", "width": "third", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Redaction rate", "query": { "kind": "value", "measure": "redaction_rate" } } },
+    { "op": "add_widget", "id": "themes", "placement": { "place": "bottom", "width": "half", "height": 8 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Themes by priority", "query": { "kind": "breakdown", "dimension": "theme", "measure": "priority", "limit": 10 } } },
+    { "op": "add_widget", "id": "theme_volume", "placement": { "place": "bottom", "width": "half", "height": 8 },
+      "widget": { "kind": "chart", "chart": "pie", "title": "Responses by theme", "query": { "kind": "breakdown", "dimension": "theme", "measure": "themed", "limit": 10 } } },
+    { "op": "add_widget", "id": "by_district", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Responses by district", "query": { "kind": "breakdown", "dimension": "district", "measure": "responses", "limit": 12 } } },
+    { "op": "add_widget", "id": "volume", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "area", "title": "Daily responses by channel", "query": { "kind": "series", "measure": "responses", "grain": "day", "by": "channel", "time": { "last": "21d" } } } },
+    { "op": "add_filter", "filter": { "id": "filter_district", "type": "select", "label": "District", "field": "district", "applies": ["*"] } },
+    { "op": "add_filter", "filter": { "id": "filter_language", "type": "select", "label": "Language", "field": "language", "applies": ["*"] } }
+  ]
+}

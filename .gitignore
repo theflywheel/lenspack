@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.duckdb
+*.duckdb.wal
+.env
+coverage/
+.DS_Store

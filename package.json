@@ -1,0 +1,26 @@
+{
+  "name": "lenspack-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' run build",
+    "test": "vitest run",
+    "test:pg": "LENSPACK_PG_URL=${LENSPACK_PG_URL:-postgres://localhost:5432/lenspack_test} vitest run",
+    "typecheck": "pnpm -r --filter './packages/*' exec tsc --noEmit -p tsconfig.json",
+    "lint:domain": "node scripts/zero-domain-grep.mjs",
+    "seed": "tsx scripts/seed.ts",
+    "check": "pnpm typecheck && pnpm lint:domain && pnpm test",
+    "demo": "node scripts/demo.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

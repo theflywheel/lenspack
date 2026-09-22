@@ -1,0 +1,11 @@
+{
+  "title": "Acquisition",
+  "ops": [
+    { "op": "add_widget", "id": "by_ref", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Sessions by referrer", "query": { "kind": "breakdown", "dimension": "referrer", "measure": "sessions", "limit": 8, "filters": [{ "dimension": "referrer", "op": "neq", "value": "(internal)" }] } } },
+    { "op": "add_widget", "id": "bounce_ref", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Bounce rate by referrer", "query": { "kind": "breakdown", "dimension": "referrer", "measure": "bounce_rate", "limit": 8, "filters": [{ "dimension": "referrer", "op": "neq", "value": "(internal)" }] } } },
+    { "op": "add_widget", "id": "weekly_users", "placement": { "place": "bottom", "width": "full", "height": 6 },
+      "widget": { "kind": "chart", "chart": "area", "title": "Weekly unique users", "query": { "kind": "series", "measure": "users", "grain": "week" } } }
+  ]
+}

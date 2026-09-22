@@ -1,0 +1,27 @@
+pack: events
+version: 1
+description: Web analytics — one wide event table, high cardinality, distinct counts and every time grain.
+
+entities:
+  pageviews:
+    source: pageviews
+    grain: one row per page view
+    time: ts
+
+dimensions:
+  - { key: path,     entity: pageviews, sql: path,     label: Page path, hint: High cardinality; ask for a limit. }
+  - { key: referrer, entity: pageviews, sql: referrer, label: Referrer }
+  - { key: country,  entity: pageviews, sql: country,  label: Country }
+  - { key: device,   entity: pageviews, sql: device,   label: Device, type: enum }
+  - { key: hour_of_day, entity: pageviews, sql: { postgres: "EXTRACT(HOUR FROM ts)::int", duckdb: "hour(ts)" }, label: Hour of day, type: number }
+  - { key: time,     entity: pageviews, sql: ts, label: Time, type: time, grains: [hour, day, week, month] }
+
+measures:
+  - { key: pageviews,    entity: pageviews, agg: count, label: Page views, synonyms: [views, hits] }
+  - { key: sessions,     entity: pageviews, agg: count_distinct, sql: session_id, label: Sessions }
+  - { key: users,        entity: pageviews, agg: count_distinct, sql: user_id, label: Unique users, synonyms: [visitors] }
+  - { key: bounce_rate,  entity: pageviews, agg: avg, sql: bounced::int, format: percent, label: Bounce rate }
+  - { key: avg_duration, entity: pageviews, agg: avg, sql: duration_ms / 1000.0, format: duration, label: Average time on page (s) }
+  - { key: p90_duration, entity: pageviews, agg: p90, sql: duration_ms / 1000.0, format: duration, label: P90 time on page (s) }
+  - { key: mobile_share, entity: pageviews, agg: avg, sql: "(device = 'mobile')::int", format: percent, label: Mobile share }
+  - { key: views_per_session, entity: pageviews, derived: pageviews / sessions, label: Views per session }

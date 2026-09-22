@@ -1,0 +1,15 @@
+{
+  "title": "Channels and segments",
+  "ops": [
+    { "op": "add_widget", "id": "aov_by_channel", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Average order value by channel", "query": { "kind": "breakdown", "dimension": "channel", "measure": "aov", "limit": 5 } } },
+    { "op": "add_widget", "id": "orders_by_segment", "placement": { "place": "top", "width": "half", "height": 7 },
+      "widget": { "kind": "chart", "chart": "line", "title": "Monthly orders by segment", "query": { "kind": "series", "measure": "orders", "grain": "month", "by": "segment" } } },
+    { "op": "add_widget", "id": "refund_table", "placement": { "place": "bottom", "width": "half", "height": 7 },
+      "widget": { "kind": "table", "title": "Refund rate by country", "query": { "kind": "breakdown", "dimension": "country", "measure": "refund_rate", "limit": 10 }, "pageSize": 10 } },
+    { "op": "add_widget", "id": "p90", "placement": { "place": "bottom", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "P90 order value", "query": { "kind": "value", "measure": "p90_order" } } },
+    { "op": "add_widget", "id": "note", "placement": { "place": "bottom", "width": "quarter", "height": 3 },
+      "widget": { "kind": "text", "title": "About", "body": "Revenue is at order grain. To split it by product category, use line revenue — the pack refuses to fan out orders across items." } }
+  ]
+}

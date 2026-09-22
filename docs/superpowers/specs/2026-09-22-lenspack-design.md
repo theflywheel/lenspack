@@ -1,7 +1,7 @@
 # lenspack — design spec
 
 Date: 2026-09-22
-Status: draft for review
+Status: implemented 2026-09-22 (0.1.0); see README for what is deferred
 Origin: extracted from `open-listening/iffy` (`lib/dashboard/*`, `lib/lens-config.ts`, `services/lenses.ts`, `ai/*-tools.ts`, `mcp/server.ts`, `app/dashboard/boards/*`)
 
 ## 1. Purpose
@@ -107,8 +107,10 @@ Rules enforced by `@lenspack/spec` at load time:
 - Every `join.on` references exactly the two entities named.
 - `sql`, `json`, `derived` are mutually exclusive on a dimension/measure.
 - `derived` may reference only measures on the same entity.
-- `verified` defaults to `false`; unverified items are loadable and compilable
-  but excluded from the model's tool surface (§7).
+- `verified` defaults to `true` for a key in the pack file (the review that
+  merged it is the verification); a proposal written by the model starts
+  `false`. Unverified items are loadable and compilable but excluded from the
+  model's tool surface (§7).
 - The `sql` fragment is opaque to lenspack: it is inlined verbatim by the
   printer. It is trusted because it comes from the pack, never from a request.
 
@@ -154,6 +156,8 @@ print   : (Ast, Dialect) → { sql: string; params: unknown[] }
 **resolve** checks every key against the catalogue, chooses the measure's
 entity as the root, finds the join path from root to each dimension's entity,
 and produces a plan with all identifiers already bound to pack objects.
+Fragments (`sql`, `filter`) may be given per dialect
+(`{ postgres: …, duckdb: … }`); the printer picks the one for its engine.
 `ResolveError` carries `{ code, key, nearest }` where `nearest` is the closest
 catalogue key by edit distance — the same mechanism `ops.ts` uses for widget IDs.
 

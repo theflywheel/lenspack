@@ -1,0 +1,48 @@
+pack: consultation
+version: 1
+description: A public consultation — multi-channel, multilingual submissions with JSON metadata, moderation, and LLM-derived themes and signals. Synthetic data only.
+
+entities:
+  submissions:
+    source: submissions
+    grain: one row per submission
+    time: submitted_at
+    tenant: tenant_id
+    joins:
+      - { to: theme_of, on: theme_of.submission_id = submissions.id, type: one_to_one }
+      - { to: wait_signal, on: wait_signal.submission_id = submissions.id, type: one_to_one }
+  # Views over the analysis tables, one row per submission, so "theme" is an
+  # ordinary joined dimension rather than a special case.
+  theme_of:
+    source: v_submission_theme
+    grain: one row per submission with its theme from the latest completed run
+    joins:
+      - { to: submissions, on: theme_of.submission_id = submissions.id, type: one_to_one }
+  wait_signal:
+    source: v_signal_wait
+    grain: one row per submission the "months waiting" signal extracted a value from
+    tenant: tenant_id
+    joins:
+      - { to: submissions, on: wait_signal.submission_id = submissions.id, type: one_to_one }
+
+dimensions:
+  - { key: channel,    entity: submissions, sql: channel, label: Channel, type: enum, hint: web, whatsapp, telegram, ivr }
+  - { key: language,   entity: submissions, sql: language, label: Language, type: enum }
+  - { key: district,   entity: submissions, json: [metadata, district], label: District, synonyms: [region, area] }
+  - { key: age_band,   entity: submissions, json: [metadata, respondent, age_band], label: Age band }
+  - { key: occupation, entity: submissions, json: [metadata, respondent, occupation], label: Occupation }
+  - { key: moderation, entity: submissions, sql: moderation_status, label: Moderation status, type: enum }
+  - { key: theme,      entity: theme_of, sql: theme, label: Theme, hint: From the latest completed analysis run. }
+  - { key: submitted,  entity: submissions, sql: submitted_at, label: Submitted, type: time, grains: [day, week, month] }
+
+measures:
+  - { key: responses,      entity: submissions, agg: count, label: Responses, synonyms: [submissions, count] }
+  - { key: flagged_rate,   entity: submissions, agg: avg, sql: "(moderation_status = 'flagged')::int", format: percent, label: Flagged rate, hint: Share held for review by the guardrail. }
+  - { key: redaction_rate, entity: submissions, agg: avg, sql: redacted::int, format: percent, label: Redaction rate, hint: Share that contained a personal identifier. }
+  - { key: mean_severity,  entity: theme_of, agg: avg, sql: severity, label: Mean severity, hint: 1 (minor) to 5 (severe), from the analysis rubric. }
+  - { key: mean_actionability, entity: theme_of, agg: avg, sql: actionability, label: Mean actionability, hint: How specific and fixable, 1 to 5. }
+  - { key: priority,       entity: theme_of, agg: avg, sql: severity * actionability, label: Priority, hint: Severity times actionability — what hurts, weighted by how tractable it is. }
+  - { key: themed,         entity: theme_of, agg: count, label: Themed responses }
+  - { key: mean_wait_months, entity: wait_signal, agg: avg, sql: months_waiting, label: Mean months waiting }
+  - { key: wants_human_rate, entity: wait_signal, agg: avg, sql: wants_human::int, format: percent, label: Wants a human }
+  - { key: signal_responses, entity: wait_signal, agg: count, label: Responses with the wait signal }

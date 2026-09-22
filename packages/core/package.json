@@ -1,0 +1,15 @@
+{
+  "name": "@lenspack/core",
+  "version": "0.1.0",
+  "description": "Dashboard-as-data: a validated board document, domain ops, packing and a closed query IR. No database, no React, no LLM.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": { "build": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
+  "dependencies": { "zod": "^3.25.76" },
+  "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/core" }
+}

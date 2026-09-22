@@ -1,0 +1,36 @@
+pack: tickets
+version: 1
+description: A support desk — tickets with a status history, SLA targets, durations, percentiles and a funnel.
+
+entities:
+  tickets:
+    source: tickets
+    grain: one row per ticket
+    time: created_at
+    joins:
+      - { to: status_history, on: status_history.ticket_id = tickets.id, type: one_to_many }
+  status_history:
+    source: status_history
+    grain: one row per status change
+    time: changed_at
+    joins:
+      - { to: tickets, on: status_history.ticket_id = tickets.id, type: many_to_one }
+
+dimensions:
+  - { key: team,     entity: tickets, sql: team,     label: Team }
+  - { key: priority, entity: tickets, sql: priority, label: Priority, type: enum, hint: p1 is most urgent }
+  - { key: status,   entity: tickets, sql: status,   label: Current status, type: enum }
+  - { key: channel,  entity: tickets, sql: channel,  label: Channel, type: enum }
+  - { key: created,  entity: tickets, sql: created_at, label: Created, type: time, grains: [day, week, month] }
+  - { key: transition, entity: status_history, sql: status, label: Status entered, hint: Every status a ticket has passed through. }
+
+measures:
+  - { key: tickets,   entity: tickets, agg: count, label: Tickets }
+  - { key: open,      entity: tickets, agg: count, filter: "status IN ('open', 'pending')", label: Open tickets, synonyms: [backlog] }
+  - { key: resolved,  entity: tickets, agg: count, filter: "status = 'resolved'", label: Resolved tickets }
+  - { key: resolution_rate, entity: tickets, derived: resolved / tickets, format: percent, label: Resolution rate }
+  - { key: median_hours_to_resolve, entity: tickets, agg: median, sql: "EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0", format: duration, label: Median hours to resolve, hint: Only resolved tickets have a value. }
+  - { key: p90_hours_to_resolve, entity: tickets, agg: p90, sql: "EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0", format: duration, label: P90 hours to resolve }
+  - { key: sla_breach_rate, entity: tickets, agg: avg, sql: "(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours)::int", filter: "resolved_at IS NOT NULL", format: percent, label: SLA breach rate }
+  - { key: mean_first_response_min, entity: tickets, agg: avg, sql: first_response_minutes, format: duration, label: Mean first response (min) }
+  - { key: transitions, entity: status_history, agg: count, label: Status changes }
