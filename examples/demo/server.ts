@@ -23,7 +23,7 @@ const port = Number(process.env.PORT ?? 8787);
 // Chat is optional. Providers come from the environment (see llm.ts); each
 // is probed at startup and the first that answers is the default.
 const providers = providersFromEnv().map(buildProvider);
-void Promise.all(providers.map(probe)).then((probed) => {
+void Promise.all(providers.map((p) => probe(p))).then((probed) => {
   probed.forEach((p, i) => (providers[i] = p));
   console.log(`[demo] chat providers: ${probed.map((p) => `${p.name}${p.available ? ` ok ${p.latencyMs}ms` : ` unavailable (${p.error})`}`).join("; ") || "(none)"}`);
 });
