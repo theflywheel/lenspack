@@ -84,6 +84,15 @@ createServer(async (req, res) => {
     const ex = examples[exampleName as ExampleName];
     if (!h || !ex) return json(res, 404, { error: "no such example" });
     if (!boardId) return json(res, 200, { example: exampleName, pack: ex.pack.pack, description: ex.pack.description, boards: await h.store.list(), catalogue: h.catalogue });
+    if (boardId === "pack") return json(res, 200, { yaml: ex.packYaml });
+    // The canonical board: built from the pack's own ops file, never the
+    // shared, editable copy. The landing page previews this.
+    if (action === "canonical" && req.method === "GET") {
+      const config = buildBoard(exampleName as ExampleName, boardId);
+      const ctx = contextFor[exampleName as ExampleName];
+      const data = await resolveBoard(config, { pack: ex.pack, executor: h.db.executor, ctx });
+      return json(res, 200, { board: { id: boardId, pack: ex.pack.pack, config, version: 0, updatedAt: new Date() }, catalogue: h.catalogue, data });
+    }
     const board = await h.store.get(boardId);
     if (!board) return json(res, 404, { error: "no such board" });
     const ctx = contextFor[exampleName as ExampleName];

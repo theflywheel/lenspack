@@ -15,6 +15,7 @@ import "@lenspack/react/styles.css";
 import "./tailwind.css";
 
 import * as shadcn from "./components/ui/chart";
+import { Landing } from "./landing";
 
 // Four charting libraries behind one seam. The board config never changes;
 // only the adapter handed to the provider does, and it can change live.
@@ -155,20 +156,29 @@ function App() {
   const [adapterName, setAdapterName] = React.useState<string>(params.get("charts") && ADAPTERS[params.get("charts")!] ? params.get("charts")! : "recharts");
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue } | null>(null);
 
+  const [problem, setProblem] = React.useState<string | null>(null);
   React.useEffect(() => {
     void api("/").then((r) => {
       setCatalog(r.examples);
       setChatEnabled(!!r.chat);
-      if (!example && r.examples[0]) {
-        setExample(r.examples[0].example);
-        setBoardId(r.examples[0].boards[0]?.id ?? "");
+      // A URL naming an example this server has not seeded falls back to the
+      // first one it has, rather than loading forever.
+      const known = r.examples.find((e: { example: string }) => e.example === example) ?? r.examples[0];
+      if (!known) return setProblem("No examples are seeded on this server. Run: pnpm seed commerce ./commerce.duckdb");
+      if (known.example !== example || !known.boards.some((b: { id: string }) => b.id === boardId)) {
+        setExample(known.example);
+        setBoardId(known.boards[0]?.id ?? "");
       }
     });
   }, []);
   React.useEffect(() => {
     if (!example || !boardId) return;
     history.replaceState(null, "", `?example=${example}&board=${boardId}&charts=${adapterName}`);
-    void api(`/${example}/${boardId}`).then((r) => setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue }));
+    void api(`/${example}/${boardId}`).then((r) => {
+      if (!r.board) return setProblem(r.error ?? "This board does not exist");
+      setProblem(null);
+      setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue });
+    });
   }, [example, boardId, adapterName]);
 
   const base = `/${example}/${boardId}`;
@@ -211,6 +221,7 @@ function App() {
       "Make the first chart full width",
     ].filter(Boolean);
   }, [state]);
+  if (problem) return <div className="wrap"><p className="err">{problem}</p></div>;
   if (!state) return <div className="wrap">Loading…</div>;
   // The chat sits outside the keyed provider: a new board version re-mounts
   // the board, and the conversation must survive that.
@@ -270,4 +281,5 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+const Root = location.pathname.startsWith("/app") ? App : () => <Landing adapters={ADAPTERS} />;
+createRoot(document.getElementById("root")!).render(<Root />);

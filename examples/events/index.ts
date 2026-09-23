@@ -7,7 +7,8 @@ import { parsePackText } from "@lenspack/spec";
 export { seed } from "./seed";
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const pack = parsePackText(readFileSync(join(here, "pack.yaml"), "utf8"));
+export const packYaml = readFileSync(join(here, "pack.yaml"), "utf8");
+export const pack = parsePackText(packYaml);
 export const boards = readdirSync(join(here, "boards"))
   .filter((f) => f.endsWith(".json"))
   .map((f) => ({ id: f.replace(/\.json$/, ""), ...(JSON.parse(readFileSync(join(here, "boards", f), "utf8")) as { title: string; ops: unknown[] }) }));
