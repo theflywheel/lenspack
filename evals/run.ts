@@ -17,7 +17,7 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 
 import { SMALL, contextFor, examples } from "../examples/index";
 import { type ProviderConfig, buildProvider, probe, providersFromEnv } from "../examples/demo/llm";
-import { SYSTEM } from "../examples/demo/prompt";
+import { PROMPT_VERSION, SYSTEM } from "../examples/demo/prompt";
 import { screenshotBoard } from "./screenshot";
 import { type Review, healingPrompt, reviewTurn } from "../examples/demo/review";
 import { type Facts, tasks } from "./tasks";
@@ -70,7 +70,7 @@ async function main() {
   await ex.seed(db.writer, "duckdb", SMALL.commerce);
   const catalogue = catalogueFrom(ex.pack);
   const ctx = contextFor.commerce;
-  const grains = Object.entries(ex.pack.entities).map(([k, e]) => `${k}: ${e.grain ?? ""}`).join("; ");
+  console.log(`prompt version ${PROMPT_VERSION}`);
   const canonicalOps = ex.boards.find((b) => b.id === "overview")!.ops.map((o) => opSchema.parse(o)) as BoardOp[];
   const refund = await run({ kind: "breakdown", dimension: "country", measure: "refund_rate", limit: 12, sort: "desc" }, { pack: ex.pack, executor: db.executor, ctx });
   const facts: Facts = { topRefund: { country: refund.rows[0]!.group, rate: refund.rows[0]!.value ?? 0 } };
@@ -103,7 +103,7 @@ async function main() {
       try {
         const out = await generateText({
           model: provider.languageModel,
-          system: SYSTEM(ex.pack.pack, `Entities — ${grains}.`),
+          system: SYSTEM(ex.pack, catalogue, seeded.board.config),
           prompt: t.prompt,
           tools,
           stopWhen: stepCountIs(12),
@@ -130,7 +130,7 @@ async function main() {
             const history = out.steps.flatMap((st) => st.response.messages);
             const again = await generateText({
               model: provider.languageModel,
-              system: SYSTEM(ex.pack.pack, `Entities — ${grains}.`),
+              system: SYSTEM(ex.pack, catalogue, seeded.board.config),
               messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: healingPrompt(review) }],
               tools,
               stopWhen: stepCountIs(12),

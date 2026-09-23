@@ -149,8 +149,7 @@ createServer(async (req, res) => {
             proposals: fileProposals(join(dataDir, `${exampleName}.proposals.json`)),
           }),
         );
-        const grains = Object.entries(ex.pack.entities).map(([k, e]) => `${k}: ${e.grain ?? ""}`).join("; ");
-        const system = SYSTEM(ex.pack.pack, `Entities — ${grains}.`);
+        const system = SYSTEM(ex.pack, h.catalogue, board.config);
         const modelMessages = await convertToModelMessages(body.messages);
         const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
         const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
