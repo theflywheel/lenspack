@@ -12,12 +12,13 @@ import { type ToolSet, generateText, stepCountIs } from "ai";
 import { type BoardOp, memoryStore, opSchema } from "@lenspack/core";
 import { boardTools, toVercelAI } from "@lenspack/mcp";
 import { catalogueFrom } from "@lenspack/spec";
+import { run } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 
 import { SMALL, contextFor, examples } from "../examples/index";
 import { type ProviderConfig, buildProvider, probe, providersFromEnv } from "../examples/demo/llm";
 import { SYSTEM } from "../examples/demo/prompt";
-import { tasks } from "./tasks";
+import { type Facts, tasks } from "./tasks";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -55,6 +56,9 @@ async function main() {
   const ctx = contextFor.commerce;
   const grains = Object.entries(ex.pack.entities).map(([k, e]) => `${k}: ${e.grain ?? ""}`).join("; ");
   const canonicalOps = ex.boards.find((b) => b.id === "overview")!.ops.map((o) => opSchema.parse(o)) as BoardOp[];
+  const refund = await run({ kind: "breakdown", dimension: "country", measure: "refund_rate", limit: 12, sort: "desc" }, { pack: ex.pack, executor: db.executor, ctx });
+  const facts: Facts = { topRefund: { country: refund.rows[0]!.group, rate: refund.rows[0]!.value ?? 0 } };
+  console.log(`facts: top refund rate ${facts.topRefund.country} ${(facts.topRefund.rate * 100).toFixed(1)}%`);
 
   const results: Result[] = [];
   for (const cfg of providerConfigs) {
@@ -92,7 +96,7 @@ async function main() {
           return v?.applied === false || v?.ok === false;
         }).length;
         const board = (await store.get("b"))!;
-        const note = t.check(board.config, out.text);
+        const note = t.check(board.config, out.text, facts);
         r = { provider: cfg.name, task: t.id, pass: note === null, note, steps: out.steps.length, toolCalls: calls.length, toolErrors, narrated: NARRATION.test(out.text), latencyMs: Date.now() - started, reply: out.text.slice(0, 300) };
       } catch (e) {
         r = { provider: cfg.name, task: t.id, pass: false, note: "threw", steps: 0, toolCalls: 0, toolErrors: 0, narrated: false, latencyMs: Date.now() - started, reply: "", error: (e instanceof Error ? e.message : String(e)).slice(0, 200) };

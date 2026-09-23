@@ -5,11 +5,14 @@ import type { BoardConfig } from "@lenspack/core";
 // failure modes that matter: vocabulary, refusal recovery, multi-step edits,
 // and answering a question with a real number.
 
+/** Facts computed from the eval database, so checks never hard-code numbers. */
+export type Facts = { topRefund: { country: string; rate: number } };
+
 export type Task = {
   id: string;
   prompt: string;
   /** Returns null when the task passed, or what is wrong. */
-  check: (config: BoardConfig, reply: string) => string | null;
+  check: (config: BoardConfig, reply: string, facts: Facts) => string | null;
 };
 
 const widget = (c: BoardConfig, pred: (w: BoardConfig["widgets"][string]) => boolean) => Object.entries(c.widgets).find(([, w]) => pred(w));
@@ -64,7 +67,13 @@ export const tasks: Task[] = [
   {
     id: "question",
     prompt: "Which country has the highest refund rate? Answer with the country code and the rate.",
-    check: (_c, reply) => (/\bKE\b|Kenya/i.test(reply) && /7\.\d\s?%|0\.07\d/.test(reply) ? null : `reply did not name KE with its rate: "${reply.slice(0, 120)}"`),
+    check: (_c, reply, facts) => {
+      const { country, rate } = facts.topRefund;
+      const pct = (rate * 100).toFixed(1);
+      const namesCountry = new RegExp(`\\b${country}\\b`, "i").test(reply);
+      const namesRate = reply.includes(pct) || reply.includes(pct.replace(/\.\d$/, "")) || reply.includes(rate.toFixed(3));
+      return namesCountry && namesRate ? null : `expected ${country} at ${pct}%: "${reply.slice(0, 120)}"`;
+    },
   },
   {
     id: "layout",

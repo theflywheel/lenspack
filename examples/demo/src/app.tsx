@@ -71,7 +71,9 @@ export function ChatPanel({
     if (wasBusy.current && !busy) onTurnEnd();
     wasBusy.current = busy;
   }, [busy, onTurnEnd]);
-  React.useEffect(() => bottom.current?.scrollIntoView({ block: "end" }), [messages, busy]);
+  React.useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "end" });
+  }, [messages, busy]);
   const ask = (text: string) => {
     if (!text.trim() || busy) return;
     void sendMessage({ text });
@@ -80,10 +82,10 @@ export function ChatPanel({
   return (
     <Card className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col gap-0 py-0" data-testid="chat">
       <CardHeader className="flex flex-row items-center justify-between gap-2 border-b py-3 [.border-b]:pb-3">
-        <CardTitle className="text-sm">Build with chat</CardTitle>
+        <CardTitle className="shrink-0 whitespace-nowrap text-sm">Chat</CardTitle>
         {models.length > 1 && (
           <Select value={model} onValueChange={onModelChange}>
-            <SelectTrigger size="sm" className="h-7 max-w-44 text-xs" aria-label="Model" data-testid="model-select">
+            <SelectTrigger size="sm" className="h-7 min-w-0 flex-1 text-xs [&>span]:truncate" aria-label="Model" data-testid="model-select">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -181,7 +183,9 @@ function FilterBar() {
     if (!host.loadFilterOptions) return;
     let cancelled = false;
     for (const f of filters) void host.loadFilterOptions(f.field).then((o) => !cancelled && setOptions((prev) => ({ ...prev, [f.field]: o })));
-    return () => void (cancelled = true);
+    return () => {
+      cancelled = true;
+    };
   }, [host, filters]);
   if (filters.length === 0) return null;
   const active = filters.some((f) => selections[f.field]);
