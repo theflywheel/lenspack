@@ -161,6 +161,8 @@ export function ChatPanel({
                   <p key={i} className="text-sm leading-6">{p.text}</p>
                 ) : p.type === "data-review" ? (
                   <ReviewBlock key={i} r={p.data as ReviewData} />
+                ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
+                  <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
                 ) : null,
               )}
               {m.role === "assistant" && receipts[m.id] && (

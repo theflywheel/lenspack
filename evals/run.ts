@@ -37,6 +37,7 @@ const visualName = arg("visual");
 const reviewFlag = process.argv.includes("--review");
 const reviewName = arg("review");
 const heal = process.argv.includes("--heal");
+const escalateName = arg("escalate");
 const demoUrl = arg("demo") ?? "http://127.0.0.1:8787";
 const modelFilter = arg("models")?.split(",");
 const providerConfigs: ProviderConfig[] = arg("providers") ? (JSON.parse(readFileSync(arg("providers")!, "utf8")) as ProviderConfig[]) : providersFromEnv();
@@ -80,6 +81,9 @@ async function main() {
   const judge = visualName ? await probe(buildProvider(providerConfigs.find((c) => c.name.includes(visualName))!)) : null;
   const reviewerCfg = reviewName && !reviewName.startsWith("--") ? providerConfigs.find((c) => c.name.includes(reviewName)) : undefined;
   const fixedReviewer = reviewerCfg ? await probe(buildProvider(reviewerCfg)) : null;
+  const escalateCfg = escalateName ? providerConfigs.find((c) => c.name.includes(escalateName)) : undefined;
+  const escalateProvider = escalateCfg ? await probe(buildProvider(escalateCfg)) : null;
+  if (escalateName && !escalateProvider?.available) throw new Error(`escalate provider ${escalateName} unavailable`);
   if (visualName && !judge?.available) throw new Error(`visual judge ${visualName} unavailable: ${judge?.error}`);
   for (const cfg of providerConfigs) {
     if (modelFilter && !modelFilter.some((m) => cfg.name.includes(m))) continue;
@@ -129,7 +133,7 @@ async function main() {
             const healStart = Date.now();
             const history = out.steps.flatMap((st) => st.response.messages);
             const again = await generateText({
-              model: provider.languageModel,
+              model: (escalateProvider ?? provider).languageModel,
               system: SYSTEM(ex.pack, catalogue, seeded.board.config),
               messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: healingPrompt(review) }],
               tools,

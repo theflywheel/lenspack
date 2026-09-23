@@ -17,4 +17,6 @@ The tasks cover the failure modes that matter for this design: naming a key that
 
 `--heal` gives the builder one more round when the reviewer is not satisfied, with the review as the instruction, and reports pass rates before and after (🩹 = passed only after healing).
 
+`--escalate <name>` runs the heal round on a larger model instead of the builder: small model first, big model only when the reviewer is not satisfied.
+
 `--visual <name>` is the optional extra: Playwright screenshots the resulting board through the demo server (`--demo`, default `http://127.0.0.1:8787`) and a vision model judges it against a fixed rubric.

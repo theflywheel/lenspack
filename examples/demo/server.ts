@@ -134,9 +134,15 @@ createServer(async (req, res) => {
         const provider = (wanted ? providers.find((p) => p.name === wanted) : null) ?? defaultProvider();
         if (!provider) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
         if (provider.available === false) return json(res, 503, { error: `${provider.name} is unavailable: ${provider.error}` });
-        // The reviewer: another (or the same) provider; ?review=off disables it.
+        // Roles. The builder is small and fast by default; the reviewer and
+        // the escalation model (used for the heal round) can be larger.
+        // ?review=off disables review; LENSPACK_LLM_ROLES sets defaults:
+        //   {"reviewer":"<name>","escalate":"<name>"}
+        const byName = (n: string | null | undefined) => (n ? providers.find((p) => p.name === n && p.available !== false) : undefined);
+        const roles = process.env.LENSPACK_LLM_ROLES ? (JSON.parse(process.env.LENSPACK_LLM_ROLES) as { reviewer?: string; escalate?: string }) : {};
         const reviewWanted = url.searchParams.get("review");
-        const reviewer = reviewWanted === "off" ? null : ((reviewWanted ? providers.find((p) => p.name === reviewWanted && p.available) : null) ?? provider);
+        const reviewer = reviewWanted === "off" ? null : (byName(reviewWanted) ?? byName(roles.reviewer) ?? provider);
+        const escalate = byName(url.searchParams.get("escalate")) ?? byName(roles.escalate) ?? provider;
         const maxRounds = Number(url.searchParams.get("rounds") ?? 2);
         const body = (await read(req)) as { messages: UIMessage[] };
         const tools = toVercelAI(
@@ -162,7 +168,9 @@ createServer(async (req, res) => {
           execute: async ({ writer }) => {
             let messages = modelMessages;
             for (let round = 1; round <= Math.max(1, maxRounds); round++) {
-              const result = streamText({ model: provider.languageModel, system, messages, tools: tools as ToolSet, stopWhen: stepCountIs(12) });
+              const builder = round === 1 ? provider : escalate;
+              writer.write({ type: "data-round", data: { round, builder: builder.name } });
+              const result = streamText({ model: builder.languageModel, system, messages, tools: tools as ToolSet, stopWhen: stepCountIs(12) });
               writer.merge(result.toUIMessageStream({ sendStart: round === 1, sendFinish: false }));
               const steps = await result.steps;
               const reply = await result.text;
