@@ -5,6 +5,20 @@ import type { Tool } from "../tools";
 // into `tools:` on generateText / streamText.
 export function toVercelAI(tools: Tool[]) {
   return Object.fromEntries(
-    tools.map((t) => [t.name, { description: t.description, inputSchema: t.inputSchema, execute: (args: unknown) => t.execute(args as never) }]),
+    tools.map((t) => [
+      t.name,
+      {
+        description: t.description,
+        inputSchema: t.inputSchema,
+        // A thrown error would end the turn; a returned one lets the model retry.
+        execute: async (args: unknown) => {
+          try {
+            return await t.execute(args as never);
+          } catch (e) {
+            return { applied: false, ok: false, error: e instanceof Error ? e.message : String(e) };
+          }
+        },
+      },
+    ]),
   );
 }

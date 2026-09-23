@@ -137,9 +137,10 @@ createServer(async (req, res) => {
           system: SYSTEM(ex.pack.pack, `Entities — ${grains}.`),
           messages: await convertToModelMessages(body.messages),
           tools: tools as unknown as ToolSet,
-          stopWhen: stepCountIs(10),
+          stopWhen: stepCountIs(12),
         });
-        const response = result.toUIMessageStreamResponse();
+        // Real messages, not "An error occurred": a demo should show what went wrong.
+        const response = result.toUIMessageStreamResponse({ onError: (e) => (e instanceof Error ? e.message : String(e)) });
         const headers: Record<string, string> = {};
         response.headers.forEach((v, k) => (headers[k] = v));
         res.writeHead(response.status, headers);

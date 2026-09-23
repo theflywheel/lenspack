@@ -42,3 +42,6 @@
 .lp-svg { flex: 1; min-height: 0; width: 100%; height: 100%; }
 .lp-svg-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; font-size: 12px; padding-top: 4px; }
 .lp-svg-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.lp-board[data-density="compact"] .lp-widget { padding: 8px 10px; }
+.lp-board[data-density="compact"] .lp-widget-title { font-size: 13px; margin-bottom: 4px; }
+.lp-board[data-density="compact"] .lp-kpi-value { font-size: 22px; }

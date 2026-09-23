@@ -42,15 +42,16 @@ export function Board({ widgets = {}, emptyMessage }: { widgets?: WidgetRegistry
     return <p className="lp-empty-board">{emptyMessage ?? "Nothing on this board yet."}</p>;
   }
 
+  const compactMode = config.grid.density === "compact";
   return (
-    <div className="lp-board" data-testid="lp-board" data-widgets={Object.keys(config.widgets).length}>
+    <div className="lp-board" data-testid="lp-board" data-widgets={Object.keys(config.widgets).length} data-density={config.grid.density}>
       {saving && <div className="lp-saving">Saving layout…</div>}
       <Grid
         className="layout"
         layout={config.layout as Layout[]}
         cols={config.grid.cols}
-        rowHeight={config.grid.rowHeight}
-        margin={[12, 12]}
+        rowHeight={compactMode ? Math.round(config.grid.rowHeight * 0.75) : config.grid.rowHeight}
+        margin={compactMode ? [6, 6] : [12, 12]}
         compactType="vertical"
         isDraggable={editable && !!host.saveLayout}
         isResizable={editable && !!host.saveLayout}

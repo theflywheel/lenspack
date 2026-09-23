@@ -39,6 +39,12 @@ export const opSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("set_title"), title: z.string().min(1).max(160) }),
   z.object({ op: z.literal("add_filter"), filter: filterSchema }),
   z.object({ op: z.literal("remove_filter"), id: z.string() }),
+  // "Make it compact": density and packing, together or separately.
+  z.object({
+    op: z.literal("set_layout_mode"),
+    density: z.enum(["comfortable", "compact"]).optional(),
+    fill: z.boolean().optional(),
+  }),
 ]);
 export type BoardOp = z.infer<typeof opSchema>;
 
@@ -206,12 +212,20 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
         draft.filters = draft.filters.filter((filter) => filter.id !== op.id);
         break;
       }
+
+      case "set_layout_mode": {
+        if (op.density) draft.grid.density = op.density;
+        if (op.fill !== undefined) draft.grid.fill = op.fill;
+        break;
+      }
     }
   }
 
   // Layout is normalised last: a widget wider than the grid, or one left
-  // hanging past the bottom, is corrected rather than rejected.
+  // hanging past the bottom, is corrected rather than rejected; a packed
+  // board also closes its gaps.
   draft.layout = compact(draft.layout, cols);
+  if (draft.grid.fill) draft.layout = pack(draft.layout, cols);
 
   const parsed = boardConfigSchema.safeParse(draft);
   if (!parsed.success) return { ok: false, opIndex: ops.length - 1, error: parsed.error.issues[0]?.message ?? "Invalid config" };
@@ -244,6 +258,39 @@ export function compact(layout: LayoutItem[], cols: number): LayoutItem[] {
     settled.push({ ...next, y });
   }
   return settled;
+}
+
+/**
+ * Packs rows: widgets slide left to close gaps, and the last widget on each
+ * row grows to the grid edge, so a quarter-width KPI never leaves three
+ * quarters of a row empty. Rows are groups of widgets sharing a top edge;
+ * a widget that spans several rows keeps its width and blocks the rows it
+ * covers. Applied after gravity, so it never creates an overlap.
+ */
+export function pack(layout: LayoutItem[], cols: number): LayoutItem[] {
+  const items = layout.map((l) => ({ ...l })).sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows = new Map<number, typeof items>();
+  for (const item of items) rows.set(item.y, [...(rows.get(item.y) ?? []), item]);
+
+  for (const [y, row] of [...rows.entries()].sort((a, b) => a[0] - b[0])) {
+    // Columns already taken on this row by taller widgets from rows above.
+    const blocked = items.filter((o) => o.y < y && o.y + o.h > y);
+    const free = (x: number, w: number) => !blocked.some((o) => x < o.x + o.w && x + w > o.x);
+    let cursor = 0;
+    for (const item of row) {
+      // Slide left to the first free column at or after the cursor.
+      let x = cursor;
+      while (x + item.w <= cols && !free(x, item.w)) x++;
+      if (x + item.w <= cols) item.x = x;
+      cursor = item.x + item.w;
+    }
+    // Widen the last widget of the row up to the next blocked column or the edge.
+    const last = row[row.length - 1]!;
+    let edge = cols;
+    for (const o of blocked) if (o.x >= last.x + last.w && o.x < edge) edge = o.x;
+    if (edge - last.x > last.w) last.w = edge - last.x;
+  }
+  return compact(items, cols);
 }
 
 export type Problem = { error: string; hint?: string };

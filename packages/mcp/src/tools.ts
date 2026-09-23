@@ -36,19 +36,32 @@ export type BoardToolsOptions = {
   timeoutMs?: number;
 };
 
-const PLACE = z.string().default("bottom").describe('Where to put it: "top", "bottom", or "after:<widgetId>"');
-const WIDTH = z.enum(["full", "half", "third", "quarter"]).default("half").describe("full is the whole row, half is two across, third is three across");
+// Lenient scalars: a null, a numeric string or a "true" from a weaker model
+// is an argument to accept and coerce, not a reason to end the turn.
+const str = (fallback = "") => z.string().nullish().transform((v) => v ?? fallback);
+const num = (fallback: number, min: number, max: number) =>
+  z
+    .union([z.number(), z.string(), z.null(), z.undefined()])
+    .transform((v) => (v === null || v === undefined || v === "" ? fallback : Number(v)))
+    .pipe(z.number().int().min(min).max(max));
+const bool = (fallback = false) =>
+  z.union([z.boolean(), z.string(), z.null(), z.undefined()]).transform((v) => (v === null || v === undefined || v === "" ? fallback : v === true || v === "true"));
+const oneOf = <T extends [string, ...string[]]>(values: T, fallback: T[number]) =>
+  z.union([z.enum(values), z.null(), z.undefined(), z.literal("")]).transform((v) => (v ? v : fallback) as T[number]);
+
+const PLACE = str("bottom").describe('Where to put it: "top", "bottom", or "after:<widgetId>"');
+const WIDTH = oneOf(["full", "half", "third", "quarter"], "half").describe("full is the whole row, half is two across, third is three across, quarter is four across");
 const QUERY_SHAPE = {
   query_kind: z.enum(["breakdown", "series", "value", "rows"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records"),
-  measure: z.string().default("").describe("Measure key from list_metrics (not for rows)"),
-  dimension: z.string().default("").describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
-  entity: z.string().default("").describe("For rows: the entity to list"),
-  grain: z.enum(["hour", "day", "week", "month", "quarter", "year"]).default("day").describe("For series"),
-  time_last: z.string().default("").describe('Relative window like "30d", "12w", "6m"; empty for all time'),
-  compare: z.boolean().default(false).describe("For value: also compute the previous period"),
-  limit: z.number().int().min(0).max(500).default(0).describe("Max groups or rows; 0 for the default"),
-  filter_dimension: z.string().default("").describe("Optional: narrow by this dimension"),
-  filter_value: z.string().default("").describe("Optional: the value the filter dimension must equal"),
+  measure: str().describe("Measure key from list_metrics (not for rows)"),
+  dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
+  entity: str().describe("For rows: the entity to list"),
+  grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
+  time_last: str().describe('Relative window like "30d", "12w", "6m"; empty for all time'),
+  compare: bool(false).describe("For value: also compute the previous period"),
+  limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
+  filter_dimension: str().describe("Optional: narrow by this dimension"),
+  filter_value: str().describe("Optional: the value the filter dimension must equal"),
 };
 
 export function assembleQuery(a: { [K in keyof typeof QUERY_SHAPE]: z.infer<(typeof QUERY_SHAPE)[K]> }): Query {
@@ -87,13 +100,22 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   const ctx = opts.ctx ?? {};
   const proposals = opts.proposals ?? memoryProposals();
 
-  const apply = async (ops: BoardOp[]) => {
-    // Refuse at edit time what the compiler would refuse at render time.
-    const checked = checkOps(ops, pack, { dialect: executor.dialect, ctx });
-    if (!checked.ok) return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
-    const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
-    if (!result.ok) return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
-    return { applied: true, version: result.board.version, board: summarise(result.board.config) };
+  // Models call several edit tools in one step and the SDK runs them in
+  // parallel; each patch reads the board, so unserialised they would race and
+  // the last write would win. Edits queue per tool set instead.
+  let queue: Promise<unknown> = Promise.resolve();
+  const apply = (ops: BoardOp[]) => {
+    const work = async () => {
+      // Refuse at edit time what the compiler would refuse at render time.
+      const checked = checkOps(ops, pack, { dialect: executor.dialect, ctx });
+      if (!checked.ok) return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
+      if (!result.ok) return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
+      return { applied: true, version: result.board.version, board: summarise(result.board.config) };
+    };
+    const next = queue.then(work, work);
+    queue = next.catch(() => undefined);
+    return next;
   };
 
   const tools: Tool[] = [
@@ -161,12 +183,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         id: z.string().describe("Short lowercase id, e.g. revenue_by_country"),
         kind: z.enum(["chart", "kpi", "table", "text"]),
         title: z.string().describe("What the reader sees above it"),
-        chart: z.enum(["bar", "line", "pie", "area"]).default("bar").describe("Only when kind is chart"),
-        body: z.string().default("").describe("Only when kind is text: the note itself"),
+        chart: oneOf(["bar", "line", "pie", "area"], "bar").describe("Only when kind is chart"),
+        body: str().describe("Only when kind is text: the note itself"),
         ...QUERY_SHAPE,
         place: PLACE,
         width: WIDTH,
-        height: z.number().int().min(0).max(20).default(0).describe("Rows tall; 0 lets the server choose"),
+        height: num(0, 0, 20).describe("Rows tall; 0 lets the server choose"),
       }),
       async execute(a) {
         try {
@@ -177,8 +199,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
                 ? { kind: "kpi" as const, title: a.title, query: assembleQuery(a), aggregate: "last" as const }
                 : a.kind === "table"
                   ? { kind: "table" as const, title: a.title, query: assembleQuery(a), pageSize: 10 }
-                  : { kind: "chart" as const, chart: a.chart, title: a.title, query: assembleQuery(a), options: { legend: true, colorScheme: "default" as const } };
-          return apply([{ op: "add_widget", id: a.id, widget, placement: { place: a.place, width: a.width, ...(a.height > 0 ? { height: a.height } : {}) } }]);
+                  : { kind: "chart" as const, chart: a.chart as "bar" | "line" | "pie" | "area", title: a.title, query: assembleQuery(a), options: { legend: true, colorScheme: "default" as const } };
+          return apply([{ op: "add_widget", id: a.id, widget, placement: { place: a.place, width: a.width as "full" | "half" | "third" | "quarter", ...(a.height > 0 ? { height: a.height } : {}) } }]);
         } catch (e) {
           return fail(e);
         }
@@ -191,8 +213,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         id: z.string(),
         kind: z.enum(["chart", "kpi", "table", "text"]),
         title: z.string(),
-        chart: z.enum(["bar", "line", "pie", "area"]).default("bar"),
-        body: z.string().default(""),
+        chart: oneOf(["bar", "line", "pie", "area"], "bar"),
+        body: str(),
         ...QUERY_SHAPE,
       }),
       async execute(a) {
@@ -204,7 +226,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
                 ? { kind: "kpi" as const, title: a.title, query: assembleQuery(a), aggregate: "last" as const }
                 : a.kind === "table"
                   ? { kind: "table" as const, title: a.title, query: assembleQuery(a), pageSize: 10 }
-                  : { kind: "chart" as const, chart: a.chart, title: a.title, query: assembleQuery(a), options: { legend: true, colorScheme: "default" as const } };
+                  : { kind: "chart" as const, chart: a.chart as "bar" | "line" | "pie" | "area", title: a.title, query: assembleQuery(a), options: { legend: true, colorScheme: "default" as const } };
           return apply([{ op: "update_widget", id: a.id, widget }]);
         } catch (e) {
           return fail(e);
@@ -215,13 +237,16 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       name: "move_widget",
       description: "Move a widget somewhere else on the board.",
       inputSchema: z.object({ id: z.string(), place: PLACE, width: WIDTH }),
-      execute: ({ id, place, width }) => apply([{ op: "move_widget", id, placement: { place, width } }, { op: "resize_widget", id, width }]),
+      execute: ({ id, place, width }) => {
+        const w = width as "full" | "half" | "third" | "quarter";
+        return apply([{ op: "move_widget", id, placement: { place, width: w } }, { op: "resize_widget", id, width: w }]);
+      },
     }),
     defineTool({
       name: "resize_widget",
       description: "Make a widget wider, narrower, taller or shorter.",
-      inputSchema: z.object({ id: z.string(), width: WIDTH, height: z.number().int().min(0).max(20).default(0).describe("Rows tall; 0 leaves the height alone") }),
-      execute: ({ id, width, height }) => apply([{ op: "resize_widget", id, width, ...(height > 0 ? { height } : {}) }]),
+      inputSchema: z.object({ id: z.string(), width: WIDTH, height: num(0, 0, 20).describe("Rows tall; 0 leaves the height alone") }),
+      execute: ({ id, width, height }) => apply([{ op: "resize_widget", id, width: width as "full" | "half" | "third" | "quarter", ...(height > 0 ? { height } : {}) }]),
     }),
     defineTool({
       name: "remove_widget",
@@ -234,8 +259,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       description: "Add a control at the top of the board that narrows it to one value of a dimension.",
       inputSchema: z.object({
         field: z.string().describe("The dimension key, from list_metrics"),
-        label: z.string().default("").describe("What the control is called; defaults to the dimension's label"),
-        applies: z.string().default("*").describe('"*" for every widget, or widget ids separated by commas'),
+        label: str().describe("What the control is called; defaults to the dimension's label"),
+        applies: str("*").describe('"*" for every widget, or widget ids separated by commas'),
       }),
       execute: ({ field, label, applies }) => {
         const targets = applies.split(",").map((s) => s.trim()).filter(Boolean);
@@ -248,6 +273,15 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       description: "Take a filter off the board.",
       inputSchema: z.object({ field: z.string().describe("The dimension the filter is on") }),
       execute: ({ field }) => apply([{ op: "remove_filter", id: `filter_${field}` }]),
+    }),
+    defineTool({
+      name: "set_layout_mode",
+      description: 'How the board uses space. density "compact" tightens gutters and row height; fill true packs each row (gaps closed, last widget widened to the edge) now and on every later edit. Use for "make it compact", "pack it", "tighter", "use less space".',
+      inputSchema: z.object({
+        density: oneOf(["comfortable", "compact"], "").describe("comfortable or compact; empty leaves it"),
+        fill: z.union([z.boolean(), z.string(), z.null(), z.undefined()]).transform((v) => (v === null || v === undefined || v === "" ? undefined : v === true || v === "true")).describe("true to pack rows, false to stop packing; omit to leave it"),
+      }),
+      execute: ({ density, fill }) => apply([{ op: "set_layout_mode", ...(density ? { density: density as "comfortable" | "compact" } : {}), ...(fill === undefined ? {} : { fill }) }]),
     }),
     defineTool({
       name: "rename_board",

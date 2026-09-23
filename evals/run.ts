@@ -86,7 +86,7 @@ async function main() {
           system: SYSTEM(ex.pack.pack, `Entities — ${grains}.`),
           prompt: t.prompt,
           tools,
-          stopWhen: stepCountIs(10),
+          stopWhen: stepCountIs(12),
           abortSignal: AbortSignal.timeout(120_000),
         });
         const calls = out.steps.flatMap((s) => s.toolCalls);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyOps, compact, migrateKeys, nearest, opSchema, type BoardOp } from "../src/ops";
+import { applyOps, compact, migrateKeys, nearest, opSchema, pack, type BoardOp } from "../src/ops";
 import { emptyBoard, type BoardConfig } from "../src/schema";
 import { catalogue, packRef } from "./fixtures";
 
@@ -288,5 +288,53 @@ describe("migrations", () => {
     expect(w.kind === "chart" && w.query.kind === "breakdown" && w.query.dimension).toBe("area");
     expect(w.kind === "chart" && w.query.filters?.[0]?.dimension).toBe("medium");
     expect(migrated.filters[0]?.field).toBe("area");
+  });
+});
+
+describe("packing", () => {
+  it("closes gaps and widens the last widget on each row", () => {
+    const packed = pack(
+      [
+        { i: "a", x: 0, y: 0, w: 3, h: 3 },
+        { i: "b", x: 6, y: 0, w: 3, h: 3 }, // gap between a and b, gap after b
+        { i: "c", x: 0, y: 3, w: 6, h: 6 },
+      ],
+      12,
+    );
+    const at = (id: string) => packed.find((l) => l.i === id)!;
+    expect([at("a").x, at("a").w]).toEqual([0, 3]);
+    expect([at("b").x, at("b").w]).toEqual([3, 9]);
+    expect([at("c").x, at("c").w]).toEqual([0, 12]);
+  });
+
+  it("does not grow into a taller widget from the row above", () => {
+    const packed = pack(
+      [
+        { i: "tall", x: 8, y: 0, w: 4, h: 6 },
+        { i: "a", x: 0, y: 0, w: 4, h: 3 },
+        { i: "b", x: 0, y: 3, w: 4, h: 3 },
+      ],
+      12,
+    );
+    const at = (id: string) => packed.find((l) => l.i === id)!;
+    // The tall widget slides left next to a and takes the rest of the row; b
+    // below can only grow up to the tall widget's edge.
+    expect([at("a").x, at("a").w]).toEqual([0, 4]);
+    expect([at("tall").x, at("tall").w]).toEqual([4, 8]);
+    expect([at("b").x, at("b").w]).toEqual([0, 4]);
+    for (const p of packed) for (const q of packed) if (p.i !== q.i) expect(p.x < q.x + q.w && p.x + p.w > q.x && p.y < q.y + q.h && p.y + p.h > q.y).toBe(false);
+  });
+
+  it("set_layout_mode with fill packs every later edit too", () => {
+    const built = apply(empty(), [
+      { op: "add_widget", id: "k", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count" } }, placement: { place: "top", width: "quarter" } },
+      { op: "set_layout_mode", density: "compact", fill: true },
+    ]);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.config.grid.density).toBe("compact");
+    expect(built.config.layout[0]!.w).toBe(12);
+    const more = apply(built.config, [{ op: "add_widget", id: "c", widget: chart(), placement: { place: "bottom", width: "third" } }]);
+    expect(more.ok && more.config.layout.find((l) => l.i === "c")!.w).toBe(12);
   });
 });

@@ -16,7 +16,7 @@ export function summarise(config: BoardConfig) {
   }
   const layout = [...rows.entries()].map(([, line], i) => `  row ${i + 1}: ${line.join(" | ")}`).join("\n");
   return [
-    `Board: “${config.title}” (pack ${config.pack} v${config.packVersion})`,
+    `Board: “${config.title}” (pack ${config.pack} v${config.packVersion}${config.grid.density === "compact" ? ", compact" : ""}${config.grid.fill ? ", packed" : ""})`,
     config.layout.length === 0 ? "  (empty)" : layout,
     config.filters.length > 0 ? `Filters: ${config.filters.map((f) => `${f.label} [${f.field}]`).join(", ")}` : "",
   ]

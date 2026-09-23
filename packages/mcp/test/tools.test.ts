@@ -72,6 +72,22 @@ describe("board tools", () => {
     expect(renamed.version).toBeGreaterThan(4);
   });
 
+  it("serialises parallel edits so none is lost", async () => {
+    const store = memoryStore();
+    await store.create({ id: "p", pack, title: "Parallel" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "p", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never);
+    await Promise.all([
+      go("rename_board", { title: "Renamed" }),
+      go("add_widget", { id: "k1", kind: "kpi", title: "K1", query_kind: "value", measure: "things" }),
+      go("add_widget", { id: "k2", kind: "kpi", title: "K2", query_kind: "value", measure: "weight" }),
+    ]);
+    const board = (await store.get("p"))!;
+    expect(board.config.title).toBe("Renamed");
+    expect(Object.keys(board.config.widgets).sort()).toEqual(["k1", "k2"]);
+    expect(board.version).toBe(4);
+  });
+
   it("refuses a fan-out widget at edit time, not render time", async () => {
     const r = (await call("add_widget", { id: "fan", kind: "chart", title: "x", query_kind: "breakdown", measure: "things", dimension: "part_kind" })) as { applied: boolean; error: string };
     expect(r.applied).toBe(false);

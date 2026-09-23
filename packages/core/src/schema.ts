@@ -153,6 +153,12 @@ export const boardConfigSchema = z.object({
     .object({
       cols: z.number().int().min(4).max(24).default(12),
       rowHeight: z.number().int().min(20).max(120).default(40),
+      // How much air around widgets; the renderer maps it to gutters, padding
+      // and row height.
+      density: z.enum(["comfortable", "compact"]).default("comfortable"),
+      // Whether rows are packed: gaps closed and the last widget on each row
+      // widened to the grid edge, on every edit.
+      fill: z.boolean().default(false),
     })
     .default({}),
   layout: z.array(layoutItemSchema).default([]),

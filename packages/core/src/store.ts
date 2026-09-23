@@ -37,6 +37,7 @@ export function describeOps(ops: BoardOp[]) {
         case "set_title": return `renamed to “${op.title}”`;
         case "add_filter": return `added filter ${op.filter.field}`;
         case "remove_filter": return `removed filter ${op.id}`;
+        case "set_layout_mode": return [op.density ? `density ${op.density}` : "", op.fill === undefined ? "" : op.fill ? "packed" : "unpacked"].filter(Boolean).join(", ") || "layout mode";
       }
     })
     .join(", ");

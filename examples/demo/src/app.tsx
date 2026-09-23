@@ -2,7 +2,7 @@ import * as React from "react";
 
 import { Chat, useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { ArrowUp, ChevronDown, History, RotateCcw, SendHorizontal, X } from "lucide-react";
+import { ArrowUp, ChevronDown, History, LayoutGrid, RotateCcw, SendHorizontal, X } from "lucide-react";
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
@@ -67,15 +67,33 @@ export function ChatPanel({
   const [input, setInput] = React.useState("");
   const wasBusy = React.useRef(false);
   const bottom = React.useRef<HTMLDivElement>(null);
+  // The receipt: what the board actually gained during a turn, read back from
+  // the version log. A model's claim and the receipt are shown side by side.
+  const startVersion = React.useRef<number | null>(null);
+  const [receipts, setReceipts] = React.useState<Record<string, BoardVersion[] | "none">>({});
   React.useEffect(() => {
-    if (wasBusy.current && !busy) onTurnEnd();
+    if (wasBusy.current && !busy) {
+      onTurnEnd();
+      const last = messages[messages.length - 1];
+      const from = startVersion.current;
+      if (last?.role === "assistant" && from !== null) {
+        void fetch(`/api${base}/versions`)
+          .then((r) => r.json())
+          .then((vs: (BoardVersion & { createdAt: string })[]) => {
+            const gained = vs.filter((v) => v.version > from).map((v) => ({ ...v, createdAt: new Date(v.createdAt) })).reverse();
+            setReceipts((prev) => ({ ...prev, [last.id]: gained.length ? gained : "none" }));
+          });
+      }
+    }
     wasBusy.current = busy;
-  }, [busy, onTurnEnd]);
+  }, [busy, onTurnEnd, messages, base]);
   React.useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages, busy]);
-  const ask = (text: string) => {
+  const ask = async (text: string) => {
     if (!text.trim() || busy) return;
+    const b = await (await fetch(`/api${base}`)).json();
+    startVersion.current = b.board?.version ?? null;
     void sendMessage({ text });
     setInput("");
   };
@@ -120,6 +138,22 @@ export function ChatPanel({
               {(m.parts as Part[]).filter((p) => p.type === "text" && p.text?.trim()).map((p, i) => (
                 <p key={i} className="text-sm leading-6">{p.text}</p>
               ))}
+              {m.role === "assistant" && receipts[m.id] && (
+                <div className="rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground" data-testid="receipt">
+                  <span className="font-medium text-foreground">Receipt</span>
+                  {receipts[m.id] === "none" ? (
+                    <span> — no changes were made to the board.</span>
+                  ) : (
+                    <ul className="mt-1 space-y-0.5">
+                      {(receipts[m.id] as BoardVersion[]).map((v) => (
+                        <li key={v.version}>
+                          <span className="font-mono">v{v.version}</span> {v.summary}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {busy && <p className="text-xs text-muted-foreground">Working…</p>}
@@ -215,6 +249,28 @@ function FilterBar() {
         </Button>
       )}
     </div>
+  );
+}
+
+// Density and packing: the same set_layout_mode op the chat uses.
+function LayoutMode() {
+  const { board, apply } = useBoard();
+  const mode = board.config.grid.fill ? "packed" : board.config.grid.density;
+  return (
+    <Select
+      value={mode}
+      onValueChange={(v) => void apply([{ op: "set_layout_mode", density: v === "comfortable" ? "comfortable" : "compact", fill: v === "packed" }])}
+    >
+      <SelectTrigger size="sm" aria-label="Layout density" data-testid="density-select">
+        <LayoutGrid className="text-muted-foreground" />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="comfortable">Comfortable</SelectItem>
+        <SelectItem value="compact">Compact</SelectItem>
+        <SelectItem value="packed">Packed</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -413,7 +469,10 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
                   <h1 className="text-xl font-semibold tracking-tight">{state.board.config.title}</h1>
                   {current?.description && <p className="mt-1 text-sm text-muted-foreground">{current.description}</p>}
                 </div>
-                <VersionHistory onReverted={reloadBoard} />
+                <div className="flex items-center gap-2">
+                  <LayoutMode />
+                  <VersionHistory onReverted={reloadBoard} />
+                </div>
               </div>
               <div className="space-y-3">
                 <OpsBox />
