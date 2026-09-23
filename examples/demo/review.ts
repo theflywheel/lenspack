@@ -11,6 +11,8 @@ export type Review = {
   missing: string[];
   wrong: string[];
   note: string;
+  /** The reviewer produced no usable verdict; never treat as a failure. */
+  unavailable?: boolean;
   raw?: string;
 };
 
@@ -31,16 +33,18 @@ export async function reviewTurn(model: LanguageModel, input: { instruction: str
     model,
     system: REVIEW_PROMPT,
     prompt: `INSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}`,
-    maxOutputTokens: 500,
+    // Reasoning models spend output tokens before the JSON; leave room.
+    maxOutputTokens: 2000,
     abortSignal: AbortSignal.timeout(timeoutMs),
   });
   const raw = out.text.trim();
   const m = /\{[\s\S]*\}/.exec(raw);
   try {
     const p = JSON.parse(m ? m[0] : raw) as Partial<Review>;
-    return { satisfied: !!p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw };
+    if (typeof p.satisfied !== "boolean") throw new Error("no verdict");
+    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw };
   } catch {
-    return { satisfied: false, missing: [], wrong: [], note: "reviewer did not return JSON", raw };
+    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw };
   }
 }
 

@@ -187,7 +187,7 @@ createServer(async (req, res) => {
                 review = { satisfied: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
               }
               writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...review, raw: undefined } });
-              if (review.satisfied || round === maxRounds) break;
+              if (review.satisfied || review.unavailable || round === maxRounds) break;
               // Another round with the review as the instruction; the model keeps its own history.
               const assistantTurn = steps.flatMap((s) => s.response.messages);
               messages = [...messages, ...assistantTurn, { role: "user", content: healingPrompt(review) }];

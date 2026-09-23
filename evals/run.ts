@@ -128,8 +128,8 @@ async function main() {
           const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
           const review = await reviewTurn(reviewerModel, { instruction: t.prompt, before: summarise(seeded.board.config), after: summarise(board.config), receipt });
           // Does the reviewer agree with the deterministic check?
-          r.review = { ...review, raw: undefined, agrees: review.satisfied === r.pass };
-          if (heal && !review.satisfied) {
+          r.review = { ...review, raw: undefined, agrees: review.unavailable ? false : review.satisfied === r.pass };
+          if (heal && !review.satisfied && !review.unavailable) {
             const healStart = Date.now();
             const history = out.steps.flatMap((st) => st.response.messages);
             const again = await generateText({

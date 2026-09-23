@@ -27,15 +27,15 @@ const api = async (path: string, init?: RequestInit) => {
 };
 
 type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string; data?: unknown };
-type ReviewData = { round: number; reviewer: string; satisfied: boolean; missing: string[]; wrong: string[]; note: string };
+type ReviewData = { round: number; reviewer: string; satisfied: boolean; unavailable?: boolean; missing: string[]; wrong: string[]; note: string };
 
 // The adversarial reviewer's verdict, as the server streamed it.
 function ReviewBlock({ r }: { r: ReviewData }) {
   return (
     <div className={`rounded-md border px-2 py-1.5 text-xs ${r.satisfied ? "border-border text-muted-foreground" : "border-destructive/40 text-destructive"}`} data-testid="review">
       <div className="flex items-center gap-2">
-        <Badge variant={r.satisfied ? "secondary" : "destructive"} className="font-mono">review {r.round}</Badge>
-        <span className={r.satisfied ? "text-foreground" : ""}>{r.satisfied ? "satisfied" : "not satisfied"}</span>
+        <Badge variant={r.unavailable ? "outline" : r.satisfied ? "secondary" : "destructive"} className="font-mono">review {r.round}</Badge>
+        <span className={r.satisfied && !r.unavailable ? "text-foreground" : ""}>{r.unavailable ? "unavailable" : r.satisfied ? "satisfied" : "not satisfied"}</span>
         <span className="ml-auto truncate text-muted-foreground">{r.reviewer}</span>
       </div>
       {(r.missing.length > 0 || r.wrong.length > 0) && (
