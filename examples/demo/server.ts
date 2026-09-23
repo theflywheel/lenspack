@@ -6,9 +6,9 @@ import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 
-import { type ToolSet, type UIMessage, convertToModelMessages, stepCountIs, streamText } from "ai";
+import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardOp, opSchema } from "@lenspack/core";
+import { type BoardOp, boardConfigSchema, opSchema, summarise } from "@lenspack/core";
 import { boardTools, fileProposals, toVercelAI } from "@lenspack/mcp";
 import { catalogueFrom } from "@lenspack/spec";
 import { type Executor, type Writer, checkOps, dimensionValues, resolveBoard, sqlStore } from "@lenspack/sql";
@@ -16,6 +16,7 @@ import { type Executor, type Writer, checkOps, dimensionValues, resolveBoard, sq
 import { type ExampleName, buildBoard, contextFor, examples } from "../index";
 import { buildProvider, probe, providersFromEnv, publicView } from "./llm";
 import { SYSTEM } from "./prompt";
+import { healingPrompt, reviewTurn } from "./review";
 
 const dataDir = process.env.LENSPACK_DATA_DIR ?? ".";
 const port = Number(process.env.PORT ?? 8787);
@@ -77,6 +78,14 @@ createServer(async (req, res) => {
     if (!h || !ex) return json(res, 404, { error: "no such example" });
     if (!boardId) return json(res, 200, { example: exampleName, pack: ex.pack.pack, description: ex.pack.description, boards: await h.store.list(), catalogue: h.catalogue });
     if (boardId === "pack") return json(res, 200, { yaml: ex.packYaml });
+    // Temporary boards for previews and evals: created from a config, deleted after.
+    if (boardId === "boards" && req.method === "POST") {
+      const body = (await read(req)) as { config: unknown; title?: string; temporary?: boolean };
+      const config = boardConfigSchema.parse(body.config);
+      const id = `${body.temporary ? "tmp" : "b"}_${Math.random().toString(36).slice(2, 10)}`;
+      const board = await h.store.create({ id, pack: ex.pack, title: body.title ?? config.title, config });
+      return json(res, 200, { id: board.id, version: board.version });
+    }
     // The canonical board: built from the pack's own ops file, never the
     // shared, editable copy. The landing page previews this.
     if (action === "canonical" && req.method === "GET") {
@@ -87,6 +96,11 @@ createServer(async (req, res) => {
     }
     const board = await h.store.get(boardId);
     if (!board) return json(res, 404, { error: "no such board" });
+    if (req.method === "DELETE" && !action) {
+      if (!boardId.startsWith("tmp_")) return json(res, 403, { error: "only temporary boards can be deleted here" });
+      await h.store.delete(boardId);
+      return json(res, 200, { deleted: boardId });
+    }
     const ctx = contextFor[exampleName as ExampleName];
     const opts = { pack: ex.pack, executor: h.db.executor, ctx };
     switch (`${req.method} ${action ?? ""}`) {
@@ -120,6 +134,10 @@ createServer(async (req, res) => {
         const provider = (wanted ? providers.find((p) => p.name === wanted) : null) ?? defaultProvider();
         if (!provider) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
         if (provider.available === false) return json(res, 503, { error: `${provider.name} is unavailable: ${provider.error}` });
+        // The reviewer: another (or the same) provider; ?review=off disables it.
+        const reviewWanted = url.searchParams.get("review");
+        const reviewer = reviewWanted === "off" ? null : ((reviewWanted ? providers.find((p) => p.name === reviewWanted && p.available) : null) ?? provider);
+        const maxRounds = Number(url.searchParams.get("rounds") ?? 2);
         const body = (await read(req)) as { messages: UIMessage[] };
         const tools = toVercelAI(
           boardTools({
@@ -132,15 +150,47 @@ createServer(async (req, res) => {
           }),
         );
         const grains = Object.entries(ex.pack.entities).map(([k, e]) => `${k}: ${e.grain ?? ""}`).join("; ");
-        const result = streamText({
-          model: provider.languageModel,
-          system: SYSTEM(ex.pack.pack, `Entities — ${grains}.`),
-          messages: await convertToModelMessages(body.messages),
-          tools: tools as unknown as ToolSet,
-          stopWhen: stepCountIs(12),
+        const system = SYSTEM(ex.pack.pack, `Entities — ${grains}.`);
+        const modelMessages = await convertToModelMessages(body.messages);
+        const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
+        const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
+        const before = summarise(board.config);
+        const startVersion = board.version;
+
+        // Build, then review, then heal — all in one response stream. The
+        // reviewer's verdict is written as a data part the UI renders.
+        const stream = createUIMessageStream({
+          execute: async ({ writer }) => {
+            let messages = modelMessages;
+            for (let round = 1; round <= Math.max(1, maxRounds); round++) {
+              const result = streamText({ model: provider.languageModel, system, messages, tools: tools as ToolSet, stopWhen: stepCountIs(12) });
+              writer.merge(result.toUIMessageStream({ sendStart: round === 1, sendFinish: false }));
+              const steps = await result.steps;
+              const reply = await result.text;
+              if (!reviewer) break;
+              const current = (await h.store.get(boardId))!;
+              const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion);
+              const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
+              // Questions get no review: there is nothing on the board to check.
+              if (versions.length === 0 && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
+              let review;
+              try {
+                review = await reviewTurn(reviewer.languageModel, { instruction, before, after: summarise(current.config), receipt });
+              } catch (e) {
+                review = { satisfied: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
+              }
+              writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...review, raw: undefined } });
+              if (review.satisfied || round === maxRounds) break;
+              // Another round with the review as the instruction; the model keeps its own history.
+              const assistantTurn = steps.flatMap((s) => s.response.messages);
+              messages = [...messages, ...assistantTurn, { role: "user", content: healingPrompt(review) }];
+              void reply;
+            }
+            writer.write({ type: "finish" });
+          },
+          onError: (e) => (e instanceof Error ? e.message : String(e)),
         });
-        // Real messages, not "An error occurred": a demo should show what went wrong.
-        const response = result.toUIMessageStreamResponse({ onError: (e) => (e instanceof Error ? e.message : String(e)) });
+        const response = createUIMessageStreamResponse({ stream });
         const headers: Record<string, string> = {};
         response.headers.forEach((v, k) => (headers[k] = v));
         res.writeHead(response.status, headers);

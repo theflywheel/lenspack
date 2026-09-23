@@ -22,10 +22,12 @@ export const tasks: Task[] = [
     id: "kpi",
     prompt: "Add a KPI for total revenue across the top, quarter width.",
     check: (c) => {
-      const hit = widget(c, (w) => w.kind === "kpi" && w.query.kind === "value" && w.query.measure === "revenue");
-      if (!hit) return "no kpi widget with a value query on revenue";
-      const item = c.layout.find((l) => l.i === hit[0]);
-      return item && item.y === 0 && item.w <= 4 ? null : `kpi not on the top row at quarter width (y=${item?.y}, w=${item?.w})`;
+      // The canonical board already has a revenue KPI (revenue_30d); the new
+      // one must be another widget, on row 1, at most a third wide.
+      const hits = Object.entries(c.widgets).filter(([id, w]) => id !== "revenue_30d" && w.kind === "kpi" && w.query.kind === "value" && w.query.measure === "revenue");
+      if (hits.length === 0) return "no new kpi widget with a value query on revenue";
+      const placed = hits.map(([id]) => c.layout.find((l) => l.i === id)!);
+      return placed.some((l) => l.y === 0 && l.w <= 4) ? null : `new kpi not on the top row at quarter width (${placed.map((l) => `y=${l.y}, w=${l.w}`).join("; ")})`;
     },
   },
   {

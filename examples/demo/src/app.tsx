@@ -26,7 +26,28 @@ const api = async (path: string, init?: RequestInit) => {
   return r.json();
 };
 
-type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string };
+type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string; data?: unknown };
+type ReviewData = { round: number; reviewer: string; satisfied: boolean; missing: string[]; wrong: string[]; note: string };
+
+// The adversarial reviewer's verdict, as the server streamed it.
+function ReviewBlock({ r }: { r: ReviewData }) {
+  return (
+    <div className={`rounded-md border px-2 py-1.5 text-xs ${r.satisfied ? "border-border text-muted-foreground" : "border-destructive/40 text-destructive"}`} data-testid="review">
+      <div className="flex items-center gap-2">
+        <Badge variant={r.satisfied ? "secondary" : "destructive"} className="font-mono">review {r.round}</Badge>
+        <span className={r.satisfied ? "text-foreground" : ""}>{r.satisfied ? "satisfied" : "not satisfied"}</span>
+        <span className="ml-auto truncate text-muted-foreground">{r.reviewer}</span>
+      </div>
+      {(r.missing.length > 0 || r.wrong.length > 0) && (
+        <ul className="mt-1 space-y-0.5">
+          {r.missing.map((m, i) => <li key={`m${i}`}>missing: {m}</li>)}
+          {r.wrong.map((w, i) => <li key={`w${i}`}>wrong: {w}</li>)}
+        </ul>
+      )}
+      {r.note && <p className="mt-1 text-muted-foreground">{r.note}</p>}
+    </div>
+  );
+}
 
 function StepBadge({ name, part }: { name: string; part: Part }) {
   const r = part.output as { applied?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
@@ -135,9 +156,13 @@ export function ChatPanel({
               {(m.parts as Part[]).filter((p) => p.type.startsWith("tool-")).map((p, i) => (
                 <StepBadge key={i} name={p.type.slice(5)} part={p} />
               ))}
-              {(m.parts as Part[]).filter((p) => p.type === "text" && p.text?.trim()).map((p, i) => (
-                <p key={i} className="text-sm leading-6">{p.text}</p>
-              ))}
+              {(m.parts as Part[]).map((p, i) =>
+                p.type === "text" && p.text?.trim() ? (
+                  <p key={i} className="text-sm leading-6">{p.text}</p>
+                ) : p.type === "data-review" ? (
+                  <ReviewBlock key={i} r={p.data as ReviewData} />
+                ) : null,
+              )}
               {m.role === "assistant" && receipts[m.id] && (
                 <div className="rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground" data-testid="receipt">
                   <span className="font-medium text-foreground">Receipt</span>
@@ -418,6 +443,17 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
 
   if (problem) return <div className="mx-auto max-w-6xl p-6 text-sm text-destructive">{problem}</div>;
   if (!state) return <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">Loading…</div>;
+
+  // Board only, for screenshots and embeds.
+  if (params.get("chrome") === "0")
+    return (
+      <div className="min-h-screen bg-background p-4 text-foreground font-sans antialiased">
+        <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} editable={false} charts={adapters[adapterName]!}>
+          <h1 className="mb-3 text-lg font-semibold tracking-tight">{state.board.config.title}</h1>
+          <Board />
+        </BoardProvider>
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">

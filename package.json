@@ -24,6 +24,7 @@
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
     "ai": "^7.0.109",
-    "@ai-sdk/openai-compatible": "^3.0.53"
+    "@ai-sdk/openai-compatible": "^3.0.53",
+    "playwright": "^1.63.0"
   }
 }
