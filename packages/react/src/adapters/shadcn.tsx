@@ -41,8 +41,13 @@ function safeKeys(spec: ChartSpec, palette: string[]) {
 export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOptions = {}): ChartAdapter {
   const { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } = c;
 
+  // Entry animation is off: a board re-renders whenever data or layout
+  // changes, and recharts v3 restarts a running animation on each new data
+  // array, which under ChartContainer left shapes at their zero frame.
   function ShadcnChart({ spec }: { spec: ChartSpec }) {
     const palette = opts.palette ?? spec.palette;
+    const cartesian = React.useMemo(() => safeKeys(spec, palette), [spec, palette]);
+    const slices = React.useMemo(() => spec.rows.map((r, i) => ({ slice: `k${i}`, value: r.value, fill: `var(--color-k${i})` })), [spec]);
     const style = { height: "100%", width: "100%", aspectRatio: "auto" } as const;
     const tooltipFormatter = (value: unknown, name: unknown) => (
       <span style={{ display: "flex", gap: 8, justifyContent: "space-between", width: "100%" }}>
@@ -52,20 +57,19 @@ export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOption
     );
 
     if (spec.chart === "pie") {
-      const slices = spec.rows.map((r, i) => ({ slice: `k${i}`, value: r.value, fill: `var(--color-k${i})` }));
       const config = Object.fromEntries(spec.rows.map((r, i) => [`k${i}`, { label: String(r[spec.groupKey]), color: palette[i % palette.length] }]));
       return (
         <ChartContainer config={config} className={opts.className} style={style}>
           <PieChart>
             <ChartTooltip content={<ChartTooltipContent nameKey="slice" formatter={tooltipFormatter} hideLabel />} />
-            <Pie data={slices} dataKey="value" nameKey="slice" innerRadius="45%" outerRadius="80%" paddingAngle={1} stroke="none" />
+            <Pie data={slices} dataKey="value" nameKey="slice" innerRadius="45%" outerRadius="80%" paddingAngle={1} stroke="none" isAnimationActive={false} />
             {spec.legend && <ChartLegend content={<ChartLegendContent nameKey="slice" />} />}
           </PieChart>
         </ChartContainer>
       );
     }
 
-    const { rows, map, config } = safeKeys(spec, palette);
+    const { rows, map, config } = cartesian;
     const axes = [
       <CartesianGrid key="g" vertical={false} />,
       <XAxis key="x" dataKey={spec.groupKey} tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />,
@@ -78,21 +82,21 @@ export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOption
         <BarChart accessibilityLayer data={rows}>
           {axes}
           {map.map((m) => (
-            <Bar key={m.to} dataKey={m.to} fill={`var(--color-${m.to})`} radius={4} />
+            <Bar key={m.to} dataKey={m.to} fill={`var(--color-${m.to})`} radius={4} isAnimationActive={false} />
           ))}
         </BarChart>
       ) : spec.chart === "line" ? (
         <LineChart accessibilityLayer data={rows}>
           {axes}
           {map.map((m) => (
-            <Line key={m.to} dataKey={m.to} type="monotone" stroke={`var(--color-${m.to})`} strokeWidth={2} dot={false} />
+            <Line key={m.to} dataKey={m.to} type="monotone" stroke={`var(--color-${m.to})`} strokeWidth={2} dot={false} isAnimationActive={false} />
           ))}
         </LineChart>
       ) : (
         <AreaChart accessibilityLayer data={rows}>
           {axes}
           {map.map((m) => (
-            <Area key={m.to} dataKey={m.to} type="monotone" stroke={`var(--color-${m.to})`} fill={`var(--color-${m.to})`} fillOpacity={0.25} strokeWidth={2} />
+            <Area key={m.to} dataKey={m.to} type="monotone" stroke={`var(--color-${m.to})`} fill={`var(--color-${m.to})`} fillOpacity={0.25} strokeWidth={2} isAnimationActive={false} />
           ))}
         </AreaChart>
       );
