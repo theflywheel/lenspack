@@ -3,6 +3,8 @@ import * as React from "react";
 import type { Board as BoardT, Catalogue } from "@lenspack/core";
 import { Board, BoardProvider, type BoardHost, type ChartAdapter } from "@lenspack/react";
 
+import { Button } from "./components/ui/button";
+
 // The home page, in the register of a component library's docs: short claims,
 // a live preview beside the code that produced it, and steps you can follow.
 
@@ -36,7 +38,7 @@ function Nav() {
         <nav className="flex items-center gap-1 text-sm">
           <a className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground" href="https://github.com/theflywheel/lenspack/blob/main/docs/pack-spec.md">Docs</a>
           <a className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground" href="https://github.com/theflywheel/lenspack">GitHub</a>
-          <a className="ml-2 rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:opacity-90" href="/app">Open the demo</a>
+          <Button asChild size="sm" className="ml-2"><a href="/app">Open the demo</a></Button>
         </nav>
       </div>
     </header>
@@ -52,8 +54,8 @@ function Hero() {
         Describe your data once in a pack. Any model, any chat, any MCP client can then build and edit boards over it — without ever writing SQL, JSX or a colour value. What the model cannot express, it cannot break.
       </p>
       <div className="mt-8 flex flex-wrap items-center gap-3">
-        <a href="/app" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">Try the live demo</a>
-        <a href="https://github.com/theflywheel/lenspack" className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent">Read the source</a>
+        <Button asChild><a href="/app">Try the live demo</a></Button>
+        <Button asChild variant="outline"><a href="https://github.com/theflywheel/lenspack">Read the source</a></Button>
       </div>
       <Install />
     </section>
