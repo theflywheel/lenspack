@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { svgAdapter } from "./adapters/svg";
+import type { ChartAdapter } from "./charts";
 import type { Board, BoardOp, Catalogue, LayoutItem, PatchResult, WidgetData } from "./types";
 import type { BoardHost } from "./types";
 
@@ -17,6 +19,8 @@ type State = {
   host: BoardHost;
   editable: boolean;
   currency?: string;
+  /** The charting library behind chart widgets; swappable at runtime. */
+  charts: ChartAdapter;
 };
 
 const Ctx = React.createContext<State | null>(null);
@@ -39,6 +43,7 @@ export function BoardProvider({
   host,
   editable = true,
   currency,
+  charts = svgAdapter,
   initialSelections = {},
   onSelectionsChange,
   children,
@@ -48,6 +53,8 @@ export function BoardProvider({
   host: BoardHost;
   editable?: boolean;
   currency?: string;
+  /** Chart adapter: svg (no dependencies) by default; recharts, echarts or shadcn from `@lenspack/react/adapters/*`. */
+  charts?: ChartAdapter;
   /** Selections are session state, not configuration; the host may keep them in the URL. */
   initialSelections?: Record<string, string>;
   onSelectionsChange?(selections: Record<string, string>): void;
@@ -115,8 +122,8 @@ export function BoardProvider({
   }, [onSelectionsChange]);
 
   const value = React.useMemo<State>(
-    () => ({ board, catalogue, data, loading, selections, setSelection, clearSelections, apply, saveLayout, refresh: load, host, editable, currency }),
-    [board, catalogue, data, loading, selections, setSelection, clearSelections, apply, saveLayout, load, host, editable, currency],
+    () => ({ board, catalogue, data, loading, selections, setSelection, clearSelections, apply, saveLayout, refresh: load, host, editable, currency, charts }),
+    [board, catalogue, data, loading, selections, setSelection, clearSelections, apply, saveLayout, load, host, editable, currency, charts],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

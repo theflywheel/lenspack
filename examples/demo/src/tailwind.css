@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* shadcn chart tokens, so the shadcn adapter can be themed with --chart-n. */
+:root {
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --background: #fff; --foreground: #1c1917; --border: #e7e5e4; --muted-foreground: #78716c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-1: oklch(0.488 0.243 264.376);
+    --chart-2: oklch(0.696 0.17 162.48);
+    --chart-3: oklch(0.769 0.188 70.08);
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    --background: #18181b; --foreground: #f4f4f5; --border: #3f3f46; --muted-foreground: #a1a1aa;
+  }
+}
+/* Tailwind's preflight resets these; the demo's own styles expect them. */
+button, select, input { font: inherit; }

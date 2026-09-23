@@ -20,7 +20,8 @@
       "@lenspack/sql/pg": ["packages/sql/src/executors/pg.ts"],
       "@lenspack/sql/duckdb": ["packages/sql/src/executors/duckdb.ts"],
       "@lenspack/mcp": ["packages/mcp/src/index.ts"],
-      "@lenspack/react": ["packages/react/src/index.tsx"]
+      "@lenspack/react": ["packages/react/src/index.tsx"],
+      "@lenspack/react/adapters/*": ["packages/react/src/adapters/*.tsx"]
     }
   }
 }

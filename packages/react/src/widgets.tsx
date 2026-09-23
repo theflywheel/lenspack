@@ -1,17 +1,15 @@
 import * as React from "react";
-import { Area, AreaChart, Bar, BarChart, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import type { Widget } from "@lenspack/core";
 
+import { buildChartSpec } from "./charts";
 import { formatDelta, formatValue } from "./format";
+import { useBoard } from "./provider";
 import type { WidgetData } from "./types";
 
 // Every option is mapped explicitly rather than spread from the config, which
 // is what makes the schema closed in practice and not just on paper. Colours
 // are CSS variables: a config names a scheme, never a colour.
-
-const SERIES = Array.from({ length: 8 }, (_, i) => `var(--lp-series-${i + 1})`);
-const SEQUENTIAL = Array.from({ length: 8 }, (_, i) => `var(--lp-sequential-${i + 1})`);
 
 export type WidgetProps<K extends Widget["kind"]> = { widget: Extract<Widget, { kind: K }>; data?: WidgetData; currency?: string };
 export type WidgetRegistry = { [K in Widget["kind"]]?: React.ComponentType<WidgetProps<K>> };
@@ -20,88 +18,18 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <div className="lp-empty">{children}</div>;
 }
 
-// A series split by a dimension arrives as long rows; recharts wants one row
-// per bucket with a column per series.
-function pivot(rows: WidgetData["rows"]) {
-  const series = [...new Set(rows.map((r) => r.series).filter((s): s is string => s !== undefined))];
-  if (series.length === 0) return { rows: rows.map((r) => ({ group: r.group, value: r.value })), keys: ["value"] };
-  const byGroup = new Map<string, Record<string, number | string | null>>();
-  for (const r of rows) {
-    const row = byGroup.get(r.group) ?? { group: r.group };
-    row[r.series!] = r.value;
-    byGroup.set(r.group, row);
-  }
-  return { rows: [...byGroup.values()], keys: series };
-}
-
+// The chart widget is library-agnostic: it builds a ChartSpec and hands it to
+// whichever adapter the provider holds (svg when none is given).
 export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
+  const { charts, catalogue } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Empty>{data.error}{data.hint ? ` — did you mean “${data.hint}”?` : ""}</Empty>;
-  const rows = data.rows.filter((r) => r.value !== null);
-  if (rows.length === 0) return <Empty>Nothing to draw yet.</Empty>;
-  const palette = widget.options.colorScheme === "sequential" ? SEQUENTIAL : SERIES;
-  const fmt = (v: number) => formatValue(v, data.format, { currency });
-  const axis = { tick: { fontSize: 11 }, tickLine: false, axisLine: false } as const;
-
-  if (widget.chart === "pie") {
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie data={rows} dataKey="value" nameKey="group" innerRadius="45%" outerRadius="80%" paddingAngle={1} stroke="none">
-            {rows.map((row, i) => (
-              <Cell key={row.group} fill={palette[i % palette.length]} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(value: number, name: string) => [fmt(value), name]} />
-          {widget.options.legend && <Legend />}
-        </PieChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  const { rows: wide, keys } = pivot(rows);
-  const common = { data: wide, margin: { top: 6, right: 10, bottom: 0, left: 0 } };
-  // An array, not a fragment: recharts finds axes and tooltips by walking its
-  // direct children, and React.Children flattens arrays but not fragments.
-  const axes = [
-    <XAxis key="x" dataKey="group" {...axis} />,
-    <YAxis key="y" {...axis} width={48} tickFormatter={(v: number) => fmt(v)} />,
-    <Tooltip key="t" formatter={(value: number) => fmt(value)} />,
-    ...(widget.options.legend && keys.length > 1 ? [<Legend key="l" />] : []),
-  ];
-
-  if (widget.chart === "line")
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart {...common}>
-          {axes}
-          {keys.map((k, i) => (
-            <Line key={k} type="monotone" dataKey={k} stroke={palette[i % palette.length]} strokeWidth={2} dot={false} />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  if (widget.chart === "area")
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart {...common}>
-          {axes}
-          {keys.map((k, i) => (
-            <Area key={k} type="monotone" dataKey={k} stroke={palette[i % palette.length]} fill={palette[i % palette.length]} fillOpacity={0.25} strokeWidth={2} />
-          ))}
-        </AreaChart>
-      </ResponsiveContainer>
-    );
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart {...common}>
-        {axes}
-        {keys.map((k, i) => (
-          <Bar key={k} dataKey={k} fill={palette[i % palette.length]} radius={[3, 3, 0, 0]} />
-        ))}
-      </BarChart>
-    </ResponsiveContainer>
-  );
+  const measureKey = widget.query.kind === "rows" ? undefined : widget.query.measure;
+  const measureLabel = catalogue.measures.find((m) => m.key === measureKey)?.label;
+  const spec = buildChartSpec(widget, data, { currency, measureLabel });
+  if (!spec) return <Empty>Nothing to draw yet.</Empty>;
+  const Chart = charts.Chart;
+  return <Chart spec={spec} />;
 }
 
 export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {

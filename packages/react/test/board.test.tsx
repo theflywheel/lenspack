@@ -7,7 +7,6 @@ import { type Board as BoardT, type BoardConfig, applyOps, emptyBoard, memorySto
 import "./setup";
 import { formatDelta, formatValue } from "../src/format";
 import { Board } from "../src/grid";
-import { ChartWidget } from "../src/widgets";
 import { FilterBar } from "../src/filter-bar";
 import { BoardProvider, useBoardOps } from "../src/provider";
 import type { BoardHost, WidgetData } from "../src/types";
@@ -70,21 +69,6 @@ describe("<Board>", () => {
     expect(screen.getByText("25%")).toBeTruthy();
     // Text bodies are text nodes, never markup.
     expect(screen.getByText("<b>not markup</b>").querySelector("b")).toBeNull();
-  });
-
-  it("renders axes on cartesian charts (recharts ignores children inside fragments)", async () => {
-    const { container } = render(
-      <div style={{ width: 600, height: 300 }}>
-        <ChartWidget
-          widget={{ kind: "chart", chart: "bar", title: "x", query: { kind: "breakdown", dimension: "region", measure: "count", limit: 5, sort: "desc" }, options: { legend: true, colorScheme: "default" } }}
-          data={data.c}
-        />
-      </div>,
-    );
-    await waitFor(() => expect(container.querySelector(".recharts-responsive-container")).toBeTruthy());
-    // jsdom has no layout, so recharts cannot draw; assert on the element tree it builds instead.
-    const rc = container.querySelector(".recharts-responsive-container")!;
-    expect(rc).toBeTruthy();
   });
 
   it("shows an inline error for one widget without taking the board down", async () => {

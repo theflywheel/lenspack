@@ -6,8 +6,24 @@ import { opSchema } from "@lenspack/core";
 import { Chat, useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 
-import { Board, BoardProvider, FilterBar, VersionHistory, useBoardOps, type BoardHost } from "@lenspack/react";
+import { Board, BoardProvider, FilterBar, VersionHistory, useBoardOps, type BoardHost, type ChartAdapter } from "@lenspack/react";
+import { createEchartsAdapter } from "@lenspack/react/adapters/echarts";
+import { rechartsAdapter } from "@lenspack/react/adapters/recharts";
+import { createShadcnAdapter } from "@lenspack/react/adapters/shadcn";
+import { svgAdapter } from "@lenspack/react/adapters/svg";
 import "@lenspack/react/styles.css";
+import "./tailwind.css";
+
+import * as shadcn from "./components/ui/chart";
+
+// Four charting libraries behind one seam. The board config never changes;
+// only the adapter handed to the provider does, and it can change live.
+const ADAPTERS: Record<string, ChartAdapter> = {
+  recharts: rechartsAdapter,
+  echarts: createEchartsAdapter(),
+  shadcn: createShadcnAdapter(shadcn, { palette: ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"] }),
+  svg: svgAdapter,
+};
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
@@ -136,6 +152,7 @@ function App() {
   const [chatEnabled, setChatEnabled] = React.useState(false);
   const [example, setExample] = React.useState<string>(params.get("example") ?? "");
   const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? "");
+  const [adapterName, setAdapterName] = React.useState<string>(params.get("charts") && ADAPTERS[params.get("charts")!] ? params.get("charts")! : "recharts");
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue } | null>(null);
 
   React.useEffect(() => {
@@ -150,9 +167,9 @@ function App() {
   }, []);
   React.useEffect(() => {
     if (!example || !boardId) return;
-    history.replaceState(null, "", `?example=${example}&board=${boardId}`);
+    history.replaceState(null, "", `?example=${example}&board=${boardId}&charts=${adapterName}`);
     void api(`/${example}/${boardId}`).then((r) => setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue }));
-  }, [example, boardId]);
+  }, [example, boardId, adapterName]);
 
   const base = `/${example}/${boardId}`;
   const host = React.useMemo<BoardHost>(
@@ -202,7 +219,7 @@ function App() {
       <div className={chatEnabled ? "split" : ""}>
         {chatEnabled && <ChatPanel key={base} base={base} suggestions={suggestions} onTurnEnd={reloadBoard} />}
         <div className="main">
-          <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host}>
+          <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} charts={ADAPTERS[adapterName]!}>
             <header>
               <div>
                 <h1>{state.board.config.title}</h1>
@@ -230,6 +247,13 @@ function App() {
                     </option>
                   ))}
                 </select>
+                <select value={adapterName} onChange={(e) => setAdapterName(e.target.value)} title="Charting library" data-testid="charts-select">
+                  {Object.keys(ADAPTERS).map((n) => (
+                    <option key={n} value={n}>
+                      charts: {n}
+                    </option>
+                  ))}
+                </select>
                 <VersionHistory />
               </div>
             </header>
@@ -240,7 +264,7 @@ function App() {
         </div>
       </div>
       <footer>
-        <a href="https://github.com/theflywheel/lenspack">lenspack</a> — a dashboard is data, not code. Four synthetic packs; build boards with the chat, edit with the ops box, drag widgets, restore versions.
+        <a href="https://github.com/theflywheel/lenspack">lenspack</a> — a dashboard is data, not code. Four synthetic packs; build boards with the chat, edit with the ops box, drag widgets, restore versions — and switch the charting library (recharts, ECharts, shadcn, plain SVG) without touching the board.
       </footer>
     </div>
   );

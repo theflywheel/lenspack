@@ -11,15 +11,22 @@
     "@ai-sdk/openai-compatible": "^3.0.53",
     "@ai-sdk/react": "^4.0.112",
     "@lenspack/core": "workspace:*",
+    "@lenspack/mcp": "workspace:*",
     "@lenspack/react": "workspace:*",
     "@lenspack/spec": "workspace:*",
     "@lenspack/sql": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
     "ai": "^7.0.109",
+    "clsx": "^2.1.1",
+    "echarts": "^6.1.0",
+    "lucide-react": "^1.47.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-grid-layout": "^1.5.4",
     "react-resizable": "^3.0.5",
-    "@lenspack/mcp": "workspace:*"
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/react": "^19.0.2",

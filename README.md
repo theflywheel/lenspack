@@ -48,7 +48,7 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 | `@lenspack/core` | board config schema, the query IR, the eight ops, packing, validation, `nearest()`, in-memory store | zod |
 | `@lenspack/spec` | pack loader: YAML/JSON → validated catalogue | core |
 | `@lenspack/sql` | compiler (resolve → plan → print) for **Postgres** and **DuckDB**, read-only executors, cache, SQL board store | core, spec |
-| `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()` | core, react-grid-layout, recharts |
+| `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; chart adapters for **recharts, ECharts, shadcn** and a zero-dependency SVG fallback | core, react-grid-layout (chart libraries are optional peers) |
 | `@lenspack/mcp` | `boardTools()` — provider-agnostic tool definitions — plus `toVercelAI()`, `toMcp()` and the `lenspack-mcp` CLI | core, spec, sql |
 
 ## A pack
@@ -135,6 +135,22 @@ import "@lenspack/react/styles.css";
 ```
 
 The renderer never touches a database or a model: everything arrives through the `host` callbacks, so it sits in front of a Next.js route, an Express server or anything else.
+
+### Charting libraries are adapters
+
+A chart widget builds a `ChartSpec` — pivoted rows, series keys, a formatter, a palette of CSS variables — and hands it to whichever adapter the provider holds. The board config never changes; only the library does, and it can change at runtime (try the "charts:" selector on the live demo).
+
+```tsx
+import { rechartsAdapter } from "@lenspack/react/adapters/recharts";   // recharts ≥ 3
+import { createEchartsAdapter } from "@lenspack/react/adapters/echarts"; // canvas, imperative
+import { createShadcnAdapter } from "@lenspack/react/adapters/shadcn";   // your copy of shadcn's chart.tsx
+import { svgAdapter } from "@lenspack/react/adapters/svg";               // no dependencies; the default
+
+<BoardProvider charts={rechartsAdapter} …>
+<BoardProvider charts={createShadcnAdapter(shadcnChart, { palette: ["var(--chart-1)", "var(--chart-2)"] })} …>
+```
+
+Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. The conformance test in `packages/react/test/adapters.test.tsx` runs every adapter through every chart kind.
 
 ## Security model
 
