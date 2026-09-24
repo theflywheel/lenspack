@@ -10,6 +10,7 @@ import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "./resol
 
 const D = (key: string) => `__d_${key}`;
 const M = (key: string) => `__m_${key}`;
+const T = "__t";
 
 const col = (alias: string, name: string): Expr => ({ t: "col", alias, col: name });
 const raw = (sql: Fragment): Expr => ({ t: "raw", sql });
@@ -40,6 +41,11 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       const def = pack.entities[entity]!;
       s = { alias: entity, table: def.source, projections: [], where: [] };
       if (def.tenant && bound.tenant !== null) s.where.push({ t: "bin", op: "=", l: col("", def.tenant), r: param(bound.tenant) });
+      // The entity's own predicate (soft deletes, "current" rows) applies to
+      // every query that touches it, in every role.
+      if (def.filter) s.where.push(raw(def.filter));
+      // Time is projected once so the rest of the plan can treat it as a column.
+      if (def.time) s.projections.push({ alias: T, expr: typeof def.time === "string" ? col("", def.time) : raw(def.time.sql) });
       sources.set(entity, s);
     }
     return s;
@@ -71,7 +77,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   };
 
   const where: Expr[] = [];
-  const timeCol = bound.rootEntity.time ? col(root, bound.rootEntity.time) : null;
+  const timeCol = bound.rootEntity.time ? col(root, T) : null;
   const inWindow = (w: TimeWindow): Expr => ({
     t: "bin",
     op: "AND",

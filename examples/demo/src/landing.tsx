@@ -214,12 +214,13 @@ const PACKS = [
   { id: "events", title: "events", blurb: "One wide table, every time grain, distinct counts, a high-cardinality dimension, a per-dialect fragment.", board: "traffic" },
   { id: "consultation", title: "consultation", blurb: "Multilingual submissions with JSON metadata, multi-tenancy, and LLM-derived themes as ordinary joined dimensions.", board: "committee" },
   { id: "tickets", title: "tickets", blurb: "State history, durations, an SLA breach rate as a filtered rate, a resolution rate as a ratio, a funnel.", board: "desk" },
+  { id: "hcm", title: "hcm", blurb: "A health-campaign registry with a genuinely awkward schema: epoch-millisecond times, soft deletes, dual keys, JSON in text, dotted hierarchies, fan-out everywhere.", board: "campaign" },
 ];
 
 function Packs() {
   return (
     <section className="py-8">
-      <h2 className="text-2xl font-semibold tracking-tight">Four packs, four shapes of data</h2>
+      <h2 className="text-2xl font-semibold tracking-tight">Five packs, five shapes of data</h2>
       <p className="mt-1 mb-6 text-sm text-muted-foreground">Synthetic, seeded in seconds, and each one stresses a different axis of the abstraction.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         {PACKS.map((p) => (

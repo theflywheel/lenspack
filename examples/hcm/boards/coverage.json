@@ -1,0 +1,19 @@
+{
+  "title": "Registration coverage",
+  "ops": [
+    { "op": "add_widget", "id": "hh_by_locality", "placement": { "place": "top", "width": "half", "height": 8 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Households by locality", "query": { "kind": "breakdown", "dimension": "locality", "measure": "households", "limit": 15 } } },
+    { "op": "add_widget", "id": "size_by_type", "placement": { "place": "top", "width": "half", "height": 8 },
+      "widget": { "kind": "table", "title": "Household size by type", "query": { "kind": "breakdown", "dimension": "household_type", "measure": "household_size", "limit": 5 }, "pageSize": 10 } },
+    { "op": "add_widget", "id": "by_gender", "placement": { "place": "bottom", "width": "third", "height": 7 },
+      "widget": { "kind": "chart", "chart": "pie", "title": "Individuals by gender", "query": { "kind": "breakdown", "dimension": "gender", "measure": "individuals", "limit": 5 } } },
+    { "op": "add_widget", "id": "by_age", "placement": { "place": "bottom", "width": "third", "height": 7 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Individuals by age band", "query": { "kind": "breakdown", "dimension": "age_band", "measure": "individuals", "limit": 6 } } },
+    { "op": "add_widget", "id": "weekly_reg", "placement": { "place": "bottom", "width": "third", "height": 7 },
+      "widget": { "kind": "chart", "chart": "area", "title": "Weekly registrations", "query": { "kind": "series", "measure": "households", "grain": "week" } } },
+    { "op": "add_widget", "id": "referrals", "placement": { "place": "bottom", "width": "half", "height": 6 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Referrals by recipient type", "query": { "kind": "breakdown", "dimension": "recipient_type", "measure": "referrals", "limit": 5 } } },
+    { "op": "add_widget", "id": "symptoms", "placement": { "place": "bottom", "width": "half", "height": 6 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Reported symptoms", "query": { "kind": "breakdown", "dimension": "symptom", "measure": "side_effects", "limit": 8 } } }
+  ]
+}

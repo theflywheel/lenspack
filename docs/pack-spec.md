@@ -12,7 +12,10 @@ entities:
     source: <table|schema.table|view>
     grain: <one line, surfaced to the model>      # optional but recommended
     time: <column>          # default time column for series, windows and comparisons
+    # …or an expression, when time is stored as something else (epoch milliseconds in a BIGINT):
+    # time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
     tenant: <column>        # when present, every query over this entity MUST carry a tenant
+    filter: <predicate>     # carried by every query over this entity, e.g. soft deletes: isdeleted = false
     joins:
       - to: <entity_key>
         on: <a.col = b.col> # exactly the two entities, parsed, never inlined

@@ -1,0 +1,135 @@
+pack: hcm
+version: 1
+description: A health-campaign registry (DIGIT HCM shape) — epoch-millisecond timestamps, soft deletes, dual keys, JSON in text columns, dotted project hierarchies, and fan-out on every side.
+
+# Conventions this schema imposes, and how the pack absorbs them:
+#   - every audit time is BIGINT epoch milliseconds       -> `time: { sql: ... }` per dialect
+#   - every table carries isdeleted                        -> `filter: isdeleted = false` on the entity
+#   - tenant is a column (tenantid), schemas are per-tenant -> `tenant: tenantid`
+#   - additionaldetails / symptoms are JSON (jsonb on PG)   -> per-dialect fragments
+#   - projects are a dotted hierarchy (root.child.leaf)     -> split_part on the path
+
+entities:
+  households:
+    source: household
+    grain: one row per registered household
+    time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+    joins:
+      - { to: addresses, on: households.addressid = addresses.id, type: many_to_one }
+      - { to: members, on: members.householdid = households.id, type: one_to_many }
+  addresses:
+    source: address
+    grain: one row per address (households, individuals and tasks all point at one)
+    tenant: tenantid
+  members:
+    source: household_member
+    grain: one row per person-in-household
+    time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+    joins:
+      - { to: households, on: members.householdid = households.id, type: many_to_one }
+      - { to: individuals, on: members.individualid = individuals.id, type: many_to_one }
+  individuals:
+    source: individual
+    grain: one row per person
+    time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+  projects:
+    source: v_project
+    grain: one row per project (campaign node in a dotted hierarchy)
+    tenant: tenantid
+  beneficiaries:
+    source: project_beneficiary
+    grain: one row per household enrolled in a project
+    time: { sql: { postgres: "(to_timestamp(dateofregistration / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(dateofregistration)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+    joins:
+      - { to: projects, on: beneficiaries.projectid = projects.id, type: many_to_one }
+  tasks:
+    source: project_task
+    grain: one row per delivery visit (task)
+    time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+    joins:
+      - { to: projects, on: tasks.projectid = projects.id, type: many_to_one }
+      - { to: beneficiaries, on: tasks.projectbeneficiaryid = beneficiaries.id, type: many_to_one }
+      - { to: addresses, on: tasks.addressid = addresses.id, type: many_to_one }
+      - { to: resources, on: resources.taskid = tasks.id, type: one_to_many }
+      - { to: side_effects, on: side_effects.taskid = tasks.id, type: one_to_many }
+  resources:
+    source: task_resource
+    grain: one row per product line on a task
+    time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+    joins:
+      - { to: tasks, on: resources.taskid = tasks.id, type: many_to_one }
+  side_effects:
+    source: side_effect
+    grain: one row per reported side effect
+    time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+    joins:
+      - { to: tasks, on: side_effects.taskid = tasks.id, type: many_to_one }
+  referrals:
+    source: referral
+    grain: one row per referral of a beneficiary
+    time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    tenant: tenantid
+    filter: isdeleted = false
+    joins:
+      - { to: projects, on: referrals.projectid = projects.id, type: many_to_one }
+
+dimensions:
+  - { key: locality,        entity: addresses, sql: localitycode, label: Locality, synonyms: [boundary code, area] }
+  - { key: ward,            entity: addresses, sql: wardcode, label: Ward }
+  - { key: city,            entity: addresses, sql: city, label: City }
+  - { key: household_type,  entity: households, sql: householdtype, label: Household type, type: enum }
+  - { key: gender,          entity: individuals, sql: gender, label: Gender, type: enum }
+  - { key: age_band,        entity: individuals, label: Age band, hint: Derived from dateofbirth at query time.,
+      sql: { postgres: "CASE WHEN dateofbirth IS NULL THEN 'unknown' WHEN (current_date - dateofbirth) / 365.25 < 5 THEN '0-4' WHEN (current_date - dateofbirth) / 365.25 < 15 THEN '5-14' WHEN (current_date - dateofbirth) / 365.25 < 50 THEN '15-49' ELSE '50+' END",
+            duckdb:   "CASE WHEN dateofbirth IS NULL THEN 'unknown' WHEN date_diff('day', dateofbirth, current_date) / 365.25 < 5 THEN '0-4' WHEN date_diff('day', dateofbirth, current_date) / 365.25 < 15 THEN '5-14' WHEN date_diff('day', dateofbirth, current_date) / 365.25 < 50 THEN '15-49' ELSE '50+' END" } }
+  - { key: project,         entity: projects, sql: name, label: Project, hint: The leaf project a task or beneficiary belongs to. }
+  - { key: campaign,        entity: projects, sql: root, label: Campaign, hint: The root of the project hierarchy (root.child.leaf). }
+  - { key: project_boundary, entity: projects, sql: boundary, label: Project boundary }
+  - { key: status,          entity: tasks, sql: status, label: Task status, type: enum, hint: ADMINISTRATION_SUCCESS, ADMINISTRATION_FAILED, BENEFICIARY_REFUSED, CLOSED_HOUSEHOLD, NOT_ADMINISTERED }
+  - { key: product,         entity: resources, sql: productvariantid, label: Product variant }
+  - { key: non_delivery_reason, entity: resources, sql: reasonifnotdelivered, label: Reason not delivered }
+  - { key: symptom,         entity: side_effects, label: Symptom, hint: First symptom recorded.,
+      sql: { postgres: "symptoms ->> 0", duckdb: "json_extract_string(symptoms, '$[0]')" } }
+  - { key: recipient_type,  entity: referrals, sql: recipienttype, label: Referral recipient type, type: enum }
+  - { key: registered,      entity: households, label: Registered, type: time, grains: [day, week, month],
+      sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+
+measures:
+  - { key: households,   entity: households, agg: count, label: Households }
+  - { key: household_size, entity: households, agg: avg, sql: numberofmembers, label: Mean household size }
+  - { key: large_household_rate, entity: households, agg: avg, sql: "(numberofmembers >= 6)::int", format: percent, label: Share of households with 6+ members }
+  - { key: members,      entity: members, agg: count, label: Household memberships }
+  - { key: heads,        entity: members, agg: count, filter: isheadofhousehold = true, label: Heads of household }
+  - { key: individuals,  entity: individuals, agg: count, label: Individuals }
+  - { key: mobile_on_file_rate, entity: individuals, agg: avg, sql: "(mobilenumber IS NOT NULL)::int", format: percent, label: Share with a mobile number, hint: Numbers are stored encrypted; presence is all this measures. }
+  - { key: projects,     entity: projects, agg: count, label: Projects }
+  - { key: beneficiaries, entity: beneficiaries, agg: count, label: Enrolled beneficiaries }
+  - { key: tasks,        entity: tasks, agg: count, label: Tasks, synonyms: [visits, deliveries] }
+  - { key: success_rate, entity: tasks, agg: avg, sql: "(status = 'ADMINISTRATION_SUCCESS')::int", format: percent, label: Administration success rate }
+  - { key: refusal_rate, entity: tasks, agg: avg, sql: "(status = 'BENEFICIARY_REFUSED')::int", format: percent, label: Refusal rate }
+  - { key: closed_household_rate, entity: tasks, agg: avg, sql: "(status = 'CLOSED_HOUSEHOLD')::int", format: percent, label: Closed-household rate }
+  - { key: median_visit_minutes, entity: tasks, agg: median, sql: "(actualenddate - actualstartdate) / 60000.0", format: duration, label: Median visit length (min), hint: Only visits with both actual times. }
+  - { key: p90_visit_minutes, entity: tasks, agg: p90, sql: "(actualenddate - actualstartdate) / 60000.0", format: duration, label: P90 visit length (min) }
+  - { key: late_start_rate, entity: tasks, agg: avg, sql: "(actualstartdate > plannedstartdate)::int", filter: actualstartdate IS NOT NULL AND plannedstartdate IS NOT NULL, format: percent, label: Late-start rate }
+  - { key: side_effect_rate, entity: tasks, agg: avg, format: percent, label: Tasks with a side effect, hint: Share of tasks with at least one reported side effect.,
+      sql: "(EXISTS (SELECT 1 FROM side_effect se WHERE se.taskid = project_task.id AND se.isdeleted = false))::int" }
+  - { key: resources,    entity: resources, agg: count, label: Product lines }
+  - { key: delivered_rate, entity: resources, agg: avg, sql: isdelivered::int, format: percent, label: Delivered rate, synonyms: [delivery rate] }
+  - { key: undelivered,  entity: resources, agg: count, filter: isdelivered = false, label: Undelivered lines }
+  - { key: quantity,     entity: resources, agg: sum, sql: quantity, label: Quantity delivered, hint: Sum of quantity on delivered lines only., filter: isdelivered = true }
+  - { key: side_effects, entity: side_effects, agg: count, label: Side effects }
+  - { key: referrals,    entity: referrals, agg: count, label: Referrals }

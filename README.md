@@ -91,7 +91,7 @@ The compiler guarantees, and property tests check, that every identifier in the 
 
 ## What "generic" means here, and how CI proves it
 
-lenspack was extracted from a public-consultation moderation tool where the dashboard logic was hard-wired to one schema. To make sure the abstraction is real rather than claimed, the repository ships four example packs that stress different axes, and CI runs five checks against them:
+lenspack was extracted from a public-consultation moderation tool where the dashboard logic was hard-wired to one schema. To make sure the abstraction is real rather than claimed, the repository ships five example packs that stress different axes, and CI runs five checks against them:
 
 | pack | what it stresses |
 |---|---|
@@ -99,6 +99,7 @@ lenspack was extracted from a public-consultation moderation tool where the dash
 | [`events`](examples/events) | one wide table, every time grain, `count_distinct`, high cardinality, a per-dialect fragment |
 | [`consultation`](examples/consultation) | JSON paths, multilingual text, multi-tenancy, LLM-derived themes and signals as *ordinary* joined dimensions |
 | [`tickets`](examples/tickets) | state history, durations, SLA breach as a filtered rate, a funnel |
+| [`hcm`](examples/hcm) | a real-world awkward schema (DIGIT HCM shape): epoch-millisecond `BIGINT` times, `isdeleted` on every table, dual keys, JSON in text columns, dotted hierarchies, fan-out on every side |
 
 1. **Two engines, same answer.** Every example board runs on Postgres and DuckDB; results must match.
 2. **One ops suite, four packs.** The core's tests run parametrised over every catalogue.

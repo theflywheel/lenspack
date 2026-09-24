@@ -1,0 +1,38 @@
+[
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "fanout-trap",
+    "pass": true,
+    "note": null,
+    "steps": 6,
+    "toolCalls": 5,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 33431,
+    "reply": "A pie of a success rate isn't valid (rates don't sum to a whole), and success_rate can't be split by product variant since products live at the line level, not per visit — so I added a bar chart of delivered rate by product variant instead: \"Delivery rate by product variant\" at the bottom (half widt"
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6380,
+    "reply": "I can't add that: the board supports only chart, kpi, table and text widgets (no map), and the hcm pack has no facility, distance or coordinates data, so \"within 2 km of FAC-7\" can't be filtered or measured. If it helps, I can add households by locality or ward instead — just say the word."
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3452,
+    "reply": "574 households are registered in total."
+  }
+]

@@ -20,6 +20,7 @@ import { type ProviderConfig, buildProvider, probe, providersFromEnv } from "../
 import { PROMPT_VERSION, SYSTEM } from "../examples/demo/prompt";
 import { screenshotBoard } from "./screenshot";
 import { type Review, healingPrompt, reviewTurn } from "../examples/demo/review";
+import { type HcmFacts, hcmTasks } from "./tasks-hcm";
 import { type Facts, tasks } from "./tasks";
 import { type VisualVerdict, judgeScreenshot } from "./visual";
 
@@ -38,6 +39,8 @@ const reviewFlag = process.argv.includes("--review");
 const reviewName = arg("review");
 const heal = process.argv.includes("--heal");
 const escalateName = arg("escalate");
+// --pack commerce|hcm: which example, its canonical board and task set.
+const packName = (arg("pack") ?? "commerce") as "commerce" | "hcm";
 const demoUrl = arg("demo") ?? "http://127.0.0.1:8787";
 const modelFilter = arg("models")?.split(",");
 const providerConfigs: ProviderConfig[] = arg("providers") ? (JSON.parse(readFileSync(arg("providers")!, "utf8")) as ProviderConfig[]) : providersFromEnv();
@@ -66,16 +69,32 @@ type Result = {
 };
 
 async function main() {
-  const ex = examples.commerce;
+  const ex = examples[packName];
   const db = await openDuckdb();
-  await ex.seed(db.writer, "duckdb", SMALL.commerce);
+  await ex.seed(db.writer, "duckdb", SMALL[packName] as never);
   const catalogue = catalogueFrom(ex.pack);
-  const ctx = contextFor.commerce;
-  console.log(`prompt version ${PROMPT_VERSION}`);
-  const canonicalOps = ex.boards.find((b) => b.id === "overview")!.ops.map((o) => opSchema.parse(o)) as BoardOp[];
-  const refund = await run({ kind: "breakdown", dimension: "country", measure: "refund_rate", limit: 12, sort: "desc" }, { pack: ex.pack, executor: db.executor, ctx });
-  const facts: Facts = { topRefund: { country: refund.rows[0]!.group, rate: refund.rows[0]!.value ?? 0 } };
-  console.log(`facts: top refund rate ${facts.topRefund.country} ${(facts.topRefund.rate * 100).toFixed(1)}%`);
+  const ctx = contextFor[packName];
+  console.log(`pack ${packName}; prompt version ${PROMPT_VERSION}`);
+  const canonicalBoard = packName === "hcm" ? "campaign" : "overview";
+  const canonicalOps = ex.boards.find((b) => b.id === canonicalBoard)!.ops.map((o) => opSchema.parse(o)) as BoardOp[];
+  const q = (query: Parameters<typeof run>[0]) => run(query, { pack: ex.pack, executor: db.executor, ctx });
+  let facts: Facts | HcmFacts;
+  let taskList: { id: string; prompt: string; check: (c: never, reply: string, f: never) => string | null }[];
+  if (packName === "hcm") {
+    const byLoc = await q({ kind: "breakdown", dimension: "locality", measure: "success_rate", limit: 50, sort: "asc" });
+    const worst = byLoc.rows.find((r) => r.count >= 100)!;
+    const reasons = await q({ kind: "breakdown", dimension: "non_delivery_reason", measure: "undelivered", limit: 10, sort: "desc" });
+    const top = reasons.rows.find((r) => r.group !== "(none)")!;
+    const hh = await q({ kind: "value", measure: "households" });
+    facts = { worstLocality: { locality: worst.group, rate: worst.value ?? 0, tasks: worst.count }, topReason: { reason: top.group, count: top.value ?? 0 }, households: hh.rows[0]!.value ?? 0 };
+    console.log(`facts: worst locality ${worst.group} ${((worst.value ?? 0) * 100).toFixed(1)}% (${worst.count} visits); top reason ${top.group} ${top.value}; households ${hh.rows[0]!.value}`);
+    taskList = hcmTasks as never;
+  } else {
+    const refund = await q({ kind: "breakdown", dimension: "country", measure: "refund_rate", limit: 12, sort: "desc" });
+    facts = { topRefund: { country: refund.rows[0]!.group, rate: refund.rows[0]!.value ?? 0 } };
+    console.log(`facts: top refund rate ${refund.rows[0]!.group} ${((refund.rows[0]!.value ?? 0) * 100).toFixed(1)}%`);
+    taskList = tasks as never;
+  }
 
   const results: Result[] = [];
   const judge = visualName ? await probe(buildProvider(providerConfigs.find((c) => c.name.includes(visualName))!)) : null;
@@ -90,11 +109,11 @@ async function main() {
     const provider = await probe(buildProvider(cfg));
     if (!provider.available) {
       console.log(`\n## ${cfg.name} — unavailable: ${provider.error}`);
-      for (const t of tasks) results.push({ provider: cfg.name, task: t.id, pass: false, note: "provider unavailable", steps: 0, toolCalls: 0, toolErrors: 0, narrated: false, latencyMs: 0, reply: "", error: provider.error });
+      for (const t of taskList) results.push({ provider: cfg.name, task: t.id, pass: false, note: "provider unavailable", steps: 0, toolCalls: 0, toolErrors: 0, narrated: false, latencyMs: 0, reply: "", error: provider.error });
       continue;
     }
     console.log(`\n## ${cfg.name} (${cfg.model}) — probe ${provider.latencyMs}ms`);
-    for (const t of tasks) {
+    for (const t of taskList) {
       if (only && !only.includes(t.id)) continue;
       // A fresh copy of the canonical board for every task.
       const store = memoryStore();
@@ -120,9 +139,9 @@ async function main() {
           return v?.applied === false || v?.ok === false;
         }).length;
         const board = (await store.get("b"))!;
-        const note = t.check(board.config, out.text, facts);
+        const note = t.check(board.config as never, out.text, facts as never);
         r = { provider: cfg.name, task: t.id, pass: note === null, note, steps: out.steps.length, toolCalls: calls.length, toolErrors, narrated: NARRATION.test(out.text), latencyMs: Date.now() - started, reply: out.text.slice(0, 300) };
-        if ((reviewFlag || heal) && t.id !== "question") {
+        if ((reviewFlag || heal) && !t.id.startsWith("question")) {
           const reviewerModel = (fixedReviewer ?? provider).languageModel;
           const versions = (await store.versions("b")).filter((v) => v.version > seeded.board.version);
           const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
@@ -141,13 +160,13 @@ async function main() {
               abortSignal: AbortSignal.timeout(120_000),
             });
             const healedBoard = (await store.get("b"))!;
-            const healedNote = t.check(healedBoard.config, again.text, facts);
+            const healedNote = t.check(healedBoard.config as never, again.text, facts as never);
             r.healed = { pass: healedNote === null, note: healedNote, latencyMs: Date.now() - healStart };
           }
         }
-        if (judge && t.id !== "question") {
+        if (judge && !t.id.startsWith("question")) {
           try {
-            const png = await screenshotBoard(board.config, { baseUrl: demoUrl, example: "commerce" });
+            const png = await screenshotBoard(board.config, { baseUrl: demoUrl, example: packName });
             r.visual = await judgeScreenshot(judge.languageModel, png, t.prompt);
           } catch (e) {
             r.visual = { ok: false, score: 0, issues: [`visual check failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`], seen: "", raw: "" };
@@ -162,7 +181,7 @@ async function main() {
   }
   await db.close();
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const stamp = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}-${packName}`;
   const dir = join(import.meta.dirname, "results");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${stamp}.json`), JSON.stringify(results, null, 2));

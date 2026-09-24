@@ -38,6 +38,10 @@ export function daysAgo(base: Date, days: number) {
   return new Date(base.getTime() - days * 86400e3);
 }
 
+// A JS integer beyond 32 bits (epoch milliseconds, for instance) must be bound
+// as a BigInt: DuckDB's binding otherwise narrows it to INTEGER and it wraps.
+const bind = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && Math.abs(v) > 2_147_483_647 ? BigInt(v) : v);
+
 /** Multi-row parameterised inserts, batched under Postgres's parameter cap. */
 export async function insertRows(writer: Writer, table: string, columns: string[], rows: unknown[][]) {
   if (rows.length === 0) return;
@@ -45,7 +49,7 @@ export async function insertRows(writer: Writer, table: string, columns: string[
   for (let i = 0; i < rows.length; i += perBatch) {
     const batch = rows.slice(i, i + perBatch);
     const values: unknown[] = [];
-    const tuples = batch.map((row) => `(${row.map((v) => (values.push(v), `$${values.length}`)).join(", ")})`);
+    const tuples = batch.map((row) => `(${row.map((v) => (values.push(bind(v)), `$${values.length}`)).join(", ")})`);
     await writer.exec(`INSERT INTO ${table} (${columns.join(", ")}) VALUES ${tuples.join(", ")}`, values);
   }
 }

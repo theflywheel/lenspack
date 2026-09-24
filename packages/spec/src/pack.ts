@@ -39,8 +39,14 @@ export const joinSchema = z.object({
 export const entitySchema = z.object({
   source: qualified,
   grain: z.string().max(200).optional(),
-  time: column.optional(),
+  // A column, or an expression that yields a timestamp — schemas that store
+  // epoch milliseconds in a BIGINT are common enough to deserve first-class
+  // support: `time: { sql: { postgres: "to_timestamp(createdtime / 1000.0)", duckdb: "epoch_ms(createdtime)" } }`.
+  time: z.union([column, z.object({ sql: fragmentSchema })]).optional(),
   tenant: column.optional(),
+  // A predicate every query over this entity carries, e.g. soft deletes:
+  // `filter: "isdeleted = false"`. Pushed into the entity's subquery.
+  filter: fragmentSchema.optional(),
   joins: z.array(joinSchema).default([]),
 });
 
