@@ -38,6 +38,13 @@ describe("board tools", () => {
     expect(r.sql).toContain("GROUP BY");
   });
 
+  it("passes sort through for a breakdown", async () => {
+    const r = (await call("explain", { query_kind: "breakdown", measure: "things", dimension: "colour", sort: "asc" })) as { ok: boolean; query: { sort: string }; sql: string };
+    expect(r.ok).toBe(true);
+    expect(r.query.sort).toBe("asc");
+    expect(r.sql).toContain("ASC NULLS LAST");
+  });
+
   it("explains without running and names the entities joined", async () => {
     const r = (await call("explain", { query_kind: "breakdown", measure: "things", dimension: "tier" })) as { ok: boolean; entities: string[] };
     expect(r.ok).toBe(true);

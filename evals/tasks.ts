@@ -10,6 +10,7 @@ export type Facts = { topRefund: { country: string; rate: number } };
 
 export type Task = {
   id: string;
+  kind?: "edit" | "question" | "refusal";
   prompt: string;
   /** Returns null when the task passed, or what is wrong. */
   check: (config: BoardConfig, reply: string, facts: Facts) => string | null;
@@ -68,6 +69,7 @@ export const tasks: Task[] = [
   },
   {
     id: "question",
+    kind: "question",
     prompt: "Which country has the highest refund rate? Answer with the country code and the rate.",
     check: (_c, reply, facts) => {
       const { country, rate } = facts.topRefund;

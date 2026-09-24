@@ -60,6 +60,7 @@ const QUERY_SHAPE = {
   time_last: str().describe('Relative window like "30d", "12w", "6m"; empty for all time'),
   compare: bool(false).describe("For value: also compute the previous period"),
   limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
+  sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
   filter_dimension: str().describe("Optional: narrow by this dimension"),
   filter_value: str().describe("Optional: the value the filter dimension must equal"),
 };
@@ -70,7 +71,7 @@ export function assembleQuery(a: { [K in keyof typeof QUERY_SHAPE]: z.infer<(typ
   const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}) };
   switch (a.query_kind) {
     case "breakdown":
-      return querySchema.parse({ kind: "breakdown", dimension: a.dimension, measure: a.measure, ...(a.limit ? { limit: a.limit } : {}), ...base });
+      return querySchema.parse({ kind: "breakdown", dimension: a.dimension, measure: a.measure, sort: a.sort, ...(a.limit ? { limit: a.limit } : {}), ...base });
     case "series":
       return querySchema.parse({ kind: "series", measure: a.measure, grain: a.grain, ...(a.dimension ? { by: a.dimension } : {}), ...base });
     case "value":

@@ -128,6 +128,10 @@ describe("refusals", () => {
   it("refuses a fan-out rather than multiplying", () => {
     const e = fails({ kind: "breakdown", dimension: "part_kind", measure: "things", limit: 10, sort: "desc" }, "FANOUT_REFUSED");
     expect(e.message).toContain("multiply");
+    // The refusal names what is answerable: measures on the far entity, dimensions on the root.
+    expect(e.message).toContain("parts");
+    expect(e.message).toContain("colour");
+    expect(e.nearest).toBe("parts");
   });
 
   it("allows the same join in the safe direction", async () => {

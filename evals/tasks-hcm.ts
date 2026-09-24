@@ -14,8 +14,12 @@ export type HcmFacts = {
 export type HcmTask = {
   id: string;
   prompt: string;
+  /** edit = the board must change; question = only the reply matters; refusal = nothing should be added. Only edits are reviewed. */
+  kind: "edit" | "question" | "refusal";
   check: (config: BoardConfig, reply: string, facts: HcmFacts) => string | null;
 };
+
+const loose = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const find = (c: BoardConfig, pred: (w: BoardConfig["widgets"][string], id: string) => boolean) => Object.entries(c.widgets).find(([id, w]) => pred(w, id));
 const KEYS = (c: BoardConfig) => Object.keys(c.widgets);
@@ -23,6 +27,7 @@ const KEYS = (c: BoardConfig) => Object.keys(c.widgets);
 export const hcmTasks: HcmTask[] = [
   {
     id: "delivery-by-locality",
+    kind: "edit",
     prompt: "Show the delivered rate of product lines by locality as a bar chart, lowest first.",
     check: (c) => {
       const hit = find(c, (w) => w.kind === "chart" && w.chart === "bar" && w.query.kind === "breakdown" && w.query.measure === "delivered_rate" && w.query.dimension === "locality");
@@ -33,6 +38,7 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "fanout-trap",
+    kind: "edit",
     prompt: "Add a pie chart of administration success rate by product variant.",
     // success_rate lives on tasks; product on resources across a one-to-many. The
     // answerable neighbour is delivered_rate by product (resources grain).
@@ -45,6 +51,7 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "epoch-window",
+    kind: "edit",
     prompt: "Plot weekly visits split by campaign for the last 10 weeks as a line chart.",
     check: (c) => {
       const hit = find(c, (w) => w.kind === "chart" && w.query.kind === "series" && w.query.measure === "tasks" && w.query.grain === "week" && w.query.by === "campaign");
@@ -55,6 +62,7 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "duration-percentile",
+    kind: "edit",
     prompt: "Add a KPI for the P90 visit length in minutes over the last 30 days, and a bar chart of median visit length by project.",
     check: (c) => {
       const kpi = find(c, (w) => w.kind === "kpi" && w.query.kind === "value" && w.query.measure === "p90_visit_minutes");
@@ -67,6 +75,7 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "hierarchy",
+    kind: "edit",
     prompt: "Compare refusal rate across campaigns as a bar chart, then add a filter on campaign that applies to everything.",
     check: (c) => {
       const bar = find(c, (w) => w.kind === "chart" && w.query.kind === "breakdown" && w.query.measure === "refusal_rate" && w.query.dimension === "campaign");
@@ -76,6 +85,7 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "question-worst-locality",
+    kind: "question",
     prompt: "Which locality has the lowest administration success rate among localities with at least 100 visits? Give the locality code, its rate and its visit count.",
     check: (_c, reply, f) => {
       const pct = (f.worstLocality.rate * 100).toFixed(1);
@@ -86,11 +96,13 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "question-top-reason",
+    kind: "question",
     prompt: "What is the most common reason a product line was not delivered, and how many lines does it account for?",
-    check: (_c, reply, f) => (reply.includes(f.topReason.reason) && reply.includes(String(f.topReason.count)) ? null : `expected ${f.topReason.reason} (${f.topReason.count}): "${reply.slice(0, 160)}"`),
+    check: (_c, reply, f) => (loose(reply).includes(loose(f.topReason.reason)) && reply.includes(String(f.topReason.count)) ? null : `expected ${f.topReason.reason} (${f.topReason.count}): "${reply.slice(0, 160)}"`),
   },
   {
     id: "unanswerable-radius",
+    kind: "refusal",
     prompt: "Add a map of households within 2 km of facility FAC-7.",
     // Nothing in the pack can express this. The right outcome: no widget added,
     // and the reply says so (optionally proposing a measure).
@@ -101,6 +113,7 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "two-dimensions",
+    kind: "refusal",
     prompt: "Add a stacked bar chart of visits by locality and status.",
     // A breakdown takes one dimension; a series can split by one. The honest
     // answers: a breakdown by one of them plus a filter, or a clear statement.
@@ -113,6 +126,7 @@ export const hcmTasks: HcmTask[] = [
   },
   {
     id: "soft-delete-count",
+    kind: "question",
     prompt: "How many households are registered in total? Reply with the number.",
     // The seed soft-deletes ~4%; the pack's entity filter must exclude them.
     check: (_c, reply, f) => (reply.replace(/,/g, "").includes(String(f.households)) ? null : `expected ${f.households}: "${reply.slice(0, 120)}"`),

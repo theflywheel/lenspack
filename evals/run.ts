@@ -79,7 +79,7 @@ async function main() {
   const canonicalOps = ex.boards.find((b) => b.id === canonicalBoard)!.ops.map((o) => opSchema.parse(o)) as BoardOp[];
   const q = (query: Parameters<typeof run>[0]) => run(query, { pack: ex.pack, executor: db.executor, ctx });
   let facts: Facts | HcmFacts;
-  let taskList: { id: string; prompt: string; check: (c: never, reply: string, f: never) => string | null }[];
+  let taskList: { id: string; kind?: "edit" | "question" | "refusal"; prompt: string; check: (c: never, reply: string, f: never) => string | null }[];
   if (packName === "hcm") {
     const byLoc = await q({ kind: "breakdown", dimension: "locality", measure: "success_rate", limit: 50, sort: "asc" });
     const worst = byLoc.rows.find((r) => r.count >= 100)!;
@@ -141,7 +141,7 @@ async function main() {
         const board = (await store.get("b"))!;
         const note = t.check(board.config as never, out.text, facts as never);
         r = { provider: cfg.name, task: t.id, pass: note === null, note, steps: out.steps.length, toolCalls: calls.length, toolErrors, narrated: NARRATION.test(out.text), latencyMs: Date.now() - started, reply: out.text.slice(0, 300) };
-        if ((reviewFlag || heal) && !t.id.startsWith("question")) {
+        if ((reviewFlag || heal) && (t.kind ?? "edit") === "edit") {
           const reviewerModel = (fixedReviewer ?? provider).languageModel;
           const versions = (await store.versions("b")).filter((v) => v.version > seeded.board.version);
           const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
@@ -164,7 +164,7 @@ async function main() {
             r.healed = { pass: healedNote === null, note: healedNote, latencyMs: Date.now() - healStart };
           }
         }
-        if (judge && !t.id.startsWith("question")) {
+        if (judge && (t.kind ?? "edit") !== "question") {
           try {
             const png = await screenshotBoard(board.config, { baseUrl: demoUrl, example: packName });
             r.visual = await judgeScreenshot(judge.languageModel, png, t.prompt);
