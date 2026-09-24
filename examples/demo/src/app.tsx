@@ -81,6 +81,16 @@ function StepBadge({ name, part }: { name: string; part: Part }) {
 // when its turn ends the board is fetched again and re-rendered.
 export type ModelInfo = { name: string; model: string; available: boolean | null; latencyMs?: number; error?: string };
 
+// Provider names carry the host in parentheses ("glm-5.3-flash (openrouter)")
+// so roles and URLs can name them exactly; the menu shows just the model,
+// keeping the host only where two available entries would otherwise collide.
+function labelFor(name: string, models: ModelInfo[]) {
+  const base = (n: string) => n.replace(/\s*\([^)]*\)\s*$/, "");
+  const mine = base(name);
+  const collides = models.filter((m) => m.available !== false && m.name !== name && base(m.name) === mine).length > 0;
+  return collides ? name : mine;
+}
+
 export function ChatPanel({
   base,
   suggestions,
@@ -139,15 +149,16 @@ export function ChatPanel({
         {models.length > 1 && (
           <Select value={model} onValueChange={onModelChange}>
             <SelectTrigger size="sm" className="h-7 min-w-0 flex-1 text-xs [&>span]:truncate" aria-label="Model" data-testid="model-select">
-              <SelectValue />
+              <SelectValue>{labelFor(model, models)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {models.map((m) => (
-                <SelectItem key={m.name} value={m.name} disabled={m.available === false}>
-                  {m.name}
-                  {m.available === false ? " (unavailable)" : ""}
-                </SelectItem>
-              ))}
+              {models
+                .filter((m) => m.available !== false)
+                .map((m) => (
+                  <SelectItem key={m.name} value={m.name}>
+                    {labelFor(m.name, models)}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         )}
