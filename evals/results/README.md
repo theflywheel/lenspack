@@ -91,3 +91,17 @@ Two things learned from the residue:
 | glm-5.3-flash | 9 → 9/10 | the same 120 s stall on the two-dimension ask — a provider hang (0 steps), not a loop |
 
 Builders are now near the ceiling of this set. The reviewer, however, fell to 2/5–3/5 agreement, uniformly on two tasks: it cannot see `sort` in the board summary (so "lowest first" looks unmet) and it never learns that the system *refused* the original fan-out request (so an honest alternative looks like a substitution). Both are evidence problems, not prompting problems: the summary now shows sort and limit, and the reviewer receives the turn's REFUSALS with their reasons.
+
+## hcm round 4 — reviewer with evidence (`2026-09-24T08-4x-hcm`)
+
+| builder | pass | reviewer agrees (r3 → r4) |
+|---|---|---|
+| deepseek-v4-flash | 10/10 | 3/5 → **4/5** |
+| glm-5.3-flashx | 9/10 | 3/5 → **4/5** |
+| glm-5.3-flash | 9/10 | 3/5 → **4/5** |
+| gemma-4-31b-it | 9/10 | 2/5 → 3/5 |
+| qwen3.7-flash | 9/10 | 3/5 → 3/5 |
+
+Giving the reviewer the evidence (sort in the summary, the turn's refusals) recovered its agreement. Pass rates now vary run to run by one task per model — the fan-out trap and the 10-week window are the two the models flip on — which is model nondeterminism, not a system defect; the deterministic checks, the refusal text and the tool surface are stable across rounds 2–4.
+
+Where this leaves the hard set: every task on the awkward schema is passed by at least four of five small models on every run, with the receipt and review visible to the person for the rest. The next gains are not in the prompt — they are a larger builder for the two flaky tasks (escalation is wired for exactly that) and the `lenspack init` bootstrap so the pack itself is drafted by a stronger model.
