@@ -14,7 +14,7 @@ import { catalogueFrom } from "@lenspack/spec";
 import { type Executor, type Writer, checkOps, dimensionValues, resolveBoard, sqlStore } from "@lenspack/sql";
 
 import { type ExampleName, buildBoard, contextFor, examples } from "../index";
-import { buildProvider, probe, providersFromEnv, publicView } from "./llm";
+import { buildProvider, probe, providersFromEnv, publicView, stopOnRepeatedRefusals } from "./llm";
 import { SYSTEM } from "./prompt";
 import { healingPrompt, reviewTurn } from "./review";
 
@@ -173,7 +173,7 @@ createServer(async (req, res) => {
             for (let round = 1; round <= Math.max(1, maxRounds); round++) {
               const builder = round === 1 ? provider : escalate;
               writer.write({ type: "data-round", data: { round, builder: builder.name } });
-              const result = streamText({ model: builder.languageModel, system, messages, tools: tools as ToolSet, stopWhen: stepCountIs(12) });
+              const result = streamText({ model: builder.languageModel, system, messages, tools: tools as ToolSet, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)] });
               writer.merge(result.toUIMessageStream({ sendStart: round === 1, sendFinish: false }));
               const steps = await result.steps;
               const reply = await result.text;

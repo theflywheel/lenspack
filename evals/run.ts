@@ -16,7 +16,7 @@ import { run } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 
 import { SMALL, contextFor, examples } from "../examples/index";
-import { type ProviderConfig, buildProvider, probe, providersFromEnv } from "../examples/demo/llm";
+import { type ProviderConfig, buildProvider, probe, providersFromEnv, stopOnRepeatedRefusals } from "../examples/demo/llm";
 import { PROMPT_VERSION, SYSTEM } from "../examples/demo/prompt";
 import { screenshotBoard } from "./screenshot";
 import { type Review, healingPrompt, reviewTurn } from "../examples/demo/review";
@@ -129,7 +129,7 @@ async function main() {
           system: SYSTEM(ex.pack, catalogue, seeded.board.config),
           prompt: t.prompt,
           tools,
-          stopWhen: stepCountIs(12),
+          stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)],
           abortSignal: AbortSignal.timeout(120_000),
         });
         const calls = out.steps.flatMap((s) => s.toolCalls);

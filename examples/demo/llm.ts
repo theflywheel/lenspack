@@ -70,3 +70,21 @@ export async function probe(p: Provider, timeoutMs = 20_000): Promise<Provider> 
 export function publicView(p: Provider) {
   return { name: p.name, model: p.model, available: p.available, latencyMs: p.latencyMs, error: p.error };
 }
+
+/**
+ * Stops a tool loop that is going nowhere: when the last `n` steps each ended
+ * in a refused or failed tool call, the model is retrying the same wrong
+ * idea and the turn should end so it can explain instead.
+ */
+export function stopOnRepeatedRefusals(n = 3) {
+  return ({ steps }: { steps: { toolResults: { output?: unknown }[] }[] }) => {
+    if (steps.length < n) return false;
+    return steps.slice(-n).every((st) => {
+      const outs = st.toolResults ?? [];
+      return outs.length > 0 && outs.every((o) => {
+        const v = o.output as { applied?: boolean; ok?: boolean } | undefined;
+        return v?.applied === false || v?.ok === false;
+      });
+    });
+  };
+}

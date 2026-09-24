@@ -45,8 +45,8 @@ export const hcmTasks: HcmTask[] = [
     check: (c) => {
       const wrong = find(c, (w) => w.kind === "chart" && w.query.kind === "breakdown" && w.query.dimension === "product" && w.query.measure === "success_rate");
       if (wrong) return "added a fan-out widget (success_rate by product) — should have been refused";
-      const ok = find(c, (w) => w.kind === "chart" && w.query.kind === "breakdown" && w.query.dimension === "product" && w.query.measure === "delivered_rate");
-      return ok ? null : "did not recover with delivered_rate by product";
+      const ok = find(c, (w) => w.kind === "chart" && w.query.kind === "breakdown" && w.query.dimension === "product" && ["delivered_rate", "resources", "undelivered", "quantity"].includes(w.query.measure));
+      return ok ? null : "did not recover with a resources-grain measure by product";
     },
   },
   {

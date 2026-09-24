@@ -57,7 +57,7 @@ const QUERY_SHAPE = {
   dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
   entity: str().describe("For rows: the entity to list"),
   grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
-  time_last: str().describe('Relative window like "30d", "12w", "6m"; empty for all time'),
+  time_last: str().describe('Relative window like "30d", "12w", "6m". Always set it when the request names a period ("last 10 weeks" -> "10w", "past month" -> "30d"); empty means all time'),
   compare: bool(false).describe("For value: also compute the previous period"),
   limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),

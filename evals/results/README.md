@@ -62,3 +62,20 @@ What the round found, in order of what it says about the *system* rather than th
 4. The `question-top-reason` check demanded the literal `STOCK_OUT`; two models answered "Stock-out" correctly. Check loosened.
 
 Round 2 re-runs the same set with those four changes.
+
+## hcm round 2 — after the four fixes (`2026-09-24T07-49-20-hcm`)
+
+| builder | round 1 | round 2 | remaining misses |
+|---|---|---|---|
+| glm-5.3-flashx | 8/10 | **10/10** | — |
+| deepseek-v4-flash | 6/10 | **10/10** | — |
+| glm-5.3-flash | 9/10 | 9/10 | one 120 s stall on the two-dimension ask (kept retrying refused calls) |
+| gemma-4-31b-it | 6/10 | 8/10 | fan-out (added a *count* by product instead of a rate — arguably the better pie); dropped the 10-week window |
+| qwen3.7-flash | 8/10 | 8/10 | same two |
+
+`sort` on the tool surface fixed "lowest first" for everyone. The richer fan-out refusal moved three models from fail to pass. Reviewer agreement rose to 4/5 on the edit tasks.
+
+Two things learned from the residue:
+- gemma and qwen both wrote "last 10 weeks" in the widget title and **omitted the window from the query** — and the reviewer accepted the title as evidence. The reviewer is now told to judge by the query description only; the tool's `time_last` description now insists on it.
+- A model that keeps retrying a refused call spins until the timeout. Turns now stop after three consecutive refused steps so the model explains instead.
+- The fan-out check accepted only `delivered_rate`; a count of product lines by product is an equally honest recovery and is now accepted.

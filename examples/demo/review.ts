@@ -24,6 +24,7 @@ Find every way the result fails the instruction:
 - a requested rename, filter, removal, move, resize or packing that the RECEIPT does not show;
 - placement intent not met ("across the top" but not on row 1; "full width" but not 12/12 wide);
 - anything added that was not asked for.
+Judge widgets by their query description in AFTER (measure, dimension, grain, split, window such as "last 10w"), never by their title or id — a title saying "last 10 weeks" with no window in the query is a defect.
 Do not invent requirements the instruction did not state. If everything requested is present, say so.
 If the instruction asked for something the pack cannot express (the assistant could only refuse, or offered the nearest answerable alternative and said so), and nothing wrong was added, that is satisfied — an honest refusal is the correct outcome, not a failure.
 If the instruction was a question about the data (not an edit) and the assistant answered it, that is satisfied.
