@@ -15,7 +15,7 @@ The tasks cover the failure modes that matter for this design: naming a key that
 
 `--review [name]` runs an adversarial text review after each task: the reviewer (another provider, or the builder itself) sees the instruction, the board before and after, and the receipt of versions gained, and lists what is missing or wrong. The table reports how often the reviewer agrees with the deterministic check — a reviewer that says "satisfied" when the check fails is not worth its latency.
 
-`--heal` gives the builder one more round when the reviewer is not satisfied, with the review as the instruction, and reports pass rates before and after (🩹 = passed only after healing).
+In the demo, review runs on every turn but healing is opt-in (`?rounds=2`); the review block offers "Apply fixes" instead. `--heal` gives the builder one more round when the reviewer is not satisfied, with the review as the instruction, and reports pass rates before and after (🩹 = passed only after healing).
 
 `--escalate <name>` runs the heal round on a larger model instead of the builder: small model first, big model only when the reviewer is not satisfied.
 

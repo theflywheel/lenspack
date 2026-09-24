@@ -143,7 +143,10 @@ createServer(async (req, res) => {
         const reviewWanted = url.searchParams.get("review");
         const reviewer = reviewWanted === "off" ? null : (byName(reviewWanted) ?? byName(roles.reviewer) ?? provider);
         const escalate = byName(url.searchParams.get("escalate")) ?? byName(roles.escalate) ?? provider;
-        const maxRounds = Number(url.searchParams.get("rounds") ?? 2);
+        // Review informs; healing is opt-in (?rounds=2). A wrong "not
+        // satisfied" from the reviewer must not be able to damage a correct
+        // board on its own — the evals showed it can.
+        const maxRounds = Number(url.searchParams.get("rounds") ?? 1);
         const body = (await read(req)) as { messages: UIMessage[] };
         const tools = toVercelAI(
           boardTools({

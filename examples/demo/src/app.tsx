@@ -29,8 +29,11 @@ const api = async (path: string, init?: RequestInit) => {
 type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string; data?: unknown };
 type ReviewData = { round: number; reviewer: string; satisfied: boolean; unavailable?: boolean; missing: string[]; wrong: string[]; note: string };
 
-// The adversarial reviewer's verdict, as the server streamed it.
-function ReviewBlock({ r }: { r: ReviewData }) {
+// The adversarial reviewer's verdict, as the server streamed it. When it is
+// not satisfied, the findings can be sent back as the next instruction — by
+// the person, not automatically.
+function ReviewBlock({ r, onApply }: { r: ReviewData; onApply?: (text: string) => void }) {
+  const fixes = [...r.missing.map((m) => `missing: ${m}`), ...r.wrong.map((w) => `wrong: ${w}`)];
   return (
     <div className={`rounded-md border px-2 py-1.5 text-xs ${r.satisfied ? "border-border text-muted-foreground" : "border-destructive/40 text-destructive"}`} data-testid="review">
       <div className="flex items-center gap-2">
@@ -45,6 +48,17 @@ function ReviewBlock({ r }: { r: ReviewData }) {
         </ul>
       )}
       {r.note && <p className="mt-1 text-muted-foreground">{r.note}</p>}
+      {!r.satisfied && !r.unavailable && fixes.length > 0 && onApply && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 h-7 text-xs"
+          data-testid="apply-fixes"
+          onClick={() => onApply(`A review found the last edit incomplete. Fix exactly these points, then verify with get_board:\n${fixes.map((f) => `- ${f}`).join("\n")}`)}
+        >
+          Apply fixes
+        </Button>
+      )}
     </div>
   );
 }
@@ -160,7 +174,7 @@ export function ChatPanel({
                 p.type === "text" && p.text?.trim() ? (
                   <p key={i} className="text-sm leading-6">{p.text}</p>
                 ) : p.type === "data-review" ? (
-                  <ReviewBlock key={i} r={p.data as ReviewData} />
+                  <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
                   <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
                 ) : null,
