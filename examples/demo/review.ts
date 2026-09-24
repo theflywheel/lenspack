@@ -17,7 +17,7 @@ export type Review = {
 };
 
 export const REVIEW_PROMPT = `You are a strict, adversarial reviewer of a dashboard edit made by another assistant.
-You will be given: the user's instruction, the board BEFORE, the board AFTER, and a RECEIPT listing the versions the board actually gained (this is the ground truth of what changed — the assistant's own claims are not).
+You will be given: the user's instruction, the board BEFORE, the board AFTER, a RECEIPT listing the versions the board actually gained (this is the ground truth of what changed — the assistant's own claims are not), and REFUSALS: edits the system itself rejected during the turn, with the reason. A request the system refused cannot be satisfied as asked; the assistant is right to offer the nearest answerable alternative or to say so.
 
 Find every way the result fails the instruction:
 - a requested widget that does not exist in AFTER, or has the wrong kind (kpi vs bar vs line vs pie), measure, dimension, split, or time window;
@@ -31,11 +31,11 @@ If the instruction was a question about the data (not an edit) and the assistant
 
 Reply with JSON only: {"satisfied": boolean, "missing": ["what was asked and is absent, naming the widget kind and keys"], "wrong": ["what exists but differs from the request, with the widget id"], "note": "one sentence"}.`;
 
-export async function reviewTurn(model: LanguageModel, input: { instruction: string; before: string; after: string; receipt: string }, timeoutMs = 60_000): Promise<Review> {
+export async function reviewTurn(model: LanguageModel, input: { instruction: string; before: string; after: string; receipt: string; refusals?: string[] }, timeoutMs = 60_000): Promise<Review> {
   const out = await generateText({
     model,
     system: REVIEW_PROMPT,
-    prompt: `INSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}`,
+    prompt: `INSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`,
     // Reasoning models spend output tokens before the JSON; leave room.
     maxOutputTokens: 2000,
     abortSignal: AbortSignal.timeout(timeoutMs),
@@ -58,4 +58,15 @@ export function healingPrompt(review: Review) {
     ...review.missing.map((m) => `- missing: ${m}`),
     ...review.wrong.map((w) => `- wrong: ${w}`),
   ].join("\n");
+}
+
+/** The refusals in a turn's tool results, as short lines for the reviewer. */
+export function refusalsFrom(steps: { toolResults: { toolName?: string; output?: unknown }[] }[]): string[] {
+  const out: string[] = [];
+  for (const st of steps)
+    for (const r of st.toolResults ?? []) {
+      const v = r.output as { applied?: boolean; ok?: boolean; error?: string } | undefined;
+      if ((v?.applied === false || v?.ok === false) && v?.error) out.push(`${r.toolName ?? "tool"}: ${v.error.slice(0, 200)}`);
+    }
+  return out.slice(0, 8);
 }

@@ -19,7 +19,7 @@ import { SMALL, contextFor, examples } from "../examples/index";
 import { type ProviderConfig, buildProvider, probe, providersFromEnv, stopOnRepeatedRefusals } from "../examples/demo/llm";
 import { PROMPT_VERSION, SYSTEM } from "../examples/demo/prompt";
 import { screenshotBoard } from "./screenshot";
-import { type Review, healingPrompt, reviewTurn } from "../examples/demo/review";
+import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "../examples/demo/review";
 import { type HcmFacts, hcmTasks } from "./tasks-hcm";
 import { type Facts, tasks } from "./tasks";
 import { type VisualVerdict, judgeScreenshot } from "./visual";
@@ -145,7 +145,7 @@ async function main() {
           const reviewerModel = (fixedReviewer ?? provider).languageModel;
           const versions = (await store.versions("b")).filter((v) => v.version > seeded.board.version);
           const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
-          const review = await reviewTurn(reviewerModel, { instruction: t.prompt, before: summarise(seeded.board.config), after: summarise(board.config), receipt });
+          const review = await reviewTurn(reviewerModel, { instruction: t.prompt, before: summarise(seeded.board.config), after: summarise(board.config), receipt, refusals: refusalsFrom(out.steps as never) });
           // Does the reviewer agree with the deterministic check?
           r.review = { ...review, raw: undefined, agrees: review.unavailable ? false : review.satisfied === r.pass };
           if (heal && !review.satisfied && !review.unavailable) {

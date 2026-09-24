@@ -16,7 +16,7 @@ import { type Executor, type Writer, checkOps, dimensionValues, resolveBoard, sq
 import { type ExampleName, buildBoard, contextFor, examples } from "../index";
 import { buildProvider, probe, providersFromEnv, publicView, stopOnRepeatedRefusals } from "./llm";
 import { SYSTEM } from "./prompt";
-import { healingPrompt, reviewTurn } from "./review";
+import { healingPrompt, refusalsFrom, reviewTurn } from "./review";
 
 const dataDir = process.env.LENSPACK_DATA_DIR ?? ".";
 const port = Number(process.env.PORT ?? 8787);
@@ -185,7 +185,7 @@ createServer(async (req, res) => {
               if (versions.length === 0 && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
               let review;
               try {
-                review = await reviewTurn(reviewer.languageModel, { instruction, before, after: summarise(current.config), receipt });
+                review = await reviewTurn(reviewer.languageModel, { instruction, before, after: summarise(current.config), receipt, refusals: refusalsFrom(steps as never) });
               } catch (e) {
                 review = { satisfied: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
               }

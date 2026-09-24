@@ -79,3 +79,15 @@ Two things learned from the residue:
 - gemma and qwen both wrote "last 10 weeks" in the widget title and **omitted the window from the query** — and the reviewer accepted the title as evidence. The reviewer is now told to judge by the query description only; the tool's `time_last` description now insists on it.
 - A model that keeps retrying a refused call spins until the timeout. Turns now stop after three consecutive refused steps so the model explains instead.
 - The fan-out check accepted only `delivered_rate`; a count of product lines by product is an equally honest recovery and is now accepted.
+
+## hcm round 3 — after the round-2 fixes (`2026-09-24T08-15-26-hcm`)
+
+| builder | round 2 → 3 | remaining |
+|---|---|---|
+| glm-5.3-flashx | 10 → **10/10** | — |
+| deepseek-v4-flash | 10 → **10/10** | — |
+| qwen3.7-flash | 8 → **10/10** | — |
+| gemma-4-31b-it | 8 → 9/10 | still omits the 10-week window once |
+| glm-5.3-flash | 9 → 9/10 | the same 120 s stall on the two-dimension ask — a provider hang (0 steps), not a loop |
+
+Builders are now near the ceiling of this set. The reviewer, however, fell to 2/5–3/5 agreement, uniformly on two tasks: it cannot see `sort` in the board summary (so "lowest first" looks unmet) and it never learns that the system *refused* the original fan-out request (so an honest alternative looks like a substitution). Both are evidence problems, not prompting problems: the summary now shows sort and limit, and the reviewer receives the turn's REFUSALS with their reasons.

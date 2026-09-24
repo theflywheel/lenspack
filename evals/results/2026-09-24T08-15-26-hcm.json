@@ -1,0 +1,862 @@
+[
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3849,
+    "reply": "Added a bar chart showing the delivered rate of product lines by locality, sorted from lowest to highest.",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "delivered_rate_by_locality: bar chart with measure delivered_rate by dimension locality was added but the query does not specify sorting lowest-first (ascending)"
+      ],
+      "note": "The requested bar chart exists but is not ordered 'lowest first' as required.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 7172
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "fanout-trap",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 6,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 6148,
+    "reply": "I couldn't add a pie chart of success rates because rates cannot be summed into a pie; instead, I added a pie chart of product lines by variant.",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "pie chart of administration success rate by product variant (pie; measure=success_rate; dimension=product_variant)"
+      ],
+      "wrong": [
+        "resources_by_product: exists as a pie but its query is \"resources by product\" (measure=resources, dimension=product) — it does not use measure=success_rate nor the product_variant dimension requested"
+      ],
+      "note": "A pie was added, but its query uses resources/product rather than administration success_rate by product variant.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": false,
+      "note": "did not recover with a resources-grain measure by product",
+      "latencyMs": 58813
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "epoch-window",
+    "pass": false,
+    "note": "window not 10w: undefined",
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4449,
+    "reply": "Added a line chart of weekly visits split by campaign for the last 10 weeks to the bottom of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "A line chart widget weekly_visits_campaign_10w with query 'tasks per week by campaign last 10w' was added, matching the requested weekly visits split by campaign for the last 10 weeks.",
+      "agrees": false
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3084,
+    "reply": "I have added the P90 visit length KPI for the last 30 days and the bar chart showing median visit length by project to the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "Both requested widgets were added: a KPI with p90_visit_minutes over last 30d and a bar chart of median_visit_minutes by project, matching the instruction.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 3,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 9706,
+    "reply": "I've added a bar chart comparing the refusal rate by campaign and verified that a campaign filter already applies to the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "A refusal_rate by campaign bar chart was added and the Campaign filter that applies to the board is present, so the instruction is satisfied.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3379,
+    "reply": "The locality with the lowest administration success rate among those with at least 100 visits is NG_ST_LGA1_W2_L6, with a rate of 70.8% and 325 visits."
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1748,
+    "reply": "The most common reason a product line was not delivered is STOCK_OUT, accounting for 98 lines."
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1635,
+    "reply": "I'm sorry, but I cannot add that map because there is no \"facility\" dimension or measure in the available data pack to filter by facility ID."
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 5,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 4669,
+    "reply": "I've added a bar chart of visits by locality to the bottom of the board."
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1036,
+    "reply": "574 households are registered in total."
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 14375,
+    "reply": "Added a half-width bar chart \"Delivered rate by locality (lowest first)\" at the bottom, with NG_ST_LGA1_W4_L12 lowest at 85.8%.",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "bar chart showing delivered_rate by locality sorted lowest first (query must include ordering 'lowest first')"
+      ],
+      "wrong": [
+        "delivered_by_locality: exists as bar with measure delivered_rate by locality but query does not specify ordering 'lowest first' (query shown: \"delivered_rate by locality\")"
+      ],
+      "note": "The widget was added with the correct kind, measure, and dimension, but the query lacks the required 'lowest first' ordering.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 12167
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "fanout-trap",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 3,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 23639,
+    "reply": "Administration success rate is a task-level measure, so it can't be grouped by product (that would double-count tasks); the closest valid chart is delivery rate by product variant, added as a bar since rates don't work as pie slices — \"Delivery success rate by product\" now sits at the bottom. If you",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "Pie chart of administration success rate by product variant (pie, measure: success_rate, dimension: product_variant)"
+      ],
+      "wrong": [
+        "delivered_by_product: bar chart of delivered_rate by product (widget added is a bar showing delivered_rate by product; request was a pie of success_rate by product variant)"
+      ],
+      "note": "The board added a bar for delivered_rate by product instead of the requested pie of administration success_rate by product variant.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 25861
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 8200,
+    "reply": "Updated the \"Weekly visits by campaign\" widget to a line chart of weekly tasks split by campaign over the last 10 weeks.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The 'weekly' line chart query is tasks per week by campaign with a last 10w window, matching the requested weekly visits split by campaign for the last 10 weeks.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 12517,
+    "reply": "Added the P90 visit length KPI at the top row and a half-width bar chart of median visit length by project at the bottom of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "Both requested widgets were added: a KPI for p90_visit_minutes over the last 30 days and a bar chart of median_visit_minutes by project, with correct query definitions.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 4,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 21330,
+    "reply": "Added a \"Refusal rate by campaign\" bar chart at the bottom, and the Campaign filter now applies to every widget on the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The bar chart (refusal_rate by campaign) was added and a Campaign filter that applies to the board was added, matching the instruction.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 16130,
+    "reply": "Among localities with at least 100 visits, the lowest administration success rate is NG_ST_LGA1_W2_L6 at 70.8%, with 325 visits. (The nominally lower localities like NG_ST_LGA1_W4_L11 at 62.5% have only 64 visits.)"
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7020,
+    "reply": "Stock-out is the most common reason, accounting for 98 undelivered product lines."
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5598,
+    "reply": "The pack has no facility data, coordinates or distance measure, and the board supports only bar, line, pie and area charts — so a 2 km radius map around FAC-7 isn't possible. I can add households broken down by locality, ward or city as the nearest alternative if you'd like."
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 4,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 33220,
+    "reply": "The pack's breakdowns only support one grouping dimension, so I couldn't combine locality and status in a single stacked bar; I added a bar chart of visits by locality at the bottom (half width) instead. If you'd like, I can also add a separate status breakdown, or note that locality and status live"
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4683,
+    "reply": "574"
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5139,
+    "reply": "Added \"Delivered rate by locality (lowest first)\" as a bar chart at the bottom of the board, at half width next to the other locality chart's row.",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "delivered_by_locality: widget exists as a bar showing delivered_rate by locality but its query does not indicate an ascending/\"lowest first\" sort (requirement not met)"
+      ],
+      "note": "The bar chart was added with the correct measure and dimension, but the query lacks the required lowest-first ordering.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 7622
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "fanout-trap",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 3,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 44001,
+    "reply": "Added \"Delivered rate by product variant\" as a bar chart on a new row. A pie of administration success by product wasn't possible: product is recorded per product line, so a tasks-level rate can't be grouped by it, and pies can't show rates — I used the delivered rate of product lines instead, as a ",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "pie chart with measure success_rate by dimension product_variant (pie of administration success rate by product variant)"
+      ],
+      "wrong": [
+        "widget id success_by_product: is a bar chart showing measure delivered_rate by dimension product (titled 'Delivered rate by product variant') instead of a pie chart of success_rate by product_variant"
+      ],
+      "note": "The added widget is a bar of delivered_rate by product, not the requested pie of administration success_rate by product variant.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 28613
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5056,
+    "reply": "Done — the \"Weekly visits by campaign\" line chart now shows weekly visits split by campaign for the last 10 weeks.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The 12/12 line widget 'weekly' queries tasks per week split by campaign with window last 10w, which matches the requested weekly visits-by-campaign for the last 10 weeks.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6097,
+    "reply": "Added a \"P90 visit length (min), last 30 days\" KPI at the top of the board (which nudged the visits KPI to row 2) and a \"Median visit length by project\" bar chart at the bottom, both confirmed on the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "Both requested widgets were added with the correct kinds and queries (P90 KPI with last 30d window and median-by-project bar); no requested items are missing.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 4,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 13015,
+    "reply": "Added a full-width \"Refusal rate by campaign\" bar chart at the bottom, and the Campaign filter now applies to every widget on the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The bar chart 'refusal_rate by campaign' was added and a Campaign filter is present on the board, satisfying both requests.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 25787,
+    "reply": "**NG_ST_LGA1_W2_L6** has the lowest administration success rate among localities with at least 100 visits: **70.8%** (70.77%) across **325 visits**. (The lower rates in L11, L10 and L8 were excluded as those have only 64, 80 and 96 visits.)"
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1938,
+    "reply": "Stock-out is the most common reason lines were not delivered, accounting for 98 product lines (ahead of beneficiary absent at 86)."
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": true,
+    "latencyMs": 2789,
+    "reply": "I can't add that — the pack has no facility entity or distance/geo measure, and the board supports only chart, kpi, table and text widgets, so there's no map and nothing to filter households by \"within 2 km of FAC-7\". Let me know if you'd like an alternative, such as households broken down by locali"
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "two-dimensions",
+    "pass": false,
+    "note": "threw",
+    "steps": 0,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 120006,
+    "reply": "",
+    "error": "The operation was aborted due to timeout"
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2325,
+    "reply": "574 households are registered in total."
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 22484,
+    "reply": "Added a bar chart \"Delivered rate by locality (lowest first)\" in row 4, showing delivered_rate by locality sorted lowest first.",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "delivered_by_locality: widget exists as a bar (delivered_rate by locality last 30d) but its query does not specify sorting order — it does not guarantee 'lowest first'"
+      ],
+      "note": "The bar chart was added, but the query lacks the required lowest-first sort.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 10660
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "fanout-trap",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 4,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 31081,
+    "reply": "Since a pie chart of a rate (like success_rate or delivered_rate) isn't supported because rates don't sum to a whole across categories, I added a pie chart of **undelivered lines by product variant** instead — that shows which products contribute to failures, as the closest meaningful alternative.\n\n",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "pie chart of administration success_rate by product_variant (pie; measure=success_rate; dimension=product_variant)"
+      ],
+      "wrong": [
+        "undelivered_by_product: pie showing measure=undelivered by dimension=product (widget was added but it is the wrong metric/dimension — not administration success_rate by product variant)"
+      ],
+      "note": "A pie was added, but it reports undelivered by product rather than administration success_rate by product variant, so the requested widget is missing.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 18769
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 12722,
+    "reply": "Updated the existing \"Weekly visits by campaign\" line chart on row 2 to use the last 10 weeks.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The dashboard has a 12/12 line chart 'weekly' measuring tasks per week split by campaign with a last 10 weeks window, which matches the requested weekly visits by campaign for the last 10 weeks.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 4,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 20726,
+    "reply": "Added a **P90 visit length** KPI (last 30 days) to the top row and a **Median visit length by project** bar chart at the bottom, both showing as expected.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "Both requested widgets are present and correctly configured: p90_visit is a KPI of p90_visit_minutes over last 30d, and median_by_project is a bar of median_visit_minutes by project.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 4,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 22634,
+    "reply": "A bar chart showing refusal rate by campaign has been added at the bottom. The board already has a Campaign filter that applies to everything, so no additional filter was needed.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The bar chart showing refusal_rate by campaign was added and the Campaign filter (board-level) is present, satisfying the request.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 4,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 19637,
+    "reply": "**Answer:**  \nThe locality **NG_ST_LGA1_W2_L6** has the lowest administration success rate among localities with at least 100 visits: **70.8%**, with **325 visits**."
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7497,
+    "reply": "The most common reason a product line was not delivered is **STOCK_OUT**, accounting for **98 undelivered lines**."
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 10,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 34745,
+    "reply": "The **hcm v1** pack does not contain geocoordinates (latitude/longitude) on addresses or households, and the board builder doesn't offer a map chart type — only bar, line, pie, and area. So I cannot add a map of households near FAC-7. I've proposed a latitude/longitude measure for addresses so a mai"
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 6,
+    "toolCalls": 5,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 54894,
+    "reply": "The bar chart has been added at the bottom showing visits by locality. However, the available tools don't support a stacked bar split by a second dimension (status) — the chart shows total tasks per locality without a status breakdown. If you'd like, I can instead show a separate chart breaking down"
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6779,
+    "reply": "574 households are registered in total."
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 8590,
+    "reply": "The delivered rate of product lines by locality as a bar chart (lowest first) has been added to the board.",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "bar chart delivered_rate by locality (sorted ascending / lowest first)"
+      ],
+      "wrong": [
+        "delivered_by_locality: widget exists as a bar chart (delivered_rate by locality) but its query does not specify an ascending/lowest-first sort"
+      ],
+      "note": "The delivered_by_locality bar was added but the query lacks the required 'lowest first' (ascending) ordering.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 8751
+    }
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "fanout-trap",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 4,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 41865,
+    "reply": "Added a pie chart showing resource counts by product variant at the bottom of the board. Note: since pie charts require proportions (not rates), it displays `resources` by `product` rather than a true success rate breakdown.",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "pie (success_rate by product_variant) — a pie chart measuring administration success_rate split by product_variant"
+      ],
+      "wrong": [
+        "success_by_product: widget exists as a pie but its query is 'resources by product' (measure=resources, dimension=product) rather than the requested measure=success_rate and dimension=product_variant"
+      ],
+      "note": "A pie was added but it measures 'resources by product' instead of administration success_rate by product variant.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 24884
+    }
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 30764,
+    "reply": "Done. I've added a new line chart widget (`weekly_visits_by_campaign`) that plots weekly task counts split by campaign for the last 10 weeks. This displays on row 3 with \"Weekly visits by campaign\" as the title. The previous weekly chart has been removed as the new one fulfills the request.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board contains a line widget (weekly_visits_by_campaign) whose query is tasks per week by campaign with window last 10w, satisfying the requested plot.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 16894,
+    "reply": "Added a KPI showing P90 visit length over the last 30 days and a bar chart of median visit length by project, both placed side-by-side in row 4.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "Both the P90 KPI (p90_visit_minutes over last 30d) and the median-by-project bar (median_visit_minutes by project) were added as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 3,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 18082,
+    "reply": "Added the \"Refusal rate by campaign\" bar chart at the bottom of row 4 and confirmed the existing Campaign filter is already applied to all widgets on the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The bar chart 'refusal_rate by campaign' was added and a Campaign filter that applies to the board is present, so the instruction is satisfied.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 32652,
+    "reply": "**NG_ST_LGA1_W2_L6** has the lowest administration success rate among localities with at least 100 visits: **70.77%** success rate with **325 visits**."
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 8569,
+    "reply": "The most common reason a product line was not delivered is **STOCK_OUT**, which accounts for **98** undelivered lines."
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 13047,
+    "reply": "I cannot add a map of households within 2 km of facility FAC-7 because this data pack does not include geospatial data such as coordinates, facility locations, or distance calculations. The available entities only cover household demographics, tasks, projects, beneficiaries, resources, side effects,"
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 9,
+    "toolCalls": 8,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 110044,
+    "reply": "I've added a bar chart of tasks by locality, but the current dashboard tools don't support creating stacked bar charts that group by two different dimensions (locality and status). A stacked bar chart requires a single grouping dimension — it can show either visits by locality or visits by status, b"
+  },
+  {
+    "provider": "qwen3.7-flash (openrouter)",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7027,
+    "reply": "574 households are registered in total."
+  }
+]
