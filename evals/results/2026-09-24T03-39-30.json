@@ -1,0 +1,949 @@
+[
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "kpi",
+    "pass": false,
+    "note": "threw",
+    "steps": 0,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 141326,
+    "reply": "",
+    "error": "The operation was aborted due to timeout"
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "breakdown",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3188,
+    "reply": "Revenue by country is already on the board as a bar chart — the \"Revenue by country\" widget in row 3, shown as a half-width chart next to the category pie. No changes were needed.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board already contains the bar chart widget 'by_country' (bar, revenue by country), so the request is satisfied and no changes were made.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "series-split",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7995,
+    "reply": "Added \"Weekly orders by channel (last 12 weeks)\" — a full-width line chart of weekly orders split by channel, placed at the bottom of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The new line chart orders_by_channel_weekly (orders per week by channel, last 12w) was added as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "fanout-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6069,
+    "reply": "Added \"Revenue by product category\" as a pie chart at the bottom of the board. Note the board already had a similar pie, \"Line revenue by category\" (item_revenue by category) in row 3, so you may want to remove one to avoid duplication.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The pie chart 'revenue_by_category' (pie, item_revenue by category, titled 'Revenue by product category') was added as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "typo-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6259,
+    "reply": "Added \"Refund rate by country\" as a half-width bar chart at the bottom of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The bar chart refund_rate_by_country (bar, refund_rate by country) was added as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "multi-step",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 6,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 20364,
+    "reply": "Done: the board is now titled \"Shop health\", the \"Line revenue by category\" pie is removed, and the Country filter was reset to apply to every widget.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "All requested changes are present: the board was renamed to 'Shop health', the pie chart by_category was removed, and a Country filter (global) exists.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "question",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5251,
+    "reply": "Germany (DE) has the highest refund rate at 10.1%, well ahead of GB at 6.7%."
+  },
+  {
+    "provider": "glm-5.3-flashx (openrouter)",
+    "task": "layout",
+    "pass": true,
+    "note": null,
+    "steps": 7,
+    "toolCalls": 6,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 19913,
+    "reply": "Done: the weekly revenue area chart is now full width in row 1 at the top, and the refund KPI moved back next to the revenue and orders KPIs.",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "refunds (widget id: refunds) was moved from row 1 to row 2 and resized from 4/12 to 3/12 — this change was not requested"
+      ],
+      "note": "The weekly revenue chart was moved to the top and is full width as requested, but the refunds widget was moved and resized even though that was not part of the instruction.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": false,
+      "note": "revenue_trend is w=12 y=3",
+      "latencyMs": 61110
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "kpi",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2954,
+    "reply": "I've added a KPI for Total Revenue across the top of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The KPI total_revenue_kpi (kpi, 3/12, measure: revenue) was added to row 1 as requested; no requested changes are missing or incorrect.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "breakdown",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1403,
+    "reply": "The revenue by country is already displayed as a bar chart on the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board already contains the bar chart 'by_country' showing revenue by country and no edits were made, so the request is satisfied.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "series-split",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2720,
+    "reply": "I've added a line chart showing weekly orders split by channel for the last 12 weeks at the bottom of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The requested line chart 'weekly_orders_by_channel' was added as a 12/12 wide line widget showing orders per week by channel for the last 12 weeks, matching the instruction.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "fanout-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2588,
+    "reply": "I've added a pie chart of revenue by product category to the bottom of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "A pie chart widget named revenue_by_category showing item_revenue by category titled “Revenue by product category” was added, satisfying the request.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "typo-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2392,
+    "reply": "I've added a bar chart of refund rate by country to the bottom of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The bar chart widget 'refund_rate_by_country' (bar, showing refund_rate by country) was added as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "multi-step",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 4,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 3637,
+    "reply": "The board has been renamed to Shop health, the pie chart removed, and the country filter is already in place.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "All requested changes were made: the board was renamed to 'Shop health', the Country filter is present (applies to the board), and the pie chart (by_category) was removed.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "question",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1476,
+    "reply": "DE has the highest refund rate at 10.14%."
+  },
+  {
+    "provider": "gemma-4-31b-it (amul)",
+    "task": "layout",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1398,
+    "reply": "The weekly revenue chart is now full width and located at the top of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The weekly revenue chart (revenue_trend) is 12/12 full width and placed in row 1 as requested; no requested changes are missing.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "kpi",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6036,
+    "reply": "Added a \"Total revenue\" KPI (quarter width) at the top of the board; the row shifted so \"Revenue, last 30 days\" now sits below it.",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "revenue_30d: moved from row 1 to row 2 (move not recorded in RECEIPT)",
+        "revenue_trend: moved from row 2 to row 3 (move not recorded in RECEIPT)",
+        "by_country: moved from row 3 to row 4 (move not recorded in RECEIPT)",
+        "by_category: moved from row 3 to row 4 (move not recorded in RECEIPT)"
+      ],
+      "note": "The requested KPI (revenue_total) was added correctly at quarter width on the top row, but several existing widgets were shifted down rows in AFTER even though the RECEIPT only records adding revenue_total.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": false,
+      "note": "new kpi not on the top row at quarter width (y=17, w=3)",
+      "latencyMs": 27414
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "breakdown",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5106,
+    "reply": "That chart is already on the board: \"Revenue by country\" is a bar chart (revenue by country) in row 3, half-width. Nothing needed changing.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The dashboard already contains the by_country bar chart showing revenue by country (row 3), so the request is satisfied.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "series-split",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4660,
+    "reply": "Added \"Weekly orders by channel, last 12 weeks\" — a line chart of orders per week split by channel, placed at the bottom in half width.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board contains the added line chart orders_by_channel showing weekly orders by channel for the last 12 weeks as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "fanout-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 26926,
+    "reply": "The board already has that chart — \"Line revenue by category,\" a pie of revenue by product category, bottom right next to Revenue by country — so there was nothing to add. If you'd like it renamed, resized, or moved, just say the word.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "A pie chart of revenue by product category already exists as widget 'by_category' (pie, item_revenue by category), so the request is satisfied.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "typo-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3171,
+    "reply": "Added \"Refund rate by country\" as a bar chart after the revenue trend, sharing the row with the country/category charts at half width.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The bar chart 'refunds_by_country' (bar, measure refund_rate, split by country) was added as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "multi-step",
+    "pass": true,
+    "note": null,
+    "steps": 6,
+    "toolCalls": 7,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 15556,
+    "reply": "Done: the board is now \"Shop health\", the Country filter applies to all widgets, and the \"Line revenue by category\" pie has been removed.",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "Removed filter 'filter_country' (id: filter_country) — the assistant removed an existing filter that was not requested.",
+        "Filter 'country' (id: country) — RECEIPT shows it was added but does not indicate its scope/apply-to-all behavior, so it's not verifiable that it \"applies to everything\" as requested."
+      ],
+      "note": "Board renamed and pie chart removed as requested, but an unrelated filter was removed and the new filter's global scope is not confirmed.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 39336
+    }
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "question",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3845,
+    "reply": "Germany (DE) has the highest refund rate at 10.1%."
+  },
+  {
+    "provider": "glm-5.3-flash (openrouter)",
+    "task": "layout",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 9038,
+    "reply": "Done — the Weekly revenue chart now sits full width at the top of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The weekly revenue chart (revenue_trend) was moved to the top and set to full width as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "kpi",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 8451,
+    "reply": "Done. Added a \"Total Revenue\" KPI at the top (quarter width) showing all-time revenue. It now sits first on the top row, with the other KPIs shifted into the next rows.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The KPI 'total_revenue' was added on the top row as a 3/12-wide KPI measuring revenue, satisfying the instruction.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "breakdown",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 10957,
+    "reply": "The board already has a \"Revenue by country\" bar chart (by_country) on row 3 — nothing to change.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The dashboard already contained a 'by_country' bar chart showing revenue by country and no changes were required or made.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "series-split",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 15562,
+    "reply": "Added a full-width line chart \"Weekly orders by channel\" at the bottom, showing orders per week split by channel for the last 12 weeks.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board contains a line chart widget orders_by_channel_weekly (12/12) showing orders per week by channel for the last 12 weeks as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "fanout-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 41231,
+    "reply": "Added a pie chart titled \"Revenue by product category\" in the bottom row, showing `item_revenue` broken down by `category`.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board contains a new pie chart widget revenue_by_category (pie) showing item_revenue by category titled “Revenue by product category”, which satisfies the request.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "typo-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 22964,
+    "reply": "Added a bar chart \"Refund rate by country\" to row 4, half width, showing refund_rate broken down by country.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The requested bar chart 'refund_rate_by_country' (bar showing refund_rate by country) was added as requested.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "multi-step",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 7,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 16103,
+    "reply": "Done. The board is renamed to **Shop health**, the pie chart (by_category) has been removed, and the Country filter now applies to all widgets.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "All requested changes are present: the board was renamed to “Shop health”, the pie chart (by_category) was removed, and a country filter is present.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "question",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7633,
+    "reply": "DE (Germany) has the highest refund rate at 10.14%."
+  },
+  {
+    "provider": "deepseek-v4-flash (openrouter)",
+    "task": "layout",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 4,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 23739,
+    "reply": "Weekly revenue is now full width at the top of the board.",
+    "review": {
+      "satisfied": true,
+      "unavailable": true,
+      "missing": [],
+      "wrong": [],
+      "note": "reviewer returned nothing",
+      "agrees": false
+    }
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "kpi",
+    "pass": false,
+    "note": "no new kpi widget with a value query on revenue",
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1068,
+    "reply": "",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "KPI widget for total revenue (kind: kpi) placed across the top (row 1) with quarter width (3/12) showing total revenue (measure: total revenue)"
+      ],
+      "wrong": [],
+      "note": "No new widget was added — the dashboard AFTER is identical to BEFORE and the requested top-quarter KPI for total revenue is absent.",
+      "agrees": true
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 11818
+    }
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "breakdown",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 11754,
+    "reply": "",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board already contained the 'by_country' bar chart showing revenue by country and no changes were needed or made.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "series-split",
+    "pass": false,
+    "note": "no weekly orders series split by channel",
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1598,
+    "reply": "",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "line chart 'weekly_orders_by_channel' — kind=line, measure=orders (weekly), split=channel (dimension), time_window=last 12 weeks"
+      ],
+      "wrong": [],
+      "note": "No changes were made (receipt shows no versions); the requested line chart for weekly orders split by channel over the last 12 weeks is absent.",
+      "agrees": true
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 7800
+    }
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "fanout-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7679,
+    "reply": "",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "pie chart of revenue by product category (widget kind=pie, measure=revenue/item_revenue, dimension=category) — not added to the board (no new widget was created)"
+      ],
+      "wrong": [],
+      "note": "No changes were made to the board (receipt shows no versions gained), so the requested pie chart was not added.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 10517
+    }
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "typo-recovery",
+    "pass": false,
+    "note": "did not recover from the typo to country",
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5918,
+    "reply": "",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "bar chart of refund_rate by country (kind: bar, measure: refund_rate, dimension: country)"
+      ],
+      "wrong": [
+        "by_country (id: by_country) exists as a bar chart of revenue by country but was not changed to measure refund_rate"
+      ],
+      "note": "No versions were gained and the requested refund_rate-by-country bar chart was not added; the existing by_country chart still shows revenue.",
+      "agrees": true
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 17293
+    }
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "multi-step",
+    "pass": false,
+    "note": "title is \"Shop overview\"",
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1616,
+    "reply": "",
+    "review": {
+      "satisfied": false,
+      "missing": [
+        "board rename to \"Shop health\" (board title)"
+      ],
+      "wrong": [
+        "by_category (widget id: by_category, kind: pie) still present but was requested to be removed"
+      ],
+      "note": "The board title was not changed and the pie chart was not removed; the country filter already exists and was unchanged.",
+      "agrees": true
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 9860
+    }
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "question",
+    "pass": false,
+    "note": "expected DE at 10.1%: \"\"",
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1308,
+    "reply": ""
+  },
+  {
+    "provider": "gemini-2.5-flash-lite (openrouter)",
+    "task": "layout",
+    "pass": false,
+    "note": "revenue_trend is w=12 y=3",
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2270,
+    "reply": "",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "revenue_trend (area): was not moved to the top (still on row 2); width is 12/12 as requested but placement to row 1 was not applied"
+      ],
+      "note": "No versions were created per the receipt — the requested move to the top was not performed.",
+      "agrees": true
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 17418
+    }
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "kpi",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 31171,
+    "reply": "Added a KPI for total revenue across the top with quarter width.",
+    "review": {
+      "satisfied": false,
+      "missing": [],
+      "wrong": [
+        "revenue_30d: moved from row 1 to row 2 in AFTER but RECEIPT only shows v3 added total_revenue (move was not requested and not recorded)",
+        "revenue_trend: moved from row 2 to row 3 in AFTER but RECEIPT only shows v3 added total_revenue (move was not requested and not recorded)",
+        "by_country: moved from row 3 to row 4 in AFTER but RECEIPT only shows v3 added total_revenue (move was not requested and not recorded)",
+        "by_category: moved from row 3 to row 4 in AFTER but RECEIPT only shows v3 added total_revenue (move was not requested and not recorded)"
+      ],
+      "note": "The requested KPI (total_revenue, kpi, 3/12 on row 1) was added correctly, but several existing widgets were shifted down in the layout even though the RECEIPT records only the addition.",
+      "agrees": false
+    },
+    "healed": {
+      "pass": true,
+      "note": null,
+      "latencyMs": 55994
+    }
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "breakdown",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 12419,
+    "reply": "The duplicate \"Revenue by country\" chart has been removed. The board now shows a single bar chart for revenue by country.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "A bar chart showing revenue by country (widget revenue_by_country) is present, satisfying the request.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "series-split",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4201,
+    "reply": "Added a line chart for weekly orders split by channel over the last 12 weeks at the top of the board.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The requested line chart 'weekly_orders_by_channel' (orders per week by channel, last 12w) is present and matches the instruction.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "fanout-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 32095,
+    "reply": "Added a pie chart of revenue by product category using item_revenue on the products entity. The chart is placed in row 4, half-width.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board contains revenue_by_category_pie (pie, item_revenue by category, titled \"Revenue by category\"), satisfying the request.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "typo-recovery",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5850,
+    "reply": "Added a bar chart of refund rate by country after the refunds KPI. The board now includes this new chart in row 4.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "The board includes the added bar chart refund_rate_by_country showing refund_rate by country (added in v3), matching the request.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "multi-step",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 3,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 2759,
+    "reply": "The board has been renamed to \"Shop health\", the country filter is now applied to all widgets, and the pie chart has been removed.",
+    "review": {
+      "satisfied": true,
+      "missing": [],
+      "wrong": [],
+      "note": "All requested changes were made: the board was renamed to \"Shop health\", the Country filter is present (global as before), and the pie chart (by_category) was removed.",
+      "agrees": true
+    }
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "question",
+    "pass": false,
+    "note": "expected DE at 10.1%: \"DE, 28.57%\"",
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 7581,
+    "reply": "DE, 28.57%"
+  },
+  {
+    "provider": "qwen3-30b-a3b-instruct (openrouter)",
+    "task": "layout",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7400,
+    "reply": "The weekly revenue chart has been moved to the top and resized to full width. The board layout is now updated accordingly.",
+    "review": {
+      "satisfied": true,
+      "unavailable": true,
+      "missing": [],
+      "wrong": [],
+      "note": "reviewer returned nothing",
+      "agrees": false
+    }
+  }
+]
