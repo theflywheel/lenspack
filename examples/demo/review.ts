@@ -36,8 +36,9 @@ export async function reviewTurn(model: LanguageModel, input: { instruction: str
     model,
     system: REVIEW_PROMPT,
     prompt: `INSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`,
-    // Reasoning models spend output tokens before the JSON; leave room.
-    maxOutputTokens: 2000,
+    // Reasoning models spend output tokens on hidden reasoning before the
+    // JSON, and this prompt carries a whole board; leave generous room.
+    maxOutputTokens: 4000,
     abortSignal: AbortSignal.timeout(timeoutMs),
   });
   const raw = out.text.trim();
