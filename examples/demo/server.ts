@@ -197,10 +197,13 @@ createServer(async (req, res) => {
               // Questions get no review: there is nothing on the board to check.
               if (versions.length === 0 && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
               let review;
+              const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
               try {
                 review = await reviewTurn(reviewer.languageModel, { instruction, before, after: summarise(current.config), receipt, refusals: refusalsFrom(steps as never) });
               } catch (e) {
-                review = { satisfied: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
+                review = { satisfied: true, unavailable: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
+              } finally {
+                clearInterval(beat);
               }
               writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...review, raw: undefined } });
               if (review.satisfied || review.unavailable || round === maxRounds) break;
@@ -214,10 +217,16 @@ createServer(async (req, res) => {
           onError: (e) => (e instanceof Error ? e.message : String(e)),
         });
         const response = createUIMessageStreamResponse({ stream });
-        const headers: Record<string, string> = {};
+        const headers: Record<string, string> = { "x-accel-buffering": "no" };
         response.headers.forEach((v, k) => (headers[k] = v));
         res.writeHead(response.status, headers);
-        if (response.body) for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
+        res.flushHeaders();
+        res.socket?.setNoDelay(true);
+        try {
+          if (response.body) for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
+        } catch {
+          // The reader went away mid-turn; the edits are already committed.
+        }
         return res.end();
       }
     }
