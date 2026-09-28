@@ -21,8 +21,23 @@ export type ProviderConfig = {
 
 export type Provider = ProviderConfig & { languageModel: LanguageModel; available: boolean | null; latencyMs?: number; error?: string };
 
+/**
+ * Names are the identifier, so they must be unique and are best written as
+ * the model alone ("glm-5.3-flash"). Two providers serving the same model
+ * from different hosts get a numbered suffix rather than silently shadowing
+ * each other.
+ */
+function uniqueNames(configs: ProviderConfig[]): ProviderConfig[] {
+  const seen = new Map<string, number>();
+  return configs.map((c) => {
+    const n = (seen.get(c.name) ?? 0) + 1;
+    seen.set(c.name, n);
+    return n === 1 ? c : { ...c, name: `${c.name} ${n}` };
+  });
+}
+
 export function providersFromEnv(env = process.env): ProviderConfig[] {
-  if (env.LENSPACK_LLM_PROVIDERS) return JSON.parse(env.LENSPACK_LLM_PROVIDERS) as ProviderConfig[];
+  if (env.LENSPACK_LLM_PROVIDERS) return uniqueNames(JSON.parse(env.LENSPACK_LLM_PROVIDERS) as ProviderConfig[]);
   if (env.LENSPACK_LLM_BASE_URL && env.LENSPACK_LLM_API_KEY) {
     return [
       {

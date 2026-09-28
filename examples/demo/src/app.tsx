@@ -486,14 +486,13 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <header className="border-b border-rule">
+      <header className="sticky top-0 z-30 border-b border-rule bg-background/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5">
-          <div className="flex min-w-0 items-center gap-2 text-sm">
-            <a href="/" className="font-mono text-sm font-semibold tracking-tight text-foreground">
+          <div className="flex min-w-0 items-center gap-2">
+            <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
               lenspack
             </a>
-            <span className="text-muted-foreground">/</span>
-            <span className="truncate font-mono text-xs text-muted-foreground">demo</span>
+            <span className="font-mono text-xs text-muted-foreground">/ demo</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -504,15 +503,15 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
                 setBoardId(next?.boards[0]?.id ?? "");
               }}
             >
-              <SelectTrigger size="sm" className="w-36" aria-label="Example pack"><SelectValue /></SelectTrigger>
+              <SelectTrigger size="sm" className="w-36 font-mono text-xs" aria-label="Example pack"><SelectValue /></SelectTrigger>
               <SelectContent>{catalog.map((c) => <SelectItem key={c.example} value={c.example}>{c.example}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={boardId} onValueChange={setBoardId}>
-              <SelectTrigger size="sm" className="w-52" aria-label="Board"><SelectValue /></SelectTrigger>
+              <SelectTrigger size="sm" className="w-52 text-xs" aria-label="Board"><SelectValue /></SelectTrigger>
               <SelectContent>{(current?.boards ?? []).map((b) => <SelectItem key={b.id} value={b.id}>{b.title}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={adapterName} onValueChange={setAdapterName}>
-              <SelectTrigger size="sm" className="w-40" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
+              <SelectTrigger size="sm" className="w-40 font-mono text-xs" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
               <SelectContent>{Object.keys(adapters).map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
             </Select>
           </div>
