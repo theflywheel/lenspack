@@ -35,6 +35,21 @@ export interface ChartAdapter {
   Chart: React.ComponentType<{ spec: ChartSpec }>;
 }
 
+/**
+ * How wide the value axis must be for its own labels. A fixed width clips
+ * "US$100,000" to "00,000" — the formatter knows how long its output is, so
+ * ask it rather than guessing.
+ */
+export function axisWidth(spec: ChartSpec, charPx = 7.2, padding = 14) {
+  let longest = 0;
+  for (const row of spec.rows)
+    for (const k of spec.keys) {
+      const v = row[k];
+      if (typeof v === "number") longest = Math.max(longest, spec.format(v).length);
+    }
+  return Math.min(120, Math.max(40, Math.ceil(longest * charPx) + padding));
+}
+
 export const SERIES_VARS = Array.from({ length: 8 }, (_, i) => `var(--lp-series-${i + 1})`);
 export const SEQUENTIAL_VARS = Array.from({ length: 8 }, (_, i) => `var(--lp-sequential-${i + 1})`);
 

@@ -4,7 +4,7 @@ import { BarChart, LineChart, PieChart } from "echarts/charts";
 import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
 import { CanvasRenderer, SVGRenderer } from "echarts/renderers";
 
-import { type ChartAdapter, type ChartSpec, resolveCssVar } from "../charts";
+import { type ChartAdapter, type ChartSpec, axisWidth, resolveCssVar } from "../charts";
 
 // An imperative, canvas-first library behind the same seam. The palette
 // arrives as CSS variables and is resolved against the mounted element, so
@@ -21,6 +21,7 @@ function toOption(spec: ChartSpec, el: HTMLElement): echarts.EChartsCoreOption {
   if (spec.chart === "pie") {
     return {
       color: colours,
+      animation: false,
       tooltip: { trigger: "item", valueFormatter: (v: number) => spec.format(v) },
       legend: spec.legend ? { bottom: 0, textStyle: { color: fg } } : undefined,
       series: [{ type: "pie", radius: ["45%", "80%"], data: spec.rows.map((r) => ({ name: String(r.group), value: r.value })), label: { show: false } }],
@@ -37,7 +38,8 @@ function toOption(spec: ChartSpec, el: HTMLElement): echarts.EChartsCoreOption {
   }));
   return {
     color: colours,
-    grid: { left: 56, right: 12, top: 12, bottom: spec.legend && spec.keys.length > 1 ? 40 : 28 },
+    animation: false,
+    grid: { left: axisWidth(spec) + 8, right: 12, top: 12, bottom: spec.legend && spec.keys.length > 1 ? 40 : 28 },
     tooltip: { trigger: "axis", valueFormatter: (v: number) => spec.format(v) },
     legend: spec.legend && spec.keys.length > 1 ? { bottom: 0, textStyle: { color: fg } } : undefined,
     xAxis: { type: "category", data: groups, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: fg, fontSize: 11 } },

@@ -1,300 +1,506 @@
 import * as React from "react";
 
-import type { Board as BoardT, Catalogue } from "@lenspack/core";
+import type { Board as BoardT, Catalogue, Query } from "@lenspack/core";
 import { Board, BoardProvider, type BoardHost, type ChartAdapter } from "@lenspack/react";
 
-import { Button } from "./components/ui/button";
-
-// The home page, in the register of a component library's docs: short claims,
-// a live preview beside the code that produced it, and steps you can follow.
+// The home page. One idea carries it: colour is provenance. A key that the
+// pack declares is always mono and blue — in the YAML, in prose, in a board
+// title. Something the compiler refuses is always mono and ochre. By the time
+// you reach the demo you have learned the product's whole thesis without
+// reading a feature list.
 
 const api = async (path: string) => (await fetch(`/api${path}`)).json();
 
+/** A key from the catalogue. The same treatment everywhere it appears. */
+function K({ children }: { children: React.ReactNode }) {
+  return <span className="key">{children}</span>;
+}
+
+/** Two-track page grid: a quiet rail of meta on the left, content on the right. */
+function Row({ label, children, className = "", wide = false }: { label?: React.ReactNode; children: React.ReactNode; className?: string; wide?: boolean }) {
+  if (wide)
+    return (
+      <div className={`mx-auto max-w-[1180px] px-6 ${className}`}>
+        {label && <div className="mb-3 font-mono text-2xs text-muted-foreground">{label}</div>}
+        {children}
+      </div>
+    );
+  return (
+    <div className={`mx-auto grid max-w-[1180px] grid-cols-1 gap-x-10 px-6 md:grid-cols-[132px_minmax(0,1fr)] ${className}`}>
+      <div className="hidden pt-1 font-mono text-2xs leading-5 text-muted-foreground md:block">{label}</div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
 export function Landing({ adapters }: { adapters: Record<string, ChartAdapter> }) {
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <Nav />
-      <main className="mx-auto max-w-6xl px-6">
-        <Hero />
-        <Preview adapters={adapters} />
+    <div className="min-h-screen bg-background text-body">
+      <Header />
+      <main>
+        <Hero adapters={adapters} />
+        <Refusals />
         <FirstBoard />
         <Packs />
-        <Generic />
-        <Security />
+        <Conformance />
+        <Guarantees />
       </main>
       <Footer />
     </div>
   );
 }
 
-function Nav() {
+function Header() {
   return (
-    <header className="sticky top-0 z-30 border-b border-border/60 bg-background/80 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <a href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <span className="inline-block h-5 w-5 rounded-sm bg-primary" aria-hidden />
+    <header className="sticky top-0 z-30 border-b border-rule bg-background/95 backdrop-blur-sm">
+      <div className="mx-auto flex h-14 max-w-[1180px] items-center justify-between px-6">
+        <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
           lenspack
         </a>
-        <nav className="flex items-center gap-1 text-sm">
-          <a className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground" href="https://github.com/theflywheel/lenspack/blob/main/docs/pack-spec.md">Docs</a>
-          <a className="rounded-md px-3 py-1.5 text-muted-foreground hover:text-foreground" href="https://github.com/theflywheel/lenspack">GitHub</a>
-          <Button asChild size="sm" className="ml-2"><a href="/app">Open the demo</a></Button>
+        <nav className="flex items-center gap-6 text-sm">
+          <a className="hover:text-foreground" href="https://github.com/theflywheel/lenspack/blob/main/docs/pack-spec.md">
+            Pack spec
+          </a>
+          <a className="hover:text-foreground" href="https://github.com/theflywheel/lenspack">
+            Source
+          </a>
+          <a className="border border-rule-strong bg-foreground px-3 py-1.5 font-medium text-background hover:opacity-90" href="/app">
+            Open the demo
+          </a>
         </nav>
       </div>
     </header>
   );
 }
 
-function Hero() {
-  return (
-    <section className="py-16 md:py-24">
-      <p className="mb-3 text-sm font-medium text-muted-foreground">Open source · Apache-2.0 · Postgres and DuckDB</p>
-      <h1 className="max-w-3xl text-4xl font-bold tracking-tight md:text-6xl">A dashboard is data, not code.</h1>
-      <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
-        Describe your data once in a pack. Any model, any chat, any MCP client can then build and edit boards over it — without ever writing SQL, JSX or a colour value. What the model cannot express, it cannot break.
-      </p>
-      <div className="mt-8 flex flex-wrap items-center gap-3">
-        <Button asChild><a href="/app">Try the live demo</a></Button>
-        <Button asChild variant="outline"><a href="https://github.com/theflywheel/lenspack">Read the source</a></Button>
-      </div>
-      <Install />
-    </section>
-  );
-}
+const PRESET_TABS = ["preview", "pack", "config"] as const;
+type PresetTab = (typeof PRESET_TABS)[number];
 
-function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
-  return (
-    <div className="inline-flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground" role="tablist">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          role="tab"
-          aria-selected={value === t.id}
-          onClick={() => onChange(t.id)}
-          className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${value === t.id ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"}`}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Code({ children, lang = "bash" }: { children: string; lang?: string }) {
-  return (
-    <pre className="overflow-x-auto rounded-lg border border-border bg-muted/50 p-4 font-mono text-[13px] leading-6" data-lang={lang}>
-      <code>{children}</code>
-    </pre>
-  );
-}
-
-function Install() {
-  const [tab, setTab] = React.useState<"pnpm" | "npm" | "mcp">("pnpm");
-  const cmd = {
-    pnpm: "pnpm add @lenspack/core @lenspack/spec @lenspack/sql @lenspack/react",
-    npm: "npm install @lenspack/core @lenspack/spec @lenspack/sql @lenspack/react",
-    mcp: "npx lenspack-mcp --pack ./packs/commerce.yaml --db ./commerce.duckdb",
-  }[tab];
-  return (
-    <div className="mt-10 max-w-2xl">
-      <Tabs tabs={[{ id: "pnpm", label: "pnpm" }, { id: "npm", label: "npm" }, { id: "mcp", label: "MCP client" }]} value={tab} onChange={setTab} />
-      <div className="mt-2">
-        <Code>{cmd}</Code>
-      </div>
-    </div>
-  );
-}
-
-// The component-preview pattern: the live thing on one tab, what produced it
-// on the others. The board is real, read-only, and rendered through whichever
-// charting library you pick — the config underneath never changes.
-function Preview({ adapters }: { adapters: Record<string, ChartAdapter> }) {
-  const [tab, setTab] = React.useState<"preview" | "pack" | "board">("preview");
+function Hero({ adapters }: { adapters: Record<string, ChartAdapter> }) {
+  const [tab, setTab] = React.useState<PresetTab>("preview");
   const [adapter, setAdapter] = React.useState("recharts");
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue; yaml: string; data: Record<string, unknown> } | null>(null);
+
   React.useEffect(() => {
     void Promise.all([api("/commerce/overview/canonical"), api("/commerce/pack")]).then(([b, p]) =>
       setState({ board: { ...b.board, updatedAt: new Date(b.board.updatedAt) }, catalogue: b.catalogue, yaml: p.yaml, data: b.data }),
     );
   }, []);
-  // The canonical board's data arrives with it; the preview never queries again.
   const host = React.useMemo<BoardHost>(() => ({ loadBoardData: async () => (state?.data ?? {}) as never }), [state]);
 
   return (
-    <section className="py-8">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">One board, four charting libraries</h2>
-          <p className="mt-1 text-sm text-muted-foreground">A real board from the <code className="font-mono">commerce</code> pack. Switch the library; the board config is untouched.</p>
+    <section className="border-b border-rule pb-14 pt-16 md:pt-24">
+      <Row label="lenspack">
+        <h1 className="max-w-[18ch] font-mono text-2xl font-semibold leading-[1.05] tracking-[-0.035em] text-foreground md:text-3xl lg:text-4xl">
+          A dashboard is data, not code.
+        </h1>
+        <p className="mt-7 max-w-[62ch] text-lg leading-[1.55]">
+          Declare your data once in a pack. After that a language model can build and edit dashboards over it by naming keys —{" "}
+          <K>revenue</K>, <K>country</K>, <K>refund_rate</K> — and nothing else. No SQL, no JSX, no colour values. What the pack does not declare,
+          the compiler will not build.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <a className="border border-foreground bg-foreground px-4 py-2 text-sm font-medium text-background hover:opacity-90" href="/app">
+            Open the demo
+          </a>
+          <a className="border border-rule-strong px-4 py-2 text-sm font-medium text-foreground hover:bg-accent" href="https://github.com/theflywheel/lenspack">
+            Read the source
+          </a>
+          <span className="font-mono text-xs text-muted-foreground">Apache-2.0 · Postgres and DuckDB</span>
         </div>
-        <div className="flex items-center gap-3">
-          <Tabs tabs={Object.keys(adapters).map((id) => ({ id, label: id }))} value={adapter} onChange={setAdapter} />
+      </Row>
+
+      <Row label="the binding" wide className="mt-16">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <p className="max-w-[54ch] text-sm">
+            On the left, everything a person writes. On the right, a board built only from it — rendered live, and by whichever charting library you
+            pick. The board never changes; only the renderer does.
+          </p>
+          <div className="flex gap-1 font-mono text-xs">
+            {Object.keys(adapters).map((n) => (
+              <button
+                key={n}
+                onClick={() => setAdapter(n)}
+                aria-pressed={adapter === n}
+                className={`border px-2 py-1 ${adapter === n ? "border-declared text-declared" : "border-rule text-muted-foreground hover:text-foreground"}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <Tabs tabs={[{ id: "preview", label: "Preview" }, { id: "pack", label: "pack.yaml" }, { id: "board", label: "board.json" }]} value={tab} onChange={setTab} />
-      <div className="mt-2 overflow-hidden rounded-xl border border-border bg-card">
-        {tab === "preview" && (
-          <div className="p-4 md:p-6" data-testid="landing-preview">
+
+        <div className="grid grid-cols-1 items-stretch gap-px border border-rule bg-rule lg:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="flex min-w-0 flex-col bg-card">
+            <div className="flex border-b border-rule">
+              {PRESET_TABS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  aria-pressed={tab === t}
+                  className={`border-r border-rule px-3 py-2 font-mono text-xs ${tab === t ? "bg-declared-soft text-declared" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {t === "preview" ? "pack.yaml" : t === "pack" ? "board.json" : "the ops"}
+                </button>
+              ))}
+            </div>
+            <div className="max-h-[520px] min-h-[320px] overflow-auto p-4">
+              {tab === "preview" && <Yaml text={state?.yaml ?? ""} />}
+              {tab === "pack" && <Code>{state ? JSON.stringify(state.board.config, null, 2) : ""}</Code>}
+              {tab === "config" && <Ops />}
+            </div>
+          </div>
+
+          <div className="min-w-0 bg-card p-4" data-testid="landing-preview">
             {state ? (
               <BoardProvider key={adapter} board={state.board} catalogue={state.catalogue} host={host} editable={false} charts={adapters[adapter]!}>
                 <Board />
               </BoardProvider>
             ) : (
-              <p className="p-10 text-center text-sm text-muted-foreground">Loading the board…</p>
+              <div className="grid h-[340px] place-items-center font-mono text-xs text-muted-foreground">building the board…</div>
             )}
           </div>
-        )}
-        {tab === "pack" && <Code lang="yaml">{state?.yaml ?? "…"}</Code>}
-        {tab === "board" && <Code lang="json">{state ? JSON.stringify(state.board.config, null, 2) : "…"}</Code>}
-      </div>
-      <p className="mt-3 text-sm text-muted-foreground">
-        The model only ever names keys from the pack and emits one of eight ops. The compiler refuses what the pack cannot answer — a fan-out, a missing tenant, a typo — with the nearest real key.{" "}
-        <a className="underline underline-offset-4" href="/app?example=commerce&board=overview">Edit this board with chat →</a>
-      </p>
+        </div>
+      </Row>
     </section>
   );
 }
 
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+// Long join clauses would dictate the panel's width; the pack's shape is what
+// matters here, and the whole file is one click away in the demo.
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/** The pack, with every declared key given the treatment it keeps everywhere. */
+function Yaml({ text }: { text: string }) {
+  if (!text) return <div className="font-mono text-xs text-muted-foreground">…</div>;
+  const lines = text.split("\n").slice(0, 46);
   return (
-    <div className="relative border-l border-border pl-8 pb-10 last:pb-0">
-      <span className="absolute -left-4 top-0 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background font-mono text-sm">{n}</span>
-      <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-      <div className="mt-3 space-y-3 text-sm text-muted-foreground [&_pre]:text-foreground">{children}</div>
+    <pre className="overflow-x-auto font-mono text-xs leading-[1.7]">
+      {lines.map((line, i) => {
+        const m = /^(\s*-?\s*\{?\s*key:\s*)([a-z_][a-z0-9_]*)(.*)$/.exec(line);
+        if (m)
+          return (
+            <div key={i}>
+              <span className="text-muted-foreground">{m[1]}</span>
+              <K>{m[2]}</K>
+              <span className="text-muted-foreground">{clip(m[3]!, 30)}</span>
+            </div>
+          );
+        const isComment = /^\s*#/.test(line);
+        const head = /^([a-z_]+):/.exec(line);
+        return (
+          <div key={i} className={isComment ? "text-muted-foreground/70" : head ? "text-foreground" : "text-muted-foreground"}>
+            {line.length > 72 ? `${line.slice(0, 72)}…` : line || " "}
+          </div>
+        );
+      })}
+      <div className="pt-2 text-muted-foreground/70">… the whole pack is 40 lines</div>
+    </pre>
+  );
+}
+
+function Code({ children }: { children: string }) {
+  return <pre className="overflow-x-auto font-mono text-xs leading-[1.7] text-muted-foreground">{children || "…"}</pre>;
+}
+
+const SENT_OPS = `{ "op": "add_widget", "id": "revenue_30d",
+  "widget": { "kind": "kpi", "title": "Revenue, last 30 days",
+    "query": { "kind": "value", "measure": "revenue",
+               "compare": "previous_period",
+               "time": { "last": "30d" } } },
+  "placement": { "place": "top", "width": "quarter" } }`;
+
+function Ops() {
+  return (
+    <div className="space-y-3">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        The model never emits SQL or markup. It emits one of eight operations, and every string in it must already be in the catalogue.
+      </p>
+      <pre className="overflow-x-auto font-mono text-xs leading-[1.7] text-muted-foreground">{SENT_OPS}</pre>
     </div>
   );
 }
 
-function FirstBoard() {
+// ── the refusal, live ──────────────────────────────────────────────────────
+// The most distinctive thing lenspack does is decline. This asks the real
+// compiler and prints what it actually says.
+
+type Probe = { ask: string; q: Query };
+const PROBES: Probe[] = [
+  { ask: "revenue by country", q: { kind: "breakdown", dimension: "country", measure: "revenue", limit: 10, sort: "desc" } },
+  { ask: "revenue by product category", q: { kind: "breakdown", dimension: "category", measure: "revenue", limit: 10, sort: "desc" } },
+  { ask: "revenue by contry", q: { kind: "breakdown", dimension: "contry", measure: "revenue", limit: 10, sort: "desc" } },
+  { ask: "median order value", q: { kind: "value", measure: "median_order" } },
+];
+
+type Verdict = { ok: boolean; sql?: string; code?: string; error?: string; nearest?: string };
+
+function Refusals() {
+  const [i, setI] = React.useState(0);
+  const [verdict, setVerdict] = React.useState<Verdict | null>(null);
+  React.useEffect(() => {
+    setVerdict(null);
+    const probe = PROBES[i]!;
+    void api(`/commerce/explain?q=${encodeURIComponent(JSON.stringify(probe.q))}`).then(setVerdict);
+  }, [i]);
+
   return (
-    <section className="py-16">
-      <h2 className="text-2xl font-semibold tracking-tight">Your first board</h2>
-      <p className="mt-1 mb-8 text-sm text-muted-foreground">Three steps. The pack is the only place a domain is described; everything after it is generic.</p>
-      <div className="max-w-3xl">
-        <Step n={1} title="Describe your data in a pack">
-          <p>Entities, dimensions, measures and joins — with their direction, so a fan-out can be refused instead of computed. Humans write the SQL fragments and review them in git.</p>
-          <Code lang="yaml">{`pack: commerce
-version: 1
-entities:
+    <section className="border-b border-rule py-14">
+      <Row label="the refusal">
+        <h2 className="max-w-[30ch] font-mono text-lg font-semibold tracking-[-0.02em] text-foreground md:text-xl">
+          A closed vocabulary is only useful if something enforces it.
+        </h2>
+        <p className="mt-4 max-w-[62ch] text-base">
+          Ask for something the pack cannot answer and the compiler declines, names the reason, and points at the nearest key that exists. Every
+          answer below comes from the running compiler, not from a screenshot.
+        </p>
+
+        <div className="mt-8 grid grid-cols-1 gap-px border border-rule bg-rule lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
+          <div className="bg-card">
+            {PROBES.map((p, n) => (
+              <button
+                key={p.ask}
+                onClick={() => setI(n)}
+                aria-pressed={i === n}
+                className={`block w-full border-b border-rule px-4 py-3 text-left font-mono text-xs last:border-b-0 ${i === n ? "bg-declared-soft text-declared" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {p.ask}
+              </button>
+            ))}
+          </div>
+          <div className="min-h-[188px] bg-card p-5">
+            {!verdict ? (
+              <div className="font-mono text-xs text-muted-foreground">compiling…</div>
+            ) : verdict.ok ? (
+              <div>
+                <p className="mb-3 font-mono text-xs text-declared">compiled</p>
+                <pre className="whitespace-pre-wrap break-all font-mono text-2xs leading-[1.7] text-muted-foreground">{verdict.sql?.split("\n").slice(0, 7).join("\n")}</pre>
+              </div>
+            ) : (
+              <div>
+                <p className="mb-3 font-mono text-xs">
+                  <span className="refusal">⊘ {verdict.code}</span>
+                </p>
+                <p className="max-w-[64ch] text-sm leading-relaxed text-foreground">{verdict.error}</p>
+                {verdict.nearest && (
+                  <p className="mt-3 text-sm">
+                    nearest key that exists: <K>{verdict.nearest}</K>
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </Row>
+    </section>
+  );
+}
+
+// ── three steps: a genuine sequence, so it is numbered ─────────────────────
+
+function FirstBoard() {
+  const steps = [
+    {
+      t: "Describe the data once",
+      b: (
+        <>
+          Entities, dimensions, measures and the direction of every join. A human writes this and reviews it in git; the model never edits it. The{" "}
+          <K>many_to_one</K> on a join is what lets the compiler refuse a fan-out later.
+        </>
+      ),
+      code: `entities:
   orders:
     source: orders
     grain: one row per order
     time: placed_at
     joins:
-      - { to: customers, on: orders.customer_id = customers.id, type: many_to_one }
-dimensions:
-  - { key: country, entity: customers, sql: country, synonyms: [market, region] }
+      - to: customers
+        on: orders.customer_id = customers.id
+        type: many_to_one
 measures:
-  - { key: revenue,     entity: orders, agg: sum, sql: total_cents / 100.0, format: currency }
-  - { key: refund_rate, entity: orders, agg: avg, sql: "(status = 'refunded')::int", format: percent }`}</Code>
-        </Step>
-        <Step n={2} title="Let a model build the board">
-          <p>Point any MCP client at the pack, or drop the same tools into your own agent. Every edit is a validated op; every refusal names the nearest real key.</p>
-          <Code lang="json">{`{ "mcpServers": { "commerce": { "command": "npx",
-    "args": ["lenspack-mcp", "--pack", "packs/commerce.yaml", "--db", "./commerce.duckdb"] } } }`}</Code>
-          <p className="italic">“Put revenue for the last 30 days as a KPI across the top, weekly revenue below it, and a pie of line revenue by category.”</p>
-        </Step>
-        <Step n={3} title="Render it">
-          <p>The renderer is the only code. It never touches a database or a model — data arrives through host callbacks — and the charting library is an adapter.</p>
-          <Code lang="tsx">{`import { BoardProvider, Board, FilterBar } from "@lenspack/react";
-import { rechartsAdapter } from "@lenspack/react/adapters/recharts";
-
-<BoardProvider board={board} catalogue={catalogue} host={host} charts={rechartsAdapter}>
+  - { key: revenue, entity: orders,
+      agg: sum, sql: total_cents / 100.0 }
+  - { key: refund_rate, entity: orders,
+      agg: avg, sql: "(status = 'refunded')::int" }`,
+    },
+    {
+      t: "Point a model at it",
+      b: (
+        <>
+          Any MCP client, or the same tools inside your own agent. A small model is enough: on the hardest example pack, five models under 30B
+          parameters pass nine or ten of ten build tasks.
+        </>
+      ),
+      code: `npx lenspack-mcp --pack packs/commerce.yaml --db ./commerce.duckdb`,
+    },
+    {
+      t: "Render it",
+      b: (
+        <>
+          The renderer is the only code. It never reaches a database or a model — data arrives through host callbacks — and the charting library is
+          an adapter you choose.
+        </>
+      ),
+      code: `<BoardProvider
+  board={board}
+  catalogue={catalogue}
+  host={host}
+  charts={rechartsAdapter}
+>
   <FilterBar />
   <Board />
-</BoardProvider>`}</Code>
-        </Step>
-      </div>
+</BoardProvider>`,
+    },
+  ];
+  return (
+    <section className="border-b border-rule py-14">
+      <Row label="how it goes">
+        <h2 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground md:text-xl">Three steps, and only the first is yours</h2>
+        <div className="mt-10 space-y-12">
+          {steps.map((s, i) => (
+            <div key={s.t} className="grid grid-cols-1 gap-x-8 gap-y-4 lg:grid-cols-[minmax(0,44ch)_minmax(0,1fr)]">
+              <div>
+                <div className="flex items-baseline gap-3">
+                  <span className="font-mono text-xs text-muted-foreground">{i + 1}</span>
+                  <h3 className="text-lg font-medium tracking-[-0.01em] text-foreground">{s.t}</h3>
+                </div>
+                <p className="mt-3 pl-7 text-sm leading-relaxed">{s.b}</p>
+              </div>
+              <pre className="overflow-x-auto border border-rule bg-card p-4 font-mono text-2xs leading-[1.75] text-muted-foreground">{s.code}</pre>
+            </div>
+          ))}
+        </div>
+      </Row>
     </section>
   );
 }
 
 const PACKS = [
-  { id: "commerce", title: "commerce", blurb: "A star schema with money, ratios, percentiles — and a fan-out trap the compiler refuses.", board: "overview" },
-  { id: "events", title: "events", blurb: "One wide table, every time grain, distinct counts, a high-cardinality dimension, a per-dialect fragment.", board: "traffic" },
-  { id: "consultation", title: "consultation", blurb: "Multilingual submissions with JSON metadata, multi-tenancy, and LLM-derived themes as ordinary joined dimensions.", board: "committee" },
-  { id: "tickets", title: "tickets", blurb: "State history, durations, an SLA breach rate as a filtered rate, a resolution rate as a ratio, a funnel.", board: "desk" },
-  { id: "hcm", title: "hcm", blurb: "A health-campaign registry with a genuinely awkward schema: epoch-millisecond times, soft deletes, dual keys, JSON in text, dotted hierarchies, fan-out everywhere.", board: "campaign" },
+  { id: "commerce", board: "overview", line: "A star schema, money and ratios — and a fan-out trap the compiler refuses." },
+  { id: "events", board: "traffic", line: "One wide table: every time grain, distinct counts, a high-cardinality dimension." },
+  { id: "consultation", board: "committee", line: "Multilingual text with JSON metadata, multi-tenancy, LLM-derived themes as joined dimensions." },
+  { id: "tickets", board: "desk", line: "State history, durations, an SLA breach rate, a funnel read from transitions." },
+  { id: "hcm", board: "campaign", line: "A deliberately awkward registry: epoch-millisecond times, soft deletes, dotted hierarchies." },
 ];
 
 function Packs() {
   return (
-    <section className="py-8">
-      <h2 className="text-2xl font-semibold tracking-tight">Five packs, five shapes of data</h2>
-      <p className="mt-1 mb-6 text-sm text-muted-foreground">Synthetic, seeded in seconds, and each one stresses a different axis of the abstraction.</p>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {PACKS.map((p) => (
-          <a key={p.id} href={`/app?example=${p.id}&board=${p.board}`} className="group rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent">
-            <div className="flex items-center justify-between">
-              <h3 className="font-mono text-sm font-semibold">{p.title}</h3>
-              <span className="text-xs text-muted-foreground group-hover:text-foreground">open →</span>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">{p.blurb}</p>
-          </a>
-        ))}
-      </div>
+    <section className="border-b border-rule py-14">
+      <Row label="five packs">
+        <h2 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground md:text-xl">Five shapes of data, one renderer</h2>
+        <p className="mt-4 max-w-[62ch] text-base">
+          Each one stresses a different axis of the abstraction, and each is synthetic and seeds in seconds. They are also the test suite: every board
+          below runs on Postgres and DuckDB in CI and the results must match.
+        </p>
+        <ul className="mt-8 border-t border-rule">
+          {PACKS.map((p) => (
+            <li key={p.id}>
+              <a
+                href={`/app?example=${p.id}&board=${p.board}`}
+                className="group grid grid-cols-1 items-baseline gap-x-6 gap-y-1 border-b border-rule py-4 sm:grid-cols-[140px_minmax(0,1fr)_auto] hover:bg-accent"
+              >
+                <span className="font-mono text-sm text-declared">{p.id}</span>
+                <span className="text-sm">{p.line}</span>
+                <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground">open</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </Row>
     </section>
   );
 }
 
-const CHECKS = [
-  ["Two engines, same answer", "Every example board runs on Postgres and DuckDB in CI; the results must match."],
-  ["One ops suite, four packs", "The core's tests run parametrised over every catalogue."],
+const CHECKS: [string, string][] = [
+  ["Two engines, one answer", "Every example board runs on Postgres and DuckDB; results must match after normalisation."],
+  ["One ops suite, five packs", "The core's tests run parametrised over every catalogue, not just the one it was written for."],
   ["Zero-domain grep", "CI fails if the core or the compiler contains a word from any example domain."],
-  ["Pack conformance", "Every dimension × measure × query shape compiles, or fails with a documented reason; every declared fan-out is refused; tenancy is present."],
-  ["The fifth pack", "Writing a pack for a new dataset should take under an hour and change nothing under packages/."],
+  ["Pack conformance", "Every dimension × measure × shape compiles or fails with a documented reason; declared fan-outs are refused; tenancy is present."],
+  ["The next pack", "Writing a pack for a new dataset takes under an hour and changes nothing under packages/."],
 ];
 
-function Generic() {
+function Conformance() {
   return (
-    <section className="py-16">
-      <h2 className="text-2xl font-semibold tracking-tight">What “generic” means here</h2>
-      <p className="mt-1 mb-6 max-w-2xl text-sm text-muted-foreground">
-        lenspack was extracted from a public-consultation tool whose dashboard logic was hard-wired to one schema. Five CI checks keep the abstraction honest.
-      </p>
-      <ol className="grid gap-3 md:grid-cols-2">
-        {CHECKS.map(([t, d], i) => (
-          <li key={t} className="rounded-lg border border-border p-4">
-            <div className="flex items-baseline gap-3">
-              <span className="font-mono text-xs text-muted-foreground">0{i + 1}</span>
-              <h3 className="font-medium">{t}</h3>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">{d}</p>
-          </li>
-        ))}
-      </ol>
+    <section className="border-b border-rule py-14">
+      <Row label="what holds">
+        <h2 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground md:text-xl">Claims that fail the build when they stop being true</h2>
+        <p className="mt-4 max-w-[62ch] text-base">
+          lenspack came out of a consultation tool whose dashboard logic was welded to one schema. These five checks are what keep the abstraction
+          honest now that it is not.
+        </p>
+        <table className="mt-8 w-full border-collapse text-left">
+          <tbody>
+            {CHECKS.map(([t, d]) => (
+              <tr key={t} className="border-b border-rule align-baseline first:border-t">
+                <th scope="row" className="w-[240px] py-4 pr-6 text-sm font-medium text-foreground">
+                  {t}
+                </th>
+                <td className="py-4 text-sm">{d}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Row>
     </section>
   );
 }
 
-function Security() {
+function Guarantees() {
+  const lines = [
+    <>
+      The model's only outputs are operations and queries — closed unions, validated before anything reaches a database.
+    </>,
+    <>
+      Every identifier in the emitted SQL comes from the pack; every value is a bound parameter; a <K>LIMIT</K> is always present.
+    </>,
+    <>Tenancy is structural: an entity that declares a tenant cannot be queried without one, so there is no forgot-to-filter state.</>,
+    <>
+      Raw SQL is off by default. Switched on it is read-only, timeboxed, capped, and its results can never become a widget.
+    </>,
+    <>No URLs, no markup and no colour values in any board. Text renders as text; a scheme name maps to a CSS variable.</>,
+  ];
   return (
-    <section className="pb-20">
-      <div className="rounded-xl border border-border bg-muted/40 p-6">
-        <h2 className="text-lg font-semibold tracking-tight">The model’s only outputs are ops and queries — closed unions, validated before anything touches a database.</h2>
-        <ul className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
-          <li>No URLs, markup or colours in any config; text renders as text.</li>
-          <li>Tenancy is structural: an entity that declares a tenant cannot be queried without one.</li>
-          <li>Every identifier comes from the pack; every value is a bound parameter; LIMIT is always emitted.</li>
-          <li><code className="font-mono">run_sql</code> is off by default; on, it is read-only, timeboxed, and can never become a widget.</li>
+    <section className="py-14">
+      <Row label="the guarantees">
+        <ul className="space-y-4 border-t border-rule pt-6">
+          {lines.map((l, i) => (
+            <li key={i} className="max-w-[72ch] text-base leading-relaxed">
+              {l}
+            </li>
+          ))}
         </ul>
-        <a className="mt-4 inline-block text-sm underline underline-offset-4" href="https://github.com/theflywheel/lenspack/blob/main/docs/security.md">Security model →</a>
-      </div>
+        <a className="mt-8 inline-block border-b border-declared pb-0.5 font-mono text-xs text-declared" href="https://github.com/theflywheel/lenspack/blob/main/docs/security.md">
+          The security model in full
+        </a>
+      </Row>
     </section>
   );
 }
 
 function Footer() {
   return (
-    <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-8 text-sm text-muted-foreground">
-        <span>lenspack · Apache-2.0 · built by <a className="underline underline-offset-4" href="https://theflywheel.in">The Flywheel</a></span>
-        <span className="flex gap-4">
-          <a className="hover:text-foreground" href="https://github.com/theflywheel/lenspack">GitHub</a>
-          <a className="hover:text-foreground" href="https://github.com/theflywheel/lenspack/blob/main/docs/writing-a-pack.md">Writing a pack</a>
-          <a className="hover:text-foreground" href="/app">Demo</a>
-        </span>
-      </div>
+    <footer className="border-t border-rule py-8">
+      <Row>
+        <div className="flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-muted-foreground">
+          <span>
+            lenspack · Apache-2.0 · built by{" "}
+            <a className="text-foreground hover:text-declared" href="https://theflywheel.in">
+              The Flywheel
+            </a>
+          </span>
+          <span className="flex gap-5">
+            <a className="hover:text-foreground" href="https://github.com/theflywheel/lenspack">
+              GitHub
+            </a>
+            <a className="hover:text-foreground" href="https://github.com/theflywheel/lenspack/blob/main/docs/writing-a-pack.md">
+              Writing a pack
+            </a>
+            <a className="hover:text-foreground" href="/app">
+              Demo
+            </a>
+          </span>
+        </div>
+      </Row>
     </footer>
   );
 }

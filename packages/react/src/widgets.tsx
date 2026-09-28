@@ -18,6 +18,24 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <div className="lp-empty">{children}</div>;
 }
 
+/**
+ * A widget the compiler would not build. It gets the same treatment as a
+ * refusal anywhere else — the reason in full, and the nearest key that does
+ * exist — rather than an apology in grey.
+ */
+function Problem({ message, hint }: { message: string; hint?: string }) {
+  return (
+    <div className="lp-problem">
+      <p className="lp-problem-reason">{message}</p>
+      {hint && (
+        <p className="lp-problem-hint">
+          nearest key that exists: <code>{hint}</code>
+        </p>
+      )}
+    </div>
+  );
+}
+
 // The chart widget is library-agnostic: it builds a ChartSpec and hands it to
 // whichever adapter the provider holds (svg when none is given).
 export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
@@ -34,7 +52,7 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
 
 export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
   if (!data) return <Empty>Loading…</Empty>;
-  if (data.error) return <Empty>{data.error}</Empty>;
+  if (data.error) return <Problem message={data.error} hint={data.hint} />;
   const values = data.rows.map((r) => r.value ?? 0);
   const value =
     values.length === 0
@@ -66,7 +84,7 @@ export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
 
 export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
   if (!data) return <Empty>Loading…</Empty>;
-  if (data.error) return <Empty>{data.error}</Empty>;
+  if (data.error) return <Problem message={data.error} hint={data.hint} />;
   if (data.records) {
     const columns = data.columns ?? Object.keys(data.records[0] ?? {});
     return (

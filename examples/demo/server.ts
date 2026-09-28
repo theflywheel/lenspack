@@ -8,10 +8,10 @@ import { join } from "node:path";
 
 import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardOp, boardConfigSchema, opSchema, summarise } from "@lenspack/core";
+import { type BoardOp, boardConfigSchema, opSchema, querySchema, summarise } from "@lenspack/core";
 import { boardTools, fileProposals, toVercelAI } from "@lenspack/mcp";
 import { catalogueFrom } from "@lenspack/spec";
-import { type Executor, type Writer, checkOps, dimensionValues, resolveBoard, sqlStore } from "@lenspack/sql";
+import { type Executor, type Writer, ResolveError, checkOps, compile, dimensionValues, resolveBoard, sqlStore } from "@lenspack/sql";
 
 import { type ExampleName, buildBoard, contextFor, examples } from "../index";
 import { buildProvider, probe, providersFromEnv, publicView, stopOnRepeatedRefusals } from "./llm";
@@ -78,6 +78,19 @@ createServer(async (req, res) => {
     if (!h || !ex) return json(res, 404, { error: "no such example" });
     if (!boardId) return json(res, 200, { example: exampleName, pack: ex.pack.pack, description: ex.pack.description, boards: await h.store.list(), catalogue: h.catalogue });
     if (boardId === "pack") return json(res, 200, { yaml: ex.packYaml });
+    // Compile one query without running it: the landing page shows the real
+    // SQL, or the real refusal, rather than a screenshot of either.
+    if (boardId === "explain" && req.method === "GET") {
+      const ctx = contextFor[exampleName as ExampleName];
+      try {
+        const query = querySchema.parse(JSON.parse(url.searchParams.get("q") ?? "{}"));
+        const c = compile(query, ex.pack, { dialect: h.db.dialect, ctx });
+        return json(res, 200, { ok: true, sql: c.sql, params: c.params.length, entities: c.bound.entitiesUsed });
+      } catch (e) {
+        if (e instanceof ResolveError) return json(res, 200, { ok: false, code: e.code, error: e.message, nearest: e.nearest, key: e.key });
+        return json(res, 200, { ok: false, code: "INVALID", error: e instanceof Error ? e.message.slice(0, 200) : String(e) });
+      }
+    }
     // Temporary boards for previews and evals: created from a config, deleted after.
     if (boardId === "boards" && req.method === "POST") {
       const body = (await read(req)) as { config: unknown; title?: string; temporary?: boolean };

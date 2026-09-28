@@ -132,6 +132,7 @@ describe("refusals", () => {
     expect(e.message).toContain("parts");
     expect(e.message).toContain("colour");
     expect(e.nearest).toBe("parts");
+    expect(e.message).toContain("Measure one of these instead");
   });
 
   it("allows the same join in the safe direction", async () => {

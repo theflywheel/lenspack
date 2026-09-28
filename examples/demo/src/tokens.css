@@ -1,0 +1,216 @@
+@import "tailwindcss";
+
+/* ── lenspack design tokens ──────────────────────────────────────────────
+   One idea carries this design: colour is provenance.
+
+     declared  a key that exists in the pack — the model may name it
+     refused   something the compiler would not compile
+
+   Those two are the only hues with meaning. Everything else is paper,
+   ink and rule. The chart ramp is built on the same circle so a chart
+   never shouts louder than the text around it.
+   ────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --paper: #fcfcfa;
+  --raised: #ffffff;
+  --ink: #000000;
+  --body: #3a3a3c;
+  --mute: #63635f;
+  --rule: #e2e0d9;
+  --rule-strong: #cfccc2;
+
+  --declared: #1f3be0;
+  --declared-soft: #edefff;
+  --refused: #8a4600;
+  --refused-soft: #fbf0e4;
+
+  /* Categorical series: one lightness/chroma circle, so every series
+     carries the same visual weight. The first is the declared blue. */
+  --lp-series-1: oklch(0.52 0.21 266);
+  --lp-series-2: oklch(0.58 0.13 192);
+  --lp-series-3: oklch(0.57 0.15 58);
+  --lp-series-4: oklch(0.52 0.18 322);
+  --lp-series-5: oklch(0.60 0.14 142);
+  --lp-series-6: oklch(0.55 0.17 24);
+  --lp-series-7: oklch(0.58 0.09 243);
+  --lp-series-8: oklch(0.57 0.11 92);
+
+  /* Sequential: one measure, ordered. Pure descent from the declared hue. */
+  --lp-sequential-1: oklch(0.32 0.15 266);
+  --lp-sequential-2: oklch(0.40 0.18 266);
+  --lp-sequential-3: oklch(0.48 0.20 266);
+  --lp-sequential-4: oklch(0.56 0.18 266);
+  --lp-sequential-5: oklch(0.64 0.15 266);
+  --lp-sequential-6: oklch(0.72 0.11 266);
+  --lp-sequential-7: oklch(0.80 0.08 266);
+  --lp-sequential-8: oklch(0.88 0.05 266);
+
+  /* shadcn surface tokens, re-pointed at the palette above. */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--raised);
+  --card-foreground: var(--ink);
+  --muted: #f3f2ee;
+  --muted-foreground: var(--mute);
+  --accent: #f3f2ee;
+  --accent-foreground: var(--ink);
+  --border: var(--rule);
+  --input: var(--rule-strong);
+  --ring: var(--declared);
+  --primary: var(--ink);
+  --primary-foreground: #ffffff;
+  --secondary: #f3f2ee;
+  --secondary-foreground: var(--ink);
+  --destructive: var(--refused);
+  --popover: var(--raised);
+  --popover-foreground: var(--ink);
+  --radius: 3px;
+}
+
+/* Dark is tinted toward the signal rather than toward grey: the ground is
+   the declared blue taken almost to black, so the accent belongs to it. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0b0e1a;
+    --raised: #121628;
+    --ink: #f6f7fb;
+    --body: #c8cbd8;
+    --mute: #9096a8;
+    --rule: #232a43;
+    --rule-strong: #333c5c;
+
+    --declared: #8fa2ff;
+    --declared-soft: #182046;
+    --refused: #e0a35e;
+    --refused-soft: #2a1f12;
+
+    --lp-series-1: oklch(0.72 0.16 266);
+    --lp-series-2: oklch(0.76 0.12 192);
+    --lp-series-3: oklch(0.76 0.13 58);
+    --lp-series-4: oklch(0.72 0.15 322);
+    --lp-series-5: oklch(0.78 0.13 142);
+    --lp-series-6: oklch(0.70 0.15 24);
+    --lp-series-7: oklch(0.74 0.09 243);
+    --lp-series-8: oklch(0.76 0.11 92);
+
+    --lp-sequential-1: oklch(0.90 0.05 266);
+    --lp-sequential-2: oklch(0.82 0.09 266);
+    --lp-sequential-3: oklch(0.74 0.13 266);
+    --lp-sequential-4: oklch(0.66 0.16 266);
+    --lp-sequential-5: oklch(0.58 0.18 266);
+    --lp-sequential-6: oklch(0.50 0.19 266);
+    --lp-sequential-7: oklch(0.42 0.17 266);
+    --lp-sequential-8: oklch(0.34 0.14 266);
+
+    --muted: #171c30;
+    --accent: #1a2038;
+    --secondary: #1a2038;
+    --primary: #f6f7fb;
+    --primary-foreground: #0b0e1a;
+    --destructive: #e0a35e;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-body: var(--body);
+  --color-declared: var(--declared);
+  --color-declared-soft: var(--declared-soft);
+  --color-refused: var(--refused);
+  --color-refused-soft: var(--refused-soft);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* A perfect fourth, rounded to whole pixels. */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-lg: 20px;
+  --text-xl: 27px;
+  --text-2xl: 36px;
+  --text-3xl: 48px;
+  --text-4xl: 64px;
+}
+
+html { -webkit-font-smoothing: antialiased; }
+body { background: var(--paper); color: var(--body); font-family: var(--font-sans); }
+::selection { background: var(--declared); color: #fff; }
+
+/* A key from the pack, wherever it appears: prose, YAML, board titles,
+   transcripts. Seeing the same treatment everywhere is what teaches the
+   closed vocabulary without a paragraph explaining it. */
+.key {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--declared);
+  background: var(--declared-soft);
+  padding: 0.5px 4px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.refusal {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--refused);
+  background: var(--refused-soft);
+  padding: 0.5px 4px;
+  border-radius: 2px;
+}
+
+/* Visible keyboard focus on everything, once. */
+:where(a, button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--declared);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Tailwind preflight resets these; the library's own controls expect them. */
+button, select, input { font: inherit; }
+
+/* The board's cards take the same surface tokens, so the library's renderer
+   and the page around it are one design rather than two. */
+:root {
+  --lp-bg: var(--card);
+  --lp-fg: var(--card-foreground);
+  --lp-muted: var(--mute);
+  --lp-border: var(--rule);
+  --lp-hover: var(--accent);
+  --lp-radius: var(--radius);
+  --lp-mono: var(--font-mono);
+  --lp-key: var(--declared);
+  --lp-refused: var(--refused);
+}
+.lp-widget { box-shadow: none; }
+.lp-widget-title { font-size: 13px; font-weight: 500; letter-spacing: -0.006em; }
+.lp-kpi-value { font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.lp-table { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

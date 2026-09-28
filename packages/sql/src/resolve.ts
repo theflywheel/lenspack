@@ -109,16 +109,22 @@ function joinPath(pack: Pack, graph: Map<string, Edge[]>, root: string, target: 
   };
   const safe = search(false);
   if (safe) return safe;
-  if (search(true)) {
-    const onTarget = pack.measures.filter((m) => m.entity === target).map((m) => m.key);
+  const fanout = search(true);
+  if (fanout) {
+    // Suggest measures on any entity the fan-out path crosses, not just its
+    // far end: the useful answer usually lives on the intermediate table
+    // (the join table rather than its far end), and a target with no measures
+    // of its own would otherwise produce a refusal with no way forward.
+    const crossed = [target, ...fanout.map((step) => step.to)];
+    const onPath = pack.measures.filter((m) => crossed.includes(m.entity) && !m.derived).map((m) => m.key);
     const onRoot = pack.dimensions.filter((d) => d.entity === root && d.type !== "time").map((d) => d.key);
     throw new ResolveError(
       "FANOUT_REFUSED",
       `"${dimensionKey}" lives on "${target}", which has many rows per "${root}" row; grouping a ${root}-level measure by it would multiply the numbers.` +
-        (onTarget.length ? ` Use a measure on "${target}" instead: ${onTarget.join(", ")}.` : "") +
-        (onRoot.length ? ` Or keep the measure and use a dimension on "${root}": ${onRoot.join(", ")}.` : ""),
+        (onPath.length ? ` Measure one of these instead: ${onPath.join(", ")}.` : "") +
+        (onRoot.length ? ` Or keep the measure and group by a dimension on "${root}": ${onRoot.join(", ")}.` : ""),
       dimensionKey,
-      onTarget[0],
+      onPath[0],
     );
   }
   throw new ResolveError("NO_JOIN_PATH", `No join path from "${root}" to "${target}" is declared in the pack`, dimensionKey);

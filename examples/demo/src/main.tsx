@@ -7,7 +7,7 @@ import { rechartsAdapter } from "@lenspack/react/adapters/recharts";
 import { createShadcnAdapter } from "@lenspack/react/adapters/shadcn";
 import { svgAdapter } from "@lenspack/react/adapters/svg";
 import "@lenspack/react/styles.css";
-import "./tailwind.css";
+import "./tokens.css";
 
 import { App } from "./app";
 import * as shadcn from "./components/ui/chart";
@@ -18,7 +18,7 @@ import { Landing } from "./landing";
 const ADAPTERS: Record<string, ChartAdapter> = {
   recharts: rechartsAdapter,
   echarts: createEchartsAdapter(),
-  shadcn: createShadcnAdapter(shadcn, { palette: ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"] }),
+  shadcn: createShadcnAdapter(shadcn),
   svg: svgAdapter,
 };
 

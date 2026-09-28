@@ -1,15 +1,15 @@
 import * as React from "react";
 
-import type { ChartAdapter, ChartSpec } from "../charts";
+import { type ChartAdapter, type ChartSpec, axisWidth } from "../charts";
 
 // The zero-dependency adapter: enough to render every chart kind readably,
 // deterministic for tests, and the default when no library is supplied.
 
 const W = 600;
 const H = 300;
-const PAD = { top: 12, right: 12, bottom: 28, left: 56 };
 
 function scales(spec: ChartSpec) {
+  const PAD = { top: 12, right: 12, bottom: 28, left: axisWidth(spec) + 8 };
   const values = spec.rows.flatMap((r) => spec.keys.map((k) => (typeof r[k] === "number" ? (r[k] as number) : 0)));
   const max = Math.max(0, ...values);
   const min = Math.min(0, ...values);
@@ -18,10 +18,11 @@ function scales(spec: ChartSpec) {
   const y = (v: number) => PAD.top + innerH - ((v - min) / (max - min || 1)) * innerH;
   const x = (i: number) => PAD.left + ((i + 0.5) / spec.rows.length) * innerW;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => min + (max - min) * t);
-  return { max, min, innerW, innerH, x, y, ticks };
+  return { max, min, innerW, innerH, x, y, ticks, PAD };
 }
 
 function Axes({ spec, s }: { spec: ChartSpec; s: ReturnType<typeof scales> }) {
+  const PAD = s.PAD;
   const step = Math.max(1, Math.ceil(spec.rows.length / 8));
   return (
     <g className="lp-svg-axes" fontSize={11} fill="currentColor" opacity={0.7}>
@@ -53,6 +54,7 @@ function Legend({ spec }: { spec: ChartSpec }) {
 
 function SvgChart({ spec }: { spec: ChartSpec }) {
   const s = scales(spec);
+  const PAD = s.PAD;
   const n = spec.rows.length;
 
   if (spec.chart === "pie") {

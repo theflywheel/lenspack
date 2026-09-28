@@ -143,9 +143,9 @@ export function ChatPanel({
     setInput("");
   };
   return (
-    <Card className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col gap-0 py-0" data-testid="chat">
+    <Card className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col gap-0 rounded-md py-0" data-testid="chat">
       <CardHeader className="flex flex-row items-center justify-between gap-2 border-b py-3 [.border-b]:pb-3">
-        <CardTitle className="shrink-0 whitespace-nowrap text-sm">Chat</CardTitle>
+        <CardTitle className="shrink-0 whitespace-nowrap font-mono text-xs font-medium text-muted-foreground">build with chat</CardTitle>
         {models.length > 1 && (
           <Select value={model} onValueChange={onModelChange}>
             <SelectTrigger size="sm" className="h-7 min-w-0 flex-1 text-xs [&>span]:truncate" aria-label="Model" data-testid="model-select">
@@ -167,9 +167,11 @@ export function ChatPanel({
         <CardContent className="space-y-4 py-4">
           {messages.length === 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Describe what belongs on this board. Every change is a version, so nothing is hard to undo.</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Describe what belongs on this board. Every change is a version, so nothing here is hard to undo.
+              </p>
               {suggestions.map((s) => (
-                <Button key={s} variant="outline" size="sm" className="h-auto w-full justify-start whitespace-normal py-1.5 text-left text-xs font-normal" onClick={() => ask(s)}>
+                <Button key={s} variant="outline" size="sm" className="h-auto w-full justify-start whitespace-normal rounded-sm py-1.5 text-left text-xs font-normal leading-snug" onClick={() => ask(s)}>
                   {s}
                 </Button>
               ))}
@@ -177,7 +179,7 @@ export function ChatPanel({
           )}
           {messages.map((m) => (
             <div key={m.id} className="space-y-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{m.role === "user" ? "You" : "lenspack"}</p>
+              <p className="font-mono text-2xs text-muted-foreground">{m.role === "user" ? "you" : "lenspack"}</p>
               {(m.parts as Part[]).filter((p) => p.type.startsWith("tool-")).map((p, i) => (
                 <StepBadge key={i} name={p.type.slice(5)} part={p} />
               ))}
@@ -484,17 +486,16 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
-      <header className="border-b">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4">
+      <header className="border-b border-rule">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2 text-sm">
-            <a href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-              <span className="inline-block size-4 rounded-sm bg-primary" aria-hidden />
+            <a href="/" className="font-mono text-sm font-semibold tracking-tight text-foreground">
               lenspack
             </a>
             <span className="text-muted-foreground">/</span>
-            <span className="truncate text-muted-foreground">demo</span>
+            <span className="truncate font-mono text-xs text-muted-foreground">demo</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Select
               value={example}
               onValueChange={(v) => {
@@ -519,18 +520,13 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6">
-        <div className={chatEnabled ? "grid gap-6 lg:grid-cols-4" : ""}>
-          {chatEnabled && (
-            <div className="lg:col-span-1">
-              <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={reloadBoard} models={models} model={model} onModelChange={setModel} />
-            </div>
-          )}
-          <div className={chatEnabled ? "min-w-0 lg:col-span-3" : "min-w-0"}>
+        <div className={chatEnabled ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]" : ""}>
+          <div className={chatEnabled ? "order-1 min-w-0" : "min-w-0"}>
             <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} charts={adapters[adapterName]!}>
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h1 className="text-xl font-semibold tracking-tight">{state.board.config.title}</h1>
-                  {current?.description && <p className="mt-1 text-sm text-muted-foreground">{current.description}</p>}
+                <div className="min-w-0">
+                  <h1 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground">{state.board.config.title}</h1>
+                  {current?.description && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">{current.description}</p>}
                 </div>
                 <div className="flex items-center gap-2">
                   <LayoutMode />
@@ -538,13 +534,26 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
                 </div>
               </div>
               <div className="space-y-3">
-                <OpsBox />
                 <FilterBar />
+                <details className="group">
+                  <summary className="w-fit cursor-pointer list-none font-mono text-xs text-muted-foreground hover:text-foreground">
+                    <span className="group-open:hidden">Edit with an operation instead</span>
+                    <span className="hidden group-open:inline">Operation</span>
+                  </summary>
+                  <div className="mt-2">
+                    <OpsBox />
+                  </div>
+                </details>
               </div>
               <Separator className="my-4" />
-              <Board />
+              <Board showQueries />
             </BoardProvider>
           </div>
+          {chatEnabled && (
+            <div className="order-2 min-w-0">
+              <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={reloadBoard} models={models} model={model} onModelChange={setModel} />
+            </div>
+          )}
         </div>
       </main>
       <footer className="mx-auto max-w-7xl px-4 pb-10 text-xs text-muted-foreground">

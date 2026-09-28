@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Pie, PieChart, XAxis, YAxis } from "recharts";
 
-import type { ChartAdapter, ChartSpec } from "../charts";
+import { type ChartAdapter, type ChartSpec, axisWidth } from "../charts";
 
 // shadcn's chart primitives are copy-paste code that lives in the host app —
 // "the components are yours" — so this adapter takes them as arguments rather
@@ -73,7 +73,7 @@ export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOption
     const axes = [
       <CartesianGrid key="g" vertical={false} />,
       <XAxis key="x" dataKey={spec.groupKey} tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />,
-      <YAxis key="y" tickLine={false} axisLine={false} width={48} fontSize={11} tickFormatter={(v: number) => spec.format(v)} />,
+      <YAxis key="y" tickLine={false} axisLine={false} width={axisWidth(spec)} fontSize={11} tickFormatter={(v: number) => spec.format(v)} />,
       <ChartTooltip key="t" content={<ChartTooltipContent formatter={tooltipFormatter} />} />,
       ...(spec.legend && map.length > 1 ? [<ChartLegend key="l" content={<ChartLegendContent />} />] : []),
     ];
