@@ -28,11 +28,27 @@ Every identifier from the pack; every value a bound parameter; tenant predicate 
 
 ## `run_sql`
 
-Off by default. When enabled: one statement, `SELECT`/`WITH` by shape, wrapped in `SELECT * FROM (…) LIMIT n`, executed through the read-only executor. No keyword denylist — a denylist cannot know what a function does; the role and the transaction mode are the guards. Results are returned to the caller and cannot be attached to a widget: if an answer is worth keeping, `propose_measure` it and let a human promote it.
+Off by default, and refused on a pack with tenant-scoped entities or a caller scope: raw SQL does not pass through the pack, so neither applies to it. There it can be enabled only as `runSql: "role-scoped"` (`--run-sql-role-scoped`), which states that the database role behind the connection already limits what it can read. When enabled: one statement, `SELECT`/`WITH` by shape, wrapped in `SELECT * FROM (…) LIMIT n`, executed through the read-only executor. No keyword denylist — a denylist cannot know what a function does; the role and the transaction mode are the guards. Results are returned to the caller and cannot be attached to a widget: if an answer is worth keeping, `propose_measure` it and let a human promote it.
 
 ## Tenancy
 
 An entity that declares `tenant` cannot be queried without one; the predicate is pushed into that entity's subquery. The tenant value comes from the host's `ctx`, never from the model.
+
+## Callers: who, which rows, what they may change
+
+lenspack keeps no users. The deployment identifies each caller through an `access(request)` hook, or `auth:` in `lenspack.yaml`:
+
+- `tokens`: bearer tokens the deployment issues, each an `env:` reference, compared in constant time.
+- `proxy`: a login proxy in front names the user in a header. The header is believed only when the request carries the proxy's shared secret (16+ characters), so a caller who reaches lenspack directly cannot claim to be anyone.
+- `none`: open, and it must be written down. With no `auth:` block the server listens on 127.0.0.1 only.
+
+The answer is a principal: `{ user, tenant?, scope?, edit?, packs? }`.
+
+- **Unknown caller:** 401 on every API path. A pack outside `packs` answers 404, as if it did not exist.
+- **Tenant:** narrows the pack's tenancy; it can never move a pack the config pins to another tenant (403).
+- **Scope:** filter clauses added to every query in resolution — boards, filter menus, explain, chat tools — on every connector. A query whose root cannot be narrowed by a scope dimension is refused with `OUT_OF_SCOPE` rather than answered for all rows. Cached results are keyed by the compiled statement and its parameters, so one caller's rows are never served to another.
+- **Edit:** every non-GET request (ops, layout, revert, chat, create, delete) needs it; a viewer gets 403.
+- **Audit:** every change, refused change and denied request goes to the `audit` hook with the user, pack, board and outcome (`audit: ./audit.jsonl` appends JSON lines).
 
 ## Pack fragments are code
 

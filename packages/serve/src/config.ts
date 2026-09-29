@@ -11,6 +11,7 @@ import YAML from "yaml";
 import { z } from "zod";
 
 import type { BoardFile, Host } from "./app";
+import { authSchema } from "./auth";
 
 // lenspack.yaml: which sources exist, which pack reads which source, and where
 // boards are kept. Secrets are never written here — only `env:NAME`, read from
@@ -49,6 +50,16 @@ export const configSchema = z.object({
   store: z.union([z.object({ kind: z.literal("memory") }), z.object({ kind: z.literal("duckdb"), path: z.string().min(1) }), z.object({ kind: z.literal("postgres"), url: secret })]).default({ kind: "memory" }),
   ui: z.string().optional(),
   port: z.number().int().positive().optional(),
+  /**
+   * Who may use the API. Absent: the server listens on 127.0.0.1 only, for
+   * local use. `{ kind: none }` opens it to the network with no sign-in —
+   * say so explicitly; `tokens` or `proxy` identify each caller.
+   */
+  auth: authSchema.optional(),
+  /** Interface to listen on; defaults to 127.0.0.1 without auth, 0.0.0.0 with it. */
+  host: z.string().optional(),
+  /** Append a JSON line per change, refusal and denial to this file. */
+  audit: z.string().optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 

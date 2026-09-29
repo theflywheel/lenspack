@@ -1,4 +1,4 @@
-import { type Query, nearest } from "@lenspack/core";
+import { type FilterClause, type Query, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
 // Resolution binds every key in a query to a pack object and finds a join path
@@ -6,7 +6,16 @@ import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expa
 // errors with a `nearest` suggestion — and where a fan-out is refused rather
 // than computed.
 
-export type Ctx = { tenant?: string; now?: Date };
+export type Ctx = {
+  tenant?: string;
+  now?: Date;
+  /**
+   * The caller's row scope: filters every query must carry, whatever the
+   * board asks. A query that cannot be narrowed by one of them is refused
+   * (OUT_OF_SCOPE) rather than answered unnarrowed.
+   */
+  scope?: FilterClause[];
+};
 
 export type ResolveErrorCode =
   | "UNKNOWN_MEASURE"
@@ -20,7 +29,8 @@ export type ResolveErrorCode =
   | "WRONG_ENTITY"
   | "TIME_DIMENSION"
   | "NEEDS_JOIN"
-  | "NOT_SUPPORTED";
+  | "NOT_SUPPORTED"
+  | "OUT_OF_SCOPE";
 
 /** What a backend can do. Resolution refuses the rest up front. */
 export type Capabilities = {
@@ -242,6 +252,18 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   }
 
   const filters: BoundFilter[] = (query.filters ?? []).map((f) => ({ dimension: bind(f.dimension), op: f.op, value: f.value })) as BoundFilter[];
+  // The caller's scope narrows every query. One it cannot reach is refused:
+  // a number that ignores the caller's scope would show them other rows.
+  for (const f of ctx.scope ?? []) {
+    let dimension: BoundDimension;
+    try {
+      dimension = bind(f.dimension);
+    } catch (e) {
+      if (!(e instanceof ResolveError)) throw e;
+      throw new ResolveError("OUT_OF_SCOPE", `This view is limited by "${f.dimension}", which "${root}" cannot be narrowed by, so it is not shown`, f.dimension);
+    }
+    filters.push({ dimension, op: f.op, value: f.value } as BoundFilter);
+  }
 
   if (query.time && !rootEntity.time)
     throw new ResolveError("NO_TIME", `"${root}" has no time column, so a time range cannot apply`, query.kind === "rows" ? query.entity : query.measure);

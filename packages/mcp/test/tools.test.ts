@@ -107,7 +107,10 @@ describe("board tools", () => {
     expect(tools.run_sql).toBeUndefined();
     const store = memoryStore();
     await store.create({ id: "c", pack, title: "x" });
-    const withSql = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "c", ctx: { tenant: "t1" }, runSql: true }).map((t) => [t.name, t]));
+    // Raw SQL skips the pack's tenancy (6 rows, where tenant t1 has 5): on a
+    // tenant-scoped pack it needs the database role to be the fence.
+    expect(() => boardTools({ pack, executor: db.executor, store, boardId: "c", ctx: { tenant: "t1" }, runSql: true })).toThrow(/past its tenant and row scope/);
+    const withSql = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "c", ctx: { tenant: "t1" }, runSql: "role-scoped" }).map((t) => [t.name, t]));
     const r = (await withSql.run_sql!.execute({ sql: "select count(*) as n from things" } as never)) as { ok: boolean; rows: { n: unknown }[] };
     expect(r.ok).toBe(true);
     expect(Number(r.rows[0]!.n)).toBe(6);

@@ -12,7 +12,7 @@ import { createMcpServer } from "./adapters/mcp";
 import { fileProposals } from "./proposals";
 import { boardTools } from "./tools";
 
-// lenspack-mcp --pack ./pack.yaml --db postgres://… | ./data.duckdb [--board id] [--tenant t] [--run-sql] [--http 8787]
+// lenspack-mcp --pack ./pack.yaml --db postgres://… | ./data.duckdb [--board id] [--tenant t] [--run-sql | --run-sql-role-scoped] [--http 8787]
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`);
@@ -24,7 +24,7 @@ async function main() {
   const packPath = arg("pack");
   const dbUrl = arg("db");
   if (!packPath || !dbUrl || flag("help")) {
-    console.error("usage: lenspack-mcp --pack <pack.yaml> --db <postgres://…|file.duckdb> [--board <id>] [--tenant <t>] [--run-sql] [--http <port>]");
+    console.error("usage: lenspack-mcp --pack <pack.yaml> --db <postgres://…|file.duckdb> [--board <id>] [--tenant <t>] [--run-sql | --run-sql-role-scoped] [--http <port>]");
     process.exit(flag("help") ? 0 : 2);
   }
 
@@ -42,7 +42,7 @@ async function main() {
     store,
     boardId,
     ctx: { tenant: arg("tenant") },
-    runSql: flag("run-sql"),
+    runSql: flag("run-sql-role-scoped") ? "role-scoped" : flag("run-sql"),
     proposals: fileProposals(join(dirname(packPath), `${pack.pack}.proposals.json`)),
   });
 

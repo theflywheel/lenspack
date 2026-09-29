@@ -32,8 +32,14 @@ export type BoardToolsOptions = {
   store: BoardStore;
   boardId: string;
   ctx?: Ctx;
-  /** Off by default. Results are ephemeral and can never become a widget. */
-  runSql?: boolean;
+  /**
+   * Off by default. Results are ephemeral and can never become a widget.
+   * Raw SQL does not pass through the pack, so the tenant and row scope are
+   * not applied to it: on a pack with tenant-scoped entities, or with a
+   * caller scope, it is refused unless the database role itself limits what
+   * the connection can read ("role-scoped").
+   */
+  runSql?: boolean | "role-scoped";
   proposals?: ProposalStore;
   timeoutMs?: number;
 };
@@ -101,6 +107,11 @@ function fail(e: unknown) {
 
 export function boardTools(opts: BoardToolsOptions): Tool[] {
   const { pack, store, boardId } = opts;
+  const scoped = Object.values(pack.entities).some((e) => e.tenant) || !!opts.ctx?.scope?.length;
+  if (opts.runSql === true && scoped)
+    throw new Error(
+      `run_sql would read "${pack.pack}" past its tenant and row scope. Enable it as "role-scoped" only when the database role behind this connection already limits the rows it can read.`,
+    );
   const connector = opts.connector ?? (opts.executor ? sqlConnector(opts.executor) : null);
   if (!connector) throw new Error("boardTools needs a connector (or a SQL executor)");
   const executor = opts.executor ?? (connector as { executor?: Executor }).executor;

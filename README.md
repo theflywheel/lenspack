@@ -203,8 +203,22 @@ Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec 
 - The model's only outputs are ops and IR, both closed unions validated before anything touches a database.
 - No URLs, HTML or colours in any config; text widgets render as text nodes.
 - Tenancy is structural: if an entity declares `tenant`, a query without one does not compile.
-- `run_sql` is off by default; when on, it is one SELECT/WITH, read-only, timeboxed, row-capped, and its results can never become a widget.
+- Every query runs in a read-only transaction with a statement timeout; boards are stored apart from the data.
+- **Who is asking** is the deployment's answer, not lenspack's: an `access(request)` hook (or `auth:` in `lenspack.yaml`) names the caller, their tenant, their row scope and whether they may edit. Unknown callers get 401; viewers cannot change boards.
+- **Row scope** (`ctx.scope`) narrows every query, filter menus included, on every connector. A number the scope cannot reach is refused (`OUT_OF_SCOPE`), never shown unnarrowed.
+- Every change, refused change and denied request is passed to an `audit` hook with the user (`audit: file.jsonl` in the config).
+- `run_sql` is off by default; when on, it is one SELECT/WITH, read-only, timeboxed, row-capped, and its results can never become a widget. It bypasses the pack, so on a tenant-scoped pack it is refused unless enabled as `role-scoped`, meaning the database role is the fence.
 - Pack `sql` fragments are trusted code. Review them like code.
+
+```yaml
+# lenspack.yaml — no auth block: 127.0.0.1 only. `auth: { kind: none }` opens it, on purpose.
+auth:
+  kind: tokens                     # or: proxy (a login proxy's user header, trusted only with its shared secret)
+  users:
+    - { user: ops,  token: env:OPS_TOKEN, edit: true }
+    - { user: kenya, token: env:KE_TOKEN, tenant: ke, scope: [{ dimension: province, op: in, value: [Nairobi] }] }
+audit: ./audit.jsonl
+```
 
 More in [docs/security.md](docs/security.md).
 

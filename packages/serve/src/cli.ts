@@ -7,7 +7,8 @@ import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
 import { buildBoard, createApp, seedBoards } from "./app";
-import { openConfig, readConfig } from "./config";
+import { accessFrom, fileAudit } from "./auth";
+import { openConfig, readConfig, resolveSecrets } from "./config";
 import { buildProvider, probe, providersFromEnv } from "./llm";
 
 const USAGE = `lenspack <command>
@@ -38,8 +39,14 @@ async function main() {
       const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
       const ui = flag("ui") ?? (config.ui ? resolve(dir, config.ui) : undefined);
       const port = Number(flag("port") ?? config.port ?? process.env.PORT ?? 8787);
-      createServer(createApp(hosts, { ui, providers, roles })).listen(port, () => {
-        console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://localhost:${port}/api${ui ? `, ui from ${ui}` : ""}`);
+      const access = config.auth ? accessFrom(resolveSecrets(config.auth)) : undefined;
+      // No auth block: local use only. An open API on the network is a choice
+      // the config has to spell out (auth: { kind: none }).
+      const host = flag("host") ?? config.host ?? (config.auth ? "0.0.0.0" : "127.0.0.1");
+      if (!access) console.warn(config.auth ? "lenspack: auth is `none` — anyone who reaches this port may read and edit every board" : "lenspack: no auth configured — listening on 127.0.0.1 only");
+      const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
+      createServer(createApp(hosts, { ui, providers, roles, access, audit })).listen(port, host, () => {
+        console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${access ? `, sign-in by ${config.auth!.kind}` : ""}`);
       });
       return;
     }

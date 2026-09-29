@@ -9,6 +9,7 @@ import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, expl
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
+import type { Access, Audit, Principal } from "./auth";
 import { type Provider, publicView, stopOnRepeatedRefusals } from "./llm";
 import { SYSTEM } from "./prompt";
 import { healingPrompt, refusalsFrom, reviewTurn } from "./review";
@@ -43,7 +44,18 @@ export type AppOptions = {
   /** `{ reviewer, escalate }` provider names. */
   roles?: { reviewer?: string; escalate?: string };
   log?: (line: string) => void;
+  /**
+   * Who a request is. Absent, the API is open: anyone who reaches it may read
+   * and edit every board. With it, an unknown caller gets 401, a caller
+   * without edit rights cannot change boards, and each caller's tenant and
+   * row scope narrow every query they run.
+   */
+  access?: Access;
+  /** Told of every change, refused change and denied request, with the user. */
+  audit?: Audit;
 };
+
+const OPEN: Principal = { user: "anonymous", edit: true };
 
 /** Builds a board from a pack's ops file — the same path the model uses. */
 export function buildBoard(pack: Pack, file: BoardFile): BoardConfig {
@@ -97,21 +109,45 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const defaultProvider = () => providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
   const provider = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
 
+  const audit = (e: Omit<Parameters<Audit>[0], "at">) => {
+    try {
+      opts.audit?.({ at: new Date().toISOString(), ...e });
+    } catch (err) {
+      opts.log?.(`audit failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   return async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
     const [, api, packName, boardId, action] = url.pathname.split("/");
     try {
       if (api !== "api") return opts.ui ? serveStatic(opts.ui, url.pathname, res) : json(res, 404, { error: "not found" });
+      const who = opts.access ? await opts.access(req) : OPEN;
+      if (!who) return json(res, 401, { error: "sign in to use this API" });
+      const mayOpen = (name: string) => !who.packs || who.packs.includes(name);
       if (!packName) {
         const list = await Promise.all(
-          [...byName.values()].map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await h.store.list() })),
+          [...byName.values()].filter((h) => mayOpen(h.name)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await h.store.list() })),
         );
         return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView) });
       }
       const h = byName.get(packName);
-      if (!h) return json(res, 404, { error: "no such pack" });
+      // A pack the caller may not open looks the same as one that is not there.
+      if (!h || !mayOpen(packName)) return json(res, 404, { error: "no such pack" });
       const catalogue = h.catalogue;
-      const run = { pack: h.pack, connector: h.connector, ctx: h.ctx };
+      // The caller's tenant may narrow a pack, never move a pinned one elsewhere.
+      if (who.tenant && h.ctx.tenant && who.tenant !== h.ctx.tenant) {
+        audit({ user: who.user, pack: packName, action: "open", outcome: "denied", detail: "tenant" });
+        return json(res, 403, { error: "this pack belongs to another tenant" });
+      }
+      const ctx = { ...h.ctx, ...(who.tenant ? { tenant: who.tenant } : {}), ...(who.scope?.length ? { scope: [...(h.ctx.scope ?? []), ...who.scope] } : {}) };
+      const run = { pack: h.pack, connector: h.connector, ctx };
+      // Everything but reading changes a board: those need the edit right.
+      const writes = req.method !== "GET" && req.method !== "HEAD";
+      if (writes && !who.edit) {
+        audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
+        return json(res, 403, { error: "you may view these boards but not change them" });
+      }
       if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, boards: await h.store.list(), catalogue });
       if (boardId === "pack") return json(res, 200, { yaml: h.packYaml });
       // Compile one query without running it: the real native query, or the
@@ -132,6 +168,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         const config = boardConfigSchema.parse(body.config);
         const id = `${body.temporary ? "tmp" : "b"}_${Math.random().toString(36).slice(2, 10)}`;
         const board = await h.store.create({ id, pack: h.pack, title: body.title ?? config.title, config });
+        audit({ user: who.user, pack: packName, board: board.id, action: "create", outcome: "ok" });
         return json(res, 200, { id: board.id, version: board.version });
       }
       // The canonical board: built from the pack's own ops file, never the
@@ -148,6 +185,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       if (req.method === "DELETE" && !action) {
         if (!boardId.startsWith("tmp_")) return json(res, 403, { error: "only temporary boards can be deleted here" });
         await h.store.delete(boardId);
+        audit({ user: who.user, pack: packName, board: boardId, action: "delete", outcome: "ok" });
         return json(res, 200, { deleted: boardId });
       }
       switch (`${req.method} ${action ?? ""}`) {
@@ -175,20 +213,30 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         case "POST ops": {
           const body = (await read(req)) as { ops: unknown[] };
           const ops = body.ops.map((o) => opSchema.parse(o)) as BoardOp[];
-          const checked = checkOps(ops, h.pack, { ctx: h.ctx, capabilities: h.connector.capabilities });
-          if (!checked.ok) return json(res, 200, checked);
-          return json(res, 200, await h.store.patch({ id: boardId, ops, catalogue, source: "ops" }));
+          const checked = checkOps(ops, h.pack, { ctx, capabilities: h.connector.capabilities });
+          if (!checked.ok) {
+            audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "refused", detail: checked.error });
+            return json(res, 200, checked);
+          }
+          const patched = await h.store.patch({ id: boardId, ops, catalogue, source: "ops" });
+          audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "ok", detail: ops.map((o) => o.op).join(",") });
+          return json(res, 200, patched);
         }
         case "POST layout": {
           const body = (await read(req)) as { layout: BoardOp[] };
-          return json(res, 200, await h.store.replaceConfig({ id: boardId, config: { ...board.config, layout: body.layout as never } }));
+          const saved = await h.store.replaceConfig({ id: boardId, config: { ...board.config, layout: body.layout as never } });
+          audit({ user: who.user, pack: packName, board: boardId, action: "layout", outcome: "ok" });
+          return json(res, 200, saved);
         }
         case "POST revert": {
           const body = (await read(req)) as { version: number };
-          return json(res, 200, await h.store.revertTo(boardId, body.version));
+          const reverted = await h.store.revertTo(boardId, body.version);
+          audit({ user: who.user, pack: packName, board: boardId, action: "revert", outcome: "ok", detail: `to v${body.version}` });
+          return json(res, 200, reverted);
         }
         case "POST chat":
-          return chat(req, res, url, h, board.config, board.version, boardId);
+          audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
+          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
