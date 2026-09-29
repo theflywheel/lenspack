@@ -24,6 +24,16 @@ import type { ModelInfo } from "./chat";
 
 const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
 
+// Requests the page's HTML already started (see vite.config.ts), taken once.
+type Boot = { index: Promise<any>; board: Promise<any> | null; path: string | null };
+const boot = (window as unknown as { __lenspackBoot?: Boot }).__lenspackBoot;
+const takeBoot = <K extends "index" | "board">(key: K, path?: string) => {
+  if (!boot || !boot[key] || (key === "board" && boot.path !== path)) return null;
+  const p = boot[key];
+  boot[key] = null as never;
+  return p;
+};
+
 const api = async (path: string, init?: RequestInit) => {
   const r = await fetch(`/api${path}`, { headers: { "content-type": "application/json" }, ...init });
   return r.json();
@@ -255,7 +265,7 @@ export function App() {
   const [problem, setProblem] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    void api("/").then((r) => {
+    void (takeBoot("index") ?? api("/")).then((r) => {
       setCatalog(r.examples);
       setChatEnabled(!!r.chat);
       const ms: ModelInfo[] = r.models ?? [];
@@ -279,7 +289,7 @@ export function App() {
   const primer = React.useRef<{ config: string; data: Record<string, WidgetData>; options: Record<string, FilterOption[]> } | null>(null);
   const reloadBoard = React.useCallback(
     (withData = false) => {
-      void api(`${base}${withData ? "?include=data,options" : ""}`).then((r) => {
+      void ((withData && takeBoot("board", base)) || api(`${base}${withData ? "?include=data,options" : ""}`)).then((r) => {
         if (!r.board) return setProblem(r.error ?? "This board does not exist");
         setProblem(null);
         if (withData && r.data) primer.current = { config: JSON.stringify(r.board.config), data: r.data, options: r.options ?? {} };
