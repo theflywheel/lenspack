@@ -77,6 +77,11 @@ export function documents(opts: { households?: number; now?: Date } = {}) {
       },
     });
   }
+  // Targets are planned a little above what the field teams reach, so
+  // coverage lands where real campaigns do (roughly 75-95%).
+  const reached = new Map<string, number>();
+  for (const t of tasks) if (t.Data.deliveredTo === "HOUSEHOLD" && (t.Data.quantity as number) > 0) reached.set(t.Data.district as string, (reached.get(t.Data.district as string) ?? 0) + 1);
+  for (const p of projects) if (p.Data.targetType === "HOUSEHOLD") p.Data.overallTarget = Math.max(1, Math.round((reached.get(p.Data.district as string) ?? 0) * (1.05 + r.next() * 0.28)));
   return { tasks, projects };
 }
 
