@@ -20,7 +20,7 @@ const ACROSS_LIMIT = 10_000;
 export function acrossEntities(
   query: Query,
   pack: Pack,
-): { numerator: Query; denominator: Query; def: PackMeasure; operands: [PackMeasure, PackMeasure]; unfiltered: string[] } | null {
+): { numerator: Query; denominator: Query; def: PackMeasure; operands: [PackMeasure, PackMeasure]; unfiltered: string[]; timeless: boolean } | null {
   if (query.kind === "rows") return null;
   const def = pack.measures.find((m) => m.key === query.measure);
   if (!def?.derived) return null;
@@ -38,8 +38,19 @@ export function acrossEntities(
   };
   const kept = (query.filters ?? []).filter((f) => onDen(f.dimension));
   const unfiltered = [...new Set((query.filters ?? []).filter((f) => !onDen(f.dimension)).map((f) => f.dimension))];
-  const denSide = { ...side(denominator), filters: kept.length ? kept : undefined } as Query;
-  return { numerator: side(numerator), denominator: denSide, def, operands: [num, den], unfiltered };
+  let denSide = { ...side(denominator), filters: kept.length ? kept : undefined } as Query;
+  // A denominator with no time (a target, a capacity) is the same in every
+  // period: each bucket, and the previous period, divide by that one number
+  // (per series, when the numerator is split by a dimension it also has).
+  const timeless = !pack.entities[den.entity]?.time;
+  if (timeless) {
+    const { time: _time, ...rest } = denSide as Query & { time?: unknown };
+    if (denSide.kind === "series")
+      denSide = denSide.by ? { kind: "breakdown", dimension: denSide.by, measure: denominator, limit: ACROSS_LIMIT, sort: "desc", filters: rest.filters } : { kind: "value", measure: denominator, filters: rest.filters };
+    else if (denSide.kind === "value") denSide = { kind: "value", measure: denominator, filters: rest.filters };
+    else denSide = rest as Query;
+  }
+  return { numerator: side(numerator), denominator: denSide, def, operands: [num, den], unfiltered, timeless };
 }
 
 // A group missing on one side had no rows there: zero for an additive
@@ -47,7 +58,7 @@ export function acrossEntities(
 const additive = (m: PackMeasure) => m.agg === "count" || m.agg === "sum";
 const divide = (n: number | null, d: number | null) => (n === null || d === null || d === 0 ? null : n / d);
 
-function joinSides(query: Query, num: WidgetData, den: WidgetData, def: PackMeasure, [nm, dm]: [PackMeasure, PackMeasure]): WidgetData {
+function joinSides(query: Query, num: WidgetData, den: WidgetData, def: PackMeasure, [nm, dm]: [PackMeasure, PackMeasure], timeless = false): WidgetData {
   const format = def.format ?? "number";
   const approximate = num.approximate || den.approximate || undefined;
   const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
@@ -55,12 +66,19 @@ function joinSides(query: Query, num: WidgetData, den: WidgetData, def: PackMeas
     const n = num.rows[0]?.value ?? null;
     const d = den.rows[0]?.value ?? null;
     const data: WidgetData = { rows: [{ group: def.key, value: divide(n, d), count: num.total }], total: num.total, format, approximate };
-    if (num.compare && den.compare) {
+    if (num.compare && (den.compare || timeless)) {
       const value = divide(n, d);
-      const previous = divide(num.compare.previous, den.compare.previous);
+      const previous = divide(num.compare.previous, timeless ? d : den.compare!.previous);
       data.compare = { previous, delta: value !== null && previous !== null && previous !== 0 ? (value - previous) / Math.abs(previous) : null };
     }
     return data;
+  }
+  if (timeless && query.kind === "series") {
+    // Every bucket over the one timeless denominator (per series if split).
+    const q = query;
+    const denOf = (r: DataRow) => (q.by ? (den.rows.find((d) => d.group === r.series)?.value ?? (additive(dm) ? 0 : null)) : (den.rows[0]?.value ?? null));
+    const rows = num.rows.map((r) => ({ ...r, value: divide(r.value, denOf(r)) }));
+    return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate };
   }
   const nByKey = new Map(num.rows.map((r) => [keyOf(r), r]));
   const dByKey = new Map(den.rows.map((r) => [keyOf(r), r]));
@@ -93,7 +111,7 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
       const [num, den] = await Promise.all([run(across.numerator, opts), run(across.denominator, opts)]);
       if (num.error) return num;
       if (den.error) return den;
-      return joinSides(query, num, den, across.def, across.operands);
+      return joinSides(query, num, den, across.def, across.operands, across.timeless);
     }
     const bound = resolve(query, opts.pack, opts.ctx, opts.connector.capabilities);
     const plan = await opts.connector.compile(bound, opts.pack);
@@ -115,6 +133,7 @@ export async function explain(query: Query, opts: Omit<RunOptions, "timeoutMs">)
       text:
         `-- ${across.def.key} = ${across.operands[0].key} / ${across.operands[1].key}, each computed on its own and joined on the group\n` +
         (across.unfiltered.length ? `-- the denominator is not narrowed by ${across.unfiltered.join(", ")}: "${across.operands[1].entity}" has no such dimension\n` : "") +
+        (across.timeless ? `-- "${across.operands[1].entity}" has no time: every period divides by the same denominator\n` : "") +
         `-- numerator\n${n.text}\n-- denominator\n${d.text}`,
       root: n.root,
       entities: [...new Set([...n.entities, ...d.entities])],

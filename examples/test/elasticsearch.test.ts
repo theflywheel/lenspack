@@ -1,6 +1,10 @@
-import type { Query } from "@lenspack/core";
+import { readFileSync } from "node:fs";
+
+import { type BoardOp, type Query, applyOps, emptyBoard } from "@lenspack/core";
+import { compileDss } from "@lenspack/dss";
+import { catalogueFrom } from "@lenspack/spec";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
-import { type WidgetData, explain, run, sqlConnector } from "@lenspack/sql";
+import { type WidgetData, explain, resolveBoard, run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -116,5 +120,29 @@ describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", (
     expect(task.rows).toBe(3000);
     expect(task.fields.find((f) => f.path === "Data.district")?.type).toBe("text");
     expect(task.fields.find((f) => f.path === "Data.district.keyword")?.type).toBe("keyword");
+  });
+
+  it("draws DSS charts compiled to a pack against the index they were written for", async () => {
+    const fx = new URL("../../packages/dss/test/fixtures/", import.meta.url);
+    const r = compileDss(JSON.parse(readFileSync(new URL("ChartApiConfig.sample.json", fx), "utf8")), JSON.parse(readFileSync(new URL("MasterDashboardConfig.sample.json", fx), "utf8")));
+    const built = applyOps(emptyBoard(r.pack, "dss"), r.boards[0]!.ops as BoardOp[], catalogueFrom(r.pack));
+    if (!built.ok) throw new Error(built.error);
+    const data = await resolveBoard(built.config, { pack: r.pack, connector: es, ctx }, { product_variant: "PVAR-NET-SINGLE" });
+    // The synthetic data has the task and project indexes, not the staff and sync ones.
+    const onSeeded = Object.entries(built.config.widgets).filter(([, w]) => w.kind !== "text" && !/user_sync|staff/.test(JSON.stringify(w)));
+    expect(onSeeded.length).toBeGreaterThanOrEqual(5);
+    for (const [id] of onSeeded) {
+      expect(data[id]!.error, `${id}: ${data[id]!.error}`).toBeUndefined();
+      expect(data[id]!.rows.length, id).toBeGreaterThan(0);
+    }
+    const byDistrict = data["rd_total_households_not_delivered_chart"]!;
+    // The compiled pack is connector-neutral too: DuckDB, over tables named
+    // like the indexes, must draw the same board.
+    const onSql = await resolveBoard(built.config, { pack: r.pack, connector: sqlConnector(duck.executor), ctx }, { product_variant: "PVAR-NET-SINGLE" });
+    for (const [id] of onSeeded) {
+      expect(onSql[id]!.error, `${id} on sql: ${onSql[id]!.error}`).toBeUndefined();
+      expect(data[id]!.rows, id).toEqual(onSql[id]!.rows);
+    }
+    expect(byDistrict.rows.length).toBeGreaterThan(3);
   });
 });

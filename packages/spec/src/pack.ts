@@ -47,11 +47,11 @@ export function maybeFragmentFor(fragment: Fragment, dialect: string): string | 
 }
 
 // A structured predicate: the connector-neutral way to say "only these rows".
-export const WHERE_OPS = ["eq", "neq", "in", "gt", "gte", "lt", "lte", "exists"] as const;
+export const WHERE_OPS = ["eq", "neq", "in", "gt", "gte", "lt", "lte", "exists", "missing"] as const;
 const whereValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()])).min(1).max(100)]);
 export const whereSchema = z
   .object({ field: fieldPath, op: z.enum(WHERE_OPS).default("eq"), value: whereValue.optional() })
-  .refine((w) => (w.op === "exists") === (w.value === undefined), { message: "every op but exists takes a value" })
+  .refine((w) => (w.op === "exists" || w.op === "missing") === (w.value === undefined), { message: "every op but exists and missing takes a value" })
   .refine((w) => (w.op === "in") === Array.isArray(w.value), { message: "in takes a list; the other ops take one value" });
 export type Where = z.infer<typeof whereSchema>;
 

@@ -1,0 +1,15 @@
+{
+  "name": "@lenspack/dss",
+  "version": "0.1.0",
+  "description": "Compiles DIGIT DSS dashboard configs (ChartApiConfig.json, MasterDashboardConfig.json) into a lenspack pack and boards, with a report of what could not be translated.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": { "build": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
+  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/engine": "workspace:*", "@lenspack/spec": "workspace:*", "yaml": "^2.6.1" },
+  "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/dss" }
+}

@@ -1,0 +1,44 @@
+{
+ "dashboards": [
+  {
+   "name": "DSS_HEALTH_NATIONAL_DASHBOARD_LLIN_HEADING",
+   "id": "national-health-dashboard",
+   "title": null,
+   "visualizations": [
+    {
+     "vizArray": [
+      {
+       "name": "sample",
+       "charts": [
+        {
+         "id": "todaysVisits"
+        },
+        {
+         "id": "totalPopulationCovered"
+        },
+        {
+         "id": "totalHouseholdCoverageProvince"
+        },
+        {
+         "id": "totalHouseholdsNotDeliveredProvince"
+        },
+        {
+         "id": "rdTotalHouseholdsNotDeliveredChartProvince"
+        },
+        {
+         "id": "summaryByDistrictDay"
+        },
+        {
+         "id": "userSyncSummaryProvince"
+        },
+        {
+         "id": "rdBednetsDistributedChartProvincePercent"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

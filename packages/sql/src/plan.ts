@@ -44,6 +44,8 @@ export function whereExpr(w: Where): Expr {
       return { t: "bin", op: "<=", l: f, r: param(v) };
     case "exists":
       return { t: "notnull", arg: f };
+    case "missing":
+      return { t: "isnull", arg: f };
   }
 }
 

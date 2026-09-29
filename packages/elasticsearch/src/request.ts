@@ -63,6 +63,8 @@ function whereClause(w: Where, env: Env): { must?: Json; mustNot?: Json } {
       return { must: { terms: { [f]: w.value } } };
     case "exists":
       return { must: { exists: { field: f } } };
+    case "missing":
+      return { mustNot: { exists: { field: f } } };
     default:
       return { must: { range: { [f]: { [w.op]: w.value } } } };
   }

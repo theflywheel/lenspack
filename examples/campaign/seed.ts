@@ -33,6 +33,12 @@ export function documents(opts: { households?: number; now?: Date } = {}) {
       projectId: `P-${i + 1}`,
       province,
       district,
+      // Targets are stored per hierarchy level; these are district-level rows,
+      // so the finer levels are absent.
+      administrativeProvince: null,
+      locality: null,
+      // DSS narrows targets by product variant, so the project index carries it.
+      productVariant: "PVAR-NET-SINGLE",
       targetType: "HOUSEHOLD",
       overallTarget: 250 + r.int(0, 300),
       targetPerDay: 20 + r.int(0, 20),

@@ -141,6 +141,21 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
+  packages/dss:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@lenspack/spec':
+        specifier: workspace:*
+        version: link:../spec
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.1
+
   packages/elasticsearch:
     dependencies:
       '@lenspack/core':

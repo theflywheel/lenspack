@@ -65,6 +65,8 @@ export function print(ast: Ast, rules: DialectRules): Printed {
         return rules.epoch(expr(e.arg), e.unit);
       case "notnull":
         return `(${expr(e.arg)} IS NOT NULL)`;
+      case "isnull":
+        return `(${expr(e.arg)} IS NULL)`;
     }
   };
 
