@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { Writer } from "@lenspack/sql";
 
 import { type Dialect, execAll, insertRows, rng } from "../_shared/seed-util";
@@ -82,6 +84,15 @@ export function documents(opts: { households?: number; now?: Date } = {}) {
   const reached = new Map<string, number>();
   for (const t of tasks) if (t.Data.deliveredTo === "HOUSEHOLD" && (t.Data.quantity as number) > 0) reached.set(t.Data.district as string, (reached.get(t.Data.district as string) ?? 0) + 1);
   for (const p of projects) if (p.Data.targetType === "HOUSEHOLD") p.Data.overallTarget = Math.max(1, Math.round((reached.get(p.Data.district as string) ?? 0) * (1.05 + r.next() * 0.28)));
+  // DSS keeps a target row per level: each province's row is the sum of its
+  // districts', with no district. Summing every row would count twice; the
+  // pack reads the level it is asked about.
+  for (const province of Object.keys(PROVINCES)) {
+    const rows = projects.filter((p) => p.Data.province === province && p.Data.targetType === "HOUSEHOLD" && p.Data.district);
+    projects.push({
+      Data: { ...rows[0]!.Data, projectId: `P-${province.toUpperCase()}`, district: null, overallTarget: rows.reduce((n, p) => n + (p.Data.overallTarget as number), 0), targetPerDay: rows.reduce((n, p) => n + (p.Data.targetPerDay as number), 0) },
+    });
+  }
   return { tasks, projects };
 }
 
@@ -114,8 +125,9 @@ type Request = (method: string, path: string, body?: unknown) => Promise<any>;
  */
 export async function seedSearch(request: Request, opts: { households?: number; now?: Date } = {}) {
   const { tasks, projects } = documents(opts);
-  const stamp = `households=${opts.households ?? 4000}`;
   for (const [index, docs] of [[TASK_INDEX, tasks], [PROJECT_INDEX, projects]] as const) {
+    // The stamp is the documents themselves: a changed generator reseeds.
+    const stamp = createHash("sha1").update(JSON.stringify(docs)).digest("hex");
     // Seeding is shared by test files that may run at once: an index already
     // holding this data is kept, and a seeder that loses the race to create
     // it waits for the winner rather than deleting its work.

@@ -91,11 +91,20 @@ measures:
     entity: task
     agg: count_distinct
     field: Data.userId
-  - key: household_target
+  - key: household_target_at_district
     entity: project
     agg: sum
     field: Data.overallTarget
-    where: [{ field: Data.targetType, value: HOUSEHOLD }]
+    where: [{ field: Data.targetType, value: HOUSEHOLD }, { field: Data.district, op: exists }]
+  - key: household_target_at_province
+    entity: project
+    agg: sum
+    field: Data.overallTarget
+    where: [{ field: Data.targetType, value: HOUSEHOLD }, { field: Data.district, op: missing }]
+  - key: household_target
+    entity: project
+    levels: { province: household_target_at_province, district: household_target_at_district }
+    hint: Targets are kept per province and per district; this reads the level being viewed
   - key: household_coverage
     entity: task
     derived: households_delivered / household_target
@@ -122,3 +131,6 @@ measures:
     entity: task
     derived: 100 - coverage_points
     hint: Percentage points short of the target; built on another derived measure
+
+hierarchies:
+  area: [province, district, locality, village]

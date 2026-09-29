@@ -160,4 +160,20 @@ describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", (
     }
     expect(byDistrict.rows.length).toBeGreaterThan(3);
   });
+
+  it("drills the same way on both: a province selected, districts and per-level targets follow", async () => {
+    const { buildBoard } = await import("../index");
+    const board = buildBoard("campaign", "overview");
+    for (const selection of [{ province: "Eastern" }, { province: "Northern", district: "Mansa" }]) {
+      const [a, b] = await Promise.all([
+        resolveBoard(board, { pack, connector: sqlConnector(duck.executor), ctx }, selection),
+        resolveBoard(board, { pack, connector: es, ctx }, selection),
+      ]);
+      for (const id of Object.keys(a)) {
+        expect(b[id]!.error, `${id}: ${b[id]!.error}`).toBeUndefined();
+        if (id !== "distributors") expect(b[id]!.rows, `${JSON.stringify(selection)} ${id}`).toEqual(a[id]!.rows);
+      }
+    }
+  });
 });
+

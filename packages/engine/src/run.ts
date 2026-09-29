@@ -3,6 +3,7 @@ import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, 
 
 import type { Connector } from "./connector";
 import type { DataRow, WidgetData } from "./data";
+import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
 import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, resolve } from "./resolve";
 
 export type RunOptions = { pack: Pack; connector: Connector; ctx?: Ctx; timeoutMs?: number };
@@ -119,8 +120,23 @@ const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: 
 
 /** Compile and run one query. Resolution errors come back as data, not throws. */
 export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
-  if (query.kind !== "rows" && query.measures?.length) return runMeasures(query, opts);
-  return runOne(query, opts);
+  // Per-level measures are read at the level this query views.
+  const view = { ...opts, pack: packAtLevel(opts.pack, viewedLevel(query, opts.pack)) };
+  const data = query.kind !== "rows" && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
+  return query.kind === "breakdown" ? withoutEmptyGroups(data, query.measure, view.pack) : data;
+}
+
+// A measure's where narrows the rows it counts, not the groups: a group with
+// no rows for it at all (a per-level target's other levels) comes back empty.
+// Such a group is dropped. A zero count stays, and so does a ratio that
+// could not be computed: those are answers, an empty group is not.
+function withoutEmptyGroups(data: WidgetData, measure: string, pack: Pack): WidgetData {
+  const m = pack.measures.find((x) => x.key === measure);
+  if (!m || data.error) return data;
+  const plain = !m.derived || /^\s*[a-z][a-z0-9_]*\s*$/.test(m.derived);
+  if (!plain) return data;
+  const rows = data.rows.filter((r) => r.value !== null || r.count === 0);
+  return rows.length === data.rows.length ? data : { ...data, rows, total: rows.reduce((n, r) => n + r.count, 0) };
 }
 
 /** The query without its further measures, and one query per further measure. */
@@ -183,7 +199,12 @@ async function runOne(query: Query, opts: RunOptions): Promise<WidgetData> {
   try {
     const across = acrossEntities(query, opts.pack);
     if (across) {
-      const data = await Promise.all(across.sides.map((s) => runOne(s.query, opts)));
+      const data = await Promise.all(
+        across.sides.map(async (s) => {
+          const d = await runOne(s.query, opts);
+          return s.query.kind === "breakdown" ? withoutEmptyGroups(d, s.measure.key, opts.pack) : d;
+        }),
+      );
       const failed = data.find((d) => d.error);
       return failed ?? combine(query, across, data);
     }
@@ -199,7 +220,8 @@ async function runOne(query: Query, opts: RunOptions): Promise<WidgetData> {
 export type Explained = { text: string; root: string; entities: string[]; tenant: string | null; approximate: boolean };
 
 /** What would run, without running it. Throws ResolveError for a refusal. */
-export async function explain(query: Query, opts: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
+export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
+  const opts = { ...given, pack: packAtLevel(given.pack, viewedLevel(query, given.pack)) };
   const { primary, extras } = splitMeasures(query, opts.pack);
   if (extras.length) {
     const parts = await Promise.all([explain(primary, opts), ...extras.map((e) => explain(e.query, opts))]);
@@ -233,7 +255,8 @@ export async function explain(query: Query, opts: Omit<RunOptions, "timeoutMs">)
 }
 
 /** Resolution only: every refusal a query would get, with no backend call. */
-export function check(query: Query, pack: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
+export function check(query: Query, given: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
+  const pack = packAtLevel(given, viewedLevel(query, given));
   const { primary, extras } = splitMeasures(query, pack);
   if (extras.length) {
     for (const q of [primary, ...extras.map((e) => e.query)]) check(q, pack, opts);
@@ -287,7 +310,7 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
   const data: Record<string, WidgetData> = {};
   await Promise.all(
     Object.entries(config.widgets).map(async ([id, widget]) => {
-      const query = widgetQuery(config, id, widget, selections);
+      const query = drilledQuery(config, id, widget, selections, opts.pack, { ctx: opts.ctx, capabilities: opts.connector.capabilities });
       if (!query) return;
       const key = JSON.stringify(query);
       if (!byKey.has(key)) byKey.set(key, run(query, opts));

@@ -141,14 +141,19 @@ export const measureSchema = z
     // An extra predicate on the base rows, e.g. "state = 'broken'".
     filter: fragmentSchema.optional(),
     where: z.array(whereSchema).max(20).optional(),
+    // One number read at whichever level of a hierarchy is being viewed, when
+    // the source keeps a row per level (targets set per region and per
+    // sub-region): `levels: { region: target_at_region, subregion: target_at_subregion }`.
+    levels: z.record(slug, slug).optional(),
     // Multiplies the aggregate, e.g. people per item handed out.
     scale: z.number().refine((n) => n !== 0 && Number.isFinite(n), "a non-zero number").optional(),
     format: z.enum(FORMATS).default("number"),
     ...named,
   })
-  .refine((m) => (m.derived ? !m.agg && !m.sql && !m.field && !m.filter && !m.where && !m.scale : !!m.agg), {
-    message: "a measure has agg (with optional sql or field, filter, where, scale), or derived, not both",
+  .refine((m) => [m.agg, m.derived, m.levels].filter(Boolean).length === 1, {
+    message: "a measure has exactly one of agg (with optional sql or field, filter, where, scale), derived, or levels",
   })
+  .refine((m) => (m.agg ? true : !m.sql && !m.field && !m.filter && !m.where && !m.scale), { message: "sql, field, filter, where and scale belong to a measure with agg" })
   .refine((m) => !(m.sql && m.field), { message: "a measure has sql or field, not both" })
   .refine((m) => m.agg !== "count" || !m.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })
   .refine((m) => !m.agg || m.agg === "count" || !!m.sql || !!m.field, { message: "an aggregate other than count needs sql or field" });
@@ -160,6 +165,9 @@ export const packSchema = z.object({
   entities: z.record(slug, entitySchema),
   dimensions: z.array(dimensionSchema).default([]),
   measures: z.array(measureSchema).default([]),
+  // Dimensions that nest, coarse to fine. Picking a value on one level narrows
+  // the board to it and moves anything grouped at or above it one level down.
+  hierarchies: z.record(slug, z.array(slug).min(2).max(10)).default({}),
 });
 
 export type Pack = z.infer<typeof packSchema>;
@@ -221,12 +229,36 @@ export function checkPack(pack: Pack): PackProblem[] {
     }
   }
 
+  const dimsByKey = new Map(pack.dimensions.map((d) => [d.key, d]));
+  const inHierarchy = new Map<string, string>();
+  for (const [name, levels] of Object.entries(pack.hierarchies)) {
+    const path = `hierarchies.${name}`;
+    if (keys.has(name)) problems.push({ path, message: `"${name}" is already a dimension or measure key` });
+    for (const key of levels) {
+      const d = dimsByKey.get(key);
+      if (!d) problems.push({ path, message: `unknown dimension "${key}"` });
+      else if (d.type === "time") problems.push({ path, message: `"${key}" is a time dimension; time has grains, not a hierarchy` });
+      if (inHierarchy.has(key)) problems.push({ path, message: `"${key}" is already a level of "${inHierarchy.get(key)}"` });
+      inHierarchy.set(key, name);
+    }
+  }
+
   const measureEntity = new Map(pack.measures.map((m) => [m.key, m.entity]));
   for (const [i, m] of pack.measures.entries()) {
     const path = `measures[${i}]`;
     if (keys.has(m.key)) problems.push({ path, message: `key "${m.key}" already used by ${keys.get(m.key)}` });
     keys.set(m.key, path);
     if (!entities.has(m.entity)) problems.push({ path, message: `unknown entity "${m.entity}"` });
+    if (m.levels) {
+      for (const [level, target] of Object.entries(m.levels)) {
+        if (!inHierarchy.has(level)) problems.push({ path, message: `level "${level}" is not a level of any hierarchy` });
+        const t = pack.measures.find((x) => x.key === target);
+        if (!t) problems.push({ path, message: `level "${level}" names unknown measure "${target}"` });
+        else if (t.levels) problems.push({ path, message: `"${target}" has levels of its own` });
+      }
+      const hs = new Set(Object.keys(m.levels).map((l) => inHierarchy.get(l)));
+      if (hs.size > 1) problems.push({ path, message: "levels come from one hierarchy" });
+    }
     if (m.derived) {
       const ops = operands(parseExpr(m.derived));
       for (const operand of ops) {
