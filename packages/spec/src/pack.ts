@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ExprError, operands, parseExpr } from "./expr";
+import { ExprError, expandExpr, operands, parseExpr } from "./expr";
 
 // The pack is the only place a domain is described. Humans write it; it is
 // reviewed in git; the model only ever names keys from it. The `sql` fragments
@@ -187,6 +187,11 @@ export function parseDerived(expr: string): { numerator: string; denominator: st
 
 export type PackProblem = { path: string; message: string };
 
+/** A measure's expression over aggregating measures only (derived operands inlined). */
+export function expandedExpr(pack: Pack, key: string) {
+  return expandExpr(key, (k) => pack.measures.find((m) => m.key === k)?.derived);
+}
+
 /** Cross-reference checks the zod schema cannot express. */
 export function checkPack(pack: Pack): PackProblem[] {
   const problems: PackProblem[] = [];
@@ -227,8 +232,11 @@ export function checkPack(pack: Pack): PackProblem[] {
       for (const operand of ops) {
         const ent = measureEntity.get(operand);
         if (!ent) problems.push({ path, message: `derived measure refers to unknown measure "${operand}"` });
-        const target = pack.measures.find((x) => x.key === operand);
-        if (target?.derived) problems.push({ path, message: `derived measure "${operand}" cannot be an operand of another` });
+      }
+      try {
+        expandedExpr(pack, m.key);
+      } catch (e) {
+        problems.push({ path, message: e instanceof Error ? e.message : String(e) });
       }
       // A derived measure is read at the grain of one of its operands.
       const entities = new Set(ops.map((o) => measureEntity.get(o)).filter(Boolean));

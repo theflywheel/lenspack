@@ -79,8 +79,11 @@ measures:
     p.measures[2].derived = "amount / owner_n";
     expect(() => parsePack(p)).not.toThrow();
   });
-  it("rejects a derived measure built on a derived measure", () => {
-    bad((p) => p.measures.push({ key: "twice", entity: "items", derived: "avg_amount / count" }), "cannot be an operand");
+  it("rejects derived measures that refer to each other", () => {
+    bad((p) => {
+      p.measures.push({ key: "loop_a", entity: "items", derived: "loop_b * 2" });
+      p.measures.push({ key: "loop_b", entity: "items", derived: "loop_a / 2" });
+    }, "refer to each other");
   });
   it("rejects grains on a non-time dimension", () => bad((p) => (p.dimensions[0].grains = ["day"]), "only apply to a time dimension"));
   it("rejects an uppercase key", () => bad((p) => (p.dimensions[0].key = "Region"), "lowercase"));

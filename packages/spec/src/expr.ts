@@ -90,6 +90,25 @@ export function evaluate(e: MeasureExpr, value: (key: string) => number | null):
   }
 }
 
+/**
+ * A derived measure's expression with every derived operand replaced by its
+ * own expression, down to measures that aggregate rows. Backends only ever
+ * see those. A cycle is an error, not a loop.
+ */
+export function expandExpr(key: string, derivedOf: (key: string) => string | undefined, seen: string[] = []): MeasureExpr {
+  if (seen.includes(key)) throw new ExprError(`derived measures refer to each other: ${[...seen, key].join(" → ")}`);
+  if (seen.length > MAX_DEPTH) throw new ExprError("derived measures nest too deeply");
+  const source = derivedOf(key);
+  if (!source) return { t: "measure", key };
+  const walk = (e: MeasureExpr): MeasureExpr => {
+    if (e.t === "measure") return derivedOf(e.key) ? expandExpr(e.key, derivedOf, [...seen, key]) : e;
+    if (e.t === "neg") return { t: "neg", arg: walk(e.arg) };
+    if (e.t === "op") return { ...e, l: walk(e.l), r: walk(e.r) };
+    return e;
+  };
+  return walk(parseExpr(source));
+}
+
 export function formatExpr(e: MeasureExpr): string {
   const prec = (x: MeasureExpr) => (x.t === "op" ? (x.op === "+" || x.op === "-" ? 1 : 2) : 3);
   const wrap = (x: MeasureExpr, min: number) => (prec(x) < min ? `(${formatExpr(x)})` : formatExpr(x));

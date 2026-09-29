@@ -1,5 +1,5 @@
 import type { BoardConfig, BoardOp, Query, Widget } from "@lenspack/core";
-import { type MeasureExpr, type Pack, type PackMeasure, evaluate, formatExpr, operands, parseExpr } from "@lenspack/spec";
+import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
 import type { DataRow, WidgetData } from "./data";
@@ -31,7 +31,7 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   if (query.kind === "rows") return null;
   const def = pack.measures.find((m) => m.key === query.measure);
   if (!def?.derived) return null;
-  const expr = parseExpr(def.derived);
+  const expr = expandedExpr(pack, def.key);
   const measures = operands(expr).map((k) => pack.measures.find((m) => m.key === k)).filter((m): m is PackMeasure => !!m);
   if (new Set(measures.map((m) => m.entity)).size < 2) return null;
   const base = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
@@ -132,7 +132,7 @@ export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extr
   const timeless = (key: string) => {
     const m = pack?.measures.find((x) => x.key === key);
     if (!m || !pack) return false;
-    const entities = m.derived ? operands(parseExpr(m.derived)).map((k) => pack.measures.find((x) => x.key === k)?.entity) : [m.entity];
+    const entities = m.derived ? operands(expandedExpr(pack, m.key)).map((k) => pack.measures.find((x) => x.key === k)?.entity) : [m.entity];
     return entities.every((e) => e && !pack.entities[e]?.time);
   };
   return {

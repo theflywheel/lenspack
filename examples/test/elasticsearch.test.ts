@@ -37,6 +37,7 @@ const queries: Query[] = [
   { kind: "breakdown", dimension: "province", measure: "household_coverage", measures: ["households_remaining", "delivery_rate"], limit: 5, sort: "asc" },
   { kind: "series", measure: "visits", measures: ["households_delivered", "delivery_rate"], grain: "week" },
   { kind: "value", measure: "visits", measures: ["nets_distributed", "household_coverage"] },
+  { kind: "breakdown", dimension: "district", measure: "coverage_gap_points", limit: 12, sort: "desc" },
   { kind: "breakdown", dimension: "district", measure: "household_coverage", limit: 12, sort: "desc" },
   { kind: "breakdown", dimension: "province", measure: "household_coverage", limit: 12, sort: "asc" },
   ...measures.map((measure) => ({ kind: "value", measure }) as Query),

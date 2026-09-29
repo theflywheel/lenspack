@@ -1,5 +1,5 @@
 import { type Query, nearest } from "@lenspack/core";
-import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, operands, parseExpr, parseJoinOn } from "@lenspack/spec";
+import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
 // Resolution binds every key in a query to a pack object and finds a join path
 // for every dimension. It is where the model's mistakes surface as loud
@@ -184,7 +184,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     const def = findMeasure(query.measure);
     root = def.entity;
     if (def.derived) {
-      const expr = parseExpr(def.derived);
+      const expr = expandedExpr(pack, def.key);
       measure = { kind: "derived", def, expr, operands: operands(expr).map(findMeasure) };
       // Operands on several entities are never joined row-wise: run()
       // computes each on its own and combines the aggregates (acrossEntities).
