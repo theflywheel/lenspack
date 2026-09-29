@@ -40,6 +40,8 @@ export type Catalogue = {
   dimensions: CatalogueDimension[];
   measures: CatalogueMeasure[];
   entities: CatalogueEntity[];
+  /** Dimensions that nest, coarse to fine: what a click drills through. */
+  hierarchies?: Record<string, string[]>;
 };
 
 export function dimension(catalogue: Catalogue, key: string) {
@@ -67,4 +69,39 @@ export function verifiedOnly(catalogue: Catalogue): Catalogue {
     dimensions: catalogue.dimensions.filter((d) => d.verified),
     measures: catalogue.measures.filter((m) => m.verified),
   };
+}
+
+/**
+ * Where a grouping stands under the current selections: a grouping at or above
+ * the deepest selected level of its hierarchy steps one level below it (or
+ * stays at the finest level). Used by the engine to build the drilled query
+ * and by a renderer to know what a click on a drilled bar selects.
+ */
+export function drilledDimension(dimension: string, selections: Record<string, string>, hierarchies: Record<string, string[]> = {}): string {
+  for (const levels of Object.values(hierarchies)) {
+    const index = levels.indexOf(dimension);
+    if (index < 0) continue;
+    const deepest = Math.max(-1, ...levels.map((l, i) => (selections[l] ? i : -1)));
+    return index > deepest ? dimension : levels[Math.min(deepest + 1, levels.length - 1)]!;
+  }
+  return dimension;
+}
+
+/** The next level below a dimension, if it is a level with one. */
+export function nextLevel(dimension: string, hierarchies: Record<string, string[]> = {}): string | null {
+  for (const levels of Object.values(hierarchies)) {
+    const index = levels.indexOf(dimension);
+    if (index >= 0) return levels[index + 1] ?? null;
+  }
+  return null;
+}
+
+/** Selecting a level clears the finer levels below it in the same hierarchy. */
+export function selectLevel(selections: Record<string, string>, dimension: string, value: string, hierarchies: Record<string, string[]> = {}): Record<string, string> {
+  const next = { ...selections };
+  const levels = Object.values(hierarchies).find((ls) => ls.includes(dimension));
+  if (levels) for (const finer of levels.slice(levels.indexOf(dimension) + 1)) delete next[finer];
+  if (value) next[dimension] = value;
+  else delete next[dimension];
+  return next;
 }

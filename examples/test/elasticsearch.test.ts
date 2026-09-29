@@ -164,7 +164,7 @@ describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", (
   it("drills the same way on both: a province selected, districts and per-level targets follow", async () => {
     const { buildBoard } = await import("../index");
     const board = buildBoard("campaign", "overview");
-    for (const selection of [{ province: "Eastern" }, { province: "Northern", district: "Mansa" }]) {
+    for (const selection of [{ province: "Eastern" }, { province: "Northern", district: "Mansa" }] as Record<string, string>[]) {
       const [a, b] = await Promise.all([
         resolveBoard(board, { pack, connector: sqlConnector(duck.executor), ctx }, selection),
         resolveBoard(board, { pack, connector: es, ctx }, selection),

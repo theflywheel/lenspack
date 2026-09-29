@@ -39,13 +39,15 @@ function Problem({ message, hint }: { message: string; hint?: string }) {
 // The chart widget is library-agnostic: it builds a ChartSpec and hands it to
 // whichever adapter the provider holds (svg when none is given).
 export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
-  const { charts, catalogue } = useBoard();
+  const { charts, catalogue, drill, drillTarget } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Empty>{data.error}{data.hint ? ` — did you mean “${data.hint}”?` : ""}</Empty>;
   const measureKey = widget.query.kind === "rows" ? undefined : widget.query.measure;
   const measureLabel = catalogue.measures.find((m) => m.key === measureKey)?.label;
   const labelOf = (key: string) => catalogue.measures.find((m) => m.key === key)?.label;
-  const spec = buildChartSpec(widget, data, { currency, measureLabel, labelOf });
+  const target = widget.query.kind === "breakdown" ? drillTarget(widget.query.dimension) : null;
+  const onSelect = target?.selects ? (group: string) => group !== "(none)" && drill(target.selects!, group) : undefined;
+  const spec = buildChartSpec(widget, data, { currency, measureLabel, labelOf, onSelect });
   if (!spec) return <Empty>Nothing to draw yet.</Empty>;
   const Chart = charts.Chart;
   return <Chart spec={spec} />;
@@ -97,7 +99,12 @@ export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
 }
 
 export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
-  const { catalogue } = useBoard();
+  const { catalogue, drill, drillTarget } = useBoard();
+  const target = widget.query.kind === "breakdown" ? drillTarget(widget.query.dimension) : null;
+  const rowProps = (group: string) =>
+    target?.selects && group !== "(none)"
+      ? { className: "lp-drillable", onClick: () => drill(target.selects!, group), title: `Drill into ${group}` }
+      : {};
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
   if (data.records) {
@@ -119,7 +126,7 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
   }
   if (data.measures?.length) {
     // One column per measure, labelled from the catalogue, each in its own format.
-    const dim = widget.query.kind === "breakdown" ? widget.query.dimension : widget.query.kind === "series" ? widget.query.grain : "";
+    const dim = widget.query.kind === "breakdown" ? (target?.at ?? widget.query.dimension) : widget.query.kind === "series" ? widget.query.grain : "";
     const label = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
     return (
       <div className="lp-table-wrap">
@@ -132,7 +139,7 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
           </thead>
           <tbody>
             {data.rows.slice(0, widget.pageSize).map((row) => (
-              <tr key={`${row.group}|${row.series ?? ""}`}>
+              <tr key={`${row.group}|${row.series ?? ""}`} {...rowProps(row.group)}>
                 <td>{row.group}</td>
                 {data.measures!.map((m, i) => (
                   <td key={m.key} className="lp-num">{formatValue(i === 0 ? row.value : (row.values?.[m.key] ?? null), m.format, { currency })}</td>
@@ -149,7 +156,7 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
       <table className="lp-table">
         <tbody>
           {data.rows.slice(0, widget.pageSize).map((row) => (
-            <tr key={`${row.group}|${row.series ?? ""}`}>
+            <tr key={`${row.group}|${row.series ?? ""}`} {...rowProps(row.group)}>
               <td>{row.series ? `${row.group} · ${row.series}` : row.group}</td>
               <td className="lp-num">{formatValue(row.value, data.format, { currency })}</td>
               <td className="lp-muted lp-num">n={row.count.toLocaleString()}</td>

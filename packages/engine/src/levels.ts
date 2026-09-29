@@ -1,4 +1,4 @@
-import type { BoardConfig, Query, Widget } from "@lenspack/core";
+import { type BoardConfig, type Query, type Widget, drilledDimension } from "@lenspack/core";
 import type { Pack } from "@lenspack/spec";
 
 import { type Capabilities, type Ctx, ResolveError } from "./resolve";
@@ -94,14 +94,7 @@ export function drilledQuery(
     if (explicit.some((f) => f.field === field) || accepts(next)) q = next;
   }
   // Step groupings down past the deepest selected level of their hierarchy.
-  const step = (dim: string | undefined) => {
-    const h = dim ? hierarchyOf(pack, dim) : null;
-    if (!h) return dim;
-    const selected = h.levels.map((l, i) => (selections[l] ? i : -1)).filter((i) => i >= 0);
-    const deepest = selected.length ? Math.max(...selected) : -1;
-    if (h.index > deepest) return dim;
-    return h.levels[Math.min(deepest + 1, h.levels.length - 1)];
-  };
+  const step = (dim: string | undefined) => (dim ? drilledDimension(dim, selections, pack.hierarchies) : dim);
   if (q.kind === "breakdown") {
     const d = step(q.dimension)!;
     if (d !== q.dimension && accepts({ ...q, dimension: d })) q = { ...q, dimension: d };

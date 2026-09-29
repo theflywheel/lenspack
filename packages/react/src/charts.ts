@@ -28,6 +28,8 @@ export type ChartSpec = {
   /** CSS `var(--lp-series-n)` strings in order. Canvas libraries resolve them with `resolveCssVar`. */
   palette: string[];
   legend: boolean;
+  /** Set when a click on a bar, slice or point means something (a drill-down): called with the group. */
+  onSelect?: (group: string) => void;
 };
 
 export interface ChartAdapter {
@@ -87,7 +89,7 @@ export function widen(rows: WidgetData["rows"], measures: NonNullable<WidgetData
 export function buildChartSpec(
   widget: Extract<Widget, { kind: "chart" }>,
   data: WidgetData,
-  opts: { currency?: string; measureLabel?: string; labelOf?: (key: string) => string | undefined } = {},
+  opts: { currency?: string; measureLabel?: string; labelOf?: (key: string) => string | undefined; onSelect?: (group: string) => void } = {},
 ): ChartSpec | null {
   const rows = data.rows.filter((r) => r.value !== null);
   if (rows.length === 0) return null;
@@ -102,5 +104,6 @@ export function buildChartSpec(
     format: (v) => formatValue(v, data.format, { currency: opts.currency }),
     palette: widget.options.colorScheme === "sequential" ? SEQUENTIAL_VARS : SERIES_VARS,
     legend: widget.options.legend,
+    ...(opts.onSelect ? { onSelect: opts.onSelect } : {}),
   };
 }

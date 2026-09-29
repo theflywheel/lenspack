@@ -11,6 +11,7 @@ export function catalogueFrom(pack: Pack): Catalogue {
   return {
     pack: pack.pack,
     version: pack.version,
+    ...(Object.keys(pack.hierarchies ?? {}).length ? { hierarchies: pack.hierarchies } : {}),
     entities: Object.entries(pack.entities).map(([key, e]) => ({
       key,
       grain: e.grain,

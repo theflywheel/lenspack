@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { drilledDimension, selectLevel } from "@lenspack/core";
+
 import { svgAdapter } from "./adapters/svg";
 import type { ChartAdapter } from "./charts";
 import type { Board, BoardOp, Catalogue, LayoutItem, PatchResult, WidgetData } from "./types";
@@ -12,6 +14,10 @@ type State = {
   loading: boolean;
   selections: Record<string, string>;
   setSelection(field: string, value: string): void;
+  /** Select a value on a hierarchy level (clearing finer levels): a drill-down. */
+  drill(dimension: string, value: string): void;
+  /** For a widget grouped by `dimension`: the level its rows are at now, and what a click on one selects (null when nothing). */
+  drillTarget(dimension: string): { at: string; selects: string | null };
   clearSelections(): void;
   apply(ops: BoardOp[]): Promise<PatchResult>;
   saveLayout(layout: LayoutItem[]): Promise<void>;
@@ -116,14 +122,35 @@ export function BoardProvider({
     },
     [onSelectionsChange],
   );
+  const hierarchies = catalogue.hierarchies;
+  const drill = React.useCallback(
+    (dimension: string, value: string) => {
+      setSelections((prev) => {
+        const next = selectLevel(prev, dimension, value, hierarchies);
+        onSelectionsChange?.(next);
+        return next;
+      });
+    },
+    [hierarchies, onSelectionsChange],
+  );
+  const drillTarget = React.useCallback(
+    (dimension: string) => {
+      const at = drilledDimension(dimension, selections, hierarchies);
+      const inHierarchy = Object.values(hierarchies ?? {}).some((ls) => ls.includes(at));
+      // A click selects the level the rows are at, unless the finest level is
+      // already selected (there is nowhere further to go).
+      return { at, selects: inHierarchy && !selections[at] ? at : null };
+    },
+    [selections, hierarchies],
+  );
   const clearSelections = React.useCallback(() => {
     setSelections({});
     onSelectionsChange?.({});
   }, [onSelectionsChange]);
 
   const value = React.useMemo<State>(
-    () => ({ board, catalogue, data, loading, selections, setSelection, clearSelections, apply, saveLayout, refresh: load, host, editable, currency, charts }),
-    [board, catalogue, data, loading, selections, setSelection, clearSelections, apply, saveLayout, load, host, editable, currency, charts],
+    () => ({ board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, currency, charts }),
+    [board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, currency, charts],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -5,6 +5,10 @@ import { type ChartAdapter, type ChartSpec, axisWidth } from "../charts";
 // The zero-dependency adapter: enough to render every chart kind readably,
 // deterministic for tests, and the default when no library is supplied.
 
+// A clickable mark when the chart drills; nothing otherwise.
+const pick = (spec: ChartSpec, group: unknown) =>
+  spec.onSelect ? { onClick: () => spec.onSelect!(String(group)), style: { cursor: "pointer" }, "data-drill": String(group) } : {};
+
 const W = 600;
 const H = 300;
 
@@ -71,7 +75,7 @@ function SvgChart({ spec }: { spec: ChartSpec }) {
       const p = (a: number, rad: number) => `${cx + rad * Math.cos(a)},${cy + rad * Math.sin(a)}`;
       const large = a1 - a0 > Math.PI ? 1 : 0;
       const d = `M${p(a0, R)} A${R},${R} 0 ${large} 1 ${p(a1, R)} L${p(a1, r0)} A${r0},${r0} 0 ${large} 0 ${p(a0, r0)} Z`;
-      return <path key={i} d={d} fill={spec.palette[i % spec.palette.length]}><title>{`${r.group}: ${spec.format(v)}`}</title></path>;
+      return <path key={i} d={d} fill={spec.palette[i % spec.palette.length]} {...pick(spec, r.group)}><title>{`${r.group}: ${spec.format(v)}`}</title></path>;
     });
     return (
       <div className="lp-svg-wrap">
@@ -93,7 +97,7 @@ function SvgChart({ spec }: { spec: ChartSpec }) {
       return spec.rows.map((r, i) => {
         const v = typeof r[k] === "number" ? (r[k] as number) : 0;
         const x = s.x(i) - ((s.innerW / n) * 0.8) / 2 + bw * si;
-        return <rect key={`${k}-${i}`} x={x} y={Math.min(s.y(v), s.y(0))} width={bw} height={Math.abs(s.y(0) - s.y(v))} fill={colour} rx={2}><title>{`${r.group} · ${spec.label(k)}: ${spec.format(v)}`}</title></rect>;
+        return <rect key={`${k}-${i}`} x={x} y={Math.min(s.y(v), s.y(0))} width={bw} height={Math.abs(s.y(0) - s.y(v))} fill={colour} rx={2} {...pick(spec, r.group)}><title>{`${r.group} · ${spec.label(k)}: ${spec.format(v)}`}</title></rect>;
       });
     }
     const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x},${y}`).join(" ");

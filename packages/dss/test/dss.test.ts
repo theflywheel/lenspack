@@ -117,3 +117,43 @@ describe("what real configs carry besides charts", () => {
   });
 });
 
+
+describe("hierarchies from drill links", () => {
+  const terms = (field: string, aggs: object) => ({ terms: { field, size: 50 }, aggs });
+  const target = (level: string, finer: string) => ({
+    T: { filter: { bool: { must: [{ exists: { field: `Data.${level}.keyword` } }], must_not: [{ exists: { field: `Data.${finer}.keyword` } }] } }, aggs: { Target: { sum: { field: "Data.target" } } } },
+  });
+  const chart = (field: string, drill: string, level: string, finer: string) => ({
+    chartType: "xtable",
+    drillChart: drill,
+    aggregationPaths: [],
+    queries: [
+      { indexName: "tasks", requestQueryMap: '{"region":"Data.region.keyword","town":"Data.town.keyword","street":"Data.street.keyword"}', aggrQuery: JSON.stringify({ aggs: { G: terms(`Data.${field}.keyword`, { Done: { value_count: { field: "Data.id.keyword" } } }) } }) },
+      { indexName: "goals", requestQueryMap: '{"region":"Data.region.keyword","town":"Data.town.keyword"}', aggrQuery: JSON.stringify({ aggs: { G: terms(`Data.${field}.keyword`, target(level, finer)) } }) },
+    ],
+    computedFields: [{ actionName: "PercentageComputedField", fields: ["Done", "Target"], newField: "Progress" }],
+  });
+  const charts = {
+    byRegion: chart("region", "byTown", "region", "town"),
+    byTown: chart("town", "byStreet", "town", "street"),
+    byStreet: chart("street", "none", "town", "street"),
+    // A category that drills into a boundary once is not a level.
+    byKind: { ...chart("kind", "byTown", "region", "town") },
+  } as Record<string, DssChart>;
+  const r = compileDss(charts, { dashboards: [{ id: "d", name: "d", visualizations: [{ vizArray: [{ charts: [{ id: "byRegion" }, { id: "byKind" }] }] }] }] });
+
+  it("orders the boundary levels by where the drill links go", () => {
+    expect(r.pack.hierarchies).toEqual({ boundary: ["region", "town", "street"] });
+  });
+  it("keeps a target read per level as one measure", () => {
+    const per = r.pack.measures.find((m) => m.levels);
+    expect(per?.levels).toEqual({ region: expect.any(String), town: expect.any(String) });
+  });
+  it("draws the drilled-into charts by drilling, not as widgets of their own", () => {
+    const drilled = r.outcomes.filter((o) => o.drilledFrom).map((o) => o.chart).sort();
+    expect(drilled).toEqual(["byStreet", "byTown"]);
+    const ids = r.boards[0]!.ops.map((o) => (o as { id?: string }).id).filter(Boolean);
+    expect(ids).toEqual(["by_region", "by_kind"]);
+    expect(r.outcomes.find((o) => o.chart === "byRegion")?.drills).toBe(true);
+  });
+});

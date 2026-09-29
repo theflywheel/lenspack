@@ -6,7 +6,7 @@ import { ArrowUp, ChevronDown, History, LayoutGrid, RotateCcw, SendHorizontal, X
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
-import { Board, BoardProvider, useBoard, useBoardOps, type BoardHost, type BoardVersion, type ChartAdapter, type FilterOption } from "@lenspack/react";
+import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type ChartAdapter, type FilterOption } from "@lenspack/react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -264,7 +264,7 @@ function OpsBox() {
 // Filter bar on shadcn Select. What a board filters by is configuration;
 // what you have selected is not, and lives in the provider.
 function FilterBar() {
-  const { board, selections, setSelection, clearSelections, host } = useBoard();
+  const { board, selections, setSelection, clearSelections, host, catalogue } = useBoard();
   const filters = board.config.filters;
   const [options, setOptions] = React.useState<Record<string, FilterOption[]>>({});
   React.useEffect(() => {
@@ -275,10 +275,12 @@ function FilterBar() {
       cancelled = true;
     };
   }, [host, filters]);
-  if (filters.length === 0) return null;
+  const drilling = Object.values(catalogue.hierarchies ?? {}).some((ls) => ls.some((l) => selections[l]));
+  if (filters.length === 0 && !drilling) return null;
   const active = filters.some((f) => selections[f.field]);
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2" data-testid="lp-filter-bar">
+      <DrillPath />
       {filters.map((f) => (
         <div key={f.id} className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">{f.label}</span>

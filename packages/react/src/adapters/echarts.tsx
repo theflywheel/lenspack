@@ -66,6 +66,14 @@ export function createEchartsAdapter(opts: EchartsOptions = {}): ChartAdapter {
     }, []);
     React.useEffect(() => {
       if (ref.current && chart.current) chart.current.setOption(toOption(spec, ref.current), true);
+      // Bars and slices name their group; a click on one drills.
+      const c = chart.current;
+      if (!c || !spec.onSelect) return;
+      const handler = (p: { name?: string }) => p.name !== undefined && spec.onSelect!(String(p.name));
+      c.on("click", handler);
+      return () => {
+        c.off("click", handler);
+      };
     }, [spec]);
     return <div ref={ref} className="lp-echarts" style={{ width: "100%", height: "100%" }} role="img" aria-label={spec.title} />;
   }

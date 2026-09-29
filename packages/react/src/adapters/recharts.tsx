@@ -16,7 +16,11 @@ function RechartsChart({ spec }: { spec: ChartSpec }) {
         <PieChart>
           <Pie data={rows} dataKey="value" nameKey={spec.groupKey} innerRadius="52%" outerRadius="80%" paddingAngle={1} stroke="none" isAnimationActive={false}>
             {rows.map((row, i) => (
-              <Cell key={String(row.group)} fill={palette[i % palette.length]} />
+              <Cell
+                key={String(row.group)}
+                fill={palette[i % palette.length]}
+                {...(spec.onSelect ? { onClick: () => spec.onSelect!(String(row.group)), style: { cursor: "pointer" } } : {})}
+              />
             ))}
           </Pie>
           <Tooltip formatter={(value, name) => [format(Number(value ?? 0)), String(name)]} />
@@ -63,7 +67,15 @@ function RechartsChart({ spec }: { spec: ChartSpec }) {
       <BarChart {...common}>
         {axes}
         {keys.map((k, i) => (
-          <Bar key={k} dataKey={k} name={spec.label(k)} fill={palette[i % palette.length]} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+          <Bar
+            key={k}
+            dataKey={k}
+            name={spec.label(k)}
+            fill={palette[i % palette.length]}
+            radius={[2, 2, 0, 0]}
+            isAnimationActive={false}
+            {...(spec.onSelect ? { onClick: (d: { payload?: { group?: unknown } }) => spec.onSelect!(String(d.payload?.group)), style: { cursor: "pointer" } } : {})}
+          />
         ))}
       </BarChart>
     </ResponsiveContainer>

@@ -66,3 +66,9 @@
 .lp-kpi-more dd { margin: 0; }
 .lp-table thead th { text-align: left; font-weight: 600; color: var(--lp-muted); border-bottom: 1px solid var(--lp-border); }
 .lp-table thead th.lp-num { text-align: right; }
+
+.lp-drill-path { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; }
+.lp-drill-sep { color: var(--lp-muted); }
+.lp-drill-here { font-weight: 600; }
+tr.lp-drillable { cursor: pointer; }
+tr.lp-drillable:hover { background: var(--lp-hover); }

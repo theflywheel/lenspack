@@ -36,7 +36,16 @@ export type DssOptions = {
   capabilities?: Capabilities;
 };
 
-export type ChartOutcome = { chart: string; status: "converted" | "partial" | "skipped"; notes: string[]; widget?: string };
+export type ChartOutcome = {
+  chart: string;
+  status: "converted" | "partial" | "skipped";
+  notes: string[];
+  widget?: string;
+  /** Reached by drilling down another chart's widget rather than drawn on its own. */
+  drilledFrom?: string;
+  /** The widget drills: it is grouped by a hierarchy level with a level below it. */
+  drills?: boolean;
+};
 
 export type DssResult = { pack: Pack; packYaml: string; boards: { id: string; title: string; ops: BoardOp[] }[]; outcomes: ChartOutcome[]; assumptions: string[]; report: string };
 
@@ -85,6 +94,10 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
   const measures = new Map<string, PackMeasure>();
   const measureBySig = new Map<string, string>();
   const filterDims = new Set<string>();
+  // Dimensions a dashboard request can filter by (requestQueryMap keys): the
+  // boundary levels. Only these can be levels of a hierarchy; a drill from a
+  // category into a boundary is a different kind of link.
+  const filterable = new Set<string>();
 
   const entityFor = (q: DssQuery) => {
     const key = entityKey(q.indexName);
@@ -180,7 +193,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
       const perQuery = chart.queries.map((q) => {
         const entity = entityFor(q);
         try {
-          for (const [k, f] of Object.entries(JSON.parse(q.requestQueryMap || "{}") as Record<string, string>)) dimension(entity, f, k);
+          for (const [k, f] of Object.entries(JSON.parse(q.requestQueryMap || "{}") as Record<string, string>)) filterable.add(dimension(entity, f, k));
         } catch {
           notes.push("requestQueryMap is not JSON");
         }
@@ -325,6 +338,126 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     }
   }
 
+  // ── Hierarchies, from DSS's drill links ────────────────────────────────
+  // A chart grouped by A that drills into a chart grouped by B says B nests
+  // in A. The links, counted, become the pack's hierarchies.
+  type Q = { kind: string; dimension?: string; by?: string; measure: string; measures?: string[] };
+  const queryOf = (p: Planned) => (p.widget as unknown as { widget: { query: Q } }).widget.query;
+  const groupOf = (p: Planned) => {
+    const q = queryOf(p);
+    return q.kind === "breakdown" ? q.dimension : q.kind === "series" ? q.by : undefined;
+  };
+  const edges = new Map<string, Map<string, number>>();
+  const drillsTo = new Map<string, string>(); // chart → chart it drills into
+  for (const [chartId, chart] of Object.entries(charts)) {
+    const target = chart && typeof chart === "object" ? (chart as DssChart & { drillChart?: string }).drillChart : undefined;
+    const a = planned.get(chartId);
+    const b = target ? planned.get(target) : undefined;
+    if (!a || !b) continue;
+    const [da, db] = [groupOf(a), groupOf(b)];
+    if (!da || !db || da === db) continue;
+    if (!filterable.has(da) || !filterable.has(db)) continue;
+    drillsTo.set(chartId, target!);
+    const out = edges.get(da) ?? new Map<string, number>();
+    out.set(db, (out.get(db) ?? 0) + 1);
+    edges.set(da, out);
+  }
+  // A link is a nesting when it carries a real share of the drills into its
+  // target (a category view drilling into a boundary a handful of times is
+  // not), and is not mutual (two views flipping between each other).
+  const weight = (a: string, b: string) => edges.get(a)?.get(b) ?? 0;
+  const targets = new Set([...edges.values()].flatMap((m) => [...m.keys()]));
+  const parentOf = new Map<string, string>();
+  for (const b of targets) {
+    const incoming = [...edges.keys()].map((a) => [a, weight(a, b)] as const).filter(([, w]) => w > 0);
+    const max = Math.max(...incoming.map(([, w]) => w));
+    const kept = incoming.filter(([a, w]) => (w >= 3 || incoming.length === 1) && w / max > 0.25 && weight(b, a) === 0).sort((x, y) => y[1] - x[1]);
+    if (kept[0]) parentOf.set(b, kept[0][0]);
+  }
+  const childrenOf = new Map<string, string[]>();
+  for (const [b, a] of parentOf) childrenOf.set(a, [...(childrenOf.get(a) ?? []), b]);
+  const hierarchies: Record<string, string[]> = {};
+  const roots = [...childrenOf.keys()].filter((a) => !parentOf.has(a)).sort((x, y) => weight(y, childrenOf.get(y)![0]!) - weight(x, childrenOf.get(x)![0]!));
+  for (const root of roots) {
+    const chain = [root];
+    for (let at = root; ; ) {
+      const next = (childrenOf.get(at) ?? []).filter((c) => !chain.includes(c)).sort((x, y) => weight(at, y) - weight(at, x))[0];
+      if (!next) break;
+      chain.push(next);
+      at = next;
+    }
+    if (chain.length >= 2) hierarchies[Object.keys(hierarchies).length ? `boundary_${Object.keys(hierarchies).length + 1}` : "boundary"] = chain;
+  }
+  for (const [name, levels] of Object.entries(hierarchies)) assumptions.push(`hierarchy ${name}: ${levels.join(" > ")} (from drill links)`);
+
+  // ── Per-level measures ──────────────────────────────────────────────────
+  // A family that differs only in which hierarchy level's rows it reads
+  // becomes one measure with levels; every reference to a member follows.
+  const levelDim = (m: PackMeasure): string | null => {
+    const has = (m.where ?? []).filter((w) => w.op === "exists");
+    if (has.length !== 1 || !(m.where ?? []).some((w) => w.op === "missing")) return null;
+    const dim = fieldToDim.get(`${m.entity}|${has[0]!.field}`) ?? [...dimensions.values()].find((d) => d.field === has[0]!.field || d.also?.[m.entity]?.field === has[0]!.field)?.key;
+    return dim && Object.values(hierarchies).some((ls) => ls.includes(dim)) ? dim : null;
+  };
+  const replaced = new Map<string, string>(); // member → levels measure
+  const families = new Map<string, PackMeasure[]>();
+  for (const m of measures.values()) {
+    if (m.derived || !levelDim(m)) continue;
+    const sig = JSON.stringify([m.entity, m.agg, m.field ?? null, m.scale ?? null, whereSig((m.where ?? []).filter((w) => w.op !== "exists" && w.op !== "missing"))]);
+    families.set(sig, [...(families.get(sig) ?? []), m]);
+  }
+  for (const members of families.values()) {
+    // One hierarchy per measure: the one that holds most of the family's levels.
+    const hierarchyOfLevel = (l: string) => Object.entries(hierarchies).find(([, ls]) => ls.includes(l))?.[0];
+    const counts = new Map<string, number>();
+    for (const m of members) counts.set(hierarchyOfLevel(levelDim(m)!)!, (counts.get(hierarchyOfLevel(levelDim(m)!)!) ?? 0) + 1);
+    const home = [...counts].sort((x, y) => y[1] - x[1])[0]?.[0];
+    const byLevel = new Map<string, PackMeasure>();
+    for (const m of members) if (hierarchyOfLevel(levelDim(m)!) === home && !byLevel.has(levelDim(m)!)) byLevel.set(levelDim(m)!, m);
+    if (byLevel.size < 2) continue;
+    const first = members[0]!;
+    let key = first.key.replace(/_at_[a-z0-9_]+$/, "") || first.key;
+    for (let i = 2; measures.has(key) || dimensions.has(key); i++) key = `${first.key.replace(/_at_[a-z0-9_]+$/, "")}_${i}`;
+    measures.set(key, { key, entity: first.entity, levels: Object.fromEntries([...byLevel].map(([l, m]) => [l, m.key])), label: first.label, format: first.format, synonyms: [], verified: true });
+    for (const m of byLevel.values()) replaced.set(m.key, key);
+  }
+  const follow = (k: string) => replaced.get(k) ?? k;
+  for (const m of measures.values()) if (m.derived) m.derived = formatExpr(renameKeys(parseExpr(m.derived), follow));
+  // Measures that became the same arithmetic are one measure.
+  const byExpr = new Map<string, string>();
+  const merged = new Map<string, string>();
+  for (const m of [...measures.values()]) {
+    if (!m.derived) continue;
+    const sig = `${m.derived}|${m.format}`;
+    const same = byExpr.get(sig);
+    if (same) {
+      merged.set(m.key, same);
+      measures.delete(m.key);
+    } else byExpr.set(sig, m.key);
+  }
+  const final = (k: string) => merged.get(follow(k)) ?? follow(k);
+  for (const m of measures.values()) if (m.derived) m.derived = formatExpr(renameKeys(parseExpr(m.derived), final));
+  for (const p of planned.values()) {
+    const q = queryOf(p);
+    q.measure = final(q.measure);
+    if (q.measures) q.measures = [...new Set(q.measures.map(final))].filter((k) => k !== q.measure);
+  }
+
+  // ── Drill copies fold into the widget they are reached from ─────────────
+  // A chart that is only ever reached by drilling from another, and draws
+  // the same number one level down, is that widget drilled: it is not drawn
+  // on its own.
+  const folded = new Map<string, string>(); // chart → the chart whose widget draws it
+  for (const [from, to] of drillsTo) {
+    const [a, b] = [planned.get(from)!, planned.get(to)!];
+    const levels = Object.values(hierarchies).find((ls) => ls.includes(groupOf(a)!) && ls.includes(groupOf(b)!));
+    if (!levels || levels.indexOf(groupOf(b)!) <= levels.indexOf(groupOf(a)!)) continue;
+    if (queryOf(a).measure !== queryOf(b).measure) continue;
+    let root = from;
+    while (folded.has(root)) root = folded.get(root)!;
+    if (root !== to) folded.set(to, root);
+  }
+
   // A measure named like a dimension (a DSS label that is also a field name)
   // takes a suffix, and every widget and ratio that names it follows.
   for (const key of [...measures.keys()].filter((k) => dimensions.has(k))) {
@@ -349,6 +482,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     entities,
     dimensions: [...dimensions.values()],
     measures: [...measures.values()],
+    ...(Object.keys(hierarchies).length ? { hierarchies } : {}),
   };
   const pack = parsePack(rawPack);
   const catalogue = catalogueFrom(pack);
@@ -378,7 +512,9 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
       const probe = applyOps(emptyBoard(pack, "probe"), [opSchema.parse(p.widget) as BoardOp], catalogue);
       if (!probe.ok) throw new Error(probe.error);
       accepted.set(p.chartId, p);
-      outcomes.push({ chart: p.chartId, status: p.notes.length ? "partial" : "converted", notes: p.notes, widget: p.id });
+      const g = groupOf(p);
+      const drills = !!g && Object.values(hierarchies).some((ls) => ls.includes(g) && ls.indexOf(g) < ls.length - 1);
+      outcomes.push({ chart: p.chartId, status: p.notes.length ? "partial" : "converted", notes: p.notes, widget: p.id, ...(drills ? { drills } : {}) });
     } catch (e) {
       outcomes.push({ chart: p.chartId, status: "skipped", notes: [...p.notes, reason(e)] });
     }
@@ -386,10 +522,20 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
 
   const filterOps = (): BoardOp[] =>
     [...filterDims].map((field) => ({ op: "add_filter", filter: { id: `filter_${field}`, type: "select", label: readable(field), field, applies: ["*"] } }) as unknown as BoardOp);
+  // A drilled-into chart is drawn by the widget it is reached from.
+  const drawnBy = (chart: string) => {
+    let at = chart;
+    while (folded.has(at) && accepted.has(folded.get(at)!)) at = folded.get(at)!;
+    return at;
+  };
+  for (const o of outcomes) {
+    const root = drawnBy(o.chart);
+    if (root !== o.chart && o.status !== "skipped") o.drilledFrom = accepted.get(root)!.id;
+  }
   const board = (id: string, title: string, chartIds: string[]) => {
     const seen = new Set<string>();
     const ops = chartIds
-      .map((c) => accepted.get(c))
+      .map((c) => accepted.get(drawnBy(c)))
       .filter((p): p is Planned => !!p && !seen.has(p.id) && !!seen.add(p.id))
       .map((p) => p.widget);
     return { id: slug(id), title, ops: [...ops, ...filterOps()] };
@@ -397,7 +543,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
 
   const boards = master
     ? master.dashboards.map((d) => board(d.id ?? d.name ?? "board", readable(d.title ?? d.name ?? d.id ?? "Dashboard"), (d.visualizations ?? []).flatMap((v) => v.vizArray ?? []).flatMap((v) => v.charts ?? []).map((c) => c.id)))
-    : chunk([...accepted.keys()], 16).map((ids, i) => board(`charts_${i + 1}`, `DSS charts ${i + 1}`, ids));
+    : chunk([...accepted.keys()].filter((c) => drawnBy(c) === c), 16).map((ids, i) => board(`charts_${i + 1}`, `DSS charts ${i + 1}`, ids));
 
   const packYaml = YAML.stringify(JSON.parse(JSON.stringify(rawPack)), { lineWidth: 0 });
   return { pack, packYaml, boards: boards.filter((b) => b.ops.length > filterDims.size), outcomes, assumptions: [...new Set(assumptions)], report: report(charts, pack, outcomes, [...new Set(assumptions)], leafCount) };
@@ -453,8 +599,9 @@ function report(charts: Record<string, DssChart>, pack: Pack, outcomes: ChartOut
     .reduce((n, c) => n + c.queries.reduce((m, q) => m + String(q.aggrQuery ?? "").split("\n").length, 0), 0);
   // Measures that differ only by the hierarchy level they read.
   const families = new Map<string, string[]>();
+  const inLevels = new Set(pack.measures.flatMap((m) => Object.values(m.levels ?? {})));
   for (const m of pack.measures) {
-    if (m.derived || !levelOf(m.where ?? [])) continue;
+    if (m.derived || inLevels.has(m.key) || !levelOf(m.where ?? [])) continue;
     const rest = JSON.stringify([m.entity, m.agg, m.field ?? null, m.scale ?? null, (m.where ?? []).filter((w) => w.op !== "exists" && w.op !== "missing")]);
     families.set(rest, [...(families.get(rest) ?? []), m.key]);
   }
@@ -472,11 +619,15 @@ function report(charts: Record<string, DssChart>, pack: Pack, outcomes: ChartOut
     "- every dimension is typed string; mark enums, numbers and booleans by hand",
     "- measure keys come from DSS labels; rename them to what people call them",
     "",
-    "## Per-level copies",
+    "## Hierarchies and drill-down",
     "",
-    perLevel.length
-      ? `${perLevel.reduce((n, f) => n + f.length, 0)} measures are ${perLevel.length} numbers read at different hierarchy levels. If the finest level is complete, one entity filtered to it (and grouped upward by dimension) replaces each family with a single measure — a modelling decision, so it is left to you:`
-      : "None.",
+    ...Object.entries(pack.hierarchies ?? {}).map(([n, ls]) => `- ${n}: ${ls.join(" › ")}`),
+    `- ${outcomes.filter((o) => o.drilledFrom).length} charts are the same number one level down: drawn by drilling into the widget they are reached from`,
+    `- ${pack.measures.filter((m) => m.levels).length} measures are kept per level (${pack.measures.filter((m) => m.levels).map((m) => m.key).join(", ") || "none"})`,
+    "",
+    "## Per-level copies left as they are",
+    "",
+    perLevel.length ? `${perLevel.length} families read a level that is not in a hierarchy; each member stays its own measure:` : "None.",
     "",
     ...perLevel.map((f) => `- ${f.join(", ")}`),
     "",

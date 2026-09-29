@@ -62,7 +62,17 @@ export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOption
         <ChartContainer config={config} className={opts.className} style={style}>
           <PieChart>
             <ChartTooltip content={<ChartTooltipContent nameKey="slice" formatter={tooltipFormatter} hideLabel />} />
-            <Pie data={slices} dataKey="value" nameKey="slice" innerRadius="45%" outerRadius="80%" paddingAngle={1} stroke="none" isAnimationActive={false} />
+            <Pie
+              data={slices}
+              dataKey="value"
+              nameKey="slice"
+              innerRadius="45%"
+              outerRadius="80%"
+              paddingAngle={1}
+              stroke="none"
+              isAnimationActive={false}
+              {...(spec.onSelect ? { onClick: (_: unknown, i: number) => spec.onSelect!(String(spec.rows[i]?.[spec.groupKey])), style: { cursor: "pointer" } } : {})}
+            />
             {spec.legend && <ChartLegend content={<ChartLegendContent nameKey="slice" />} />}
           </PieChart>
         </ChartContainer>
@@ -82,7 +92,14 @@ export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOption
         <BarChart accessibilityLayer data={rows}>
           {axes}
           {map.map((m) => (
-            <Bar key={m.to} dataKey={m.to} fill={`var(--color-${m.to})`} radius={4} isAnimationActive={false} />
+            <Bar
+              key={m.to}
+              dataKey={m.to}
+              fill={`var(--color-${m.to})`}
+              radius={4}
+              isAnimationActive={false}
+              {...(spec.onSelect ? { onClick: (d: { payload?: Record<string, unknown> }) => spec.onSelect!(String(d.payload?.[spec.groupKey])), style: { cursor: "pointer" } } : {})}
+            />
           ))}
         </BarChart>
       ) : spec.chart === "line" ? (
