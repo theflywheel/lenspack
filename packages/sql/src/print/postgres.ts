@@ -6,7 +6,7 @@ const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 export const postgresRules: DialectRules = {
   dialect: "postgres",
   quote,
-  cast: (to) => ({ double: "DOUBLE PRECISION", text: "TEXT", timestamp: "TIMESTAMP", int: "INTEGER" })[to],
+  cast: (to) => ({ double: "DOUBLE PRECISION", text: "TEXT", timestamp: "TIMESTAMP", int: "INTEGER", bigint: "BIGINT" })[to],
   json: (col, path) => {
     // (col #>> ARRAY['a','b']) reads nested keys as text; a single key uses ->>.
     const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;

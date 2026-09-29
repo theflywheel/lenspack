@@ -9,7 +9,9 @@ import { z } from "zod";
 
 export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as const;
 export const CHART_KINDS = ["bar", "line", "pie", "area"] as const;
-export const FILTER_OPS = ["eq", "neq", "in", "gte", "lte", "between", "contains"] as const;
+// subtree: a node of a dotted path and everything under it ("a.b" matches
+// "a.b" and "a.b.c", not "a.bc").
+export const FILTER_OPS = ["eq", "neq", "in", "gte", "lte", "between", "contains", "subtree"] as const;
 
 const scalar = z.union([z.string(), z.number(), z.boolean()]);
 
@@ -51,7 +53,9 @@ export const querySchema = z.discriminatedUnion("kind", [
     sort: z.enum(["asc", "desc"]).default("desc"),
     // What the sort is on: the measure (largest first), or the group itself
     // (a date, a code) for a breakdown that reads in its own order.
-    sortBy: z.enum(["value", "group"]).optional(),
+    // "none" keeps the source's own grouping order: for a migrated dashboard
+    // that must list tied rows exactly as the system it replaces did.
+    sortBy: z.enum(["value", "group", "none"]).optional(),
     ...alsoMeasures,
     ...common,
   }),

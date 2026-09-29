@@ -137,6 +137,7 @@
           "measure": "daily_complaints",
           "limit": 120,
           "sort": "desc",
+          "sortBy": "none",
           "time": {
             "last": "7d"
           }
@@ -195,6 +196,7 @@
           ],
           "limit": 200,
           "sort": "desc",
+          "sortBy": "none",
           "time": {
             "last": "7d"
           }
@@ -361,6 +363,7 @@
           ],
           "limit": 500,
           "sort": "desc",
+          "sortBy": "none",
           "time": {
             "last": "7d"
           }

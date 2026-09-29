@@ -6,7 +6,7 @@ const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 export const duckdbRules: DialectRules = {
   dialect: "duckdb",
   quote,
-  cast: (to) => ({ double: "DOUBLE", text: "VARCHAR", timestamp: "TIMESTAMP", int: "INTEGER" })[to],
+  cast: (to) => ({ double: "DOUBLE", text: "VARCHAR", timestamp: "TIMESTAMP", int: "INTEGER", bigint: "BIGINT" })[to],
   json: (col, path) => {
     const seg = (s: string) => `."${s.replace(/"/g, '\\"')}"`;
     if (path.length === 0) return `CAST(${col} AS VARCHAR)`;
@@ -17,7 +17,9 @@ export const duckdbRules: DialectRules = {
   epoch: (arg, unit) => `epoch_ms(CAST(${arg} AS BIGINT)${unit === "epoch_s" ? " * 1000" : ""})`,
   // DuckDB accepts numbered parameters, so both dialects bind the same way.
   param: (i) => `$${i}`,
-  paramValue: (v) => (v instanceof Date ? v.toISOString().replace("T", " ").replace("Z", "") : v),
+  // The node binding narrows a JS integer past 32 bits to INTEGER, so large
+  // integers (epoch milliseconds) are bound as BigInt.
+  paramValue: (v) => (v instanceof Date ? v.toISOString().replace("T", " ").replace("Z", "") : typeof v === "number" && Number.isInteger(v) && Math.abs(v) > 2_147_483_647 ? BigInt(v) : v),
 };
 
 export function printDuckdb(ast: Ast): Printed {

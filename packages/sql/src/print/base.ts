@@ -10,7 +10,7 @@ export type Printed = { sql: string; params: unknown[] };
 export type DialectRules = {
   dialect: Dialect;
   quote(id: string): string;
-  cast(to: "double" | "text" | "timestamp" | "int"): string;
+  cast(to: "double" | "text" | "timestamp" | "int" | "bigint"): string;
   json(col: string, path: string[]): string;
   percentile(fn: "median" | "p90", arg: string): string;
   trunc(grain: string, arg: string): string;
@@ -22,7 +22,7 @@ export type DialectRules = {
 export function print(ast: Ast, rules: DialectRules): Printed {
   const params: unknown[] = [];
   const q = rules.quote;
-  const P = (value: unknown, cast?: "timestamp" | "double" | "int") => {
+  const P = (value: unknown, cast?: "timestamp" | "double" | "int" | "bigint") => {
     params.push(rules.paramValue(value));
     const ph = rules.param(params.length);
     return cast ? `CAST(${ph} AS ${rules.cast(cast)})` : ph;

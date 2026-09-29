@@ -8,7 +8,7 @@ export type Grain = "hour" | "day" | "week" | "month" | "quarter" | "year";
 export type Expr =
   | { t: "raw"; sql: Fragment } // a fragment from the pack, inlined verbatim (per dialect)
   | { t: "col"; alias: string; col: string }
-  | { t: "param"; value: unknown; cast?: "timestamp" | "double" | "int" }
+  | { t: "param"; value: unknown; cast?: "timestamp" | "double" | "int" | "bigint" }
   | { t: "lit"; value: number }
   | { t: "star" }
   | { t: "json"; alias: string; col: string; path: string[] }

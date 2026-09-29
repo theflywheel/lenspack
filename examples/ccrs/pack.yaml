@@ -151,6 +151,24 @@ dimensions:
     type: string
     synonyms: []
     verified: true
+  - key: complaint_node_path
+    entity: facts
+    field: complaint_node_path
+    type: string
+    synonyms: []
+    verified: true
+  - key: boundary_path
+    entity: facts
+    field: boundary_path
+    type: string
+    synonyms: []
+    verified: true
+  - key: account_id
+    entity: facts
+    field: account_id
+    type: string
+    synonyms: []
+    verified: true
 measures:
   - key: avg_resolution_ms_resolved
     entity: facts
@@ -475,6 +493,13 @@ measures:
       - field: sla_breached
         op: eq
         value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: facts_built_at
+    entity: facts
+    agg: max
+    field: facts_built_at
     format: number
     synonyms: []
     verified: true

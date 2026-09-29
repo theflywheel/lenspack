@@ -54,6 +54,20 @@ export type SkinTile = {
   sparkline?: { measure: string; dateColumn: string };
   public: boolean;
   requiredActionUrl?: string;
+  /** The widget's lenspack query, before any board filter or request param. */
+  query: Query;
+  grain: "facts" | "events" | "daily";
+  /** The KPI's own window when the request names none (last_7d, mtd, …). */
+  window: string | null;
+  /** The per-day column a daily series groups by on this grain. */
+  seriesDate: string;
+  /** Complaint-type level the KPI rolls up to when not overridden ("1", "leaf"). */
+  hierLevel: string | null;
+  /** The KPI's CCRS dimension names, in order (for result columns). */
+  dimensions: string[];
+  /** Record fields (rows queries), in the order CCRS returns them. */
+  recordColumns?: string[];
+  version?: string;
 };
 export type Skin = { tiles: Record<string, SkinTile>; packs: Record<string, { public: boolean; requiredActionUrl?: string }> };
 
@@ -85,6 +99,12 @@ const hierDimension = (level: number): PackDimension => ({
   synonyms: [],
   verified: true,
 });
+
+// A tile's stored query carries no window: the request supplies one.
+const tilesQuery = (q: Query): Query => {
+  const { time: _t, ...rest } = q as Query & { time?: unknown };
+  return rest as Query;
+};
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(\d)/, "n_$1") || "measure";
 const unwrap = <T>(records: T[] | { data: T }[]): T[] => (records as { data?: T }[]).map((r) => (r && typeof r === "object" && "data" in r ? (r.data as T) : (r as T)));
@@ -278,7 +298,8 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
         ...(!split && Object.keys(extras).length ? { measures: Object.keys(extras).slice(0, 11) } : {}),
         limit,
         sort: sortSpec?.dir ?? (byGroup || DATE_COLUMNS.has(group!) ? "asc" : "desc"),
-        ...(byGroup || DATE_COLUMNS.has(group!) ? { sortBy: "group" } : {}),
+        // No declared sort means the database's own order, as CCRS returns it.
+        ...(byGroup || DATE_COLUMNS.has(group!) ? { sortBy: "group" } : !sortSpec ? { sortBy: "none" } : {}),
       } as Query;
       if (split && Object.keys(extras).length) notes.push({ kpi: kpi.id, note: "split by a second dimension: extra measures dropped" });
     }
@@ -308,8 +329,22 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       ...(kind === "kpi" && sparkDate && /sparkline/.test(viz.kind) ? { sparkline: { measure: names.get(String(viz.sparklineMeasureKey ?? valueName)) ?? primary, dateColumn: sparkDate } } : {}),
       public: kpi.public === true,
       ...(kpi.requiredActionUrl ? { requiredActionUrl: kpi.requiredActionUrl } : {}),
+      query: tilesQuery(query),
+      grain: q.grain ?? "facts",
+      window: live ? null : (kpi.params?.find((p) => p.name === "window")?.default || q.window?.name || null),
+      seriesDate: q.grain === "daily" ? "snapshot_date" : q.grain === "events" ? "occurred_date" : "created_date",
+      hierLevel: hier ?? null,
+      dimensions: q.dimensions ?? [],
+      ...(query.kind === "rows" ? { recordColumns: [...(q.dimensions ?? []), ...q.measures.map((m) => m.name)] } : {}),
+      ...(kpi.version ? { version: kpi.version } : {}),
     };
   }
+  // When the numbers were last rebuilt: CCRS reports it as asOf.
+  entityFor("facts");
+  measures.set("facts_built_at", { key: "facts_built_at", entity: "facts", agg: "max", field: "facts_built_at", format: "number", synonyms: [], verified: true });
+  // The complaint-type filter narrows by a node of the type tree.
+  dimension("facts", "complaint_node_path");
+  for (const c of ["ward_code", "service_code", "department_code", "boundary_path", "account_id"]) dimension("facts", c);
 
   const rawPack = {
     pack: opts.packName ?? "ccrs",
@@ -348,3 +383,4 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
   void pack;
   return { pack: finalPack, packYaml: YAML.stringify(JSON.parse(JSON.stringify({ ...rawPack, dimensions: [...dimensions.values()] })), { lineWidth: 0 }), boards, skin, notes };
 }
+export { ccrsApi, type CcrsApiOptions, type Board as CcrsBoard } from "./api";

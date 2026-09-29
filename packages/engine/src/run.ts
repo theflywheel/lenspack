@@ -108,7 +108,9 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   });
   if (query.kind === "breakdown") {
     const dir = query.sort === "asc" ? 1 : -1;
-    if (query.sortBy === "group") rows.sort((a, b) => a.group.localeCompare(b.group) * dir || (a.series ?? "").localeCompare(b.series ?? ""));
+    if (query.sortBy === "none") {
+      // The source's own order: the home operand's rows first, as they came.
+    } else if (query.sortBy === "group") rows.sort((a, b) => a.group.localeCompare(b.group) * dir || (a.series ?? "").localeCompare(b.series ?? ""));
     else rows.sort((a, b) => (a.value === null ? 1 : b.value === null ? -1 : (a.value - b.value) * dir) || a.group.localeCompare(b.group) || (a.series ?? "").localeCompare(b.series ?? ""));
     rows = rows.slice(0, query.limit);
   } else {

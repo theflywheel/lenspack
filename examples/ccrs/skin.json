@@ -39,7 +39,18 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "avg_resolution_ms_resolved",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_chart_complaints_by_type": {
       "kpiId": "cl_chart_complaints_by_type",
@@ -102,7 +113,22 @@
         "group": "service_code"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "service_type_l1",
+        "measure": "complaints",
+        "limit": 500,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": "last_30d",
+      "seriesDate": "created_date",
+      "hierLevel": "1",
+      "dimensions": [
+        "service_code"
+      ],
+      "version": "1.2.0"
     },
     "cl_chart_complaints_over_time": {
       "kpiId": "cl_chart_complaints_over_time",
@@ -181,7 +207,23 @@
         "group": "created_date"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "created_date",
+        "measure": "complaints",
+        "limit": 366,
+        "sort": "asc",
+        "sortBy": "group"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "created_date"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_department_breach_scatter": {
       "kpiId": "cl_chart_department_breach_scatter",
@@ -234,7 +276,26 @@
         "group": "department_code"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "department_code",
+        "measure": "daily_complaints_open",
+        "measures": [
+          "daily_complaints_open_sla_status_bucket_eq_breached",
+          "daily_complaints_open_sla_status_bucket_in_within_approachin"
+        ],
+        "limit": 50,
+        "sort": "desc"
+      },
+      "grain": "daily",
+      "window": null,
+      "seriesDate": "snapshot_date",
+      "hierLevel": null,
+      "dimensions": [
+        "department_code"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_department_flow_ratio": {
       "kpiId": "cl_chart_department_flow_ratio",
@@ -283,7 +344,26 @@
         "group": "department_code"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "department_code",
+        "measure": "complaints_not_open_resolved",
+        "measures": [
+          "complaints"
+        ],
+        "limit": 500,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "department_code"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_department_resolution_rate": {
       "kpiId": "cl_chart_department_resolution_rate",
@@ -326,7 +406,23 @@
         "group": "department_code"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "department_code",
+        "measure": "chart_department_resolution_rate",
+        "limit": 500,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "facts",
+      "window": "last_30d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "department_code"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_departments_by_type": {
       "kpiId": "cl_chart_departments_by_type",
@@ -367,7 +463,23 @@
         "group": "department_code"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "department_code",
+        "measure": "complaints",
+        "limit": 500,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "department_code"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_officer_sla": {
       "kpiId": "cl_chart_officer_sla",
@@ -437,7 +549,25 @@
         "series": "sla_status_bucket"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/officer"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/officer",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "current_assignee_uuid",
+        "by": "sla_status_bucket",
+        "measure": "complaints_open",
+        "limit": 120,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "current_assignee_uuid",
+        "sla_status_bucket"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_open_by_age": {
       "kpiId": "cl_chart_open_by_age",
@@ -484,7 +614,23 @@
         "group": "aging_bucket"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "aging_bucket",
+        "measure": "complaints_open",
+        "limit": 10,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "aging_bucket"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_open_by_channel": {
       "kpiId": "cl_chart_open_by_channel",
@@ -608,7 +754,22 @@
         "group": "source"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "source",
+        "measure": "complaints_open",
+        "limit": 50,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "source"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_open_by_type_stage": {
       "kpiId": "cl_chart_open_by_type_stage",
@@ -697,7 +858,25 @@
         "series": "application_status"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "service_type_l1",
+        "by": "application_status",
+        "measure": "complaints_open",
+        "limit": 300,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": "1",
+      "dimensions": [
+        "service_code",
+        "application_status"
+      ],
+      "version": "1.2.0"
     },
     "cl_chart_over_time_created_daily": {
       "kpiId": "cl_chart_over_time_created_daily",
@@ -776,7 +955,27 @@
         "group": "created_date"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "created_date",
+        "measure": "complaints",
+        "measures": [
+          "complaints_not_open_resolved",
+          "complaints_not_open_resolved_not_sla_breached"
+        ],
+        "limit": 366,
+        "sort": "asc",
+        "sortBy": "group"
+      },
+      "grain": "facts",
+      "window": "last_30d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "created_date"
+      ],
+      "version": "1.0.1"
     },
     "cl_chart_over_time_open_daily": {
       "kpiId": "cl_chart_over_time_open_daily",
@@ -812,7 +1011,23 @@
         "group": "snapshot_date"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports-extended"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports-extended",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "snapshot_date",
+        "measure": "daily_complaints_open",
+        "limit": 366,
+        "sort": "asc",
+        "sortBy": "group"
+      },
+      "grain": "daily",
+      "window": null,
+      "seriesDate": "snapshot_date",
+      "hierLevel": null,
+      "dimensions": [
+        "snapshot_date"
+      ],
+      "version": "1.0.0"
     },
     "cl_chart_wards_by_sla": {
       "kpiId": "cl_chart_wards_by_sla",
@@ -886,7 +1101,25 @@
         "series": "sla_status_bucket"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "ward_code",
+        "by": "sla_status_bucket",
+        "measure": "daily_complaints",
+        "limit": 120,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "daily",
+      "window": "last_7d",
+      "seriesDate": "snapshot_date",
+      "hierLevel": null,
+      "dimensions": [
+        "ward_code",
+        "sla_status_bucket"
+      ],
+      "version": "1.0.0"
     },
     "cl_created_today_count": {
       "kpiId": "cl_created_today_count",
@@ -919,7 +1152,18 @@
         "dateColumn": "created_date"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "complaints",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "dtd",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_csat_avg": {
       "kpiId": "cl_csat_avg",
@@ -966,7 +1210,18 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "avg_rating_rating_resolved",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_first_assignment_rate_count": {
       "kpiId": "cl_first_assignment_rate_count",
@@ -1013,7 +1268,18 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "first_assignment_rate",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_flow_ratio_count": {
       "kpiId": "cl_flow_ratio_count",
@@ -1054,7 +1320,18 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "value",
+        "measure": "chart_department_resolution_rate",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_map_complaint_pins": {
       "kpiId": "cl_map_complaint_pins",
@@ -1104,7 +1381,63 @@
         }
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "rows",
+        "entity": "facts",
+        "columns": [
+          "service_request_id",
+          "latitude",
+          "longitude",
+          "ward_code",
+          "service_code",
+          "application_status",
+          "created_date",
+          "source",
+          "sla_status_bucket"
+        ],
+        "limit": 500,
+        "filters": [
+          {
+            "dimension": "is_open",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "dimension": "has_geo_pin",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "service_request_id",
+        "latitude",
+        "longitude",
+        "ward_code",
+        "service_code",
+        "application_status",
+        "created_date",
+        "source",
+        "sla_status_bucket"
+      ],
+      "recordColumns": [
+        "service_request_id",
+        "latitude",
+        "longitude",
+        "ward_code",
+        "service_code",
+        "application_status",
+        "created_date",
+        "source",
+        "sla_status_bucket",
+        "total"
+      ],
+      "version": "1.0.0"
     },
     "cl_map_complaint_pins_all": {
       "kpiId": "cl_map_complaint_pins_all",
@@ -1156,7 +1489,64 @@
         }
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "rows",
+        "entity": "facts",
+        "columns": [
+          "service_request_id",
+          "latitude",
+          "longitude",
+          "ward_code",
+          "service_code",
+          "application_status",
+          "created_date",
+          "source",
+          "sla_status_bucket",
+          "is_open",
+          "is_resolved"
+        ],
+        "limit": 500,
+        "filters": [
+          {
+            "dimension": "has_geo_pin",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "service_request_id",
+        "latitude",
+        "longitude",
+        "ward_code",
+        "service_code",
+        "application_status",
+        "created_date",
+        "source",
+        "sla_status_bucket",
+        "is_open",
+        "is_resolved"
+      ],
+      "recordColumns": [
+        "service_request_id",
+        "latitude",
+        "longitude",
+        "ward_code",
+        "service_code",
+        "application_status",
+        "created_date",
+        "source",
+        "sla_status_bucket",
+        "is_open",
+        "is_resolved",
+        "total"
+      ],
+      "version": "1.0.0"
     },
     "cl_map_ward_wow_current": {
       "kpiId": "cl_map_ward_wow_current",
@@ -1200,7 +1590,27 @@
         "group": "ward_code"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "ward_code",
+        "measure": "complaints",
+        "measures": [
+          "complaints_open",
+          "complaints_not_open_resolved"
+        ],
+        "limit": 200,
+        "sort": "desc",
+        "sortBy": "none"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "ward_code"
+      ],
+      "version": "1.0.0"
     },
     "cl_new_created_count": {
       "kpiId": "cl_new_created_count",
@@ -1245,7 +1655,18 @@
         "dateColumn": "created_date"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "complaints",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_oldest_open_age": {
       "kpiId": "cl_oldest_open_age",
@@ -1292,7 +1713,17 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "max_open_age_ms_open"
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_open_complaints_live": {
       "kpiId": "cl_open_complaints_live",
@@ -1337,7 +1768,17 @@
         "dateColumn": "created_date"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "complaints_open"
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_reopen_rate_count": {
       "kpiId": "cl_reopen_rate_count",
@@ -1384,7 +1825,18 @@
         "extras": {}
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "reopen_rate",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_resolution_rate_count": {
       "kpiId": "cl_resolution_rate_count",
@@ -1435,7 +1887,18 @@
         "dateColumn": "created_date"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "chart_department_resolution_rate",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_resolved_date_range_count": {
       "kpiId": "cl_resolved_date_range_count",
@@ -1487,7 +1950,18 @@
         "dateColumn": "created_date"
       },
       "public": true,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "complaints_not_open_resolved",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_resolved_on_time_rate_count": {
       "kpiId": "cl_resolved_on_time_rate_count",
@@ -1538,7 +2012,18 @@
         "dateColumn": "created_date"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "resolved_on_time_rate",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_sla_compliance_rate_count": {
       "kpiId": "cl_sla_compliance_rate_count",
@@ -1585,7 +2070,18 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "sla_compliance_rate",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_sla_noncompliance_rate_count": {
       "kpiId": "cl_sla_noncompliance_rate_count",
@@ -1632,7 +2128,18 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "sla_noncompliance_rate",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "cl_table_complaints_at_risk": {
       "kpiId": "cl_table_complaints_at_risk",
@@ -1686,7 +2193,63 @@
         }
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/officer"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/officer",
+      "query": {
+        "kind": "rows",
+        "entity": "facts",
+        "columns": [
+          "service_request_id",
+          "service_code",
+          "service_group",
+          "ward_code",
+          "application_status",
+          "sla_status_bucket",
+          "current_assignee_uuid",
+          "open_age_ms",
+          "sla_target_ms"
+        ],
+        "limit": 500,
+        "filters": [
+          {
+            "dimension": "is_open",
+            "op": "eq",
+            "value": true
+          },
+          {
+            "dimension": "sla_status_bucket",
+            "op": "in",
+            "value": [
+              "approaching",
+              "breached"
+            ]
+          }
+        ]
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "service_request_id",
+        "service_code",
+        "service_group",
+        "ward_code",
+        "application_status",
+        "sla_status_bucket",
+        "current_assignee_uuid"
+      ],
+      "recordColumns": [
+        "service_request_id",
+        "service_code",
+        "service_group",
+        "ward_code",
+        "application_status",
+        "sla_status_bucket",
+        "current_assignee_uuid",
+        "open_age_ms",
+        "sla_target_ms"
+      ],
+      "version": "1.0.0"
     },
     "cl_table_complaint_type_details": {
       "kpiId": "cl_table_complaint_type_details",
@@ -1834,7 +2397,24 @@
         "series": "service_group"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "service_code",
+        "by": "service_group",
+        "measure": "avg_resolution_ms_resolved",
+        "limit": 100,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": "all",
+      "seriesDate": "created_date",
+      "hierLevel": "leaf",
+      "dimensions": [
+        "service_code",
+        "service_group"
+      ],
+      "version": "1.2.0"
     },
     "cl_table_recurring_ward_subtype": {
       "kpiId": "cl_table_recurring_ward_subtype",
@@ -1936,7 +2516,24 @@
         "series": "service_code"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "ward_code",
+        "by": "service_code",
+        "measure": "complaints",
+        "limit": 200,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": "leaf",
+      "dimensions": [
+        "ward_code",
+        "service_code"
+      ],
+      "version": "1.3.0"
     },
     "cl_table_service_quality_by_channel": {
       "kpiId": "cl_table_service_quality_by_channel",
@@ -2012,7 +2609,26 @@
         "group": "source"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "source",
+        "measure": "complaints",
+        "measures": [
+          "chart_department_resolution_rate",
+          "avg_rating_rating_resolved"
+        ],
+        "limit": 100,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "source"
+      ],
+      "version": "1.1.0"
     },
     "cl_table_subtype_performance": {
       "kpiId": "cl_table_subtype_performance",
@@ -2104,7 +2720,26 @@
         "group": "service_code"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "service_code",
+        "measure": "avg_resolution_ms_resolved",
+        "measures": [
+          "complaints",
+          "avg_sla_target_ms"
+        ],
+        "limit": 30,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": "leaf",
+      "dimensions": [
+        "service_code"
+      ],
+      "version": "1.2.0"
     },
     "cl_table_ward_open_daily": {
       "kpiId": "cl_table_ward_open_daily",
@@ -2140,7 +2775,22 @@
         "group": "ward_code"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports-extended"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports-extended",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "ward_code",
+        "measure": "daily_complaints_open",
+        "limit": 200,
+        "sort": "desc"
+      },
+      "grain": "daily",
+      "window": null,
+      "seriesDate": "snapshot_date",
+      "hierLevel": null,
+      "dimensions": [
+        "ward_code"
+      ],
+      "version": "1.0.0"
     },
     "cl_table_ward_performance": {
       "kpiId": "cl_table_ward_performance",
@@ -2234,7 +2884,28 @@
         "group": "ward_code"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/reports",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "ward_code",
+        "measure": "complaints",
+        "measures": [
+          "complaints_open",
+          "reopen_rate",
+          "resolved_on_time_rate",
+          "avg_rating_rating_resolved"
+        ],
+        "limit": 200,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "ward_code"
+      ],
+      "version": "1.1.0"
     },
     "cl_total_complaints_count": {
       "kpiId": "cl_total_complaints_count",
@@ -2277,7 +2948,18 @@
         "extras": {}
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "complaints",
+        "compare": "previous_period"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     },
     "ep_table_employee_performance": {
       "kpiId": "ep_table_employee_performance",
@@ -2411,7 +3093,24 @@
         "series": "department_code"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/officer"
+      "requiredActionUrl": "/pgr-services/v2/analytics/capabilities/officer",
+      "query": {
+        "kind": "breakdown",
+        "dimension": "current_assignee_uuid",
+        "by": "department_code",
+        "measure": "complaints_open",
+        "limit": 40,
+        "sort": "desc"
+      },
+      "grain": "facts",
+      "window": "last_7d",
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [
+        "current_assignee_uuid",
+        "department_code"
+      ],
+      "version": "1.0.0"
     },
     "rs_breach_total": {
       "kpiId": "rs_breach_total",
@@ -2463,7 +3162,17 @@
         "dateColumn": "created_date"
       },
       "public": false,
-      "requiredActionUrl": "/pgr-services/v2/analytics/_query"
+      "requiredActionUrl": "/pgr-services/v2/analytics/_query",
+      "query": {
+        "kind": "value",
+        "measure": "complaints_open_sla_breached"
+      },
+      "grain": "facts",
+      "window": null,
+      "seriesDate": "created_date",
+      "hierLevel": null,
+      "dimensions": [],
+      "version": "1.0.0"
     }
   },
   "packs": {

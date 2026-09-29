@@ -11,10 +11,11 @@ import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "@lenspa
 const D = (key: string) => `__d_${key}`;
 const M = (key: string) => `__m_${key}`;
 const T = "__t";
+const TRAW = "__t_raw";
 
 const col = (alias: string, name: string): Expr => ({ t: "col", alias, col: name });
 const raw = (sql: Fragment): Expr => ({ t: "raw", sql });
-const param = (value: unknown, cast?: "timestamp" | "double" | "int"): Expr => ({ t: "param", value, cast });
+const param = (value: unknown, cast?: "timestamp" | "double" | "int" | "bigint"): Expr => ({ t: "param", value, cast });
 
 function dimensionExpr(d: PackDimension): Expr {
   if (d.field) return col("", d.field);
@@ -124,11 +125,18 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
 
   const where: Expr[] = [];
   const timeCol = bound.rootEntity.time ? col(root, T) : null;
+  // A window on epoch-number time compares the stored column with epoch
+  // numbers: the planner sees the real column (its statistics, its index),
+  // where converting every row first would hide both.
+  const epoch = typeof bound.rootEntity.time === "object" && bound.rootEntity.time && "unit" in bound.rootEntity.time ? bound.rootEntity.time : null;
+  if (epoch) project(root, TRAW, col("", epoch.field));
+  const bound_ = (d: Date): Expr => (epoch ? param(epoch.unit === "epoch_ms" ? d.getTime() : Math.floor(d.getTime() / 1000), "bigint") : param(d, "timestamp"));
+  const windowCol = epoch ? col(root, TRAW) : timeCol;
   const inWindow = (w: TimeWindow): Expr => ({
     t: "bin",
     op: "AND",
-    l: { t: "bin", op: ">=", l: timeCol!, r: param(w.from, "timestamp") },
-    r: { t: "bin", op: "<", l: timeCol!, r: param(w.to, "timestamp") },
+    l: { t: "bin", op: ">=", l: windowCol!, r: bound_(w.from) },
+    r: { t: "bin", op: "<", l: windowCol!, r: bound_(w.to) },
   });
 
   for (const f of bound.filters) where.push(filterExpr(dimRef(f.dimension), f));
@@ -138,8 +146,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   const windowed = !!bound.previous;
   if (bound.time && !windowed) where.push(inWindow(bound.time));
   if (windowed) {
-    where.push({ t: "bin", op: ">=", l: timeCol!, r: param(bound.previous!.from, "timestamp") });
-    where.push({ t: "bin", op: "<", l: timeCol!, r: param(bound.time!.to, "timestamp") });
+    where.push({ t: "bin", op: ">=", l: windowCol!, r: bound_(bound.previous!.from) });
+    where.push({ t: "bin", op: "<", l: windowCol!, r: bound_(bound.time!.to) });
   }
 
   // Aggregates over the root's projected measure columns.
@@ -197,8 +205,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
       // Ties broken by name so the same data always prints the same rows.
       if (query.sortBy === "group") orderBy.push({ expr: col("", "group"), dir: query.sort });
-      else orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
-      if (bound.split) orderBy.push({ expr: col("", "series"), dir: "asc" });
+      else if (query.sortBy !== "none") orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
+      if (bound.split && query.sortBy !== "none") orderBy.push({ expr: col("", "series"), dir: "asc" });
       limit = query.limit;
       shape = "breakdown";
       break;
@@ -257,6 +265,10 @@ function filterExpr(ref: Expr, f: BoundFilter): Expr {
     case "between": {
       const [a, b] = Array.isArray(v) ? v : [v, v];
       return { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: ref, r: one(a) }, r: { t: "bin", op: "<=", l: ref, r: one(b) } };
+    }
+    case "subtree": {
+      const escaped = String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
+      return { t: "paren", arg: { t: "bin", op: "OR", l: { t: "bin", op: "=", l: ref, r: one(v) }, r: { t: "bin", op: "LIKE", l: ref, r: one(`${escaped}.%`) } } };
     }
     case "contains":
       return { t: "bin", op: "ILIKE", l: { t: "cast", arg: ref, to: "text" }, r: one(`%${String(v).replace(/[%_\\]/g, (c) => `\\${c}`)}%`) };

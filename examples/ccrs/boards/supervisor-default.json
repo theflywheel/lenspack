@@ -115,7 +115,8 @@
           "by": "sla_status_bucket",
           "measure": "complaints_open",
           "limit": 120,
-          "sort": "desc"
+          "sort": "desc",
+          "sortBy": "none"
         },
         "options": {
           "legend": true,
@@ -140,7 +141,8 @@
           "by": "application_status",
           "measure": "complaints_open",
           "limit": 300,
-          "sort": "desc"
+          "sort": "desc",
+          "sortBy": "none"
         },
         "options": {
           "legend": true,
@@ -169,6 +171,7 @@
           ],
           "limit": 200,
           "sort": "desc",
+          "sortBy": "none",
           "time": {
             "last": "7d"
           }
@@ -199,6 +202,7 @@
           ],
           "limit": 500,
           "sort": "desc",
+          "sortBy": "none",
           "time": {
             "last": "7d"
           }

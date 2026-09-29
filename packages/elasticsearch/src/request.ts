@@ -89,6 +89,8 @@ function filterClause(f: BoundFilter, env: Env): { must: Json[]; mustNot: Json[]
       const [a, b] = Array.isArray(v) ? v : [v, v];
       return { must: [{ range: { [field]: { gte: a, lte: b } } }], mustNot: [] };
     }
+    case "subtree":
+      return { must: [{ bool: { should: [{ term: { [field]: v } }, { prefix: { [field]: `${String(v)}.` } }], minimum_should_match: 1 } }], mustNot: [] };
     case "contains": {
       const needle = `*${String(v).replace(/[*?\\]/g, (c) => `\\${c}`)}*`;
       const insensitive = env.version.major > 7 || (env.version.major === 7 && env.version.minor >= 10);
@@ -268,7 +270,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
           let rows: Row[] = bound.split
             ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), value: metricAggs.read(b), n: b.doc_count })))
             : groups.map((b) => ({ group: groupKey(b), value: metricAggs.read(b), n: b.doc_count }));
-          if (sortAfter) {
+          if (sortAfter && query.sortBy !== "none") {
             const dir = query.sort === "asc" ? 1 : -1;
             const cmp = (x: unknown, y: unknown) => String(x).localeCompare(String(y));
             rows.sort((a, b) =>
@@ -276,9 +278,8 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
                 ? cmp(a.group, b.group) * dir || cmp(a.series ?? "", b.series ?? "")
                 : ((a.value as number | null) === null ? 1 : (b.value as number | null) === null ? -1 : ((a.value as number) - (b.value as number)) * dir) || cmp(a.group, b.group) || cmp(a.series ?? "", b.series ?? ""),
             );
-            rows = rows.slice(0, query.limit);
           }
-          return rows;
+          return rows.slice(0, query.limit);
         },
       };
     }
