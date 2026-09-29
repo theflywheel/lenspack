@@ -41,13 +41,21 @@ const connector = sqlConnector(db.executor);
 // apply what it says. Cached briefly; the token is never logged or stored.
 type Scope = { departments?: string[]; jurisdictions?: string[]; accountId?: string; restrictedTo?: string };
 const scopes = new Map<string, { at: number; scope: Scope | null }>();
-async function scopeOf(body: Record<string, unknown>): Promise<Scope | null> {
+// The caller's own auth headers go with every call made on their behalf:
+// CCRS resolves the principal from them as well as from RequestInfo.
+const authHeaders = (request: unknown): Record<string, string> => {
+  const h = (request as { headers?: Record<string, string | string[] | undefined> })?.headers ?? {};
+  return Object.fromEntries(["authorization", "cookie", "x-tenant-id"].filter((k) => h[k]).map((k) => [k, String(h[k])]));
+};
+
+async function scopeOf(body: Record<string, unknown>, request?: unknown): Promise<Scope | null> {
   const info = body.RequestInfo as { authToken?: string; userInfo?: { uuid?: string } } | undefined;
-  const key = info?.authToken ?? "";
+  const key = `${info?.authToken ?? ""}|${authHeaders(request).authorization ?? ""}`;
   const hit = scopes.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit.scope;
-  const probe = { RequestInfo: body.RequestInfo, tenantId: body.tenantId, query: { grain: "facts", window: { name: "all" }, measures: [{ name: "n", agg: "count" }] } };
-  const r = await fetch(`${upstream}/pgr-services/v2/analytics/_query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(probe) });
+  // The same inline shape CCRS's own page sends for its filter menus.
+  const probe = { RequestInfo: body.RequestInfo, tenantId: body.tenantId, queries: { scope: { grain: "facts", window: { name: "all" }, dimensions: ["ward_code"], measures: [{ name: "n", agg: "count" }], limit: 1 } } };
+  const r = await fetch(`${upstream}/pgr-services/v2/analytics/_query`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders(request) }, body: JSON.stringify(probe) });
   let scope: Scope | null = null;
   if (r.ok) {
     const s = ((await r.json()) as { scope?: Scope }).scope ?? {};
@@ -59,9 +67,11 @@ async function scopeOf(body: Record<string, unknown>): Promise<Scope | null> {
     };
   } else {
     // No scope, no rows: never widen what CCRS would show.
+    console.warn(`[ccrs] scope probe answered ${r.status}; admitting no rows for this caller`);
     scope = { departments: [] };
   }
   scopes.set(key, { at: Date.now(), scope });
+  console.log(`[ccrs] scope probe ${r.status}: ${scope ? `${scope.departments?.length ?? "all"} departments, ${scope.jurisdictions?.length ?? "all"} jurisdictions${scope.accountId ? ", own records" : ""}` : "none"}`);
   return scope;
 }
 
@@ -73,8 +83,8 @@ const api = ccrsApi({
   tenant: process.env.CCRS_TENANT ?? "ke",
   // What a signed-in caller may see is CCRS's decision: ask its /_access with
   // the caller's own RequestInfo, and show exactly what it grants.
-  capabilities: async (body) => {
-    const r = await fetch(`${upstream}/pgr-services/v2/analytics/_access`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  capabilities: async (body, request) => {
+    const r = await fetch(`${upstream}/pgr-services/v2/analytics/_access`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders(request) }, body: JSON.stringify(body) });
     if (!r.ok) return [];
     const grant = (await r.json()) as { allowed?: boolean; capabilities?: string[] };
     return grant.allowed ? (grant.capabilities ?? []) : [];
@@ -99,7 +109,7 @@ createServer(async (req, res) => {
     const m = /^\/(?:api\/analytics|pgr-services\/v2\/analytics)(\/.*)$/.exec(url.pathname);
     if (m && req.method === "POST") {
       const raw = await read(req);
-      const out = await api(m[1]!, raw.length ? JSON.parse(raw.toString("utf8")) : {});
+      const out = await api(m[1]!, raw.length ? JSON.parse(raw.toString("utf8")) : {}, req);
       res.writeHead(out.status, { "content-type": "application/json", "x-served-by": "lenspack" });
       return res.end(JSON.stringify(out.body));
     }

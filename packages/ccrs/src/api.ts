@@ -24,18 +24,19 @@ export type CcrsApiOptions = {
    * capability grant CCRS's own /_access returns for the caller's token.
    * Absent, every tile is visible (a trusted, private deployment).
    */
-  capabilities?: (body: Record<string, unknown>) => Promise<string[] | null>;
+  capabilities?: (body: Record<string, unknown>, request?: unknown) => Promise<string[] | null>;
   /**
    * The caller's row scope as CCRS resolves it (departments, jurisdictions,
    * own records), applied as filters so an employee sees exactly the rows
    * CCRS would show them.
    */
-  scope?: (body: Record<string, unknown>) => Promise<RowScope | null>;
+  scope?: (body: Record<string, unknown>, request?: unknown) => Promise<RowScope | null>;
 };
 
 export type RowScope = { departments?: string[]; jurisdictions?: string[]; accountId?: string; restrictedTo?: string };
 
-type Ref = { kpiId: string; params?: Record<string, string> };
+type InlineQuery = { grain?: string; window?: { name?: string }; dimensions?: string[]; measures?: { name: string; agg: string; column?: string; filter?: unknown }[]; limit?: number; filters?: unknown; sort?: unknown };
+type Ref = { kpiId?: string; params?: Record<string, string> } & InlineQuery;
 type Result = { grain: string; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; tookMs: number; paramsIgnored?: string[] };
 
 const ACTION = "/pgr-services/v2/analytics";
@@ -131,6 +132,8 @@ export function ccrsApi(opts: CcrsApiOptions) {
     if (scope?.departments) filters.push({ dimension: "department_code", op: "in", value: scope.departments.length ? scope.departments : ["\u0000none"] });
     if (scope?.jurisdictions) filters.push({ dimension: "boundary_path", op: "segment", value: scope.jurisdictions.length ? scope.jurisdictions : ["\u0000none"] } as unknown as FilterClause);
     if (scope?.accountId) filters.push({ dimension: "account_id", op: "eq", value: scope.accountId });
+    // The KPI's own filters narrow the rows, as CCRS's WHERE does.
+    for (const f of tile.rowFilters ?? []) if (!filters.some((x) => x.dimension === f.dimension && x.op === f.op)) filters.push(f as FilterClause);
     const narrow = (dimension: string, op: FilterClause["op"], value: string, param: string) => {
       // A param may not override a filter the KPI itself bakes in.
       if (isPublic && filters.some((f) => f.dimension === dimension)) return ignored.push(param);
@@ -172,22 +175,25 @@ export function ccrsApi(opts: CcrsApiOptions) {
   /** lenspack's widget data → CCRS's { columns, rows } in the KPI's own column names. */
   const toResult = (tile: SkinTile, q: Query, data: WidgetData, grain: string, started: number, ignored: string[]): Result => {
     const cols = tile.columns;
+    // Measures in the KPI's own order, as pgr-services selects them.
+    const order = (names: string[]) => (tile.measureOrder?.length ? [...names].sort((a, b) => tile.measureOrder.indexOf(a) - tile.measureOrder.indexOf(b)) : names);
     let columns: string[];
     let rows: Record<string, unknown>[];
     if (data.records) {
       columns = tile.recordColumns ?? data.columns ?? [];
       const src = data.columns ?? [];
-      rows = data.records.map((r) => Object.fromEntries(columns.map((c, i) => [c, cell(c, r[src[i] ?? c])])));
+      const fixed = tile.recordConstants ?? {};
+      rows = data.records.map((r) => Object.fromEntries(columns.map((c, i) => [c, c in fixed ? fixed[c] : cell(c, r[src[i] ?? c])])));
     } else if (q.kind === "value") {
       const extras = Object.entries(cols.extras);
-      columns = [cols.value, ...extras.map(([, name]) => name)];
+      columns = order([cols.value, ...extras.map(([, name]) => name)]);
       const r = data.rows[0];
       rows = r ? [{ [cols.value]: cell(cols.value, r.value, q.measure), ...Object.fromEntries(extras.map(([key, name]) => [name, cell(name, r.values?.[key] ?? null, key)])) }] : [];
     } else {
       const measure = (q as { measure: string }).measure;
       const extras = Object.entries(cols.extras);
       const dims = [cols.group, cols.series].filter((d): d is string => !!d);
-      columns = [...dims, cols.value, ...extras.map(([, name]) => name)];
+      columns = [...dims, ...order([cols.value, ...extras.map(([, name]) => name)])];
       rows = data.rows.map((r) => ({
         ...(cols.group ? { [cols.group]: cell(cols.group, r.group === "(none)" ? null : r.group) } : {}),
         ...(cols.series ? { [cols.series]: cell(cols.series, r.series === "(none)" ? null : r.series) } : {}),
@@ -195,21 +201,47 @@ export function ccrsApi(opts: CcrsApiOptions) {
         ...Object.fromEntries(extras.map(([key, name]) => [name, cell(name, r.values?.[key] ?? null, key)])),
       }));
     }
+    // Each row lists its fields in column order, as pgr-services' JSON does.
+    rows = rows.map((r) => Object.fromEntries(columns.map((c) => [c, r[c]])));
     return { grain, columns, rows, rowCount: rows.length, tookMs: Date.now() - started, ...(ignored.length ? { paramsIgnored: ignored } : {}) };
   };
 
+  // The inline queries a CCRS page sends itself: distinct values of one
+  // dimension with a count (the ward and complaint-type menus). Anything
+  // richer is refused rather than guessed.
+  const runInline = async (ref: InlineQuery, scope: RowScope | null): Promise<Result | { error: string; message: string }> => {
+    const started = Date.now();
+    const [dim, ...more] = ref.dimensions ?? [];
+    const measure = ref.measures?.[0];
+    if (!dim || more.length || (ref.measures?.length ?? 0) !== 1 || measure?.agg !== "count" || measure.filter || ref.filters || !opts.pack.dimensions.some((d) => d.key === dim))
+      return { error: "unsupported_query", message: "unsupported_query: only distinct values of one dimension with a count are answered inline" };
+    const tile = { dimensions: [dim], grain: "facts", live: true, query: { kind: "breakdown", dimension: dim, measure: "complaints", limit: Math.min(1000, ref.limit ?? 1000), sort: "desc", sortBy: "none" } } as unknown as SkinTile;
+    const { q } = build(tile, {}, false, scope);
+    const data = await run(q, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
+    if (data.error) return { error: "query_failed", message: data.error };
+    const rows = data.rows.map((r) => ({ [dim]: r.group === "(none)" ? null : r.group, [measure.name]: r.value }));
+    return { grain: ref.grain ?? "facts", columns: [dim, measure.name], rows, rowCount: rows.length, tookMs: Date.now() - started };
+  };
+
   const runRef = async (name: string, ref: Ref, isPublic: boolean, caps: string[] | null, scope: RowScope | null): Promise<Result | { error: string; message: string }> => {
+    if (!ref.kpiId) {
+      if (isPublic || (caps !== null && !caps.includes(`${ACTION}/_query`))) return { error: "kpi_forbidden", message: "kpi_forbidden: inline queries need the query capability" };
+      return runInline(ref, scope);
+    }
     const tile = opts.skin.tiles[ref.kpiId];
     if (!tile || !visible(tile, caps, isPublic)) return { error: "kpi_forbidden", message: `kpi_forbidden: '${ref.kpiId}' is not available` };
     const params = { ...Object.fromEntries((tile.params ?? []).filter((p) => p.default).map((p) => [p.name, p.default!])), ...(ref.params ?? {}) };
     const started = Date.now();
     const { q, ignored } = build(tile, params, isPublic, scope);
     let query: Query;
-    if (params.compare === "prior") query = withWindow(q, tile.live ? null : priorFor(tile, params));
+    // pgr-services resolves compare:prior before the live-snapshot rule: even
+    // a tile reading the current open state compares against the prior window.
+    if (params.compare === "prior") query = withWindow(q, priorFor(tile, params));
     else if (params.series === "daily") {
       // A daily series of the headline number over the same window.
       const w = windowFor(tile, params) ?? (tile.live ? null : { from: new Date(now().getTime() - 30 * 86_400_000), to: now() });
-      const days = w ? Math.min(366, Math.ceil((w.to.getTime() - w.from.getTime()) / 86_400_000)) : 366;
+      // pgr-services: min(366, days in the range) with a date range, 366 otherwise.
+      const days = params.dateFrom && params.dateTo ? Math.min(366, Math.round((Date.parse(`${params.dateTo}T00:00:00Z`) - Date.parse(`${params.dateFrom}T00:00:00Z`)) / 86_400_000) + 1) : 366;
       const measure = (q as { measure?: string }).measure!;
       query = withWindow({ kind: "breakdown", dimension: tile.seriesDate, measure, limit: Math.max(2, days), sort: "asc", sortBy: "group", ...((q as { filters?: FilterClause[] }).filters ? { filters: (q as { filters: FilterClause[] }).filters } : {}) } as Query, w);
       const data = await run(query, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
@@ -274,10 +306,11 @@ export function ccrsApi(opts: CcrsApiOptions) {
   };
 
   /** Dispatch one API call. `path` is below the analytics base (e.g. "/public/packs"). */
-  return async function handle(path: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }> {
+  /** Dispatch one API call. `request` is passed through to the access and scope callbacks (e.g. the caller's headers). */
+  return async function handle(path: string, body: Record<string, unknown>, request?: unknown): Promise<{ status: number; body: unknown }> {
     try {
       const isPublic = path.startsWith("/public/");
-      const caps = isPublic ? null : opts.capabilities ? await opts.capabilities(body) : null;
+      const caps = isPublic ? null : opts.capabilities ? await opts.capabilities(body, request) : null;
       const tilesFor = (board: Board | undefined) => (board?.tiles ?? Object.keys(opts.skin.tiles)).map((k) => opts.skin.tiles[k]).filter((t): t is SkinTile => !!t && visible(t, caps, isPublic)).map(safeTile);
       switch (path) {
         case "/_access":
@@ -305,7 +338,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
         case "/_query":
         case "/public/_query": {
           const queries = (body.queries as Record<string, Ref>) ?? (body.query ? { result: body.query as Ref } : {});
-          const scope = isPublic || !opts.scope ? null : await opts.scope(body);
+          const scope = isPublic || !opts.scope ? null : await opts.scope(body, request);
           return { status: 200, body: await batch(queries, isPublic, caps, scope) };
         }
         default:

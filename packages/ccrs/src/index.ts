@@ -67,6 +67,12 @@ export type SkinTile = {
   dimensions: string[];
   /** Record fields (rows queries), in the order CCRS returns them. */
   recordColumns?: string[];
+  /** Record fields with one value on every row: a count over one complaint is 1. */
+  recordConstants?: Record<string, number>;
+  /** The KPI's measure names in its own order: CCRS lists result columns so. */
+  measureOrder: string[];
+  /** The KPI's own filters, applied to rows as CCRS's WHERE does (so groups without such rows disappear). */
+  rowFilters: { dimension: string; op: "eq" | "neq" | "in" | "gte" | "lte"; value: Scalar | Scalar[] }[];
   version?: string;
 };
 export type Skin = { tiles: Record<string, SkinTile>; packs: Record<string, { public: boolean; requiredActionUrl?: string }> };
@@ -263,6 +269,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
     const sortSpec = q.sort?.[0];
     const limit = Math.max(2, Math.min(500, q.limit ?? 12));
     let query: Query;
+    let recordConstants: Record<string, number> | undefined;
     let kind: "kpi" | "chart" | "table";
     const colMap: SkinTile["columns"] = { value: valueName, extras };
 
@@ -281,9 +288,13 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
         entity,
         columns: cols,
         limit: Math.min(1000, q.limit ?? 50),
+        ...(sortSpec && cols.includes(sortSpec.by) ? { orderBy: { key: sortSpec.by, dir: sortSpec.dir ?? "asc" } } : {}),
         filters: base.filter((w) => w.op === "eq" || w.op === "in").map((w) => ({ dimension: w.field, op: w.op as "eq" | "in", value: w.value as Scalar })),
       } as Query;
       colMap.records = Object.fromEntries(cols.map((c) => [c, c]));
+      // CCRS groups by the complaint itself, so a count without a column is 1.
+      const ones = q.measures.filter((m) => m.agg === "count" && !m.column && !m.filter).map((m) => [m.name, 1] as const);
+      if (ones.length) recordConstants = Object.fromEntries(ones);
     } else {
       kind = ["data-table", "table", "xtable"].includes(viz.kind) ? "table" : "chart";
       const [group, split] = dims;
@@ -337,7 +348,11 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       seriesDate: q.grain === "daily" ? "snapshot_date" : q.grain === "events" ? "occurred_date" : "created_date",
       hierLevel: hier ?? null,
       dimensions: q.dimensions ?? [],
-      ...(query.kind === "rows" ? { recordColumns: [...(q.dimensions ?? []), ...q.measures.map((m) => m.name)] } : {}),
+      measureOrder: q.measures.map((m) => m.name),
+      rowFilters: base
+        .filter((w) => ["eq", "neq", "in", "gte", "lte"].includes(w.op))
+        .map((w) => (dimension(entity, w.field), { dimension: w.field, op: w.op as "eq" | "neq" | "in" | "gte" | "lte", value: w.value as Scalar | Scalar[] })),
+      ...(query.kind === "rows" ? { recordColumns: [...(q.dimensions ?? []), ...q.measures.map((m) => m.name)], ...(recordConstants ? { recordConstants } : {}) } : {}),
       ...(kpi.version ? { version: kpi.version } : {}),
     };
   }

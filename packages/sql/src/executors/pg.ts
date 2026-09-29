@@ -10,6 +10,12 @@ const OID = { date: 1082, timestamp: 1114 } as const;
 export const naiveTimeAsText = {
   getTypeParser(oid: number, format?: "text" | "binary") {
     if (oid === OID.date || oid === OID.timestamp) return (v: string) => v;
+    // NUMERIC arrives as text; a JSON API returns it as a number.
+    if (oid === 1700)
+      return (v: string) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : v;
+      };
     // Defer to pg's defaults for everything else.
     return pg.types.getTypeParser(oid, format as never) as (v: string) => unknown;
   },

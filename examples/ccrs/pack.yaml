@@ -20,6 +20,12 @@ entities:
       match: subtree
     joins: []
 dimensions:
+  - key: is_resolved
+    entity: facts
+    field: is_resolved
+    type: string
+    synonyms: []
+    verified: true
   - key: service_type_l1
     entity: facts
     sql:
@@ -43,6 +49,15 @@ dimensions:
     also:
       daily:
         field: department_code
+  - key: is_open
+    entity: facts
+    field: is_open
+    type: string
+    synonyms: []
+    verified: true
+    also:
+      daily:
+        field: is_open
   - key: current_assignee_uuid
     entity: facts
     field: current_assignee_uuid
@@ -91,6 +106,12 @@ dimensions:
     also:
       daily:
         field: ward_code
+  - key: has_rating
+    entity: facts
+    field: has_rating
+    type: string
+    synonyms: []
+    verified: true
   - key: service_request_id
     entity: facts
     field: service_request_id
@@ -115,21 +136,9 @@ dimensions:
     type: string
     synonyms: []
     verified: true
-  - key: is_open
-    entity: facts
-    field: is_open
-    type: string
-    synonyms: []
-    verified: true
   - key: has_geo_pin
     entity: facts
     field: has_geo_pin
-    type: string
-    synonyms: []
-    verified: true
-  - key: is_resolved
-    entity: facts
-    field: is_resolved
     type: string
     synonyms: []
     verified: true
@@ -148,6 +157,12 @@ dimensions:
   - key: sla_target_ms
     entity: facts
     field: sla_target_ms
+    type: string
+    synonyms: []
+    verified: true
+  - key: sla_breached
+    entity: facts
+    field: sla_breached
     type: string
     synonyms: []
     verified: true

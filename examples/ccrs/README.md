@@ -44,6 +44,10 @@ Checked against Bomet's live deployment:
 - **Pixels:** screenshots of the public dashboard are identical at 1280, 1456
   and 1920 px, by default and after choosing a ward, a complaint type or a
   date range, with every analytics call answered by lenspack.
+- **Signed in:** the supervisor dashboard, as the same employee on both sides,
+  is identical to the pixel, and all 20 of its analytics results (tiles,
+  prior-period deltas, sparklines, map pins, filter menus) match pgr-services
+  byte for byte, with CCRS's department and jurisdiction scope applied.
 
 Access control stays CCRS's. A signed-in caller's capabilities come from CCRS's
 own `/_access`, and their row scope (HRMS departments, jurisdictions, own
@@ -62,3 +66,5 @@ records) comes from CCRS's own resolution. lenspack applies both.
 - **Ordering:** unsorted KPIs keep the database's grouping order, and KPIs
   sorted by a measure leave ties as the database does. This lenspack gets by
   giving Postgres the same plan (epoch windows compare the raw column).
+  Rows ordered by one column break ties by the remaining columns, as
+  Postgres's grouped sort does.

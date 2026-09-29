@@ -15,6 +15,7 @@ export type DialectRules = {
   percentile(fn: "median" | "p90", arg: string): string;
   trunc(grain: string, arg: string): string;
   epoch(arg: string, unit: "epoch_ms" | "epoch_s"): string;
+  segment(arg: string, values: string[]): string;
   param(index: number): string;
   paramValue(value: unknown): unknown;
 };
@@ -65,6 +66,8 @@ export function print(ast: Ast, rules: DialectRules): Printed {
         return `(${expr(e.arg)})`;
       case "epoch":
         return rules.epoch(expr(e.arg), e.unit);
+      case "segment":
+        return rules.segment(expr(e.arg), e.values.map(expr));
       case "notnull":
         return `(${expr(e.arg)} IS NOT NULL)`;
       case "isnull":

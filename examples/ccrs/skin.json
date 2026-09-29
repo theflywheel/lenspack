@@ -50,6 +50,16 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "avg_ms"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_resolved",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_chart_complaints_by_type": {
@@ -129,6 +139,10 @@
       "dimensions": [
         "service_code"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [],
       "version": "1.2.0"
     },
     "cl_chart_complaints_over_time": {
@@ -224,6 +238,10 @@
       "dimensions": [
         "created_date"
       ],
+      "measureOrder": [
+        "created"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_chart_department_breach_scatter": {
@@ -297,6 +315,18 @@
       "dimensions": [
         "department_code"
       ],
+      "measureOrder": [
+        "open",
+        "breached",
+        "sla_elapsed"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_chart_department_flow_ratio": {
@@ -365,6 +395,11 @@
       "dimensions": [
         "department_code"
       ],
+      "measureOrder": [
+        "filed",
+        "resolved"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_chart_department_resolution_rate": {
@@ -424,6 +459,10 @@
       "dimensions": [
         "department_code"
       ],
+      "measureOrder": [
+        "rate"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_chart_departments_by_type": {
@@ -481,6 +520,10 @@
       "dimensions": [
         "department_code"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_chart_officer_sla": {
@@ -569,6 +612,16 @@
         "current_assignee_uuid",
         "sla_status_bucket"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_chart_open_by_age": {
@@ -631,6 +684,16 @@
       "hierLevel": null,
       "dimensions": [
         "aging_bucket"
+      ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
       ],
       "version": "1.0.0"
     },
@@ -772,6 +835,16 @@
       "dimensions": [
         "source"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_chart_open_by_type_stage": {
@@ -879,6 +952,16 @@
         "service_code",
         "application_status"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.2.0"
     },
     "cl_chart_over_time_created_daily": {
@@ -978,6 +1061,12 @@
       "dimensions": [
         "created_date"
       ],
+      "measureOrder": [
+        "created",
+        "resolved",
+        "on_time"
+      ],
+      "rowFilters": [],
       "version": "1.0.1"
     },
     "cl_chart_over_time_open_daily": {
@@ -1029,6 +1118,16 @@
       "hierLevel": null,
       "dimensions": [
         "snapshot_date"
+      ],
+      "measureOrder": [
+        "open"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
       ],
       "version": "1.0.0"
     },
@@ -1122,6 +1221,10 @@
         "ward_code",
         "sla_status_bucket"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_created_today_count": {
@@ -1166,6 +1269,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_csat_avg": {
@@ -1224,6 +1331,21 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "avg"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "has_rating",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "dimension": "is_resolved",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_first_assignment_rate_count": {
@@ -1282,6 +1404,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "pct"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_flow_ratio_count": {
@@ -1334,6 +1460,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "ratio"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_map_complaint_pins": {
@@ -1428,6 +1558,21 @@
         "source",
         "sla_status_bucket"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "dimension": "has_geo_pin",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "recordColumns": [
         "service_request_id",
         "latitude",
@@ -1440,6 +1585,9 @@
         "sla_status_bucket",
         "total"
       ],
+      "recordConstants": {
+        "total": 1
+      },
       "version": "1.0.0"
     },
     "cl_map_complaint_pins_all": {
@@ -1510,6 +1658,10 @@
           "is_resolved"
         ],
         "limit": 1000,
+        "orderBy": {
+          "key": "created_date",
+          "dir": "desc"
+        },
         "filters": [
           {
             "dimension": "has_geo_pin",
@@ -1535,6 +1687,16 @@
         "is_open",
         "is_resolved"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "has_geo_pin",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "recordColumns": [
         "service_request_id",
         "latitude",
@@ -1549,6 +1711,9 @@
         "is_resolved",
         "total"
       ],
+      "recordConstants": {
+        "total": 1
+      },
       "version": "1.0.0"
     },
     "cl_map_ward_wow_current": {
@@ -1613,6 +1778,12 @@
       "dimensions": [
         "ward_code"
       ],
+      "measureOrder": [
+        "filed",
+        "open",
+        "resolved"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_new_created_count": {
@@ -1669,6 +1840,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_oldest_open_age": {
@@ -1726,6 +1901,16 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "max_age_ms"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_open_complaints_live": {
@@ -1781,6 +1966,16 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_reopen_rate_count": {
@@ -1839,6 +2034,16 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "pct"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_resolved",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_resolution_rate_count": {
@@ -1901,6 +2106,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "pct"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_resolved_date_range_count": {
@@ -1964,6 +2173,21 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "dimension": "is_resolved",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_resolved_on_time_rate_count": {
@@ -2026,6 +2250,16 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "pct"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_resolved",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     },
     "cl_sla_compliance_rate_count": {
@@ -2084,6 +2318,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "pct"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_sla_noncompliance_rate_count": {
@@ -2142,6 +2380,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "pct"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "cl_table_complaints_at_risk": {
@@ -2240,6 +2482,25 @@
         "application_status",
         "sla_status_bucket",
         "current_assignee_uuid"
+      ],
+      "measureOrder": [
+        "open_age_ms",
+        "sla_target_ms"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "dimension": "sla_status_bucket",
+          "op": "in",
+          "value": [
+            "approaching",
+            "breached"
+          ]
+        }
       ],
       "recordColumns": [
         "service_request_id",
@@ -2418,6 +2679,15 @@
         "service_code",
         "service_group"
       ],
+      "measureOrder": [
+        "avg_resolution_ms",
+        "ideal_sla_ms",
+        "reopen_rate",
+        "oldest_open_ms",
+        "ontime_rate",
+        "avg_csat"
+      ],
+      "rowFilters": [],
       "version": "1.2.0"
     },
     "cl_table_recurring_ward_subtype": {
@@ -2538,6 +2808,10 @@
         "ward_code",
         "service_code"
       ],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [],
       "version": "1.3.0"
     },
     "cl_table_service_quality_by_channel": {
@@ -2634,6 +2908,12 @@
       "dimensions": [
         "source"
       ],
+      "measureOrder": [
+        "volume",
+        "resolution_rate",
+        "avg_csat"
+      ],
+      "rowFilters": [],
       "version": "1.1.0"
     },
     "cl_table_subtype_performance": {
@@ -2746,6 +3026,12 @@
       "dimensions": [
         "service_code"
       ],
+      "measureOrder": [
+        "total",
+        "avg_resolution_ms",
+        "ideal_sla_ms"
+      ],
+      "rowFilters": [],
       "version": "1.2.0"
     },
     "cl_table_ward_open_daily": {
@@ -2797,6 +3083,16 @@
       "hierLevel": null,
       "dimensions": [
         "ward_code"
+      ],
+      "measureOrder": [
+        "open"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        }
       ],
       "version": "1.0.0"
     },
@@ -2914,6 +3210,14 @@
       "dimensions": [
         "ward_code"
       ],
+      "measureOrder": [
+        "created",
+        "open",
+        "reopen_rate",
+        "ontime_rate",
+        "avg_csat"
+      ],
+      "rowFilters": [],
       "version": "1.1.0"
     },
     "cl_total_complaints_count": {
@@ -2968,6 +3272,10 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "ep_table_employee_performance": {
@@ -3120,6 +3428,15 @@
         "current_assignee_uuid",
         "department_code"
       ],
+      "measureOrder": [
+        "assigned",
+        "open",
+        "resolved",
+        "reopen_rate",
+        "avg_csat",
+        "escalation_rate"
+      ],
+      "rowFilters": [],
       "version": "1.0.0"
     },
     "rs_breach_total": {
@@ -3182,6 +3499,21 @@
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
+      "measureOrder": [
+        "total"
+      ],
+      "rowFilters": [
+        {
+          "dimension": "is_open",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "dimension": "sla_breached",
+          "op": "eq",
+          "value": true
+        }
+      ],
       "version": "1.0.0"
     }
   },

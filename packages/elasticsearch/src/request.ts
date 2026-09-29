@@ -346,7 +346,9 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const cols = bound.columns.map((c) => ({ key: c.def.key, path: dimensionField(c.def, env, "listed").replace(/\.keyword$/, "") }));
       body.size = query.limit;
       body._source = cols.map((c) => c.path);
-      if (bound.orderBy) body.sort = [{ [dimensionField(bound.orderBy.dimension.def, env, "sorted")]: { order: bound.orderBy.dir } }];
+      // Ties fall to the remaining columns in the order listed, as in SQL.
+      if (bound.orderBy)
+        body.sort = [bound.orderBy, ...bound.columns.filter((c) => c.def.key !== bound.orderBy!.dimension.def.key).map((dimension) => ({ dimension, dir: "asc" as const }))].map((o) => ({ [dimensionField(o.dimension.def, env, "sorted")]: { order: o.dir } }));
       return {
         index: entity.source,
         body,

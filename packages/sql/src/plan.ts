@@ -239,7 +239,12 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     }
     case "rows": {
       for (const c of bound.columns) select.push({ alias: c.def.key, expr: dimRef(c) });
-      if (bound.orderBy) orderBy.push({ expr: dimRef(bound.orderBy.dimension), dir: bound.orderBy.dir });
+      // Ties under orderBy fall to the remaining columns in the order listed,
+      // so a limited page of rows is the same page on every run.
+      if (bound.orderBy) {
+        orderBy.push({ expr: dimRef(bound.orderBy.dimension), dir: bound.orderBy.dir });
+        for (const c of bound.columns) if (c.def.key !== bound.orderBy.dimension.def.key) orderBy.push({ expr: dimRef(c), dir: "asc" });
+      }
       limit = query.limit;
       shape = "rows";
       break;
@@ -267,14 +272,9 @@ function filterExpr(ref: Expr, f: BoundFilter): Expr {
       const [a, b] = Array.isArray(v) ? v : [v, v];
       return { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: ref, r: one(a) }, r: { t: "bin", op: "<=", l: ref, r: one(b) } };
     }
-    case "segment": {
-      // Whole segments only: "|" + path + "|" contains "|" + value + "|".
-      const values = Array.isArray(v) ? v : [v];
-      const wrapped: Expr = { t: "bin", op: "||", l: { t: "bin", op: "||", l: { t: "str", value: "|" }, r: { t: "cast", arg: ref, to: "text" } }, r: { t: "str", value: "|" } };
-      return values
-        .map((x): Expr => ({ t: "bin", op: "LIKE", l: wrapped, r: one(`%|${String(x).replace(/[\\%_]/g, (c) => `\\${c}`)}|%`) }))
-        .reduce((l, r) => ({ t: "bin", op: "OR", l, r }));
-    }
+    case "segment":
+      // Whole segments of a "|"-separated path: "BOMET" matches "KE|BOMET|SOTIK", not "BOM".
+      return { t: "segment", arg: ref, values: (Array.isArray(v) ? v : [v]).map(one) };
     case "subtree": {
       const escaped = String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
       return { t: "paren", arg: { t: "bin", op: "OR", l: { t: "bin", op: "=", l: ref, r: one(v) }, r: { t: "bin", op: "LIKE", l: ref, r: one(`${escaped}.%`) } } };

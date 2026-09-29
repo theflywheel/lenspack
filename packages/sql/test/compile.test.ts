@@ -116,6 +116,11 @@ describe("rows", () => {
     const data = await q({ kind: "rows", entity: "things", columns: ["colour", "size"], limit: 3, orderBy: { key: "size", dir: "asc" } });
     expect(data.records).toEqual([{ colour: "red", size: 10 }, { colour: "red", size: 20 }, { colour: "blue", size: 30 }]);
   });
+
+  it("breaks ties under orderBy by the remaining columns, in order", () => {
+    const { sql } = compile({ kind: "rows", entity: "things", columns: ["colour", "size", "origin"], limit: 5, orderBy: { key: "size", dir: "desc" } }, pack, { dialect: "duckdb", ctx });
+    expect(sql).toMatch(/ORDER BY \S*size\S* DESC[^,]*, \S*colour\S* ASC[^,]*, \S*origin\S* ASC/);
+  });
 });
 
 describe("refusals", () => {
@@ -209,8 +214,8 @@ describe("path filters", () => {
     const { parsePack } = await import("@lenspack/spec");
     const p = parsePack({ pack: "t", version: 1, entities: { rows: { source: "rows" } }, dimensions: [{ key: "path", entity: "rows", field: "path" }], measures: [{ key: "n", entity: "rows", agg: "count" }] });
     const seg = compile({ kind: "value", measure: "n", filters: [{ dimension: "path", op: "segment", value: ["B%1", "C"] }] }, p, { dialect: "postgres" });
-    expect(seg.sql).toContain(`(('|' || CAST("rows"."__d_path" AS TEXT)) || '|') LIKE $1`);
-    expect(seg.params).toEqual(["%|B\\%1|%", "%|C|%"]);
+    expect(seg.sql).toContain(`EXISTS (SELECT 1 FROM unnest(string_to_array(CAST("rows"."__d_path" AS TEXT), '|')) AS seg WHERE seg IN ($1, $2))`);
+    expect(seg.params).toEqual(["B%1", "C"]);
     const sub = compile({ kind: "value", measure: "n", filters: [{ dimension: "path", op: "subtree", value: "a.b" }] }, p, { dialect: "postgres" });
     expect(sub.params).toEqual(["a.b", "a.b.%"]);
   });
