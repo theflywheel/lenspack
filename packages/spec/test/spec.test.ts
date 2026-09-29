@@ -64,14 +64,20 @@ measures:
   it("rejects duplicate keys across dimensions and measures", () => bad((p) => (p.measures[0].key = "region"), "already used"));
   it("rejects a join to an unknown entity", () => bad((p) => (p.entities.items.joins[0].to = "ghost"), 'unknown entity "ghost"'));
   it("rejects a join whose on-clause names other entities", () => bad((p) => (p.entities.items.joins[0].on = "items.owner_id = ghosts.id"), "must reference exactly"));
-  it("rejects a dimension with both sql and json", () => bad((p) => (p.dimensions[0].json = ["a"]), "exactly one of sql or json"));
+  it("rejects a dimension with both sql and json", () => bad((p) => (p.dimensions[0].json = ["a"]), "exactly one of field, sql or json"));
   it("rejects a measure with neither agg nor derived", () => bad((p) => delete p.measures[0].agg, "agg"));
   it("rejects a non-count aggregate without sql", () => bad((p) => delete p.measures[1].sql, "needs sql"));
-  it("rejects a derived measure across entities", () => {
+  it("rejects a derived measure that does not live with its numerator", () => {
     bad((p) => {
       p.measures.push({ key: "owner_n", entity: "owners", agg: "count" });
-      p.measures[2].derived = "amount / owner_n";
-    }, 'is on "owners"');
+      p.measures[2].derived = "owner_n / amount";
+    }, "its numerator's");
+  });
+  it("accepts a derived measure across entities, read at its numerator's grain", () => {
+    const p = structuredClone(minimal) as any;
+    p.measures.push({ key: "owner_n", entity: "owners", agg: "count" });
+    p.measures[2].derived = "amount / owner_n";
+    expect(() => parsePack(p)).not.toThrow();
   });
   it("rejects a derived measure built on a derived measure", () => {
     bad((p) => p.measures.push({ key: "twice", entity: "items", derived: "avg_amount / count" }), "cannot be an operand");

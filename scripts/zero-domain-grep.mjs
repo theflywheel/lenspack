@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOTS = ["packages/core/src", "packages/spec/src", "packages/sql/src", "packages/mcp/src", "packages/react/src"];
+const ROOTS = ["packages/core/src", "packages/spec/src", "packages/engine/src", "packages/sql/src", "packages/elasticsearch/src", "packages/mcp/src", "packages/react/src"];
 const WORDS = [
   "orders", "order_items", "revenue", "customers?", "products?", "refund(ed)?", "aov", "cart",
   "pageviews?", "session_id", "referrer", "bounced?", "visitors?",
@@ -14,6 +14,8 @@ const WORDS = [
   "iffy", "clerk",
 ];
 const pattern = new RegExp(`\\b(${WORDS.join("|")})\\b`, "i");
+// Platform API names that happen to collide with a domain word.
+const PLATFORM = [/\bsignal: AbortSignal\./];
 
 const files = [];
 const walk = (dir) => {
@@ -31,7 +33,7 @@ let failures = 0;
 for (const file of files) {
   const lines = readFileSync(file, "utf8").split("\n");
   lines.forEach((line, i) => {
-    const m = pattern.exec(line);
+    const m = PLATFORM.some((p) => p.test(line)) ? null : pattern.exec(line);
     if (m) {
       failures++;
       console.log(`${file}:${i + 1}: "${m[1]}" — ${line.trim().slice(0, 100)}`);

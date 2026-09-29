@@ -1,0 +1,24 @@
+{
+  "title": "Distribution overview",
+  "ops": [
+    { "op": "add_widget", "id": "visits", "placement": { "place": "top", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Households visited", "query": { "kind": "value", "measure": "visits" } } },
+    { "op": "add_widget", "id": "nets", "placement": { "place": "bottom", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Nets distributed", "query": { "kind": "value", "measure": "nets_distributed" } } },
+    { "op": "add_widget", "id": "population", "placement": { "place": "bottom", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Population covered", "query": { "kind": "value", "measure": "population_covered" } } },
+    { "op": "add_widget", "id": "coverage", "placement": { "place": "bottom", "width": "quarter", "height": 3 },
+      "widget": { "kind": "kpi", "title": "Household coverage", "query": { "kind": "value", "measure": "household_coverage" } } },
+    { "op": "add_widget", "id": "coverage_by_district", "placement": { "place": "bottom", "width": "half", "height": 8 },
+      "widget": { "kind": "chart", "chart": "bar", "title": "Coverage by district", "query": { "kind": "breakdown", "dimension": "district", "measure": "household_coverage", "limit": 12 } } },
+    { "op": "add_widget", "id": "daily_visits", "placement": { "place": "bottom", "width": "half", "height": 8 },
+      "widget": { "kind": "chart", "chart": "line", "title": "Daily visits", "query": { "kind": "series", "measure": "visits", "grain": "day" } } },
+    { "op": "add_widget", "id": "not_delivered", "placement": { "place": "bottom", "width": "third", "height": 7 },
+      "widget": { "kind": "chart", "chart": "pie", "title": "Why nothing was delivered", "query": { "kind": "breakdown", "dimension": "not_delivered_reason", "measure": "households_not_delivered", "limit": 6, "filters": [{ "dimension": "not_delivered_reason", "op": "neq", "value": "" }] } } },
+    { "op": "add_widget", "id": "by_province", "placement": { "place": "bottom", "width": "third", "height": 7 },
+      "widget": { "kind": "table", "title": "Nets by province", "query": { "kind": "breakdown", "dimension": "province", "measure": "nets_distributed", "limit": 10 }, "pageSize": 10 } },
+    { "op": "add_widget", "id": "weekly_by_variant", "placement": { "place": "bottom", "width": "third", "height": 7 },
+      "widget": { "kind": "chart", "chart": "area", "title": "Weekly nets by variant", "query": { "kind": "series", "measure": "nets_distributed", "grain": "week", "by": "product_variant" } } },
+    { "op": "add_filter", "filter": { "id": "filter_variant", "type": "select", "label": "Product variant", "field": "product_variant", "applies": ["*"] } }
+  ]
+}

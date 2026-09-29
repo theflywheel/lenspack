@@ -1,0 +1,107 @@
+pack: campaign
+version: 1
+description: >
+  A distribution campaign in DIGIT DSS's index shapes: one document per delivery
+  (project-task-index-v1) and one per project with its household target
+  (project-index-v1). Written only with fields and structured predicates, so it
+  answers unchanged on Elasticsearch, Postgres and DuckDB.
+
+entities:
+  task:
+    source: project-task-index-v1
+    grain: one delivery attempt
+    time: { field: Data.createdTime, unit: epoch_ms }
+  project:
+    source: project-index-v1
+    grain: one project and its target
+    time: { field: Data.startDate, unit: epoch_ms }
+
+dimensions:
+  - key: province
+    entity: task
+    field: Data.province
+    also: { project: { field: Data.province } }
+  - key: district
+    entity: task
+    field: Data.district
+    also: { project: { field: Data.district } }
+    synonyms: [lga]
+  - key: locality
+    entity: task
+    field: Data.locality
+  - key: village
+    entity: task
+    field: Data.village
+  - key: product_variant
+    entity: task
+    field: Data.productVariant
+    type: enum
+    synonyms: [product, pvar]
+  - key: delivered_to
+    entity: task
+    field: Data.deliveredTo
+    type: enum
+    hint: HOUSEHOLD or INDIVIDUAL
+  - key: not_delivered_reason
+    entity: task
+    field: Data.deliveryComments
+    hint: Empty on a delivery; the reason when nothing was handed over
+  - key: delivered_by
+    entity: task
+    field: Data.userId
+  - key: target_type
+    entity: project
+    field: Data.targetType
+    type: enum
+
+measures:
+  - key: visits
+    entity: task
+    agg: count
+    field: Data.id
+    where: [{ field: Data.deliveredTo, value: HOUSEHOLD }]
+    label: Households visited
+  - key: households_delivered
+    entity: task
+    agg: count
+    where: [{ field: Data.deliveredTo, value: HOUSEHOLD }, { field: Data.quantity, op: gt, value: 0 }]
+  - key: households_not_delivered
+    entity: task
+    agg: count
+    where: [{ field: Data.deliveredTo, value: HOUSEHOLD }, { field: Data.quantity, value: 0 }]
+  - key: nets_distributed
+    entity: task
+    agg: sum
+    field: Data.quantity
+    where: [{ field: Data.deliveredTo, value: HOUSEHOLD }]
+    synonyms: [bednets, quantity]
+  - key: population_covered
+    entity: task
+    agg: sum
+    field: Data.quantity
+    where: [{ field: Data.deliveredTo, value: HOUSEHOLD }]
+    scale: 1.8
+    hint: Nets handed out times 1.8 people per net, the campaign's planning ratio
+  - key: avg_nets_per_visit
+    entity: task
+    agg: avg
+    field: Data.quantity
+    where: [{ field: Data.deliveredTo, value: HOUSEHOLD }]
+  - key: distributors_active
+    entity: task
+    agg: count_distinct
+    field: Data.userId
+  - key: household_target
+    entity: project
+    agg: sum
+    field: Data.overallTarget
+    where: [{ field: Data.targetType, value: HOUSEHOLD }]
+  - key: household_coverage
+    entity: task
+    derived: households_delivered / household_target
+    format: percent
+    hint: Households delivered over the household target, per group. The two live in different indexes and are joined after aggregation.
+  - key: delivery_rate
+    entity: task
+    derived: households_delivered / visits
+    format: percent

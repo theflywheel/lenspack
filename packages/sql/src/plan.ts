@@ -1,7 +1,7 @@
-import type { Fragment, Pack, PackDimension, PackMeasure } from "@lenspack/spec";
+import type { Fragment, Pack, PackDimension, PackMeasure, Where } from "@lenspack/spec";
 
 import { type Ast, type Expr, type Join, type Source } from "./ast";
-import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "./resolve";
+import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
 // projects the pack's dimension and measure fragments under reserved aliases,
@@ -17,17 +17,54 @@ const raw = (sql: Fragment): Expr => ({ t: "raw", sql });
 const param = (value: unknown, cast?: "timestamp" | "double" | "int"): Expr => ({ t: "param", value, cast });
 
 function dimensionExpr(d: PackDimension): Expr {
+  if (d.field) return col("", d.field);
   if (d.json) return { t: "json", alias: "", col: d.json[0]!, path: d.json.slice(1) };
   return raw(d.sql!);
 }
 
+// A structured predicate. `neq` keeps rows where the field is absent, the way
+// a search engine's must_not does, so a pack means the same on every backend.
+export function whereExpr(w: Where): Expr {
+  const f = col("", w.field);
+  const v = w.value as string | number | boolean | (string | number | boolean)[];
+  switch (w.op) {
+    case "eq":
+      return { t: "bin", op: "=", l: f, r: param(v) };
+    case "neq":
+      return { t: "bin", op: "IS DISTINCT FROM", l: f, r: param(v) };
+    case "in":
+      return { t: "in", l: f, values: (v as unknown[]).map((x) => param(x)) };
+    case "gt":
+      return { t: "bin", op: ">", l: f, r: param(v) };
+    case "gte":
+      return { t: "bin", op: ">=", l: f, r: param(v) };
+    case "lt":
+      return { t: "bin", op: "<", l: f, r: param(v) };
+    case "lte":
+      return { t: "bin", op: "<=", l: f, r: param(v) };
+    case "exists":
+      return { t: "notnull", arg: f };
+  }
+}
+
+const allOf = (exprs: Expr[]): Expr | null => (exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r })));
+
 // A measure's row-level value. A `filter` folds into a CASE so the aggregate
 // simply ignores rows outside it; `count` gets a literal 1 to count.
+// A counted `field` counts its non-null values.
 function measureRowExpr(m: PackMeasure): Expr | null {
   if (m.derived) return null;
-  const base: Expr = m.agg === "count" ? { t: "lit", value: 1 } : raw(m.sql!);
-  if (!m.filter) return m.agg === "count" ? null : base;
-  return { t: "case", when: raw(m.filter), then: base };
+  const value: Expr | null = m.field ? col("", m.field) : m.sql ? raw(m.sql) : null;
+  const base: Expr = value ?? { t: "lit", value: 1 };
+  const when = allOf([...(m.filter ? [raw(m.filter)] : []), ...(m.where ?? []).map(whereExpr)]);
+  if (!when) return m.agg === "count" && !value ? null : base;
+  return { t: "case", when, then: base };
+}
+
+function timeExpr(time: NonNullable<Pack["entities"][string]["time"]>): Expr {
+  if (typeof time === "string") return col("", time);
+  if ("sql" in time) return raw(time.sql);
+  return { t: "epoch", unit: time.unit, arg: col("", time.field) };
 }
 
 export type Shape = "breakdown" | "series" | "value" | "rows";
@@ -44,8 +81,9 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       // The entity's own predicate (soft deletes, "current" rows) applies to
       // every query that touches it, in every role.
       if (def.filter) s.where.push(raw(def.filter));
+      for (const w of def.where ?? []) s.where.push(whereExpr(w));
       // Time is projected once so the rest of the plan can treat it as a column.
-      if (def.time) s.projections.push({ alias: T, expr: typeof def.time === "string" ? col("", def.time) : raw(def.time.sql) });
+      if (def.time) s.projections.push({ alias: T, expr: timeExpr(def.time) });
       sources.set(entity, s);
     }
     return s;
@@ -101,12 +139,15 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     const rowExpr = measureRowExpr(m);
     if (rowExpr) project(root, M(m.key), rowExpr);
     const ref: Expr | null = rowExpr ? col(root, M(m.key)) : null;
+    let agg: Expr;
     if (m.agg === "count") {
       const arg: Expr = cond ? { t: "case", when: cond, then: ref ?? { t: "lit", value: 1 } } : (ref ?? { t: "star" });
-      return { t: "agg", fn: "count", arg };
+      agg = { t: "agg", fn: "count", arg };
+    } else {
+      const arg: Expr = cond ? { t: "case", when: cond, then: ref! } : ref!;
+      agg = { t: "agg", fn: m.agg!, arg };
     }
-    const arg: Expr = cond ? { t: "case", when: cond, then: ref! } : ref!;
-    return { t: "agg", fn: m.agg!, arg };
+    return m.scale ? { t: "bin", op: "*", l: { t: "cast", arg: agg, to: "double" }, r: { t: "lit", value: m.scale } } : agg;
   };
   const valueExpr = (cond: Expr | null): Expr => {
     const m = bound.measure!;

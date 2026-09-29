@@ -14,6 +14,7 @@ export type DialectRules = {
   json(col: string, path: string[]): string;
   percentile(fn: "median" | "p90", arg: string): string;
   trunc(grain: string, arg: string): string;
+  epoch(arg: string, unit: "epoch_ms" | "epoch_s"): string;
   param(index: number): string;
   paramValue(value: unknown): unknown;
 };
@@ -60,6 +61,10 @@ export function print(ast: Ast, rules: DialectRules): Printed {
         return `NULLIF(${expr(e.arg)}, 0)`;
       case "paren":
         return `(${expr(e.arg)})`;
+      case "epoch":
+        return rules.epoch(expr(e.arg), e.unit);
+      case "notnull":
+        return `(${expr(e.arg)} IS NOT NULL)`;
     }
   };
 

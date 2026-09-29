@@ -13,7 +13,7 @@
   },
   "files": ["dist"],
   "scripts": { "build": "tsup src/index.ts src/executors/pg.ts src/executors/duckdb.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
-  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/spec": "workspace:*" },
+  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/engine": "workspace:*", "@lenspack/spec": "workspace:*" },
   "peerDependencies": { "@duckdb/node-api": "*", "pg": ">=8.11.0" },
   "peerDependenciesMeta": { "@duckdb/node-api": { "optional": true }, "pg": { "optional": true } },
   "devDependencies": { "@duckdb/node-api": "^1.4.0-r.1", "@types/pg": "^8.11.10", "pg": "^8.13.1" },

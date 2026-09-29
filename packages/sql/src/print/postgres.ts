@@ -16,6 +16,7 @@ export const postgresRules: DialectRules = {
   },
   percentile: (fn, arg) => `percentile_cont(${fn === "median" ? 0.5 : 0.9}) WITHIN GROUP (ORDER BY ${arg})`,
   trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
+  epoch: (arg, unit) => `(to_timestamp(${arg}${unit === "epoch_ms" ? " / 1000.0" : ""}) AT TIME ZONE 'UTC')`,
   param: (i) => `$${i}`,
   paramValue: (v) => (v instanceof Date ? v.toISOString() : v),
 };

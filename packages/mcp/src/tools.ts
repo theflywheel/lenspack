@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { type BoardOp, type BoardStore, type Query, querySchema, summarise, verifiedOnly } from "@lenspack/core";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/spec";
-import { type Ctx, type Executor, checkOps, compile, describeSources, run, runSql } from "@lenspack/sql";
+import { type Connector, type Ctx, type Executor, checkOps, describeSources, explain, run, runSql, sqlConnector } from "@lenspack/sql";
 
 import { type Proposal, type ProposalStore, memoryProposals } from "./proposals";
 
@@ -26,7 +26,9 @@ function defineTool<A extends z.ZodRawShape>(t: Tool<A>): Tool {
 
 export type BoardToolsOptions = {
   pack: Pack;
-  executor: Executor;
+  /** The backend. A bare SQL executor is accepted and wrapped. */
+  connector?: Connector;
+  executor?: Executor;
   store: BoardStore;
   boardId: string;
   ctx?: Ctx;
@@ -96,7 +98,12 @@ function fail(e: unknown) {
 }
 
 export function boardTools(opts: BoardToolsOptions): Tool[] {
-  const { pack, executor, store, boardId } = opts;
+  const { pack, store, boardId } = opts;
+  const connector = opts.connector ?? (opts.executor ? sqlConnector(opts.executor) : null);
+  if (!connector) throw new Error("boardTools needs a connector (or a SQL executor)");
+  const executor = opts.executor ?? (connector as { executor?: Executor }).executor;
+  // What the model sees the compiled query called: SQL, or a search request.
+  const nativeKey = connector.kind === "postgres" || connector.kind === "duckdb" ? "sql" : "request";
   const catalogue = verifiedOnly(catalogueFrom(pack));
   const ctx = opts.ctx ?? {};
   const proposals = opts.proposals ?? memoryProposals();
@@ -108,7 +115,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   const apply = (ops: BoardOp[]) => {
     const work = async () => {
       // Refuse at edit time what the compiler would refuse at render time.
-      const checked = checkOps(ops, pack, { dialect: executor.dialect, ctx });
+      const checked = checkOps(ops, pack, { ctx, capabilities: connector.capabilities });
       if (!checked.ok) return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
       const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
       if (!result.ok) return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
@@ -139,15 +146,24 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
     defineTool({
       name: "query",
-      description: "Run one query against the pack and return its rows plus the SQL that ran. Use this to answer questions or to check a widget before adding it.",
+      description: "Run one query against the pack and return its rows plus the native query that ran. Use this to answer questions or to check a widget before adding it.",
       inputSchema: z.object(QUERY_SHAPE),
       async execute(a) {
         try {
           const query = assembleQuery(a);
-          const compiled = compile(query, pack, { dialect: executor.dialect, ctx });
-          const data = await run(query, { pack, executor, ctx, timeoutMs: opts.timeoutMs });
+          const data = await run(query, { pack, connector, ctx, timeoutMs: opts.timeoutMs });
           if (data.error) return { ok: false, error: data.error, ...(data.hint ? { didYouMean: data.hint } : {}) };
-          return { ok: true, query, rows: data.records ?? data.rows, total: data.total, format: data.format, compare: data.compare, sql: compiled.sql };
+          const { text } = await explain(query, { pack, connector, ctx });
+          return {
+            ok: true,
+            query,
+            rows: data.records ?? data.rows,
+            total: data.total,
+            format: data.format,
+            compare: data.compare,
+            ...(data.approximate ? { approximate: true } : {}),
+            [nativeKey]: text,
+          };
         } catch (e) {
           return { ok: false, ...fail(e) };
         }
@@ -155,13 +171,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
     defineTool({
       name: "explain",
-      description: "Compile a query without running it: the SQL, the entities joined, and the tenant scope. Cheap; use it to debug a refusal.",
+      description: "Compile a query without running it: the native query, the entities used, and the tenant scope. Cheap; use it to debug a refusal.",
       inputSchema: z.object(QUERY_SHAPE),
       async execute(a) {
         try {
           const query = assembleQuery(a);
-          const c = compile(query, pack, { dialect: executor.dialect, ctx });
-          return { ok: true, query, sql: c.sql, params: c.params, root: c.bound.root, entities: c.bound.entitiesUsed, tenant: c.bound.tenant };
+          const c = await explain(query, { pack, connector, ctx });
+          return { ok: true, query, [nativeKey]: c.text, root: c.root, entities: c.entities, tenant: c.tenant, ...(c.approximate ? { approximate: true } : {}) };
         } catch (e) {
           return { ok: false, ...fail(e) };
         }
@@ -312,7 +328,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
   ];
 
-  if (opts.runSql) {
+  if (opts.runSql && executor) {
     tools.push(defineTool({
       name: "run_sql",
       description: `Read-only SQL for a question the pack cannot express. One SELECT or WITH statement, capped rows, timeboxed. Results are for answering, never for widgets: if the answer is worth keeping, propose_measure it. Tables:\n${describeSources(pack)}`,

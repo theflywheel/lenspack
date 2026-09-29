@@ -18,7 +18,21 @@ export type ResolveErrorCode =
   | "NO_TIME"
   | "NEEDS_TIME_RANGE"
   | "WRONG_ENTITY"
-  | "TIME_DIMENSION";
+  | "TIME_DIMENSION"
+  | "NEEDS_JOIN"
+  | "NOT_SUPPORTED";
+
+/** What a backend can do. Resolution refuses the rest up front. */
+export type Capabilities = {
+  /** Row-level joins between entities. A search index has none. */
+  joins: boolean;
+  /** count_distinct is exact (false: an estimate, shown as ≈). */
+  exactDistinct: boolean;
+  /** median / p90 are exact. */
+  exactPercentiles: boolean;
+};
+
+export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true };
 
 export class ResolveError extends Error {
   constructor(
@@ -142,7 +156,7 @@ function window(query: Query, now: Date): TimeWindow | null {
   return { from: new Date(query.time.from), to: new Date(query.time.to) };
 }
 
-export function resolve(query: Query, pack: Pack, ctx: Ctx = {}): BoundPlan {
+export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilities = SQL_CAPABILITIES): BoundPlan {
   const now = ctx.now ?? new Date();
   const dimKeys = pack.dimensions.map((d) => d.key);
   const measureKeys = pack.measures.map((m) => m.key);
@@ -172,6 +186,10 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}): BoundPlan {
     if (def.derived) {
       const { numerator, denominator } = parseDerived(def.derived);
       measure = { kind: "derived", def, numerator: findMeasure(numerator), denominator: findMeasure(denominator) };
+      // Operands on two entities are never joined row-wise: run() computes
+      // each side on its own and joins the aggregates (see acrossEntities).
+      if (measure.numerator.entity !== measure.denominator.entity)
+        throw new ResolveError("NOT_SUPPORTED", `"${def.key}" divides measures on two entities; it is computed by run(), not compiled as one query`, def.key);
     } else {
       measure = { kind: "simple", def };
     }
@@ -180,6 +198,18 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}): BoundPlan {
 
   const bind = (key: string): BoundDimension => {
     const def = findDimension(key);
+    // A dimension that also lives on the root is read there, with no join.
+    const local = def.entity !== root ? def.also?.[root] : undefined;
+    if (local) return { def: { ...def, entity: root, field: local.field, sql: local.sql, json: local.json, also: undefined }, path: [] };
+    if (!caps.joins && def.entity !== root) {
+      const here = pack.dimensions.filter((d) => d.type !== "time" && (d.entity === root || d.also?.[root])).map((d) => d.key);
+      throw new ResolveError(
+        "NEEDS_JOIN",
+        `"${key}" lives on "${def.entity}" and this source cannot join it to "${root}".` + (here.length ? ` Dimensions on "${root}": ${here.join(", ")}.` : ""),
+        key,
+        nearest(key, here) ?? here[0],
+      );
+    }
     return { def, path: joinPath(pack, graph, root, def.entity, key) };
   };
 

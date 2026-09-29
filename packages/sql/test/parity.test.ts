@@ -1,7 +1,12 @@
 import type { Query } from "@lenspack/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { type Executor, type WidgetData, run } from "../src/executor";
+import { type WidgetData, run as runWith } from "@lenspack/engine";
+
+import { type Executor, sqlConnector } from "../src/executor";
+
+const run = (q: Parameters<typeof runWith>[0], o: { pack: Parameters<typeof runWith>[1]["pack"]; executor: Executor; ctx?: Parameters<typeof runWith>[1]["ctx"] }) =>
+  runWith(q, { pack: o.pack, connector: sqlConnector(o.executor), ctx: o.ctx });
 import { openDuckdb } from "../src/executors/duckdb";
 import { openPostgres } from "../src/executors/pg";
 import { pack, seedFixture } from "./fixture-pack";

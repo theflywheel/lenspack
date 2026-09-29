@@ -6,9 +6,11 @@ import * as commerce from "./commerce/index";
 import * as consultation from "./consultation/index";
 import * as events from "./events/index";
 import * as hcm from "./hcm/index";
+import * as campaign from "./campaign/index";
 import * as tickets from "./tickets/index";
 
-export const examples = { commerce, events, consultation, tickets, hcm } as const;
+export { campaign };
+export const examples = { commerce, events, consultation, tickets, hcm, campaign } as const;
 export type ExampleName = keyof typeof examples;
 
 /** Builds a board config from an example's ops file — the same path the model uses. */
@@ -30,6 +32,7 @@ export const contextFor: Record<ExampleName, { tenant?: string; now: Date }> = {
   consultation: { tenant: "dopt", now: new Date("2026-09-01T00:00:00Z") },
   tickets: { now: new Date("2026-09-01T00:00:00Z") },
   hcm: { tenant: "ng.state", now: new Date("2026-09-01T00:00:00Z") },
+  campaign: { now: new Date("2026-09-01T00:00:00Z") },
 };
 
-export const SMALL = { commerce: { orders: 800 }, events: { rows: 15_000 }, consultation: { submissions: 600 }, tickets: { tickets: 800 }, hcm: { households: 600 } } as const;
+export const SMALL = { commerce: { orders: 800 }, events: { rows: 15_000 }, consultation: { submissions: 600 }, tickets: { tickets: 800 }, hcm: { households: 600 }, campaign: { households: 800 } } as const;

@@ -14,6 +14,7 @@ export const duckdbRules: DialectRules = {
   },
   percentile: (fn, arg) => `quantile_cont(${arg}, ${fn === "median" ? 0.5 : 0.9})`,
   trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
+  epoch: (arg, unit) => `epoch_ms(CAST(${arg} AS BIGINT)${unit === "epoch_s" ? " * 1000" : ""})`,
   // DuckDB accepts numbered parameters, so both dialects bind the same way.
   param: (i) => `$${i}`,
   paramValue: (v) => (v instanceof Date ? v.toISOString().replace("T", " ").replace("Z", "") : v),

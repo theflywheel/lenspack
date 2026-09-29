@@ -12,7 +12,7 @@ import { type ToolSet, generateText, stepCountIs } from "ai";
 import { type BoardOp, memoryStore, opSchema, summarise } from "@lenspack/core";
 import { boardTools, toVercelAI } from "@lenspack/mcp";
 import { catalogueFrom } from "@lenspack/spec";
-import { run } from "@lenspack/sql";
+import { run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 
 import { SMALL, contextFor, examples } from "../examples/index";
@@ -77,7 +77,7 @@ async function main() {
   console.log(`pack ${packName}; prompt version ${PROMPT_VERSION}`);
   const canonicalBoard = packName === "hcm" ? "campaign" : "overview";
   const canonicalOps = ex.boards.find((b) => b.id === canonicalBoard)!.ops.map((o) => opSchema.parse(o)) as BoardOp[];
-  const q = (query: Parameters<typeof run>[0]) => run(query, { pack: ex.pack, executor: db.executor, ctx });
+  const q = (query: Parameters<typeof run>[0]) => run(query, { pack: ex.pack, connector: sqlConnector(db.executor), ctx });
   let facts: Facts | HcmFacts;
   let taskList: { id: string; kind?: "edit" | "question" | "refusal"; prompt: string; check: (c: never, reply: string, f: never) => string | null }[];
   if (packName === "hcm") {

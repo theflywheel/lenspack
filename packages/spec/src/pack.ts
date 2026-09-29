@@ -5,8 +5,13 @@ import { z } from "zod";
 // are trusted code precisely because they never come from a request.
 
 const slug = z.string().regex(/^[a-z][a-z0-9_]*$/, "lowercase letters, digits and underscores, starting with a letter");
-const qualified = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/, "a table name, optionally schema-qualified");
+// A table (optionally schema-qualified) or a search index; index names carry
+// hyphens and may be a pattern. Printers quote it; it is never a fragment.
+const qualified = z.string().regex(/^[A-Za-z_][A-Za-z0-9_*-]*(\.[A-Za-z_][A-Za-z0-9_*-]*)?$/, "a table or index name, optionally schema-qualified");
 const column = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a column name");
+// A column, or a document field path such as "attrs.region.keyword". The one
+// way to name data that every connector understands.
+export const fieldPath = z.string().regex(/^[A-Za-z_@][A-Za-z0-9_@]*(\.[A-Za-z_@][A-Za-z0-9_@]*)*$/, 'a column or field path, e.g. "region" or "attrs.region.keyword"');
 
 export const AGGS = ["count", "count_distinct", "sum", "avg", "min", "max", "median", "p90"] as const;
 export const FORMATS = ["number", "percent", "currency", "compact", "duration"] as const;
@@ -17,17 +22,38 @@ export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as con
 export const fragmentSchema = z.union([
   z.string().min(1).max(500),
   z
-    .object({ default: z.string().min(1).max(500).optional(), postgres: z.string().min(1).max(500).optional(), duckdb: z.string().min(1).max(500).optional() })
-    .refine((f) => f.default || f.postgres || f.duckdb, { message: "a per-dialect fragment needs at least one entry" }),
+    .object({
+      default: z.string().min(1).max(500).optional(),
+      postgres: z.string().min(1).max(500).optional(),
+      duckdb: z.string().min(1).max(500).optional(),
+      // Query DSL JSON for a filter; a Painless script for a dimension or measure.
+      elasticsearch: z.string().min(1).max(2000).optional(),
+    })
+    .refine((f) => f.default || f.postgres || f.duckdb || f.elasticsearch, { message: "a per-dialect fragment needs at least one entry" }),
 ]);
 export type Fragment = z.infer<typeof fragmentSchema>;
 
 export function fragmentFor(fragment: Fragment, dialect: string): string {
-  if (typeof fragment === "string") return fragment;
-  const chosen = (fragment as Record<string, string | undefined>)[dialect] ?? fragment.default;
-  if (!chosen) throw new Error(`No SQL fragment for dialect "${dialect}"`);
+  const chosen = maybeFragmentFor(fragment, dialect);
+  if (!chosen) throw new Error(`No fragment for dialect "${dialect}"`);
   return chosen;
 }
+
+/** A bare string is SQL: it serves every SQL dialect but never a non-SQL one. */
+export function maybeFragmentFor(fragment: Fragment, dialect: string): string | undefined {
+  const sql = dialect === "postgres" || dialect === "duckdb";
+  if (typeof fragment === "string") return sql ? fragment : undefined;
+  return (fragment as Record<string, string | undefined>)[dialect] ?? (sql ? fragment.default : undefined);
+}
+
+// A structured predicate: the connector-neutral way to say "only these rows".
+export const WHERE_OPS = ["eq", "neq", "in", "gt", "gte", "lt", "lte", "exists"] as const;
+const whereValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()])).min(1).max(100)]);
+export const whereSchema = z
+  .object({ field: fieldPath, op: z.enum(WHERE_OPS).default("eq"), value: whereValue.optional() })
+  .refine((w) => (w.op === "exists") === (w.value === undefined), { message: "every op but exists takes a value" })
+  .refine((w) => (w.op === "in") === Array.isArray(w.value), { message: "in takes a list; the other ops take one value" });
+export type Where = z.infer<typeof whereSchema>;
 
 export const joinSchema = z.object({
   to: slug,
@@ -42,11 +68,14 @@ export const entitySchema = z.object({
   // A column, or an expression that yields a timestamp — schemas that store
   // epoch milliseconds in a BIGINT are common enough to deserve first-class
   // support: `time: { sql: { postgres: "to_timestamp(createdtime / 1000.0)", duckdb: "epoch_ms(createdtime)" } }`.
-  time: z.union([column, z.object({ sql: fragmentSchema })]).optional(),
-  tenant: column.optional(),
+  // A field holding numbers rather than timestamps says its unit, and every
+  // connector converts: `time: { field: Data.createdTime, unit: epoch_ms }`.
+  time: z.union([fieldPath, z.object({ sql: fragmentSchema }), z.object({ field: fieldPath, unit: z.enum(["epoch_ms", "epoch_s"]) })]).optional(),
+  tenant: fieldPath.optional(),
   // A predicate every query over this entity carries, e.g. soft deletes:
   // `filter: "isdeleted = false"`. Pushed into the entity's subquery.
   filter: fragmentSchema.optional(),
+  where: z.array(whereSchema).max(20).optional(),
   joins: z.array(joinSchema).default([]),
 });
 
@@ -59,17 +88,28 @@ const named = {
   verified: z.boolean().default(true),
 };
 
+// How a dimension reads on one entity: a field, a fragment, or a JSON path.
+const dimensionSource = {
+  field: fieldPath.optional(),
+  sql: fragmentSchema.optional(),
+  json: z.array(z.string().min(1).max(80)).min(1).max(8).optional(),
+};
+const oneSource = (d: { field?: unknown; sql?: unknown; json?: unknown }) => (d.field ? 1 : 0) + (d.sql ? 1 : 0) + (d.json ? 1 : 0) === 1;
+
 export const dimensionSchema = z
   .object({
     key: slug,
     entity: slug,
-    sql: fragmentSchema.optional(),
-    json: z.array(z.string().min(1).max(80)).min(1).max(8).optional(),
+    ...dimensionSource,
+    // The same concept on other entities (a conformed dimension). It is what
+    // lets one "region" group measures that live on different entities, and
+    // what a cross-entity ratio joins its two sides on.
+    also: z.record(slug, z.object(dimensionSource).refine(oneSource, { message: "exactly one of field, sql or json" })).optional(),
     type: z.enum(["string", "number", "boolean", "time", "enum"]).default("string"),
     grains: z.array(z.enum(GRAINS)).optional(),
     ...named,
   })
-  .refine((d) => (d.sql ? 1 : 0) + (d.json ? 1 : 0) === 1, { message: "a dimension has exactly one of sql or json" });
+  .refine(oneSource, { message: "a dimension has exactly one of field, sql or json" });
 
 export const measureSchema = z
   .object({
@@ -77,18 +117,24 @@ export const measureSchema = z
     entity: slug,
     agg: z.enum(AGGS).optional(),
     sql: fragmentSchema.optional(),
-    // A ratio of two measures on the same entity, e.g. "weight / things".
+    field: fieldPath.optional(),
+    // A ratio of two measures, e.g. "weight / things". Operands on different
+    // entities are computed separately and joined on the group.
     derived: z.string().regex(/^\s*[a-z][a-z0-9_]*\s*\/\s*[a-z][a-z0-9_]*\s*$/, 'e.g. "weight / things"').optional(),
     // An extra predicate on the base rows, e.g. "state = 'broken'".
     filter: fragmentSchema.optional(),
+    where: z.array(whereSchema).max(20).optional(),
+    // Multiplies the aggregate, e.g. people per item handed out.
+    scale: z.number().positive().optional(),
     format: z.enum(FORMATS).default("number"),
     ...named,
   })
-  .refine((m) => (m.derived ? !m.agg && !m.sql && !m.filter : !!m.agg), {
-    message: "a measure has agg (with optional sql and filter), or derived, not both",
+  .refine((m) => (m.derived ? !m.agg && !m.sql && !m.field && !m.filter && !m.where && !m.scale : !!m.agg), {
+    message: "a measure has agg (with optional sql or field, filter, where, scale), or derived, not both",
   })
-  .refine((m) => m.agg !== "count" || !m.sql, { message: "count takes no sql; use count_distinct or sum for an expression" })
-  .refine((m) => !m.agg || m.agg === "count" || !!m.sql, { message: "an aggregate other than count needs sql" });
+  .refine((m) => !(m.sql && m.field), { message: "a measure has sql or field, not both" })
+  .refine((m) => m.agg !== "count" || !m.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })
+  .refine((m) => !m.agg || m.agg === "count" || !!m.sql || !!m.field, { message: "an aggregate other than count needs sql or field" });
 
 export const packSchema = z.object({
   pack: slug,
@@ -145,6 +191,10 @@ export function checkPack(pack: Pack): PackProblem[] {
     keys.set(d.key, path);
     if (!entities.has(d.entity)) problems.push({ path, message: `unknown entity "${d.entity}"` });
     if (d.grains && d.type !== "time") problems.push({ path, message: "grains only apply to a time dimension" });
+    for (const other of Object.keys(d.also ?? {})) {
+      if (!entities.has(other)) problems.push({ path: `${path}.also.${other}`, message: `unknown entity "${other}"` });
+      else if (other === d.entity) problems.push({ path: `${path}.also.${other}`, message: "also names the dimension's own entity" });
+    }
   }
 
   const measureEntity = new Map(pack.measures.map((m) => [m.key, m.entity]));
@@ -158,10 +208,12 @@ export function checkPack(pack: Pack): PackProblem[] {
       for (const operand of [numerator, denominator]) {
         const ent = measureEntity.get(operand);
         if (!ent) problems.push({ path, message: `derived measure refers to unknown measure "${operand}"` });
-        else if (ent !== m.entity) problems.push({ path, message: `derived operand "${operand}" is on "${ent}", not "${m.entity}"` });
         const target = pack.measures.find((x) => x.key === operand);
         if (target?.derived) problems.push({ path, message: `derived measure "${operand}" cannot be an operand of another` });
       }
+      // A ratio lives with its numerator: that is the grain it is read at.
+      const numEntity = measureEntity.get(numerator);
+      if (numEntity && numEntity !== m.entity) problems.push({ path, message: `a derived measure's entity is its numerator's ("${numEntity}"), not "${m.entity}"` });
     }
   }
 

@@ -1,7 +1,7 @@
 import type { Query } from "@lenspack/core";
 import { applyOps, emptyBoard } from "@lenspack/core";
 import { catalogueFrom } from "@lenspack/spec";
-import { ResolveError, type WidgetData, compile, resolveBoard, run } from "@lenspack/sql";
+import { ResolveError, type WidgetData, check, compile, resolveBoard, run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { openPostgres } from "@lenspack/sql/pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -94,7 +94,7 @@ for (const name of NAMES) {
         const outcomes: Record<string, string> = {};
         const attempt = async (label: string, query: Query) => {
           try {
-            compile(query, pack, { dialect: "duckdb", ctx });
+            check(query, pack, { ctx });
           } catch (e) {
             if (e instanceof ResolveError && REFUSALS.has(e.code)) {
               outcomes[label] = e.code;
@@ -102,7 +102,7 @@ for (const name of NAMES) {
             }
             throw e;
           }
-          const data = await run(query, { pack, executor, ctx });
+          const data = await run(query, { pack, connector: sqlConnector(executor), ctx });
           expect(data.error, `${label}: ${data.error}`).toBeUndefined();
           outcomes[label] = "ok";
         };
@@ -118,7 +118,7 @@ for (const name of NAMES) {
       for (const [entity] of Object.entries(pack.entities)) {
         const cols = pack.dimensions.filter((d) => d.entity === entity && d.type !== "time").map((d) => d.key);
         if (cols.length === 0) continue;
-        const data = await run({ kind: "rows", entity, columns: cols, limit: 3 }, { pack, executor: duck[name]!.executor, ctx });
+        const data = await run({ kind: "rows", entity, columns: cols, limit: 3 }, { pack, connector: sqlConnector(duck[name]!.executor), ctx });
         expect(data.error).toBeUndefined();
         expect(data.records!.length).toBeGreaterThan(0);
       }
@@ -135,7 +135,7 @@ for (const name of NAMES) {
     for (const board of examples[name].boards) {
       it(`board ${board.id} on duckdb`, async () => {
         const config = buildBoard(name, board.id);
-        const data = await resolveBoard(config, { pack, executor: duck[name]!.executor, ctx });
+        const data = await resolveBoard(config, { pack, connector: sqlConnector(duck[name]!.executor), ctx });
         const errors = Object.entries(data).filter(([, d]) => d.error).map(([id, d]) => `${id}: ${d.error}`);
         expect(errors).toEqual([]);
         const widgets = Object.entries(config.widgets).filter(([, w]) => w.kind !== "text");
@@ -145,8 +145,8 @@ for (const name of NAMES) {
       it(`board ${board.id}: postgres agrees with duckdb`, async ({ skip }) => {
         if (!pg) return skip();
         const config = buildBoard(name, board.id);
-        const a = await resolveBoard(config, { pack, executor: duck[name]!.executor, ctx });
-        const b = await resolveBoard(config, { pack, executor: pg.executor, ctx });
+        const a = await resolveBoard(config, { pack, connector: sqlConnector(duck[name]!.executor), ctx });
+        const b = await resolveBoard(config, { pack, connector: sqlConnector(pg.executor), ctx });
         for (const id of Object.keys(a)) expect(normalise(b[id]!), id).toEqual(normalise(a[id]!));
       });
     }

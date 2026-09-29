@@ -2,7 +2,7 @@ import { type Board, type BoardConfig, type BoardStore, type BoardVersion, apply
 
 import type { Dialect } from "./print/base";
 import type { Executor, Writer } from "./executor";
-import { toDate } from "./executor";
+import { toDate } from "@lenspack/engine";
 
 // Two tables, portable DDL: config is stored as JSON text so the same store
 // runs on Postgres and DuckDB. Every patch inserts a version row; the boards
