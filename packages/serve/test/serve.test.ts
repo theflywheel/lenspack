@@ -49,7 +49,7 @@ describe("lenspack serve from a config file", () => {
   let sqlApi: string;
   beforeAll(async () => {
     const db = await openDuckdb(join(dir, "campaign.duckdb"));
-    await seed(db.writer, "duckdb", { households: 1500 });
+    await seed(db.writer, "duckdb", { households: 3000 });
     await db.close();
     sqlApi = await start(`{ kind: duckdb, path: ${join(dir, "campaign.duckdb")} }`);
   });
@@ -81,10 +81,10 @@ describe("lenspack serve from a config file", () => {
 
   it.skipIf(!process.env.LENSPACK_ES_URL)("serves the same board from Elasticsearch, configured by env reference", async () => {
     const esApi = await start("{ kind: elasticsearch, url: env:CAMPAIGN_ES }");
-    // The index was seeded by the connector parity test with the same generator.
+    // Same generator and size as the connector parity test, so either may seed it.
     const { elasticsearchConnector } = await import("@lenspack/elasticsearch");
     const { seedSearch } = await import("../../../examples/campaign/seed");
-    await seedSearch(elasticsearchConnector({ url: process.env.LENSPACK_ES_URL! }).request, { households: 1500 });
+    await seedSearch(elasticsearchConnector({ url: process.env.LENSPACK_ES_URL! }).request, { households: 3000 });
     expect((await get(esApi)).examples[0].source).toBe("elasticsearch");
     const [a, b] = await Promise.all([get(`${sqlApi}/campaign/overview/data`), get(`${esApi}/campaign/overview/data`)]);
     for (const id of Object.keys(a)) {

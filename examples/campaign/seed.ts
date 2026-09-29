@@ -109,16 +109,40 @@ type Request = (method: string, path: string, body?: unknown) => Promise<any>;
  */
 export async function seedSearch(request: Request, opts: { households?: number; now?: Date } = {}) {
   const { tasks, projects } = documents(opts);
+  const stamp = `households=${opts.households ?? 4000}`;
   for (const [index, docs] of [[TASK_INDEX, tasks], [PROJECT_INDEX, projects]] as const) {
-    await request("DELETE", `/${index}`).catch(() => undefined);
+    // Seeding is shared by test files that may run at once: an index already
+    // holding this data is kept, and a seeder that loses the race to create
+    // it waits for the winner rather than deleting its work.
+    const count = async () => (await request("GET", `/${index}/_count`).catch(() => ({ count: -1 })))?.count;
+    const settled = async () => {
+      for (let i = 0; i < 120 && (await count()) !== docs.length; i++) await new Promise((r) => setTimeout(r, 250));
+    };
+    const meta = await request("GET", `/${index}/_mapping`).catch(() => null);
+    const seeded = meta?.[index]?.mappings?._meta?.seed;
+    if (seeded === stamp) {
+      // This data, complete or still loading: never delete it from under its seeder.
+      await settled();
+      continue;
+    }
+    if (meta) await request("DELETE", `/${index}`).catch(() => undefined);
     const properties = Object.fromEntries(
       columnsOf(docs).map((c) => [c, FIELD_TYPES[c] === "keyword" ? { type: "text", fields: { keyword: { type: "keyword", ignore_above: 256 } } } : { type: FIELD_TYPES[c] }]),
     );
-    await request("PUT", `/${index}`, { settings: { number_of_shards: 1, number_of_replicas: 0 }, mappings: { properties: { Data: { properties } } } });
+    try {
+      await request("PUT", `/${index}`, { settings: { number_of_shards: 1, number_of_replicas: 0 }, mappings: { _meta: { seed: stamp, state: "loading" }, properties: { Data: { properties } } } });
+    } catch (e) {
+      if (!/already.exists/i.test(String(e))) throw e;
+      await settled();
+      continue;
+    }
     for (let i = 0; i < docs.length; i += 2000) {
       const lines = docs.slice(i, i + 2000).flatMap((d, j) => [JSON.stringify({ index: { _id: String(i + j + 1) } }), JSON.stringify(d)]);
       const res = await request("POST", `/${index}/_bulk`, lines.join("\n") + "\n");
-      if (res?.errors) throw new Error(`bulk into ${index} reported errors`);
+      if (res?.errors) {
+        const first = (res.items as Record<string, { error?: { reason?: string } }>[]).map((it) => Object.values(it)[0]?.error?.reason).find(Boolean);
+        throw new Error(`bulk into ${index} reported errors: ${first}`);
+      }
     }
     await request("POST", `/${index}/_refresh`);
   }
