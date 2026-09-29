@@ -1,6 +1,7 @@
 import { type BoardConfig, type Query, type Widget, drilledDimension } from "@lenspack/core";
 import type { Pack } from "@lenspack/spec";
 
+import { dateRangeWindow, defaultRange } from "./calendar";
 import { type Capabilities, type Ctx, ResolveError } from "./resolve";
 import { check } from "./run";
 
@@ -76,7 +77,15 @@ export function drilledQuery(
 ): Query | null {
   if (widget.kind === "text") return null;
   let q: Query = widget.query;
-  const explicit = config.filters.filter((f) => selections[f.field] && (f.applies.includes("*") || f.applies.includes(id)));
+  const covers = (f: BoardConfig["filters"][number]) => f.applies.includes("*") || f.applies.includes(id);
+  // A date range sets the window of the widgets it covers: the selection, or
+  // the filter's default ("the last month"), in the pack's time zone.
+  for (const f of config.filters.filter((x) => x.type === "daterange" && covers(x))) {
+    const chosen = selections[f.field] || defaultRange(f.default, opts.ctx?.now ?? new Date(), pack.timeZone);
+    const window = chosen ? dateRangeWindow(chosen, pack.timeZone) : null;
+    if (window) q = { ...q, time: window } as Query;
+  }
+  const explicit = config.filters.filter((f) => f.type !== "daterange" && selections[f.field] && covers(f));
   const drill = Object.keys(selections).filter((k) => selections[k] && hierarchyOf(pack, k) && !explicit.some((f) => f.field === k));
   const add = [...explicit.map((f) => f.field), ...drill];
   const accepts = (candidate: Query) => {

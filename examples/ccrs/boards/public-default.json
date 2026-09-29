@@ -1,0 +1,278 @@
+{
+  "title": "Curated public dashboard",
+  "ops": [
+    {
+      "op": "add_widget",
+      "id": "cl_new_created_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "New complaints created",
+        "query": {
+          "kind": "value",
+          "measure": "complaints",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_resolution_rate_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "Resolution rate",
+        "query": {
+          "kind": "value",
+          "measure": "chart_department_resolution_rate",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_reopen_rate_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "Reopen rate",
+        "query": {
+          "kind": "value",
+          "measure": "reopen_rate",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_open_complaints_live",
+      "widget": {
+        "kind": "kpi",
+        "title": "Open complaints",
+        "query": {
+          "kind": "value",
+          "measure": "complaints_open"
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_resolved_date_range_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "Resolved complaints",
+        "query": {
+          "kind": "value",
+          "measure": "complaints_not_open_resolved",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_chart_complaints_by_type",
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Complaints by type",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "service_type_l1",
+          "measure": "complaints",
+          "limit": 500,
+          "sort": "desc",
+          "time": {
+            "last": "30d"
+          }
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_chart_over_time_created_daily",
+      "widget": {
+        "kind": "chart",
+        "chart": "line",
+        "title": "Complaints over time",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "created_date",
+          "measure": "complaints",
+          "measures": [
+            "complaints_not_open_resolved",
+            "complaints_not_open_resolved_not_sla_breached"
+          ],
+          "limit": 366,
+          "sort": "asc",
+          "sortBy": "group",
+          "time": {
+            "last": "30d"
+          }
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_chart_department_resolution_rate",
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Department-wise resolution rate",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "department_code",
+          "measure": "chart_department_resolution_rate",
+          "limit": 500,
+          "sort": "desc",
+          "time": {
+            "last": "30d"
+          }
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_filter",
+      "filter": {
+        "id": "ward",
+        "type": "select",
+        "label": "Ward",
+        "field": "ward_code",
+        "applies": [
+          "*"
+        ]
+      }
+    },
+    {
+      "op": "add_filter",
+      "filter": {
+        "id": "complaint_type",
+        "type": "select",
+        "label": "Complaint type",
+        "field": "service_code",
+        "applies": [
+          "*"
+        ]
+      }
+    }
+  ],
+  "layout": [
+    {
+      "i": "cl_new_created_count",
+      "x": 0,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_resolution_rate_count",
+      "x": 2,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_reopen_rate_count",
+      "x": 4,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_open_complaints_live",
+      "x": 6,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_resolved_date_range_count",
+      "x": 8,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_chart_complaints_by_type",
+      "x": 0,
+      "y": 2,
+      "w": 6,
+      "h": 6
+    },
+    {
+      "i": "cl_chart_over_time_created_daily",
+      "x": 6,
+      "y": 2,
+      "w": 6,
+      "h": 6
+    },
+    {
+      "i": "cl_chart_department_resolution_rate",
+      "x": 0,
+      "y": 8,
+      "w": 12,
+      "h": 6
+    }
+  ],
+  "grid": {
+    "cols": 12,
+    "rowHeight": 52
+  }
+}

@@ -1,0 +1,520 @@
+{
+  "title": "Default executive dashboard pack",
+  "ops": [
+    {
+      "op": "add_widget",
+      "id": "cl_resolved_on_time_rate_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "Resolved on time rate",
+        "query": {
+          "kind": "value",
+          "measure": "resolved_on_time_rate",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_resolved_date_range_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "Resolved complaints",
+        "query": {
+          "kind": "value",
+          "measure": "complaints_not_open_resolved",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_total_complaints_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "Total complaints",
+        "query": {
+          "kind": "value",
+          "measure": "complaints",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_flow_ratio_count",
+      "widget": {
+        "kind": "kpi",
+        "title": "Flow ratio",
+        "query": {
+          "kind": "value",
+          "measure": "chart_department_resolution_rate",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_oldest_open_age",
+      "widget": {
+        "kind": "kpi",
+        "title": "Oldest complaint",
+        "query": {
+          "kind": "value",
+          "measure": "max_open_age_ms_open"
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_csat_avg",
+      "widget": {
+        "kind": "kpi",
+        "title": "Citizen satisfaction",
+        "query": {
+          "kind": "value",
+          "measure": "avg_rating_rating_resolved",
+          "compare": "previous_period",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "aggregate": "last"
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_chart_wards_by_sla",
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Complaints by Wards",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "ward_code",
+          "by": "sla_status_bucket",
+          "measure": "daily_complaints",
+          "limit": 120,
+          "sort": "desc",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_table_subtype_performance",
+      "widget": {
+        "kind": "table",
+        "title": "Complaint sub-type performance",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "service_code",
+          "measure": "avg_resolution_ms_resolved",
+          "measures": [
+            "complaints",
+            "avg_sla_target_ms"
+          ],
+          "limit": 30,
+          "sort": "desc",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "pageSize": 50
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_map_ward_wow_current",
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Complaint map (week-over-week)",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "ward_code",
+          "measure": "complaints",
+          "measures": [
+            "complaints_open",
+            "complaints_not_open_resolved"
+          ],
+          "limit": 200,
+          "sort": "desc",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_table_recurring_ward_subtype",
+      "widget": {
+        "kind": "table",
+        "title": "Recurring complaints by ward & sub-type",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "ward_code",
+          "by": "service_code",
+          "measure": "complaints",
+          "limit": 200,
+          "sort": "desc",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "pageSize": 50
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_chart_complaints_over_time",
+      "widget": {
+        "kind": "chart",
+        "chart": "line",
+        "title": "Complaints over time",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "created_date",
+          "measure": "complaints",
+          "limit": 366,
+          "sort": "asc",
+          "sortBy": "group",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_chart_department_breach_scatter",
+      "widget": {
+        "kind": "chart",
+        "chart": "line",
+        "title": "Breach rate vs caseload by department",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "department_code",
+          "measure": "daily_complaints_open",
+          "measures": [
+            "daily_complaints_open_sla_status_bucket_eq_breached",
+            "daily_complaints_open_sla_status_bucket_in_within_approachin"
+          ],
+          "limit": 50,
+          "sort": "desc"
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_table_ward_performance",
+      "widget": {
+        "kind": "table",
+        "title": "Ward performance",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "ward_code",
+          "measure": "complaints",
+          "measures": [
+            "complaints_open",
+            "reopen_rate",
+            "resolved_on_time_rate",
+            "avg_rating_rating_resolved"
+          ],
+          "limit": 200,
+          "sort": "desc",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "pageSize": 50
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_table_service_quality_by_channel",
+      "widget": {
+        "kind": "table",
+        "title": "Service quality by channel",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "source",
+          "measure": "complaints",
+          "measures": [
+            "chart_department_resolution_rate",
+            "avg_rating_rating_resolved"
+          ],
+          "limit": 100,
+          "sort": "desc",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "pageSize": 50
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cl_chart_department_flow_ratio",
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Flow ratio by department",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "department_code",
+          "measure": "complaints_not_open_resolved",
+          "measures": [
+            "complaints"
+          ],
+          "limit": 500,
+          "sort": "desc",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "options": {
+          "legend": true,
+          "colorScheme": "default"
+        }
+      },
+      "placement": {
+        "place": "bottom",
+        "width": "half"
+      }
+    },
+    {
+      "op": "add_filter",
+      "filter": {
+        "id": "dates",
+        "type": "daterange",
+        "label": "Dates",
+        "field": "time",
+        "applies": [
+          "cl_resolved_on_time_rate_count",
+          "cl_resolved_date_range_count",
+          "cl_total_complaints_count",
+          "cl_flow_ratio_count",
+          "cl_csat_avg",
+          "cl_chart_wards_by_sla",
+          "cl_table_subtype_performance",
+          "cl_map_ward_wow_current",
+          "cl_table_recurring_ward_subtype",
+          "cl_chart_complaints_over_time",
+          "cl_table_ward_performance",
+          "cl_table_service_quality_by_channel",
+          "cl_chart_department_flow_ratio"
+        ],
+        "default": {
+          "months": 1
+        }
+      }
+    },
+    {
+      "op": "add_filter",
+      "filter": {
+        "id": "ward",
+        "type": "select",
+        "label": "Ward",
+        "field": "ward_code",
+        "applies": [
+          "*"
+        ]
+      }
+    },
+    {
+      "op": "add_filter",
+      "filter": {
+        "id": "complaint_type",
+        "type": "select",
+        "label": "Complaint type",
+        "field": "service_code",
+        "applies": [
+          "*"
+        ]
+      }
+    }
+  ],
+  "layout": [
+    {
+      "i": "cl_resolved_on_time_rate_count",
+      "x": 0,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_resolved_date_range_count",
+      "x": 2,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_total_complaints_count",
+      "x": 4,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_flow_ratio_count",
+      "x": 6,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_oldest_open_age",
+      "x": 8,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_csat_avg",
+      "x": 10,
+      "y": 0,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "i": "cl_chart_wards_by_sla",
+      "x": 0,
+      "y": 2,
+      "w": 8,
+      "h": 6
+    },
+    {
+      "i": "cl_table_subtype_performance",
+      "x": 8,
+      "y": 2,
+      "w": 4,
+      "h": 6
+    },
+    {
+      "i": "cl_map_ward_wow_current",
+      "x": 0,
+      "y": 8,
+      "w": 12,
+      "h": 9
+    },
+    {
+      "i": "cl_table_recurring_ward_subtype",
+      "x": 0,
+      "y": 17,
+      "w": 8,
+      "h": 6
+    },
+    {
+      "i": "cl_chart_complaints_over_time",
+      "x": 0,
+      "y": 23,
+      "w": 8,
+      "h": 6
+    },
+    {
+      "i": "cl_chart_department_breach_scatter",
+      "x": 0,
+      "y": 29,
+      "w": 8,
+      "h": 6
+    }
+  ],
+  "grid": {
+    "cols": 12,
+    "rowHeight": 52
+  }
+}

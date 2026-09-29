@@ -149,11 +149,16 @@ export type Widget = z.infer<typeof widgetSchema>;
 
 export const filterSchema = z.object({
   id: z.string(),
-  type: z.enum(["select", "search"]),
+  type: z.enum(["select", "search", "daterange"]),
   label: z.string().min(1),
-  // Filters narrow by a dimension the pack actually has.
+  // Filters narrow by a dimension the pack actually has. A daterange filter
+  // sets the time window of the widgets it applies to instead; its field is
+  // "time".
   field: z.string(),
   applies: z.array(z.string()).min(1),
+  // A daterange's window before anyone picks one: the last N calendar months
+  // or days up to today, in the pack's time zone.
+  default: z.object({ months: z.number().int().min(1).max(60).optional(), days: z.number().int().min(1).max(3660).optional() }).optional(),
 });
 export type Filter = z.infer<typeof filterSchema>;
 

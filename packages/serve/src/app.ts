@@ -17,7 +17,12 @@ import { healingPrompt, refusalsFrom, reviewTurn } from "./review";
 // of packs, each bound to its own source. Nothing here knows which backend a
 // pack runs on: it holds a Connector.
 
-export type BoardFile = { id: string; title: string; ops: unknown[] };
+/**
+ * A board as ops, and optionally the exact grid it was designed on: a
+ * layout (coordinates per widget) and grid settings a migrated dashboard
+ * must keep to match the original.
+ */
+export type BoardFile = { id: string; title: string; ops: unknown[]; layout?: { i: string; x: number; y: number; w: number; h: number }[]; grid?: { cols?: number; rowHeight?: number } };
 
 export type Host = {
   name: string;
@@ -45,7 +50,12 @@ export function buildBoard(pack: Pack, file: BoardFile): BoardConfig {
   const ops = file.ops.map((op) => opSchema.parse(op)) as BoardOp[];
   const result = applyOps(emptyBoard(pack, file.title), ops, catalogueFrom(pack));
   if (!result.ok) throw new Error(`Board ${pack.pack}/${file.id} op ${result.opIndex}: ${result.error}${result.hint ? ` (${result.hint})` : ""}`);
-  return result.config;
+  const config = boardConfigSchema.parse({
+    ...result.config,
+    ...(file.grid ? { grid: { ...result.config.grid, ...file.grid } } : {}),
+    ...(file.layout ? { layout: file.layout.filter((l) => result.config.widgets[l.i]) } : {}),
+  });
+  return config;
 }
 
 /** Creates each pack's boards in its store if they are not there yet. */

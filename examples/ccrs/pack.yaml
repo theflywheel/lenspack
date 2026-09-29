@@ -1,0 +1,480 @@
+pack: ccrs
+version: 1
+timeZone: Africa/Nairobi
+description: "Complaint analytics compiled from a CCRS KPI catalog (dss.KpiDefinition): complaint facts, workflow events and daily open-state snapshots."
+entities:
+  facts:
+    source: complaint_facts
+    time:
+      field: created_at
+      unit: epoch_ms
+    tenant:
+      field: tenant_id
+      match: subtree
+    joins: []
+  daily:
+    source: complaint_open_state_daily
+    time: snapshot_date
+    tenant:
+      field: tenant_id
+      match: subtree
+    joins: []
+dimensions:
+  - key: service_type_l1
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(1, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 1)
+    synonyms: []
+    verified: true
+  - key: created_date
+    entity: facts
+    field: created_date
+    type: string
+    synonyms: []
+    verified: true
+  - key: department_code
+    entity: facts
+    field: department_code
+    type: string
+    synonyms: []
+    verified: true
+    also:
+      daily:
+        field: department_code
+  - key: current_assignee_uuid
+    entity: facts
+    field: current_assignee_uuid
+    type: string
+    synonyms: []
+    verified: true
+  - key: sla_status_bucket
+    entity: facts
+    field: sla_status_bucket
+    type: string
+    synonyms: []
+    verified: true
+    also:
+      daily:
+        field: sla_status_bucket
+  - key: aging_bucket
+    entity: facts
+    field: aging_bucket
+    type: string
+    synonyms: []
+    verified: true
+  - key: source
+    entity: facts
+    field: source
+    type: string
+    synonyms: []
+    verified: true
+  - key: application_status
+    entity: facts
+    field: application_status
+    type: string
+    synonyms: []
+    verified: true
+  - key: snapshot_date
+    entity: daily
+    field: snapshot_date
+    type: string
+    synonyms: []
+    verified: true
+  - key: ward_code
+    entity: facts
+    field: ward_code
+    type: string
+    synonyms: []
+    verified: true
+    also:
+      daily:
+        field: ward_code
+  - key: service_request_id
+    entity: facts
+    field: service_request_id
+    type: string
+    synonyms: []
+    verified: true
+  - key: latitude
+    entity: facts
+    field: latitude
+    type: string
+    synonyms: []
+    verified: true
+  - key: longitude
+    entity: facts
+    field: longitude
+    type: string
+    synonyms: []
+    verified: true
+  - key: service_code
+    entity: facts
+    field: service_code
+    type: string
+    synonyms: []
+    verified: true
+  - key: is_open
+    entity: facts
+    field: is_open
+    type: string
+    synonyms: []
+    verified: true
+  - key: has_geo_pin
+    entity: facts
+    field: has_geo_pin
+    type: string
+    synonyms: []
+    verified: true
+  - key: is_resolved
+    entity: facts
+    field: is_resolved
+    type: string
+    synonyms: []
+    verified: true
+  - key: service_group
+    entity: facts
+    field: service_group
+    type: string
+    synonyms: []
+    verified: true
+  - key: open_age_ms
+    entity: facts
+    field: open_age_ms
+    type: string
+    synonyms: []
+    verified: true
+  - key: sla_target_ms
+    entity: facts
+    field: sla_target_ms
+    type: string
+    synonyms: []
+    verified: true
+measures:
+  - key: avg_resolution_ms_resolved
+    entity: facts
+    agg: avg
+    field: resolution_ms
+    where:
+      - field: is_resolved
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints
+    entity: facts
+    agg: count
+    format: number
+    synonyms: []
+    verified: true
+  - key: daily_complaints_open
+    entity: daily
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: daily_complaints_open_sla_status_bucket_eq_breached
+    entity: daily
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: true
+      - field: sla_status_bucket
+        op: eq
+        value: breached
+    format: number
+    synonyms: []
+    verified: true
+  - key: daily_complaints_open_sla_status_bucket_in_within_approachin
+    entity: daily
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: true
+      - field: sla_status_bucket
+        op: in
+        value:
+          - within
+          - approaching
+          - breached
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_not_open_resolved
+    entity: facts
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: false
+      - field: is_resolved
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: chart_department_resolution_rate
+    entity: facts
+    derived: complaints_not_open_resolved / complaints
+    label: Department-wise resolution rate
+    format: percent
+    synonyms: []
+    verified: true
+  - key: complaints_open
+    entity: facts
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_not_open_resolved_not_sla_breached
+    entity: facts
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: false
+      - field: is_resolved
+        op: eq
+        value: true
+      - field: sla_breached
+        op: eq
+        value: false
+    format: number
+    synonyms: []
+    verified: true
+  - key: daily_complaints
+    entity: daily
+    agg: count
+    format: number
+    synonyms: []
+    verified: true
+  - key: avg_rating_rating_resolved
+    entity: facts
+    agg: avg
+    field: rating
+    where:
+      - field: has_rating
+        op: eq
+        value: true
+      - field: is_resolved
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_assignment_count_eq_1
+    entity: facts
+    agg: count
+    where:
+      - field: assignment_count
+        op: eq
+        value: 1
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_assignment_count_gte_1
+    entity: facts
+    agg: count
+    where:
+      - field: assignment_count
+        op: gte
+        value: 1
+    format: number
+    synonyms: []
+    verified: true
+  - key: first_assignment_rate
+    entity: facts
+    derived: complaints_assignment_count_eq_1 / complaints_assignment_count_gte_1
+    label: First-assignment rate
+    format: percent
+    synonyms: []
+    verified: true
+  - key: complaints_open_geo_pin
+    entity: facts
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: true
+      - field: has_geo_pin
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_geo_pin
+    entity: facts
+    agg: count
+    where:
+      - field: has_geo_pin
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: max_open_age_ms_open
+    entity: facts
+    agg: max
+    field: open_age_ms
+    where:
+      - field: is_open
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_resolved_reopened
+    entity: facts
+    agg: count
+    where:
+      - field: is_resolved
+        op: eq
+        value: true
+      - field: is_reopened
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_resolved
+    entity: facts
+    agg: count
+    where:
+      - field: is_resolved
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: reopen_rate
+    entity: facts
+    derived: complaints_resolved_reopened / complaints_resolved
+    label: Reopen rate
+    format: percent
+    synonyms: []
+    verified: true
+  - key: complaints_resolved_not_sla_breached
+    entity: facts
+    agg: count
+    where:
+      - field: is_resolved
+        op: eq
+        value: true
+      - field: sla_breached
+        op: eq
+        value: false
+    format: number
+    synonyms: []
+    verified: true
+  - key: resolved_on_time_rate
+    entity: facts
+    derived: complaints_resolved_not_sla_breached / complaints_resolved
+    label: Resolved on time rate
+    format: percent
+    synonyms: []
+    verified: true
+  - key: sla_compliance_rate
+    entity: facts
+    derived: complaints_not_open_resolved_not_sla_breached / complaints
+    label: SLA compliance rate
+    format: percent
+    synonyms: []
+    verified: true
+  - key: complaints_sla_breached
+    entity: facts
+    agg: count
+    where:
+      - field: sla_breached
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true
+  - key: sla_noncompliance_rate
+    entity: facts
+    derived: complaints_sla_breached / complaints
+    label: SLA non-compliance rate
+    format: percent
+    synonyms: []
+    verified: true
+  - key: max_open_age_ms_open_sla_status_bucket_in_approaching_breach
+    entity: facts
+    agg: max
+    field: open_age_ms
+    where:
+      - field: is_open
+        op: eq
+        value: true
+      - field: sla_status_bucket
+        op: in
+        value:
+          - approaching
+          - breached
+    format: number
+    synonyms: []
+    verified: true
+  - key: max_sla_target_ms_open_sla_status_bucket_in_approaching_brea
+    entity: facts
+    agg: max
+    field: sla_target_ms
+    where:
+      - field: is_open
+        op: eq
+        value: true
+      - field: sla_status_bucket
+        op: in
+        value:
+          - approaching
+          - breached
+    format: number
+    synonyms: []
+    verified: true
+  - key: avg_sla_target_ms
+    entity: facts
+    agg: avg
+    field: sla_target_ms
+    format: number
+    synonyms: []
+    verified: true
+  - key: complaints_escalation_count_gte_1
+    entity: facts
+    agg: count
+    where:
+      - field: escalation_count
+        op: gte
+        value: 1
+    format: number
+    synonyms: []
+    verified: true
+  - key: table_employee_performance_escalation_rate
+    entity: facts
+    derived: complaints_escalation_count_gte_1 / complaints
+    label: Employee performance
+    format: percent
+    synonyms: []
+    verified: true
+  - key: complaints_open_sla_breached
+    entity: facts
+    agg: count
+    where:
+      - field: is_open
+        op: eq
+        value: true
+      - field: sla_breached
+        op: eq
+        value: true
+    format: number
+    synonyms: []
+    verified: true

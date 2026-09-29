@@ -1,0 +1,8 @@
+# lenspack serve --config examples/ccrs/lenspack.yaml
+# CCRS_PG_URL points at a pgr-services database with the analytics views
+# (complaint_facts, complaint_events, complaint_open_state_daily). Read-only.
+sources:
+  pgr: { kind: postgres, url: env:CCRS_PG_URL }
+packs:
+  - { pack: ./pack.yaml, source: pgr, boards: ./boards, tenant: ke }
+store: { kind: memory }

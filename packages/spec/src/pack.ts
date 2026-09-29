@@ -165,6 +165,9 @@ export const packSchema = z.object({
   pack: slug,
   version: z.number().int().min(1),
   description: z.string().max(500).optional(),
+  // Where a day starts: calendar windows (a board's date range, "a month
+  // ago → today") are local dates in this zone. UTC when absent.
+  timeZone: z.string().max(64).optional(),
   entities: z.record(slug, entitySchema),
   dimensions: z.array(dimensionSchema).default([]),
   measures: z.array(measureSchema).default([]),

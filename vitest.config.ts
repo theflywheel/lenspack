@@ -15,6 +15,7 @@ export default defineConfig({
       { find: "@lenspack/engine", replacement: pkg("engine") },
       { find: "@lenspack/elasticsearch", replacement: pkg("elasticsearch") },
       { find: "@lenspack/dss", replacement: pkg("dss") },
+      { find: "@lenspack/ccrs", replacement: pkg("ccrs") },
       { find: "@lenspack/serve", replacement: pkg("serve") },
       { find: "@lenspack/sql", replacement: pkg("sql") },
       { find: "@lenspack/mcp", replacement: pkg("mcp") },

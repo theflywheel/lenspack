@@ -19,6 +19,7 @@
       "@lenspack/engine": ["packages/engine/src/index.ts"],
       "@lenspack/elasticsearch": ["packages/elasticsearch/src/index.ts"],
       "@lenspack/dss": ["packages/dss/src/index.ts"],
+      "@lenspack/ccrs": ["packages/ccrs/src/index.ts"],
       "@lenspack/serve": ["packages/serve/src/index.ts"],
       "@lenspack/sql": ["packages/sql/src/index.ts"],
       "@lenspack/sql/pg": ["packages/sql/src/executors/pg.ts"],

@@ -195,8 +195,8 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
       case "add_filter": {
         if (draft.filters.some((filter) => filter.id === op.filter.id))
           return fail(`A filter called "${op.filter.id}" already exists`);
-        if (!findDimension(catalogue, op.filter.field))
-          return fail(
+        if (op.filter.type === "daterange" ? op.filter.field !== "time" : !findDimension(catalogue, op.filter.field))
+          return fail(op.filter.type === "daterange" ? 'A date range filter sets time; its field is "time"' :
             `"${op.filter.field}" is not a dimension in this pack`,
             nearest(op.filter.field, catalogue.dimensions.map((d) => d.key)) ?? undefined,
           );
