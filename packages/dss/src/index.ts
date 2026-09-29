@@ -175,7 +175,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     // Real configs carry comments and stray values beside the charts.
     if (!chart || typeof chart !== "object" || !Array.isArray((chart as DssChart).queries)) continue;
     const notes: string[] = [];
-    const chartName = chart.chartName ?? chartId;
+    const chartName = chart.chartName || chartId;
     try {
       const perQuery = chart.queries.map((q) => {
         const entity = entityFor(q);
@@ -196,6 +196,20 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
         walked.leaves.filter((l) => paths.size === 0 || l.path.some((p) => paths.has(p))).map((leaf) => ({ entity, leaf })),
       );
       leafCount += drawn.length;
+      // DSS merges a chart's queries by bucket key: the terms field each query
+      // groups by is one concept, whatever each index calls it.
+      const innermost = (l: Leaf) => l.buckets.filter((b): b is Extract<Bucket, { kind: "terms" }> => b.kind === "terms").at(-1);
+      const lead = drawn.find((d) => innermost(d.leaf));
+      if (lead) {
+        const key = dimension(lead.entity, innermost(lead.leaf)!.field);
+        const dim = dimensions.get(key)!;
+        for (const d of drawn) {
+          const t = innermost(d.leaf);
+          if (!t || d.entity === dim.entity || dim.also?.[d.entity]) continue;
+          dim.also = { ...(dim.also ?? {}), [d.entity]: { field: t.field } };
+          if (!fieldToDim.has(`${d.entity}|${t.field}`)) fieldToDim.set(`${d.entity}|${t.field}`, key);
+        }
+      }
       if (drawn.length === 0) {
         outcomes.push({ chart: chartId, status: "skipped", notes: notes.length ? notes : ["no aggregation lenspack can read"] });
         continue;
