@@ -1,0 +1,11 @@
+# lenspack serve --config examples/campaign/lenspack.yaml
+# Secrets and hosts come from the environment: ES_URL (and ES_API_KEY if the
+# cluster needs one — add `apiKey: env:ES_API_KEY` to the source).
+sources:
+  search: { kind: elasticsearch, url: env:ES_URL }
+packs:
+  - pack: ./pack.yaml
+    source: search
+    boards: ./boards
+    now: "2026-09-01T00:00:00Z"
+store: { kind: memory }

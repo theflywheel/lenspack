@@ -47,9 +47,54 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 |---|---|---|
 | `@lenspack/core` | board config schema, the query IR, the eight ops, packing, validation, `nearest()`, in-memory store | zod |
 | `@lenspack/spec` | pack loader: YAML/JSON → validated catalogue | core |
-| `@lenspack/sql` | compiler (resolve → plan → print) for **Postgres** and **DuckDB**, read-only executors, cache, SQL board store | core, spec |
+| `@lenspack/engine` | the backend-neutral half: resolve (keys, join paths, fan-out refusal, tenancy, time, capability refusals), the `Connector` interface, `run` / `explain` / `checkOps`, cross-entity ratios | core, spec |
+| `@lenspack/sql` | `sqlConnector()`: compiler (plan → print) for **Postgres** and **DuckDB**, read-only executors, cache, SQL board store | engine |
+| `@lenspack/elasticsearch` | `elasticsearchConnector()`: the IR as aggregations over plain HTTP — **Elasticsearch 6.x–8.x and OpenSearch**; text→keyword from the mapping; approximate aggregations flagged ≈ | engine |
 | `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; chart adapters for **recharts, ECharts, shadcn** and a zero-dependency SVG fallback | core, react-grid-layout (chart libraries are optional peers) |
-| `@lenspack/mcp` | `boardTools()` — provider-agnostic tool definitions — plus `toVercelAI()`, `toMcp()` and the `lenspack-mcp` CLI | core, spec, sql |
+| `@lenspack/mcp` | `boardTools()` — provider-agnostic tool definitions — plus `toVercelAI()`, `toMcp()` and the `lenspack-mcp` CLI | core, spec, engine |
+| `@lenspack/serve` | the `lenspack` CLI: `serve` (board API + chat with review, from a `lenspack.yaml`), `check`, `sources`, `dss` | all of the above |
+| `@lenspack/dss` | compiles DIGIT DSS `ChartApiConfig.json` into a pack and boards, with a report of what did not translate | core, spec, engine |
+
+## Sources
+
+A pack says what the numbers mean; a **connector** says where they live. The
+same pack runs on any connector when it names data with `field:` and `where:`
+rather than SQL fragments, and CI holds that to account: the `campaign`
+example (DIGIT DSS's index shapes, synthetic data) returns identical numbers
+from DuckDB and a real Elasticsearch on 77 queries.
+
+```yaml
+# lenspack.yaml — secrets are env: references, never values
+sources:
+  search: { kind: elasticsearch, url: env:ES_URL, apiKey: env:ES_API_KEY }
+  shop:   { kind: duckdb, path: ./data/shop.duckdb }
+packs:
+  - { pack: ./packs/campaign/pack.yaml, source: search, boards: ./packs/campaign/boards }
+store: { kind: duckdb, path: ./data/boards.duckdb }   # boards never live in a source
+```
+
+```sh
+lenspack sources --config lenspack.yaml     # what each source holds
+lenspack check   --config lenspack.yaml     # draw every board; exit 1 on any error
+lenspack serve   --config lenspack.yaml     # the board API on :8787
+```
+
+A search index cannot join, so a dimension on another entity is refused with
+the dimensions it *can* group by, unless the pack declares it on both with
+`also:`. A ratio across entities (delivered / target) is two aggregates joined
+on the group, never a row-level join; a target with no time divides every
+period.
+
+### Coming from DIGIT DSS
+
+```sh
+lenspack dss ChartApiConfig.json --dashboards MasterDashboardConfig.json --out packs/dss
+```
+
+On the 140-chart health config: 124 charts translate (48 exactly, the rest
+with notes), 343 drawn numbers become 118 measures, and `report.md` lists
+what did not translate (painless scripts, date_range, differences of
+measures) and the 13 target/stock numbers DSS stores once per hierarchy level.
 
 ## A pack
 

@@ -16,10 +16,10 @@ import { run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 
 import { SMALL, contextFor, examples } from "../examples/index";
-import { type ProviderConfig, buildProvider, probe, providersFromEnv, stopOnRepeatedRefusals } from "../examples/demo/llm";
-import { PROMPT_VERSION, SYSTEM } from "../examples/demo/prompt";
+import { type ProviderConfig, buildProvider, probe, providersFromEnv, stopOnRepeatedRefusals } from "@lenspack/serve";
+import { PROMPT_VERSION, SYSTEM } from "@lenspack/serve";
 import { screenshotBoard } from "./screenshot";
-import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "../examples/demo/review";
+import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "@lenspack/serve";
 import { type HcmFacts, hcmTasks } from "./tasks-hcm";
 import { type Facts, tasks } from "./tasks";
 import { type VisualVerdict, judgeScreenshot } from "./visual";

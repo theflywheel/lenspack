@@ -12,8 +12,16 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U lenspack" --health-interval 5s --health-timeout 5s --health-retries 10
+      # The version DIGIT deployments run; the connector also speaks 6.x, 8.x and OpenSearch.
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.17.24
+        env: { discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: "-Xms512m -Xmx512m" }
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -fs localhost:9200/_cluster/health" --health-interval 5s --health-timeout 5s --health-retries 30
     env:
       LENSPACK_PG_URL: postgres://lenspack:lenspack@localhost:5432/lenspack_test
+      LENSPACK_ES_URL: http://localhost:9200
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4   # version comes from package.json's packageManager
@@ -24,7 +32,7 @@ jobs:
         run: pnpm typecheck
       - name: Zero-domain grep (core and compiler know no domain)
         run: pnpm lint:domain
-      - name: Test (unit, property, two-engine parity, pack conformance)
+      - name: Test (unit, property, SQL and search parity, pack conformance, DSS compile)
         run: pnpm test
       - name: Build
         run: pnpm build

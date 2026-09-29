@@ -52,12 +52,18 @@ importers:
       '@lenspack/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@lenspack/elasticsearch':
+        specifier: workspace:*
+        version: link:../../packages/elasticsearch
       '@lenspack/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
       '@lenspack/react':
         specifier: workspace:*
         version: link:../../packages/react
+      '@lenspack/serve':
+        specifier: workspace:*
+        version: link:../../packages/serve
       '@lenspack/spec':
         specifier: workspace:*
         version: link:../../packages/spec
@@ -237,6 +243,49 @@ importers:
       recharts:
         specifier: ^3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@18.3.1)(react@19.3.0)(redux@5.0.1)
+
+  packages/serve:
+    dependencies:
+      '@ai-sdk/openai-compatible':
+        specifier: ^3.0.53
+        version: 3.0.53(zod@3.25.76)
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@lenspack/dss':
+        specifier: workspace:*
+        version: link:../dss
+      '@lenspack/elasticsearch':
+        specifier: workspace:*
+        version: link:../elasticsearch
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@lenspack/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@lenspack/spec':
+        specifier: workspace:*
+        version: link:../spec
+      '@lenspack/sql':
+        specifier: workspace:*
+        version: link:../sql
+      ai:
+        specifier: ^7.0.109
+        version: 7.0.109(zod@3.25.76)
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.1
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@duckdb/node-api':
+        specifier: ^1.4.0-r.1
+        version: 1.4.0-r.2
+      pg:
+        specifier: ^8.13.1
+        version: 8.23.0
 
   packages/spec:
     dependencies:
