@@ -13,7 +13,7 @@ export type Expr =
   | { t: "star" }
   | { t: "json"; alias: string; col: string; path: string[] }
   | { t: "agg"; fn: "count" | "count_distinct" | "sum" | "avg" | "min" | "max" | "median" | "p90"; arg: Expr }
-  | { t: "bin"; op: "=" | "<>" | ">=" | "<=" | ">" | "<" | "+" | "-" | "*" | "/" | "AND" | "OR" | "ILIKE" | "IS DISTINCT FROM"; l: Expr; r: Expr }
+  | { t: "bin"; op: "=" | "<>" | ">=" | "<=" | ">" | "<" | "+" | "-" | "*" | "/" | "AND" | "OR" | "ILIKE" | "LIKE" | "IS DISTINCT FROM"; l: Expr; r: Expr }
   | { t: "notnull"; arg: Expr }
   | { t: "isnull"; arg: Expr }
   | { t: "epoch"; unit: "epoch_ms" | "epoch_s"; arg: Expr } // a number of (milli)seconds since 1970, as a naive UTC timestamp

@@ -76,7 +76,10 @@ export const entitySchema = z.object({
   // A field holding numbers rather than timestamps says its unit, and every
   // connector converts: `time: { field: Data.createdTime, unit: epoch_ms }`.
   time: z.union([fieldPath, z.object({ sql: fragmentSchema }), z.object({ field: fieldPath, unit: z.enum(["epoch_ms", "epoch_s"]) })]).optional(),
-  tenant: fieldPath.optional(),
+  // A tenant column, or one whose tenant ids nest ("ke" owns "ke.bomet"):
+  // `tenant: { field: tenant_id, match: subtree }` lets a parent tenant read
+  // its own rows and every descendant's.
+  tenant: z.union([fieldPath, z.object({ field: fieldPath, match: z.enum(["exact", "subtree"]).default("exact") })]).optional(),
   // A predicate every query over this entity carries, e.g. soft deletes:
   // `filter: "isdeleted = false"`. Pushed into the entity's subquery.
   filter: fragmentSchema.optional(),
@@ -175,6 +178,13 @@ export type PackEntity = z.infer<typeof entitySchema>;
 export type PackDimension = z.infer<typeof dimensionSchema>;
 export type PackMeasure = z.infer<typeof measureSchema>;
 export type PackJoin = z.infer<typeof joinSchema>;
+
+/** An entity's tenant column and how a tenant id matches it. */
+export function tenantOf(entity: PackEntity): { field: string; match: "exact" | "subtree" } | null {
+  const t = entity.tenant;
+  if (!t) return null;
+  return typeof t === "string" ? { field: t, match: "exact" } : { field: t.field, match: t.match ?? "exact" };
+}
 export type Agg = (typeof AGGS)[number];
 
 export type ParsedJoin = { left: { entity: string; column: string }; right: { entity: string; column: string } };

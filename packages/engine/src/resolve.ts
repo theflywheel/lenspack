@@ -68,6 +68,7 @@ export type BoundPlan = {
   entitiesUsed: string[];
   measure: BoundMeasure | null;
   dimension: BoundDimension | null; // breakdown dimension or series `by`
+  split: BoundDimension | null; // a breakdown's second dimension
   columns: BoundDimension[]; // rows
   orderBy: { dimension: BoundDimension; dir: "asc" | "desc" } | null;
   filters: BoundFilter[];
@@ -217,10 +218,12 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   const columns: BoundDimension[] = [];
   let orderBy: BoundPlan["orderBy"] = null;
 
+  let split: BoundDimension | null = null;
   if (query.kind === "breakdown") {
     dimension = bind(query.dimension);
     if (dimension.def.type === "time")
       throw new ResolveError("TIME_DIMENSION", `"${query.dimension}" is a time dimension; use a series to break down by time`, query.dimension, "series");
+    if (query.by) split = bind(query.by);
   } else if (query.kind === "series") {
     if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so nothing on it can be plotted over time`, query.measure);
     if (query.by) dimension = bind(query.by);
@@ -246,12 +249,12 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   const time = window(query, now);
   const previous = query.kind === "value" && query.compare && time ? { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } : null;
 
-  const entitiesUsed = [...new Set([root, ...[dimension, ...columns, orderBy?.dimension ?? null, ...filters.map((f) => f.dimension)].filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
+  const entitiesUsed = [...new Set([root, ...[dimension, split, ...columns, orderBy?.dimension ?? null, ...filters.map((f) => f.dimension)].filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
 
   // Tenancy is structural: if any entity in play declares a tenant column,
   // a tenant must be supplied. There is no "forgot to filter" state.
   const needsTenant = entitiesUsed.some((e) => pack.entities[e]!.tenant);
   if (needsTenant && !ctx.tenant) throw new ResolveError("TENANT_REQUIRED", `Pack "${pack.pack}" is multi-tenant; a tenant is required to query "${root}"`);
 
-  return { query, root, rootEntity, tenant: needsTenant ? ctx.tenant! : null, entitiesUsed, measure, dimension, columns, orderBy, filters, time, previous };
+  return { query, root, rootEntity, tenant: needsTenant ? ctx.tenant! : null, entitiesUsed, measure, dimension, split, columns, orderBy, filters, time, previous };
 }

@@ -43,9 +43,15 @@ export const querySchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("breakdown"),
     dimension: z.string(),
+    // A second dimension within each group: one row per (group, by) pair,
+    // drawn as stacked or grouped bars.
+    by: z.string().optional(),
     measure: z.string(),
-    limit: z.number().int().min(2).max(50).default(12),
+    limit: z.number().int().min(2).max(500).default(12),
     sort: z.enum(["asc", "desc"]).default("desc"),
+    // What sort orders by: the measure (largest first), or the group itself
+    // (a date, a code) for a breakdown that reads in its own order.
+    sortBy: z.enum(["value", "group"]).optional(),
     ...alsoMeasures,
     ...common,
   }),

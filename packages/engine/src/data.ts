@@ -81,7 +81,7 @@ export function groupLabel(v: unknown): string {
 export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?: string): WidgetData {
   switch (query.kind) {
     case "breakdown": {
-      const rows = raw.map((r) => ({ group: groupLabel(r.group), value: toNumber(r.value), count: toNumber(r.n) ?? 0 }));
+      const rows = raw.map((r) => ({ group: groupLabel(r.group), ...("series" in r ? { series: groupLabel(r.series) } : {}), value: toNumber(r.value), count: toNumber(r.n) ?? 0 }));
       return { rows, total: rows.reduce((s, r) => s + r.count, 0), format };
     }
     case "series": {

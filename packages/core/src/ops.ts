@@ -328,6 +328,11 @@ export function checkQuery(query: Query, catalogue: Catalogue): Problem | null {
       if (!dim) return noDim(query.dimension);
       if (dim.type === "time") return { error: `"${query.dimension}" is a time dimension; use a series to break down by time`, hint: "series" };
       if (!findMeasure(catalogue, query.measure)) return noMeasure(query.measure);
+      if (query.by) {
+        if (!findDimension(catalogue, query.by)) return noDim(query.by);
+        if (query.by === query.dimension) return { error: "A breakdown split by its own dimension has nothing to split", hint: "by" };
+        if (query.measures?.length) return { error: "A breakdown split by a second dimension draws one measure; drop by, or drop measures", hint: "measures" };
+      }
       return null;
     }
     case "series": {
@@ -395,6 +400,7 @@ export function migrateKeys(config: BoardConfig, renames: Record<string, string>
     if (q.kind !== "rows" && q.measures) q.measures = q.measures.map(rename);
     if (q.kind === "breakdown") {
       q.dimension = rename(q.dimension);
+      if (q.by) q.by = rename(q.by);
       q.measure = rename(q.measure);
     } else if (q.kind === "series") {
       q.measure = rename(q.measure);

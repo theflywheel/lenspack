@@ -1,5 +1,5 @@
 import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow } from "@lenspack/engine";
-import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor } from "@lenspack/spec";
+import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/spec";
 
 // The query IR, compiled to one search request. Every structural decision —
 // which entity, which dimensions, tenancy, the time window — was made by the
@@ -207,7 +207,11 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
   const must: Json[] = [];
   const mustNot: Json[] = [];
 
-  if (entity.tenant && bound.tenant !== null) must.push({ term: { [exact(entity.tenant, env)]: bound.tenant } });
+  const tenant = tenantOf(entity);
+  if (tenant && bound.tenant !== null) {
+    const f = exact(tenant.field, env);
+    must.push(tenant.match === "subtree" ? { bool: { should: [{ term: { [f]: bound.tenant } }, { prefix: { [f]: `${bound.tenant}.` } }], minimum_should_match: 1 } } : { term: { [f]: bound.tenant } });
+  }
   const own = predicates(entity.where, entity.filter, env, root);
   must.push(...own.must);
   mustNot.push(...own.mustNot);
@@ -244,29 +248,34 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
     case "breakdown": {
       const dim = bound.dimension!.def;
       const metricAggs = measureAggs(bound, env);
-      const src = dimensionSource(dim, env);
-      const missing = dim.field && (dim.type === "string" || dim.type === "enum") && env.typeOf(exact(dim.field, env)) === "keyword" ? { missing: "" } : {};
-      const sortAfter = metricAggs.order === null;
-      body.aggs = {
-        g: {
-          terms: {
-            ...src,
-            ...missing,
-            size: sortAfter ? 10_000 : query.limit,
-            ...(sortAfter ? {} : { order: [{ [metricAggs.order!]: query.sort }, { _key: "asc" }] }),
-          },
-          aggs: metricAggs.aggs,
-        },
+      const termsOf = (d: PackDimension, size: number, order?: unknown) => {
+        const missing = d.field && (d.type === "string" || d.type === "enum") && env.typeOf(exact(d.field, env)) === "keyword" ? { missing: "" } : {};
+        return { ...dimensionSource(d, env), ...missing, size, ...(order ? { order } : {}) };
       };
+      const byGroup = query.sortBy === "group";
+      // With a second dimension, or an order the terms aggregation cannot
+      // express, every group comes back and the rows are sorted and cut here.
+      const sortAfter = metricAggs.order === null || !!bound.split;
+      const order = byGroup ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, { _key: "asc" }];
+      const inner = bound.split ? { s: { terms: termsOf(bound.split.def, 1000), aggs: metricAggs.aggs } } : metricAggs.aggs;
+      body.aggs = { g: { terms: termsOf(dim, sortAfter ? 10_000 : query.limit, order), aggs: inner } };
       return {
         index: entity.source,
         body,
         approximate: metricAggs.approximate,
         decode(r) {
-          let rows = ((r.aggregations?.g?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(b), value: metricAggs.read(b), n: b.doc_count }));
+          const groups = (r.aggregations?.g?.buckets ?? []) as Bucket[];
+          let rows: Row[] = bound.split
+            ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), value: metricAggs.read(b), n: b.doc_count })))
+            : groups.map((b) => ({ group: groupKey(b), value: metricAggs.read(b), n: b.doc_count }));
           if (sortAfter) {
             const dir = query.sort === "asc" ? 1 : -1;
-            rows.sort((a, b) => (a.value === null ? 1 : b.value === null ? -1 : (a.value - b.value) * dir) || String(a.group).localeCompare(String(b.group)));
+            const cmp = (x: unknown, y: unknown) => String(x).localeCompare(String(y));
+            rows.sort((a, b) =>
+              byGroup
+                ? cmp(a.group, b.group) * dir || cmp(a.series ?? "", b.series ?? "")
+                : ((a.value as number | null) === null ? 1 : (b.value as number | null) === null ? -1 : ((a.value as number) - (b.value as number)) * dir) || cmp(a.group, b.group) || cmp(a.series ?? "", b.series ?? ""),
+            );
             rows = rows.slice(0, query.limit);
           }
           return rows;

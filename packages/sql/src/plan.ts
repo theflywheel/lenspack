@@ -1,4 +1,4 @@
-import type { Fragment, MeasureExpr, Pack, PackDimension, PackMeasure, Where } from "@lenspack/spec";
+import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/spec";
 
 import { type Ast, type Expr, type Join, type Source } from "./ast";
 import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "@lenspack/engine";
@@ -79,7 +79,13 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     if (!s) {
       const def = pack.entities[entity]!;
       s = { alias: entity, table: def.source, projections: [], where: [] };
-      if (def.tenant && bound.tenant !== null) s.where.push({ t: "bin", op: "=", l: col("", def.tenant), r: param(bound.tenant) });
+      const tenant = tenantOf(def);
+      if (tenant && bound.tenant !== null) {
+        const eq: Expr = { t: "bin", op: "=", l: col("", tenant.field), r: param(bound.tenant) };
+        // A subtree tenant owns itself and "<id>.*"; LIKE wildcards in the id are escaped.
+        const escaped = bound.tenant.replace(/[\\%_]/g, (c) => `\\${c}`);
+        s.where.push(tenant.match === "subtree" ? { t: "paren", arg: { t: "bin", op: "OR", l: eq, r: { t: "bin", op: "LIKE", l: col("", tenant.field), r: param(`${escaped}.%`) } } } : eq);
+      }
       // The entity's own predicate (soft deletes, "current" rows) applies to
       // every query that touches it, in every role.
       if (def.filter) s.where.push(raw(def.filter));
@@ -181,10 +187,18 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   switch (query.kind) {
     case "breakdown": {
       const g = dimRef(bound.dimension!);
-      select.push({ alias: "group", expr: g }, { alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
+      select.push({ alias: "group", expr: g });
       groupBy.push(g);
+      if (bound.split) {
+        const s = dimRef(bound.split);
+        select.push({ alias: "series", expr: s });
+        groupBy.push(s);
+      }
+      select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
       // Ties broken by name so the same data always prints the same rows.
-      orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
+      if (query.sortBy === "group") orderBy.push({ expr: col("", "group"), dir: query.sort });
+      else orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
+      if (bound.split) orderBy.push({ expr: col("", "series"), dir: "asc" });
       limit = query.limit;
       shape = "breakdown";
       break;

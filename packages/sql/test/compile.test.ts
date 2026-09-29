@@ -193,3 +193,13 @@ describe("printed SQL invariants", () => {
     expect(d.params).toEqual(["t1"]);
   });
 });
+
+describe("subtree tenancy", () => {
+  it("lets a parent tenant read itself and its descendants, with LIKE wildcards in the id escaped", async () => {
+    const { parsePack } = await import("@lenspack/spec");
+    const p = parsePack({ pack: "t", version: 1, entities: { rows: { source: "rows", tenant: { field: "tenant_id", match: "subtree" } } }, measures: [{ key: "n", entity: "rows", agg: "count" }] });
+    const c = compile({ kind: "value", measure: "n" }, p, { dialect: "postgres", ctx: { tenant: "ke_1%" } });
+    expect(c.sql).toMatch(/\("tenant_id" = \$1\) OR \("tenant_id" LIKE \$2\)/);
+    expect(c.params).toEqual(["ke_1%", "ke\\_1\\%.%"]);
+  });
+});

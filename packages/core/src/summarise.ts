@@ -28,7 +28,7 @@ export function describeQuery(query: Query) {
   const time = query.time ? ("last" in query.time ? ` last ${query.time.last}` : ` ${query.time.from.slice(0, 10)}→${query.time.to.slice(0, 10)}`) : "";
   switch (query.kind) {
     case "breakdown":
-      return `${withMore(query)} by ${query.dimension}${query.sort === "asc" ? " (lowest first)" : ""}${query.limit !== 12 ? ` top ${query.limit}` : ""}${time}`;
+      return `${withMore(query)} by ${query.dimension}${query.by ? ` and ${query.by}` : ""}${query.sortBy === "group" ? ` in ${query.dimension} order` : ""}${query.sort === "asc" ? " (lowest first)" : ""}${query.limit !== 12 ? ` top ${query.limit}` : ""}${time}`;
     case "series":
       return `${withMore(query)} per ${query.grain}${query.by ? ` by ${query.by}` : ""}${time}`;
     case "value":
