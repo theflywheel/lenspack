@@ -89,6 +89,11 @@ function filterClause(f: BoundFilter, env: Env): { must: Json[]; mustNot: Json[]
       const [a, b] = Array.isArray(v) ? v : [v, v];
       return { must: [{ range: { [field]: { gte: a, lte: b } } }], mustNot: [] };
     }
+    case "segment": {
+      const values = Array.isArray(v) ? v : [v];
+      const esc = (x: unknown) => String(x).replace(/[*?\\]/g, (c) => `\\${c}`);
+      return { must: [{ bool: { should: values.flatMap((x) => [{ term: { [field]: x } }, { wildcard: { [field]: `${esc(x)}|*` } }, { wildcard: { [field]: `*|${esc(x)}` } }, { wildcard: { [field]: `*|${esc(x)}|*` } }]), minimum_should_match: 1 } }], mustNot: [] };
+    }
     case "subtree":
       return { must: [{ bool: { should: [{ term: { [field]: v } }, { prefix: { [field]: `${String(v)}.` } }], minimum_should_match: 1 } }], mustNot: [] };
     case "contains": {
@@ -258,7 +263,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       // With a second dimension, or an order the terms aggregation cannot
       // express, every group comes back and the rows are sorted and cut here.
       const sortAfter = metricAggs.order === null || !!bound.split;
-      const order = byGroup ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, { _key: "asc" }];
+      const order = byGroup ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, ...(query.sortBy === "measure" ? [] : [{ _key: "asc" }])];
       const inner = bound.split ? { s: { terms: termsOf(bound.split.def, 1000), aggs: metricAggs.aggs } } : metricAggs.aggs;
       body.aggs = { g: { terms: termsOf(dim, sortAfter ? 10_000 : query.limit, order), aggs: inner } };
       return {

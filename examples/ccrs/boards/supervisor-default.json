@@ -269,7 +269,7 @@
             "open_age_ms",
             "sla_target_ms"
           ],
-          "limit": 500,
+          "limit": 1000,
           "filters": [
             {
               "dimension": "is_open",
@@ -417,6 +417,19 @@
       "w": 12,
       "h": 5
     }
+  ],
+  "tiles": [
+    "cl_resolution_rate_count",
+    "rs_breach_total",
+    "cl_resolved_date_range_count",
+    "cl_reopen_rate_count",
+    "cl_csat_avg",
+    "cl_chart_officer_sla",
+    "cl_chart_open_by_type_stage",
+    "cl_map_ward_wow_current",
+    "cl_chart_department_flow_ratio",
+    "cl_chart_over_time_created_daily",
+    "cl_table_complaints_at_risk"
   ],
   "grid": {
     "cols": 12,

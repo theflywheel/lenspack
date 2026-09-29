@@ -25,7 +25,15 @@ export type CcrsApiOptions = {
    * Absent, every tile is visible (a trusted, private deployment).
    */
   capabilities?: (body: Record<string, unknown>) => Promise<string[] | null>;
+  /**
+   * The caller's row scope as CCRS resolves it (departments, jurisdictions,
+   * own records), applied as filters so an employee sees exactly the rows
+   * CCRS would show them.
+   */
+  scope?: (body: Record<string, unknown>) => Promise<RowScope | null>;
 };
+
+export type RowScope = { departments?: string[]; jurisdictions?: string[]; accountId?: string; restrictedTo?: string };
 
 type Ref = { kpiId: string; params?: Record<string, string> };
 type Result = { grain: string; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; tookMs: number; paramsIgnored?: string[] };
@@ -115,10 +123,14 @@ export function ccrsApi(opts: CcrsApiOptions) {
   };
 
   // ── One reference → one lenspack query ─────────────────────────────────
-  const build = (tile: SkinTile, params: Record<string, string>, isPublic: boolean) => {
+  const build = (tile: SkinTile, params: Record<string, string>, isPublic: boolean, scope: RowScope | null = null) => {
     const ignored: string[] = [];
     let q: Query = JSON.parse(JSON.stringify(tile.query));
     const filters: FilterClause[] = [...((q as { filters?: FilterClause[] }).filters ?? [])];
+    // The caller's rows, as CCRS scopes them. An empty list admits nothing.
+    if (scope?.departments) filters.push({ dimension: "department_code", op: "in", value: scope.departments.length ? scope.departments : ["\u0000none"] });
+    if (scope?.jurisdictions) filters.push({ dimension: "boundary_path", op: "segment", value: scope.jurisdictions.length ? scope.jurisdictions : ["\u0000none"] } as unknown as FilterClause);
+    if (scope?.accountId) filters.push({ dimension: "account_id", op: "eq", value: scope.accountId });
     const narrow = (dimension: string, op: FilterClause["op"], value: string, param: string) => {
       // A param may not override a filter the KPI itself bakes in.
       if (isPublic && filters.some((f) => f.dimension === dimension)) return ignored.push(param);
@@ -128,6 +140,8 @@ export function ccrsApi(opts: CcrsApiOptions) {
     };
     if (params.ward && params.ward !== "all") narrow("ward_code", "eq", params.ward, "ward");
     if (params.serviceCode && params.serviceCode !== "all") narrow("service_code", "eq", params.serviceCode, "serviceCode");
+    if (params.complaintPath && !/^[A-Za-z0-9._/\-]{1,256}$/.test(params.complaintPath))
+      throw Object.assign(new Error("invalid_param: complaintPath must match ^[A-Za-z0-9._/\\-]{1,256}$"), { status: 400, perRef: true });
     if (params.complaintPath) {
       if (tile.grain === "daily") ignored.push("complaintPath");
       else narrow("complaint_node_path", "subtree", params.complaintPath, "complaintPath");
@@ -184,12 +198,12 @@ export function ccrsApi(opts: CcrsApiOptions) {
     return { grain, columns, rows, rowCount: rows.length, tookMs: Date.now() - started, ...(ignored.length ? { paramsIgnored: ignored } : {}) };
   };
 
-  const runRef = async (name: string, ref: Ref, isPublic: boolean, caps: string[] | null): Promise<Result | { error: string; message: string }> => {
+  const runRef = async (name: string, ref: Ref, isPublic: boolean, caps: string[] | null, scope: RowScope | null): Promise<Result | { error: string; message: string }> => {
     const tile = opts.skin.tiles[ref.kpiId];
     if (!tile || !visible(tile, caps, isPublic)) return { error: "kpi_forbidden", message: `kpi_forbidden: '${ref.kpiId}' is not available` };
     const params = { ...Object.fromEntries((tile.params ?? []).filter((p) => p.default).map((p) => [p.name, p.default!])), ...(ref.params ?? {}) };
     const started = Date.now();
-    const { q, ignored } = build(tile, params, isPublic);
+    const { q, ignored } = build(tile, params, isPublic, scope);
     let query: Query;
     if (params.compare === "prior") query = withWindow(q, tile.live ? null : priorFor(tile, params));
     else if (params.series === "daily") {
@@ -214,24 +228,41 @@ export function ccrsApi(opts: CcrsApiOptions) {
     const d = await run({ kind: "value", measure: "facts_built_at" }, { pack: opts.pack, connector: opts.connector, ctx: ctx() }).catch(() => null);
     return d?.rows[0]?.value ?? now().getTime();
   };
-  const envelope = async () => ({ asOf: await asOf(), calendar: { timeZone: tz, businessDate: localDate(now(), tz) }, scope: { tenantId: opts.tenant, level: opts.tenant.includes(".") ? "city" : "state" } });
+  const envelope = async (scope: RowScope | null = null) => ({
+    asOf: await asOf(),
+    calendar: { timeZone: tz, businessDate: localDate(now(), tz) },
+    scope: {
+      tenantId: opts.tenant,
+      level: opts.tenant.includes(".") ? "city" : "state",
+      ...(scope?.restrictedTo ? { restrictedTo: scope.restrictedTo } : {}),
+      ...(scope?.departments ? { departments: scope.departments } : {}),
+      ...(scope?.jurisdictions ? { jurisdictions: scope.jurisdictions } : {}),
+    },
+  });
 
-  const batch = async (queries: Record<string, Ref>, isPublic: boolean, caps: string[] | null) => {
+  const batch = async (queries: Record<string, Ref>, isPublic: boolean, caps: string[] | null, scope: RowScope | null) => {
     const names = Object.keys(queries);
     if (names.length > MAX_BATCH) throw Object.assign(new Error(`invalid_param: at most ${MAX_BATCH} queries per batch`), { status: 400 });
     const results: Record<string, unknown> = {};
     let partial = false;
     await Promise.all(
       names.map(async (n) => {
-        const r = await runRef(n, queries[n]!, isPublic, caps).catch((e) => ({ error: "query_failed", message: e instanceof Error ? e.message : String(e) }));
+        const r = await runRef(n, queries[n]!, isPublic, caps, scope).catch((e) => {
+          const message = e instanceof Error ? e.message : String(e);
+          return { error: message.includes(":") ? message.split(":")[0]! : "query_failed", message };
+        });
         if ("error" in r) partial = true;
         results[n] = r;
       }),
     );
-    return { ...(await envelope()), results, partial };
+    return { ...(await envelope(scope)), results, partial };
   };
 
-  const packFor = (caps: string[] | null, isPublic: boolean) => opts.boards.find((b) => (isPublic ? b.public : !b.public && (caps === null || !b.requiredActionUrl || caps.includes(b.requiredActionUrl))));
+  // CCRS's getBestPack: the first pack, in catalog order, the caller can see.
+  // An employee needs the pack's requiredActionUrl; a pack with neither that
+  // nor public is visible to no one.
+  const packFor = (caps: string[] | null, isPublic: boolean) =>
+    opts.boards.find((b) => (isPublic ? b.public : !!b.requiredActionUrl && (caps === null || caps.includes(b.requiredActionUrl))));
 
   const options = async () => {
     const distinct = async (dimension: string) => {
@@ -274,7 +305,8 @@ export function ccrsApi(opts: CcrsApiOptions) {
         case "/_query":
         case "/public/_query": {
           const queries = (body.queries as Record<string, Ref>) ?? (body.query ? { result: body.query as Ref } : {});
-          return { status: 200, body: await batch(queries, isPublic, caps) };
+          const scope = isPublic || !opts.scope ? null : await opts.scope(body);
+          return { status: 200, body: await batch(queries, isPublic, caps, scope) };
         }
         default:
           return { status: 404, body: { error: "not_found", message: `no analytics endpoint ${path}` } };

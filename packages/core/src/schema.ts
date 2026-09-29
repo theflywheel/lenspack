@@ -11,7 +11,9 @@ export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as con
 export const CHART_KINDS = ["bar", "line", "pie", "area"] as const;
 // subtree: a node of a dotted path and everything under it ("a.b" matches
 // "a.b" and "a.b.c", not "a.bc").
-export const FILTER_OPS = ["eq", "neq", "in", "gte", "lte", "between", "contains", "subtree"] as const;
+// segment: one of the values is a whole segment of a "|"-separated path
+// (a boundary path "KE|BOMET|SOTIK" has segment "BOMET", not "BOM").
+export const FILTER_OPS = ["eq", "neq", "in", "gte", "lte", "between", "contains", "subtree", "segment"] as const;
 
 const scalar = z.union([z.string(), z.number(), z.boolean()]);
 
@@ -53,9 +55,11 @@ export const querySchema = z.discriminatedUnion("kind", [
     sort: z.enum(["asc", "desc"]).default("desc"),
     // What the sort is on: the measure (largest first), or the group itself
     // (a date, a code) for a breakdown that reads in its own order.
-    // "none" keeps the source's own grouping order: for a migrated dashboard
-    // that must list tied rows exactly as the system it replaces did.
-    sortBy: z.enum(["value", "group", "none"]).optional(),
+    // "value" (the default) breaks ties by group so the same data always
+    // lists the same way. "measure" sorts on the measure alone and "none"
+    // keeps the source's grouping order: both for a migrated dashboard that
+    // must list tied rows exactly as the system it replaces did.
+    sortBy: z.enum(["value", "measure", "group", "none"]).optional(),
     ...alsoMeasures,
     ...common,
   }),
@@ -80,7 +84,7 @@ export const querySchema = z.discriminatedUnion("kind", [
     kind: z.literal("rows"),
     entity: z.string(),
     columns: z.array(z.string()).min(1).max(20),
-    limit: z.number().int().min(1).max(500).default(50),
+    limit: z.number().int().min(1).max(1000).default(50),
     orderBy: z.object({ key: z.string(), dir: z.enum(["asc", "desc"]).default("desc") }).optional(),
     ...common,
   }),

@@ -205,8 +205,9 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
       // Ties broken by name so the same data always prints the same rows.
       if (query.sortBy === "group") orderBy.push({ expr: col("", "group"), dir: query.sort });
+      else if (query.sortBy === "measure") orderBy.push({ expr: col("", "value"), dir: query.sort });
       else if (query.sortBy !== "none") orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
-      if (bound.split && query.sortBy !== "none") orderBy.push({ expr: col("", "series"), dir: "asc" });
+      if (bound.split && query.sortBy !== "none" && query.sortBy !== "measure") orderBy.push({ expr: col("", "series"), dir: "asc" });
       limit = query.limit;
       shape = "breakdown";
       break;
@@ -265,6 +266,14 @@ function filterExpr(ref: Expr, f: BoundFilter): Expr {
     case "between": {
       const [a, b] = Array.isArray(v) ? v : [v, v];
       return { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: ref, r: one(a) }, r: { t: "bin", op: "<=", l: ref, r: one(b) } };
+    }
+    case "segment": {
+      // Whole segments only: "|" + path + "|" contains "|" + value + "|".
+      const values = Array.isArray(v) ? v : [v];
+      const wrapped: Expr = { t: "bin", op: "||", l: { t: "bin", op: "||", l: { t: "str", value: "|" }, r: { t: "cast", arg: ref, to: "text" } }, r: { t: "str", value: "|" } };
+      return values
+        .map((x): Expr => ({ t: "bin", op: "LIKE", l: wrapped, r: one(`%|${String(x).replace(/[\\%_]/g, (c) => `\\${c}`)}|%`) }))
+        .reduce((l, r) => ({ t: "bin", op: "OR", l, r }));
     }
     case "subtree": {
       const escaped = String(v).replace(/[\\%_]/g, (c) => `\\${c}`);

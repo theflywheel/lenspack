@@ -115,6 +115,7 @@
           "measure": "complaints",
           "limit": 500,
           "sort": "desc",
+          "sortBy": "measure",
           "time": {
             "last": "30d"
           }
@@ -271,6 +272,16 @@
       "w": 12,
       "h": 6
     }
+  ],
+  "tiles": [
+    "cl_new_created_count",
+    "cl_resolution_rate_count",
+    "cl_reopen_rate_count",
+    "cl_open_complaints_live",
+    "cl_resolved_date_range_count",
+    "cl_chart_complaints_by_type",
+    "cl_chart_over_time_created_daily",
+    "cl_chart_department_resolution_rate"
   ],
   "grid": {
     "cols": 12,

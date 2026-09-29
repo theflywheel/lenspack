@@ -74,7 +74,7 @@ export type Skin = { tiles: Record<string, SkinTile>; packs: Record<string, { pu
 export type CcrsResult = {
   pack: Pack;
   packYaml: string;
-  boards: { id: string; title: string; ops: BoardOp[]; layout: { i: string; x: number; y: number; w: number; h: number }[] }[];
+  boards: { id: string; title: string; ops: BoardOp[]; layout: { i: string; x: number; y: number; w: number; h: number }[]; tiles: string[] }[];
   skin: Skin;
   notes: { kpi: string; note: string }[];
 };
@@ -280,7 +280,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
         kind: "rows",
         entity,
         columns: cols,
-        limit: Math.min(500, q.limit ?? 50),
+        limit: Math.min(1000, q.limit ?? 50),
         filters: base.filter((w) => w.op === "eq" || w.op === "in").map((w) => ({ dimension: w.field, op: w.op as "eq" | "in", value: w.value as Scalar })),
       } as Query;
       colMap.records = Object.fromEntries(cols.map((c) => [c, c]));
@@ -299,7 +299,9 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
         limit,
         sort: sortSpec?.dir ?? (byGroup || DATE_COLUMNS.has(group!) ? "asc" : "desc"),
         // No declared sort means the database's own order, as CCRS returns it.
-        ...(byGroup || DATE_COLUMNS.has(group!) ? { sortBy: "group" } : !sortSpec ? { sortBy: "none" } : {}),
+        // CCRS sorts on exactly what the KPI names: a measure alone (ties as
+        // the database leaves them), a dimension, or nothing (its own order).
+        ...(byGroup || DATE_COLUMNS.has(group!) ? { sortBy: "group" } : !sortSpec ? { sortBy: "none" } : { sortBy: "measure" }),
       } as Query;
       if (split && Object.keys(extras).length) notes.push({ kpi: kpi.id, note: "split by a second dimension: extra measures dropped" });
     }
@@ -374,6 +376,9 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       title: String(p.description ?? p.id).split(" — ")[0]!,
       ops: [...ops, ...filters],
       layout: p.layout.filter((l) => widgetOps.has(l.kpiId)).map((l) => ({ i: l.kpiId, x: l.x, y: l.y, w: l.w, h: l.h })),
+      // The pack's own tile list is what CCRS serves; the layout may omit
+      // some, which its UI then places itself.
+      tiles: p.tiles.filter((t) => widgetOps.has(t)),
     };
   });
   // Dimensions added for board filters after the pack was parsed.

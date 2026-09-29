@@ -36,6 +36,8 @@ export function print(ast: Ast, rules: DialectRules): Printed {
         return e.alias ? `${q(e.alias)}.${q(e.col)}` : q(e.col);
       case "param":
         return P(e.value, e.cast);
+      case "str":
+        return `'${e.value.replace(/'/g, "''")}'`;
       case "lit":
         return String(e.value);
       case "star":

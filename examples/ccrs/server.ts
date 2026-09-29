@@ -26,15 +26,44 @@ const boards: CcrsBoard[] = readdirSync(join(here, "boards"))
   .filter((f) => f.endsWith(".json"))
   .map((f) => {
     const id = f.replace(/\.json$/, "");
-    const b = JSON.parse(readFileSync(join(here, "boards", f), "utf8")) as { layout: CcrsBoard["layout"] };
+    const b = JSON.parse(readFileSync(join(here, "boards", f), "utf8")) as { layout: CcrsBoard["layout"]; tiles?: string[] };
     const meta = skin.packs[id] ?? { public: false };
-    return { id, public: meta.public, requiredActionUrl: meta.requiredActionUrl, layout: b.layout, tiles: b.layout.map((l) => l.i) };
+    return { id, public: meta.public, requiredActionUrl: meta.requiredActionUrl, layout: b.layout, tiles: b.tiles ?? b.layout.map((l) => l.i) };
   })
   // CCRS picks the first pack a caller can see, in MDMS order.
   .sort((a, b) => Object.keys(skin.packs).indexOf(a.id) - Object.keys(skin.packs).indexOf(b.id));
 
 const db = await openPostgres(process.env.CCRS_PG_URL);
 const connector = sqlConnector(db.executor);
+
+// A caller's row scope is CCRS's own resolution (HRMS departments and
+// jurisdictions per role): ask it once per token with a one-row query and
+// apply what it says. Cached briefly; the token is never logged or stored.
+type Scope = { departments?: string[]; jurisdictions?: string[]; accountId?: string; restrictedTo?: string };
+const scopes = new Map<string, { at: number; scope: Scope | null }>();
+async function scopeOf(body: Record<string, unknown>): Promise<Scope | null> {
+  const info = body.RequestInfo as { authToken?: string; userInfo?: { uuid?: string } } | undefined;
+  const key = info?.authToken ?? "";
+  const hit = scopes.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.scope;
+  const probe = { RequestInfo: body.RequestInfo, tenantId: body.tenantId, query: { grain: "facts", window: { name: "all" }, measures: [{ name: "n", agg: "count" }] } };
+  const r = await fetch(`${upstream}/pgr-services/v2/analytics/_query`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(probe) });
+  let scope: Scope | null = null;
+  if (r.ok) {
+    const s = ((await r.json()) as { scope?: Scope }).scope ?? {};
+    scope = {
+      ...(s.departments ? { departments: s.departments } : {}),
+      ...(s.jurisdictions ? { jurisdictions: s.jurisdictions } : {}),
+      ...(s.restrictedTo ? { restrictedTo: s.restrictedTo } : {}),
+      ...(s.restrictedTo === "own-records" && info?.userInfo?.uuid ? { accountId: info.userInfo.uuid } : {}),
+    };
+  } else {
+    // No scope, no rows: never widen what CCRS would show.
+    scope = { departments: [] };
+  }
+  scopes.set(key, { at: Date.now(), scope });
+  return scope;
+}
 
 const api = ccrsApi({
   pack,
@@ -50,6 +79,7 @@ const api = ccrsApi({
     const grant = (await r.json()) as { allowed?: boolean; capabilities?: string[] };
     return grant.allowed ? (grant.capabilities ?? []) : [];
   },
+  scope: scopeOf,
 });
 
 const read = (req: import("node:http").IncomingMessage) =>

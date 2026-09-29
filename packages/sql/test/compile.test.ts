@@ -203,3 +203,15 @@ describe("subtree tenancy", () => {
     expect(c.params).toEqual(["ke_1%", "ke\\_1\\%.%"]);
   });
 });
+
+describe("path filters", () => {
+  it("matches a whole segment of a |-path and a dotted subtree, escaping the value", async () => {
+    const { parsePack } = await import("@lenspack/spec");
+    const p = parsePack({ pack: "t", version: 1, entities: { rows: { source: "rows" } }, dimensions: [{ key: "path", entity: "rows", field: "path" }], measures: [{ key: "n", entity: "rows", agg: "count" }] });
+    const seg = compile({ kind: "value", measure: "n", filters: [{ dimension: "path", op: "segment", value: ["B%1", "C"] }] }, p, { dialect: "postgres" });
+    expect(seg.sql).toContain(`(('|' || CAST("rows"."__d_path" AS TEXT)) || '|') LIKE $1`);
+    expect(seg.params).toEqual(["%|B\\%1|%", "%|C|%"]);
+    const sub = compile({ kind: "value", measure: "n", filters: [{ dimension: "path", op: "subtree", value: "a.b" }] }, p, { dialect: "postgres" });
+    expect(sub.params).toEqual(["a.b", "a.b.%"]);
+  });
+});

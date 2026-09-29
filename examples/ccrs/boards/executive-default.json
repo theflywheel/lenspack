@@ -168,6 +168,7 @@
           ],
           "limit": 30,
           "sort": "desc",
+          "sortBy": "measure",
           "time": {
             "last": "7d"
           }
@@ -224,6 +225,7 @@
           "measure": "complaints",
           "limit": 200,
           "sort": "desc",
+          "sortBy": "measure",
           "time": {
             "last": "7d"
           }
@@ -279,7 +281,8 @@
             "daily_complaints_open_sla_status_bucket_in_within_approachin"
           ],
           "limit": 50,
-          "sort": "desc"
+          "sort": "desc",
+          "sortBy": "measure"
         },
         "options": {
           "legend": true,
@@ -309,6 +312,7 @@
           ],
           "limit": 200,
           "sort": "desc",
+          "sortBy": "measure",
           "time": {
             "last": "7d"
           }
@@ -336,6 +340,7 @@
           ],
           "limit": 100,
           "sort": "desc",
+          "sortBy": "measure",
           "time": {
             "last": "7d"
           }
@@ -515,6 +520,23 @@
       "w": 8,
       "h": 6
     }
+  ],
+  "tiles": [
+    "cl_resolved_on_time_rate_count",
+    "cl_resolved_date_range_count",
+    "cl_total_complaints_count",
+    "cl_flow_ratio_count",
+    "cl_oldest_open_age",
+    "cl_csat_avg",
+    "cl_chart_wards_by_sla",
+    "cl_table_subtype_performance",
+    "cl_map_ward_wow_current",
+    "cl_table_recurring_ward_subtype",
+    "cl_chart_complaints_over_time",
+    "cl_chart_department_breach_scatter",
+    "cl_table_ward_performance",
+    "cl_table_service_quality_by_channel",
+    "cl_chart_department_flow_ratio"
   ],
   "grid": {
     "cols": 12,
