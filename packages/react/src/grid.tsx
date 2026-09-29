@@ -52,7 +52,10 @@ export function Board({ widgets = {}, emptyMessage, showQueries = false }: { wid
   // rewrite the layout everyone else sees.
   const [breakpoint, setBreakpoint] = React.useState<keyof typeof COLS>("lg");
 
-  const onLayoutChange = async (layout: Layout[]) => {
+  // Saved only when a person finishes a drag or a resize. The grid also
+  // reports a "layout change" on mount, after compacting whatever it was
+  // given — saving that turned merely opening an older version into a new one.
+  const onGesture = async (layout: Layout[]) => {
     if (!editable || !host.saveLayout || breakpoint !== "lg") return;
     const next = layout.map((item) => ({ i: item.i, x: item.x, y: item.y, w: item.w, h: item.h }));
     if (JSON.stringify(next) === JSON.stringify(config.layout)) return;
@@ -89,7 +92,8 @@ export function Board({ widgets = {}, emptyMessage, showQueries = false }: { wid
         isResizable={editable && !!host.saveLayout && breakpoint === "lg"}
         draggableHandle=".lp-drag-handle"
         onBreakpointChange={(bp) => setBreakpoint(bp as keyof typeof COLS)}
-        onLayoutChange={onLayoutChange}
+        onDragStop={(layout) => void onGesture(layout)}
+        onResizeStop={(layout) => void onGesture(layout)}
       >
         {config.layout.map((item) => {
           const widget = config.widgets[item.i];

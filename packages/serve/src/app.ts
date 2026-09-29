@@ -141,8 +141,19 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         return json(res, 200, { deleted: boardId });
       }
       switch (`${req.method} ${action ?? ""}`) {
-        case "GET ":
-          return json(res, 200, { board, catalogue });
+        case "GET ": {
+          // ?include=data,options: everything the first paint needs, in one
+          // response, instead of a board request followed by two more.
+          const include = new Set((url.searchParams.get("include") ?? "").split(",").filter(Boolean));
+          if (include.size === 0) return json(res, 200, { board, catalogue });
+          const [data, options] = await Promise.all([
+            include.has("data") ? resolveBoard(board.config, run) : undefined,
+            include.has("options")
+              ? Promise.all(board.config.filters.map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
+              : undefined,
+          ]);
+          return json(res, 200, { board, catalogue, ...(data ? { data } : {}), ...(options ? { options } : {}) });
+        }
         case "GET data": {
           const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
           return json(res, 200, await resolveBoard(board.config, run, selections));

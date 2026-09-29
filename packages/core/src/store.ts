@@ -91,6 +91,9 @@ export function memoryStore(): BoardStore {
     async revertTo(id, version) {
       const target = history.get(id)?.find((v) => v.version === version);
       if (!target) return null;
+      // Restoring what is already there records nothing.
+      const current = boards.get(id);
+      if (current && JSON.stringify(current.config) === JSON.stringify(target.config)) return current;
       return record(id, target.config, "revert", `restored v${version}`);
     },
     async delete(id) {

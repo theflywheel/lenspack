@@ -104,7 +104,10 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
       const [r] = await executor.query(`SELECT config FROM lenspack_board_versions WHERE board_id = $1 AND version = $2`, [id, version]);
       const current = await store.get(id);
       if (!r || !current) return null;
-      return record(id, current.pack, boardConfigSchema.parse(JSON.parse(String(r.config))), "revert", `restored v${version}`);
+      const config = boardConfigSchema.parse(JSON.parse(String(r.config)));
+      // Restoring what is already there records nothing.
+      if (JSON.stringify(config) === JSON.stringify(current.config)) return current;
+      return record(id, current.pack, config, "revert", `restored v${version}`);
     },
     async delete(id) {
       await writer.exec(`DELETE FROM lenspack_board_versions WHERE board_id = $1`, [id]);

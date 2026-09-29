@@ -64,9 +64,12 @@ function SvgChart({ spec }: { spec: ChartSpec }) {
   if (spec.chart === "pie") {
     const total = spec.rows.reduce((sum, r) => sum + (typeof r.value === "number" ? r.value : 0), 0) || 1;
     let angle = -Math.PI / 2;
-    const cx = W / 2;
-    const cy = H / 2;
-    const R = Math.min(W, H) / 2 - 12;
+    // A square drawing beside its legend: a legend stacked underneath takes
+    // the height a short widget has, and left the donut a sliver.
+    const S = 300;
+    const cx = S / 2;
+    const cy = S / 2;
+    const R = S / 2 - 8;
     const r0 = R * 0.55;
     const arcs = spec.rows.map((r, i) => {
       const v = typeof r.value === "number" ? r.value : 0;
@@ -78,8 +81,8 @@ function SvgChart({ spec }: { spec: ChartSpec }) {
       return <path key={i} d={d} fill={spec.palette[i % spec.palette.length]} {...pick(spec, r.group)}><title>{`${r.group}: ${spec.format(v)}`}</title></path>;
     });
     return (
-      <div className="lp-svg-wrap">
-        <svg viewBox={`0 0 ${W} ${H}`} className="lp-svg" role="img" aria-label={spec.title}>{arcs}</svg>
+      <div className="lp-svg-wrap lp-svg-pie">
+        <svg viewBox={`0 0 ${S} ${S}`} className="lp-svg" role="img" aria-label={spec.title}>{arcs}</svg>
         <div className="lp-svg-legend">
           {spec.rows.map((r, i) => (
             <span key={i}><i style={{ background: spec.palette[i % spec.palette.length] }} />{String(r.group)}</span>

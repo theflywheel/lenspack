@@ -4,7 +4,7 @@ import { drilledDimension, selectLevel } from "@lenspack/core";
 
 import { svgAdapter } from "./adapters/svg";
 import type { ChartAdapter } from "./charts";
-import type { Board, BoardOp, Catalogue, LayoutItem, PatchResult, WidgetData } from "./types";
+import type { Board, BoardOp, BoardVersion, Catalogue, LayoutItem, PatchResult, WidgetData } from "./types";
 import type { BoardHost } from "./types";
 
 type State = {
@@ -24,6 +24,9 @@ type State = {
   refresh(): Promise<void>;
   host: BoardHost;
   editable: boolean;
+  /** An older version shown read-only; null shows the current board. */
+  previewing: BoardVersion | null;
+  preview(version: BoardVersion | null): void;
   currency?: string;
   /** The charting library behind chart widgets; swappable at runtime. */
   charts: ChartAdapter;
@@ -47,7 +50,7 @@ export function BoardProvider({
   board: initial,
   catalogue,
   host,
-  editable = true,
+  editable: editableProp = true,
   currency,
   charts = svgAdapter,
   initialSelections = {},
@@ -66,7 +69,12 @@ export function BoardProvider({
   onSelectionsChange?(selections: Record<string, string>): void;
   children: React.ReactNode;
 }) {
-  const [board, setBoard] = React.useState(initial);
+  const [current, setBoard] = React.useState(initial);
+  // Looking at an old version is not an edit: it is shown read-only until the
+  // user restores it (which is) or goes back to the current board.
+  const [previewing, setPreviewing] = React.useState<BoardVersion | null>(null);
+  const board = React.useMemo(() => (previewing ? { ...current, config: previewing.config, version: previewing.version } : current), [current, previewing]);
+  const editable = editableProp && !previewing;
   const [data, setData] = React.useState<Record<string, WidgetData>>({});
   const [loading, setLoading] = React.useState(true);
   const [selections, setSelections] = React.useState(initialSelections);
@@ -95,7 +103,10 @@ export function BoardProvider({
     async (ops: BoardOp[]): Promise<PatchResult> => {
       if (!host.applyOps) return { ok: false, error: "This board is read-only" };
       const result = await host.applyOps(ops);
-      if (result.ok) setBoard(result.board);
+      if (result.ok) {
+        setBoard(result.board);
+        setPreviewing(null);
+      }
       return result;
     },
     [host],
@@ -104,10 +115,11 @@ export function BoardProvider({
   const saveLayout = React.useCallback(
     async (layout: LayoutItem[]) => {
       if (!host.saveLayout) return;
+      if (previewing) return;
       const next = await host.saveLayout(layout);
       setBoard(next);
     },
-    [host],
+    [host, previewing],
   );
 
   const setSelection = React.useCallback(
@@ -149,8 +161,8 @@ export function BoardProvider({
   }, [onSelectionsChange]);
 
   const value = React.useMemo<State>(
-    () => ({ board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, currency, charts }),
-    [board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, currency, charts],
+    () => ({ board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, previewing, preview: setPreviewing, currency, charts }),
+    [board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, previewing, currency, charts],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

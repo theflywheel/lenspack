@@ -1,12 +1,10 @@
 import * as React from "react";
 
-import { Chat, useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
 import { ArrowUp, ChevronDown, History, LayoutGrid, RotateCcw, SendHorizontal, X } from "lucide-react";
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
-import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type ChartAdapter, type FilterOption } from "@lenspack/react";
+import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type ChartAdapter, type FilterOption, type WidgetData } from "@lenspack/react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -21,215 +19,15 @@ import { Separator } from "./components/ui/separator";
 // by @lenspack/react; everything around it — chat, ops, filters, history —
 // is host UI, and the provider's hooks give it all it needs.
 
+import { ADAPTER_NAMES, type AdapterName, isAdapter, useChartAdapter } from "./adapters";
+import type { ModelInfo } from "./chat";
+
+const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
+
 const api = async (path: string, init?: RequestInit) => {
   const r = await fetch(`/api${path}`, { headers: { "content-type": "application/json" }, ...init });
   return r.json();
 };
-
-type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string; data?: unknown };
-type ReviewData = { round: number; reviewer: string; satisfied: boolean; unavailable?: boolean; missing: string[]; wrong: string[]; note: string };
-
-// The adversarial reviewer's verdict, as the server streamed it. When it is
-// not satisfied, the findings can be sent back as the next instruction — by
-// the person, not automatically.
-function ReviewBlock({ r, onApply }: { r: ReviewData; onApply?: (text: string) => void }) {
-  const fixes = [...r.missing.map((m) => `missing: ${m}`), ...r.wrong.map((w) => `wrong: ${w}`)];
-  return (
-    <div className={`rounded-md border px-2 py-1.5 text-xs ${r.satisfied ? "border-border text-muted-foreground" : "border-destructive/40 text-destructive"}`} data-testid="review">
-      <div className="flex items-center gap-2">
-        <Badge variant={r.unavailable ? "outline" : r.satisfied ? "secondary" : "destructive"} className="font-mono">review {r.round}</Badge>
-        <span className={r.satisfied && !r.unavailable ? "text-foreground" : ""}>{r.unavailable ? "unavailable" : r.satisfied ? "satisfied" : "not satisfied"}</span>
-        <span className="ml-auto truncate text-muted-foreground">{r.reviewer}</span>
-      </div>
-      {(r.missing.length > 0 || r.wrong.length > 0) && (
-        <ul className="mt-1 space-y-0.5">
-          {r.missing.map((m, i) => <li key={`m${i}`}>missing: {m}</li>)}
-          {r.wrong.map((w, i) => <li key={`w${i}`}>wrong: {w}</li>)}
-        </ul>
-      )}
-      {r.note && <p className="mt-1 text-muted-foreground">{r.note}</p>}
-      {!r.satisfied && !r.unavailable && fixes.length > 0 && onApply && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-2 h-7 text-xs"
-          data-testid="apply-fixes"
-          onClick={() => onApply(`A review found the last edit incomplete. Fix exactly these points, then verify with get_board:\n${fixes.map((f) => `- ${f}`).join("\n")}`)}
-        >
-          Apply fixes
-        </Button>
-      )}
-    </div>
-  );
-}
-
-function StepBadge({ name, part }: { name: string; part: Part }) {
-  const r = part.output as { applied?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
-  const failed = part.errorText !== undefined || r?.applied === false || r?.ok === false;
-  const pending = !part.errorText && part.state && part.state !== "output-available";
-  return (
-    <div className="flex items-start gap-2 text-xs">
-      <Badge variant={failed ? "destructive" : r?.applied ? "default" : "secondary"} className="font-mono">{name}</Badge>
-      <span className={failed ? "text-destructive" : "text-muted-foreground"}>
-        {part.errorText ? part.errorText.slice(0, 160) : failed ? `${r?.error ?? ""}${r?.didYouMean ? ` — retrying with “${r.didYouMean}”` : ""}` : r?.applied ? `saved as v${r.version}` : pending ? "…" : ""}
-      </span>
-    </div>
-  );
-}
-
-// Chat beside the thing it edits. The model only ever calls the board tools;
-// when its turn ends the board is fetched again and re-rendered.
-export type ModelInfo = { name: string; model: string; available: boolean | null; latencyMs?: number; error?: string };
-
-// Provider names carry the host in parentheses ("glm-5.3-flash (openrouter)")
-// so roles and URLs can name them exactly; the menu shows just the model,
-// keeping the host only where two available entries would otherwise collide.
-function labelFor(name: string, models: ModelInfo[]) {
-  const base = (n: string) => n.replace(/\s*\([^)]*\)\s*$/, "");
-  const mine = base(name);
-  const collides = models.filter((m) => m.available !== false && m.name !== name && base(m.name) === mine).length > 0;
-  return collides ? name : mine;
-}
-
-export function ChatPanel({
-  base,
-  suggestions,
-  onTurnEnd,
-  models,
-  model,
-  onModelChange,
-}: {
-  base: string;
-  suggestions: string[];
-  onTurnEnd: () => void;
-  models: ModelInfo[];
-  model: string;
-  onModelChange: (m: string) => void;
-}) {
-  const chat = React.useMemo(() => new Chat({ transport: new DefaultChatTransport({ api: `/api${base}/chat?model=${encodeURIComponent(model)}` }) }), [base, model]);
-  const { messages, sendMessage, status, error } = useChat({ chat });
-  const busy = status === "submitted" || status === "streaming";
-  const [input, setInput] = React.useState("");
-  const wasBusy = React.useRef(false);
-  const bottom = React.useRef<HTMLDivElement>(null);
-  // The receipt: what the board actually gained during a turn, read back from
-  // the version log. A model's claim and the receipt are shown side by side.
-  const startVersion = React.useRef<number | null>(null);
-  const [receipts, setReceipts] = React.useState<Record<string, BoardVersion[] | "none">>({});
-  React.useEffect(() => {
-    if (wasBusy.current && !busy) {
-      onTurnEnd();
-      const last = messages[messages.length - 1];
-      const from = startVersion.current;
-      if (last?.role === "assistant" && from !== null) {
-        void fetch(`/api${base}/versions`)
-          .then((r) => r.json())
-          .then((vs: (BoardVersion & { createdAt: string })[]) => {
-            const gained = vs.filter((v) => v.version > from).map((v) => ({ ...v, createdAt: new Date(v.createdAt) })).reverse();
-            setReceipts((prev) => ({ ...prev, [last.id]: gained.length ? gained : "none" }));
-          });
-      }
-    }
-    wasBusy.current = busy;
-  }, [busy, onTurnEnd, messages, base]);
-  React.useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
-  }, [messages, busy]);
-  const ask = async (text: string) => {
-    if (!text.trim() || busy) return;
-    const b = await (await fetch(`/api${base}`)).json();
-    startVersion.current = b.board?.version ?? null;
-    void sendMessage({ text });
-    setInput("");
-  };
-  return (
-    <Card className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col gap-0 rounded-md py-0" data-testid="chat">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 border-b py-3 [.border-b]:pb-3">
-        <CardTitle className="shrink-0 whitespace-nowrap font-mono text-xs font-medium text-muted-foreground">build with chat</CardTitle>
-        {models.length > 1 && (
-          <Select value={model} onValueChange={onModelChange}>
-            <SelectTrigger size="sm" className="h-7 min-w-0 flex-1 text-xs [&>span]:truncate" aria-label="Model" data-testid="model-select">
-              <SelectValue>{labelFor(model, models)}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {models
-                .filter((m) => m.available !== false)
-                .map((m) => (
-                  <SelectItem key={m.name} value={m.name}>
-                    {labelFor(m.name, models)}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        )}
-      </CardHeader>
-      <ScrollArea className="min-h-[160px] flex-1">
-        <CardContent className="space-y-4 py-4">
-          {messages.length === 0 && (
-            <div className="space-y-2">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Describe what belongs on this board. Every change is a version, so nothing here is hard to undo.
-              </p>
-              {suggestions.map((s) => (
-                <Button key={s} variant="outline" size="sm" className="h-auto w-full justify-start whitespace-normal rounded-sm py-1.5 text-left text-xs font-normal leading-snug" onClick={() => ask(s)}>
-                  {s}
-                </Button>
-              ))}
-            </div>
-          )}
-          {messages.map((m) => (
-            <div key={m.id} className="space-y-1.5">
-              <p className="font-mono text-2xs text-muted-foreground">{m.role === "user" ? "you" : "lenspack"}</p>
-              {(m.parts as Part[]).filter((p) => p.type.startsWith("tool-")).map((p, i) => (
-                <StepBadge key={i} name={p.type.slice(5)} part={p} />
-              ))}
-              {(m.parts as Part[]).map((p, i) =>
-                p.type === "text" && p.text?.trim() ? (
-                  <p key={i} className="text-sm leading-6">{p.text}</p>
-                ) : p.type === "data-review" ? (
-                  <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
-                ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
-                  <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
-                ) : null,
-              )}
-              {m.role === "assistant" && receipts[m.id] && (
-                <div className="rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground" data-testid="receipt">
-                  <span className="font-medium text-foreground">Receipt</span>
-                  {receipts[m.id] === "none" ? (
-                    <span> — no changes were made to the board.</span>
-                  ) : (
-                    <ul className="mt-1 space-y-0.5">
-                      {(receipts[m.id] as BoardVersion[]).map((v) => (
-                        <li key={v.version}>
-                          <span className="font-mono">v{v.version}</span> {v.summary}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-          {busy && <p className="text-xs text-muted-foreground">Working…</p>}
-          {error && <p className="text-xs text-destructive">{error.message}</p>}
-          <div ref={bottom} />
-        </CardContent>
-      </ScrollArea>
-      <form
-        className="flex items-center gap-2 border-t p-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          ask(input);
-        }}
-      >
-        <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Add a chart…" disabled={busy} className="h-8 text-sm" />
-        <Button type="submit" size="icon" className="size-8" disabled={busy || !input.trim()} aria-label="Send">
-          <SendHorizontal />
-        </Button>
-      </form>
-    </Card>
-  );
-}
 
 // The same eight ops a model emits, typed as JSON: anything can drive a board.
 function OpsBox() {
@@ -333,65 +131,117 @@ function LayoutMode() {
 // Version history in a popover. Rolling back appends rather than rewinds,
 // so a rollback can itself be undone.
 function VersionHistory({ onReverted }: { onReverted: () => void }) {
-  const { board, host } = useBoard();
+  const { board, host, previewing, preview } = useBoard();
   const [versions, setVersions] = React.useState<BoardVersion[]>([]);
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState<number | null>(null);
+  const latest = versions[0]?.version;
   React.useEffect(() => {
     if (open && host.loadVersions) void host.loadVersions().then(setVersions);
   }, [open, host, board.version]);
   if (!host.loadVersions) return null;
+  const restore = async (version: number) => {
+    setBusy(version);
+    await host.revertTo!(version);
+    setBusy(null);
+    setOpen(false);
+    preview(null);
+    onReverted();
+  };
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" data-testid="history-toggle">
           <History /> v{board.version}
+          {previewing && <span className="text-muted-foreground">(viewing)</span>}
           <ChevronDown className="opacity-60" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-96 p-0">
-        <ScrollArea className="max-h-96">
-          <div className="p-2" data-testid="version-history">
-            {versions.map((v) => (
-              <div key={v.version} className="flex items-start gap-2 rounded-md px-2 py-2 hover:bg-accent">
+        {/* A plain scrolling box: the list must stay inside the popover. */}
+        <div className="max-h-96 overflow-y-auto overscroll-contain p-2" data-testid="version-history">
+          {versions.map((v) => {
+            const shown = v.version === board.version;
+            const isLatest = v.version === latest;
+            return (
+              <button
+                type="button"
+                key={v.version}
+                data-testid={`version-${v.version}`}
+                aria-current={shown ? "true" : undefined}
+                // Clicking a version shows it; nothing changes until Restore.
+                onClick={() => preview(isLatest ? null : v)}
+                className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-accent ${shown ? "bg-accent" : ""}`}
+              >
                 <div className="min-w-0 flex-1 text-sm">
                   <p>
                     <span className="font-mono text-xs">v{v.version}</span> {v.summary || "no change recorded"}
+                    {isLatest && <span className="ml-1 text-xs text-muted-foreground">(current)</span>}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {v.source === "chat" ? "by chat" : v.source === "revert" ? "rollback" : v.source === "layout" ? "by hand" : v.source} · {v.createdAt.toLocaleString()}
                   </p>
                 </div>
-                {v.version !== board.version && host.revertTo && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    disabled={busy !== null}
+                {!isLatest && host.revertTo && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="inline-flex h-7 items-center gap-1 rounded px-2 text-xs hover:bg-background"
                     data-testid={`restore-${v.version}`}
-                    onClick={async () => {
-                      setBusy(v.version);
-                      await host.revertTo!(v.version);
-                      setBusy(null);
-                      setOpen(false);
-                      onReverted();
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (busy === null) void restore(v.version);
                     }}
                   >
-                    <RotateCcw /> {busy === v.version ? "…" : "restore"}
-                  </Button>
+                    <RotateCcw className="size-3" /> {busy === v.version ? "…" : "restore"}
+                  </span>
                 )}
-              </div>
-            ))}
-          </div>
-        </ScrollArea>
+              </button>
+            );
+          })}
+        </div>
       </PopoverContent>
     </Popover>
   );
 }
 
+/** While an older version is shown: say so, and offer the two ways out. */
+function PreviewBanner({ onReverted }: { onReverted: () => void }) {
+  const { previewing, preview, host } = useBoard();
+  const [busy, setBusy] = React.useState(false);
+  if (!previewing) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-3 py-2 text-sm" data-testid="preview-banner">
+      <span>
+        Viewing <span className="font-mono">v{previewing.version}</span> — read-only. {previewing.summary}
+      </span>
+      <span className="flex-1" />
+      <Button variant="ghost" size="sm" onClick={() => preview(null)}>
+        Back to current
+      </Button>
+      {host.revertTo && (
+        <Button
+          size="sm"
+          disabled={busy}
+          data-testid="preview-restore"
+          onClick={async () => {
+            setBusy(true);
+            await host.revertTo!(previewing.version);
+            setBusy(false);
+            preview(null);
+            onReverted();
+          }}
+        >
+          <RotateCcw /> Restore this version
+        </Button>
+      )}
+    </div>
+  );
+}
+
 type Catalog = { example: string; description?: string; boards: { id: string; title: string }[] }[];
 
-export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
+export function App() {
   const params = new URLSearchParams(location.search);
   const [catalog, setCatalog] = React.useState<Catalog>([]);
   const [chatEnabled, setChatEnabled] = React.useState(false);
@@ -399,7 +249,8 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
   const [model, setModel] = React.useState<string>(params.get("model") ?? "");
   const [example, setExample] = React.useState<string>(params.get("example") ?? "");
   const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? "");
-  const [adapterName, setAdapterName] = React.useState<string>(params.get("charts") && adapters[params.get("charts")!] ? params.get("charts")! : "recharts");
+  const [adapterName, setAdapterName] = React.useState<AdapterName>(isAdapter(params.get("charts")) ? (params.get("charts") as AdapterName) : "recharts");
+  const charts = useChartAdapter(adapterName);
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue } | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
 
@@ -423,22 +274,42 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
   }, []);
 
   const base = `/${example}/${boardId}`;
-  const reloadBoard = React.useCallback(() => {
-    void api(base).then((r) => {
-      if (!r.board) return setProblem(r.error ?? "This board does not exist");
-      setProblem(null);
-      setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue });
-    });
-  }, [base]);
+  // The first paint needs the board, its data and its filter options: one
+  // request brings all three, and the host serves them from this primer.
+  const primer = React.useRef<{ config: string; data: Record<string, WidgetData>; options: Record<string, FilterOption[]> } | null>(null);
+  const reloadBoard = React.useCallback(
+    (withData = false) => {
+      void api(`${base}${withData ? "?include=data,options" : ""}`).then((r) => {
+        if (!r.board) return setProblem(r.error ?? "This board does not exist");
+        setProblem(null);
+        if (withData && r.data) primer.current = { config: JSON.stringify(r.board.config), data: r.data, options: r.options ?? {} };
+        setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue });
+      });
+    },
+    [base],
+  );
+  // The board loads when the board changes, and only then: the chart library
+  // and the model are view choices, not a reason to fetch it again.
+  React.useEffect(() => {
+    if (!example || !boardId) return;
+    reloadBoard(true);
+  }, [example, boardId, reloadBoard]);
   React.useEffect(() => {
     if (!example || !boardId) return;
     history.replaceState(null, "", `/app?example=${example}&board=${boardId}&charts=${adapterName}${model ? `&model=${encodeURIComponent(model)}` : ""}`);
-    reloadBoard();
-  }, [example, boardId, adapterName, model, reloadBoard]);
+  }, [example, boardId, adapterName, model]);
 
   const host = React.useMemo<BoardHost>(
     () => ({
-      loadBoardData: (_config, selections) => api(`${base}/data?${new URLSearchParams(Object.fromEntries(Object.entries(selections).map(([k, v]) => [`f_${k}`, v])))}`),
+      loadBoardData: (config, selections) => {
+        const p = primer.current;
+        if (p && Object.keys(selections).length === 0 && JSON.stringify(config) === p.config) {
+          // Used once: a refresh or a new selection asks the server.
+          primer.current = { ...p, config: "" };
+          return Promise.resolve(p.data);
+        }
+        return api(`${base}/data?${new URLSearchParams(Object.fromEntries(Object.entries(selections).map(([k, v]) => [`f_${k}`, v])))}`);
+      },
       applyOps: async (ops) => {
         const r = await api(`${base}/ops`, { method: "POST", body: JSON.stringify({ ops }) });
         if (r.ok) r.board.updatedAt = new Date(r.board.updatedAt);
@@ -448,7 +319,10 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
         const b = await api(`${base}/layout`, { method: "POST", body: JSON.stringify({ layout }) });
         return { ...b, updatedAt: new Date(b.updatedAt) };
       },
-      loadFilterOptions: (field) => api(`${base}/options?field=${encodeURIComponent(field)}`),
+      loadFilterOptions: (field) => {
+        const hit = primer.current?.options[field];
+        return hit ? Promise.resolve(hit) : api(`${base}/options?field=${encodeURIComponent(field)}`);
+      },
       loadVersions: async () => (await api(`${base}/versions`)).map((v: { createdAt: string }) => ({ ...v, createdAt: new Date(v.createdAt) })),
       revertTo: async (version) => {
         const b = await api(`${base}/revert`, { method: "POST", body: JSON.stringify({ version }) });
@@ -473,13 +347,13 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
   }, [state]);
 
   if (problem) return <div className="mx-auto max-w-6xl p-6 text-sm text-destructive">{problem}</div>;
-  if (!state) return <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (!state || !charts) return <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">Loading…</div>;
 
   // Board only, for screenshots and embeds.
   if (params.get("chrome") === "0")
     return (
       <div className="min-h-screen bg-background p-4 text-foreground font-sans antialiased">
-        <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} editable={false} charts={adapters[adapterName]!}>
+        <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} editable={false} charts={charts}>
           <h1 className="mb-3 text-lg font-semibold tracking-tight">{state.board.config.title}</h1>
           <Board />
         </BoardProvider>
@@ -512,9 +386,9 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
               <SelectTrigger size="sm" className="w-52 text-xs" aria-label="Board"><SelectValue /></SelectTrigger>
               <SelectContent>{(current?.boards ?? []).map((b) => <SelectItem key={b.id} value={b.id}>{b.title}</SelectItem>)}</SelectContent>
             </Select>
-            <Select value={adapterName} onValueChange={setAdapterName}>
+            <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
               <SelectTrigger size="sm" className="w-40 font-mono text-xs" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
-              <SelectContent>{Object.keys(adapters).map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
+              <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
             </Select>
           </div>
         </div>
@@ -523,7 +397,7 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className={chatEnabled ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]" : ""}>
           <div className={chatEnabled ? "order-1 min-w-0" : "min-w-0"}>
-            <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} charts={adapters[adapterName]!}>
+            <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts}>
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h1 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground">{state.board.config.title}</h1>
@@ -531,10 +405,11 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <LayoutMode />
-                  <VersionHistory onReverted={reloadBoard} />
+                  <VersionHistory onReverted={() => reloadBoard()} />
                 </div>
               </div>
               <div className="space-y-3">
+                <PreviewBanner onReverted={() => reloadBoard()} />
                 <FilterBar />
                 <details className="group">
                   <summary className="w-fit cursor-pointer list-none font-mono text-xs text-muted-foreground hover:text-foreground">
@@ -552,7 +427,9 @@ export function App({ adapters }: { adapters: Record<string, ChartAdapter> }) {
           </div>
           {chatEnabled && (
             <div className="order-2 min-w-0">
-              <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={reloadBoard} models={models} model={model} onModelChange={setModel} />
+              <React.Suspense fallback={<div className="rounded-md border p-4 text-sm text-muted-foreground">Loading chat…</div>}>
+                <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={() => reloadBoard()} models={models} model={model} onModelChange={setModel} />
+              </React.Suspense>
             </div>
           )}
         </div>

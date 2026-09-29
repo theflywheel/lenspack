@@ -72,3 +72,8 @@
 .lp-drill-here { font-weight: 600; }
 tr.lp-drillable { cursor: pointer; }
 tr.lp-drillable:hover { background: var(--lp-hover); }
+
+/* Pie: donut and legend side by side, so the donut keeps the widget's height. */
+.lp-svg-pie { flex-direction: row; align-items: center; gap: 12px; }
+.lp-svg-pie .lp-svg { flex: 1 1 0; min-width: 0; height: 100%; }
+.lp-svg-pie .lp-svg-legend { flex: 0 1 auto; max-width: 45%; max-height: 100%; overflow: auto; flex-direction: column; flex-wrap: nowrap; justify-content: center; padding-top: 0; }

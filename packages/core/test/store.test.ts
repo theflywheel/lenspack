@@ -54,3 +54,15 @@ describe("memory store", () => {
     expect(text).toContain("| b (bar, 6/12 wide) count by region “By region”");
   });
 });
+
+describe("restoring", () => {
+  it("records nothing when the restored version is what the board already shows", async () => {
+    const { memoryStore, emptyBoard } = await import("../src");
+    const store = memoryStore();
+    await store.create({ id: "b", pack: { pack: "p", version: 1 }, title: "B", config: emptyBoard({ pack: "p", version: 1 }, "B") });
+    const before = (await store.versions("b")).length;
+    const same = await store.revertTo("b", 1);
+    expect(same?.version).toBe(1);
+    expect((await store.versions("b")).length).toBe(before);
+  });
+});

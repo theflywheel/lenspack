@@ -1,7 +1,10 @@
 import * as React from "react";
 
 import type { Board as BoardT, Catalogue, Query } from "@lenspack/core";
-import { Board, BoardProvider, type BoardHost, type ChartAdapter } from "@lenspack/react";
+import { Board, BoardProvider, type BoardHost } from "@lenspack/react";
+import { svgAdapter as svgFallback } from "@lenspack/react/adapters/svg";
+
+import { ADAPTER_NAMES, type AdapterName, useChartAdapter } from "./adapters";
 
 // The home page. One idea carries it: colour is provenance. A key that the
 // pack declares is always mono and blue — in the YAML, in prose, in a board
@@ -33,12 +36,12 @@ function Row({ label, children, className = "", wide = false }: { label?: React.
   );
 }
 
-export function Landing({ adapters }: { adapters: Record<string, ChartAdapter> }) {
+export function Landing() {
   return (
     <div className="min-h-screen bg-background text-body">
       <Header />
       <main>
-        <Hero adapters={adapters} />
+        <Hero />
         <Refusals />
         <FirstBoard />
         <Packs />
@@ -76,9 +79,10 @@ function Header() {
 const PRESET_TABS = ["preview", "pack", "config"] as const;
 type PresetTab = (typeof PRESET_TABS)[number];
 
-function Hero({ adapters }: { adapters: Record<string, ChartAdapter> }) {
+function Hero() {
   const [tab, setTab] = React.useState<PresetTab>("preview");
-  const [adapter, setAdapter] = React.useState("recharts");
+  const [adapter, setAdapter] = React.useState<AdapterName>("recharts");
+  const charts = useChartAdapter(adapter);
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue; yaml: string; data: Record<string, unknown> } | null>(null);
 
   React.useEffect(() => {
@@ -117,7 +121,7 @@ function Hero({ adapters }: { adapters: Record<string, ChartAdapter> }) {
             pick. The board never changes; only the renderer does.
           </p>
           <div className="flex gap-1 font-mono text-xs">
-            {Object.keys(adapters).map((n) => (
+            {ADAPTER_NAMES.map((n) => (
               <button
                 key={n}
                 onClick={() => setAdapter(n)}
@@ -153,7 +157,7 @@ function Hero({ adapters }: { adapters: Record<string, ChartAdapter> }) {
 
           <div className="min-w-0 bg-card p-4" data-testid="landing-preview">
             {state ? (
-              <BoardProvider key={adapter} board={state.board} catalogue={state.catalogue} host={host} editable={false} charts={adapters[adapter]!}>
+              <BoardProvider key={adapter} board={state.board} catalogue={state.catalogue} host={host} editable={false} charts={charts ?? svgFallback}>
                 <Board />
               </BoardProvider>
             ) : (
