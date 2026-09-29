@@ -316,6 +316,11 @@ export function checkQuery(query: Query, catalogue: Catalogue): Problem | null {
   for (const clause of query.filters ?? []) {
     if (!findDimension(catalogue, clause.dimension)) return noDim(clause.dimension);
   }
+  if (query.kind !== "rows" && query.measures) {
+    for (const key of query.measures) if (!findMeasure(catalogue, key)) return noMeasure(key);
+    if (query.measures.includes(query.measure)) return { error: `"${query.measure}" is already the widget's measure; list only the others in measures` };
+    if (query.kind === "series" && query.by) return { error: "A series split by a dimension draws one measure; drop by, or drop measures", hint: "measures" };
+  }
 
   switch (query.kind) {
     case "breakdown": {
@@ -370,6 +375,7 @@ function checkWidget(widget: Widget, catalogue: Catalogue): Problem | null {
       return { error: `A pie of "${widget.query.measure}" would imply the groups sum to a whole, and rates do not`, hint: "bar" };
     if (widget.query.kind !== "breakdown")
       return { error: "A pie needs a breakdown to divide", hint: "breakdown" };
+    if (widget.query.measures?.length) return { error: "A pie divides one measure; several measures need a bar or a table", hint: "bar" };
   }
 
   return null;
@@ -386,6 +392,7 @@ export function migrateKeys(config: BoardConfig, renames: Record<string, string>
     if (widget.kind === "text") continue;
     const q = widget.query;
     for (const clause of q.filters ?? []) clause.dimension = rename(clause.dimension);
+    if (q.kind !== "rows" && q.measures) q.measures = q.measures.map(rename);
     if (q.kind === "breakdown") {
       q.dimension = rename(q.dimension);
       q.measure = rename(q.measure);

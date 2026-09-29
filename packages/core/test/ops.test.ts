@@ -338,3 +338,18 @@ describe("packing", () => {
     expect(more.ok && more.config.layout.find((l) => l.i === "c")!.w).toBe(12);
   });
 });
+
+describe("further measures on one widget", () => {
+  it("checks every measure key and refuses what a widget cannot draw", async () => {
+    const { checkQuery } = await import("../src/ops");
+    const cat = {
+      pack: "p", version: 1,
+      entities: [{ key: "e", hasTime: true, hasTenant: false }],
+      dimensions: [{ key: "d", label: "D", entity: "e", type: "string" as const, synonyms: [], verified: true }],
+      measures: ["a", "b"].map((key) => ({ key, label: key, entity: "e", format: "number" as const, synonyms: [], verified: true })),
+    };
+    expect(checkQuery({ kind: "breakdown", dimension: "d", measure: "a", measures: ["b"], limit: 5, sort: "desc" }, cat)).toBeNull();
+    expect(checkQuery({ kind: "breakdown", dimension: "d", measure: "a", measures: ["bb"], limit: 5, sort: "desc" }, cat)).toMatchObject({ hint: "b" });
+    expect(checkQuery({ kind: "series", measure: "a", measures: ["b"], grain: "day", by: "d" }, cat)?.error).toMatch(/one measure/);
+  });
+});

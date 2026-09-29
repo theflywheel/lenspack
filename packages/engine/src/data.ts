@@ -7,7 +7,14 @@ import type { Query } from "@lenspack/core";
 
 export type Row = Record<string, unknown>;
 
-export type DataRow = { group: string; series?: string; value: number | null; count: number };
+export type DataRow = {
+  group: string;
+  series?: string;
+  value: number | null;
+  count: number;
+  /** A query's further measures for this group, by key. */
+  values?: Record<string, number | null>;
+};
 
 export type Format = "number" | "percent" | "currency" | "compact" | "duration";
 
@@ -20,6 +27,8 @@ export type WidgetData = {
   compare?: { previous: number | null; delta: number | null };
   /** An estimate (a search engine's distinct count or percentile), drawn with ≈. */
   approximate?: boolean;
+  /** For a query with further measures: every measure drawn, the primary first. */
+  measures?: { key: string; format: Format }[];
   error?: string;
   hint?: string;
 };

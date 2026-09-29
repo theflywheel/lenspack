@@ -1,6 +1,6 @@
 import { type BoardOp, type Query, applyOps, emptyBoard, opSchema } from "@lenspack/core";
 import { type Capabilities, ResolveError, check } from "@lenspack/engine";
-import { type Pack, type PackDimension, type PackMeasure, type Where, catalogueFrom, parsePack } from "@lenspack/spec";
+import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, catalogueFrom, formatExpr, operands, parseExpr, parsePack } from "@lenspack/spec";
 import YAML from "yaml";
 
 import { type Bucket, type Leaf, bare, walk } from "./walk";
@@ -24,6 +24,7 @@ export type DssChart = {
   computedFields?: { actionName?: string; fields?: string[]; newField?: string }[];
   filterForCurrentDay?: boolean;
   insight?: { action?: string };
+  excludedColumns?: string[];
 };
 export type DssMaster = { dashboards: { name?: string; id?: string; title?: string; visualizations?: { vizArray?: { name?: string; charts?: { id: string }[] }[] }[] }[] };
 
@@ -151,16 +152,20 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     return key;
   };
 
-  const ratio = (num: string, den: string, label: string, percent: boolean): string => {
-    const sig = JSON.stringify(["ratio", num, den]);
+  // Arithmetic over measures already defined. Read at the grain of its
+  // first operand; the engine combines operands from several entities.
+  const derived = (expr: string, label: string, percent: boolean): string => {
+    const sig = JSON.stringify(["derived", expr]);
     const known = measureBySig.get(sig);
     if (known) return known;
     let key = slug(label);
     for (let i = 2; measures.has(key) || dimensions.has(key); i++) key = `${slug(label)}_${i}`;
-    measures.set(key, { key, entity: measures.get(num)!.entity, derived: `${num} / ${den}`, label, format: percent ? "percent" : "number", synonyms: [], verified: true });
+    const first = operands(parseExpr(expr))[0]!;
+    measures.set(key, { key, entity: measures.get(first)!.entity, derived: expr, label, format: percent ? "percent" : "number", synonyms: [], verified: true });
     measureBySig.set(sig, key);
     return key;
   };
+
 
   type Planned = { id: string; chartId: string; widget: BoardOp; notes: string[] };
   let leafCount = 0;
@@ -197,39 +202,71 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
       }
 
       const keyOf = ({ entity, leaf }: { entity: string; leaf: Leaf }): string => {
-        if (!leaf.ratio) return measure(entity, leaf, chartName);
-        const n = measure(entity, leaf.ratio.numerator, chartName);
-        const d = measure(entity, leaf.ratio.denominator, chartName);
-        return ratio(n, d, name(leaf, chartName), leaf.ratio.percent);
+        if (!leaf.arith) return measure(entity, leaf, chartName);
+        const keys = Object.fromEntries(Object.entries(leaf.arith.vars).map(([v, l]) => [v, measure(entity, l, chartName)]));
+        return derived(formatExpr(renameKeys(leaf.arith.expr, (v) => keys[v]!)), name(leaf, chartName), leaf.arith.percent);
       };
 
-      // A two-number percentage (action: percentage, or a percentage computed
-      // field) is a ratio; its operands may live on two indexes.
-      const pct = chart.computedFields?.find((c) => c.actionName === "PercentageComputedField" && c.fields?.length === 2);
-      // Percentages name their operands by the aliases additive fields create.
-      const alias = new Map((chart.computedFields ?? []).filter((c) => c.actionName === "AdditiveComputedField" && c.fields?.length === 1).map((c) => [c.newField!, c.fields![0]!]));
-      if ((chart.action === "percentage" || pct) && drawn.length < 2) {
-        outcomes.push({ chart: chartId, status: "skipped", notes: [...notes, "a percentage whose operands did not both translate; drawing one of them alone would mislabel it"] });
-        continue;
+      // DSS columns by the name the chart uses for them: the leaf's own agg
+      // name, and any alias or sum a computed field adds.
+      type Column = { label: string; key: string };
+      const columns: Column[] = drawn.map((d) => ({ label: d.leaf.path.at(-1)!, key: keyOf(d) }));
+      const find = (label: string) =>
+        columns.find((c) => c.label === label) ?? (() => {
+          const d = drawn.find((x) => x.leaf.path.includes(label));
+          return d ? { label, key: keyOf(d) } : undefined;
+        })();
+      for (const cf of chart.computedFields ?? []) {
+        const fields = (cf.fields ?? []).map(find);
+        const label = cf.newField ?? cf.fields?.join(" ") ?? "";
+        if (fields.some((f) => !f) || !fields.length) {
+          notes.push(`computed field ${cf.newField ?? cf.actionName}: an operand did not translate`);
+          continue;
+        }
+        const keys = fields.map((f) => f!.key);
+        const action = cf.actionName ?? "";
+        if ((action === "AdditiveComputedField" || action === "NoOpsComputedField" || action === "") && keys.length === 1) columns.push({ label, key: keys[0]! });
+        else if (action === "AdditiveComputedField" || action === "SumComputedField") columns.push({ label, key: derived(keys.join(" + "), label, false) });
+        else if (action === "PercentageComputedField" && keys.length === 2) columns.push({ label, key: derived(`${keys[0]} / ${keys[1]}`, label, true) });
+        else notes.push(`computed field ${action} not translated`);
       }
+
+      // What the chart's headline number is.
       let measureKey: string;
-      let bucketLeaf = drawn[0]!.leaf;
-      if ((chart.action === "percentage" || pct) && drawn.length >= 2) {
-        const pick = (label?: string) => (label ? drawn.find((d) => d.leaf.path.includes(alias.get(label) ?? label)) : undefined);
-        const num = pick(pct?.fields?.[0]) ?? drawn[0]!;
-        const den = pick(pct?.fields?.[1]) ?? drawn[1]!;
-        measureKey = ratio(keyOf(num), keyOf(den), pct?.newField ?? readable(chartName).replace(/ (province|district|national|locality|village)$/i, ""), true);
-        bucketLeaf = num.leaf;
-        if (drawn.length > 2) notes.push(`${drawn.length - 2} more column(s) not drawn: ${drawn.slice(2).map((d) => keyOf(d)).join(", ")}`);
+      const order = chart.aggregationPaths ?? [];
+      if ((chart.action === "percentage" || chart.action === "division") && order.length >= 2) {
+        const [a, b] = [find(order[0] ?? ""), find(order[1] ?? "")];
+        if (!a || !b) {
+          outcomes.push({ chart: chartId, status: "skipped", notes: [...notes, `a ${chart.action} whose operands did not both translate; drawing one of them alone would mislabel it`] });
+          continue;
+        }
+        const label = readable(chartName).replace(/ (province|district|national|locality|village)$/i, "");
+        measureKey = derived(`${a.key} / ${b.key}`, label, chart.action === "percentage");
       } else {
-        // One number per widget; a multi-column table keeps its first column
-        // and the rest become measures the board can add.
-        const extra = drawn.slice(1).map(keyOf);
-        measureKey = keyOf(drawn[0]!);
-        if (extra.length) notes.push(`${extra.length} more column(s) available as measures: ${extra.join(", ")}`);
+        const pct = [...columns].reverse().find((c) => measures.get(c.key)?.format === "percent");
+        const hiddenLabels = new Set(chart.excludedColumns ?? []);
+        const visible = columns.filter((c) => !hiddenLabels.has(c.label));
+        // A windowed chart leads with a column that has time, when it has one.
+        const timed = (c: Column) => {
+          const m = measures.get(c.key)!;
+          const e = m.derived ? measures.get(operands(parseExpr(m.derived))[0]!)!.entity : m.entity;
+          return !!entities[e]?.time;
+        };
+        const lead = (chart.filterForCurrentDay ? visible.find(timed) : undefined) ?? visible[0] ?? columns[0]!;
+        measureKey = chart.chartType === "metric" && chart.valueType === "percentage" && pct ? pct.key : lead.key;
       }
-      for (const c of chart.computedFields ?? []) if (c.actionName && !["AdditiveComputedField", "PercentageComputedField"].includes(c.actionName)) notes.push(`computed field ${c.actionName} not translated`);
-      if (chart.action && !["", "percentage"].includes(chart.action)) notes.push(`action "${chart.action}" not translated`);
+      if (chart.action && !["", "percentage", "division"].includes(chart.action)) notes.push(`action "${chart.action}" not translated`);
+      if ((chart.action === "percentage" || chart.action === "division") && order.length < 2) notes.push(`action "${chart.action}" without two aggregation paths; drawn as its columns`);
+
+      // Every other visible column rides along as a further measure.
+      const hidden = new Set(chart.excludedColumns ?? []);
+      const extraKeys = [...new Set(columns.filter((c) => !hidden.has(c.label)).map((c) => c.key))].filter((k) => k !== measureKey);
+      // A metric card is one number; its other paths are that number's operands.
+      const drawsMany = chart.chartType === "xtable" || chart.chartType === "table" || chart.chartType === "line";
+      const measuresExtra = drawsMany ? extraKeys.slice(0, 11) : [];
+      if (!drawsMany && chart.chartType !== "metric" && extraKeys.length) notes.push(`${extraKeys.length} more column(s) available as measures: ${extraKeys.join(", ")}`);
+      if (extraKeys.length > 11) notes.push(`${extraKeys.length - 11} column(s) beyond eleven dropped`);
+      const bucketLeaf = drawn[0]!.leaf;
 
       const entity = measures.get(measureKey)!.entity;
       const dateBucket = bucketLeaf.buckets.find((b): b is Extract<Bucket, { kind: "date" }> => b.kind === "date");
@@ -246,14 +283,14 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
         const timeField = typeof t === "string" ? t : t && "field" in t ? t.field : undefined;
         if (timeField !== dateBucket.field) notes.push(`histogram over ${dateBucket.field}; lenspack buckets by the entity's time (${timeField ?? "none"})`);
         const by = termBuckets[0] ? dimension(entity, termBuckets[0].field) : undefined;
-        query = { kind: "series", measure: measureKey, grain, ...(by ? { by } : {}), ...base };
+        query = { kind: "series", measure: measureKey, grain, ...(by ? { by } : measuresExtra.length ? { measures: measuresExtra } : {}), ...base };
       } else if (termBuckets.length) {
         const dim = dimension(entity, termBuckets[termBuckets.length - 1]!.field);
         if (termBuckets.length > 1) notes.push(`nested terms: grouped by the innermost (${dim}) only`);
-        query = { kind: "breakdown", dimension: dim, measure: measureKey, limit: Math.max(2, Math.min(50, termBuckets.at(-1)!.size ?? 12)), sort: "desc", ...base };
+        query = { kind: "breakdown", dimension: dim, measure: measureKey, limit: Math.max(2, Math.min(50, termBuckets.at(-1)!.size ?? 12)), sort: "desc", ...(measuresExtra.length ? { measures: measuresExtra } : {}), ...base };
       } else {
         const compare = chart.insight?.action === "differenceOfNumbers" && chart.filterForCurrentDay;
-        query = { kind: "value", measure: measureKey, ...(compare ? { compare: "previous_period" } : {}), ...base };
+        query = { kind: "value", measure: measureKey, ...(compare ? { compare: "previous_period" } : {}), ...(measuresExtra.length ? { measures: measuresExtra } : {}), ...base };
         if (chart.insight?.action === "differenceOfNumbers" && !compare) notes.push("insight comparison needs a time window; drawn without it");
       }
 
@@ -283,10 +320,11 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     measures.delete(key);
     measures.set(next, { ...def, key: next });
     for (const [sig, k] of measureBySig) if (k === key) measureBySig.set(sig, next);
-    for (const m of measures.values()) if (m.derived) m.derived = m.derived.split("/").map((x) => (x.trim() === key ? ` ${next} ` : x)).join("/").trim().replace(/\s+/g, " ");
+    for (const m of measures.values()) if (m.derived) m.derived = formatExpr(renameKeys(parseExpr(m.derived), (k) => (k === key ? next : k)));
     for (const p of planned.values()) {
-      const q = (p.widget as unknown as { widget: { query: { measure?: string } } }).widget.query;
+      const q = (p.widget as unknown as { widget: { query: { measure?: string; measures?: string[] } } }).widget.query;
       if (q.measure === key) q.measure = next;
+      if (q.measures) q.measures = q.measures.map((k) => (k === key ? next : k));
     }
   }
 
@@ -307,6 +345,21 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
   for (const p of planned.values()) {
     const w = (p.widget as { widget: { query: Query } }).widget;
     try {
+      // A further column that cannot be grouped like the headline number is
+      // dropped with a note; the widget keeps the rest.
+      const q = w.query;
+      if (q.kind !== "rows" && q.measures?.length) {
+        const ok = q.measures.filter((k) => {
+          try {
+            check({ ...q, measures: [k] } as Query, pack, { capabilities: caps });
+            return true;
+          } catch {
+            p.notes.push(`column ${k} cannot be grouped the same way; left off`);
+            return false;
+          }
+        });
+        (q as { measures?: string[] }).measures = ok.length ? ok : undefined;
+      }
       check(w.query, pack, { capabilities: caps });
       const probe = applyOps(emptyBoard(pack, "probe"), [opSchema.parse(p.widget) as BoardOp], catalogue);
       if (!probe.ok) throw new Error(probe.error);
@@ -334,6 +387,13 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
 
   const packYaml = YAML.stringify(JSON.parse(JSON.stringify(rawPack)), { lineWidth: 0 });
   return { pack, packYaml, boards: boards.filter((b) => b.ops.length > filterDims.size), outcomes, assumptions: [...new Set(assumptions)], report: report(charts, pack, outcomes, [...new Set(assumptions)], leafCount) };
+}
+
+function renameKeys(e: MeasureExpr, to: (key: string) => string): MeasureExpr {
+  if (e.t === "measure") return { t: "measure", key: to(e.key) };
+  if (e.t === "neg") return { t: "neg", arg: renameKeys(e.arg, to) };
+  if (e.t === "op") return { ...e, l: renameKeys(e.l, to), r: renameKeys(e.r, to) };
+  return e;
 }
 
 function reason(e: unknown): string {

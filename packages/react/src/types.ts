@@ -4,14 +4,18 @@ import type { Board, BoardConfig, BoardOp, BoardVersion, Catalogue, LayoutItem, 
 // fetch or save arrives through these callbacks, so it works in front of any
 // host: a Next.js route, an Express server, a Tauri command.
 
-export type DataRow = { group: string; series?: string; value: number | null; count: number };
+export type DataRow = { group: string; series?: string; value: number | null; count: number; values?: Record<string, number | null> };
+type Format = "number" | "percent" | "currency" | "compact" | "duration";
 export type WidgetData = {
   rows: DataRow[];
   records?: Record<string, unknown>[];
   columns?: string[];
   total: number;
-  format: "number" | "percent" | "currency" | "compact" | "duration";
+  format: Format;
   compare?: { previous: number | null; delta: number | null };
+  approximate?: boolean;
+  /** Every measure drawn when a query has further measures, the primary first. */
+  measures?: { key: string; format: Format }[];
   error?: string;
   hint?: string;
 };

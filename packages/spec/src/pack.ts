@@ -142,7 +142,7 @@ export const measureSchema = z
     filter: fragmentSchema.optional(),
     where: z.array(whereSchema).max(20).optional(),
     // Multiplies the aggregate, e.g. people per item handed out.
-    scale: z.number().positive().optional(),
+    scale: z.number().refine((n) => n !== 0 && Number.isFinite(n), "a non-zero number").optional(),
     format: z.enum(FORMATS).default("number"),
     ...named,
   })

@@ -56,6 +56,7 @@ const WIDTH = oneOf(["full", "half", "third", "quarter"], "half").describe("full
 const QUERY_SHAPE = {
   query_kind: z.enum(["breakdown", "series", "value", "rows"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records"),
   measure: str().describe("Measure key from list_metrics (not for rows)"),
+  measures: str().describe("Optional, comma-separated: further measures over the same groups, as extra table columns or chart series (not with a split series)"),
   dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
   entity: str().describe("For rows: the entity to list"),
   grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
@@ -70,7 +71,8 @@ const QUERY_SHAPE = {
 export function assembleQuery(a: { [K in keyof typeof QUERY_SHAPE]: z.infer<(typeof QUERY_SHAPE)[K]> }): Query {
   const filters = a.filter_dimension ? [{ dimension: a.filter_dimension, op: "eq" as const, value: a.filter_value }] : undefined;
   const time = a.time_last ? { last: a.time_last } : undefined;
-  const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}) };
+  const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);
+  const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" ? { measures: more } : {}) };
   switch (a.query_kind) {
     case "breakdown":
       return querySchema.parse({ kind: "breakdown", dimension: a.dimension, measure: a.measure, sort: a.sort, ...(a.limit ? { limit: a.limit } : {}), ...base });

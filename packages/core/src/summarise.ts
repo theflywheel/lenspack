@@ -28,12 +28,16 @@ export function describeQuery(query: Query) {
   const time = query.time ? ("last" in query.time ? ` last ${query.time.last}` : ` ${query.time.from.slice(0, 10)}→${query.time.to.slice(0, 10)}`) : "";
   switch (query.kind) {
     case "breakdown":
-      return `${query.measure} by ${query.dimension}${query.sort === "asc" ? " (lowest first)" : ""}${query.limit !== 12 ? ` top ${query.limit}` : ""}${time}`;
+      return `${withMore(query)} by ${query.dimension}${query.sort === "asc" ? " (lowest first)" : ""}${query.limit !== 12 ? ` top ${query.limit}` : ""}${time}`;
     case "series":
-      return `${query.measure} per ${query.grain}${query.by ? ` by ${query.by}` : ""}${time}`;
+      return `${withMore(query)} per ${query.grain}${query.by ? ` by ${query.by}` : ""}${time}`;
     case "value":
-      return `${query.measure}${query.compare ? " vs previous" : ""}${time}`;
+      return `${withMore(query)}${query.compare ? " vs previous" : ""}${time}`;
     case "rows":
       return `${query.entity} rows [${query.columns.join(", ")}]${time}`;
   }
+}
+
+function withMore(query: { measure: string; measures?: string[] }) {
+  return query.measures?.length ? `${query.measure} + ${query.measures.join(", ")}` : query.measure;
 }

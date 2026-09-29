@@ -75,17 +75,30 @@ export function pivot(rows: WidgetData["rows"]) {
   return { rows: [...byGroup.values()], keys: series };
 }
 
-export function buildChartSpec(widget: Extract<Widget, { kind: "chart" }>, data: WidgetData, opts: { currency?: string; measureLabel?: string } = {}): ChartSpec | null {
+// Several measures over the same groups: one column per measure.
+export function widen(rows: WidgetData["rows"], measures: NonNullable<WidgetData["measures"]>) {
+  const [primary, ...rest] = measures;
+  return {
+    rows: rows.map((r) => ({ group: r.group, [primary!.key]: r.value, ...Object.fromEntries(rest.map((m) => [m.key, r.values?.[m.key] ?? null])) })),
+    keys: measures.map((m) => m.key),
+  };
+}
+
+export function buildChartSpec(
+  widget: Extract<Widget, { kind: "chart" }>,
+  data: WidgetData,
+  opts: { currency?: string; measureLabel?: string; labelOf?: (key: string) => string | undefined } = {},
+): ChartSpec | null {
   const rows = data.rows.filter((r) => r.value !== null);
   if (rows.length === 0) return null;
-  const { rows: wide, keys } = pivot(rows);
+  const { rows: wide, keys } = data.measures?.length ? widen(rows, data.measures) : pivot(rows);
   return {
     chart: widget.chart,
     title: widget.title,
     rows: wide,
     groupKey: "group",
     keys,
-    label: (key) => (key === "value" ? (opts.measureLabel ?? widget.title) : key),
+    label: (key) => (key === "value" ? (opts.measureLabel ?? widget.title) : (opts.labelOf?.(key) ?? key)),
     format: (v) => formatValue(v, data.format, { currency: opts.currency }),
     palette: widget.options.colorScheme === "sequential" ? SEQUENTIAL_VARS : SERIES_VARS,
     legend: widget.options.legend,

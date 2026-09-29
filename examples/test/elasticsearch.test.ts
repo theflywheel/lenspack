@@ -33,6 +33,10 @@ const queries: Query[] = [
   { kind: "value", measure: "households_remaining" },
   { kind: "value", measure: "undelivered_share", compare: "previous_period", time: { last: "30d" } },
   { kind: "series", measure: "undelivered_share", grain: "week", by: "province" },
+  { kind: "breakdown", dimension: "district", measure: "visits", measures: ["nets_distributed", "household_target", "household_coverage", "distributors_active"], limit: 12, sort: "desc" },
+  { kind: "breakdown", dimension: "province", measure: "household_coverage", measures: ["households_remaining", "delivery_rate"], limit: 5, sort: "asc" },
+  { kind: "series", measure: "visits", measures: ["households_delivered", "delivery_rate"], grain: "week" },
+  { kind: "value", measure: "visits", measures: ["nets_distributed", "household_coverage"] },
   { kind: "breakdown", dimension: "district", measure: "household_coverage", limit: 12, sort: "desc" },
   { kind: "breakdown", dimension: "province", measure: "household_coverage", limit: 12, sort: "asc" },
   ...measures.map((measure) => ({ kind: "value", measure }) as Query),
@@ -72,12 +76,16 @@ function agree(sql: WidgetData, es: WidgetData, q: Query) {
   for (const r of sql.rows) {
     const other = esByKey.get(key(r))!;
     expect(close(r.value, other.value, approximate), `${key(r)}: sql ${r.value} vs es ${other.value}`).toBe(true);
+    for (const [k, v] of Object.entries(r.values ?? {}))
+      expect(close(v, other.values?.[k] ?? null, APPROXIMATE.has(k)), `${key(r)} ${k}: sql ${v} vs es ${other.values?.[k]}`).toBe(true);
     expect(other.count).toBe(r.count);
   }
   if (sql.compare) {
     expect(close(sql.compare.previous, es.compare!.previous, approximate)).toBe(true);
   }
-  expect(!!es.approximate).toBe(approximate);
+  const anyApprox = approximate || (q.kind !== "rows" && (q.measures ?? []).some((m) => APPROXIMATE.has(m)));
+  expect(!!es.approximate).toBe(anyApprox);
+  expect(es.measures).toEqual(sql.measures);
 }
 
 describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", () => {

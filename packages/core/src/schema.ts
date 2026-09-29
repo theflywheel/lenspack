@@ -33,6 +33,10 @@ const common = {
   filters: z.array(filterClauseSchema).max(20).optional(),
 };
 
+// Further measures over the same groups, drawn beside `measure` as table
+// columns or extra series. `measure` stays the one that is sorted and ranked.
+const alsoMeasures = { measures: z.array(z.string()).min(1).max(11).optional() };
+
 // What a widget is looking at. A closed union: every variant is something the
 // compiler already knows how to build, and every string in it is a key.
 export const querySchema = z.discriminatedUnion("kind", [
@@ -42,6 +46,7 @@ export const querySchema = z.discriminatedUnion("kind", [
     measure: z.string(),
     limit: z.number().int().min(2).max(50).default(12),
     sort: z.enum(["asc", "desc"]).default("desc"),
+    ...alsoMeasures,
     ...common,
   }),
   z.object({
@@ -49,6 +54,7 @@ export const querySchema = z.discriminatedUnion("kind", [
     measure: z.string(),
     grain: z.enum(GRAINS).default("day"),
     by: z.string().optional(),
+    ...alsoMeasures,
     ...common,
   }),
   // The whole population rather than a breakdown of it. Its own variant
@@ -57,6 +63,7 @@ export const querySchema = z.discriminatedUnion("kind", [
     kind: z.literal("value"),
     measure: z.string(),
     compare: z.enum(["previous_period"]).optional(),
+    ...alsoMeasures,
     ...common,
   }),
   z.object({

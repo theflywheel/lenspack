@@ -44,13 +44,16 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
   if (data.error) return <Empty>{data.error}{data.hint ? ` — did you mean “${data.hint}”?` : ""}</Empty>;
   const measureKey = widget.query.kind === "rows" ? undefined : widget.query.measure;
   const measureLabel = catalogue.measures.find((m) => m.key === measureKey)?.label;
-  const spec = buildChartSpec(widget, data, { currency, measureLabel });
+  const labelOf = (key: string) => catalogue.measures.find((m) => m.key === key)?.label;
+  const spec = buildChartSpec(widget, data, { currency, measureLabel, labelOf });
   if (!spec) return <Empty>Nothing to draw yet.</Empty>;
   const Chart = charts.Chart;
   return <Chart spec={spec} />;
 }
 
 export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
+  const { catalogue } = useBoard();
+  const labelOf = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
   const values = data.rows.map((r) => r.value ?? 0);
@@ -71,18 +74,30 @@ export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
                   ? values.length
                   : values.at(-1)!;
   const delta = formatDelta(data.compare?.delta);
+  const more = widget.query.kind === "value" ? (data.measures ?? []).slice(1) : [];
   return (
     <div className="lp-kpi">
       <div className="lp-kpi-value" data-testid="kpi-value">{formatValue(value, widget.format ?? data.format, { currency })}</div>
       <div className="lp-kpi-sub">
         {delta && <span className={`lp-delta ${(data.compare?.delta ?? 0) >= 0 ? "lp-up" : "lp-down"}`}>{delta} vs previous</span>}
-        {!delta && data.total > 0 && <span>{data.total.toLocaleString()} rows</span>}
+        {!delta && !more.length && data.total > 0 && <span>{data.total.toLocaleString()} rows</span>}
       </div>
+      {more.length > 0 && (
+        <dl className="lp-kpi-more">
+          {more.map((m) => (
+            <div key={m.key}>
+              <dt>{labelOf(m.key)}</dt>
+              <dd className="lp-num">{formatValue(data.rows[0]?.values?.[m.key] ?? null, m.format, { currency })}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }
 
 export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
+  const { catalogue } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
   if (data.records) {
@@ -96,6 +111,33 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
           <tbody>
             {data.records.slice(0, widget.pageSize).map((row, i) => (
               <tr key={i}>{columns.map((c) => <td key={c}>{String(row[c] ?? "")}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+  if (data.measures?.length) {
+    // One column per measure, labelled from the catalogue, each in its own format.
+    const dim = widget.query.kind === "breakdown" ? widget.query.dimension : widget.query.kind === "series" ? widget.query.grain : "";
+    const label = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
+    return (
+      <div className="lp-table-wrap">
+        <table className="lp-table">
+          <thead>
+            <tr>
+              <th>{catalogue.dimensions.find((d) => d.key === dim)?.label ?? dim}</th>
+              {data.measures.map((m) => <th key={m.key} className="lp-num">{label(m.key)}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.slice(0, widget.pageSize).map((row) => (
+              <tr key={`${row.group}|${row.series ?? ""}`}>
+                <td>{row.group}</td>
+                {data.measures!.map((m, i) => (
+                  <td key={m.key} className="lp-num">{formatValue(i === 0 ? row.value : (row.values?.[m.key] ?? null), m.format, { currency })}</td>
+                ))}
+              </tr>
             ))}
           </tbody>
         </table>

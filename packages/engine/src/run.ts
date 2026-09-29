@@ -119,10 +119,71 @@ const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: 
 
 /** Compile and run one query. Resolution errors come back as data, not throws. */
 export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
+  if (query.kind !== "rows" && query.measures?.length) return runMeasures(query, opts);
+  return runOne(query, opts);
+}
+
+/** The query without its further measures, and one query per further measure. */
+export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { key: string; query: Query }[] } {
+  if (query.kind === "rows" || !query.measures?.length) return { primary: query, extras: [] };
+  const { measures, ...primary } = query;
+  // A further measure on an entity with no time (a target beside today's
+  // deliveries) shows its whole value rather than refusing the window.
+  const timeless = (key: string) => {
+    const m = pack?.measures.find((x) => x.key === key);
+    if (!m || !pack) return false;
+    const entities = m.derived ? operands(parseExpr(m.derived)).map((k) => pack.measures.find((x) => x.key === k)?.entity) : [m.entity];
+    return entities.every((e) => e && !pack.entities[e]?.time);
+  };
+  return {
+    primary: primary as Query,
+    extras: measures.map((key) => {
+      let q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT } : { ...primary, measure: key }) as Query;
+      if (timeless(key)) {
+        const { time: _t, ...rest } = q as Query & { time?: unknown; compare?: unknown };
+        q = (q.kind === "series" ? { kind: "value", measure: key, filters: rest.filters } : q.kind === "value" ? { kind: "value", measure: key, filters: rest.filters } : rest) as Query;
+      }
+      return { key, query: q };
+    }),
+  };
+}
+
+// Further measures follow the primary's groups: the primary decides which
+// groups are shown and in what order, and each other measure fills in its
+// column, from whichever entity it lives on.
+async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOptions): Promise<WidgetData> {
+  const { primary, extras } = splitMeasures(query, opts.pack);
+  const [main, ...others] = await Promise.all([runOne(primary, opts), ...extras.map((e) => runOne(e.query, opts))]);
+  if (main!.error) return main!;
+  const failed = others.findIndex((o) => o.error);
+  if (failed >= 0) return { ...others[failed]!, error: `${extras[failed]!.key}: ${others[failed]!.error}` };
+  const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
+  const defs = extras.map((e) => opts.pack.measures.find((m) => m.key === e.key));
+  const lookups = others.map((o) => new Map(o.rows.map((r) => [keyOf(r), r.value])));
+  const rows = main!.rows.map((r) => ({
+    ...r,
+    values: Object.fromEntries(
+      extras.map((e, i) => {
+        // A timeless measure beside a series is one number for every bucket.
+        const flat = e.query.kind === "value" && query.kind === "series";
+        const hit = flat ? (others[i]!.rows[0]?.value ?? null) : lookups[i]!.get(keyOf(r));
+        return [e.key, hit !== undefined ? hit : defs[i] && additive(defs[i]!) ? 0 : null];
+      }),
+    ),
+  }));
+  return {
+    ...main!,
+    rows,
+    measures: [{ key: query.measure, format: main!.format }, ...extras.map((e, i) => ({ key: e.key, format: others[i]!.format }))],
+    approximate: main!.approximate || others.some((o) => o.approximate) || undefined,
+  };
+}
+
+async function runOne(query: Query, opts: RunOptions): Promise<WidgetData> {
   try {
     const across = acrossEntities(query, opts.pack);
     if (across) {
-      const data = await Promise.all(across.sides.map((s) => run(s.query, opts)));
+      const data = await Promise.all(across.sides.map((s) => runOne(s.query, opts)));
       const failed = data.find((d) => d.error);
       return failed ?? combine(query, across, data);
     }
@@ -139,6 +200,17 @@ export type Explained = { text: string; root: string; entities: string[]; tenant
 
 /** What would run, without running it. Throws ResolveError for a refusal. */
 export async function explain(query: Query, opts: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
+  const { primary, extras } = splitMeasures(query, opts.pack);
+  if (extras.length) {
+    const parts = await Promise.all([explain(primary, opts), ...extras.map((e) => explain(e.query, opts))]);
+    return {
+      text: parts.map((p, i) => `-- ${i === 0 ? (primary as { measure: string }).measure : extras[i - 1]!.key}\n${p.text}`).join("\n"),
+      root: parts[0]!.root,
+      entities: [...new Set(parts.flatMap((p) => p.entities))],
+      tenant: parts.find((p) => p.tenant)?.tenant ?? null,
+      approximate: parts.some((p) => p.approximate),
+    };
+  }
   const across = acrossEntities(query, opts.pack);
   if (across) {
     const parts = await Promise.all(across.sides.map((s) => explain(s.query, opts)));
@@ -162,6 +234,11 @@ export async function explain(query: Query, opts: Omit<RunOptions, "timeoutMs">)
 
 /** Resolution only: every refusal a query would get, with no backend call. */
 export function check(query: Query, pack: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
+  const { primary, extras } = splitMeasures(query, pack);
+  if (extras.length) {
+    for (const q of [primary, ...extras.map((e) => e.query)]) check(q, pack, opts);
+    return;
+  }
   const across = acrossEntities(query, pack);
   for (const q of across ? across.sides.map((s) => s.query) : [query]) resolve(q, pack, opts.ctx, opts.capabilities ?? SQL_CAPABILITIES);
 }

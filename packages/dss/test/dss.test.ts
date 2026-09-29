@@ -41,8 +41,8 @@ describe("reading an aggregation tree", () => {
     const people = w.leaves.find((l) => l.path.at(-1) === "People")!;
     expect(people).toMatchObject({ agg: "sum", field: "Data.quantity", scale: 1.8 });
     const per = w.leaves.find((l) => l.path.at(-1) === "Per")!;
-    expect(per.ratio?.percent).toBe(true);
-    expect(per.ratio?.denominator).toMatchObject({ agg: "count", field: "Data.id" });
+    expect(per.arith?.percent).toBe(true);
+    expect(per.arith?.vars.v_b).toMatchObject({ agg: "count", field: "Data.id" });
   });
   it("names what it cannot read", () => {
     const w = walk(JSON.stringify({ aggs: { X: { sum: { script: "doc['a'].value * 2" } } } }), new Set());

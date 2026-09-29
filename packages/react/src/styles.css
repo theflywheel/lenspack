@@ -59,3 +59,10 @@
   .lp-kpi-value { font-size: 26px; }
   .lp-widget-title { font-size: 13px; }
 }
+
+.lp-kpi-more { display: grid; gap: 2px; margin: 8px 0 0; font-size: 0.8125rem; }
+.lp-kpi-more > div { display: flex; justify-content: space-between; gap: 12px; }
+.lp-kpi-more dt { color: var(--lp-muted); }
+.lp-kpi-more dd { margin: 0; }
+.lp-table thead th { text-align: left; font-weight: 600; color: var(--lp-muted); border-bottom: 1px solid var(--lp-border); }
+.lp-table thead th.lp-num { text-align: right; }

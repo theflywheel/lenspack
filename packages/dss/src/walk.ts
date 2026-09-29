@@ -1,4 +1,4 @@
-import type { Agg, Where } from "@lenspack/spec";
+import { type Agg, type MeasureExpr, type Where, operands, parseExpr } from "@lenspack/spec";
 
 // Reads one DSS `aggrQuery` — hand-written aggregation DSL — into leaves:
 // each leaf is a single number the chart draws, with the predicates above it,
@@ -15,8 +15,12 @@ export type Leaf = {
   where: Where[];
   scale?: number;
   buckets: Bucket[];
-  /** A ratio of two sibling leaves (a bucket_script dividing them). */
-  ratio?: { numerator: Leaf; denominator: Leaf; percent: boolean };
+  /**
+   * Arithmetic over sibling leaves (a bucket_script): the expression names
+   * the script's variables, each bound to a leaf. `percent` when the script
+   * multiplied a ratio by 100, which a percent format does at display.
+   */
+  arith?: { expr: MeasureExpr; vars: Record<string, Leaf>; percent: boolean };
 };
 
 export type Walked = { leaves: Leaf[]; placeholders: { field: string; token: string }[]; problems: string[] };
@@ -107,6 +111,7 @@ export function walk(aggrQuery: string, placeholders: Set<string>): Walked {
   const visit = (aggs: Json, path: string[], where: Where[], buckets: Bucket[]) => {
     const here: Record<string, Leaf> = {};
     const scripts: [string, Json][] = [];
+    const sums: [string, Json][] = [];
     for (const [name, node] of Object.entries(aggs ?? {})) {
       const kind = Object.keys(node).find((k) => k !== "aggs" && k !== "aggregations" && k !== "meta");
       const children: Json = node.aggs ?? node.aggregations;
@@ -144,6 +149,8 @@ export function walk(aggrQuery: string, placeholders: Set<string>): Walked {
         here[name] = leafOf(at, "count_distinct", bare(def.params.fieldName), where, buckets);
       } else if (kind === "bucket_script") {
         scripts.push([name, def]);
+      } else if (kind === "sum_bucket") {
+        sums.push([name, def]);
       } else {
         out.problems.push(`${at.join(" > ")}: ${kind} aggregation`);
       }
@@ -154,15 +161,46 @@ export function walk(aggrQuery: string, placeholders: Set<string>): Walked {
       const vars = def.buckets_path as Record<string, string>;
       const script = String(typeof def.script === "string" ? def.script : def.script?.source ?? "").trim();
       const sibling = (v: string) => here[String(vars?.[v] ?? "").split(">")[0]!];
-      const scaled = script.match(/^\(?\s*params\.(\w+)\s*\)?\s*\*\s*([0-9]*\.?[0-9]+)$/);
-      const ratio = script.match(/^\(?\s*\(?\s*params\.(\w+)\s*\/\s*params\.(\w+)\s*\)?\s*(\*\s*100)?\s*\)?$/);
-      if (scaled && sibling(scaled[1]!)) {
+      const scaled = script.match(/^\(?\s*params\.(\w+)\s*\)?\s*\*\s*(-?[0-9]*\.?[0-9]+)$/);
+      if (scaled && sibling(scaled[1]!) && Number(scaled[2]) !== 0) {
+        // One leaf times a constant is still one measure, scaled.
         const base = sibling(scaled[1]!)!;
         here[name] = { ...base, path: at, scale: (base.scale ?? 1) * Number(scaled[2]) };
-      } else if (ratio && sibling(ratio[1]!) && sibling(ratio[2]!)) {
-        here[name] = { ...leafOf(at, "count", undefined, where, buckets), ratio: { numerator: sibling(ratio[1]!)!, denominator: sibling(ratio[2]!)!, percent: !!ratio[3] } };
-      } else {
+        continue;
+      }
+      // Anything else must be plain arithmetic over the script's variables:
+      // no conditionals, no Math, no field access.
+      const text = script.replace(/;\s*$/, "").replace(/params\.(\w+)/g, (_, v: string) => `v_${v.toLowerCase()}`);
+      let expr: MeasureExpr | null = null;
+      try {
+        expr = parseExpr(text);
+      } catch {
+        expr = null;
+      }
+      const bound = Object.fromEntries(Object.keys(vars0(def)).map((v) => [`v_${v.toLowerCase()}`, sibling(v)]));
+      if (!expr || operands(expr).some((o) => !bound[o])) {
         out.problems.push(`${at.join(" > ")}: bucket_script "${script.slice(0, 60)}"`);
+        continue;
+      }
+      // "x / y * 100" is a ratio the percent format already scales.
+      let percent = false;
+      if (expr.t === "op" && expr.op === "*" && expr.r.t === "number" && expr.r.value === 100 && expr.l.t === "op" && expr.l.op === "/") {
+        expr = expr.l;
+        percent = true;
+      }
+      here[name] = { ...leafOf(at, "count", undefined, where, buckets), arith: { expr, vars: bound as Record<string, Leaf>, percent } };
+    }
+    // sum_bucket over a per-group count or sum is the plain count or sum;
+    // over anything else (per-day distinct counts) it means something the
+    // measure cannot say, and is reported.
+    for (const [name, def] of sums) {
+      const at = [...path, name];
+      const target = String(def.buckets_path ?? "").split(">");
+      const inner = out.leaves.find((l) => l.path.join("\u0000") === [...path, ...target].join("\u0000"));
+      if (inner && (inner.agg === "count" || inner.agg === "sum") && !inner.arith && inner.buckets.length > buckets.length) {
+        here[name] = { ...inner, path: at, buckets: inner.buckets.slice(0, buckets.length) };
+      } else {
+        out.problems.push(`${at.join(" > ")}: sum_bucket over ${inner ? `a per-bucket ${inner.agg}` : `"${def.buckets_path}"`}`);
       }
     }
     out.leaves.push(...Object.values(here));
@@ -170,6 +208,8 @@ export function walk(aggrQuery: string, placeholders: Set<string>): Walked {
   visit(root.aggs ?? root.aggregations ?? {}, [], [], []);
   return out;
 }
+
+const vars0 = (def: Json): Record<string, string> => (def?.buckets_path && typeof def.buckets_path === "object" ? def.buckets_path : {});
 
 function leafOf(path: string[], agg: Agg, field: string | undefined, where: Where[], buckets: Bucket[]): Leaf {
   return { path, agg, ...(field ? { field } : {}), where, buckets };

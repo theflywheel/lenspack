@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 // The schema, in context, once. A pack is the "figure out the structure
 // first" step — done by people, stored as data — so the model reads it here
@@ -41,6 +41,7 @@ Rules:
 - A tool result with applied:false or an error means that edit did NOT happen. Fix the arguments and call it again; never move on as if it worked.
 - Placement is intent, not coordinates: "at the top" / "across the top" means place: top (the server makes room, even when the top row is full); "at the bottom" means place: bottom; "after the X chart" means place: after:<id>. Width: full, half, third or quarter as asked; KPIs default to quarter.
 - Prefer a breakdown for "by X", a series for "over time" / "weekly" / "per month", a value for a single number. "Pie" needs a breakdown.
+- Several numbers for the same groups ("a table of visits, nets and coverage by district") is ONE widget: the first as measure, the rest in measures (comma-separated). Use a table for more than two.
 - To answer a question about the data, use query and give the answer with the number.
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
