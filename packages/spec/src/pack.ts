@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ExprError, operands, parseExpr } from "./expr";
+
 // The pack is the only place a domain is described. Humans write it; it is
 // reviewed in git; the model only ever names keys from it. The `sql` fragments
 // are trusted code precisely because they never come from a request.
@@ -121,9 +123,21 @@ export const measureSchema = z
     agg: z.enum(AGGS).optional(),
     sql: fragmentSchema.optional(),
     field: fieldPath.optional(),
-    // A ratio of two measures, e.g. "weight / things". Operands on different
-    // entities are computed separately and joined on the group.
-    derived: z.string().regex(/^\s*[a-z][a-z0-9_]*\s*\/\s*[a-z][a-z0-9_]*\s*$/, 'e.g. "weight / things"').optional(),
+    // Arithmetic over other measures: "weight / things", "received - dispatched",
+    // "(a + b) / c * 100". Operands on different entities are computed
+    // separately and combined per group.
+    derived: z
+      .string()
+      .max(300)
+      .refine((s) => {
+        try {
+          parseExpr(s);
+          return true;
+        } catch {
+          return false;
+        }
+      }, 'measure keys and numbers with + - * / and parentheses, e.g. "weight / things"')
+      .optional(),
     // An extra predicate on the base rows, e.g. "state = 'broken'".
     filter: fragmentSchema.optional(),
     where: z.array(whereSchema).max(20).optional(),
@@ -164,9 +178,11 @@ export function parseJoinOn(on: string): ParsedJoin {
   return { left: { entity: le, column: lc }, right: { entity: re, column: rc } };
 }
 
+/** A two-operand ratio's parts; other expressions go through parseExpr. */
 export function parseDerived(expr: string): { numerator: string; denominator: string } {
-  const [n, d] = expr.split("/").map((s) => s.trim()) as [string, string];
-  return { numerator: n, denominator: d };
+  const e = parseExpr(expr);
+  if (e.t === "op" && e.op === "/" && e.l.t === "measure" && e.r.t === "measure") return { numerator: e.l.key, denominator: e.r.key };
+  throw new ExprError(`"${expr}" is not a ratio of two measures`);
 }
 
 export type PackProblem = { path: string; message: string };
@@ -207,16 +223,16 @@ export function checkPack(pack: Pack): PackProblem[] {
     keys.set(m.key, path);
     if (!entities.has(m.entity)) problems.push({ path, message: `unknown entity "${m.entity}"` });
     if (m.derived) {
-      const { numerator, denominator } = parseDerived(m.derived);
-      for (const operand of [numerator, denominator]) {
+      const ops = operands(parseExpr(m.derived));
+      for (const operand of ops) {
         const ent = measureEntity.get(operand);
         if (!ent) problems.push({ path, message: `derived measure refers to unknown measure "${operand}"` });
         const target = pack.measures.find((x) => x.key === operand);
         if (target?.derived) problems.push({ path, message: `derived measure "${operand}" cannot be an operand of another` });
       }
-      // A ratio lives with its numerator: that is the grain it is read at.
-      const numEntity = measureEntity.get(numerator);
-      if (numEntity && numEntity !== m.entity) problems.push({ path, message: `a derived measure's entity is its numerator's ("${numEntity}"), not "${m.entity}"` });
+      // A derived measure is read at the grain of one of its operands.
+      const entities = new Set(ops.map((o) => measureEntity.get(o)).filter(Boolean));
+      if (entities.size && !entities.has(m.entity)) problems.push({ path, message: `a derived measure's entity is one of its operands' (${[...entities].join(", ")}), not "${m.entity}"` });
     }
   }
 

@@ -67,11 +67,11 @@ measures:
   it("rejects a dimension with both sql and json", () => bad((p) => (p.dimensions[0].json = ["a"]), "exactly one of field, sql or json"));
   it("rejects a measure with neither agg nor derived", () => bad((p) => delete p.measures[0].agg, "agg"));
   it("rejects a non-count aggregate without sql", () => bad((p) => delete p.measures[1].sql, "needs sql"));
-  it("rejects a derived measure that does not live with its numerator", () => {
+  it("rejects a derived measure that does not live with one of its operands", () => {
     bad((p) => {
       p.measures.push({ key: "owner_n", entity: "owners", agg: "count" });
-      p.measures[2].derived = "owner_n / amount";
-    }, "its numerator's");
+      p.measures[2].derived = "owner_n / owner_n";
+    }, "one of its operands'");
   });
   it("accepts a derived measure across entities, read at its numerator's grain", () => {
     const p = structuredClone(minimal) as any;

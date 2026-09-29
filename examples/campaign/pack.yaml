@@ -105,3 +105,16 @@ measures:
     entity: task
     derived: households_delivered / visits
     format: percent
+  - key: undelivered_share
+    entity: task
+    derived: (visits - households_delivered) / visits
+    format: percent
+    hint: Share of household visits that handed nothing over
+  - key: households_remaining
+    entity: project
+    derived: household_target - households_delivered
+    hint: Households still to reach against the target; the two live in different indexes
+  - key: coverage_points
+    entity: task
+    derived: households_delivered / household_target * 100
+    hint: Coverage as a number of percentage points, the way DSS reports it

@@ -1,5 +1,5 @@
 import { type Query, nearest } from "@lenspack/core";
-import { type Pack, type PackDimension, type PackMeasure, parseDerived, parseJoinOn } from "@lenspack/spec";
+import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, operands, parseExpr, parseJoinOn } from "@lenspack/spec";
 
 // Resolution binds every key in a query to a pack object and finds a join path
 // for every dimension. It is where the model's mistakes surface as loud
@@ -54,7 +54,7 @@ export type JoinStep = { from: string; to: string; on: { left: { entity: string;
 export type BoundDimension = { def: PackDimension; path: JoinStep[] };
 export type BoundMeasure =
   | { kind: "simple"; def: PackMeasure }
-  | { kind: "derived"; def: PackMeasure; numerator: PackMeasure; denominator: PackMeasure };
+  | { kind: "derived"; def: PackMeasure; expr: MeasureExpr; operands: PackMeasure[] };
 
 export type BoundFilter = { dimension: BoundDimension; op: Query["filters"] extends (infer F)[] | undefined ? (F extends { op: infer O } ? O : never) : never; value: unknown };
 
@@ -184,12 +184,12 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     const def = findMeasure(query.measure);
     root = def.entity;
     if (def.derived) {
-      const { numerator, denominator } = parseDerived(def.derived);
-      measure = { kind: "derived", def, numerator: findMeasure(numerator), denominator: findMeasure(denominator) };
-      // Operands on two entities are never joined row-wise: run() computes
-      // each side on its own and joins the aggregates (see acrossEntities).
-      if (measure.numerator.entity !== measure.denominator.entity)
-        throw new ResolveError("NOT_SUPPORTED", `"${def.key}" divides measures on two entities; it is computed by run(), not compiled as one query`, def.key);
+      const expr = parseExpr(def.derived);
+      measure = { kind: "derived", def, expr, operands: operands(expr).map(findMeasure) };
+      // Operands on several entities are never joined row-wise: run()
+      // computes each on its own and combines the aggregates (acrossEntities).
+      if (new Set(measure.operands.map((o) => o.entity)).size > 1)
+        throw new ResolveError("NOT_SUPPORTED", `"${def.key}" combines measures on several entities; it is computed by run(), not compiled as one query`, def.key);
     } else {
       measure = { kind: "simple", def };
     }

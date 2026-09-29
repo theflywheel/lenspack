@@ -1,4 +1,4 @@
-import type { Fragment, Pack, PackDimension, PackMeasure, Where } from "@lenspack/spec";
+import type { Fragment, MeasureExpr, Pack, PackDimension, PackMeasure, Where } from "@lenspack/spec";
 
 import { type Ast, type Expr, type Join, type Source } from "./ast";
 import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "@lenspack/engine";
@@ -154,13 +154,22 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   const valueExpr = (cond: Expr | null): Expr => {
     const m = bound.measure!;
     if (m.kind === "simple") return aggOf(m.def, cond);
-    // Ratio of two aggregates; the denominator is guarded against zero.
-    return {
-      t: "bin",
-      op: "/",
-      l: { t: "cast", arg: aggOf(m.numerator, cond), to: "double" },
-      r: { t: "nullif0", arg: aggOf(m.denominator, cond) },
+    // Arithmetic over aggregates, in double precision; every divisor is
+    // guarded so a zero gives NULL, as the engine's evaluator does.
+    const byKey = new Map(m.operands.map((o) => [o.key, o]));
+    const build = (e: MeasureExpr): Expr => {
+      switch (e.t) {
+        case "measure":
+          return { t: "cast", arg: aggOf(byKey.get(e.key)!, cond), to: "double" };
+        case "number":
+          return { t: "lit", value: e.value };
+        case "neg":
+          return { t: "bin", op: "*", l: { t: "lit", value: -1 }, r: build(e.arg) };
+        case "op":
+          return e.op === "/" ? { t: "bin", op: "/", l: build(e.l), r: { t: "nullif0", arg: build(e.r) } } : { t: "bin", op: e.op, l: build(e.l), r: build(e.r) };
+      }
     };
+    return build(m.expr);
   };
 
   const select: Ast["select"] = [];

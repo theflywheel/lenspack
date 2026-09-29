@@ -1,5 +1,5 @@
 import type { BoardConfig, BoardOp, Query, Widget } from "@lenspack/core";
-import { type Pack, type PackMeasure, parseDerived } from "@lenspack/spec";
+import { type MeasureExpr, type Pack, type PackMeasure, evaluate, formatExpr, operands, parseExpr } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
 import type { DataRow, WidgetData } from "./data";
@@ -7,89 +7,103 @@ import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, resolve } 
 
 export type RunOptions = { pack: Pack; connector: Connector; ctx?: Ctx; timeoutMs?: number };
 
-// Groups fetched per side of a cross-entity ratio. The sides are joined after
-// aggregation, so each must return every group, not its own top N.
+// Groups fetched per operand of a cross-entity measure. The operands are
+// combined after aggregation, so each must return every group, not its own top N.
 const ACROSS_LIMIT = 10_000;
 
+export type AcrossSide = {
+  measure: PackMeasure;
+  query: Query;
+  /** The operand's entity has no time: one number for every period (per series if split). */
+  timeless: boolean;
+  /** Filters this operand's entity has no dimension for, so they do not narrow it. */
+  unfiltered: string[];
+};
+export type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] };
+
 /**
- * A ratio whose operands live on different entities (delivered per target,
- * where deliveries and targets are separate tables or indexes). Each side is
- * the same query over its own measure; the results are joined on the group.
+ * Arithmetic whose operands live on different entities (delivered per target,
+ * where deliveries and targets are separate tables or indexes). Each operand
+ * is the same query over its own measure; the results are combined per group.
  * Returns null for anything else.
  */
-export function acrossEntities(
-  query: Query,
-  pack: Pack,
-): { numerator: Query; denominator: Query; def: PackMeasure; operands: [PackMeasure, PackMeasure]; unfiltered: string[]; timeless: boolean } | null {
+export function acrossEntities(query: Query, pack: Pack): Across | null {
   if (query.kind === "rows") return null;
   const def = pack.measures.find((m) => m.key === query.measure);
   if (!def?.derived) return null;
-  const { numerator, denominator } = parseDerived(def.derived);
-  const num = pack.measures.find((m) => m.key === numerator);
-  const den = pack.measures.find((m) => m.key === denominator);
-  if (!num || !den || num.entity === den.entity) return null;
-  const side = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
-  // A filter on a dimension the denominator does not have (a kind of item,
-  // when the goal is set per region) narrows the numerator only: this kind
-  // over the whole goal. Explain says so.
-  const onDen = (dimension: string) => {
-    const d = pack.dimensions.find((x) => x.key === dimension);
-    return !d || d.entity === den.entity || !!d.also?.[den.entity];
-  };
-  const kept = (query.filters ?? []).filter((f) => onDen(f.dimension));
-  const unfiltered = [...new Set((query.filters ?? []).filter((f) => !onDen(f.dimension)).map((f) => f.dimension))];
-  let denSide = { ...side(denominator), filters: kept.length ? kept : undefined } as Query;
-  // A denominator with no time (a target, a capacity) is the same in every
-  // period: each bucket, and the previous period, divide by that one number
-  // (per series, when the numerator is split by a dimension it also has).
-  const timeless = !pack.entities[den.entity]?.time;
-  if (timeless) {
-    const { time: _time, ...rest } = denSide as Query & { time?: unknown };
-    if (denSide.kind === "series")
-      denSide = denSide.by ? { kind: "breakdown", dimension: denSide.by, measure: denominator, limit: ACROSS_LIMIT, sort: "desc", filters: rest.filters } : { kind: "value", measure: denominator, filters: rest.filters };
-    else if (denSide.kind === "value") denSide = { kind: "value", measure: denominator, filters: rest.filters };
-    else denSide = rest as Query;
-  }
-  return { numerator: side(numerator), denominator: denSide, def, operands: [num, den], unfiltered, timeless };
+  const expr = parseExpr(def.derived);
+  const measures = operands(expr).map((k) => pack.measures.find((m) => m.key === k)).filter((m): m is PackMeasure => !!m);
+  if (new Set(measures.map((m) => m.entity)).size < 2) return null;
+  const base = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
+  const sides = measures.map((m): AcrossSide => {
+    const home = m.entity === def.entity;
+    // A filter on a dimension another operand's entity does not have (a kind
+    // of item, when the goal is set per region) narrows the home operand only:
+    // this kind over the whole goal. Explain says so.
+    const has = (dimension: string) => {
+      const d = pack.dimensions.find((x) => x.key === dimension);
+      return !d || d.entity === m.entity || !!d.also?.[m.entity];
+    };
+    const kept = home ? (query.filters ?? []) : (query.filters ?? []).filter((f) => has(f.dimension));
+    const unfiltered = home ? [] : [...new Set((query.filters ?? []).filter((f) => !has(f.dimension)).map((f) => f.dimension))];
+    let q = { ...base(m.key), filters: kept.length ? kept : undefined } as Query;
+    // An operand with no time (a target, a capacity) is the same in every
+    // period: each bucket, and the previous period, use that one number.
+    const timeless = !home && !pack.entities[m.entity]?.time;
+    if (timeless) {
+      const { time: _time, ...rest } = q as Query & { time?: unknown };
+      if (q.kind === "series")
+        q = q.by ? { kind: "breakdown", dimension: q.by, measure: m.key, limit: ACROSS_LIMIT, sort: "desc", filters: rest.filters } : { kind: "value", measure: m.key, filters: rest.filters };
+      else if (q.kind === "value") q = { kind: "value", measure: m.key, filters: rest.filters };
+      else q = rest as Query;
+    }
+    return { measure: m, query: q, timeless, unfiltered };
+  });
+  return { def, expr, sides };
 }
 
-// A group missing on one side had no rows there: zero for an additive
+// A group missing from an operand had no rows there: zero for an additive
 // operand (nothing delivered yet), unknown for anything else.
 const additive = (m: PackMeasure) => m.agg === "count" || m.agg === "sum";
-const divide = (n: number | null, d: number | null) => (n === null || d === null || d === 0 ? null : n / d);
 
-function joinSides(query: Query, num: WidgetData, den: WidgetData, def: PackMeasure, [nm, dm]: [PackMeasure, PackMeasure], timeless = false): WidgetData {
+function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
+  const { def, expr, sides } = across;
   const format = def.format ?? "number";
-  const approximate = num.approximate || den.approximate || undefined;
+  const approximate = data.some((d) => d.approximate) || undefined;
+  const homeIndex = Math.max(0, sides.findIndex((s) => s.measure.entity === def.entity));
+  const home = data[homeIndex]!;
   const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
+
   if (query.kind === "value") {
-    const n = num.rows[0]?.value ?? null;
-    const d = den.rows[0]?.value ?? null;
-    const data: WidgetData = { rows: [{ group: def.key, value: divide(n, d), count: num.total }], total: num.total, format, approximate };
-    if (num.compare && (den.compare || timeless)) {
-      const value = divide(n, d);
-      const previous = divide(num.compare.previous, timeless ? d : den.compare!.previous);
-      data.compare = { previous, delta: value !== null && previous !== null && previous !== 0 ? (value - previous) / Math.abs(previous) : null };
+    const now = (i: number) => data[i]!.rows[0]?.value ?? null;
+    const value = evaluate(expr, (k) => now(sides.findIndex((s) => s.measure.key === k)));
+    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate };
+    if (sides.every((s, i) => s.timeless || data[i]!.compare)) {
+      const previous = evaluate(expr, (k) => {
+        const i = sides.findIndex((s) => s.measure.key === k);
+        return sides[i]!.timeless ? now(i) : data[i]!.compare!.previous;
+      });
+      out.compare = { previous, delta: value !== null && previous !== null && previous !== 0 ? (value - previous) / Math.abs(previous) : null };
     }
-    return data;
+    return out;
   }
-  if (timeless && query.kind === "series") {
-    // Every bucket over the one timeless denominator (per series if split).
-    const q = query;
-    const denOf = (r: DataRow) => (q.by ? (den.rows.find((d) => d.group === r.series)?.value ?? (additive(dm) ? 0 : null)) : (den.rows[0]?.value ?? null));
-    const rows = num.rows.map((r) => ({ ...r, value: divide(r.value, denOf(r)) }));
-    return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate };
-  }
-  const nByKey = new Map(num.rows.map((r) => [keyOf(r), r]));
-  const dByKey = new Map(den.rows.map((r) => [keyOf(r), r]));
-  const keys = [...new Set([...nByKey.keys(), ...dByKey.keys()])];
+
+  const byKey = data.map((d) => new Map(d.rows.map((r) => [keyOf(r), r])));
+  // A timeless operand of a series has no buckets of its own to contribute.
+  const keys = [...new Set(sides.flatMap((s, i) => (s.timeless && query.kind === "series" ? [] : data[i]!.rows.map(keyOf))))];
   let rows: DataRow[] = keys.map((k) => {
-    const n = nByKey.get(k);
-    const d = dByKey.get(k);
-    const base = (n ?? d)!;
-    const nv = n ? n.value : additive(nm) ? 0 : null;
-    const dv = d ? d.value : additive(dm) ? 0 : null;
-    return { group: base.group, ...(base.series !== undefined ? { series: base.series } : {}), value: divide(nv, dv), count: n?.count ?? 0 };
+    const shape = sides.map((_, i) => byKey[i]!.get(k)).find(Boolean)!;
+    const operand = (i: number): number | null => {
+      const s = sides[i]!;
+      if (s.timeless && query.kind === "series") {
+        const hit = query.by ? data[i]!.rows.find((d) => d.group === shape.series) : data[i]!.rows[0];
+        return hit ? hit.value : additive(s.measure) ? 0 : null;
+      }
+      const r = byKey[i]!.get(k);
+      return r ? r.value : additive(s.measure) ? 0 : null;
+    };
+    const value = evaluate(expr, (key) => operand(sides.findIndex((s) => s.measure.key === key)));
+    return { group: shape.group, ...(shape.series !== undefined ? { series: shape.series } : {}), value, count: byKey[homeIndex]!.get(k)?.count ?? 0 };
   });
   if (query.kind === "breakdown") {
     const dir = query.sort === "asc" ? 1 : -1;
@@ -108,10 +122,9 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
   try {
     const across = acrossEntities(query, opts.pack);
     if (across) {
-      const [num, den] = await Promise.all([run(across.numerator, opts), run(across.denominator, opts)]);
-      if (num.error) return num;
-      if (den.error) return den;
-      return joinSides(query, num, den, across.def, across.operands, across.timeless);
+      const data = await Promise.all(across.sides.map((s) => run(s.query, opts)));
+      const failed = data.find((d) => d.error);
+      return failed ?? combine(query, across, data);
     }
     const bound = resolve(query, opts.pack, opts.ctx, opts.connector.capabilities);
     const plan = await opts.connector.compile(bound, opts.pack);
@@ -128,19 +141,20 @@ export type Explained = { text: string; root: string; entities: string[]; tenant
 export async function explain(query: Query, opts: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
   const across = acrossEntities(query, opts.pack);
   if (across) {
-    const [n, d] = await Promise.all([explain(across.numerator, opts), explain(across.denominator, opts)]);
+    const parts = await Promise.all(across.sides.map((s) => explain(s.query, opts)));
+    const notes = across.sides.flatMap((s) => [
+      ...(s.unfiltered.length ? [`-- ${s.measure.key} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`] : []),
+      ...(s.timeless ? [`-- "${s.measure.entity}" has no time: every period uses the same ${s.measure.key}`] : []),
+    ]);
     return {
-      text:
-        `-- ${across.def.key} = ${across.operands[0].key} / ${across.operands[1].key}, each computed on its own and joined on the group\n` +
-        (across.unfiltered.length ? `-- the denominator is not narrowed by ${across.unfiltered.join(", ")}: "${across.operands[1].entity}" has no such dimension\n` : "") +
-        (across.timeless ? `-- "${across.operands[1].entity}" has no time: every period divides by the same denominator\n` : "") +
-        `-- numerator\n${n.text}\n-- denominator\n${d.text}`,
-      root: n.root,
-      entities: [...new Set([...n.entities, ...d.entities])],
-      tenant: n.tenant ?? d.tenant,
-      approximate: n.approximate || d.approximate,
+      text: [`-- ${across.def.key} = ${formatExpr(across.expr)}, each measure computed on its own and combined per group`, ...notes, ...across.sides.map((s, i) => `-- ${s.measure.key}\n${parts[i]!.text}`)].join("\n"),
+      root: parts[0]!.root,
+      entities: [...new Set(parts.flatMap((p) => p.entities))],
+      tenant: parts.find((p) => p.tenant)?.tenant ?? null,
+      approximate: parts.some((p) => p.approximate),
     };
   }
+
   const bound = resolve(query, opts.pack, opts.ctx, opts.connector.capabilities);
   const plan = await opts.connector.compile(bound, opts.pack);
   return { text: plan.text, root: bound.root, entities: bound.entitiesUsed, tenant: bound.tenant, approximate: !!plan.approximate };
@@ -149,7 +163,7 @@ export async function explain(query: Query, opts: Omit<RunOptions, "timeoutMs">)
 /** Resolution only: every refusal a query would get, with no backend call. */
 export function check(query: Query, pack: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
   const across = acrossEntities(query, pack);
-  for (const q of across ? [across.numerator, across.denominator] : [query]) resolve(q, pack, opts.ctx, opts.capabilities ?? SQL_CAPABILITIES);
+  for (const q of across ? across.sides.map((s) => s.query) : [query]) resolve(q, pack, opts.ctx, opts.capabilities ?? SQL_CAPABILITIES);
 }
 
 /**

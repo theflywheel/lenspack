@@ -1,5 +1,5 @@
 import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow } from "@lenspack/engine";
-import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, maybeFragmentFor } from "@lenspack/spec";
+import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor } from "@lenspack/spec";
 
 // The query IR, compiled to one search request. Every structural decision —
 // which entity, which dimensions, tenancy, the time window — was made by the
@@ -189,18 +189,14 @@ function metric(m: PackMeasure, name: string, env: Env): Metric {
 function measureAggs(bound: BoundPlan, env: Env): Metric {
   const m = bound.measure!;
   if (m.kind === "simple") return metric(m.def, "m", env);
-  const n = metric(m.numerator, "num", env);
-  const d = metric(m.denominator, "den", env);
+  // Every operand as its own metric in one request, combined after.
+  const parts = new Map(m.operands.map((o, i) => [o.key, metric(o, `o${i}`, env)]));
   return {
-    aggs: { ...n.aggs, ...d.aggs },
-    read: (b) => {
-      const nv = n.read(b);
-      const dv = d.read(b);
-      return nv === null || dv === null || dv === 0 ? null : nv / dv;
-    },
-    // A ratio cannot order a terms aggregation; the groups are sorted after.
+    aggs: Object.assign({}, ...[...parts.values()].map((p) => p.aggs)),
+    read: (b) => evaluate(m.expr, (key) => parts.get(key)!.read(b)),
+    // Arithmetic cannot order a terms aggregation; the groups are sorted after.
     order: null,
-    approximate: n.approximate || d.approximate,
+    approximate: [...parts.values()].some((p) => p.approximate),
   };
 }
 
