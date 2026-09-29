@@ -167,6 +167,8 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
   const planned = new Map<string, Planned>();
 
   for (const [chartId, chart] of Object.entries(charts)) {
+    // Real configs carry comments and stray values beside the charts.
+    if (!chart || typeof chart !== "object" || !Array.isArray((chart as DssChart).queries)) continue;
     const notes: string[] = [];
     const chartName = chart.chartName ?? chartId;
     try {
@@ -177,7 +179,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
         } catch {
           notes.push("requestQueryMap is not JSON");
         }
-        const walked = walk(q.aggrQuery, placeholders);
+        const walked = walk(String(q.aggrQuery ?? ""), placeholders);
         for (const p of walked.problems) notes.push(`${q.indexName}: ${p}`);
         for (const p of walked.placeholders) filterDims.add(dimension(entity, p.field));
         return { q, entity, walked };
@@ -272,6 +274,22 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     }
   }
 
+  // A measure named like a dimension (a DSS label that is also a field name)
+  // takes a suffix, and every widget and ratio that names it follows.
+  for (const key of [...measures.keys()].filter((k) => dimensions.has(k))) {
+    let next = `${key}_n`;
+    for (let i = 2; measures.has(next) || dimensions.has(next); i++) next = `${key}_n${i}`;
+    const def = measures.get(key)!;
+    measures.delete(key);
+    measures.set(next, { ...def, key: next });
+    for (const [sig, k] of measureBySig) if (k === key) measureBySig.set(sig, next);
+    for (const m of measures.values()) if (m.derived) m.derived = m.derived.split("/").map((x) => (x.trim() === key ? ` ${next} ` : x)).join("/").trim().replace(/\s+/g, " ");
+    for (const p of planned.values()) {
+      const q = (p.widget as unknown as { widget: { query: { measure?: string } } }).widget.query;
+      if (q.measure === key) q.measure = next;
+    }
+  }
+
   const rawPack = {
     pack: slug(opts.pack ?? "dss"),
     version: 1,
@@ -356,7 +374,9 @@ function chunk<T>(xs: T[], n: number): T[][] {
 
 function report(charts: Record<string, DssChart>, pack: Pack, outcomes: ChartOutcome[], assumptions: string[], leaves: number): string {
   const by = (s: ChartOutcome["status"]) => outcomes.filter((o) => o.status === s);
-  const lines = Object.values(charts).reduce((n, c) => n + c.queries.reduce((m, q) => m + q.aggrQuery.split("\n").length, 0), 0);
+  const lines = Object.values(charts)
+    .filter((c) => c && Array.isArray(c.queries))
+    .reduce((n, c) => n + c.queries.reduce((m, q) => m + String(q.aggrQuery ?? "").split("\n").length, 0), 0);
   // Measures that differ only by the hierarchy level they read.
   const families = new Map<string, string[]>();
   for (const m of pack.measures) {

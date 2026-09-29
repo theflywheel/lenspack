@@ -6,8 +6,11 @@ import { z } from "zod";
 
 const slug = z.string().regex(/^[a-z][a-z0-9_]*$/, "lowercase letters, digits and underscores, starting with a letter");
 // A table (optionally schema-qualified) or a search index; index names carry
-// hyphens and may be a pattern. Printers quote it; it is never a fragment.
-const qualified = z.string().regex(/^[A-Za-z_][A-Za-z0-9_*-]*(\.[A-Za-z_][A-Za-z0-9_*-]*)?$/, "a table or index name, optionally schema-qualified");
+// hyphens, may be a pattern, or a comma-separated list searched as one.
+// Printers quote it; it is never a fragment.
+const qualified = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_*-]*(,[A-Za-z_][A-Za-z0-9_*-]*)*(\.[A-Za-z_][A-Za-z0-9_*-]*)?$/, "a table or index name (or index list), optionally schema-qualified");
 const column = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a column name");
 // A column, or a document field path such as "attrs.region.keyword". The one
 // way to name data that every connector understands.

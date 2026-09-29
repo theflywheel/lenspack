@@ -24,6 +24,10 @@ export const ELASTICSEARCH_CAPABILITIES: Capabilities = { joins: false, exactDis
 
 type Mapping = Map<string, string>;
 
+// An index, a pattern or a comma-separated list: commas and wildcards are the
+// search API's own syntax, so only the rest is escaped.
+const indexPath = (index: string) => index.split(",").map((i) => encodeURIComponent(i).replace(/%2A/g, "*")).join(",");
+
 /** Flattens an index mapping into field path → type, including multi-fields (`.keyword`). */
 export function flattenMapping(mappings: Record<string, any>): Mapping {
   const out: Mapping = new Map();
@@ -79,7 +83,7 @@ export function elasticsearchConnector(opts: ElasticsearchOptions): Connector & 
   const getMapping = (index: string) => {
     let m = mappings.get(index);
     if (!m) {
-      m = request("GET", `/${encodeURIComponent(index)}/_mapping`).then((r) => {
+      m = request("GET", `/${indexPath(index)}/_mapping`).then((r) => {
         // An alias or a pattern answers with several indexes; their fields merge.
         const merged: Mapping = new Map();
         for (const idx of Object.values(r ?? {}) as any[]) for (const [k, v] of flattenMapping(idx.mappings ?? {})) if (!merged.has(k)) merged.set(k, v);
@@ -104,7 +108,7 @@ export function elasticsearchConnector(opts: ElasticsearchOptions): Connector & 
     async execute(plan, o) {
       const req = plan.native as SearchRequest;
       const timeoutMs = o?.timeoutMs ?? opts.defaultTimeoutMs ?? 15_000;
-      const response = await request("POST", `/${encodeURIComponent(req.index)}/_search`, { ...req.body, timeout: `${Math.max(1, Math.floor(timeoutMs / 1000))}s` }, timeoutMs);
+      const response = await request("POST", `/${indexPath(req.index)}/_search`, { ...req.body, timeout: `${Math.max(1, Math.floor(timeoutMs / 1000))}s` }, timeoutMs);
       const def = plan.bound.measure?.def;
       const data = shapeRows(req.decode(response), plan.bound.query, def?.format ?? "number", def?.key);
       return req.approximate ? { ...data, approximate: true } : data;

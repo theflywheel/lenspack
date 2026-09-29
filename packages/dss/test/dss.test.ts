@@ -96,3 +96,24 @@ describe("compiling the sampled DSS health charts", () => {
     expect(parsePackText(r.packYaml).measures.length).toBe(r.pack.measures.length);
   });
 });
+
+describe("what real configs carry besides charts", () => {
+  const q = (index: string, aggs: object, rqm = "") => ({ indexName: index, requestQueryMap: rqm, aggrQuery: JSON.stringify({ aggs }) });
+  const r = compileDss(
+    {
+      _comment: "not a chart" as never,
+      byService: { chartType: "pie", queries: [q("idx-a", { business_service: { terms: { field: "Data.businessService.keyword" }, aggs: { Count: { value_count: { field: "Data.id.keyword" } } } } })] },
+      joined: { chartType: "metric", queries: [q("idx-a,idx-b", { Total: { sum: { field: "Data.amount" } } })] },
+      named: { chartType: "metric", queries: [q("idx-a", { business_service: { value_count: { field: "Data.id.keyword" } } }, '{"business_service":"Data.businessService.keyword"}')] },
+    },
+    undefined,
+  );
+  it("skips comments, searches index lists as one, and keeps measures and dimensions apart", () => {
+    expect(r.outcomes.map((o) => o.chart).sort()).toEqual(["byService", "joined", "named"]);
+    expect(Object.values(r.pack.entities).map((e) => e.source)).toContain("idx-a,idx-b");
+    const dims = new Set(r.pack.dimensions.map((d) => d.key));
+    expect(r.pack.measures.some((m) => dims.has(m.key))).toBe(false);
+    expect(r.outcomes.every((o) => o.status !== "skipped")).toBe(true);
+  });
+});
+
