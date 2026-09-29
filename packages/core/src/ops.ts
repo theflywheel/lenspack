@@ -331,7 +331,6 @@ export function checkQuery(query: Query, catalogue: Catalogue): Problem | null {
       if (query.by) {
         if (!findDimension(catalogue, query.by)) return noDim(query.by);
         if (query.by === query.dimension) return { error: "A breakdown split by its own dimension has nothing to split", hint: "by" };
-        if (query.measures?.length) return { error: "A breakdown split by a second dimension draws one measure; drop by, or drop measures", hint: "measures" };
       }
       return null;
     }
@@ -373,6 +372,11 @@ function checkWidget(widget: Widget, catalogue: Catalogue): Problem | null {
 
   const problem = checkQuery(widget.query, catalogue);
   if (problem) return problem;
+
+  // A chart split by a second dimension spends its colours on that split; a
+  // table can show both the split and several measures as columns.
+  if (widget.kind === "chart" && widget.query.kind === "breakdown" && widget.query.by && widget.query.measures?.length)
+    return { error: "A breakdown split by a second dimension draws one measure; drop by, or drop measures, or make it a table", hint: "measures" };
 
   // A pie divides a whole into parts, and a rate is not part of anything.
   if (widget.kind === "chart" && widget.chart === "pie") {

@@ -48,6 +48,14 @@ Checked against Bomet's live deployment:
   is identical to the pixel, and all 20 of its analytics results (tiles,
   prior-period deltas, sparklines, map pins, filter menus) match pgr-services
   byte for byte, with CCRS's department and jurisdiction scope applied.
+- **The whole catalog:** all 40 KPIs, including the executive pack CCRS never
+  shows, under 817 parameter combinations (date ranges, windows, wards, types,
+  complaint-type levels 1–4 and paths, prior-period and daily-series
+  companions), as a signed-in employee. 770 are byte-identical. 43 differ only
+  where pgr-services' own SQL leaves the order open (unsorted queries, ties,
+  an unsorted 1,000-row cap), which varies between calls on pgr-services
+  itself. 4 are refused: a daily series of a KPI grouped by two dimensions,
+  which CCRS's UI never asks for.
 
 Access control stays CCRS's. A signed-in caller's capabilities come from CCRS's
 own `/_access`, and their row scope (HRMS departments, jurisdictions, own
@@ -58,9 +66,14 @@ records) comes from CCRS's own resolution. lenspack applies both.
 - **Windows:** a date range in the tenant's time zone; rolling (`last_Nd`) and
   calendar (`dtd`, `wtd`, `mtd`, `qtd`, `ytd`) windows; prior period = the span
   before the range, or the previous calendar week.
-- **Live tiles:** tiles that read the current open state ignore the window.
-- **Complaint-type levels:** `hierLevel` rolls types up to a level of the tree;
-  `complaintPath` narrows to a subtree.
+- **Live tiles:** tiles that read the current open state ignore the window;
+  their sparklines still follow a selected range.
+- **Pinned windows:** a KPI pinned to its own period ("created today") keeps it
+  under any range; its prior period is the span before it; a range that does
+  not cover it answers nothing, flagged `suppressed`.
+- **Complaint-type levels:** `hierLevel` (1–12) rolls types up to a level of
+  the tree and drops the service group it now names; `complaintPath` narrows
+  to a subtree.
 - **Formatting:** ratios are rounded to four places; dates are returned as
   UTC-midnight epochs.
 - **Ordering:** unsorted KPIs keep the database's grouping order, and KPIs

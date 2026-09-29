@@ -59,6 +59,8 @@ export type SkinTile = {
   grain: "facts" | "events" | "daily";
   /** The KPI's own window when the request names none (last_7d, mtd, …). */
   window: string | null;
+  /** The KPI's window keeps its own period whatever range is selected ("created today"). */
+  pinned?: boolean;
   /** The per-day column a daily series groups by on this grain. */
   seriesDate: string;
   /** Complaint-type level the KPI rolls up to when not overridden ("1", "leaf"). */
@@ -93,8 +95,9 @@ const GRAIN = {
 
 const CARD_KINDS = new Set(["number-tile", "number-tile-delta", "number-tile-sparkline", "sparkline-card", "scalar"]);
 const DATE_COLUMNS = new Set(["created_date", "occurred_date", "snapshot_date"]);
+const MAX_HIER_LEVEL = 12;
 
-// The complaint-type level a KPI rolls up to by default (hierLevel "1".."4"):
+// A complaint-type level a KPI rolls up to (hierLevel "1".."12"):
 // the same expression pgr-services uses, as a Postgres fragment.
 const hierDimension = (level: number): PackDimension => ({
   key: `service_type_l${level}`,
@@ -143,8 +146,8 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
 
   const dimensions = new Map<string, PackDimension>();
   const dimension = (entity: string, column: string): string => {
-    if (/^service_type_l\d$/.test(column)) {
-      dimensions.set(column, dimensions.get(column) ?? hierDimension(Number(column.slice(-1))));
+    if (/^service_type_l\d+$/.test(column)) {
+      dimensions.set(column, dimensions.get(column) ?? hierDimension(Number(column.slice("service_type_l".length))));
       return column;
     }
     const known = dimensions.get(column);
@@ -259,7 +262,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
 
     // The complaint-type level a chart reads by default.
     const hier = kpi.params?.find((p) => p.name === "hierLevel")?.default;
-    const dims = (q.dimensions ?? []).map((c) => (c === "service_code" && hier && /^\d$/.test(hier) ? `service_type_l${hier}` : c));
+    const dims = (q.dimensions ?? []).map((c) => (c === "service_code" && hier && /^\d+$/.test(hier) ? `service_type_l${hier}` : c));
     dims.forEach((c) => dimension(entity, c));
 
     const viz = kpi.viz;
@@ -306,7 +309,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
         dimension: group!,
         ...(split ? { by: split } : {}),
         measure: primary,
-        ...(!split && Object.keys(extras).length ? { measures: Object.keys(extras).slice(0, 11) } : {}),
+        ...((!split || kind === "table") && Object.keys(extras).length ? { measures: Object.keys(extras).slice(0, 11) } : {}),
         limit,
         sort: sortSpec?.dir ?? (byGroup || DATE_COLUMNS.has(group!) ? "asc" : "desc"),
         // No declared sort means the database's own order, as CCRS returns it.
@@ -314,7 +317,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
         // the database leaves them), a dimension, or nothing (its own order).
         ...(byGroup || DATE_COLUMNS.has(group!) ? { sortBy: "group" } : !sortSpec ? { sortBy: "none" } : { sortBy: "measure" }),
       } as Query;
-      if (split && Object.keys(extras).length) notes.push({ kpi: kpi.id, note: "split by a second dimension: extra measures dropped" });
+      if (split && kind !== "table" && Object.keys(extras).length) notes.push({ kpi: kpi.id, note: "split by a second dimension: extra measures dropped" });
     }
 
     // Every non-live KPI reads a window: its own default until a board's
@@ -345,6 +348,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       query: tilesQuery(query),
       grain: q.grain ?? "facts",
       window: live ? null : (kpi.params?.find((p) => p.name === "window")?.default || q.window?.name || null),
+      ...(q.window?.pinned && q.window.name && !["all", "live"].includes(q.window.name) ? { pinned: true } : {}),
       seriesDate: q.grain === "daily" ? "snapshot_date" : q.grain === "events" ? "occurred_date" : "created_date",
       hierLevel: hier ?? null,
       dimensions: q.dimensions ?? [],
@@ -362,6 +366,8 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
   // The complaint-type filter narrows by a node of the type tree.
   dimension("facts", "complaint_node_path");
   for (const c of ["ward_code", "service_code", "department_code", "boundary_path", "account_id"]) dimension("facts", c);
+  // Every level a request may roll complaint types up to (pgr-services allows 1..12).
+  for (let level = 1; level <= MAX_HIER_LEVEL; level++) dimension("facts", `service_type_l${level}`);
 
   const rawPack = {
     pack: opts.packName ?? "ccrs",

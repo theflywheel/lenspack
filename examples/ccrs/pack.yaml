@@ -184,6 +184,94 @@ dimensions:
     type: string
     synonyms: []
     verified: true
+  - key: service_type_l2
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(2, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 2)
+    synonyms: []
+    verified: true
+  - key: service_type_l3
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(3, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 3)
+    synonyms: []
+    verified: true
+  - key: service_type_l4
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(4, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 4)
+    synonyms: []
+    verified: true
+  - key: service_type_l5
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(5, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 5)
+    synonyms: []
+    verified: true
+  - key: service_type_l6
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(6, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 6)
+    synonyms: []
+    verified: true
+  - key: service_type_l7
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(7, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 7)
+    synonyms: []
+    verified: true
+  - key: service_type_l8
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(8, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 8)
+    synonyms: []
+    verified: true
+  - key: service_type_l9
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(9, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 9)
+    synonyms: []
+    verified: true
+  - key: service_type_l10
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(10, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 10)
+    synonyms: []
+    verified: true
+  - key: service_type_l11
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(11, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 11)
+    synonyms: []
+    verified: true
+  - key: service_type_l12
+    entity: facts
+    sql:
+      postgres: coalesce(nullif(split_part(complaint_node_path, '.', least(12, complaint_depth)), ''), service_code)
+    type: string
+    label: Complaint type (level 12)
+    synonyms: []
+    verified: true
 measures:
   - key: avg_resolution_ms_resolved
     entity: facts

@@ -37,10 +37,14 @@ export type RowScope = { departments?: string[]; jurisdictions?: string[]; accou
 
 type InlineQuery = { grain?: string; window?: { name?: string }; dimensions?: string[]; measures?: { name: string; agg: string; column?: string; filter?: unknown }[]; limit?: number; filters?: unknown; sort?: unknown };
 type Ref = { kpiId?: string; params?: Record<string, string> } & InlineQuery;
-type Result = { grain: string; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; tookMs: number; paramsIgnored?: string[] };
+type Result = { grain: string; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; tookMs: number; paramsIgnored?: string[]; suppressed?: string };
 
 const ACTION = "/pgr-services/v2/analytics";
 const MAX_BATCH = 50;
+const MAX_HIER_LEVEL = 12;
+const MAX_SERIES_DAYS = 366;
+// Rows fetched for a grouped daily series before CCRS's own order and cap apply.
+const SERIES_FETCH = 500;
 const DATE_COLUMNS = new Set(["created_date", "occurred_date", "snapshot_date"]);
 
 // CCRS rounds ratios to four places in SQL; the same rounding here keeps
@@ -112,6 +116,33 @@ export function ccrsApi(opts: CcrsApiOptions) {
     const start = startOf(name, localDate(at, tz));
     return start ? { from: startOfLocalDay(start, tz), to: at } : null;
   };
+  type Win = { from: Date; to: Date };
+  /** A dateFrom/dateTo pair: local calendar dates, dateTo inclusive. */
+  const rangeOf = (params: Record<string, string>): { from: string; to: string; days: number; win: Win } | null => {
+    if (!params.dateFrom || !params.dateTo) return null;
+    const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+    if (!ok(params.dateFrom) || !ok(params.dateTo) || params.dateFrom > params.dateTo)
+      throw Object.assign(new Error("invalid_param: dateFrom/dateTo is not a valid yyyy-MM-dd range"), { status: 400, perRef: true });
+    const days = Math.round((Date.parse(`${params.dateTo}T00:00:00Z`) - Date.parse(`${params.dateFrom}T00:00:00Z`)) / 86_400_000) + 1;
+    return { from: params.dateFrom, to: params.dateTo, days, win: { from: startOfLocalDay(params.dateFrom, tz), to: startOfLocalDay(addDays(params.dateTo, 1), tz) } };
+  };
+  /** A named window (last_Nd, dtd, wtd, …) ending now; null for all. */
+  const windowNamed = (name: string): Win | null => {
+    if (name === "all" || name === "live") return null;
+    const at = now();
+    const rolling = /^last_(\d+)d$/.exec(name);
+    if (rolling) return { from: new Date(at.getTime() - Number(rolling[1]) * 86_400_000), to: at };
+    const start = startOf(name, localDate(at, tz));
+    if (!start) throw Object.assign(new Error(`invalid_param: unknown window '${name}'`), { status: 400, perRef: true });
+    return { from: startOfLocalDay(start, tz), to: at };
+  };
+  /** A pinned window's first day and today, in the tenant's calendar. */
+  const pinOf = (name: string) => {
+    const today = localDate(now(), tz);
+    const rolling = /^last_(\d+)d$/.exec(name);
+    const startDate = rolling ? localDate(new Date(now().getTime() - Number(rolling[1]) * 86_400_000), tz) : startOf(name, today)!;
+    return { startDate, today };
+  };
   /** The prior period: the span before a date range, or the previous calendar week. */
   const priorFor = (tile: SkinTile, params: Record<string, string>): { from: Date; to: Date } | null => {
     if (params.dateFrom && params.dateTo) {
@@ -151,14 +182,25 @@ export function ccrsApi(opts: CcrsApiOptions) {
     }
     if (filters.length) q = { ...q, filters } as Query;
 
-    // The complaint-type level a chart rolls up to.
+    // The complaint-type level a KPI rolls up to: its service_code column
+    // becomes the level's node, and service_group (which that node already
+    // names) is dropped, as pgr-services does.
     const level = params.hierLevel ?? tile.hierLevel;
-    if (q.kind === "breakdown" && tile.dimensions.includes("service_code") && level) {
+    if (level && level !== "leaf" && !(/^\d+$/.test(level) && Number(level) >= 1 && Number(level) <= MAX_HIER_LEVEL))
+      throw Object.assign(new Error(`invalid_param: hierLevel must be 'leaf' or an integer in 1..${MAX_HIER_LEVEL}`), { status: 400, perRef: true });
+    let dims = tile.dimensions;
+    if (level && tile.grain !== "daily" && dims.includes("service_code")) {
       const dim = level === "leaf" ? "service_code" : `service_type_l${level}`;
-      if (tile.dimensions[0] === "service_code") q = { ...q, dimension: dim };
-      else if (tile.dimensions[1] === "service_code") q = { ...q, by: dim } as Query;
+      if (level !== "leaf") dims = dims.filter((d) => d !== "service_group");
+      if (q.kind === "breakdown") {
+        const b = q as Extract<Query, { kind: "breakdown" }>;
+        const at = (d: string | undefined) => (d === "service_code" ? dim : d);
+        const [group, split] = dims;
+        q = { ...b, dimension: at(group)!, ...(split ? { by: at(split) } : {}) } as Query;
+        if (!split) delete (q as { by?: string }).by;
+      }
     }
-    return { q, ignored };
+    return { q, ignored, dims };
   };
 
   const withWindow = (q: Query, w: { from: Date; to: Date } | null): Query => {
@@ -192,11 +234,13 @@ export function ccrsApi(opts: CcrsApiOptions) {
     } else {
       const measure = (q as { measure: string }).measure;
       const extras = Object.entries(cols.extras);
-      const dims = [cols.group, cols.series].filter((d): d is string => !!d);
+      // A rolled-up KPI loses its split (service_group) along with the leaf type.
+      const split = (q as { by?: string }).by ? cols.series : undefined;
+      const dims = [cols.group, split].filter((d): d is string => !!d);
       columns = [...dims, ...order([cols.value, ...extras.map(([, name]) => name)])];
       rows = data.rows.map((r) => ({
         ...(cols.group ? { [cols.group]: cell(cols.group, r.group === "(none)" ? null : r.group) } : {}),
-        ...(cols.series ? { [cols.series]: cell(cols.series, r.series === "(none)" ? null : r.series) } : {}),
+        ...(split ? { [split]: cell(split, r.series === "(none)" ? null : r.series) } : {}),
         [cols.value]: cell(cols.value, r.value, measure),
         ...Object.fromEntries(extras.map(([key, name]) => [name, cell(name, r.values?.[key] ?? null, key)])),
       }));
@@ -232,28 +276,101 @@ export function ccrsApi(opts: CcrsApiOptions) {
     if (!tile || !visible(tile, caps, isPublic)) return { error: "kpi_forbidden", message: `kpi_forbidden: '${ref.kpiId}' is not available` };
     const params = { ...Object.fromEntries((tile.params ?? []).filter((p) => p.default).map((p) => [p.name, p.default!])), ...(ref.params ?? {}) };
     const started = Date.now();
-    const { q, ignored } = build(tile, params, isPublic, scope);
-    let query: Query;
-    // pgr-services resolves compare:prior before the live-snapshot rule: even
-    // a tile reading the current open state compares against the prior window.
-    if (params.compare === "prior") query = withWindow(q, priorFor(tile, params));
-    else if (params.series === "daily") {
-      // A daily series of the headline number over the same window.
-      const w = windowFor(tile, params) ?? (tile.live ? null : { from: new Date(now().getTime() - 30 * 86_400_000), to: now() });
-      // pgr-services: min(366, days in the range) with a date range, 366 otherwise.
-      const days = params.dateFrom && params.dateTo ? Math.min(366, Math.round((Date.parse(`${params.dateTo}T00:00:00Z`) - Date.parse(`${params.dateFrom}T00:00:00Z`)) / 86_400_000) + 1) : 366;
-      const measure = (q as { measure?: string }).measure!;
-      query = withWindow({ kind: "breakdown", dimension: tile.seriesDate, measure, limit: Math.max(2, days), sort: "asc", sortBy: "group", ...((q as { filters?: FilterClause[] }).filters ? { filters: (q as { filters: FilterClause[] }).filters } : {}) } as Query, w);
-      const data = await run(query, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
+    const { q, ignored, dims } = build(tile, params, isPublic, scope);
+    const range = rangeOf(params);
+    const prior = params.compare === "prior";
+    const series = params.series === "daily" && !prior;
+    const exec = (query: Query) => run(query, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
+
+    // The window this reference reads, in pgr-services' order of rules.
+    let w: Win | null;
+    if (tile.pinned) {
+      // A pinned window keeps its own period whatever range is selected.
+      const pin = pinOf(tile.window!);
+      if (series) w = range ? range.win : windowNamed(params.window || "last_30d");
+      else {
+        if (params.window) ignored.push("window");
+        // A range that does not cover the pinned period cannot answer it.
+        if (range && !(range.from <= pin.startDate && range.to >= pin.today))
+          return { grain: tile.grain, columns: [], rows: [], rowCount: 0, suppressed: "filter_excludes_window", tookMs: 0 } as Result;
+        const span = Math.max(1, Math.round((Date.parse(`${pin.today}T00:00:00Z`) - Date.parse(`${pin.startDate}T00:00:00Z`)) / 86_400_000) + 1);
+        w = prior ? { from: startOfLocalDay(addDays(pin.startDate, -span), tz), to: startOfLocalDay(pin.startDate, tz) } : { from: startOfLocalDay(pin.startDate, tz), to: now() };
+      }
+    } else if (prior) w = priorFor(tile, params);
+    else if (range && (!tile.live || series)) w = range.win;
+    else w = tile.live ? null : params.window ? windowNamed(params.window) : windowFor(tile, params);
+
+    if (!series) {
+      const query = withWindow(q, w);
+      const data = await exec(query);
       if (data.error) return { error: "query_failed", message: data.error };
-      const valueName = tile.columns.value;
-      const rows = data.rows.map((r) => ({ [tile.seriesDate]: cell(tile.seriesDate, r.group), [valueName]: cell(valueName, r.value, measure) }));
-      return { grain: tile.grain, columns: [tile.seriesDate, valueName], rows, rowCount: rows.length, tookMs: Date.now() - started };
-    } else query = withWindow(q, windowFor(tile, params));
-    const data = await run(query, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
+      return toResult(tile, query, data, tile.grain, started, ignored);
+    }
+
+    // A daily series: the KPI's own grouping plus the day, every measure,
+    // sorted as the KPI sorts and then by day, capped at the range's days.
+    const cap = range ? Math.min(MAX_SERIES_DAYS, range.days) : MAX_SERIES_DAYS;
+    if (q.kind === "rows") {
+      // The day joins the sort unless the KPI already sorts by it.
+      const r = q as Extract<Query, { kind: "rows" }>;
+      const query = withWindow({ ...r, limit: cap, ...(r.orderBy ? {} : { orderBy: { key: tile.seriesDate, dir: "asc" } }) } as Query, w);
+      const data = await exec(query);
+      if (data.error) return { error: "query_failed", message: data.error };
+      return toResult(tile, query, data, tile.grain, started, ignored);
+    }
+    const day = tile.seriesDate;
+    const groups = dims.filter((d) => d !== day);
+    if (groups.length > 1) return { error: "unsupported_query", message: "unsupported_query: a daily series of a KPI grouped by two dimensions is not answered" };
+    const b = q as Extract<Query, { kind: "breakdown" | "value" }>;
+    const measures = (b as { measures?: string[] }).measures ?? Object.keys(tile.columns.extras);
+    const filters = (b as { filters?: FilterClause[] }).filters;
+    const group = groups.length ? (b as { dimension: string }).dimension : null;
+    const query = withWindow(
+      {
+        kind: "breakdown",
+        dimension: day,
+        ...(group ? { by: group } : {}),
+        measure: b.measure,
+        ...(measures.length ? { measures } : {}),
+        limit: group ? SERIES_FETCH : Math.max(2, cap),
+        sort: "asc",
+        sortBy: "group",
+        ...(filters ? { filters } : {}),
+      } as Query,
+      w,
+    );
+    const data = await exec(query);
     if (data.error) return { error: "query_failed", message: data.error };
-    void name;
-    return toResult(tile, query, data, tile.grain, started, ignored);
+    // Rows are (day, group): order them as the KPI orders its groups, then by day.
+    const sortBy = (b as { sortBy?: string }).sortBy, dir = (b as { sort?: string }).sort === "asc" ? 1 : -1;
+    const rows = group
+      ? [...data.rows]
+          .sort((x, y) => {
+            if (sortBy === "measure") {
+              const d = x.value === null ? (y.value === null ? 0 : 1) : y.value === null ? -1 : (x.value - y.value) * dir;
+              if (d) return d;
+            } else if (sortBy === "group") {
+              const d = String(x.series).localeCompare(String(y.series)) * dir;
+              if (d) return d;
+            }
+            return String(x.group).localeCompare(String(y.group));
+          })
+          .slice(0, cap)
+      : data.rows;
+    const cols = tile.columns;
+    const extras = Object.entries(cols.extras);
+    const order = (names: string[]) => (tile.measureOrder?.length ? [...names].sort((x, y) => tile.measureOrder.indexOf(x) - tile.measureOrder.indexOf(y)) : names);
+    const columns = [...(group ? [cols.group!] : []), day, ...order([cols.value, ...extras.map(([, n]) => n)])];
+    const out = rows.map((r) => {
+      const row: Record<string, unknown> = {
+        ...(group ? { [cols.group!]: r.series === "(none)" ? null : r.series } : {}),
+        [day]: cell(day, r.group),
+        [cols.value]: cell(cols.value, r.value, b.measure),
+        ...Object.fromEntries(extras.map(([key, n]) => [n, cell(n, r.values?.[key] ?? null, key)])),
+      };
+      return Object.fromEntries(columns.map((c) => [c, row[c]]));
+    });
+    return { grain: tile.grain, columns, rows: out, rowCount: out.length, tookMs: Date.now() - started, ...(ignored.length ? { paramsIgnored: ignored } : {}) };
   };
 
   const asOf = async () => {

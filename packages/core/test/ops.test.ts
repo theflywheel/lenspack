@@ -168,6 +168,16 @@ describe("hallucinated fields", () => {
     expect(result.error).toContain("rates do not");
   });
 
+  it("lets a table, not a chart, carry several measures beside a split", () => {
+    const query = { kind: "breakdown" as const, dimension: "region", by: "channel", measure: "count", measures: ["amount"], limit: 12 };
+    const table = apply(empty(), [{ op: "add_widget", id: "a", widget: { kind: "table", title: "T", query, pageSize: 10 } }]);
+    expect(table.ok).toBe(true);
+    const bar = apply(empty(), [{ op: "add_widget", id: "a", widget: chart({ query }) }]);
+    expect(bar.ok).toBe(false);
+    if (bar.ok) return;
+    expect(bar.error).toMatch(/one measure/);
+  });
+
   it("requires a time range for a previous-period comparison", () => {
     const result = apply(empty(), [
       { op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count", compare: "previous_period" } } },

@@ -133,14 +133,15 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
 
 // A measure's where narrows the rows it counts, not the groups: a group with
 // no rows for it at all (a per-level target's other levels) comes back empty.
-// Such a group is dropped. A zero count stays, and so does a ratio that
+// Such a group is dropped (unless another of its measures has a value). A zero count stays, and so does a ratio that
 // could not be computed: those are answers, an empty group is not.
 function withoutEmptyGroups(data: WidgetData, measure: string, pack: Pack): WidgetData {
   const m = pack.measures.find((x) => x.key === measure);
   if (!m || data.error) return data;
   const plain = !m.derived || /^\s*[a-z][a-z0-9_]*\s*$/.test(m.derived);
   if (!plain) return data;
-  const rows = data.rows.filter((r) => r.value !== null || r.count === 0);
+  // With several measures, a group is empty only when every one of them is.
+  const rows = data.rows.filter((r) => r.value !== null || r.count === 0 || Object.values(r.values ?? {}).some((v) => v !== null));
   return rows.length === data.rows.length ? data : { ...data, rows, total: rows.reduce((n, r) => n + r.count, 0) };
 }
 

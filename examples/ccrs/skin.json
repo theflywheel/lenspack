@@ -1266,6 +1266,7 @@
       },
       "grain": "facts",
       "window": "dtd",
+      "pinned": true,
       "seriesDate": "created_date",
       "hierLevel": null,
       "dimensions": [],
@@ -2667,6 +2668,13 @@
         "dimension": "service_code",
         "by": "service_group",
         "measure": "avg_resolution_ms_resolved",
+        "measures": [
+          "avg_sla_target_ms",
+          "reopen_rate",
+          "max_open_age_ms_open",
+          "resolved_on_time_rate",
+          "avg_rating_rating_resolved"
+        ],
         "limit": 100,
         "sort": "desc",
         "sortBy": "measure"
@@ -3416,6 +3424,13 @@
         "dimension": "current_assignee_uuid",
         "by": "department_code",
         "measure": "complaints_open",
+        "measures": [
+          "complaints",
+          "complaints_not_open_resolved",
+          "reopen_rate",
+          "avg_rating_rating_resolved",
+          "table_employee_performance_escalation_rate"
+        ],
         "limit": 40,
         "sort": "desc",
         "sortBy": "measure"

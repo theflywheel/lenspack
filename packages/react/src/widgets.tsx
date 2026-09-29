@@ -128,12 +128,16 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
     // One column per measure, labelled from the catalogue, each in its own format.
     const dim = widget.query.kind === "breakdown" ? (target?.at ?? widget.query.dimension) : widget.query.kind === "series" ? widget.query.grain : "";
     const label = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
+    const dimLabel = (key: string) => catalogue.dimensions.find((d) => d.key === key)?.label ?? key;
+    // A table split by a second dimension shows it as its own column.
+    const by = widget.query.kind === "breakdown" ? widget.query.by : undefined;
     return (
       <div className="lp-table-wrap">
         <table className="lp-table">
           <thead>
             <tr>
-              <th>{catalogue.dimensions.find((d) => d.key === dim)?.label ?? dim}</th>
+              <th>{dimLabel(dim)}</th>
+              {by && <th>{dimLabel(by)}</th>}
               {data.measures.map((m) => <th key={m.key} className="lp-num">{label(m.key)}</th>)}
             </tr>
           </thead>
@@ -141,6 +145,7 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
             {data.rows.slice(0, widget.pageSize).map((row) => (
               <tr key={`${row.group}|${row.series ?? ""}`} {...rowProps(row.group)}>
                 <td>{row.group}</td>
+                {by && <td>{row.series ?? ""}</td>}
                 {data.measures!.map((m, i) => (
                   <td key={m.key} className="lp-num">{formatValue(i === 0 ? row.value : (row.values?.[m.key] ?? null), m.format, { currency })}</td>
                 ))}
