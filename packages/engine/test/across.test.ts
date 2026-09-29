@@ -53,7 +53,7 @@ describe("ratios across entities", () => {
   });
 
   it("narrows only the side that has the filtered dimension", async () => {
-    const c = stub((q) => [{ value: q.measure === "done_n" ? 3 : 12, n: 1 }] as Row[]);
+    const c = stub((q) => [{ value: q.kind !== "rows" && q.measure === "done_n" ? 3 : 12, n: 1 }] as Row[]);
     const q: Query = { kind: "value", measure: "progress", filters: [{ dimension: "kind", op: "eq", value: "a" }] };
     const data = await run(q, { pack, connector: c });
     expect(data.rows[0]!.value).toBe(0.25);
