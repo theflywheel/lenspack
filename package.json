@@ -18,13 +18,15 @@
     "eval": "tsx evals/run.ts"
   },
   "devDependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.53",
     "@types/node": "^22.10.0",
+    "ai": "^7.0.109",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.63.0",
+    "pngjs": "^7.0.0",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8",
-    "ai": "^7.0.109",
-    "@ai-sdk/openai-compatible": "^3.0.53",
-    "playwright": "^1.63.0"
+    "vitest": "^2.1.8"
   }
 }

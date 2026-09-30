@@ -45,16 +45,25 @@ Checked against Bomet's live deployment:
   and 1920 px, by default and after choosing a ward, a complaint type or a
   date range, with every analytics call answered by lenspack.
 - **Signed in:** the supervisor dashboard, as the same employee on both sides,
-  is identical to the pixel, and all 20 of its analytics results (tiles,
-  prior-period deltas, sparklines, map pins, filter menus) match pgr-services
-  byte for byte, with CCRS's department and jurisdiction scope applied.
+  is identical to the pixel on every run (12 of 12, and 3 of 3 with the script
+  below), with every analytics call answered by lenspack and CCRS's department
+  and jurisdiction scope applied. All 20 of its results match pgr-services.
+
+  `pixel-parity.mjs` reproduces this. It first compares the deployment with
+  itself (`SELF=1`, which must be 0 px), because CCRS's page does not draw
+  identically twice on its own: a full-page screenshot re-lays out its grid,
+  its content area sometimes scrolls itself sideways, cards animate into
+  place on compositor layers, and its analytics tables are rebuilt every few
+  minutes. Each is neutralised the same way on both sides.
 - **The whole catalog:** all 40 KPIs, including the executive pack CCRS never
   shows, under 817 parameter combinations (date ranges, windows, wards, types,
   complaint-type levels 1–4 and paths, prior-period and daily-series
   companions), as a signed-in employee. 770 are byte-identical. 43 differ only
   where pgr-services' own SQL leaves the order open (unsorted queries, ties,
-  an unsorted 1,000-row cap), which varies between calls on pgr-services
-  itself. 4 are refused: a daily series of a KPI grouped by two dimensions,
+  an unsorted 1,000-row cap). That order varies between calls on pgr-services
+  itself: a KPI without an ORDER BY is planned generically on a warm pooled
+  JDBC connection (rows come back sorted) and custom on a fresh one (hash
+  order). None of these reach the page's pixels. 4 are refused: a daily series of a KPI grouped by two dimensions,
   which CCRS's UI never asks for.
 
 Access control stays CCRS's. A signed-in caller's capabilities come from CCRS's
