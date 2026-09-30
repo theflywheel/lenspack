@@ -5,6 +5,7 @@
 // from lenspack.
 //
 //   CCRS_PG_URL=postgres://… CCRS_UPSTREAM=https://ccrs.example.org PORT=8791 tsx examples/ccrs/server.ts
+//   [CCRS_ANALYTICS_UPSTREAM=http://pgr-services:8080] [HOST=0.0.0.0]
 import { readFileSync, readdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
@@ -17,6 +18,10 @@ import { openPostgres } from "@lenspack/sql/pg";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const upstream = (process.env.CCRS_UPSTREAM ?? "").replace(/\/$/, "");
+// Where access and scope are asked: CCRS through its gateway by default. Once
+// the gateway routes analytics here, ask pgr-services directly (it trusts the
+// RequestInfo the gateway filled in), e.g. http://pgr-services:8080.
+const analyticsUpstream = (process.env.CCRS_ANALYTICS_UPSTREAM ?? upstream).replace(/\/$/, "");
 const port = Number(process.env.PORT ?? 8791);
 // Local by default: put a TLS proxy in front to publish it.
 const host = process.env.HOST ?? "127.0.0.1";
@@ -57,7 +62,7 @@ async function scopeOf(body: Record<string, unknown>, request?: unknown): Promis
   if (hit && Date.now() - hit.at < 60_000) return hit.scope;
   // The same inline shape CCRS's own page sends for its filter menus.
   const probe = { RequestInfo: body.RequestInfo, tenantId: body.tenantId, queries: { scope: { grain: "facts", window: { name: "all" }, dimensions: ["ward_code"], measures: [{ name: "n", agg: "count" }], limit: 1 } } };
-  const r = await fetch(`${upstream}/pgr-services/v2/analytics/_query`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders(request) }, body: JSON.stringify(probe) });
+  const r = await fetch(`${analyticsUpstream}/pgr-services/v2/analytics/_query`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders(request) }, body: JSON.stringify(probe) });
   let scope: Scope | null = null;
   if (r.ok) {
     const s = ((await r.json()) as { scope?: Scope }).scope ?? {};
@@ -86,7 +91,7 @@ const api = ccrsApi({
   // What a signed-in caller may see is CCRS's decision: ask its /_access with
   // the caller's own RequestInfo, and show exactly what it grants.
   capabilities: async (body, request) => {
-    const r = await fetch(`${upstream}/pgr-services/v2/analytics/_access`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders(request) }, body: JSON.stringify(body) });
+    const r = await fetch(`${analyticsUpstream}/pgr-services/v2/analytics/_access`, { method: "POST", headers: { "content-type": "application/json", ...authHeaders(request) }, body: JSON.stringify(body) });
     if (!r.ok) return [];
     const grant = (await r.json()) as { allowed?: boolean; capabilities?: string[] };
     return grant.allowed ? (grant.capabilities ?? []) : [];
