@@ -18,6 +18,8 @@ import { openPostgres } from "@lenspack/sql/pg";
 const here = dirname(fileURLToPath(import.meta.url));
 const upstream = (process.env.CCRS_UPSTREAM ?? "").replace(/\/$/, "");
 const port = Number(process.env.PORT ?? 8791);
+// Local by default: put a TLS proxy in front to publish it.
+const host = process.env.HOST ?? "127.0.0.1";
 if (!process.env.CCRS_PG_URL || !upstream) throw new Error("CCRS_PG_URL and CCRS_UPSTREAM are required");
 
 const pack = parsePackText(readFileSync(join(here, "pack.yaml"), "utf8"));
@@ -127,4 +129,4 @@ createServer(async (req, res) => {
     res.writeHead(502, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "bad_gateway", message: e instanceof Error ? e.message : String(e) }));
   }
-}).listen(port, () => console.log(`CCRS dashboard on lenspack: http://localhost:${port}/digit-ui/public-dashboard.html (analytics by lenspack, everything else from ${upstream})`));
+}).listen(port, host, () => console.log(`CCRS dashboard on lenspack: http://${host}:${port}/digit-ui/public-dashboard.html (analytics by lenspack, everything else from ${upstream})`));
