@@ -64,7 +64,7 @@ export async function introspectPostgres(executor: Executor): Promise<SourceSche
   const columns = await executor.query(
     `SELECT c.table_schema AS s, c.table_name AS t, c.column_name AS name, c.data_type AS type
      FROM information_schema.columns c
-     WHERE c.table_schema = ANY (current_schemas(false)) AND c.table_name NOT LIKE 'lenspack\_%'
+     WHERE c.table_schema = ANY (current_schemas(false))
      ORDER BY c.table_schema, c.table_name, c.ordinal_position`,
     [],
   );

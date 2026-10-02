@@ -45,13 +45,15 @@ export interface Writer {
 /**
  * Column rows (s, t, name, type) and row-count rows (s, t, n) → SourceSchema,
  * the shape every driver's introspection returns. The schema is left out of a
- * table's name when it is the default one.
+ * table's name when it is the default one; the board store's own tables,
+ * should it share the database, are left out altogether.
  */
 export function collectSchema(columns: Row[], estimates: Row[], defaultSchema = "public"): SourceSchema {
   const name = (r: Row) => (r.s && r.s !== defaultSchema ? `${String(r.s)}.${String(r.t)}` : String(r.t));
   const rows = new Map(estimates.filter((r) => r.n !== null && r.n !== undefined).map((r) => [name(r), Number(r.n)]));
   const tables = new Map<string, SourceSchema["collections"][number]>();
   for (const c of columns) {
+    if (String(c.t).startsWith("lenspack_")) continue;
     const key = name(c);
     if (!tables.has(key)) {
       const n = rows.get(key);

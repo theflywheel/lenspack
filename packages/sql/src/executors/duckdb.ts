@@ -69,7 +69,7 @@ export function duckdbWriter(connection: DuckDBConnection): Writer {
 export async function introspectDuckdb(executor: Executor): Promise<SourceSchema> {
   const columns = await executor.query(
     `SELECT table_schema AS s, table_name AS t, column_name AS name, data_type AS type FROM information_schema.columns
-     WHERE table_catalog = current_database() AND table_name NOT LIKE 'lenspack\_%' ESCAPE '\' ORDER BY table_schema, table_name, ordinal_position`,
+     WHERE table_catalog = current_database() ORDER BY table_schema, table_name, ordinal_position`,
     [],
   );
   const estimates = await executor.query(`SELECT schema_name AS s, table_name AS t, estimated_size AS n FROM duckdb_tables() WHERE database_name = current_database()`, []);
