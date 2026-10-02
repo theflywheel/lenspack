@@ -1,6 +1,6 @@
 -- params: ["2026-06-09T00:00:00.000Z","2026-09-01T00:00:00.000Z"]
 SELECT date_trunc('week', "tickets"."__t") AS "bucket", avg("tickets"."__m_sla_breach_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, "created_at" AS "__t", CASE WHEN (resolved_at IS NOT NULL) THEN ((EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours)::int) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
+FROM (SELECT *, "created_at" AS "__t", CASE WHEN (resolved_at IS NOT NULL) THEN (CASE WHEN EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours THEN 1 ELSE 0 END) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
 WHERE (("tickets"."__t" >= CAST($1 AS TIMESTAMP)) AND ("tickets"."__t" < CAST($2 AS TIMESTAMP)))
 GROUP BY date_trunc('week', "tickets"."__t")
 ORDER BY "bucket" ASC NULLS LAST
@@ -8,7 +8,7 @@ LIMIT 5000;
 
 -- params: ["2026-08-02T00:00:00.000Z","2026-09-01T00:00:00.000Z","2026-08-02T00:00:00.000Z","2026-09-01T00:00:00.000Z","2026-07-03T00:00:00.000Z","2026-08-02T00:00:00.000Z","2026-07-03T00:00:00.000Z","2026-09-01T00:00:00.000Z"]
 SELECT avg(CASE WHEN (("tickets"."__t" >= CAST($1 AS TIMESTAMP)) AND ("tickets"."__t" < CAST($2 AS TIMESTAMP))) THEN "tickets"."__m_sla_breach_rate" END) AS "value", count(CASE WHEN (("tickets"."__t" >= CAST($3 AS TIMESTAMP)) AND ("tickets"."__t" < CAST($4 AS TIMESTAMP))) THEN 1 END) AS "n", avg(CASE WHEN (("tickets"."__t" >= CAST($5 AS TIMESTAMP)) AND ("tickets"."__t" < CAST($6 AS TIMESTAMP))) THEN "tickets"."__m_sla_breach_rate" END) AS "previous"
-FROM (SELECT *, "created_at" AS "__t", CASE WHEN (resolved_at IS NOT NULL) THEN ((EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours)::int) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
+FROM (SELECT *, "created_at" AS "__t", CASE WHEN (resolved_at IS NOT NULL) THEN (CASE WHEN EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours THEN 1 ELSE 0 END) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
 WHERE ("tickets"."__t" >= CAST($7 AS TIMESTAMP)) AND ("tickets"."__t" < CAST($8 AS TIMESTAMP))
 LIMIT 1;
 
@@ -40,7 +40,7 @@ LIMIT 6;
 
 -- params: []
 SELECT "tickets"."__d_priority" AS "group", avg("tickets"."__m_sla_breach_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, "created_at" AS "__t", (priority) AS "__d_priority", CASE WHEN (resolved_at IS NOT NULL) THEN ((EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours)::int) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
+FROM (SELECT *, "created_at" AS "__t", (priority) AS "__d_priority", CASE WHEN (resolved_at IS NOT NULL) THEN (CASE WHEN EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours THEN 1 ELSE 0 END) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
 GROUP BY "tickets"."__d_priority"
 ORDER BY "value" ASC NULLS LAST, "group" ASC NULLS LAST
 LIMIT 3;

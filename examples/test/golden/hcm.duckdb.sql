@@ -6,7 +6,7 @@ LIMIT 1;
 
 -- params: ["ng.state","ng.state"]
 SELECT "addresses"."__d_locality" AS "group", avg("tasks"."__m_success_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, (epoch_ms(createdtime)) AS "__t", ((status = 'ADMINISTRATION_SUCCESS')::int) AS "__m_success_rate" FROM "project_task" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "tasks"
+FROM (SELECT *, (epoch_ms(createdtime)) AS "__t", (CASE WHEN status = 'ADMINISTRATION_SUCCESS' THEN 1 ELSE 0 END) AS "__m_success_rate" FROM "project_task" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "tasks"
 LEFT JOIN (SELECT *, (localitycode) AS "__d_locality" FROM "address" WHERE ("tenantid" = $2)) AS "addresses" ON "tasks"."addressid" = "addresses"."id"
 GROUP BY "addresses"."__d_locality"
 ORDER BY "value" ASC NULLS LAST, "group" ASC NULLS LAST
@@ -72,12 +72,12 @@ LIMIT 8;
 
 -- params: ["ng.state"]
 SELECT avg("resources"."__m_delivered_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, (epoch_ms(createdtime)) AS "__t", (isdelivered::int) AS "__m_delivered_rate" FROM "task_resource" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "resources"
+FROM (SELECT *, (epoch_ms(createdtime)) AS "__t", (CASE WHEN isdelivered THEN 1 ELSE 0 END) AS "__m_delivered_rate" FROM "task_resource" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "resources"
 LIMIT 1;
 
 -- params: ["ng.state"]
 SELECT avg("tasks"."__m_success_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, (epoch_ms(createdtime)) AS "__t", ((status = 'ADMINISTRATION_SUCCESS')::int) AS "__m_success_rate" FROM "project_task" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "tasks"
+FROM (SELECT *, (epoch_ms(createdtime)) AS "__t", (CASE WHEN status = 'ADMINISTRATION_SUCCESS' THEN 1 ELSE 0 END) AS "__m_success_rate" FROM "project_task" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "tasks"
 LIMIT 1;
 
 -- params: ["ng.state"]

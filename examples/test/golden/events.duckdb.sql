@@ -1,6 +1,6 @@
 -- params: ["(internal)"]
 SELECT "pageviews"."__d_referrer" AS "group", avg("pageviews"."__m_bounce_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, "ts" AS "__t", (referrer) AS "__d_referrer", (bounced::int) AS "__m_bounce_rate" FROM "pageviews") AS "pageviews"
+FROM (SELECT *, "ts" AS "__t", (referrer) AS "__d_referrer", (CASE WHEN bounced THEN 1 ELSE 0 END) AS "__m_bounce_rate" FROM "pageviews") AS "pageviews"
 WHERE ("pageviews"."__d_referrer" <> $1)
 GROUP BY "pageviews"."__d_referrer"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
@@ -42,7 +42,7 @@ LIMIT 1;
 
 -- params: ["2026-08-25 00:00:00.000","2026-09-01 00:00:00.000"]
 SELECT avg("pageviews"."__m_bounce_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, "ts" AS "__t", (bounced::int) AS "__m_bounce_rate" FROM "pageviews") AS "pageviews"
+FROM (SELECT *, "ts" AS "__t", (CASE WHEN bounced THEN 1 ELSE 0 END) AS "__m_bounce_rate" FROM "pageviews") AS "pageviews"
 WHERE (("pageviews"."__t" >= CAST($1 AS TIMESTAMP)) AND ("pageviews"."__t" < CAST($2 AS TIMESTAMP)))
 LIMIT 1;
 

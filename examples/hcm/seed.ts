@@ -14,6 +14,14 @@ const STATUSES = [["ADMINISTRATION_SUCCESS", 72], ["ADMINISTRATION_FAILED", 6], 
 const REASONS = ["BENEFICIARY_ABSENT", "STOCK_OUT", "REFUSED", "SICK", "INELIGIBLE"];
 const SYMPTOMS = ["FEVER", "VOMITING", "RASH", "DIZZINESS", "SWELLING", "HEADACHE"];
 const PRODUCTS = ["PVAR-SPAQ-3-11", "PVAR-SPAQ-12-59", "PVAR-BEDNET", "PVAR-VITA"];
+// The first segment of a dotted path, which each dialect spells its own way.
+const ROOT_SEGMENT: Record<Dialect, string> = {
+  postgres: "split_part(p.projecthierarchy, '.', 1)",
+  duckdb: "split_part(p.projecthierarchy, '.', 1)",
+  mysql: "SUBSTRING_INDEX(p.projecthierarchy, '.', 1)",
+  sqlite: "CASE WHEN instr(p.projecthierarchy, '.') > 0 THEN substr(p.projecthierarchy, 1, instr(p.projecthierarchy, '.') - 1) ELSE p.projecthierarchy END",
+  clickhouse: "splitByChar('.', ifNull(p.projecthierarchy, ''))[1]",
+};
 const LOCALITIES = (n: number) => Array.from({ length: n }, (_, i) => `NG_ST_LGA${1 + Math.floor(i / 12)}_W${1 + Math.floor(i / 3)}_L${i + 1}`);
 
 export async function seed(writer: Writer, dialect: Dialect, opts: { households?: number; now?: Date } = {}) {
@@ -45,7 +53,7 @@ export async function seed(writer: Writer, dialect: Dialect, opts: { households?
     `CREATE TABLE task_resource (id VARCHAR PRIMARY KEY, tenantid VARCHAR, productvariantid VARCHAR, taskid VARCHAR, quantity DOUBLE PRECISION, isdelivered BOOLEAN, reasonifnotdelivered VARCHAR, createdby VARCHAR, createdtime BIGINT, lastmodifiedby VARCHAR, lastmodifiedtime BIGINT, isdeleted BOOLEAN, clientreferenceid VARCHAR, additionaldetails ${J})`,
     `CREATE TABLE side_effect (id VARCHAR PRIMARY KEY, clientreferenceid VARCHAR, tenantid VARCHAR, taskid VARCHAR, taskclientreferenceid VARCHAR, projectbeneficiaryid VARCHAR, projectbeneficiaryclientreferenceid VARCHAR, symptoms ${J}, createdby VARCHAR, createdtime BIGINT, lastmodifiedby VARCHAR, lastmodifiedtime BIGINT, clientcreatedby VARCHAR, clientcreatedtime BIGINT, clientlastmodifiedby VARCHAR, clientlastmodifiedtime BIGINT, rowversion BIGINT, isdeleted BOOLEAN, additionaldetails ${J})`,
     `CREATE TABLE referral (id VARCHAR PRIMARY KEY, clientreferenceid VARCHAR, tenantid VARCHAR, projectbeneficiaryid VARCHAR, projectbeneficiaryclientreferenceid VARCHAR, referrerid VARCHAR, recipientid VARCHAR, recipienttype VARCHAR, reasons ${J}, sideeffectid VARCHAR, sideeffectclientreferenceid VARCHAR, createdby VARCHAR, createdtime BIGINT, lastmodifiedby VARCHAR, lastmodifiedtime BIGINT, clientcreatedby VARCHAR, clientcreatedtime BIGINT, clientlastmodifiedby VARCHAR, clientlastmodifiedtime BIGINT, rowversion BIGINT, isdeleted BOOLEAN, additionaldetails ${J}, referralcode VARCHAR, projectid VARCHAR)`,
-  ]);
+  ], dialect);
 
   // Geography: localities with a ward and an LGA baked into the code, as in prod.
   const locs = LOCALITIES(Math.max(12, Math.round(H / 60)));
@@ -152,7 +160,7 @@ export async function seed(writer: Writer, dialect: Dialect, opts: { households?
   // The project view: the dotted hierarchy resolved to root and name, boundary joined in.
   await execAll(writer, [
     `CREATE VIEW v_project AS
-       SELECT p.id, p.tenantid, p.name, split_part(p.projecthierarchy, '.', 1) AS root, p.projecthierarchy, pa.boundary
+       SELECT p.id, p.tenantid, p.name, ${ROOT_SEGMENT[dialect]} AS root, p.projecthierarchy, pa.boundary
        FROM project p LEFT JOIN project_address pa ON pa.projectid = p.id`,
   ]);
 }

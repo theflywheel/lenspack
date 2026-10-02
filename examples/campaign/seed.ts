@@ -106,12 +106,12 @@ const SQL_TYPE = { keyword: "VARCHAR", long: "BIGINT", boolean: "BOOLEAN" } as c
 const columnsOf = (docs: Doc[]) => Object.keys(docs[0]!.Data);
 
 /** SQL tables named like the indexes, one column per field path. */
-export async function seed(writer: Writer, _dialect: Dialect, opts: { households?: number; now?: Date } = {}) {
+export async function seed(writer: Writer, dialect: Dialect, opts: { households?: number; now?: Date } = {}) {
   const { tasks, projects } = documents(opts);
   const q = (s: string) => `"${s}"`;
   for (const [table, docs] of [[TASK_INDEX, tasks], [PROJECT_INDEX, projects]] as const) {
     const cols = columnsOf(docs);
-    await execAll(writer, [`DROP TABLE IF EXISTS ${q(table)}`, `CREATE TABLE ${q(table)} (${cols.map((c) => `${q(`Data.${c}`)} ${SQL_TYPE[FIELD_TYPES[c]!]}`).join(", ")})`]);
+    await execAll(writer, [`DROP TABLE IF EXISTS ${q(table)}`, `CREATE TABLE ${q(table)} (${cols.map((c) => `${q(`Data.${c}`)} ${SQL_TYPE[FIELD_TYPES[c]!]}`).join(", ")})`], dialect);
     await insertRows(writer, q(table), cols.map((c) => q(`Data.${c}`)), docs.map((d) => cols.map((c) => d.Data[c] ?? null)));
   }
 }

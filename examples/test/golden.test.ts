@@ -1,4 +1,4 @@
-import { type Executor, resolveBoard, sqlConnector } from "@lenspack/sql";
+import { type Dialect, type Executor, resolveBoard, sqlConnector } from "@lenspack/sql";
 import { describe, expect, it } from "vitest";
 
 import { type ExampleName, buildBoard, contextFor, examples } from "../index";
@@ -10,7 +10,7 @@ import { type ExampleName, buildBoard, contextFor, examples } from "../index";
 const NAMES = Object.keys(examples) as ExampleName[];
 const stringify = (v: unknown) => JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? `${x}n` : x));
 
-async function statements(name: ExampleName, dialect: "postgres" | "duckdb") {
+async function statements(name: ExampleName, dialect: Dialect) {
   const seen = new Set<string>();
   const executor: Executor = {
     dialect,
@@ -26,7 +26,7 @@ async function statements(name: ExampleName, dialect: "postgres" | "duckdb") {
 
 describe("example boards print the same SQL", () => {
   for (const name of NAMES) {
-    for (const dialect of ["postgres", "duckdb"] as const) {
+    for (const dialect of ["postgres", "duckdb", "mysql", "sqlite", "clickhouse"] as const) {
       it(`${name} on ${dialect}`, async () => {
         await expect(await statements(name, dialect)).toMatchFileSnapshot(`./golden/${name}.${dialect}.sql`);
       });

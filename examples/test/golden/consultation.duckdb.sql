@@ -8,7 +8,7 @@ LIMIT 5000;
 
 -- params: ["dopt","dopt"]
 SELECT "submissions"."__d_channel" AS "group", avg("wait_signal"."__m_wants_human_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, (wants_human::int) AS "__m_wants_human_rate" FROM "v_signal_wait" WHERE ("tenant_id" = $1)) AS "wait_signal"
+FROM (SELECT *, (CASE WHEN wants_human THEN 1 ELSE 0 END) AS "__m_wants_human_rate" FROM "v_signal_wait" WHERE ("tenant_id" = $1)) AS "wait_signal"
 LEFT JOIN (SELECT *, "submitted_at" AS "__t", (channel) AS "__d_channel" FROM "submissions" WHERE ("tenant_id" = $2)) AS "submissions" ON "wait_signal"."submission_id" = "submissions"."id"
 GROUP BY "submissions"."__d_channel"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
@@ -39,19 +39,19 @@ LIMIT 12;
 
 -- params: ["dopt"]
 SELECT "submissions"."__d_language" AS "group", avg("submissions"."__m_flagged_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, "submitted_at" AS "__t", (language) AS "__d_language", ((moderation_status = 'flagged')::int) AS "__m_flagged_rate" FROM "submissions" WHERE ("tenant_id" = $1)) AS "submissions"
+FROM (SELECT *, "submitted_at" AS "__t", (language) AS "__d_language", (CASE WHEN moderation_status = 'flagged' THEN 1 ELSE 0 END) AS "__m_flagged_rate" FROM "submissions" WHERE ("tenant_id" = $1)) AS "submissions"
 GROUP BY "submissions"."__d_language"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
 LIMIT 5;
 
 -- params: ["dopt"]
 SELECT avg("submissions"."__m_flagged_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, "submitted_at" AS "__t", ((moderation_status = 'flagged')::int) AS "__m_flagged_rate" FROM "submissions" WHERE ("tenant_id" = $1)) AS "submissions"
+FROM (SELECT *, "submitted_at" AS "__t", (CASE WHEN moderation_status = 'flagged' THEN 1 ELSE 0 END) AS "__m_flagged_rate" FROM "submissions" WHERE ("tenant_id" = $1)) AS "submissions"
 LIMIT 1;
 
 -- params: ["dopt"]
 SELECT avg("submissions"."__m_redaction_rate") AS "value", count(*) AS "n"
-FROM (SELECT *, "submitted_at" AS "__t", (redacted::int) AS "__m_redaction_rate" FROM "submissions" WHERE ("tenant_id" = $1)) AS "submissions"
+FROM (SELECT *, "submitted_at" AS "__t", (CASE WHEN redacted THEN 1 ELSE 0 END) AS "__m_redaction_rate" FROM "submissions" WHERE ("tenant_id" = $1)) AS "submissions"
 LIMIT 1;
 
 -- params: ["dopt"]
