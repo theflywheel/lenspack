@@ -15,7 +15,7 @@ const USAGE = `lenspack <command>
 
   serve  --config lenspack.yaml [--port 8787]   the board API (and --ui dir, or ui: in the config)
   check  --config lenspack.yaml                 draw every board against its source; exit 1 on any error
-  sources --config lenspack.yaml [--source s]   what each source holds: tables or indexes, fields, types
+  sources --config lenspack.yaml [--source s]   what each source holds: tables or indexes, fields, types, rows
   dss    ChartApiConfig.json [--dashboards MasterDashboardConfig.json]
          [--placeholders PVAR,…] [--pack name] --out dir
                                                 DIGIT DSS chart configs → pack.yaml, boards/, report.md
@@ -72,15 +72,17 @@ async function main() {
     }
     case "sources": {
       const { config, dir } = readConfig(flag("config") ?? "lenspack.yaml");
-      const { hosts, close } = await openConfig(config, dir);
+      const { sources, close } = await openConfig(config, dir);
       const only = flag("source");
-      for (const h of hosts) {
-        if (!h.connector.introspect) {
-          console.log(`${h.name}: ${h.connector.kind} does not describe itself yet`);
+      for (const [name, connector] of sources) {
+        if (only && name !== only) continue;
+        if (!connector.introspect) {
+          console.log(`${name} (${connector.kind}) does not describe itself yet`);
           continue;
         }
-        const schema = await h.connector.introspect();
-        for (const c of schema.collections) if (!only || c.name.includes(only)) console.log(`${c.name}${c.rows !== undefined ? ` (${c.rows} rows)` : ""}\n${c.fields.map((f) => `  ${f.path}: ${f.type}`).join("\n")}`);
+        const schema = await connector.introspect();
+        console.log(`${name} (${connector.kind})`);
+        for (const c of schema.collections) console.log(`  ${c.name}${c.rows !== undefined ? ` (~${c.rows} rows)` : ""}\n${c.fields.map((f) => `    ${f.path}: ${f.type}`).join("\n")}`);
       }
       await close();
       return;

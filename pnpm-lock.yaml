@@ -296,6 +296,12 @@ importers:
       ai:
         specifier: ^7.0.109
         version: 7.0.109(zod@3.25.76)
+      better-sqlite3:
+        specifier: '>=11'
+        version: 12.11.1
+      mysql2:
+        specifier: '>=3.9'
+        version: 3.24.5(@types/node@22.20.4)
       yaml:
         specifier: ^2.6.1
         version: 2.9.1
