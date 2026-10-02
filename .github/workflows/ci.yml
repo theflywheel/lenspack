@@ -12,6 +12,25 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U lenspack" --health-interval 5s --health-timeout 5s --health-retries 10
+      # Every SQL driver answers the conformance suite against DuckDB's numbers.
+      mysql:
+        image: mysql:8.4
+        env: { MYSQL_ROOT_PASSWORD: root, MYSQL_USER: lenspack, MYSQL_PASSWORD: lenspack, MYSQL_DATABASE: lenspack_test }
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -ulenspack -plenspack" --health-interval 5s --health-timeout 5s --health-retries 20
+      mariadb:
+        image: mariadb:11
+        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_USER: lenspack, MARIADB_PASSWORD: lenspack, MARIADB_DATABASE: lenspack_test }
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 5s --health-timeout 5s --health-retries 20
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.8
+        env: { CLICKHOUSE_USER: lenspack, CLICKHOUSE_PASSWORD: lenspack, CLICKHOUSE_DB: lenspack_test, CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1" }
+        ports: ["8123:8123"]
+        options: >-
+          --health-cmd "wget -qO- localhost:8123/ping" --health-interval 5s --health-timeout 5s --health-retries 20
       # The version DIGIT deployments run; the connector also speaks 6.x, 8.x and OpenSearch.
       elasticsearch:
         image: docker.elastic.co/elasticsearch/elasticsearch:7.17.24
@@ -22,6 +41,9 @@ jobs:
     env:
       LENSPACK_PG_URL: postgres://lenspack:lenspack@localhost:5432/lenspack_test
       LENSPACK_ES_URL: http://localhost:9200
+      LENSPACK_MYSQL_URL: mysql://lenspack:lenspack@127.0.0.1:3306/lenspack_test
+      LENSPACK_MARIADB_URL: mysql://lenspack:lenspack@127.0.0.1:3307/lenspack_test
+      LENSPACK_CLICKHOUSE_URL: clickhouse://lenspack:lenspack@127.0.0.1:8123/lenspack_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4   # version comes from package.json's packageManager
@@ -32,7 +54,7 @@ jobs:
         run: pnpm typecheck
       - name: Zero-domain grep (core and compiler know no domain)
         run: pnpm lint:domain
-      - name: Test (unit, property, SQL and search parity, pack conformance, DSS compile)
+      - name: Test (unit, property, golden SQL, five SQL drivers and search parity, pack conformance, DSS compile)
         run: pnpm test
       - name: Build
         run: pnpm build
