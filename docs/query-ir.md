@@ -28,24 +28,24 @@ Relative `time` is resolved against `now` at query time, so a saved board keeps 
 ```
 resolve : (Query, Pack, Ctx) → BoundPlan | ResolveError    keys, join paths, tenant, windows
 plan    : (BoundPlan, Pack) → Ast                           one subquery per entity, projections, aggregates
-print   : (Ast, Dialect) → { sql, params }                  postgres | duckdb
+print   : (Ast, Dialect) → { sql, params }                  postgres | duckdb | sqlite | mysql | clickhouse | a registered driver's
 ```
 
-`ResolveError` carries `{ code, key, nearest }`. Codes: `UNKNOWN_MEASURE`, `UNKNOWN_DIMENSION`, `UNKNOWN_ENTITY`, `NO_JOIN_PATH`, `FANOUT_REFUSED`, `TENANT_REQUIRED`, `NO_TIME`, `NEEDS_TIME_RANGE`, `WRONG_ENTITY`, `TIME_DIMENSION`.
+`ResolveError` carries `{ code, key, nearest }`. Codes: `UNKNOWN_MEASURE`, `UNKNOWN_DIMENSION`, `UNKNOWN_ENTITY`, `NO_JOIN_PATH`, `FANOUT_REFUSED`, `TENANT_REQUIRED`, `NO_TIME`, `NEEDS_TIME_RANGE`, `WRONG_ENTITY`, `TIME_DIMENSION`, `NEEDS_JOIN`, `OUT_OF_SCOPE`, and `NOT_SUPPORTED` (what the source cannot compute: a percentile on MySQL or SQLite, a fragment with no entry for its dialect).
 
 ### Invariants
 
 1. Every identifier in emitted SQL originates from the pack.
-2. Every request value is a bound parameter (`$n` on both engines).
+2. Every request value is a bound parameter (`$n`, `?` or a typed `{pN:Type}`, as the dialect binds).
 3. A declared tenant is always present in the predicate, or compilation fails.
 4. `LIMIT` is always emitted.
-5. Read-only transaction and statement timeout are applied by the executor, never expressed in SQL.
+5. Read-only, one statement, a statement timeout and a row cap are applied by the driver, never expressed in SQL.
 6. Fan-out is refused, not computed.
 7. Population and per-group rates share the same base rows.
 
 ### What the printer owns
 
-Identifier quoting, JSON access (`->>`/`#>>` vs `json_extract_string`), `date_trunc` and week start, casts (`DOUBLE PRECISION` vs `DOUBLE`), `percentile_cont … WITHIN GROUP` vs `quantile_cont`, `count(DISTINCT …)`. Nothing above the printer mentions a dialect.
+Identifier quoting, placeholders, JSON access, time buckets and week start, epoch conversion, casts, percentiles (or their refusal), `LIKE` escapes, `IS DISTINCT FROM`, NULL ordering. Each dialect is a table of rules ([drivers.md](drivers.md)); nothing above the printer mentions a dialect, and golden files pin what each one prints.
 
 ### Shape of the SQL
 

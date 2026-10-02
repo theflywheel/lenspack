@@ -246,6 +246,8 @@ for (const engine of ENGINES) {
       await expect(runSql("SELECT 1 AS one; SELECT 2 AS two", e.executor)).rejects.toThrow(/One statement/);
       await expect(runSql("WITH x AS (SELECT 1 AS one) SELECT one FROM x", e.executor)).resolves.toMatchObject({ rowCount: 1 });
       expect(await count()).toBe(4);
+      // A DuckDB file opened as a source reads nothing but itself.
+      if (engine.dialect === "duckdb") await expect(e.executor.query("SELECT * FROM read_csv('/etc/hostname')", [])).rejects.toThrow(/disabled/i);
     });
 
     it("stops a statement at the timeout, and keeps working after", async ({ skip }) => {
