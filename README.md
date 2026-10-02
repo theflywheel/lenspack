@@ -11,7 +11,7 @@ pack.yaml  ──►  catalogue  ──►  the model names keys  ──►  ops
                     │                                                     │
                     └──────────►  compiler (resolve → plan → print)  ◄────┘
                                           │
-                                 Postgres │ DuckDB
+         Postgres · DuckDB · SQLite · MySQL · ClickHouse · Elasticsearch
 ```
 
 ## Sixty seconds, zero infrastructure
@@ -48,7 +48,7 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 | `@lenspack/core` | board config schema, the query IR, the eight ops, packing, validation, `nearest()`, in-memory store | zod |
 | `@lenspack/spec` | pack loader: YAML/JSON → validated catalogue | core |
 | `@lenspack/engine` | the backend-neutral half: resolve (keys, join paths, fan-out refusal, tenancy, time, capability refusals), the `Connector` interface, `run` / `explain` / `checkOps`, cross-entity ratios | core, spec |
-| `@lenspack/sql` | `sqlConnector()`: compiler (plan → print) for **Postgres** and **DuckDB**, read-only executors, cache, SQL board store | engine |
+| `@lenspack/sql` | `sqlConnector()` and the driver registry: compiler (plan → print) and read-only drivers for **Postgres, DuckDB, SQLite, MySQL/MariaDB and ClickHouse**, chosen by connection URL; cache, SQL board store | engine |
 | `@lenspack/elasticsearch` | `elasticsearchConnector()`: the IR as aggregations over plain HTTP — **Elasticsearch 6.x–8.x and OpenSearch**; text→keyword from the mapping; approximate aggregations flagged ≈ | engine |
 | `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; chart adapters for **recharts, ECharts, shadcn** and a zero-dependency SVG fallback | core, react-grid-layout (chart libraries are optional peers) |
 | `@lenspack/mcp` | `boardTools()` — provider-agnostic tool definitions — plus `toVercelAI()`, `toMcp()` and the `lenspack-mcp` CLI | core, spec, engine |
@@ -82,18 +82,26 @@ rather than SQL fragments, and CI holds that to account: the `campaign`
 example (DIGIT DSS's index shapes, synthetic data) returns identical numbers
 from DuckDB and a real Elasticsearch on 77 queries.
 
+A SQL source is a **connection URL**, and its scheme picks the driver:
+`postgres://`, `duckdb:`, `sqlite:`, `mysql://` (MariaDB too) or
+`clickhouse://`. lenspack sends a driver SQL text and bound parameters,
+nothing else; the driver runs it read-only, one statement at a time, under a
+timeout and a row cap. Adding a database is `registerDriver()` and a test
+suite, with no change to the core. See [docs/drivers.md](docs/drivers.md).
+
 ```yaml
 # lenspack.yaml — secrets are env: references, never values
 sources:
   search: { kind: elasticsearch, url: env:ES_URL, apiKey: env:ES_API_KEY }
-  shop:   { kind: duckdb, path: ./data/shop.duckdb }
+  shop:   { url: env:DATABASE_URL }                # postgres://, mysql://, clickhouse://, sqlite:…
+  local:  { url: "duckdb:./data/shop.duckdb" }
 packs:
   - { pack: ./packs/campaign/pack.yaml, source: search, boards: ./packs/campaign/boards }
 store: { kind: duckdb, path: ./data/boards.duckdb }   # boards never live in a source
 ```
 
 ```sh
-lenspack sources --config lenspack.yaml     # what each source holds
+lenspack sources --config lenspack.yaml     # what each source holds: tables, columns, types, rows
 lenspack check   --config lenspack.yaml     # draw every board; exit 1 on any error
 lenspack serve   --config lenspack.yaml     # the board API on :8787
 ```
@@ -135,10 +143,10 @@ measures:
   - { key: orders,      entity: orders, agg: count }
   - { key: revenue,     entity: orders, agg: sum, sql: total_cents / 100.0, format: currency }
   - { key: aov,         entity: orders, derived: revenue / orders, format: currency }
-  - { key: refund_rate, entity: orders, agg: avg, sql: "(status = 'refunded')::int", format: percent }
+  - { key: refund_rate, entity: orders, agg: avg, sql: "CASE WHEN status = 'refunded' THEN 1 ELSE 0 END", format: percent }
 ```
 
-Humans write the `sql:` fragments and review them in git. The model only ever names keys. See [docs/pack-spec.md](docs/pack-spec.md) and [docs/writing-a-pack.md](docs/writing-a-pack.md).
+Humans write the `sql:` fragments and review them in git, portable or per dialect. The model only ever names keys. See [docs/pack-spec.md](docs/pack-spec.md) and [docs/writing-a-pack.md](docs/writing-a-pack.md).
 
 ## A query
 
@@ -165,7 +173,7 @@ lenspack was extracted from a public-consultation moderation tool where the dash
 | [`tickets`](examples/tickets) | state history, durations, SLA breach as a filtered rate, a funnel |
 | [`hcm`](examples/hcm) | a real-world awkward schema (DIGIT HCM shape): epoch-millisecond `BIGINT` times, `isdeleted` on every table, dual keys, JSON in text columns, dotted hierarchies, fan-out on every side |
 
-1. **Two engines, same answer.** Every example board runs on Postgres and DuckDB; results must match.
+1. **Every engine, same answer.** Every example board, and every dimension × measure × shape of every pack, runs on Postgres, MySQL, MariaDB, SQLite and ClickHouse and must return DuckDB's numbers. A percentile on a database with no percentile function (MySQL, SQLite) must come back as the documented refusal and nothing else may. Golden files pin the SQL each dialect prints.
 2. **One ops suite, four packs.** The core's tests run parametrised over every catalogue.
 3. **Zero-domain grep.** CI fails if `packages/*` contains a word from any example domain.
 4. **Pack conformance.** Every dimension × measure × query shape compiles, or fails with a documented `ResolveError`; every declared fan-out is refused; tenant injection is present.
@@ -222,7 +230,7 @@ Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec 
 - The model's only outputs are ops and IR, both closed unions validated before anything touches a database.
 - No URLs, HTML or colours in any config; text widgets render as text nodes.
 - Tenancy is structural: if an entity declares `tenant`, a query without one does not compile.
-- Every query runs in a read-only transaction with a statement timeout; boards are stored apart from the data.
+- Every query runs read-only, one statement at a time, under a statement timeout and a row cap, enforced by the database's driver rather than trusted from the SQL; boards are stored apart from the data.
 - **Who is asking** is the deployment's answer, not lenspack's: an `access(request)` hook (or `auth:` in `lenspack.yaml`) names the caller, their tenant, their row scope and whether they may edit. Unknown callers get 401; viewers cannot change boards.
 - **Row scope** (`ctx.scope`) narrows every query, filter menus included, on every connector. A number the scope cannot reach is refused (`OUT_OF_SCOPE`), never shown unnarrowed.
 - Every change, refused change and denied request is passed to an `audit` hook with the user (`audit: file.jsonl` in the config).
@@ -243,7 +251,7 @@ More in [docs/security.md](docs/security.md).
 
 ## Status
 
-`0.1.0`. The design spec is in [docs/superpowers/specs](docs/superpowers/specs/2026-09-22-lenspack-design.md). Not yet built: rollups/pre-aggregation, catalogue retrieval by embedding (packs with hundreds of metrics should scope `list_metrics` with `q`), warehouse dialects. Contributions and fifth packs welcome.
+`0.1.0`. The design spec is in [docs/superpowers/specs](docs/superpowers/specs/2026-09-22-lenspack-design.md). Not yet built: rollups/pre-aggregation, catalogue retrieval by embedding (packs with hundreds of metrics should scope `list_metrics` with `q`), warehouse drivers (BigQuery, Snowflake). Contributions, drivers and fifth packs welcome.
 
 ## License
 

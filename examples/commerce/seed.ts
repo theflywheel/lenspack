@@ -6,8 +6,6 @@ export async function seed(writer: Writer, dialect: Dialect, opts: { orders?: nu
   const r = rng(7);
   const now = opts.now ?? new Date("2026-09-01T00:00:00Z");
   const nOrders = opts.orders ?? 5000;
-  void dialect;
-
   await execAll(writer, [
     "DROP TABLE IF EXISTS order_items",
     "DROP TABLE IF EXISTS orders",
@@ -17,7 +15,7 @@ export async function seed(writer: Writer, dialect: Dialect, opts: { orders?: nu
     "CREATE TABLE products (id INTEGER PRIMARY KEY, category VARCHAR, price_cents INTEGER)",
     "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER, placed_at TIMESTAMP, status VARCHAR, channel VARCHAR, total_cents INTEGER)",
     "CREATE TABLE order_items (id INTEGER PRIMARY KEY, order_id INTEGER, product_id INTEGER, qty INTEGER, unit_cents INTEGER)",
-  ]);
+  ], dialect);
 
   const countries = [["IN", 5], ["US", 3], ["GB", 2], ["DE", 1], ["KE", 1]] as const;
   const customers = Array.from({ length: Math.max(50, Math.floor(nOrders / 8)) }, (_, i) => [

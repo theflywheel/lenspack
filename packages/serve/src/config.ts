@@ -6,7 +6,7 @@ import { elasticsearchConnector } from "@lenspack/elasticsearch";
 import type { Connector } from "@lenspack/engine";
 import { fileProposals } from "@lenspack/mcp";
 import { parsePackText } from "@lenspack/spec";
-import { type Executor, type Writer, sqlConnector, sqlStore } from "@lenspack/sql";
+import { type Executor, type Writer, driverFor, openSource, sqlStore } from "@lenspack/sql";
 import YAML from "yaml";
 import { z } from "zod";
 
@@ -18,18 +18,26 @@ import { authSchema } from "./auth";
 // the environment when the server starts.
 //
 //   sources:
+//     shop:   { url: env:DATABASE_URL }            # postgres://, mysql://, clickhouse://, …
+//     local:  { url: "duckdb:./data/shop.duckdb" }  # relative to this file
 //     search: { kind: elasticsearch, url: env:ES_URL, apiKey: env:ES_API_KEY }
-//     local:  { kind: duckdb, path: ./data/shop.duckdb }
 //   packs:
 //     - { pack: ./packs/campaign/pack.yaml, source: search, boards: ./packs/campaign/boards }
 //   store: { kind: duckdb, path: ./data/boards.duckdb }
+//
+// A SQL source is a connection URL and its scheme picks the driver; `kind:`
+// may still be written, and must then agree. Elasticsearch stays a connector
+// of its own: its SQL API cannot join, and the native one is proven in CI.
 
 const secret = z.string().min(1);
-const sourceSchema = z.discriminatedUnion("kind", [
+const limits = { timeoutMs: z.number().int().positive().optional(), maxRows: z.number().int().positive().optional() };
+const SEARCH = ["elasticsearch", "opensearch"];
+const sourceSchema = z.union([
   z.object({ kind: z.literal("elasticsearch"), url: secret, apiKey: secret.optional(), username: secret.optional(), password: secret.optional(), timeoutMs: z.number().int().positive().optional() }),
   z.object({ kind: z.literal("opensearch"), url: secret, username: secret.optional(), password: secret.optional(), timeoutMs: z.number().int().positive().optional() }),
-  z.object({ kind: z.literal("postgres"), url: secret }),
-  z.object({ kind: z.literal("duckdb"), path: z.string().min(1) }),
+  z.object({ kind: z.string().refine((k) => !SEARCH.includes(k)).optional(), url: secret, ...limits }),
+  // The form before URLs: a DuckDB or SQLite file by path.
+  z.object({ kind: z.enum(["duckdb", "sqlite"]), path: z.string().min(1), ...limits }),
 ]);
 
 export const configSchema = z.object({
@@ -97,19 +105,24 @@ export function readBoards(dir: string): BoardFile[] {
 }
 
 /** Opens every source and store a config names, and binds each pack to its source. */
-export async function openConfig(config: LenspackConfig, dir: string, env = process.env): Promise<{ hosts: Host[]; close(): Promise<void> }> {
+export async function openConfig(config: LenspackConfig, dir: string, env = process.env): Promise<{ hosts: Host[]; sources: Map<string, Connector>; close(): Promise<void> }> {
   const at = (p: string) => (isAbsolute(p) ? p : join(dir, p));
   const closers: (() => Promise<void>)[] = [];
   const connectors = new Map<string, Connector>();
   for (const [name, raw] of Object.entries(config.sources)) {
     const src = resolveSecrets(raw, env);
     if (src.kind === "elasticsearch" || src.kind === "opensearch") {
-      connectors.set(name, elasticsearchConnector({ url: src.url, apiKey: "apiKey" in src ? src.apiKey : undefined, username: src.username, password: src.password, defaultTimeoutMs: src.timeoutMs }));
-    } else {
-      const db = await openSql(src.kind, src.kind === "duckdb" ? at(src.path) : src.url);
-      closers.push(() => db.close());
-      connectors.set(name, sqlConnector(db.executor));
+      const es = src as { url: string; apiKey?: string; username?: string; password?: string; timeoutMs?: number };
+      connectors.set(name, elasticsearchConnector({ url: es.url, apiKey: es.apiKey, username: es.username, password: es.password, defaultTimeoutMs: es.timeoutMs }));
+      continue;
     }
+    const url = "url" in src ? src.url : `${src.kind}:${at(src.path)}`;
+    const driver = driverFor(url);
+    if (src.kind && src.kind !== driver.name && !driver.schemes.includes(src.kind))
+      throw new Error(`source "${name}" says kind: ${src.kind}, but its URL is a ${driver.name} URL`);
+    const { connector, connection } = await openSource(url, { base: dir, defaultTimeoutMs: src.timeoutMs, maxRows: "maxRows" in src ? src.maxRows : undefined });
+    closers.push(connection.close);
+    connectors.set(name, connector);
   }
 
   // Boards live apart from the data: a pack's source is read-only to lenspack.
@@ -144,5 +157,5 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
       proposals: fileProposals(at(`${name}.proposals.json`)),
     });
   }
-  return { hosts, close: async () => void (await Promise.all(closers.map((c) => c()))) };
+  return { hosts, sources: connectors, close: async () => void (await Promise.all(closers.map((c) => c()))) };
 }

@@ -1,5 +1,5 @@
 import type { Ast } from "../ast";
-import { type DialectRules, type Printed, print, quoteTable } from "./base";
+import { type DialectRules, type Printed, printerFor } from "./base";
 
 const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
@@ -16,6 +16,12 @@ export const duckdbRules: DialectRules = {
   trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
   segment: (arg, values) => `list_has_any(string_split(CAST(${arg} AS VARCHAR), '|'), [${values.join(", ")}])`,
   epoch: (arg, unit) => `epoch_ms(CAST(${arg} AS BIGINT)${unit === "epoch_s" ? " * 1000" : ""})`,
+  // DuckDB's LIKE has no escape character unless told; the planner escapes
+  // wildcards in a value with a backslash, as Postgres reads them.
+  ops: {
+    LIKE: (l, r) => `(${l} LIKE ${r} ESCAPE '\\')`,
+    ILIKE: (l, r) => `(${l} ILIKE ${r} ESCAPE '\\')`,
+  },
   // DuckDB accepts numbered parameters, so both dialects bind the same way.
   param: (i) => `$${i}`,
   // The node binding narrows a JS integer past 32 bits to INTEGER, so large
@@ -23,7 +29,4 @@ export const duckdbRules: DialectRules = {
   paramValue: (v) => (v instanceof Date ? v.toISOString().replace("T", " ").replace("Z", "") : typeof v === "number" && Number.isInteger(v) && Math.abs(v) > 2_147_483_647 ? BigInt(v) : v),
 };
 
-export function printDuckdb(ast: Ast): Printed {
-  const fix = (s: Ast["from"]) => ({ ...s, table: quoteTable(s.table, quote) });
-  return print({ ...ast, from: fix(ast.from), joins: ast.joins.map((j) => ({ ...j, source: fix(j.source) })) }, duckdbRules);
-}
+export const printDuckdb: (ast: Ast) => Printed = printerFor(duckdbRules);

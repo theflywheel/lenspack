@@ -40,6 +40,12 @@ export type Capabilities = {
   exactDistinct: boolean;
   /** median / p90 are exact. */
   exactPercentiles: boolean;
+  /**
+   * median / p90 can be computed at all. A SQL dialect with no percentile
+   * function (MySQL, SQLite) says false, and such a measure is refused
+   * rather than estimated some other way. Absent means true.
+   */
+  percentiles?: boolean;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true };
@@ -206,6 +212,18 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     }
   }
   const rootEntity = pack.entities[root]!;
+
+  // A percentile the source cannot compute is refused, never approximated by
+  // something that would print a different number under the same label.
+  if (measure && caps.percentiles === false) {
+    const pct = (measure.kind === "simple" ? [measure.def] : measure.operands).find((m) => m.agg === "median" || m.agg === "p90");
+    if (pct)
+      throw new ResolveError(
+        "NOT_SUPPORTED",
+        `"${pct.key}" is a ${pct.agg === "p90" ? "90th percentile" : "median"}, and this source has no percentile function, so it is not computed here`,
+        pct.key,
+      );
+  }
 
   const bind = (key: string): BoundDimension => {
     const def = findDimension(key);

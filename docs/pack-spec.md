@@ -12,8 +12,10 @@ entities:
     source: <table|schema.table|view>
     grain: <one line, surfaced to the model>      # optional but recommended
     time: <column>          # default time column for series, windows and comparisons
-    # …or an expression, when time is stored as something else (epoch milliseconds in a BIGINT):
-    # time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    # …or a field holding epoch numbers, which every connector converts:
+    # time: { field: createdtime, unit: epoch_ms }
+    # …or an expression, one per dialect where they differ:
+    # time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)", … } }
     tenant: <column>        # when present, every query over this entity MUST carry a tenant
     filter: <predicate>     # carried by every query over this entity, e.g. soft deletes: isdeleted = false
     joins:
@@ -25,7 +27,7 @@ dimensions:
   - key: <slug>
     entity: <entity_key>
     sql: <fragment>         # OR
-    json: [<column>, <key>, <key>…]   # JSON path; the printer emits ->> / #>> or json_extract_string
+    json: [<column>, <key>, <key>…]   # JSON path; each dialect reads it its own way
     type: string | number | boolean | time | enum   # default string
     grains: [hour, day, week, month, quarter, year] # time dimensions only
     label: <text>           # default: key title-cased
@@ -51,8 +53,10 @@ measures:
 A `sql`, `filter` or dimension `sql` value is either a string or a per-dialect map:
 
 ```yaml
-sql: { postgres: "EXTRACT(HOUR FROM ts)::int", duckdb: "hour(ts)", default: "…" }
+sql: { postgres: "EXTRACT(HOUR FROM ts)::int", duckdb: "hour(ts)", mysql: "HOUR(ts)", sqlite: "CAST(strftime('%H', ts) AS INTEGER)", clickhouse: "toHour(ts)" }
 ```
+
+A fragment must be **portable or per-dialect**. A bare string is read by every SQL driver, so write it in SQL they all accept (`CASE WHEN status = 'refunded' THEN 1 ELSE 0 END`, not `(status = 'refunded')::int`). Where they genuinely differ, the map gives each its own entry: `postgres`, `duckdb`, `mysql` (MariaDB too), `sqlite`, `clickhouse`, the name of any driver registered from outside, or `elasticsearch` (query DSL or Painless); `default` serves the SQL dialects not named. A query that needs a fragment its source has no entry for is refused with `NOT_SUPPORTED`, naming the fragment. A YAML anchor writes a map once and reuses it. [drivers.md](drivers.md) lists what differs.
 
 Fragments are inlined verbatim inside a subquery over that entity's own table, so unqualified column names are unambiguous even under joins. **They are trusted code.** They come from the pack file, never from a request, and should be reviewed like code.
 

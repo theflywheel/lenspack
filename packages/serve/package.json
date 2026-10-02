@@ -1,7 +1,7 @@
 {
   "name": "@lenspack/serve",
   "version": "0.1.0",
-  "description": "lenspack as a server: packs bound to sources (Postgres, DuckDB, Elasticsearch) from one config file, the board API, chat with review, and the lenspack CLI (serve, check, dss).",
+  "description": "lenspack as a server: packs bound to sources (Postgres, DuckDB, SQLite, MySQL/MariaDB, ClickHouse by connection URL, and Elasticsearch) from one config file, the board API, chat with review, and the lenspack CLI (serve, check, sources, dss).",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,8 +23,8 @@
     "yaml": "^2.6.1",
     "zod": "^3.25.76"
   },
-  "peerDependencies": { "@duckdb/node-api": "*", "pg": ">=8.11.0" },
-  "peerDependenciesMeta": { "@duckdb/node-api": { "optional": true }, "pg": { "optional": true } },
+  "peerDependencies": { "@duckdb/node-api": "*", "better-sqlite3": ">=11", "mysql2": ">=3.9", "pg": ">=8.11.0" },
+  "peerDependenciesMeta": { "@duckdb/node-api": { "optional": true }, "better-sqlite3": { "optional": true }, "mysql2": { "optional": true }, "pg": { "optional": true } },
   "devDependencies": { "@duckdb/node-api": "^1.4.0-r.1", "pg": "^8.13.1" },
   "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/serve" }
 }

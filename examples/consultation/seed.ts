@@ -52,7 +52,7 @@ export async function seed(writer: Writer, dialect: Dialect, opts: { submissions
     "CREATE TABLE themes (id INTEGER PRIMARY KEY, run_id INTEGER, name VARCHAR, severity INTEGER, actionability INTEGER)",
     "CREATE TABLE theme_assignments (submission_id INTEGER, theme_id INTEGER, run_id INTEGER)",
     "CREATE TABLE extractions (id INTEGER PRIMARY KEY, tenant_id VARCHAR, submission_id INTEGER, run_id INTEGER, signal_key VARCHAR, value_num DOUBLE PRECISION, value_bool BOOLEAN)",
-  ]);
+  ], dialect);
 
   const submissions: unknown[][] = [];
   const assignments: unknown[][] = [];

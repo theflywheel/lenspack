@@ -21,14 +21,21 @@ Anything else is rejected before it reaches a database.
 
 Every identifier from the pack; every value a bound parameter; tenant predicate present or compile error; `LIMIT` always; fan-out refused. See [query-ir.md](query-ir.md).
 
-## The executor's guarantees
+## The driver's guarantees
 
-- Postgres: `BEGIN TRANSACTION READ ONLY` and `SET LOCAL statement_timeout` around every statement. Use a read-only database role in production; the transaction mode is a belt, the role is the braces.
-- DuckDB: the executor only runs compiled statements and interrupts the connection on timeout. Seeding and the board store use a separate `Writer` that is never handed to a tool.
+Every SQL source is opened through a driver, and the driver, not the SQL, enforces four things on every statement: read-only, exactly one statement, a statement timeout and a row cap (a result over it is an error, not a shorter answer). How each database does it is in [drivers.md](drivers.md#the-guards-are-the-drivers); in short:
+
+- Postgres: `BEGIN TRANSACTION READ ONLY` and `SET LOCAL statement_timeout` around every statement, always over the extended protocol, which takes one statement.
+- DuckDB: one statement, prepared and run only if it is a `SELECT`; interrupted on timeout. A source file is opened `READ_ONLY` with external access off, so nothing can read past it.
+- SQLite: the file is opened read-only, every statement must be one SQLite marks read-only, and the connection runs in a worker thread that is ended on timeout.
+- MySQL and MariaDB: a read-only session and a read-only transaction per statement, the server's statement timer, prepared statements.
+- ClickHouse: `readonly=2`, `max_execution_time` and `max_result_rows` on every request.
+
+Use a read-only database role in production; these are belts, the role is the braces. Seeding and the board store use a separate `Writer` that is never handed to a tool.
 
 ## `run_sql`
 
-Off by default, and refused on a pack with tenant-scoped entities or a caller scope: raw SQL does not pass through the pack, so neither applies to it. There it can be enabled only as `runSql: "role-scoped"` (`--run-sql-role-scoped`), which states that the database role behind the connection already limits what it can read. When enabled: one statement, `SELECT`/`WITH` by shape, wrapped in `SELECT * FROM (…) LIMIT n`, executed through the read-only executor. No keyword denylist — a denylist cannot know what a function does; the role and the transaction mode are the guards. Results are returned to the caller and cannot be attached to a widget: if an answer is worth keeping, `propose_measure` it and let a human promote it.
+Off by default, and refused on a pack with tenant-scoped entities or a caller scope: raw SQL does not pass through the pack, so neither applies to it. There it can be enabled only as `runSql: "role-scoped"` (`--run-sql-role-scoped`), which states that the database role behind the connection already limits what it can read. When enabled: one statement, `SELECT`/`WITH` by shape, wrapped in `SELECT * FROM (…) LIMIT n`, executed through the read-only driver, whose own guards apply as well. No keyword denylist — a denylist cannot know what a function does; the role and the transaction mode are the guards. Results are returned to the caller and cannot be attached to a widget: if an answer is worth keeping, `propose_measure` it and let a human promote it.
 
 ## Tenancy
 

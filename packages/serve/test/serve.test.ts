@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { openDuckdb } from "@lenspack/sql/duckdb";
+import { openSqlite } from "@lenspack/sql/sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { seed } from "../../../examples/campaign/seed";
-import { createApp, openConfig, readConfig, resolveSecrets, seedBoards } from "../src";
+import { configSchema, createApp, openConfig, readConfig, resolveSecrets, seedBoards } from "../src";
 
 const campaign = fileURLToPath(new URL("../../../examples/campaign/", import.meta.url));
 
@@ -52,6 +53,9 @@ describe("lenspack serve from a config file", () => {
     await seed(db.writer, "duckdb", { households: 3000 });
     await db.close();
     sqlApi = await start(`{ kind: duckdb, path: ${join(dir, "campaign.duckdb")} }`);
+    const lite = await openSqlite(join(dir, "campaign.db"));
+    await seed(lite.writer, "sqlite", { households: 3000 });
+    await lite.close();
   });
   afterAll(async () => {
     for (const s of servers) s.close();
@@ -77,6 +81,31 @@ describe("lenspack serve from a config file", () => {
     expect(ok.native).toMatch(/SELECT/);
     const no = await get(`${sqlApi}/campaign/explain?q=${encodeURIComponent(JSON.stringify({ kind: "breakdown", dimension: "distrct", measure: "visits" }))}`);
     expect(no).toMatchObject({ ok: false, code: "UNKNOWN_DIMENSION", nearest: "district" });
+  });
+
+  it("takes a source as a connection URL, the driver read from its scheme, relative to the config", async () => {
+    const liteApi = await start(`{ url: "sqlite:./campaign.db" }`);
+    expect((await get(liteApi)).examples[0].source).toBe("sqlite");
+    const [a, b] = await Promise.all([get(`${sqlApi}/campaign/overview/data`), get(`${liteApi}/campaign/overview/data`)]);
+    for (const id of Object.keys(a)) expect(b[id].rows, id).toEqual(a[id].rows);
+  });
+
+  it("refuses a kind that disagrees with the URL, and a scheme with no driver", async () => {
+    const parse = (source: unknown) => configSchema.parse({ sources: { data: source }, packs: [{ pack: "p.yaml", source: "data" }] });
+    expect(parse({ url: "env:DATABASE_URL" }).sources.data).toEqual({ url: "env:DATABASE_URL" });
+    expect(parse({ kind: "postgres", url: "env:PG" }).sources.data).toMatchObject({ kind: "postgres" });
+    const open = (source: unknown) => openConfig(parse(source), dir);
+    await expect(open({ kind: "mysql", url: "sqlite:./campaign.db" })).rejects.toThrow(/says kind: mysql, but its URL is a sqlite URL/);
+    await expect(open({ url: "oracle://h/db" })).rejects.toThrow(/No driver for "oracle:"/);
+  });
+
+  it("lists what each source holds", async () => {
+    const opened = await openConfig(configSchema.parse({ sources: { lite: { url: "sqlite:./campaign.db" } }, packs: [{ pack: `${campaign}pack.yaml`, source: "lite" }] }), dir);
+    const schema = await opened.sources.get("lite")!.introspect!();
+    await opened.close();
+    const tasks = schema.collections.find((c) => c.name === "project-task-index-v1");
+    expect(tasks?.rows).toBe(3000);
+    expect(tasks?.fields.map((f) => f.path)).toContain("Data.district");
   });
 
   it.skipIf(!process.env.LENSPACK_ES_URL)("serves the same board from Elasticsearch, configured by env reference", async () => {
