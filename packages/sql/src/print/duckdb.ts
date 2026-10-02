@@ -16,6 +16,12 @@ export const duckdbRules: DialectRules = {
   trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
   segment: (arg, values) => `list_has_any(string_split(CAST(${arg} AS VARCHAR), '|'), [${values.join(", ")}])`,
   epoch: (arg, unit) => `epoch_ms(CAST(${arg} AS BIGINT)${unit === "epoch_s" ? " * 1000" : ""})`,
+  // DuckDB's LIKE has no escape character unless told; the planner escapes
+  // wildcards in a value with a backslash, as Postgres reads them.
+  ops: {
+    LIKE: (l, r) => `(${l} LIKE ${r} ESCAPE '\\')`,
+    ILIKE: (l, r) => `(${l} ILIKE ${r} ESCAPE '\\')`,
+  },
   // DuckDB accepts numbered parameters, so both dialects bind the same way.
   param: (i) => `$${i}`,
   // The node binding narrows a JS integer past 32 bits to INTEGER, so large
