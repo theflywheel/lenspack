@@ -1,4 +1,5 @@
 import type { SourceSchema } from "@lenspack/engine";
+import type { Connection as CoreConnection } from "mysql2";
 import mysql, { type Pool, type PoolConnection } from "mysql2/promise";
 
 import { type Executor, type ExecutorOptions, type Row, type Writer, capRows, collectSchema, timeoutOf } from "../executor";
@@ -16,6 +17,8 @@ const options = {
   supportBigNumbers: true,
   multipleStatements: false,
   charset: "utf8mb4",
+  // Each connection caches its prepared statements; bound them well under the server's global limit.
+  maxPreparedStatements: 256,
 } as const;
 
 export function mysqlExecutor(pool: Pool, opts: ExecutorOptions & { mariadb?: boolean } = {}): Executor {
@@ -71,14 +74,22 @@ export async function introspectMysql(executor: Executor): Promise<SourceSchema>
   return collectSchema(columns, estimates);
 }
 
+// A new pooled connection arrives as the callback-API connection, whatever
+// the pool's own API; one whose session setting fails is closed, so nothing
+// runs on it without the setting.
+const session = (c: unknown, sql: string) => {
+  const conn = c as CoreConnection;
+  conn.query(sql, (err) => err && conn.destroy());
+};
+
 /** mysql://user:pass@host:3306/db (or mariadb://…). */
 export async function openMysql(url: string, opts: ExecutorOptions = {}) {
   const uri = url.replace(/^mariadb:/i, "mysql:");
   const pool = mysql.createPool({ uri, ...options, connectionLimit: 10 });
   // Every transaction on a reading session is read-only, not just the ones the executor opens.
-  pool.on("connection", (c) => void c.query("SET SESSION TRANSACTION READ ONLY"));
+  pool.on("connection", (c) => session(c, "SET SESSION TRANSACTION READ ONLY"));
   const writes = mysql.createPool({ uri, ...options, connectionLimit: 2 });
-  writes.on("connection", (c) => void c.query("SET SESSION sql_mode = CONCAT(@@sql_mode, ',ANSI_QUOTES')"));
+  writes.on("connection", (c) => session(c, "SET SESSION sql_mode = CONCAT(@@sql_mode, ',ANSI_QUOTES')"));
   const [[version]] = (await pool.query("SELECT VERSION() AS v")) as unknown as [{ v: string }[]];
   const executor = mysqlExecutor(pool, { ...opts, mariadb: /mariadb/i.test(version?.v ?? "") });
   return {
