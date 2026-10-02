@@ -1,5 +1,5 @@
 import type { Ast } from "../ast";
-import { type DialectRules, type Printed, print, quoteTable } from "./base";
+import { type DialectRules, type Printed, printerFor } from "./base";
 
 const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
@@ -23,7 +23,4 @@ export const duckdbRules: DialectRules = {
   paramValue: (v) => (v instanceof Date ? v.toISOString().replace("T", " ").replace("Z", "") : typeof v === "number" && Number.isInteger(v) && Math.abs(v) > 2_147_483_647 ? BigInt(v) : v),
 };
 
-export function printDuckdb(ast: Ast): Printed {
-  const fix = (s: Ast["from"]) => ({ ...s, table: quoteTable(s.table, quote) });
-  return print({ ...ast, from: fix(ast.from), joins: ast.joins.map((j) => ({ ...j, source: fix(j.source) })) }, duckdbRules);
-}
+export const printDuckdb: (ast: Ast) => Printed = printerFor(duckdbRules);

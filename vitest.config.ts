@@ -10,6 +10,9 @@ export default defineConfig({
     alias: [
       { find: "@lenspack/sql/pg", replacement: pkg("sql", "executors/pg.ts") },
       { find: "@lenspack/sql/duckdb", replacement: pkg("sql", "executors/duckdb.ts") },
+      { find: "@lenspack/sql/mysql", replacement: pkg("sql", "executors/mysql.ts") },
+      { find: "@lenspack/sql/sqlite", replacement: pkg("sql", "executors/sqlite.ts") },
+      { find: "@lenspack/sql/clickhouse", replacement: pkg("sql", "executors/clickhouse.ts") },
       { find: "@lenspack/core", replacement: pkg("core") },
       { find: "@lenspack/spec", replacement: pkg("spec") },
       { find: "@lenspack/engine", replacement: pkg("engine") },

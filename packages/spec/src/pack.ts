@@ -23,20 +23,32 @@ export const FORMATS = ["number", "percent", "currency", "compact", "duration"] 
 export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as const;
 
 // A fragment is one string, or one per dialect when the engines genuinely
-// differ (a date difference, a regex). `default` covers the rest.
+// differ (a date difference, a regex). `default` covers the rest. A driver
+// added outside lenspack reads the entry named after its dialect.
+const dialectFragment = z.string().min(1).max(500).optional();
 export const fragmentSchema = z.union([
   z.string().min(1).max(500),
   z
     .object({
-      default: z.string().min(1).max(500).optional(),
-      postgres: z.string().min(1).max(500).optional(),
-      duckdb: z.string().min(1).max(500).optional(),
+      default: dialectFragment,
+      postgres: dialectFragment,
+      duckdb: dialectFragment,
+      mysql: dialectFragment,
+      sqlite: dialectFragment,
+      clickhouse: dialectFragment,
       // Query DSL JSON for a filter; a Painless script for a dimension or measure.
       elasticsearch: z.string().min(1).max(2000).optional(),
     })
-    .refine((f) => f.default || f.postgres || f.duckdb || f.elasticsearch, { message: "a per-dialect fragment needs at least one entry" }),
+    .catchall(z.string().min(1).max(2000))
+    .refine((f) => Object.values(f).some(Boolean), { message: "a per-dialect fragment needs at least one entry" }),
 ]);
 export type Fragment = z.infer<typeof fragmentSchema>;
+
+// The dialects a bare string (or `default`) serves. Every SQL driver adds its
+// own when it is registered; a search engine never does.
+const SQL_DIALECTS = new Set(["postgres", "duckdb", "mysql", "sqlite", "clickhouse"]);
+export const registerSqlDialect = (dialect: string) => void SQL_DIALECTS.add(dialect);
+export const isSqlDialect = (dialect: string) => SQL_DIALECTS.has(dialect);
 
 export function fragmentFor(fragment: Fragment, dialect: string): string {
   const chosen = maybeFragmentFor(fragment, dialect);
@@ -46,7 +58,7 @@ export function fragmentFor(fragment: Fragment, dialect: string): string {
 
 /** A bare string is SQL: it serves every SQL dialect but never a non-SQL one. */
 export function maybeFragmentFor(fragment: Fragment, dialect: string): string | undefined {
-  const sql = dialect === "postgres" || dialect === "duckdb";
+  const sql = isSqlDialect(dialect);
   if (typeof fragment === "string") return sql ? fragment : undefined;
   return (fragment as Record<string, string | undefined>)[dialect] ?? (sql ? fragment.default : undefined);
 }

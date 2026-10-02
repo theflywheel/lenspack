@@ -1,5 +1,5 @@
 import type { Ast } from "../ast";
-import { type DialectRules, type Printed, print, quoteTable } from "./base";
+import { type DialectRules, type Printed, printerFor } from "./base";
 
 const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
@@ -23,11 +23,4 @@ export const postgresRules: DialectRules = {
   paramValue: (v) => (v instanceof Date ? v.toISOString() : v),
 };
 
-export function printPostgres(ast: Ast): Printed {
-  return print(withQuotedTables(ast), postgresRules);
-}
-
-function withQuotedTables(ast: Ast): Ast {
-  const fix = (s: Ast["from"]) => ({ ...s, table: quoteTable(s.table, quote) });
-  return { ...ast, from: fix(ast.from), joins: ast.joins.map((j) => ({ ...j, source: fix(j.source) })) };
-}
+export const printPostgres: (ast: Ast) => Printed = printerFor(postgresRules);
