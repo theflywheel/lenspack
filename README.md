@@ -55,6 +55,25 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 | `@lenspack/serve` | the `lenspack` CLI: `serve` (board API + chat with review, from a `lenspack.yaml`), `check`, `sources`, `dss` | all of the above |
 | `@lenspack/dss` | compiles DIGIT DSS `ChartApiConfig.json` into a pack and boards, with a report of what did not translate | core, spec, engine |
 
+## Installing from GitHub Packages
+
+Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `spec`, `engine`, `sql`, `elasticsearch`, `react`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
+
+```ini
+@theflywheel:registry=https://npm.pkg.github.com
+```
+
+Installing needs a GitHub token with the `read:packages` scope, even for public packages (`//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}` in `~/.npmrc`, or `NODE_AUTH_TOKEN` in CI). Install under the names the code and these docs use, as npm aliases:
+
+```json
+"dependencies": {
+  "@lenspack/core": "npm:@theflywheel/lenspack-core@^0.1.0",
+  "@lenspack/react": "npm:@theflywheel/lenspack-react@^0.1.0"
+}
+```
+
+Every import shown here, subpaths included (`@lenspack/react/adapters/shadcn`, `@lenspack/react/styles.css`, `@lenspack/sql/pg`), then works unchanged. The packages depend on each other through the same aliases, so you only list the ones you import.
+
 ## Sources
 
 A pack says what the numbers mean; a **connector** says where they live. The

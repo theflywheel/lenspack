@@ -1,0 +1,87 @@
+name: publish
+# Publishes every public package under packages/* to GitHub Packages as
+# @theflywheel/lenspack-<name>, at the version in the tag (v0.1.0 -> 0.1.0).
+# The source keeps its @lenspack/* names; scripts/publish-packages.mjs renames
+# at publish time. Auth is the workflow's own GITHUB_TOKEN, nothing else.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run npm publish --dry-run instead of publishing
+        type: boolean
+        default: true
+      version:
+        description: Version to stamp (defaults to the version in packages/core/package.json)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: lenspack, POSTGRES_PASSWORD: lenspack, POSTGRES_DB: lenspack_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lenspack" --health-interval 5s --health-timeout 5s --health-retries 10
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.17.24
+        env: { discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: "-Xms512m -Xmx512m" }
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -fs localhost:9200/_cluster/health" --health-interval 5s --health-timeout 5s --health-retries 30
+    env:
+      LENSPACK_PG_URL: postgres://lenspack:lenspack@localhost:5432/lenspack_test
+      LENSPACK_ES_URL: http://localhost:9200
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@theflywheel"
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+
+      - name: Version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}";
+          elif [ -n "$INPUT_VERSION" ]; then v="${INPUT_VERSION#v}";
+          else v="$(node -p 'require("./packages/core/package.json").version')"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $v"
+
+      - name: Publish (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: node scripts/publish-packages.mjs --version "$VERSION" --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Publish
+        if: github.event_name == 'push' || !inputs.dry_run
+        run: node scripts/publish-packages.mjs --version "$VERSION"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
