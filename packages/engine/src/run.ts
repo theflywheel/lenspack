@@ -63,9 +63,9 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   return { def, expr, sides };
 }
 
-// A group missing from an operand had no rows there: zero for an additive
-// operand (nothing delivered yet), unknown for anything else.
-const additive = (m: PackMeasure) => m.agg === "count" || m.agg === "sum";
+// A group missing from an operand had no rows there: zero for a count, a
+// distinct count or a sum (nothing delivered yet), unknown for anything else.
+const additive = (m: PackMeasure) => m.agg === "count" || m.agg === "count_distinct" || m.agg === "sum";
 
 function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   const { def, expr, sides } = across;

@@ -52,6 +52,23 @@ describe("ratios across entities", () => {
     expect(data.format).toBe("percent");
   });
 
+  it("adds distinct counts from entities whose groups do not overlap", async () => {
+    const two = parsePack({
+      pack: "two",
+      version: 1,
+      entities: { web: { source: "web" }, phone: { source: "phone" } },
+      dimensions: [{ key: "channel", entity: "web", field: "channel", also: { phone: { sql: "'phone'" } } }],
+      measures: [
+        { key: "web_users", entity: "web", agg: "count_distinct", field: "user" },
+        { key: "phone_users", entity: "phone", agg: "count_distinct", field: "user" },
+        { key: "users", entity: "web", derived: "web_users + phone_users" },
+      ],
+    });
+    const c = stub((q) => (q.kind === "breakdown" && q.measure === "web_users" ? [{ group: "site", value: 7, n: 9 }] : [{ group: "phone", value: 2, n: 3 }]));
+    const data = await run({ kind: "breakdown", dimension: "channel", measure: "users", limit: 5, sort: "desc" }, { pack: two, connector: c });
+    expect(data.rows.map((r) => [r.group, r.value])).toEqual([["site", 7], ["phone", 2]]);
+  });
+
   it("narrows only the side that has the filtered dimension", async () => {
     const c = stub((q) => [{ value: q.kind !== "rows" && q.measure === "done_n" ? 3 : 12, n: 1 }] as Row[]);
     const q: Query = { kind: "value", measure: "progress", filters: [{ dimension: "kind", op: "eq", value: "a" }] };
