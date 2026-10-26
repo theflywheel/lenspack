@@ -3,6 +3,7 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import type { Connector, SourceSchema } from "@lenspack/engine";
 
 import { registerDialect } from "./dialects";
+import { cachedExecutor } from "./cache";
 import { type Executor, type ExecutorOptions, type Writer, sqlConnector } from "./executor";
 import type { DialectRules } from "./print/base";
 import { clickhouseRules } from "./print/clickhouse";
@@ -21,6 +22,8 @@ import { sqliteRules } from "./print/sqlite";
 export type ConnectOptions = ExecutorOptions & {
   /** Directory a relative file path in the URL is resolved against (the config file's). */
   base?: string;
+  /** Answer a repeated statement from memory for this long, so a board opened again does not read the database again. */
+  cacheTtlMs?: number;
 };
 
 export type Connection = {
@@ -81,7 +84,8 @@ export function filePath(url: string, base?: string): string {
 export async function openSource(url: string, opts: ConnectOptions = {}): Promise<{ driver: Driver; connection: Connection; connector: Connector & { executor: Executor } }> {
   const driver = driverFor(url);
   const connection = await driver.connect(url, opts);
-  return { driver, connection, connector: sqlConnector(connection.executor, { introspect: connection.introspect, close: connection.close }) };
+  const executor = opts.cacheTtlMs ? cachedExecutor(connection.executor, { ttlMs: opts.cacheTtlMs }) : connection.executor;
+  return { driver, connection, connector: sqlConnector(executor, { introspect: connection.introspect, close: connection.close }) };
 }
 
 // The drivers lenspack ships. Each loads its client library only when a URL

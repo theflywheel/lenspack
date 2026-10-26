@@ -30,7 +30,7 @@ import { authSchema } from "./auth";
 // of its own: its SQL API cannot join, and the native one is proven in CI.
 
 const secret = z.string().min(1);
-const limits = { timeoutMs: z.number().int().positive().optional(), maxRows: z.number().int().positive().optional() };
+const limits = { timeoutMs: z.number().int().positive().optional(), maxRows: z.number().int().positive().optional(), cacheTtlMs: z.number().int().positive().optional() };
 const SEARCH = ["elasticsearch", "opensearch"];
 const sourceSchema = z.union([
   z.object({ kind: z.literal("elasticsearch"), url: secret, apiKey: secret.optional(), username: secret.optional(), password: secret.optional(), timeoutMs: z.number().int().positive().optional() }),
@@ -120,7 +120,7 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
     const driver = driverFor(url);
     if (src.kind && src.kind !== driver.name && !driver.schemes.includes(src.kind))
       throw new Error(`source "${name}" says kind: ${src.kind}, but its URL is a ${driver.name} URL`);
-    const { connector, connection } = await openSource(url, { base: dir, defaultTimeoutMs: src.timeoutMs, maxRows: "maxRows" in src ? src.maxRows : undefined });
+    const { connector, connection } = await openSource(url, { base: dir, defaultTimeoutMs: src.timeoutMs, maxRows: "maxRows" in src ? src.maxRows : undefined, cacheTtlMs: "cacheTtlMs" in src ? src.cacheTtlMs : undefined });
     closers.push(connection.close);
     connectors.set(name, connector);
   }
