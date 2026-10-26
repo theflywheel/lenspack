@@ -66,7 +66,9 @@ const QUERY_SHAPE = {
   dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
   entity: str().describe("For rows: the entity to list"),
   grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
-  time_last: str().describe('Relative window like "30d", "12w", "6m". Always set it when the request names a period ("last 10 weeks" -> "10w", "past month" -> "30d"); empty means all time'),
+  time_last: str().describe('Relative window like "30d", "12w", "6m". Always set it when the request names a period ("last 10 weeks" -> "10w", "past month" -> "30d"); empty means all time. For a named calendar period use time_from and time_to instead'),
+  time_from: str().describe('Absolute start, ISO 8601 with offset, e.g. "2026-09-01T00:00:00Z" (inclusive); use with time_to, not with time_last'),
+  time_to: str().describe('Absolute end, ISO 8601 with offset (exclusive), e.g. "2026-10-01T00:00:00Z" for all of September'),
   compare: bool(false).describe("For value: also compute the previous period"),
   limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
@@ -76,7 +78,7 @@ const QUERY_SHAPE = {
 
 export function assembleQuery(a: { [K in keyof typeof QUERY_SHAPE]: z.infer<(typeof QUERY_SHAPE)[K]> }): Query {
   const filters = a.filter_dimension ? [{ dimension: a.filter_dimension, op: "eq" as const, value: a.filter_value }] : undefined;
-  const time = a.time_last ? { last: a.time_last } : undefined;
+  const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : a.time_last ? { last: a.time_last } : undefined;
   const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);
   const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" ? { measures: more } : {}) };
   switch (a.query_kind) {
