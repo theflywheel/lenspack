@@ -256,7 +256,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const escalate = provider(url.searchParams.get("escalate")) ?? provider(opts.roles?.escalate) ?? builderModel;
     // Review informs; healing is opt-in (?rounds=2). A wrong "not satisfied"
     // from the reviewer must not be able to damage a correct board on its own.
-    const maxRounds = Number(url.searchParams.get("rounds") ?? 1);
+    // At most 3: each round is a build and a review, both model calls.
+    const maxRounds = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("rounds") ?? 1)) || 1));
     const body = (await read(req)) as { messages: UIMessage[] };
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
     const system = SYSTEM(h.pack, h.catalogue, config, h.ctx.now);
