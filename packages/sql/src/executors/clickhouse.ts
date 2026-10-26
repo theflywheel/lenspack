@@ -19,9 +19,19 @@ export const CLICKHOUSE_SESSION: Record<string, string> = {
   session_timezone: "UTC",
   output_format_json_quote_64bit_integers: "0",
   output_format_json_quote_decimals: "0",
+  // Exact distincts whatever the server profile says, a timeout that fails rather than
+  // returning part of an answer, and a query that stops when its caller gives up.
+  count_distinct_implementation: "uniqExact",
+  timeout_overflow_mode: "throw",
+  cancel_http_readonly_queries_on_client_close: "1",
 };
 
-type Target = { base: string; database: string; headers: Record<string, string> };
+// Resource settings a source URL may pin for every statement (?max_memory_usage=…&max_threads=1),
+// for a server shared with other work. `max_concurrent` is not a setting: it caps the statements
+// this source has in flight at once (default 2), since a board draws all its widgets together.
+const PINNABLE = ["max_memory_usage", "max_threads", "final", "max_bytes_before_external_group_by", "max_bytes_before_external_sort"];
+
+type Target = { base: string; database: string; headers: Record<string, string>; pins: Record<string, string>; maxConcurrent: number };
 
 /** clickhouse://user:password@host:8123/database; ?secure=true for HTTPS (port 8443 by default). */
 export function clickhouseTarget(url: string): Target {
@@ -31,25 +41,57 @@ export function clickhouseTarget(url: string): Target {
   const headers: Record<string, string> = {};
   if (u.username) headers["X-ClickHouse-User"] = decodeURIComponent(u.username);
   if (u.password) headers["X-ClickHouse-Key"] = decodeURIComponent(u.password);
-  return { base: `${secure ? "https" : "http"}://${u.hostname}:${port}`, database: decodeURIComponent(u.pathname.replace(/^\//, "")) || "default", headers };
+  const pins: Record<string, string> = {};
+  for (const k of PINNABLE) if (u.searchParams.has(k)) pins[k] = u.searchParams.get(k)!;
+  const maxConcurrent = Number(u.searchParams.get("max_concurrent") ?? 2);
+  return { base: `${secure ? "https" : "http"}://${u.hostname}:${port}`, database: decodeURIComponent(u.pathname.replace(/^\//, "")) || "default", headers, pins, maxConcurrent };
 }
 
 async function post(target: Target, sql: string, settings: Record<string, string>, timeoutMs: number): Promise<string> {
   const qs = new URLSearchParams({ database: target.database, ...settings });
   const res = await fetch(`${target.base}/?${qs}`, { method: "POST", body: sql, headers: target.headers, signal: AbortSignal.timeout(timeoutMs) });
   const text = await res.text();
-  if (!res.ok) throw new Error(text.trim().replace(/\s+\(version [^)]*\)$/, "").slice(0, 600));
+  if (!res.ok) throw new Error(errorText(text).replace(/\s+\(version [^)]*\)$/, "").slice(0, 600));
   return text;
+}
+
+// The server writes an error in the output format when it can (http_write_exception_in_output_format):
+// a JSON body with an "exception" field rather than plain text.
+function errorText(text: string): string {
+  try {
+    const e = (JSON.parse(text) as { exception?: unknown }).exception;
+    if (typeof e === "string") return e.trim();
+  } catch {
+    // plain text
+  }
+  return text.trim();
+}
+
+function limiter(n: number) {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= n) await new Promise<void>((resolve) => waiting.push(resolve));
+    active++;
+    try {
+      return await fn();
+    } finally {
+      active--;
+      waiting.shift()?.();
+    }
+  };
 }
 
 export function clickhouseExecutor(target: Target, opts: ExecutorOptions = {}): Executor {
   const maxRows = opts.maxRows ?? DEFAULT_MAX_ROWS;
+  const slot = limiter(Math.max(1, target.maxConcurrent || 2));
   return {
     dialect: "clickhouse",
     async query(sql, params, o) {
       const timeout = timeoutOf(o, opts);
       const settings: Record<string, string> = {
         ...CLICKHOUSE_SESSION,
+        ...target.pins,
         default_format: "JSON",
         readonly: "2",
         max_execution_time: String(timeout / 1000),
@@ -60,7 +102,7 @@ export function clickhouseExecutor(target: Target, opts: ExecutorOptions = {}): 
       let text: string;
       try {
         // The client's own timer backs up the server's.
-        text = await post(target, sql, settings, timeout + 2000);
+        text = await slot(() => post(target, sql, settings, timeout + 2000));
       } catch (e) {
         if (/TOO_MANY_ROWS|Limit for result exceeded/.test(String(e))) throw new Error(`The statement returned more than ${maxRows} rows, the row cap for this source`);
         throw e;
