@@ -61,9 +61,12 @@ const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
 
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
 // to change. A board someone made is theirs to change, and everyone's to read
-// once they share it.
-const visible = (b: Ownership, who: Principal) => !b.owner || !!b.shared || b.owner === who.user;
-const writable = (b: Ownership, who: Principal) => (b.owner ? b.owner === who.user && !!(who.edit || who.maintain) : !!who.maintain);
+// once they share it: everyone in their tenant, as one user name may sign in
+// under two tenants.
+const sameTenant = (b: Ownership, who: Principal) => (b.tenant ?? "") === (who.tenant ?? "");
+const visible = (b: Ownership, who: Principal) => !b.owner || (sameTenant(b, who) && (!!b.shared || b.owner === who.user));
+const writable = (b: Ownership, who: Principal) => (b.owner ? b.owner === who.user && sameTenant(b, who) && !!(who.edit || who.maintain) : !!who.maintain);
+const randomId = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 
 /** Builds a board from a pack's ops file — the same path the model uses. */
 export function buildBoard(pack: Pack, file: BoardFile): BoardConfig {
@@ -90,8 +93,10 @@ export async function seedBoards(host: Host) {
       await host.store.create({ id: b.id, pack: host.pack, title: b.title, config });
       continue;
     }
+    // Compared as the file wrote it: a new pack version alone is not a changed file.
+    const asFile = (c?: BoardConfig) => c && JSON.stringify({ ...c, packVersion: 0 });
     const fromFile = (await host.store.versions(b.id)).find((v) => v.source === "create" || v.source === "file");
-    if (JSON.stringify(fromFile?.config) !== JSON.stringify(config)) await host.store.replaceConfig({ id: b.id, config, source: "file", summary: "changed in its board file" });
+    if (asFile(fromFile?.config) !== asFile(config)) await host.store.replaceConfig({ id: b.id, config, source: "file", summary: "changed in its board file" });
   }
 }
 
@@ -190,8 +195,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       if (boardId === "boards" && req.method === "POST") {
         const body = (await read(req)) as { config?: unknown; title?: string; temporary?: boolean };
         const config = body.config === undefined ? emptyBoard(h.pack, body.title ?? "Untitled board") : boardConfigSchema.parse(body.config);
-        const id = `${body.temporary ? "tmp" : "b"}_${Math.random().toString(36).slice(2, 10)}`;
-        const board = await h.store.create({ id, pack: h.pack, title: body.title ?? config.title, config, owner: who.user });
+        const board = await h.store.create({ id: randomId(body.temporary ? "tmp" : "b"), pack: h.pack, title: body.title ?? config.title, config, owner: who.user, tenant: who.tenant });
         audit({ user: who.user, pack: packName, board: board.id, action: "create", outcome: "ok" });
         return json(res, 200, { id: board.id, version: board.version });
       }
@@ -210,8 +214,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       // Anything the caller can see, they can make their own.
       if (req.method === "POST" && action === "copy") {
         const body = (await read(req)) as { title?: string };
-        const title = body.title ?? `${board.config.title} (copy)`;
-        const copy = await h.store.create({ id: `b_${Math.random().toString(36).slice(2, 10)}`, pack: h.pack, title, config: { ...board.config, title }, owner: who.user });
+        // Checked like any board, so a long or odd title cannot store one that will not load.
+        const config = boardConfigSchema.parse({ ...board.config, title: body.title ?? `${board.config.title.slice(0, 150)} (copy)` });
+        const copy = await h.store.create({ id: randomId("b"), pack: h.pack, title: config.title, config, owner: who.user, tenant: who.tenant });
         audit({ user: who.user, pack: packName, board: copy.id, action: "copy", outcome: "ok", detail: `from ${boardId}` });
         return json(res, 200, { id: copy.id, version: copy.version });
       }

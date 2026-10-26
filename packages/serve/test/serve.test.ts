@@ -130,14 +130,15 @@ describe("lenspack serve from a config file", () => {
 describe("boards kept in a database", () => {
   const dir = mkdtempSync(join(tmpdir(), "lenspack-store-"));
   const boards = join(dir, "boards");
-  const file = (title: string) => {
+  const file = (title: string, packVersion = 1) => {
     mkdirSync(boards, { recursive: true });
+    writeFileSync(join(dir, "pack.yaml"), readFileSync(`${campaign}pack.yaml`, "utf8").replace(/^version: 1$/m, `version: ${packVersion}`));
     const overview = JSON.parse(readFileSync(`${campaign}boards/overview.json`, "utf8"));
     writeFileSync(join(boards, "overview.json"), JSON.stringify({ ...overview, title }));
   };
   // One pack mounted twice, both kept in one database file.
   const open = async () => {
-    const pack = (name: string) => ({ pack: `${campaign}pack.yaml`, source: "data", name, boards: "./boards" });
+    const pack = (name: string) => ({ pack: "./pack.yaml", source: "data", name, boards: "./boards" });
     const opened = await openConfig(configSchema.parse({ sources: { data: { url: "duckdb:./data.duckdb" } }, packs: [pack("north"), pack("south")], store: { kind: "duckdb", path: "./boards.duckdb" } }), dir);
     for (const h of opened.hosts) await seedBoards(h);
     const [north, south] = opened.hosts.map((h) => h.store);
@@ -172,5 +173,13 @@ describe("boards kept in a database", () => {
     expect(latest).toMatchObject({ source: "file" });
     expect(edited?.config.title).toBe("Edited in the app");
     await changed.close();
+  });
+
+  it("leaves a board alone when only the pack's version moved", async () => {
+    file("The file changed", 2);
+    const bumped = await open();
+    expect((await bumped.north.versions("overview"))[0]).toMatchObject({ source: "file", config: { title: "The file changed" } });
+    expect((await bumped.north.versions("overview")).filter((v) => v.source === "file")).toHaveLength(1);
+    await bumped.close();
   });
 });

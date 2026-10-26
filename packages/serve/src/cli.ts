@@ -32,8 +32,11 @@ async function main() {
   switch (command) {
     case "serve": {
       const { config, dir } = readConfig(flag("config") ?? "lenspack.yaml");
-      const { hosts } = await openConfig(config, dir);
+      const { hosts, close } = await openConfig(config, dir);
       for (const h of hosts) await seedBoards(h);
+      // As a container's PID 1, node ignores SIGTERM unless told otherwise: close the
+      // sources and the board store (a database file is checkpointed) and exit.
+      for (const sig of ["SIGTERM", "SIGINT"] as const) process.once(sig, () => void close().finally(() => process.exit(0)));
       const providers = providersFromEnv().map(buildProvider);
       void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
       const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;

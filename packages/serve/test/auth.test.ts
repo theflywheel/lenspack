@@ -29,6 +29,9 @@ describe("serve with sign-in", () => {
     editor: { user: "editor", edit: true },
     other: { user: "other", edit: true },
     maintainer: { user: "maintainer", edit: true, maintain: true },
+    alice_a: { user: "alice", edit: true, tenant: "a" },
+    alice_b: { user: "alice", edit: true, tenant: "b" },
+    bob_a: { user: "bob", edit: true, tenant: "a" },
     viewer: { user: "viewer" },
     scoped: { user: "scoped" }, // scope filled in once a province is known
     village: { user: "village", scope: [{ dimension: "village", op: "eq", value: "nowhere" }] },
@@ -110,6 +113,21 @@ describe("serve with sign-in", () => {
 
     expect((await call("editor", `/campaign/${id}`, { method: "DELETE" })).status).toBe(200);
     expect((await call("maintainer", "/campaign/overview", { method: "DELETE" })).status).toBe(403);
+  });
+
+  it("checks a copy's title like any board's, so a long one still loads", async () => {
+    const long = await call("editor", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "t".repeat(160) }) });
+    const copy = await call("editor", `/campaign/${long.body.id}/copy`, { method: "POST", body: "{}" });
+    expect((await call("editor", `/campaign/${copy.body.id}`)).status).toBe(200);
+    expect((await call("editor", `/campaign/${long.body.id}/copy`, { method: "POST", body: JSON.stringify({ title: { x: 1 } }) })).status).not.toBe(200);
+  });
+
+  it("keeps a shared board within the tenant it was made in, even for the same user name", async () => {
+    const made = await call("alice_a", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "Tenant a" }) });
+    await call("alice_a", `/campaign/${made.body.id}/share`, { method: "POST", body: JSON.stringify({ shared: true }) });
+    expect((await call("bob_a", `/campaign/${made.body.id}`)).status).toBe(200);
+    expect((await call("alice_b", `/campaign/${made.body.id}`)).status).toBe(404);
+    expect((await call("alice_b", `/campaign/${made.body.id}`, { method: "DELETE" })).status).toBe(404);
   });
 
   it("narrows every number to the caller's scope", async () => {

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS lenspack_boards (
   pack VARCHAR NOT NULL,
   title VARCHAR NOT NULL,
   owner VARCHAR,
+  tenant VARCHAR,
   shared BOOLEAN NOT NULL,
   version INTEGER NOT NULL,
   config TEXT NOT NULL,
@@ -33,7 +34,8 @@ CREATE TABLE IF NOT EXISTS lenspack_board_versions (
   PRIMARY KEY (space, board_id, version)
 );`;
 
-const ownership = (r: Record<string, unknown>) => (r.owner == null ? {} : { owner: String(r.owner), shared: r.shared === true || r.shared === 1 });
+const ownership = (r: Record<string, unknown>) =>
+  r.owner == null ? {} : { owner: String(r.owner), shared: r.shared === true || r.shared === 1, ...(r.tenant == null ? {} : { tenant: String(r.tenant) }) };
 
 function rowToBoard(r: Record<string, unknown>): Board {
   return {
@@ -50,7 +52,7 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
   const { executor, writer } = db;
   const now = () => new Date().toISOString().replace("T", " ").replace("Z", "");
 
-  const record = async (current: Board | null, id: string, pack: string, config: BoardConfig, source: string, summary: string, owner?: string): Promise<Board> => {
+  const record = async (current: Board | null, id: string, pack: string, config: BoardConfig, source: string, summary: string, owner?: string, tenant?: string): Promise<Board> => {
     const [v] = await executor.query(`SELECT COALESCE(MAX(version), 0) AS v FROM lenspack_board_versions WHERE space = $1 AND board_id = $2`, [space, id]);
     const version = Number(v?.v ?? 0) + 1;
     const json = JSON.stringify(config);
@@ -60,10 +62,10 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
     );
     if (!current) {
       await writer.exec(
-        `INSERT INTO lenspack_boards (space, id, pack, title, owner, shared, version, config, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CAST($9 AS TIMESTAMP))`,
-        [space, id, pack, config.title, owner ?? null, false, version, json, now()],
+        `INSERT INTO lenspack_boards (space, id, pack, title, owner, tenant, shared, version, config, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CAST($10 AS TIMESTAMP))`,
+        [space, id, pack, config.title, owner ?? null, (owner && tenant) || null, false, version, json, now()],
       );
-      return { id, pack, config, version, updatedAt: new Date(), ...(owner ? { owner, shared: false } : {}) };
+      return { id, pack, config, version, updatedAt: new Date(), ...(owner ? { owner, shared: false, ...(tenant ? { tenant } : {}) } : {}) };
     }
     await writer.exec(`UPDATE lenspack_boards SET title = $1, version = $2, config = $3, updated_at = CAST($4 AS TIMESTAMP) WHERE space = $5 AND id = $6`, [config.title, version, json, now(), space, id]);
     return { ...current, config, version, updatedAt: new Date() };
@@ -73,7 +75,7 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
     async migrate() {
       for (const stmt of STORE_DDL.split(";").map((s) => s.trim()).filter(Boolean)) await writer.exec(stmt);
       // CREATE IF NOT EXISTS keeps a table from before spaces and owners; say so rather than fail on the first board.
-      await executor.query(`SELECT space, owner, shared FROM lenspack_boards WHERE 1 = 0`, []).catch(() => {
+      await executor.query(`SELECT space, owner, tenant, shared FROM lenspack_boards WHERE 1 = 0`, []).catch(() => {
         throw new Error("lenspack_boards is from a lenspack before board owners: rename it and lenspack_board_versions aside, and the boards from files are made again");
       });
     },
@@ -82,13 +84,13 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
       return r ? rowToBoard(r) : null;
     },
     async list() {
-      const rows = await executor.query(`SELECT id, pack, title, owner, shared, version, updated_at FROM lenspack_boards WHERE space = $1 ORDER BY updated_at DESC`, [space]);
+      const rows = await executor.query(`SELECT id, pack, title, owner, tenant, shared, version, updated_at FROM lenspack_boards WHERE space = $1 ORDER BY updated_at DESC`, [space]);
       return rows.map((r) => ({ id: String(r.id), pack: String(r.pack), title: String(r.title), version: Number(r.version), updatedAt: toDate(r.updated_at) ?? new Date(), ...ownership(r) }));
     },
-    async create({ id, pack, title, config, owner }) {
+    async create({ id, pack, title, config, owner, tenant }) {
       const boardId = id ?? `b_${Math.random().toString(36).slice(2, 10)}`;
       if (await store.get(boardId)) throw new Error(`Board "${boardId}" already exists`);
-      return record(null, boardId, pack.pack, config ?? emptyBoard(pack, title), "create", "created", owner);
+      return record(null, boardId, pack.pack, config ?? emptyBoard(pack, title), "create", "created", owner, tenant);
     },
     async patch({ id, ops, catalogue, source = "ops", expectedVersion }) {
       const current = await store.get(id);
