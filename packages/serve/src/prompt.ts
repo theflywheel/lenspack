@@ -29,7 +29,7 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
 }
 
 export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig) => `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
-
+${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}
 ${catalogueText(pack, catalogue)}
 
 ${board ? `CURRENT BOARD:\n${summarise(board)}` : ""}

@@ -236,7 +236,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId);
+          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId, who.user);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -244,7 +244,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
-  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string) {
+  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string) {
     const builderModel = provider(url.searchParams.get("model")) ?? defaultProvider();
     if (!builderModel) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
     if (builderModel.available === false) return json(res, 503, { error: `${builderModel.name} is unavailable: ${builderModel.error}` });
@@ -270,12 +270,17 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         let messages = modelMessages;
+        // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdict.
+        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; review?: unknown } = { instruction, calls: [], refusals: [] };
         for (let round = 1; round <= Math.max(1, maxRounds); round++) {
           const builder = round === 1 ? builderModel : escalate;
           writer.write({ type: "data-round", data: { round, builder: builder.name } });
           const result = streamText({ model: builder.languageModel, system, messages, tools: tools as ToolSet, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)] });
           writer.merge(result.toUIMessageStream({ sendStart: round === 1, sendFinish: false }));
           const steps = await result.steps;
+          turn.answer = (await result.text).slice(0, 2000);
+          turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));
+          turn.refusals.push(...refusalsFrom(steps as never));
           if (!reviewer) break;
           const current = (await h.store.get(boardId))!;
           const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion);
@@ -292,10 +297,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             clearInterval(beat);
           }
           writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...review, raw: undefined } });
+          turn.review = { satisfied: review.satisfied, unavailable: review.unavailable, missing: review.missing, wrong: review.wrong, note: review.note };
           if (review.satisfied || review.unavailable || round === maxRounds) break;
           // Another round with the review as the instruction; the model keeps its own history.
           messages = [...messages, ...steps.flatMap((s) => s.response.messages), { role: "user", content: healingPrompt(review) }];
         }
+        audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...turn }) });
         writer.write({ type: "finish" });
       },
       onError: (e) => (e instanceof Error ? e.message : String(e)),

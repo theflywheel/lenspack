@@ -68,6 +68,8 @@ export const configSchema = z.object({
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
+  /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
+  proposals: z.string().optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 
@@ -128,8 +130,9 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
   // Boards live apart from the data: a pack's source is read-only to lenspack.
   let store: () => BoardStore;
   if (config.store.kind === "memory") {
-    const shared = memoryStore();
-    store = () => shared;
+    // One per pack: a shared store lists every pack's boards under each pack, and
+    // two packs' boards with the same id overwrite each other.
+    store = () => memoryStore();
   } else {
     const s = resolveSecrets(config.store, env);
     const db = await openSql(s.kind, s.kind === "duckdb" ? at(s.path) : s.url);
@@ -154,7 +157,7 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
       store: store(),
       ctx: { ...(p.tenant ? { tenant: p.tenant } : {}), ...(p.now ? { now: new Date(p.now) } : {}) },
       boards: p.boards ? readBoards(at(p.boards)) : [],
-      proposals: fileProposals(at(`${name}.proposals.json`)),
+      proposals: fileProposals(at(join(config.proposals ?? ".", `${name}.proposals.json`))),
     });
   }
   return { hosts, sources: connectors, close: async () => void (await Promise.all(closers.map((c) => c()))) };
