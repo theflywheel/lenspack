@@ -280,7 +280,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const steps = await result.steps;
           turn.answer = (await result.text).slice(0, 2000);
           turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));
-          turn.refusals.push(...refusalsFrom(steps as never));
+          const refused = refusalsFrom(steps as never);
+          turn.refusals.push(...refused);
+          // Stopped by the refusal guard before the model said a word: say what was refused, so no turn is silent.
+          if (!turn.answer.trim() && refused.length) {
+            const id = `refused-${round}`;
+            turn.answer = `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
+            writer.write({ type: "text-start", id });
+            writer.write({ type: "text-delta", id, delta: turn.answer });
+            writer.write({ type: "text-end", id });
+          }
           if (!reviewer) break;
           const current = (await h.store.get(boardId))!;
           const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion);
