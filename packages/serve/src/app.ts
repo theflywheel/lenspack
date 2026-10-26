@@ -340,7 +340,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const builder = round === 1 ? builderModel : escalate;
           writer.write({ type: "data-round", data: { round, builder: builder.name } });
           const result = streamText({ model: builder.languageModel, system, messages, tools: tools as ToolSet, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)] });
-          writer.merge(result.toUIMessageStream({ sendStart: round === 1, sendFinish: false }));
+          // A rejected tool call shows its reason (a chart kind that does not exist, a missing title), not "An error occurred.".
+          writer.merge(result.toUIMessageStream({ sendStart: round === 1, sendFinish: false, onError: (e) => (e instanceof Error ? e.message : String(e)).slice(0, 300) }));
           const steps = await result.steps;
           turn.answer = (await result.text).slice(0, 2000);
           turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));

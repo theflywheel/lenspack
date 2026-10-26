@@ -14,7 +14,7 @@ function RechartsChart({ spec }: { spec: ChartSpec }) {
     return (
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
-          <Pie data={rows} dataKey="value" nameKey={spec.groupKey} innerRadius="52%" outerRadius="80%" paddingAngle={1} stroke="none" isAnimationActive={false}>
+          <Pie data={rows} dataKey="value" nameKey={spec.groupKey} innerRadius="52%" outerRadius="72%" paddingAngle={1} stroke="none" isAnimationActive={false} label={({ value }) => format(Number(value ?? 0))} labelLine fontSize={11}>
             {rows.map((row, i) => (
               <Cell
                 key={String(row.group)}

@@ -85,7 +85,7 @@ function SvgChart({ spec }: { spec: ChartSpec }) {
         <svg viewBox={`0 0 ${S} ${S}`} className="lp-svg" role="img" aria-label={spec.title}>{arcs}</svg>
         <div className="lp-svg-legend">
           {spec.rows.map((r, i) => (
-            <span key={i}><i style={{ background: spec.palette[i % spec.palette.length] }} />{String(r.group)}</span>
+            <span key={i}><i style={{ background: spec.palette[i % spec.palette.length] }} />{String(r.group)} <b>{spec.format(typeof r.value === "number" ? r.value : 0)}</b></span>
           ))}
         </div>
       </div>
