@@ -36,8 +36,23 @@ const takeBoot = <K extends "index" | "board">(key: K, path?: string) => {
 
 const api = async (path: string, init?: RequestInit) => {
   const r = await fetch(`/api${path}`, { headers: { "content-type": "application/json" }, ...init });
-  return r.json();
+  if (r.status === 401 && reloadToSignIn()) return new Promise<never>(() => {});
+  return r.json().catch(() => ({ error: `${r.status} ${r.statusText}` }));
 };
+
+// Signed out behind a login proxy: loading the page again goes through its
+// sign-in. At most once in 30 s, so a server that turns everyone away shows
+// its error instead of reloading forever.
+function reloadToSignIn() {
+  try {
+    if (Date.now() - Number(sessionStorage.getItem("lenspack-signin") ?? 0) < 30_000) return false;
+    sessionStorage.setItem("lenspack-signin", String(Date.now()));
+  } catch {
+    return false;
+  }
+  location.reload();
+  return true;
+}
 
 // The same eight ops a model emits, typed as JSON: anything can drive a board.
 function OpsBox() {
@@ -287,7 +302,9 @@ export function App() {
   }, []);
 
   React.useEffect(() => {
-    void (takeBoot("index") ?? api("/")).then((r) => {
+    // The page's own early request cannot follow a sign-in; on any failure, ask again.
+    const index = Promise.resolve(takeBoot("index") ?? api("/")).catch(() => api("/"));
+    void index.then((r) => {
       // Signed out, or not let in: say so rather than wait.
       if (!r.examples) return setProblem(r.error ?? "The board API did not answer");
       setCatalog(r.examples);
@@ -314,7 +331,9 @@ export function App() {
   const primer = React.useRef<{ config: string; data: Record<string, WidgetData>; options: Record<string, FilterOption[]> } | null>(null);
   const reloadBoard = React.useCallback(
     (withData = false) => {
-      void ((withData && takeBoot("board", base)) || api(`${base}${withData ? "?include=data,options" : ""}`)).then((r) => {
+      const fetchBoard = () => api(`${base}${withData ? "?include=data,options" : ""}`);
+      const first = Promise.resolve((withData && takeBoot("board", base)) || fetchBoard()).catch(fetchBoard);
+      void first.then((r) => {
         if (!r.board) return setProblem(r.error ?? "This board does not exist");
         setProblem(null);
         if (withData && r.data) primer.current = { config: JSON.stringify(r.board.config), data: r.data, options: r.options ?? {} };
