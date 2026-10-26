@@ -77,6 +77,7 @@ const QUERY_SHAPE = {
 };
 
 export function assembleQuery(a: { [K in keyof typeof QUERY_SHAPE]: z.infer<(typeof QUERY_SHAPE)[K]> }): Query {
+  if (Boolean(a.time_from) !== Boolean(a.time_to)) throw new Error("time_from and time_to go together: give both, or use time_last");
   const filters = a.filter_dimension ? [{ dimension: a.filter_dimension, op: "eq" as const, value: a.filter_value }] : undefined;
   const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : a.time_last ? { last: a.time_last } : undefined;
   const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);

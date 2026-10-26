@@ -45,7 +45,7 @@ async function main() {
       const host = flag("host") ?? config.host ?? (config.auth ? "0.0.0.0" : "127.0.0.1");
       if (!access) console.warn(config.auth ? "lenspack: auth is `none` — anyone who reaches this port may read and edit every board" : "lenspack: no auth configured — listening on 127.0.0.1 only");
       const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
-      createServer(createApp(hosts, { ui, providers, roles, access, audit })).listen(port, host, () => {
+      createServer(createApp(hosts, { ui, providers, roles, access, audit, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
         console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${access ? `, sign-in by ${config.auth!.kind}` : ""}`);
       });
       return;

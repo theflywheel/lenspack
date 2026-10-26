@@ -20,7 +20,7 @@ export const CLICKHOUSE_SESSION: Record<string, string> = {
   output_format_json_quote_64bit_integers: "0",
   output_format_json_quote_decimals: "0",
   // Exact distincts whatever the server profile says, a timeout that fails rather than
-  // returning part of an answer, and a query that stops when its caller gives up.
+  // returning part of an answer, and a query that stops when lenspack's own timer gives up.
   count_distinct_implementation: "uniqExact",
   timeout_overflow_mode: "throw",
   cancel_http_readonly_queries_on_client_close: "1",
@@ -101,13 +101,21 @@ export function clickhouseExecutor(target: Target, opts: ExecutorOptions = {}): 
       params.forEach((v, i) => (settings[`param_p${i + 1}`] = String(v)));
       let text: string;
       try {
-        // The client's own timer backs up the server's.
-        text = await slot(() => post(target, sql, settings, timeout + 2000));
+        // The client's own timer backs up the server's, and it starts before the wait for a slot.
+        const deadline = Date.now() + timeout + 2000;
+        text = await slot(async () => {
+          const left = deadline - Date.now();
+          if (left <= 0) throw new Error(`No connection to this source was free within ${timeout} ms`);
+          return post(target, sql, settings, left);
+        });
       } catch (e) {
         if (/TOO_MANY_ROWS|Limit for result exceeded/.test(String(e))) throw new Error(`The statement returned more than ${maxRows} rows, the row cap for this source`);
         throw e;
       }
-      return capRows(JSON.parse(text).data as Row[], maxRows);
+      // An error after the first rows were sent still comes with status 200, in the body.
+      const body = JSON.parse(text) as { data: Row[]; exception?: string };
+      if (body.exception) throw new Error(body.exception.trim().slice(0, 600));
+      return capRows(body.data, maxRows);
     },
   };
 }

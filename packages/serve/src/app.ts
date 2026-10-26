@@ -259,7 +259,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const maxRounds = Number(url.searchParams.get("rounds") ?? 1);
     const body = (await read(req)) as { messages: UIMessage[] };
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
-    const system = SYSTEM(h.pack, h.catalogue, config);
+    const system = SYSTEM(h.pack, h.catalogue, config, h.ctx.now);
     const modelMessages = await convertToModelMessages(body.messages);
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
@@ -271,7 +271,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       execute: async ({ writer }) => {
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdict.
-        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; review?: unknown } = { instruction, calls: [], refusals: [] };
+        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; review?: unknown } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [] };
         for (let round = 1; round <= Math.max(1, maxRounds); round++) {
           const builder = round === 1 ? builderModel : escalate;
           writer.write({ type: "data-round", data: { round, builder: builder.name } });

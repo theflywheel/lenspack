@@ -174,7 +174,8 @@ function window(query: Query, now: Date): TimeWindow | null {
 }
 
 export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilities = SQL_CAPABILITIES): BoundPlan {
-  const now = ctx.now ?? new Date();
+  // The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
+  const now = ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
   const dimKeys = pack.dimensions.map((d) => d.key);
   const measureKeys = pack.measures.map((m) => m.key);
   const graph = edges(pack);

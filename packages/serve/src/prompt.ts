@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 4;
+export const PROMPT_VERSION = 5;
 
 // The schema, in context, once. A pack is the "figure out the structure
 // first" step — done by people, stored as data — so the model reads it here
@@ -28,7 +28,8 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
   ].join("\n");
 }
 
-export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig) => `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
+export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()) => `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
+Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}: write time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}
 ${catalogueText(pack, catalogue)}
 
