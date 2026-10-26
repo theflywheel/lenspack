@@ -55,6 +55,8 @@ export type AppOptions = {
   audit?: Audit;
   /** The UI's sign-out link (auth.proxy signOutUrl). */
   signOutUrl?: string;
+  /** How the UI presents itself (lenspack.yaml `ui:`), written into the page it is served in. */
+  page?: { mode: "demo" | "app"; title?: string; home?: string };
 };
 
 const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
@@ -119,13 +121,19 @@ const read = (req: IncomingMessage) =>
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2" };
 
-function serveStatic(root: string, pathname: string, res: ServerResponse) {
+const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+
+function serveStatic(root: string, pathname: string, res: ServerResponse, page?: AppOptions["page"]) {
   const safe = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, "");
   let file = join(root, safe);
   if (!file.startsWith(root) || !existsSync(file) || statSync(file).isDirectory()) file = join(root, "index.html");
   if (!existsSync(file)) return json(res, 404, { error: "not found" });
   res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-  res.end(readFileSync(file));
+  if (!page || !file.endsWith("index.html")) return res.end(readFileSync(file));
+  // The page reads window.__lenspackUi before anything else runs; "<" is escaped so no value can end the script.
+  let html = readFileSync(file, "utf8").replace("<head>", `<head><script>window.__lenspackUi=${JSON.stringify(page).replace(/</g, "\\u003c")}</script>`);
+  if (page.title) html = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(page.title)}</title>`);
+  res.end(html);
 }
 
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
@@ -146,11 +154,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const url = new URL(req.url ?? "/", "http://x");
     const [, api, packName, boardId, action] = url.pathname.split("/");
     try {
-      if (api !== "api") return opts.ui ? serveStatic(opts.ui, url.pathname, res) : json(res, 404, { error: "not found" });
+      if (api !== "api") return opts.ui ? serveStatic(opts.ui, url.pathname, res, opts.page) : json(res, 404, { error: "not found" });
       const who = opts.access ? await opts.access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
       const mayOpen = (name: string) => !who.packs || who.packs.includes(name);
-      const boardsOf = async (h: Host) => (await h.store.list()).filter((b) => visible(b, who)).map((b) => ({ ...b, writable: writable(b, who) }));
+      // The pack's own boards first, in board-file order; then people's, latest first.
+      const boardsOf = async (h: Host) => {
+        const order = (b: Ownership & { id: string }) => (b.owner ? h.boards.length : Math.max(0, h.boards.findIndex((f) => f.id === b.id)));
+        const listed = (await h.store.list()).filter((b) => visible(b, who));
+        return listed.map((b, i) => ({ b, i })).sort((x, y) => order(x.b) - order(y.b) || x.i - y.i).map(({ b }) => ({ ...b, writable: writable(b, who) }));
+      };
       if (!packName) {
         const list = await Promise.all(
           [...byName.values()].filter((h) => mayOpen(h.name)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),

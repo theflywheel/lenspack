@@ -56,7 +56,23 @@ export const configSchema = z.object({
     )
     .min(1),
   store: z.union([z.object({ kind: z.literal("memory") }), z.object({ kind: z.literal("duckdb"), path: z.string().min(1) }), z.object({ kind: z.literal("postgres"), url: secret })]).default({ kind: "memory" }),
-  ui: z.string().optional(),
+  /**
+   * The bundled UI: its directory, or how it presents itself. mode demo (the
+   * default) is the lenspack demo; app opens the boards at "/", without the
+   * demo's landing page, chart-library switch, ops box and query captions.
+   * home ("pack/board") is the board "/" opens; title names the page.
+   */
+  ui: z
+    .union([
+      z.string(),
+      z.object({
+        dir: z.string().optional(),
+        mode: z.enum(["demo", "app"]).default("demo"),
+        title: z.string().max(80).optional(),
+        home: z.string().regex(/^[a-z][a-z0-9_-]*\/[^/]+$/).optional(),
+      }),
+    ])
+    .optional(),
   port: z.number().int().positive().optional(),
   /**
    * Who may use the API. Absent: the server listens on 127.0.0.1 only, for

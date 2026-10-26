@@ -127,6 +127,25 @@ describe("lenspack serve from a config file", () => {
   });
 });
 
+describe("the UI as an app", () => {
+  it("writes the deployment's ui settings into the page, escaped, and nowhere else", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lenspack-ui-"));
+    writeFileSync(join(dir, "index.html"), "<!doctype html><html><head><title>lenspack</title></head><body></body></html>");
+    writeFileSync(join(dir, "app.js"), "console.log(1)");
+    const page = { mode: "app" as const, title: "Boards </script><b>", home: "campaign/overview" };
+    expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: { title: "T" } }).ui).toEqual({ mode: "demo", title: "T" });
+    expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: "./dist" }).ui).toBe("./dist");
+    const { server, base } = await listen(createApp([], { ui: dir, page }));
+    const html = await (await fetch(base.replace("/api", "/"))).text();
+    const js = await (await fetch(base.replace("/api", "/app.js"))).text();
+    server.close();
+    const injected = /window\.__lenspackUi=(.*?)<\/script>/.exec(html)?.[1];
+    expect(JSON.parse(injected!)).toEqual(page);
+    expect(html).toContain("<title>Boards &#60;/script&#62;&#60;b&#62;</title>");
+    expect(js).toBe("console.log(1)");
+  });
+});
+
 describe("boards kept in a database", () => {
   const dir = mkdtempSync(join(tmpdir(), "lenspack-store-"));
   const boards = join(dir, "boards");
@@ -142,7 +161,7 @@ describe("boards kept in a database", () => {
     const opened = await openConfig(configSchema.parse({ sources: { data: { url: "duckdb:./data.duckdb" } }, packs: [pack("north"), pack("south")], store: { kind: "duckdb", path: "./boards.duckdb" } }), dir);
     for (const h of opened.hosts) await seedBoards(h);
     const [north, south] = opened.hosts.map((h) => h.store);
-    return { north: north!, south: south!, close: opened.close };
+    return { north: north!, south: south!, hosts: opened.hosts, close: opened.close };
   };
   const title = async (store: BoardStore, id: string) => (await store.get(id))?.config.title;
   // Sources open read-only, so the (empty) data file must exist.
@@ -161,6 +180,12 @@ describe("boards kept in a database", () => {
 
     const again = await open();
     expect(await again.north.get("mine")).toMatchObject({ owner: "amina", shared: false });
+    // The pack's own boards list first, even after someone's board changed more recently.
+    await again.north.share("mine", true);
+    const { server, base } = await listen(createApp(again.hosts));
+    const listed = (await (await fetch(`${base}/north`)).json()).boards.map((b: { id: string }) => b.id);
+    server.close();
+    expect(listed).toEqual(["overview", "mine"]);
     expect(await title(again.north, "overview")).toBe("Edited in the app");
     await again.close();
   });

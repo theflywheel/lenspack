@@ -20,6 +20,7 @@ import { Separator } from "./components/ui/separator";
 // is host UI, and the provider's hooks give it all it needs.
 
 import { ADAPTER_NAMES, type AdapterName, isAdapter, useChartAdapter } from "./adapters";
+import { appMode, page } from "./page";
 import type { ModelInfo } from "./chat";
 
 const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
@@ -287,8 +288,10 @@ export function App() {
   const [chatEnabled, setChatEnabled] = React.useState(false);
   const [models, setModels] = React.useState<ModelInfo[]>([]);
   const [model, setModel] = React.useState<string>(params.get("model") ?? "");
-  const [example, setExample] = React.useState<string>(params.get("example") ?? "");
-  const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? "");
+  // A URL naming nothing opens the deployment's home board, if it has one.
+  const [home] = React.useState(() => (params.get("example") || params.get("board") || !page.home ? null : page.home.split("/")));
+  const [example, setExample] = React.useState<string>(params.get("example") ?? home?.[0] ?? "");
+  const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? home?.[1] ?? "");
   const [adapterName, setAdapterName] = React.useState<AdapterName>(isAdapter(params.get("charts")) ? (params.get("charts") as AdapterName) : "recharts");
   const charts = useChartAdapter(adapterName);
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue; writable: boolean } | null>(null);
@@ -320,7 +323,7 @@ export function App() {
       if (!known) return setProblem("No examples are seeded on this server. Run: pnpm seed commerce ./commerce.duckdb");
       if (known.example !== example || !known.boards.some((b: { id: string }) => b.id === boardId)) {
         setExample(known.example);
-        setBoardId(known.boards[0]?.id ?? "");
+        setBoardId(boardGroups(known.boards, r.me ?? null).flatMap(([, list]) => list)[0]?.id ?? "");
       }
     });
   }, []);
@@ -351,8 +354,13 @@ export function App() {
   }, [example, boardId, reloadBoard]);
   React.useEffect(() => {
     if (!example || !boardId) return;
-    history.replaceState(null, "", `/app?example=${example}&board=${boardId}&charts=${adapterName}${model ? `&model=${encodeURIComponent(model)}` : ""}`);
+    // An app keeps its own path and leaves the chart library out of the URL.
+    const path = appMode ? location.pathname : "/app";
+    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}`);
   }, [example, boardId, adapterName, model]);
+  React.useEffect(() => {
+    if (appMode && state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
+  }, [state]);
 
   const writable = state?.writable ?? false;
   const host = React.useMemo<BoardHost>(
@@ -454,9 +462,9 @@ export function App() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
             <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
-              lenspack
+              {page.title ?? "lenspack"}
             </a>
-            <span className="font-mono text-xs text-muted-foreground">/ demo</span>
+            {!appMode && <span className="font-mono text-xs text-muted-foreground">/ demo</span>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -464,7 +472,7 @@ export function App() {
               onValueChange={(v) => {
                 const next = catalog.find((c) => c.example === v);
                 setExample(v);
-                setBoardId(next?.boards[0]?.id ?? "");
+                setBoardId(boardGroups(next?.boards ?? [], me).flatMap(([, list]) => list)[0]?.id ?? "");
               }}
             >
               <SelectTrigger size="sm" className="w-36 font-mono text-xs" aria-label="Example pack"><SelectValue /></SelectTrigger>
@@ -493,10 +501,12 @@ export function App() {
                 <Plus /> New board
               </Button>
             )}
-            <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
-              <SelectTrigger size="sm" className="w-40 font-mono text-xs" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
-              <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
-            </Select>
+            {!appMode && (
+              <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
+                <SelectTrigger size="sm" className="w-40 font-mono text-xs" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
+                <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
             {me && (
               <span className="text-xs text-muted-foreground" data-testid="signed-in">
                 {me.user}
@@ -521,7 +531,8 @@ export function App() {
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h1 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground">{state.board.config.title}</h1>
-                  {current?.description && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">{current.description}</p>}
+                  {/* A pack's description is written for the model; the demo shows it, an app does not. */}
+                  {!appMode && current?.description && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">{current.description}</p>}
                   {!writable && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="read-only">
                       <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board, shared with everyone.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}
@@ -552,7 +563,7 @@ export function App() {
               <div className="space-y-3">
                 <PreviewBanner onReverted={() => reloadBoard()} />
                 <FilterBar />
-                {writable && (
+                {writable && !appMode && (
                 <details className="group">
                   <summary className="w-fit cursor-pointer list-none font-mono text-xs text-muted-foreground hover:text-foreground">
                     <span className="group-open:hidden">Edit with an operation instead</span>
@@ -565,7 +576,7 @@ export function App() {
                 )}
               </div>
               <Separator className="my-4" />
-              <Board showQueries />
+              <Board showQueries={!appMode} />
             </BoardProvider>
           </div>
           {chatEnabled && (
@@ -588,9 +599,11 @@ export function App() {
           )}
         </div>
       </main>
-      <footer className="mx-auto max-w-7xl px-4 pb-10 text-xs text-muted-foreground">
-        <a className="underline underline-offset-4" href="/">lenspack</a> — a dashboard is data, not code. Build boards with the chat, edit with the ops box, drag widgets, restore versions, switch the charting library.
-      </footer>
+      {!appMode && (
+        <footer className="mx-auto max-w-7xl px-4 pb-10 text-xs text-muted-foreground">
+          <a className="underline underline-offset-4" href="/">lenspack</a> — a dashboard is data, not code. Build boards with the chat, edit with the ops box, drag widgets, restore versions, switch the charting library.
+        </footer>
+      )}
     </div>
   );
 }
