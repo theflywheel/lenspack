@@ -128,18 +128,17 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
   }
 
   // Boards live apart from the data: a pack's source is read-only to lenspack.
-  let store: () => BoardStore;
+  // Each pack gets its own store, or its own space in a shared database: a pack
+  // lists only its boards, and two packs' boards with one id stay two boards.
+  let store: (name: string) => BoardStore;
   if (config.store.kind === "memory") {
-    // One per pack: a shared store lists every pack's boards under each pack, and
-    // two packs' boards with the same id overwrite each other.
     store = () => memoryStore();
   } else {
     const s = resolveSecrets(config.store, env);
     const db = await openSql(s.kind, s.kind === "duckdb" ? at(s.path) : s.url);
     closers.push(() => db.close());
-    const shared = sqlStore(db);
-    await shared.migrate();
-    store = () => shared;
+    await sqlStore(db).migrate();
+    store = (name) => sqlStore(db, { space: name });
   }
 
   const hosts: Host[] = [];
@@ -154,7 +153,7 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
       pack,
       packYaml,
       connector,
-      store: store(),
+      store: store(name),
       ctx: { ...(p.tenant ? { tenant: p.tenant } : {}), ...(p.now ? { now: new Date(p.now) } : {}) },
       boards: p.boards ? readBoards(at(p.boards)) : [],
       proposals: fileProposals(at(join(config.proposals ?? ".", `${name}.proposals.json`))),

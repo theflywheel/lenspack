@@ -9,7 +9,9 @@ import { z } from "zod";
 // its own: the deployment says who a caller is (a bearer token it issued, or
 // headers from the login proxy in front of it), and lenspack applies the
 // answer — the tenant and row scope to every query, the edit right to every
-// change.
+// change. A board someone makes is theirs: others see it once it is shared,
+// and change it only by saving a copy. The pack's own boards, from its board
+// files, are everyone's to read and a maintainer's to change.
 
 export type Principal = {
   user: string;
@@ -17,8 +19,10 @@ export type Principal = {
   tenant?: string;
   /** Row scope: filters every query carries, whatever the board asks. */
   scope?: FilterClause[];
-  /** May change boards (ops, layout, revert, chat, create, delete). */
+  /** May make boards of their own, and change (ops, layout, revert, chat), share and delete them. */
   edit?: boolean;
+  /** May also change the pack's own boards, for everyone. Implies edit. */
+  maintain?: boolean;
   /** The packs this caller may open; absent means all. */
   packs?: string[];
 };
@@ -51,6 +55,7 @@ export const authSchema = z.discriminatedUnion("kind", [
           user: z.string().min(1),
           token: z.string().min(1),
           edit: z.boolean().default(false),
+          maintain: z.boolean().default(false),
           tenant: z.string().optional(),
           scope: scopeSchema,
           packs: z.array(z.string()).optional(),
@@ -67,8 +72,12 @@ export const authSchema = z.discriminatedUnion("kind", [
     secretHeader: z.string().default("x-lenspack-proxy-secret"),
     userHeader: z.string().default("x-forwarded-user"),
     tenantHeader: z.string().optional(),
-    /** Users who may edit; "*" for everyone the proxy lets in. */
+    /** Users who may make and change boards of their own; "*" for everyone the proxy lets in. */
     editors: z.array(z.string()).default([]),
+    /** Users who may also change the pack's own boards; "*" for everyone. */
+    maintainers: z.array(z.string()).default([]),
+    /** Where the UI's sign-out link goes: the proxy's sign-out, which may pass on to the identity provider's. */
+    signOutUrl: z.string().optional(),
   }),
 ]);
 export type AuthConfig = z.infer<typeof authSchema>;
@@ -95,7 +104,7 @@ export function accessFrom(auth: AuthConfig): Access | undefined {
         let found: (typeof auth.users)[number] | null = null;
         for (const u of auth.users) if (same(m[1]!, u.token)) found = u;
         if (!found) return null;
-        return { user: found.user, edit: found.edit, ...(found.tenant ? { tenant: found.tenant } : {}), ...(found.scope ? { scope: found.scope } : {}), ...(found.packs ? { packs: found.packs } : {}) };
+        return { user: found.user, edit: found.edit || found.maintain, ...(found.maintain ? { maintain: true } : {}), ...(found.tenant ? { tenant: found.tenant } : {}), ...(found.scope ? { scope: found.scope } : {}), ...(found.packs ? { packs: found.packs } : {}) };
       };
     case "proxy":
       // Checked after env: references are read: a short secret is guessable.
@@ -106,7 +115,9 @@ export function accessFrom(auth: AuthConfig): Access | undefined {
         const user = header(req, auth.userHeader);
         if (!user) return null;
         const tenant = auth.tenantHeader ? header(req, auth.tenantHeader) : undefined;
-        return { user, edit: auth.editors.includes("*") || auth.editors.includes(user), ...(tenant ? { tenant } : {}) };
+        const among = (list: string[]) => list.includes("*") || list.includes(user);
+        const maintain = among(auth.maintainers);
+        return { user, edit: maintain || among(auth.editors), ...(maintain ? { maintain } : {}), ...(tenant ? { tenant } : {}) };
       };
   }
 }

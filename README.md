@@ -232,6 +232,7 @@ Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec 
 - Tenancy is structural: if an entity declares `tenant`, a query without one does not compile.
 - Every query runs read-only, one statement at a time, under a statement timeout and a row cap, enforced by the database's driver rather than trusted from the SQL; boards are stored apart from the data.
 - **Who is asking** is the deployment's answer, not lenspack's: an `access(request)` hook (or `auth:` in `lenspack.yaml`) names the caller, their tenant, their row scope and whether they may edit. Unknown callers get 401; viewers cannot change boards.
+- **Boards have owners.** A board someone makes is theirs, hidden until they share it and read-only to others after (they save a copy). The pack's own boards, from its board files, are everyone's to read and a `maintain`er's to change.
 - **Row scope** (`ctx.scope`) narrows every query, filter menus included, on every connector. A number the scope cannot reach is refused (`OUT_OF_SCOPE`), never shown unnarrowed.
 - Every change, refused change and denied request is passed to an `audit` hook with the user (`audit: file.jsonl` in the config).
 - `run_sql` is off by default; when on, it is one SELECT/WITH, read-only, timeboxed, row-capped, and its results can never become a widget. It bypasses the pack, so on a tenant-scoped pack it is refused unless enabled as `role-scoped`, meaning the database role is the fence.
@@ -242,7 +243,7 @@ Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec 
 auth:
   kind: tokens                     # or: proxy (a login proxy's user header, trusted only with its shared secret)
   users:
-    - { user: ops,  token: env:OPS_TOKEN, edit: true }
+    - { user: ops,  token: env:OPS_TOKEN, edit: true, maintain: true }
     - { user: kenya, token: env:KE_TOKEN, tenant: ke, scope: [{ dimension: province, op: in, value: [Nairobi] }] }
 audit: ./audit.jsonl
 ```

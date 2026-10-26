@@ -4,7 +4,7 @@ import { extname, join, normalize } from "node:path";
 
 import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, applyOps, boardConfigSchema, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, explain, resolveBoard } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
@@ -53,9 +53,17 @@ export type AppOptions = {
   access?: Access;
   /** Told of every change, refused change and denied request, with the user. */
   audit?: Audit;
+  /** The UI's sign-out link (auth.proxy signOutUrl). */
+  signOutUrl?: string;
 };
 
-const OPEN: Principal = { user: "anonymous", edit: true };
+const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
+
+// The pack's own boards (no owner) are everyone's to read and a maintainer's
+// to change. A board someone made is theirs to change, and everyone's to read
+// once they share it.
+const visible = (b: Ownership, who: Principal) => !b.owner || !!b.shared || b.owner === who.user;
+const writable = (b: Ownership, who: Principal) => (b.owner ? b.owner === who.user && !!(who.edit || who.maintain) : !!who.maintain);
 
 /** Builds a board from a pack's ops file — the same path the model uses. */
 export function buildBoard(pack: Pack, file: BoardFile): BoardConfig {
@@ -70,9 +78,21 @@ export function buildBoard(pack: Pack, file: BoardFile): BoardConfig {
   return config;
 }
 
-/** Creates each pack's boards in its store if they are not there yet. */
+/**
+ * Puts a pack's board files in its store. A file that changed since it was
+ * last put there lands as a new version; what was changed in the app stays
+ * in the board's history.
+ */
 export async function seedBoards(host: Host) {
-  for (const b of host.boards) if (!(await host.store.get(b.id))) await host.store.create({ id: b.id, pack: host.pack, title: b.title, config: buildBoard(host.pack, b) });
+  for (const b of host.boards) {
+    const config = buildBoard(host.pack, b);
+    if (!(await host.store.get(b.id))) {
+      await host.store.create({ id: b.id, pack: host.pack, title: b.title, config });
+      continue;
+    }
+    const fromFile = (await host.store.versions(b.id)).find((v) => v.source === "create" || v.source === "file");
+    if (JSON.stringify(fromFile?.config) !== JSON.stringify(config)) await host.store.replaceConfig({ id: b.id, config, source: "file", summary: "changed in its board file" });
+  }
 }
 
 const json = (res: ServerResponse, status: number, body: unknown) => {
@@ -125,11 +145,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const who = opts.access ? await opts.access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
       const mayOpen = (name: string) => !who.packs || who.packs.includes(name);
+      const boardsOf = async (h: Host) => (await h.store.list()).filter((b) => visible(b, who)).map((b) => ({ ...b, writable: writable(b, who) }));
       if (!packName) {
         const list = await Promise.all(
-          [...byName.values()].filter((h) => mayOpen(h.name)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await h.store.list() })),
+          [...byName.values()].filter((h) => mayOpen(h.name)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),
         );
-        return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView) });
+        // Absent on an open server: there is no one to name.
+        const me = opts.access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, ...(opts.signOutUrl ? { signOut: opts.signOutUrl } : {}) } : undefined;
+        return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), ...(me ? { me } : {}) });
       }
       const h = byName.get(packName);
       // A pack the caller may not open looks the same as one that is not there.
@@ -144,11 +167,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const run = { pack: h.pack, connector: h.connector, ctx };
       // Everything but reading changes a board: those need the edit right.
       const writes = req.method !== "GET" && req.method !== "HEAD";
-      if (writes && !who.edit) {
+      if (writes && !who.edit && !who.maintain) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
         return json(res, 403, { error: "you may view these boards but not change them" });
       }
-      if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, boards: await h.store.list(), catalogue });
+      if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h), catalogue });
       if (boardId === "pack") return json(res, 200, { yaml: h.packYaml });
       // Compile one query without running it: the real native query, or the
       // real refusal.
@@ -162,12 +185,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           return json(res, 200, { ok: false, code: "INVALID", error: e instanceof Error ? e.message.slice(0, 200) : String(e) });
         }
       }
-      // Temporary boards for previews and evals: created from a config, deleted after.
+      // A new board, the caller's: empty, or from a config. Temporary ones are
+      // for previews and evals, deleted after.
       if (boardId === "boards" && req.method === "POST") {
-        const body = (await read(req)) as { config: unknown; title?: string; temporary?: boolean };
-        const config = boardConfigSchema.parse(body.config);
+        const body = (await read(req)) as { config?: unknown; title?: string; temporary?: boolean };
+        const config = body.config === undefined ? emptyBoard(h.pack, body.title ?? "Untitled board") : boardConfigSchema.parse(body.config);
         const id = `${body.temporary ? "tmp" : "b"}_${Math.random().toString(36).slice(2, 10)}`;
-        const board = await h.store.create({ id, pack: h.pack, title: body.title ?? config.title, config });
+        const board = await h.store.create({ id, pack: h.pack, title: body.title ?? config.title, config, owner: who.user });
         audit({ user: who.user, pack: packName, board: board.id, action: "create", outcome: "ok" });
         return json(res, 200, { id: board.id, version: board.version });
       }
@@ -181,9 +205,22 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         return json(res, 200, { board: { id: boardId, pack: h.pack.pack, config, version: 0, updatedAt: new Date() }, catalogue, data });
       }
       const board = await h.store.get(boardId);
-      if (!board) return json(res, 404, { error: "no such board" });
+      // A board the caller may not see looks the same as one that is not there.
+      if (!board || !visible(board, who)) return json(res, 404, { error: "no such board" });
+      // Anything the caller can see, they can make their own.
+      if (req.method === "POST" && action === "copy") {
+        const body = (await read(req)) as { title?: string };
+        const title = body.title ?? `${board.config.title} (copy)`;
+        const copy = await h.store.create({ id: `b_${Math.random().toString(36).slice(2, 10)}`, pack: h.pack, title, config: { ...board.config, title }, owner: who.user });
+        audit({ user: who.user, pack: packName, board: copy.id, action: "copy", outcome: "ok", detail: `from ${boardId}` });
+        return json(res, 200, { id: copy.id, version: copy.version });
+      }
+      if (writes && !writable(board, who)) {
+        audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? ""}`.trim(), outcome: "denied", detail: board.owner ? "owner" : "pack board" });
+        return json(res, 403, { error: board.owner ? `This board is ${board.owner}'s: save a copy to change it` : "This is the pack's own board: save a copy to change it" });
+      }
       if (req.method === "DELETE" && !action) {
-        if (!boardId.startsWith("tmp_")) return json(res, 403, { error: "only temporary boards can be deleted here" });
+        if (!board.owner) return json(res, 403, { error: "The pack's own boards come from its board files and are not deleted here" });
         await h.store.delete(boardId);
         audit({ user: who.user, pack: packName, board: boardId, action: "delete", outcome: "ok" });
         return json(res, 200, { deleted: boardId });
@@ -193,14 +230,15 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // ?include=data,options: everything the first paint needs, in one
           // response, instead of a board request followed by two more.
           const include = new Set((url.searchParams.get("include") ?? "").split(",").filter(Boolean));
-          if (include.size === 0) return json(res, 200, { board, catalogue });
+          const mine = writable(board, who);
+          if (include.size === 0) return json(res, 200, { board, catalogue, writable: mine });
           const [data, options] = await Promise.all([
             include.has("data") ? resolveBoard(board.config, run) : undefined,
             include.has("options")
               ? Promise.all(board.config.filters.map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
               : undefined,
           ]);
-          return json(res, 200, { board, catalogue, ...(data ? { data } : {}), ...(options ? { options } : {}) });
+          return json(res, 200, { board, catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });
         }
         case "GET data": {
           const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
@@ -227,6 +265,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const saved = await h.store.replaceConfig({ id: boardId, config: { ...board.config, layout: body.layout as never } });
           audit({ user: who.user, pack: packName, board: boardId, action: "layout", outcome: "ok" });
           return json(res, 200, saved);
+        }
+        case "POST share": {
+          const body = (await read(req)) as { shared?: boolean };
+          if (!board.owner) return json(res, 403, { error: "The pack's own boards are everyone's already" });
+          const shared = await h.store.share(boardId, body.shared === true);
+          audit({ user: who.user, pack: packName, board: boardId, action: body.shared === true ? "share" : "unshare", outcome: "ok" });
+          return json(res, 200, shared);
         }
         case "POST revert": {
           const body = (await read(req)) as { version: number };

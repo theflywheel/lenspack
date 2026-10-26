@@ -5,9 +5,13 @@ import { type BoardConfig, emptyBoard } from "./schema";
 // Every edit is a new immutable version, and a rollback appends rather than
 // rewinds, so a rollback can itself be undone. Auth and tenancy around the
 // store are the host application's concern; a store never reads a session.
+// It keeps who made a board and whether it is shared; the host decides what
+// that lets a caller see and change.
 
-export type Board = { id: string; pack: string; config: BoardConfig; version: number; updatedAt: Date };
-export type BoardSummary = { id: string; pack: string; title: string; version: number; updatedAt: Date };
+/** Who a board belongs to. No owner: the pack's own board, from its board files. */
+export type Ownership = { owner?: string; shared?: boolean };
+export type Board = { id: string; pack: string; config: BoardConfig; version: number; updatedAt: Date } & Ownership;
+export type BoardSummary = { id: string; pack: string; title: string; version: number; updatedAt: Date } & Ownership;
 export type BoardVersion = { version: number; source: string; summary: string; createdAt: Date; config: BoardConfig };
 
 export type PatchResult =
@@ -17,11 +21,13 @@ export type PatchResult =
 export interface BoardStore {
   get(id: string): Promise<Board | null>;
   list(): Promise<BoardSummary[]>;
-  create(input: { id?: string; pack: { pack: string; version: number }; title: string; config?: BoardConfig }): Promise<Board>;
+  create(input: { id?: string; pack: { pack: string; version: number }; title: string; config?: BoardConfig; owner?: string }): Promise<Board>;
   patch(input: { id: string; ops: BoardOp[]; catalogue: Catalogue; source?: string; expectedVersion?: number }): Promise<PatchResult>;
   replaceConfig(input: { id: string; config: BoardConfig; source?: string; summary?: string }): Promise<Board>;
   versions(id: string): Promise<BoardVersion[]>;
   revertTo(id: string, version: number): Promise<Board | null>;
+  /** Shows an owned board to everyone, or to its owner only. Not a version: the board itself is unchanged. */
+  share(id: string, shared: boolean): Promise<Board | null>;
   delete(id: string): Promise<void>;
 }
 
@@ -49,12 +55,13 @@ export function memoryStore(): BoardStore {
   const history = new Map<string, BoardVersion[]>();
   let counter = 0;
 
-  const record = (id: string, config: BoardConfig, source: string, summary: string) => {
+  const record = (id: string, config: BoardConfig, source: string, summary: string, ownership: Ownership = {}) => {
     const list = history.get(id) ?? [];
     const version = list.length + 1;
     list.push({ version, source, summary, createdAt: new Date(), config: structuredClone(config) });
     history.set(id, list);
-    const board: Board = { id, pack: config.pack, config: structuredClone(config), version, updatedAt: new Date() };
+    const { owner, shared } = boards.get(id) ?? ownership;
+    const board: Board = { id, pack: config.pack, config: structuredClone(config), version, updatedAt: new Date(), ...(owner ? { owner, shared: !!shared } : {}) };
     boards.set(id, board);
     return board;
   };
@@ -65,12 +72,12 @@ export function memoryStore(): BoardStore {
       return b ? { ...b, config: structuredClone(b.config) } : null;
     },
     async list() {
-      return [...boards.values()].map((b) => ({ id: b.id, pack: b.pack, title: b.config.title, version: b.version, updatedAt: b.updatedAt }));
+      return [...boards.values()].map((b) => ({ id: b.id, pack: b.pack, title: b.config.title, version: b.version, updatedAt: b.updatedAt, ...(b.owner ? { owner: b.owner, shared: !!b.shared } : {}) }));
     },
-    async create({ id, pack, title, config }) {
+    async create({ id, pack, title, config, owner }) {
       const boardId = id ?? `b${++counter}`;
       if (boards.has(boardId)) throw new Error(`Board "${boardId}" already exists`);
-      return record(boardId, config ?? emptyBoard(pack, title), "create", "created");
+      return record(boardId, config ?? emptyBoard(pack, title), "create", "created", { owner, shared: false });
     },
     async patch({ id, ops, catalogue, source = "ops", expectedVersion }) {
       const current = boards.get(id);
@@ -95,6 +102,12 @@ export function memoryStore(): BoardStore {
       const current = boards.get(id);
       if (current && JSON.stringify(current.config) === JSON.stringify(target.config)) return current;
       return record(id, target.config, "revert", `restored v${version}`);
+    },
+    async share(id, shared) {
+      const b = boards.get(id);
+      if (!b?.owner) return null;
+      b.shared = shared;
+      return { ...b, config: structuredClone(b.config) };
     },
     async delete(id) {
       boards.delete(id);

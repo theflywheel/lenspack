@@ -39,7 +39,8 @@ for (const name of Object.keys(examples) as ExampleName[]) {
     }
     db = await (await import("@lenspack/sql/duckdb")).openDuckdb(file);
   }
-  const store = sqlStore(db);
+  // One Postgres may hold every example: each keeps its boards in its own space.
+  const store = sqlStore(db, { space: name });
   await store.migrate();
   // The campaign example reads a search index when one is configured; its
   // boards still live in the example's own database.

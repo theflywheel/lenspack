@@ -27,6 +27,8 @@ describe("serve with sign-in", () => {
   // The test's stand-in for a login proxy: x-user names a caller below.
   const people: Record<string, Principal> = {
     editor: { user: "editor", edit: true },
+    other: { user: "other", edit: true },
+    maintainer: { user: "maintainer", edit: true, maintain: true },
     viewer: { user: "viewer" },
     scoped: { user: "scoped" }, // scope filled in once a province is known
     village: { user: "village", scope: [{ dimension: "village", op: "eq", value: "nowhere" }] },
@@ -72,13 +74,42 @@ describe("serve with sign-in", () => {
     expect(events.at(-1)).toMatchObject({ user: "viewer", pack: "campaign", board: "overview", outcome: "denied" });
   });
 
-  it("records an editor's change, and a refused one, by user", async () => {
-    const ok = await call("editor", "/campaign/overview/ops", { method: "POST", body: JSON.stringify({ ops: [{ op: "set_title", title: "Campaign" }] }) });
+  it("records a maintainer's change to the pack's board, and a refused one, by user", async () => {
+    const ok = await call("maintainer", "/campaign/overview/ops", { method: "POST", body: JSON.stringify({ ops: [{ op: "set_title", title: "Campaign" }] }) });
     expect(ok.status).toBe(200);
-    expect(events.at(-1)).toMatchObject({ user: "editor", action: "ops", outcome: "ok", detail: "set_title" });
+    expect(events.at(-1)).toMatchObject({ user: "maintainer", action: "ops", outcome: "ok", detail: "set_title" });
     const widget = { kind: "kpi", title: "x", query: { kind: "value", measure: "vists" } };
-    await call("editor", "/campaign/overview/ops", { method: "POST", body: JSON.stringify({ ops: [{ op: "add_widget", id: "x", widget }] }) });
-    expect(events.at(-1)).toMatchObject({ user: "editor", action: "ops", outcome: "refused" });
+    await call("maintainer", "/campaign/overview/ops", { method: "POST", body: JSON.stringify({ ops: [{ op: "add_widget", id: "x", widget }] }) });
+    expect(events.at(-1)).toMatchObject({ user: "maintainer", action: "ops", outcome: "refused" });
+  });
+
+  it("keeps a board someone made theirs: hidden until shared, then read-only to others, who may copy it", async () => {
+    const rename = (title: string) => ({ method: "POST", body: JSON.stringify({ ops: [{ op: "set_title", title }] }) });
+    expect((await call("editor", "/campaign/overview/ops", rename("Mine now"))).status).toBe(403);
+    const made = await call("editor", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "Editor's" }) });
+    const id = made.body.id as string;
+    expect((await call("editor", `/campaign/${id}/ops`, rename("Editor's board"))).status).toBe(200);
+
+    const listed = async (who: string) => ((await call(who, "/campaign")).body.boards as { id: string; writable: boolean }[]).find((b) => b.id === id);
+    expect(await listed("other")).toBeUndefined();
+    expect((await call("other", `/campaign/${id}`)).status).toBe(404);
+    expect((await call("other", `/campaign/${id}/share`, { method: "POST", body: JSON.stringify({ shared: true }) })).status).toBe(404);
+
+    expect((await call("editor", `/campaign/${id}/share`, { method: "POST", body: JSON.stringify({ shared: true }) })).body.shared).toBe(true);
+    expect(await listed("other")).toMatchObject({ writable: false, owner: "editor", shared: true });
+    expect((await call("other", `/campaign/${id}`)).body.writable).toBe(false);
+    expect((await call("other", `/campaign/${id}/ops`, rename("Taken"))).status).toBe(403);
+    expect((await call("other", `/campaign/${id}`, { method: "DELETE" })).status).toBe(403);
+    expect((await call("viewer", `/campaign/${id}/copy`, { method: "POST", body: "{}" })).status).toBe(403);
+
+    const copy = await call("other", `/campaign/${id}/copy`, { method: "POST", body: "{}" });
+    expect(await listed("other")).toMatchObject({ writable: false });
+    const theirs = await call("other", `/campaign/${copy.body.id}`);
+    expect(theirs.body).toMatchObject({ writable: true, board: { owner: "other", shared: false, config: { title: "Editor's board (copy)" } } });
+    expect((await call("editor", `/campaign/${copy.body.id}`)).status).toBe(404);
+
+    expect((await call("editor", `/campaign/${id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await call("maintainer", "/campaign/overview", { method: "DELETE" })).status).toBe(403);
   });
 
   it("narrows every number to the caller's scope", async () => {
@@ -119,8 +150,10 @@ describe("sign-in from lenspack.yaml", () => {
   });
 
   it("trusts a proxy's user header only with the proxy's secret", async () => {
-    const access = accessFrom(authSchema.parse({ kind: "proxy", secret: "s".repeat(32), editors: ["amina"] }))!;
-    expect(await access(req({ "x-lenspack-proxy-secret": "s".repeat(32), "x-forwarded-user": "amina" }))).toEqual({ user: "amina", edit: true });
+    const access = accessFrom(authSchema.parse({ kind: "proxy", secret: "s".repeat(32), editors: ["*"], maintainers: ["amina"] }))!;
+    const as = (user: string) => access(req({ "x-lenspack-proxy-secret": "s".repeat(32), "x-forwarded-user": user }));
+    expect(await as("amina")).toEqual({ user: "amina", edit: true, maintain: true });
+    expect(await as("bo")).toEqual({ user: "bo", edit: true });
     expect(await access(req({ "x-forwarded-user": "amina" }))).toBeNull();
     expect(() => accessFrom(authSchema.parse({ kind: "proxy", secret: "short" }))).toThrow(/16 characters/);
   });

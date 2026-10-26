@@ -1,9 +1,10 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { BoardStore } from "@lenspack/core";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { openSqlite } from "@lenspack/sql/sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -123,5 +124,53 @@ describe("lenspack serve from a config file", () => {
     }
     const e = await get(`${esApi}/campaign/explain?q=${encodeURIComponent(JSON.stringify({ kind: "value", measure: "household_coverage" }))}`);
     expect(e.native).toMatch(/POST \/project-index-v1\/_search/);
+  });
+});
+
+describe("boards kept in a database", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lenspack-store-"));
+  const boards = join(dir, "boards");
+  const file = (title: string) => {
+    mkdirSync(boards, { recursive: true });
+    const overview = JSON.parse(readFileSync(`${campaign}boards/overview.json`, "utf8"));
+    writeFileSync(join(boards, "overview.json"), JSON.stringify({ ...overview, title }));
+  };
+  // One pack mounted twice, both kept in one database file.
+  const open = async () => {
+    const pack = (name: string) => ({ pack: `${campaign}pack.yaml`, source: "data", name, boards: "./boards" });
+    const opened = await openConfig(configSchema.parse({ sources: { data: { url: "duckdb:./data.duckdb" } }, packs: [pack("north"), pack("south")], store: { kind: "duckdb", path: "./boards.duckdb" } }), dir);
+    for (const h of opened.hosts) await seedBoards(h);
+    const [north, south] = opened.hosts.map((h) => h.store);
+    return { north: north!, south: south!, close: opened.close };
+  };
+  const title = async (store: BoardStore, id: string) => (await store.get(id))?.config.title;
+  // Sources open read-only, so the (empty) data file must exist.
+  beforeAll(async () => void (await (await openDuckdb(join(dir, "data.duckdb"))).close()));
+
+  it("keeps each pack's boards apart, and what people made across a restart", async () => {
+    file("From the file");
+    const first = await open();
+    const { catalogueFrom, parsePackText } = await import("@lenspack/spec");
+    const catalogue = catalogueFrom(parsePackText(readFileSync(`${campaign}pack.yaml`, "utf8")));
+    await first.north.patch({ id: "overview", ops: [{ op: "set_title", title: "Edited in the app" }], catalogue });
+    await first.north.create({ id: "mine", pack: { pack: "campaign", version: 1 }, title: "Mine", owner: "amina" });
+    expect(await title(first.south, "overview")).toBe("From the file");
+    expect((await first.south.list()).map((b) => b.id)).toEqual(["overview"]);
+    await first.close();
+
+    const again = await open();
+    expect(await again.north.get("mine")).toMatchObject({ owner: "amina", shared: false });
+    expect(await title(again.north, "overview")).toBe("Edited in the app");
+    await again.close();
+  });
+
+  it("puts a changed board file on top, the app's edit kept in the history", async () => {
+    file("The file changed");
+    const changed = await open();
+    expect(await title(changed.north, "overview")).toBe("The file changed");
+    const [latest, edited] = await changed.north.versions("overview");
+    expect(latest).toMatchObject({ source: "file" });
+    expect(edited?.config.title).toBe("Edited in the app");
+    await changed.close();
   });
 });

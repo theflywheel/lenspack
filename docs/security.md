@@ -49,12 +49,13 @@ lenspack keeps no users. The deployment identifies each caller through an `acces
 - `proxy`: a login proxy in front names the user in a header. The header is believed only when the request carries the proxy's shared secret (16+ characters), so a caller who reaches lenspack directly cannot claim to be anyone.
 - `none`: open, and it must be written down. With no `auth:` block the server listens on 127.0.0.1 only.
 
-The answer is a principal: `{ user, tenant?, scope?, edit?, packs? }`.
+The answer is a principal: `{ user, tenant?, scope?, edit?, maintain?, packs? }`.
 
 - **Unknown caller:** 401 on every API path. A pack outside `packs` answers 404, as if it did not exist.
 - **Tenant:** narrows the pack's tenancy; it can never move a pack the config pins to another tenant (403).
 - **Scope:** filter clauses added to every query in resolution — boards, filter menus, explain, chat tools — on every connector. A query whose root cannot be narrowed by a scope dimension is refused with `OUT_OF_SCOPE` rather than answered for all rows. Cached results are keyed by the compiled statement and its parameters, so one caller's rows are never served to another.
-- **Edit:** every non-GET request (ops, layout, revert, chat, create, delete) needs it; a viewer gets 403.
+- **Edit:** every non-GET request (ops, layout, revert, chat, create, copy, share, delete) needs it; a viewer gets 403. It lets a caller make boards of their own and change, share and delete those.
+- **Boards have owners:** a board someone makes is theirs. Until they share it, nobody else sees it (404, as if it did not exist); once shared, others may read it and save a copy, not change it. The pack's own boards, from its board files, have no owner: everyone reads them, and only a caller with `maintain` changes them. A changed board file lands as a new version at the next start, so an edit made in the app stays in the history. In `proxy` mode, `editors` and `maintainers` name who gets which (`"*"` for everyone signed in); with no `auth:` block, the one local user has both.
 - **Audit:** every change, refused change and denied request goes to the `audit` hook with the user, pack, board and outcome (`audit: ./audit.jsonl` appends JSON lines).
 
 ## Pack fragments are code
