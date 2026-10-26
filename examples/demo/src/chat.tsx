@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Separator } from "./components/ui/separator";
-import { ScrollArea } from "./components/ui/scroll-area";
 
 // The chat panel, in a chunk of its own: the AI SDK loads when a board with
 // chat is opened, not with the landing page or the board.
@@ -153,7 +152,9 @@ export function ChatPanel({
           </Select>
         )}
       </CardHeader>
-      <ScrollArea className="min-h-[160px] flex-1">
+      {/* A plain scrolling box: inside a card with only a max height, a scroll area never gets a height of
+          its own, and a long conversation spills over the input and takes its clicks. */}
+      <div className="min-h-[160px] flex-1 overflow-y-auto overscroll-contain">
         <CardContent className="space-y-4 py-4">
           {messages.length === 0 && (
             <div className="space-y-2">
@@ -204,7 +205,7 @@ export function ChatPanel({
           {error && <p className="text-xs text-destructive">{error.message}</p>}
           <div ref={bottom} />
         </CardContent>
-      </ScrollArea>
+      </div>
       <form
         className="flex items-center gap-2 border-t p-2"
         onSubmit={(e) => {
