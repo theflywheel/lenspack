@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { ArrowUp, ChevronDown, History, LayoutGrid, RotateCcw, SendHorizontal, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, SendHorizontal, Share2, Trash2, X } from "lucide-react";
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { ScrollArea } from "./components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Separator } from "./components/ui/separator";
 
 // The board app, built from shadcn components. The board itself is rendered
@@ -249,7 +249,22 @@ function PreviewBanner({ onReverted }: { onReverted: () => void }) {
   );
 }
 
-type Catalog = { example: string; description?: string; boards: { id: string; title: string }[] }[];
+type Entry = { id: string; title: string; owner?: string; shared?: boolean; writable?: boolean };
+type Catalog = { example: string; description?: string; boards: Entry[] }[];
+/** Who the server says is signed in; absent on an open server. */
+type Me = { user: string; edit: boolean; maintain: boolean; signOut?: string };
+
+// The board menu: the pack's own boards, yours, and those others shared.
+// Temporary boards (previews, evals) stay out of it.
+function boardGroups(boards: Entry[], me: Me | null): [string, Entry[]][] {
+  const listed = boards.filter((b) => !b.id.startsWith("tmp_"));
+  const mine = (b: Entry) => !!b.owner && (!me || b.owner === me.user);
+  return [
+    ["The pack's boards", listed.filter((b) => !b.owner)],
+    ["Yours", listed.filter(mine)],
+    ["Shared by others", listed.filter((b) => b.owner && !mine(b))],
+  ];
+}
 
 export function App() {
   const params = new URLSearchParams(location.search);
@@ -261,12 +276,22 @@ export function App() {
   const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? "");
   const [adapterName, setAdapterName] = React.useState<AdapterName>(isAdapter(params.get("charts")) ? (params.get("charts") as AdapterName) : "recharts");
   const charts = useChartAdapter(adapterName);
-  const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue } | null>(null);
+  const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue; writable: boolean } | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
+  const [me, setMe] = React.useState<Me | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  const loadIndex = React.useCallback(async () => {
+    const r = await api("/");
+    setCatalog(r.examples);
+    return r.examples as Catalog;
+  }, []);
 
   React.useEffect(() => {
     void (takeBoot("index") ?? api("/")).then((r) => {
+      // Signed out, or not let in: say so rather than wait.
+      if (!r.examples) return setProblem(r.error ?? "The board API did not answer");
       setCatalog(r.examples);
+      setMe(r.me ?? null);
       setChatEnabled(!!r.chat);
       const ms: ModelInfo[] = r.models ?? [];
       setModels(ms);
@@ -293,7 +318,8 @@ export function App() {
         if (!r.board) return setProblem(r.error ?? "This board does not exist");
         setProblem(null);
         if (withData && r.data) primer.current = { config: JSON.stringify(r.board.config), data: r.data, options: r.options ?? {} };
-        setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue });
+        // A server from before owners says nothing: everything is writable there.
+        setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue, writable: r.writable !== false });
       });
     },
     [base],
@@ -309,6 +335,7 @@ export function App() {
     history.replaceState(null, "", `/app?example=${example}&board=${boardId}&charts=${adapterName}${model ? `&model=${encodeURIComponent(model)}` : ""}`);
   }, [example, boardId, adapterName, model]);
 
+  const writable = state?.writable ?? false;
   const host = React.useMemo<BoardHost>(
     () => ({
       loadBoardData: (config, selections) => {
@@ -334,13 +361,45 @@ export function App() {
         return hit ? Promise.resolve(hit) : api(`${base}/options?field=${encodeURIComponent(field)}`);
       },
       loadVersions: async () => (await api(`${base}/versions`)).map((v: { createdAt: string }) => ({ ...v, createdAt: new Date(v.createdAt) })),
-      revertTo: async (version) => {
-        const b = await api(`${base}/revert`, { method: "POST", body: JSON.stringify({ version }) });
-        return b ? { ...b, updatedAt: new Date(b.updatedAt) } : null;
-      },
+      // Read-only boards show their history without the restore buttons.
+      ...(writable
+        ? {
+            revertTo: async (version: number) => {
+              const b = await api(`${base}/revert`, { method: "POST", body: JSON.stringify({ version }) });
+              return b ? { ...b, updatedAt: new Date(b.updatedAt) } : null;
+            },
+          }
+        : {}),
     }),
-    [base],
+    [base, writable],
   );
+
+  // Making, copying, sharing and deleting boards: what owners need.
+  const canMake = me ? me.edit : true;
+  const entry = catalog.find((c) => c.example === example)?.boards.find((b) => b.id === boardId);
+  const open = async (r: { id?: string; error?: string }) => {
+    if (!r.id) return setNotice(r.error ?? "That did not work");
+    setNotice(null);
+    await loadIndex();
+    setBoardId(r.id);
+  };
+  const newBoard = async () => {
+    const title = window.prompt("Name the new board", "Untitled board");
+    if (title) await open(await api(`/${example}/boards`, { method: "POST", body: JSON.stringify({ title }) }));
+  };
+  const copyBoard = async () => open(await api(`${base}/copy`, { method: "POST", body: "{}" }));
+  const shareBoard = async (shared: boolean) => {
+    const r = await api(`${base}/share`, { method: "POST", body: JSON.stringify({ shared }) });
+    setNotice(r.error ?? null);
+    await loadIndex();
+  };
+  const deleteBoard = async () => {
+    if (!window.confirm(`Delete “${state?.board.config.title}”? Its history goes with it.`)) return;
+    const r = await api(base, { method: "DELETE" });
+    if (r.error) return setNotice(r.error);
+    const next = await loadIndex();
+    setBoardId(next.find((c) => c.example === example)?.boards.find((b) => !b.owner)?.id ?? "");
+  };
 
   const current = catalog.find((c) => c.example === example);
   const suggestions = React.useMemo(() => {
@@ -394,12 +453,44 @@ export function App() {
             </Select>
             <Select value={boardId} onValueChange={setBoardId}>
               <SelectTrigger size="sm" className="w-52 text-xs" aria-label="Board"><SelectValue /></SelectTrigger>
-              <SelectContent>{(current?.boards ?? []).map((b) => <SelectItem key={b.id} value={b.id}>{b.title}</SelectItem>)}</SelectContent>
+              <SelectContent>
+                {boardGroups(current?.boards ?? [], me).map(([label, list]) =>
+                  list.length === 0 ? null : (
+                    <SelectGroup key={label}>
+                      <SelectLabel>{label}</SelectLabel>
+                      {list.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.title}
+                          {b.owner && me && b.owner !== me.user && <span className="text-muted-foreground"> · {b.owner}</span>}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ),
+                )}
+              </SelectContent>
             </Select>
+            {canMake && (
+              <Button variant="outline" size="sm" onClick={newBoard} data-testid="new-board">
+                <Plus /> New board
+              </Button>
+            )}
             <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
               <SelectTrigger size="sm" className="w-40 font-mono text-xs" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
               <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
             </Select>
+            {me && (
+              <span className="text-xs text-muted-foreground" data-testid="signed-in">
+                {me.user}
+                {me.signOut && (
+                  <>
+                    {" · "}
+                    <a className="underline underline-offset-4 hover:text-foreground" href={me.signOut}>
+                      Sign out
+                    </a>
+                  </>
+                )}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -407,20 +498,42 @@ export function App() {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className={chatEnabled ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]" : ""}>
           <div className={chatEnabled ? "order-1 min-w-0" : "min-w-0"}>
-            <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts}>
+            <BoardProvider key={`${base}:${state.board.version}:${writable}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts} editable={writable}>
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h1 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground">{state.board.config.title}</h1>
                   {current?.description && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">{current.description}</p>}
+                  {!writable && (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="read-only">
+                      <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board, shared with everyone.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}
+                    </p>
+                  )}
+                  {notice && <p className="mt-1 text-xs text-destructive">{notice}</p>}
                 </div>
-                <div className="flex items-center gap-2">
-                  <LayoutMode />
+                <div className="flex flex-wrap items-center gap-2">
+                  {canMake && (
+                    <Button variant={writable ? "ghost" : "default"} size="sm" onClick={copyBoard} data-testid="copy-board">
+                      <Copy /> Save a copy
+                    </Button>
+                  )}
+                  {writable && state.board.owner && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => shareBoard(!entry?.shared)} data-testid="share-board" aria-pressed={!!entry?.shared}>
+                        <Share2 /> {entry?.shared ? "Shared: stop sharing" : "Share with everyone"}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={deleteBoard} data-testid="delete-board" aria-label="Delete board">
+                        <Trash2 />
+                      </Button>
+                    </>
+                  )}
+                  {writable && <LayoutMode />}
                   <VersionHistory onReverted={() => reloadBoard()} />
                 </div>
               </div>
               <div className="space-y-3">
                 <PreviewBanner onReverted={() => reloadBoard()} />
                 <FilterBar />
+                {writable && (
                 <details className="group">
                   <summary className="w-fit cursor-pointer list-none font-mono text-xs text-muted-foreground hover:text-foreground">
                     <span className="group-open:hidden">Edit with an operation instead</span>
@@ -430,6 +543,7 @@ export function App() {
                     <OpsBox />
                   </div>
                 </details>
+                )}
               </div>
               <Separator className="my-4" />
               <Board showQueries />
@@ -437,9 +551,20 @@ export function App() {
           </div>
           {chatEnabled && (
             <div className="order-2 min-w-0">
-              <React.Suspense fallback={<div className="rounded-md border p-4 text-sm text-muted-foreground">Loading chat…</div>}>
-                <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={() => reloadBoard()} models={models} model={model} onModelChange={setModel} />
-              </React.Suspense>
+              {writable ? (
+                <React.Suspense fallback={<div className="rounded-md border p-4 text-sm text-muted-foreground">Loading chat…</div>}>
+                  <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={() => reloadBoard()} models={models} model={model} onModelChange={setModel} />
+                </React.Suspense>
+              ) : (
+                <div className="rounded-md border p-4 text-sm text-muted-foreground" data-testid="chat-read-only">
+                  Chat changes the board it sits beside, and this one is read-only.
+                  {canMake && (
+                    <Button size="sm" className="mt-3 w-full" onClick={copyBoard}>
+                      <Copy /> Save a copy to change it with chat
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

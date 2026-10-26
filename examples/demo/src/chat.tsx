@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { Chat, useChat } from "@ai-sdk/react";
+import type { BoardVersion } from "@lenspack/react";
 import { DefaultChatTransport } from "ai";
 import { ArrowUp, ChevronDown, SendHorizontal, X } from "lucide-react";
 
