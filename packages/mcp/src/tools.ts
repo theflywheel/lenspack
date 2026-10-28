@@ -178,6 +178,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
             format: data.format,
             compare: data.compare,
             ...(data.approximate ? { approximate: true } : {}),
+            ...(data.notes ? { notes: data.notes } : {}),
             [nativeKey]: text,
           };
         } catch (e) {

@@ -17,11 +17,13 @@ type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 | shape | answers | notes |
 |---|---|---|
 | `breakdown` | a measure per group | `limit` 2–50 (default 12); ties broken by group name; time dimensions are refused (use `series`) |
-| `series` | a measure per time bucket | uses the root entity's `time` column; `by` splits into at most 12 series (top by total, the rest dropped — never bucketed as "other") |
+| `series` | a measure per time bucket | uses the root entity's `time` column; `by` splits into at most 12 series (top by total, the rest dropped, never bucketed as "other"; on SQL sources the answer's `notes` say how many) |
 | `value` | one number | `compare` needs a `time` range and returns `previous` and `delta` from one statement |
 | `rows` | records | `columns` are dimension keys on that entity; `limit` 1–500 |
 
 Relative `time` is resolved against `now` at query time, so a saved board keeps meaning "the last 30 days".
+
+A derived measure whose operands live on different entities runs one query per operand and combines the results per group. A filter must narrow every operand, or the query is refused (`NOT_SUPPORTED`, naming the operands that can be narrowed), at edit time as at run time. The one exception is an operand that only divides (a target, a capacity: `delivered / target`) when no other divisor is narrowed by that filter: it stays whole ("this kind over the whole goal") and the answer's `notes` say so.
 
 ## Compiler
 

@@ -29,6 +29,8 @@ export type WidgetData = {
   approximate?: boolean;
   /** For a query with further measures: every measure drawn, the primary first. */
   measures?: { key: string; format: Format }[];
+  /** What the answer leaves out on purpose: series past the top few, an operand no filter narrows. */
+  notes?: string[];
   error?: string;
   hint?: string;
 };
@@ -85,6 +87,7 @@ export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?:
       return { rows, total: rows.reduce((s, r) => s + r.count, 0), format };
     }
     case "series": {
+      let notes: string[] | undefined;
       let rows: DataRow[] = raw.map((r) => ({
         group: bucketLabel(r.bucket, query.grain),
         ...("series" in r ? { series: groupLabel(r.series) } : {}),
@@ -98,8 +101,9 @@ export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?:
         for (const r of rows) totals.set(r.series!, (totals.get(r.series!) ?? 0) + (r.value ?? 0));
         const keep = new Set([...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_SERIES).map(([k]) => k));
         rows = rows.filter((r) => keep.has(r.series!));
+        if (totals.size > keep.size) notes = [`${totals.size - keep.size} of ${totals.size} series left out: only the top ${keep.size} by total are drawn`];
       }
-      return { rows, total: rows.reduce((s, r) => s + r.count, 0), format };
+      return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, ...(notes ? { notes } : {}) };
     }
     case "value": {
       const r = raw[0] ?? {};

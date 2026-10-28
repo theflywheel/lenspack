@@ -39,8 +39,8 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   const sides = measures.map((m): AcrossSide => {
     const home = m.entity === def.entity;
     // A filter on a dimension another operand's entity does not have (a kind
-    // of item, when the goal is set per region) narrows the home operand only:
-    // this kind over the whole goal. Explain says so.
+    // of item, when the goal is set per region) narrows the home operand only,
+    // and only where that reads right (below). Explain and the data say so.
     const has = (dimension: string) => {
       const d = pack.dimensions.find((x) => x.key === dimension);
       return !d || d.entity === m.entity || !!d.also?.[m.entity];
@@ -60,8 +60,42 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
     }
     return { measure: m, query: q, timeless, unfiltered };
   });
+  // Left whole, an operand that only divides reads as "this kind over the
+  // whole goal". Anything else would add or subtract rows the filter excludes
+  // elsewhere, as would a divisor beside another that the filter does narrow.
+  const { divides, counts } = placed(expr);
+  for (const s of sides)
+    for (const dimension of s.unfiltered) {
+      const reference = divides.has(s.measure.key) && !counts.has(s.measure.key);
+      if (reference && sides.every((t) => !divides.has(t.measure.key) || t.unfiltered.includes(dimension))) continue;
+      const narrowable = sides.filter((t) => !t.unfiltered.length).map((t) => t.measure.key);
+      throw new ResolveError(
+        "NOT_SUPPORTED",
+        `"${def.key}" cannot be narrowed by "${dimension}": its operand ${s.measure.key} lives on "${s.measure.entity}", which has no such dimension. Measures that can be: ${narrowable.join(", ")}.`,
+        def.key,
+        narrowable[0],
+      );
+    }
   return { def, expr, sides };
 }
+
+// Operands under an odd number of divisors (b in a / b, b and c in
+// a / (b + c)) scale the answer; the rest count into it. One can do both.
+function placed(e: MeasureExpr, under = false, out = { divides: new Set<string>(), counts: new Set<string>() }) {
+  if (e.t === "measure") (under ? out.divides : out.counts).add(e.key);
+  else if (e.t === "neg") placed(e.arg, under, out);
+  else if (e.t === "op") {
+    placed(e.l, under, out);
+    placed(e.r, e.op === "/" ? !under : under, out);
+  }
+  return out;
+}
+
+const unnarrowed = (s: AcrossSide) => `${s.measure.key} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`;
+const notesOf = (data: WidgetData[], more: string[] = []) => {
+  const notes = [...new Set([...data.flatMap((d) => d.notes ?? []), ...more])];
+  return notes.length ? notes : undefined;
+};
 
 // A group missing from an operand had no rows there: zero for a count, a
 // distinct count or a sum (nothing delivered yet), unknown for anything else.
@@ -71,6 +105,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   const { def, expr, sides } = across;
   const format = def.format ?? "number";
   const approximate = data.some((d) => d.approximate) || undefined;
+  const notes = notesOf(data, sides.filter((s) => s.unfiltered.length).map(unnarrowed));
   const homeIndex = Math.max(0, sides.findIndex((s) => s.measure.entity === def.entity));
   const home = data[homeIndex]!;
   const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
@@ -78,7 +113,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   if (query.kind === "value") {
     const now = (i: number) => data[i]!.rows[0]?.value ?? null;
     const value = evaluate(expr, (k) => now(sides.findIndex((s) => s.measure.key === k)));
-    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate };
+    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate, notes };
     if (sides.every((s, i) => s.timeless || data[i]!.compare)) {
       const previous = evaluate(expr, (k) => {
         const i = sides.findIndex((s) => s.measure.key === k);
@@ -118,7 +153,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   } else {
     rows.sort((a, b) => a.group.localeCompare(b.group) || (a.series ?? "").localeCompare(b.series ?? ""));
   }
-  return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate };
+  return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate, notes };
 }
 
 const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: "number", error: e.message, hint: e.nearest });
@@ -198,6 +233,7 @@ async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOpt
     rows,
     measures: [{ key: query.measure, format: main!.format }, ...extras.map((e, i) => ({ key: e.key, format: others[i]!.format }))],
     approximate: main!.approximate || others.some((o) => o.approximate) || undefined,
+    notes: notesOf([main!, ...others]),
   };
 }
 
@@ -243,7 +279,7 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
   if (across) {
     const parts = await Promise.all(across.sides.map((s) => explain(s.query, opts)));
     const notes = across.sides.flatMap((s) => [
-      ...(s.unfiltered.length ? [`-- ${s.measure.key} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`] : []),
+      ...(s.unfiltered.length ? [`-- ${unnarrowed(s)}`] : []),
       ...(s.timeless ? [`-- "${s.measure.entity}" has no time: every period uses the same ${s.measure.key}`] : []),
     ]);
     return {

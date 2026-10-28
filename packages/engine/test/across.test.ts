@@ -2,7 +2,7 @@ import type { Query } from "@lenspack/core";
 import { parsePack } from "@lenspack/spec";
 import { describe, expect, it } from "vitest";
 
-import { type Connector, type Row, SQL_CAPABILITIES, explain, run, shapeRows } from "../src";
+import { type Connector, type Row, SQL_CAPABILITIES, check, explain, run, shapeRows } from "../src";
 
 // Cross-entity ratios are computed by the engine from two ordinary queries,
 // so a stub connector that answers from canned rows is enough to pin the join.
@@ -76,6 +76,31 @@ describe("ratios across entities", () => {
     expect(data.rows[0]!.value).toBe(0.25);
     expect(c.seen.find((s) => s.kind === "value" && s.measure === "goal_n")!.filters).toBeUndefined();
     expect((await explain(q, { pack, connector: c })).text).toMatch(/not narrowed by kind/);
+    expect(data.notes).toEqual(['goal_n is not narrowed by kind: "goal" has no such dimension']);
+  });
+
+  it("refuses a filter that cannot narrow an operand counted into the answer, at run and at edit time", async () => {
+    const sum = parsePack({
+      pack: "sum",
+      version: 1,
+      entities: { chat: { source: "chat", time: "at" }, voice: { source: "voice", time: "at" } },
+      dimensions: [{ key: "language", entity: "chat", field: "language" }],
+      measures: [
+        { key: "chat_turns", entity: "chat", agg: "count" },
+        { key: "voice_questions", entity: "voice", agg: "count" },
+        { key: "questions", entity: "chat", derived: "chat_turns + voice_questions" },
+        { key: "per_call", entity: "chat", derived: "chat_turns / (chat_turns + voice_questions)" },
+      ],
+    });
+    const c = stub(() => [{ value: 1, n: 1 }]);
+    const filters = [{ dimension: "language", op: "eq" as const, value: "x" }];
+    const data = await run({ kind: "value", measure: "questions", filters }, { pack: sum, connector: c });
+    expect(data.error).toMatch(/"questions" cannot be narrowed by "language".*voice_questions.*chat_turns/);
+    expect(data.hint).toBe("chat_turns");
+    expect(c.seen).toEqual([]);
+    // A divisor that counts some narrowed rows is no reference either.
+    expect((await run({ kind: "value", measure: "per_call", filters }, { pack: sum, connector: c })).error).toMatch(/cannot be narrowed/);
+    expect(() => check({ kind: "value", measure: "questions", filters }, sum)).toThrow(/cannot be narrowed by "language"/);
   });
 
   it("divides every period by a denominator that has no time", async () => {
@@ -107,5 +132,15 @@ describe("calendar windows", () => {
     expect(defaultRange({ months: 1 }, new Date("2026-03-31T12:00:00Z"), "UTC")).toBe("2026-02-28..2026-03-31");
     expect(startOfLocalDay("2026-03-29", "Europe/Berlin").toISOString()).toBe("2026-03-28T23:00:00.000Z");
     expect(startOfLocalDay("2026-03-30", "Europe/Berlin").toISOString()).toBe("2026-03-29T22:00:00.000Z");
+  });
+});
+
+describe("split series", () => {
+  it("says how many series it left out", () => {
+    const raw = Array.from({ length: 14 }, (_, i) => ({ bucket: "2026-08-01", series: `s${i}`, value: i, n: 1 }));
+    const data = shapeRows(raw, { kind: "series", measure: "done_n", grain: "day", by: "kind" }, "number");
+    expect(new Set(data.rows.map((r) => r.series)).size).toBe(12);
+    expect(data.notes).toEqual(["2 of 14 series left out: only the top 12 by total are drawn"]);
+    expect(shapeRows(raw.slice(0, 12), { kind: "series", measure: "done_n", grain: "day", by: "kind" }, "number").notes).toBeUndefined();
   });
 });
