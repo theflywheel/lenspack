@@ -29,13 +29,15 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
   });
   // A large catalogue: one line per entity, and a label that only restates its key left out.
   const large = tooLarge(catalogue);
-  const brief = (xs: { key: string; label: string; entity: string; verified?: boolean }[]) =>
+  const verifiedDims = catalogue.dimensions.filter((d) => d.verified);
+  const verifiedMeasures = catalogue.measures.filter((m) => m.verified);
+  const brief = (xs: { key: string; label: string; entity: string }[]) =>
     Object.keys(pack.entities).flatMap((e) => {
-      const keys = xs.filter((x) => x.verified && x.entity === e).map((x) => (x.label.toLowerCase() === x.key.replace(/_/g, " ") ? x.key : `${x.key} (${x.label})`));
+      const keys = xs.filter((x) => x.entity === e).map((x) => (x.label.toLowerCase() === x.key.replace(/_/g, " ") ? x.key : `${x.key} (${x.label})`));
       return keys.length ? [`- ${e}: ${keys.join(", ")}`] : [];
     });
-  const dims = large ? brief(catalogue.dimensions) : catalogue.dimensions.filter((d) => d.verified).map((d) => `- ${d.key} (${d.entity}, ${d.type}${d.grains ? `, grains ${d.grains.join("/")}` : ""}): ${d.label}${d.synonyms?.length ? ` [${d.synonyms.join(", ")}]` : ""}${d.hint ? ` — ${d.hint}` : ""}`);
-  const measures = large ? brief(catalogue.measures) : catalogue.measures.filter((m) => m.verified).map((m) => `- ${m.key} (${m.entity}, ${m.format}): ${m.label}${m.synonyms?.length ? ` [${m.synonyms.join(", ")}]` : ""}${m.hint ? ` — ${m.hint}` : ""}`);
+  const dims = large ? brief(verifiedDims) : verifiedDims.map((d) => `- ${d.key} (${d.entity}, ${d.type}${d.grains ? `, grains ${d.grains.join("/")}` : ""}): ${d.label}${d.synonyms?.length ? ` [${d.synonyms.join(", ")}]` : ""}${d.hint ? ` — ${d.hint}` : ""}`);
+  const measures = large ? brief(verifiedMeasures) : verifiedMeasures.map((m) => `- ${m.key} (${m.entity}, ${m.format}): ${m.label}${m.synonyms?.length ? ` [${m.synonyms.join(", ")}]` : ""}${m.hint ? ` — ${m.hint}` : ""}`);
   return [
     `ENTITIES (a measure is computed at its entity's grain; a dimension on another entity needs a many-to-one path):`,
     ...entities,
@@ -46,20 +48,24 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
   ].join("\n");
 }
 
-// An example as the board summary words a query, with its filters, which
-// that summary leaves out.
-const exampleLine = (e: Pack["examples"][number]) =>
-  `- "${e.question}" → ${e.query.kind} ${describeQuery(e.query)}${(e.query.filters ?? []).map((f) => ` where ${f.dimension} ${f.op} ${JSON.stringify(f.value)}`).join("")}${e.note ? ` (${e.note})` : ""}`;
+// An example as the board summary words a query, with the filters and a
+// rows query's order and limit, which that summary leaves out.
+const exampleLine = ({ question, query: q, note }: Pack["examples"][number]) => {
+  const order = q.kind === "rows" ? `${q.orderBy ? ` order by ${q.orderBy.key} ${q.orderBy.dir}` : ""}${q.limit !== 50 ? ` top ${q.limit}` : ""}` : "";
+  const filters = (q.filters ?? []).map((f) => ` where ${f.dimension} ${f.op} ${JSON.stringify(f.value)}`).join("");
+  // describeQuery already names a rows query as rows.
+  return `- "${question}" → ${q.kind === "rows" ? "" : `${q.kind} `}${describeQuery(q)}${order}${filters}${note ? ` (${note})` : ""}`;
+};
 
 export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()) => `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}: write time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
-${catalogueText(pack, catalogue)}${pack.examples.length ? `\n\nEXAMPLES (checked questions and the query that answers each):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
+${catalogueText(pack, catalogue)}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
 
 ${board ? `CURRENT BOARD:\n${summarise(board)}` : ""}
 
 Rules:
-- Use only the keys listed above. ${tooLarge(catalogue) ? "Only keys and labels are listed: call list_metrics with q for what a key means when its label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown above; call get_board only after your edits, to verify.
+- Use only the keys listed above. ${tooLarge(catalogue) ? "Meanings are not listed: call list_metrics with q when a label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown above; call get_board only after your edits, to verify.
 - Every edit is a tool call. Never describe an edit you did not make. Do not ask permission for straightforward edits; just make them and say what changed.
 - If a tool returns applied:false with didYouMean, retry once with that key. If a query is refused for fan-out, use a measure on the other entity instead (the hints say which).
 - A tool result with applied:false or an error means that edit did NOT happen. Fix the arguments and call it again; never move on as if it worked.

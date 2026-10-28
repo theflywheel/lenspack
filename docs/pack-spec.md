@@ -72,7 +72,7 @@ Fragments are inlined verbatim inside a subquery over that entity's own table, s
 - Every `entity` reference exists; every join's `on` names exactly the two entities involved.
 - A dimension has exactly one of `sql` or `json`; `grains` only on `type: time`.
 - A measure has `agg` (with `sql` unless `count`) or `derived`, not both; derived operands must be non-derived measures on the same entity.
-- An example's query names only keys the pack has; `lenspack serve` and `check` also resolve it against its source and refuse to start on one that would be refused.
+- An example's query names only verified keys the pack has; `lenspack serve` and `check` also resolve it against its source and refuse to start on one that would be refused.
 
 ## Semantics the compiler applies
 

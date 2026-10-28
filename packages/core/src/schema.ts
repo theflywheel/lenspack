@@ -212,9 +212,11 @@ export function queryKeys(query: Query): { dimensions: string[]; measures: strin
   const measures = new Set<string>();
   const entities = new Set<string>();
   for (const f of query.filters ?? []) dimensions.add(f.dimension);
+  if (query.kind !== "rows") for (const m of query.measures ?? []) measures.add(m);
   switch (query.kind) {
     case "breakdown":
       dimensions.add(query.dimension);
+      if (query.by) dimensions.add(query.by);
       measures.add(query.measure);
       break;
     case "series":

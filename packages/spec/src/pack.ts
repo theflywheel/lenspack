@@ -1,4 +1,4 @@
-import { querySchema } from "@lenspack/core";
+import { queryKeys, querySchema } from "@lenspack/core";
 import { z } from "zod";
 
 import { ExprError, expandExpr, operands, parseExpr } from "./expr";
@@ -311,16 +311,16 @@ export function checkPack(pack: Pack): PackProblem[] {
     }
   }
 
-  // An example names only keys the pack has; the server also resolves each
-  // one when it opens the pack's source.
-  for (const [i, { query: q }] of pack.examples.entries()) {
+  // An example names only verified keys, the ones the model is shown; the
+  // server also resolves each one when it opens the pack's source.
+  const verifiedDims = new Set(pack.dimensions.filter((d) => d.verified).map((d) => d.key));
+  const verifiedMeasures = new Set(pack.measures.filter((m) => m.verified).map((m) => m.key));
+  for (const [i, { query }] of pack.examples.entries()) {
     const path = `examples[${i}].query`;
-    if (q.kind === "rows" && !entities.has(q.entity)) problems.push({ path, message: `unknown entity "${q.entity}"` });
-    for (const k of q.kind === "rows" ? [] : [q.measure, ...(q.measures ?? [])])
-      if (!measureEntity.has(k)) problems.push({ path, message: `unknown measure "${k}"` });
-    const dims = q.kind === "breakdown" ? [q.dimension, q.by] : q.kind === "series" ? [q.by] : q.kind === "rows" ? [...q.columns, q.orderBy?.key] : [];
-    for (const k of [...dims, ...(q.filters ?? []).map((f) => f.dimension)])
-      if (k && !dimsByKey.has(k)) problems.push({ path, message: `unknown dimension "${k}"` });
+    const k = queryKeys(query);
+    for (const e of k.entities) if (!entities.has(e)) problems.push({ path, message: `unknown entity "${e}"` });
+    for (const m of k.measures) if (!verifiedMeasures.has(m)) problems.push({ path, message: `no verified measure "${m}"` });
+    for (const d of k.dimensions) if (!verifiedDims.has(d)) problems.push({ path, message: `no verified dimension "${d}"` });
   }
 
   return problems;

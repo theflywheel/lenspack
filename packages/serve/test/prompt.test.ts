@@ -25,7 +25,7 @@ describe("the system prompt", () => {
     const system = SYSTEM(pack, catalogueFrom(pack));
     expect(system).toContain("- t: m0 (First), m1, m2,");
     expect(system).not.toContain("a long meaning");
-    expect(system).toContain("call list_metrics with q for what a key means");
+    expect(system).toContain("Meanings are not listed: call list_metrics");
   });
 });
 

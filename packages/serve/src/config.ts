@@ -85,7 +85,7 @@ export const configSchema = z.object({
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
   /** How many of the latest user turns the chat model is sent (default 8). */
-  historyTurns: z.number().int().min(1).max(100).optional(),
+  historyTurns: z.number().int().positive().optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
   proposals: z.string().optional(),
 });
