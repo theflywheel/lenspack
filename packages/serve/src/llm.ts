@@ -86,20 +86,26 @@ export function publicView(p: Provider) {
   return { name: p.name, model: p.model, available: p.available, latencyMs: p.latencyMs, error: p.error };
 }
 
+// Calls that only look: a step of these beside a failure made no progress.
+const READS = new Set(["get_board", "list_metrics", "list_values", "explain"]);
+
 /**
- * Stops a tool loop that is going nowhere: when the last `n` steps each ended
- * in a refused or failed tool call, the model is retrying the same wrong
- * idea and the turn should end so it can explain instead.
+ * Stops a tool loop that is going nowhere: when the last `n` steps each had a
+ * refused or unparseable tool call and nothing but reads succeeded, the model
+ * is retrying the same wrong idea and the turn should end so it can explain.
  */
 export function stopOnRepeatedRefusals(n = 3) {
-  return ({ steps }: { steps: { toolResults: { output?: unknown }[] }[] }) => {
+  type Step = { toolResults: { toolName?: string; output?: unknown }[]; content?: { type: string }[] };
+  const refused = (o: { output?: unknown }) => {
+    const v = o.output as { applied?: boolean; ok?: boolean } | undefined;
+    return v?.applied === false || v?.ok === false;
+  };
+  return ({ steps }: { steps: Step[] }) => {
     if (steps.length < n) return false;
     return steps.slice(-n).every((st) => {
       const outs = st.toolResults ?? [];
-      return outs.length > 0 && outs.every((o) => {
-        const v = o.output as { applied?: boolean; ok?: boolean } | undefined;
-        return v?.applied === false || v?.ok === false;
-      });
+      const failed = outs.some(refused) || (st.content ?? []).some((c) => c.type === "tool-error");
+      return failed && outs.every((o) => refused(o) || READS.has(o.toolName ?? ""));
     });
   };
 }

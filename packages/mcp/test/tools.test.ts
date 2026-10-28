@@ -124,7 +124,7 @@ describe("board tools", () => {
     expect(added.board).toContain("by_colour (bar, 6/12 wide) things by colour");
     const kpi = (await call("add_widget", { id: "total", kind: "kpi", title: "Total", query_kind: "value", measure: "things", time_last: "30d", compare: true, width: "quarter" })) as { applied: boolean };
     expect(kpi.applied).toBe(true);
-    const lastMonth = (await call("add_widget", { id: "last_month", kind: "kpi", title: "Last month", query_kind: "value", measure: "things", time_period: "month", time_offset: -1, width: "quarter" })) as { board: string };
+    const lastMonth = (await call("add_widget", { id: "last_month", kind: "kpi", title: "Last month", query_kind: "value", measure: "things", time_period: "Last month", width: "quarter" })) as { board: string };
     expect(lastMonth.board).toContain("things last month");
     const bad = (await call("add_widget", { id: "oops", kind: "chart", title: "x", query_kind: "breakdown", measure: "things", dimension: "colr" })) as { applied: boolean; didYouMean?: string };
     expect(bad.applied).toBe(false);

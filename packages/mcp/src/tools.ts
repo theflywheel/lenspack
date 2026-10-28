@@ -57,6 +57,20 @@ const bool = (fallback = false) =>
 const oneOf = <T extends [string, ...string[]]>(values: T, fallback: T[number]) =>
   z.union([z.enum(values), z.null(), z.undefined(), z.literal("")]).transform((v) => (v ? v : fallback) as T[number]);
 
+// Calendar periods by name: models mangle a negative number in a tool call
+// ("-1" arrives as "--1"), so "last" is a word, never an offset.
+const PERIODS = {
+  today: ["day", 0], yesterday: ["day", -1], this_week: ["week", 0], last_week: ["week", -1], this_month: ["month", 0], last_month: ["month", -1],
+  this_quarter: ["quarter", 0], last_quarter: ["quarter", -1], this_year: ["year", 0], last_year: ["year", -1],
+} as const;
+type PeriodName = keyof typeof PERIODS;
+// "last month", "Last-Month" and a bare "month" (this one) all read as a name.
+const period = z.preprocess((v) => {
+  if (typeof v !== "string") return v;
+  const s = v.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return s === "day" ? "today" : ["week", "month", "quarter", "year"].includes(s) ? `this_${s}` : s;
+}, oneOf(["", ...(Object.keys(PERIODS) as PeriodName[])], ""));
+
 const PLACE = str("bottom").describe('Where to put it: "top", "bottom", or "after:<widgetId>"');
 const WIDTH = oneOf(["full", "half", "third", "quarter"], "half").describe("full is the whole row, half is two across, third is three across, quarter is four across");
 const QUERY_SHAPE = {
@@ -67,9 +81,8 @@ const QUERY_SHAPE = {
   entity: str().describe("For rows: the entity to list"),
   grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
   time_last: str().describe('Rolling window back from now, like "30d", "12w", "6m" ("last 30 days" -> "30d", "last 10 weeks" -> "10w"); empty means all time. For a calendar period ("this month", "last week") use time_period'),
-  time_period: oneOf(["", "day", "week", "month", "quarter", "year"], "").describe('Calendar period, weeks from Monday. "this month" -> month (to date), "last month" -> month with time_offset -1. Not with time_last or time_from'),
-  time_offset: num(0, -500, 0).describe("With time_period: 0 = the current period up to now, -1 = the previous whole one"),
-  time_count: num(1, 1, 500).describe("With time_period: how many periods, ending at time_offset"),
+  time_period: period.describe('Calendar period, weeks from Monday: "this_month" is to date, "last_month" the whole previous one. Not with time_last or time_from'),
+  time_count: num(1, 1, 500).describe('With time_period: how many periods, ending with it ("the last 3 whole months" -> last_month, 3)'),
   time_from: str().describe('Absolute start, ISO 8601 with offset, e.g. "2026-09-01T00:00:00Z" (inclusive); use with time_to, not with time_last'),
   time_to: str().describe('Absolute end, ISO 8601 with offset (exclusive), e.g. "2026-10-01T00:00:00Z" for all of September'),
   compare: bool(false).describe("For value or breakdown: also compute the previous period, the same length just before (so not the previous calendar month)"),
@@ -131,7 +144,8 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
   const clauses = parseFilters(a.filters, pack);
   if (a.filter_dimension) clauses.push({ dimension: a.filter_dimension, op: "eq", value: typedValue(pack, a.filter_dimension, a.filter_value, `${a.filter_dimension} = ${a.filter_value}`) });
   const filters = clauses.length ? clauses : undefined;
-  const period = a.time_period ? { period: a.time_period, ...(a.time_offset ? { offset: a.time_offset } : {}), ...(a.time_count > 1 ? { count: a.time_count } : {}) } : undefined;
+  const [unit, offset] = a.time_period ? PERIODS[a.time_period as PeriodName] : [];
+  const period = unit ? { period: unit, ...(offset ? { offset } : {}), ...(a.time_count > 1 ? { count: a.time_count } : {}) } : undefined;
   const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : period ?? (a.time_last ? { last: a.time_last } : undefined);
   const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);
   const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" ? { measures: more } : {}) };
