@@ -454,14 +454,21 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
   return data;
 }
 
+/** The query behind a dimension's values: its groups by a count, largest first, optionally those containing q. */
+export function valuesQuery(dimension: string, pack: Pack, limit = 50, q = ""): Query | null {
+  const dim = pack.dimensions.find((d) => d.key === dimension);
+  const measure =
+    pack.measures.find((m) => m.agg === "count" && !m.per && !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
+    pack.measures.find((m) => m.agg === "count" && !m.per && m.entity === dim?.entity) ??
+    pack.measures.find((m) => m.agg === "count" && !m.per);
+  if (!measure) return null;
+  return { kind: "breakdown", dimension, measure: measure.key, limit: Math.min(50, limit), sort: "desc", ...(q ? { filters: [{ dimension, op: "contains" as const, value: q }] } : {}) };
+}
+
 /** Distinct values of a dimension, for filter controls. */
 export async function dimensionValues(dimension: string, opts: RunOptions, limit = 50) {
-  const dim = opts.pack.dimensions.find((d) => d.key === dimension);
-  const measure =
-    opts.pack.measures.find((m) => m.agg === "count" && !m.per && !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
-    opts.pack.measures.find((m) => m.agg === "count" && !m.per && m.entity === dim?.entity) ??
-    opts.pack.measures.find((m) => m.agg === "count" && !m.per);
-  if (!measure) return [];
-  const data = await run({ kind: "breakdown", dimension, measure: measure.key, limit: Math.min(50, limit), sort: "desc" }, opts);
+  const query = valuesQuery(dimension, opts.pack, limit);
+  if (!query) return [];
+  const data = await run(query, opts);
   return data.rows.map((r) => ({ value: r.group, count: r.count }));
 }

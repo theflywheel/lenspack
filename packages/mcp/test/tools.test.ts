@@ -1,4 +1,4 @@
-import { memoryStore } from "@lenspack/core";
+import { type Query, memoryStore } from "@lenspack/core";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -57,6 +57,65 @@ describe("board tools", () => {
     expect(r.didYouMean).toBe("things");
     const fan = (await call("query", { query_kind: "breakdown", measure: "things", dimension: "part_kind" })) as { ok: boolean; error: string };
     expect(fan.error).toContain("multiply");
+  });
+
+  it("reads a flat filters string into typed IR clauses and names a bad clause", async () => {
+    const r = (await call("explain", { query_kind: "breakdown", measure: "things", dimension: "colour", split: "origin", filters: "colour in red, 'blue'; size >= 20; origin != west", filter_dimension: "tier", filter_value: "gold" })) as { ok: boolean; query: Query };
+    expect(r.ok).toBe(true);
+    expect(r.query).toMatchObject({
+      by: "origin",
+      filters: [
+        { dimension: "colour", op: "in", value: ["red", "blue"] },
+        { dimension: "size", op: "gte", value: 20 },
+        { dimension: "origin", op: "neq", value: "west" },
+        { dimension: "tier", op: "eq", value: "gold" },
+      ],
+    });
+    const bad = (await call("query", { query_kind: "value", measure: "things", filters: "colour = red; size > 20" })) as { ok: boolean; error: string };
+    expect(bad.error).toContain('"size > 20"');
+    const nan = (await call("query", { query_kind: "value", measure: "things", filters: "size >= big" })) as { ok: boolean; error: string };
+    expect(nan.error).toContain("size is a number");
+    const eqeq = (await call("query", { query_kind: "value", measure: "things", filters: "colour == red" })) as { ok: boolean; error: string };
+    expect(eqeq).toMatchObject({ ok: false, error: expect.stringContaining('"colour == red"') });
+  });
+
+  it("lists a dimension's values within the tenant, and names the real value when a guess matches nothing", async () => {
+    const all = (await call("list_values", { dimension: "colour" })) as { values: { value: string; count: number }[] };
+    // Tenant t1 has two red things; the third belongs to t2.
+    expect(all.values).toEqual([{ value: "blue", count: 2 }, { value: "red", count: 2 }, { value: "green", count: 1 }]);
+    const some = (await call("list_values", { dimension: "colour", q: "RE" })) as { values: { value: string }[] };
+    expect(some.values.map((v) => v.value).sort()).toEqual(["green", "red"]);
+    const typo = (await call("list_values", { dimension: "colr" })) as { ok: boolean; didYouMean?: string };
+    expect(typo).toMatchObject({ ok: false, didYouMean: "colour" });
+    const guessed = (await call("query", { query_kind: "breakdown", measure: "things", dimension: "origin", filters: "colour in Red, blue; origin = nrth" })) as { ok: boolean; rows: unknown[]; didYouMean?: string };
+    expect(guessed.didYouMean).toBe("colour in red, blue; origin = north");
+    const fine = (await call("query", { query_kind: "breakdown", measure: "things", dimension: "origin", filters: "colour = red; origin = east" })) as { rows: unknown[]; didYouMean?: string };
+    expect(fine.rows).toEqual([]);
+    expect(fine.didYouMean).toBeUndefined();
+  });
+
+  it("patches a widget: only the fields given change", async () => {
+    const store = memoryStore();
+    await store.create({ id: "u", pack, title: "Patch" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "u", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; error?: string; didYouMean?: string }>;
+    const widget = async () => (await store.get("u"))!.config.widgets.w!;
+    await go("add_widget", { id: "w", kind: "chart", chart: "pie", title: "Share", query_kind: "breakdown", measure: "things", dimension: "colour", limit: 5, sort: "asc", time_last: "6m", filters: "size >= 20", compare: true, share: true });
+    expect((await go("update_widget", { id: "w", title: "Share by origin", dimension: "origin", kind: null, chart: "" })).applied).toBe(true);
+    expect(await widget()).toMatchObject({ kind: "chart", chart: "pie", title: "Share by origin", query: { dimension: "origin", limit: 5, sort: "asc", time: { last: "6m" }, filters: [{ dimension: "size" }], compare: "previous_period", share: true } });
+    await go("update_widget", { id: "w", share: false });
+    expect(await widget()).toMatchObject({ query: { compare: "previous_period", share: undefined } });
+    // filter_dimension adds to the widget's filters rather than replacing them.
+    await go("update_widget", { id: "w", filter_dimension: "origin", filter_value: "north" });
+    expect(((await widget()) as { query: Query }).query.filters).toEqual([{ dimension: "size", op: "gte", value: 20 }, { dimension: "origin", op: "eq", value: "north" }]);
+    // A different query_kind starts over from the fields given.
+    expect(await go("update_widget", { id: "w", query_kind: "series", measure: "weight", grain: "month" })).toMatchObject({ applied: false });
+    expect((await go("update_widget", { id: "w", chart: "line", query_kind: "series", measure: "weight", grain: "month" })).applied).toBe(true);
+    expect(await widget()).toEqual({ kind: "chart", chart: "line", title: "Share by origin", options: { legend: true, colorScheme: "default" }, query: { kind: "series", measure: "weight", grain: "month" } });
+    await go("update_widget", { id: "w", kind: "kpi", query_kind: "value", measure: "things", compare: true, time_last: "30d" });
+    await go("update_widget", { id: "w", compare: false });
+    expect(await widget()).toMatchObject({ kind: "kpi", title: "Share by origin", query: { kind: "value", time: { last: "30d" } } });
+    expect(((await widget()) as { query: { compare?: string } }).query.compare).toBeUndefined();
   });
 
   it("adds, moves and removes widgets through the store", async () => {
