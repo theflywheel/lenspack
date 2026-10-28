@@ -120,6 +120,5 @@ export const GOLDEN_QUERIES: Query[] = [
   { kind: "rows", entity: "things", columns: ["colour", "nested"], limit: 20 },
   { kind: "breakdown", dimension: "colour", measure: "weight", limit: 10, sort: "asc", compare: "previous_period", time: between },
   { kind: "breakdown", dimension: "tier", by: "colour", measure: "per_thing", limit: 10, sort: "desc", compare: "previous_period", time: { last: "30d" } },
-  { kind: "breakdown", dimension: "part_kind", measure: "parts", limit: 10, sort: "desc", compare: "previous_period", time: between },
 ];
 

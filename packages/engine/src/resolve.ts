@@ -173,9 +173,11 @@ function window(query: Query, now: Date): TimeWindow | null {
   return { from: new Date(query.time.from), to: new Date(query.time.to) };
 }
 
+// The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
+export const nowOf = (ctx: Ctx = {}) => ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
+
 export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilities = SQL_CAPABILITIES): BoundPlan {
-  // The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
-  const now = ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
+  const now = nowOf(ctx);
   const dimKeys = pack.dimensions.map((d) => d.key);
   const measureKeys = pack.measures.map((m) => m.key);
   const graph = edges(pack);

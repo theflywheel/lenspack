@@ -287,13 +287,3 @@ GROUP BY `owners`.`__d_tier`, `things`.`__d_colour`
 HAVING (count(CASE WHEN ((`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) > 0)
 ORDER BY `value` DESC, `group` IS NULL, `group` ASC, `series` IS NULL, `series` ASC
 LIMIT 10;
-
--- {"kind":"breakdown","dimension":"part_kind","measure":"parts","limit":10,"sort":"desc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
--- params: [1767225600000,1769904000000,1767225600000,1769904000000,1764547200000,1767225600000,"ke_1",1764547200000,1769904000000,1767225600000,1769904000000]
-SELECT `parts`.`__d_part_kind` AS `group`, count(CASE WHEN ((`parts`.`__t_raw` >= CAST(? AS SIGNED)) AND (`parts`.`__t_raw` < CAST(? AS SIGNED))) THEN 1 END) AS `value`, count(CASE WHEN ((`parts`.`__t_raw` >= CAST(? AS SIGNED)) AND (`parts`.`__t_raw` < CAST(? AS SIGNED))) THEN 1 END) AS `n`, count(CASE WHEN ((`parts`.`__t_raw` >= CAST(? AS SIGNED)) AND (`parts`.`__t_raw` < CAST(? AS SIGNED))) THEN 1 END) AS `previous`
-FROM (SELECT *, TIMESTAMPADD(MICROSECOND, CAST(`added_ms` AS SIGNED) * 1000, TIMESTAMP '1970-01-01 00:00:00') AS `__t`, `added_ms` AS `__t_raw`, `kind` AS `__d_part_kind` FROM `parts` WHERE (`tenant_id` = ?)) AS `parts`
-WHERE (`parts`.`__t_raw` >= CAST(? AS SIGNED)) AND (`parts`.`__t_raw` < CAST(? AS SIGNED))
-GROUP BY `parts`.`__d_part_kind`
-HAVING (count(CASE WHEN ((`parts`.`__t_raw` >= CAST(? AS SIGNED)) AND (`parts`.`__t_raw` < CAST(? AS SIGNED))) THEN 1 END) > 0)
-ORDER BY `value` DESC, `group` IS NULL, `group` ASC
-LIMIT 10;

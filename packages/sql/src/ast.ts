@@ -41,7 +41,7 @@ export type Ast = {
   joins: Join[];
   where: Expr[];
   groupBy: Expr[];
-  having?: Expr[];
+  having: Expr[];
   orderBy: { expr: Expr; dir: "asc" | "desc" }[];
   limit: number;
 };

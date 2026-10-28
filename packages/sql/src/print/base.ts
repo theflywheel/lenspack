@@ -116,7 +116,7 @@ export function print(ast: Ast, rules: DialectRules): Printed {
   ];
   if (ast.where.length) parts.push(`WHERE ${ast.where.map(expr).join(" AND ")}`);
   if (ast.groupBy.length) parts.push(`GROUP BY ${ast.groupBy.map(expr).join(", ")}`);
-  if (ast.having?.length) parts.push(`HAVING ${ast.having.map(expr).join(" AND ")}`);
+  if (ast.having.length) parts.push(`HAVING ${ast.having.map(expr).join(" AND ")}`);
   const order = rules.orderBy ?? ((e: string, dir: "asc" | "desc") => `${e} ${dir.toUpperCase()} NULLS LAST`);
   const selected = (e: Expr) => {
     const s = e.t === "col" && !e.alias ? ast.select.find((x) => x.alias === e.col) : undefined;

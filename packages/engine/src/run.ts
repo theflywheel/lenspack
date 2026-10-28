@@ -4,7 +4,7 @@ import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, 
 import type { Connector } from "./connector";
 import { type DataRow, type WidgetData, compared } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
-import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, resolve } from "./resolve";
+import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, nowOf, resolve } from "./resolve";
 
 export type RunOptions = { pack: Pack; connector: Connector; ctx?: Ctx; timeoutMs?: number };
 
@@ -137,6 +137,9 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
   return query.kind === "breakdown" ? withoutEmptyGroups(data, query.measure, view.pack) : data;
 }
 
+// A derived measure that is one other key: a per-level measure at this level.
+const ALIAS = /^\s*[a-z][a-z0-9_]*\s*$/;
+
 // A measure's where narrows the rows it counts, not the groups: a group with
 // no rows for it at all (a per-level target's other levels) comes back empty.
 // Such a group is dropped (unless another of its measures has a value). A zero count stays, and so does a ratio that
@@ -144,28 +147,19 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
 function withoutEmptyGroups(data: WidgetData, measure: string, pack: Pack): WidgetData {
   const m = pack.measures.find((x) => x.key === measure);
   if (!m || data.error) return data;
-  const plain = !m.derived || /^\s*[a-z][a-z0-9_]*\s*$/.test(m.derived);
+  const plain = !m.derived || ALIAS.test(m.derived);
   if (!plain) return data;
   // With several measures, a group is empty only when every one of them is.
   const rows = data.rows.filter((r) => r.value !== null || r.count === 0 || Object.values(r.values ?? {}).some((v) => v !== null));
   return rows.length === data.rows.length ? data : { ...data, rows, total: rows.reduce((n, r) => n + r.count, 0) };
 }
 
-const OTHER = "(other)";
-
-/**
- * Share and Other measure the groups against the whole population, so both
- * need a measure that adds up over groups. Other is the whole minus the groups
- * shown: a count or a sum. A distinct count still has a share (its group over
- * the whole), though the shares sum past 1 when one thing is in several groups.
- * An average, a percentile, a minimum, a percentage or a ratio has no whole to
- * share out.
- */
-export function wholeRefusal(query: Query, pack: Pack): ResolveError | null {
+// Share needs a measure that adds up over groups (or a distinct count, whose
+// shares can sum past 1); Other needs a count or a sum.
+function wholeRefusal(query: Query, pack: Pack): ResolveError | null {
   if (query.kind !== "breakdown" || (!query.share && !query.other)) return null;
   let m = pack.measures.find((x) => x.key === query.measure);
-  // A one-key alias (a per-level measure at this level) is the measure it names.
-  if (m?.derived && /^\s*[a-z][a-z0-9_]*\s*$/.test(m.derived)) m = pack.measures.find((x) => x.key === m!.derived!.trim());
+  if (m?.derived && ALIAS.test(m.derived)) m = pack.measures.find((x) => x.key === m!.derived!.trim());
   if (!m) return null;
   const asked = query.other ? "other" : "share";
   const fits = (x: PackMeasure) => !x.derived && x.format !== "percent" && (x.agg === "count" || x.agg === "sum" || (asked === "share" && x.agg === "count_distinct"));
@@ -185,13 +179,7 @@ export function wholeRefusal(query: Query, pack: Pack): ResolveError | null {
 }
 
 // The whole population: the breakdown's measure, window and filters as one value.
-const wholeOf = (query: Extract<Query, { kind: "breakdown" }>): Query => ({
-  kind: "value",
-  measure: query.measure,
-  ...(query.compare ? { compare: query.compare } : {}),
-  ...(query.time ? { time: query.time } : {}),
-  ...(query.filters ? { filters: query.filters } : {}),
-});
+const wholeOf = (query: Extract<Query, { kind: "breakdown" }>): Query => ({ kind: "value", measure: query.measure, compare: query.compare, time: query.time, filters: query.filters });
 
 // The breakdown and its whole run side by side, on one clock so both read the
 // same window, and at the breakdown's level.
@@ -199,7 +187,7 @@ async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: Run
   const refused = wholeRefusal(query, opts.pack);
   if (refused) return refusal(refused);
   const { share, other, ...groups } = query;
-  const ctx = { ...opts.ctx, now: opts.ctx?.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3) };
+  const ctx = { ...opts.ctx, now: nowOf(opts.ctx) };
   const [data, whole] = await Promise.all([run(groups, { ...opts, ctx }), runOne(wholeOf(query), { ...opts, ctx })]);
   if (data.error) return data;
   if (whole.error) return whole;
@@ -207,10 +195,16 @@ async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: Run
   const ratio = (v: number | null) => (v === null || !all ? null : v / all);
   const rows: DataRow[] = data.rows.map((r) => (share ? { ...r, share: ratio(r.value) } : r));
   if (other) {
-    const shown = (f: (r: DataRow) => number | null | undefined) => data.rows.reduce((n, r) => n + (f(r) ?? 0), 0);
-    const value = all === null ? null : all - shown((r) => r.value);
-    const row: DataRow = { group: OTHER, value, count: whole.total - shown((r) => r.count), other: true };
-    if (whole.compare) row.compare = compared(value, whole.compare.previous === null ? null : whole.compare.previous - shown((r) => r.compare?.previous));
+    // The whole minus the groups shown, with float residue snapped to 0 so
+    // groups that cover everything leave an Other of 0, not 1e-16.
+    const rest = (of: number | null, f: (r: DataRow) => number | null | undefined) => {
+      if (of === null) return null;
+      const left = of - data.rows.reduce((n, r) => n + (f(r) ?? 0), 0);
+      return Math.abs(left) <= 1e-9 * Math.abs(of) ? 0 : left;
+    };
+    const value = rest(all, (r) => r.value);
+    const row: DataRow = { group: "(other)", value, count: rest(whole.total, (r) => r.count)!, other: true };
+    if (whole.compare) row.compare = compared(value, rest(whole.compare.previous, (r) => r.compare?.previous));
     if (share) row.share = ratio(value);
     rows.push(row);
   }

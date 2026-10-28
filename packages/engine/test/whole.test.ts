@@ -62,6 +62,13 @@ describe("share and other", () => {
     expect(c.seen.find((q) => q.kind === "value")).toEqual({ kind: "value", measure: "done_qty", compare: "previous_period", time });
   });
 
+  it("leaves an Other of 0, not float residue, when the groups shown are everything", async () => {
+    const parts = [0.1, 0.2, 0.3].map((value, i) => ({ group: `g${i}`, value, n: 1 }));
+    const c = stub((q) => (q.kind === "value" ? [{ value: 0.6, n: 3 }] : parts));
+    const data = await run({ kind: "breakdown", dimension: "region", measure: "done_qty", limit: 3, sort: "desc", other: true, time }, { pack, connector: c });
+    expect(data.rows.at(-1)).toEqual({ group: "(other)", value: 0, count: 0, other: true });
+  });
+
   it("refuses what does not add up over groups, and a compared ratio across entities", () => {
     const refused = (q: Query) => {
       try {

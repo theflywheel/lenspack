@@ -293,13 +293,3 @@ GROUP BY "owners"."__d_tier", "things"."__d_colour"
 HAVING (count(CASE WHEN (("things"."__t" >= CAST($20 AS TIMESTAMP)) AND ("things"."__t" < CAST($21 AS TIMESTAMP))) THEN 1 END) > 0)
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
 LIMIT 10;
-
--- {"kind":"breakdown","dimension":"part_kind","measure":"parts","limit":10,"sort":"desc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
--- params: [1767225600000,1769904000000,1767225600000,1769904000000,1764547200000,1767225600000,"ke_1",1764547200000,1769904000000,1767225600000,1769904000000]
-SELECT "parts"."__d_part_kind" AS "group", count(CASE WHEN (("parts"."__t_raw" >= CAST($1 AS BIGINT)) AND ("parts"."__t_raw" < CAST($2 AS BIGINT))) THEN 1 END) AS "value", count(CASE WHEN (("parts"."__t_raw" >= CAST($3 AS BIGINT)) AND ("parts"."__t_raw" < CAST($4 AS BIGINT))) THEN 1 END) AS "n", count(CASE WHEN (("parts"."__t_raw" >= CAST($5 AS BIGINT)) AND ("parts"."__t_raw" < CAST($6 AS BIGINT))) THEN 1 END) AS "previous"
-FROM (SELECT *, (to_timestamp("added_ms" / 1000.0) AT TIME ZONE 'UTC') AS "__t", "added_ms" AS "__t_raw", "kind" AS "__d_part_kind" FROM "parts" WHERE ("tenant_id" = $7)) AS "parts"
-WHERE ("parts"."__t_raw" >= CAST($8 AS BIGINT)) AND ("parts"."__t_raw" < CAST($9 AS BIGINT))
-GROUP BY "parts"."__d_part_kind"
-HAVING (count(CASE WHEN (("parts"."__t_raw" >= CAST($10 AS BIGINT)) AND ("parts"."__t_raw" < CAST($11 AS BIGINT))) THEN 1 END) > 0)
-ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
-LIMIT 10;
