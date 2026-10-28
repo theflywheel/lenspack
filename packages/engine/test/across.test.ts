@@ -108,4 +108,21 @@ describe("calendar windows", () => {
     expect(startOfLocalDay("2026-03-29", "Europe/Berlin").toISOString()).toBe("2026-03-28T23:00:00.000Z");
     expect(startOfLocalDay("2026-03-30", "Europe/Berlin").toISOString()).toBe("2026-03-29T22:00:00.000Z");
   });
+
+  it("resolves calendar periods in the pack's zone, each compared with the span before it", async () => {
+    const { resolve } = await import("../src");
+    const now = new Date("2026-03-31T09:00:00Z"); // Tuesday 31 March, noon in Nairobi
+    const windows = (time: Extract<Query, { kind: "value" }>["time"]) => {
+      const b = resolve({ kind: "value", measure: "done_n", compare: "previous_period", time }, { ...pack, timeZone: "Africa/Nairobi" }, { now });
+      return [b.time, b.previous].map((w) => `${w!.from.toISOString()} ${w!.to.toISOString()}`);
+    };
+    // Last month is all of February, against all of January.
+    expect(windows({ period: "month", offset: -1 })).toEqual(["2026-01-31T21:00:00.000Z 2026-02-28T21:00:00.000Z", "2025-12-31T21:00:00.000Z 2026-01-31T21:00:00.000Z"]);
+    // This month to date, 30 days in, against the whole of a 28-day February.
+    expect(windows({ period: "month" })).toEqual(["2026-02-28T21:00:00.000Z 2026-03-31T09:00:00.000Z", "2026-01-31T21:00:00.000Z 2026-02-28T21:00:00.000Z"]);
+    // This week from Monday, against last week to the same Tuesday noon.
+    expect(windows({ period: "week" })).toEqual(["2026-03-29T21:00:00.000Z 2026-03-31T09:00:00.000Z", "2026-03-22T21:00:00.000Z 2026-03-24T09:00:00.000Z"]);
+    // The two whole quarters before this one, against the two before those.
+    expect(windows({ period: "quarter", offset: -1, count: 2 })).toEqual(["2025-06-30T21:00:00.000Z 2025-12-31T21:00:00.000Z", "2024-12-31T21:00:00.000Z 2025-06-30T21:00:00.000Z"]);
+  });
 });

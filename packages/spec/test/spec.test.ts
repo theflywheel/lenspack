@@ -67,6 +67,7 @@ measures:
   it("rejects a dimension with both sql and json", () => bad((p) => (p.dimensions[0].json = ["a"]), "exactly one of field, sql or json"));
   it("rejects a measure with neither agg nor derived", () => bad((p) => delete p.measures[0].agg, "agg"));
   it("rejects a non-count aggregate without sql", () => bad((p) => delete p.measures[1].sql, "needs sql"));
+  it("rejects a time zone that is an offset rather than an IANA name", () => bad((p) => (p.timeZone = "+03:00"), "IANA time zone"));
   it("rejects a derived measure that does not live with one of its operands", () => {
     bad((p) => {
       p.measures.push({ key: "owner_n", entity: "owners", agg: "count" });

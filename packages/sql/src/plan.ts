@@ -213,7 +213,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       break;
     }
     case "series": {
-      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol! };
+      const zone = pack.timeZone && pack.timeZone !== "UTC" ? pack.timeZone : undefined;
+      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol!, zone };
       select.push({ alias: "bucket", expr: bucket });
       groupBy.push(bucket);
       if (bound.dimension) {

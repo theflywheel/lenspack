@@ -66,7 +66,10 @@ const QUERY_SHAPE = {
   dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
   entity: str().describe("For rows: the entity to list"),
   grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
-  time_last: str().describe('Relative window like "30d", "12w", "6m". Always set it when the request names a period ("last 10 weeks" -> "10w", "past month" -> "30d"); empty means all time. For a named calendar period use time_from and time_to instead'),
+  time_last: str().describe('Rolling window back from now, like "30d", "12w", "6m". Always set it for "the last N days/weeks/months" ("last 30 days" -> "30d", "last 10 weeks" -> "10w"); empty means all time. For one named calendar period ("this month", "last week", "this year") use time_period'),
+  time_period: str().describe('A calendar period: "day", "week" (from Monday), "month", "quarter" or "year", in the pack\'s time zone. "this month" -> month with time_offset 0 (month to date), "last month" -> month with time_offset -1, "yesterday" -> day with -1, "the 3 whole months before this one" -> month, -1, time_count 3. Not with time_last'),
+  time_offset: num(0, -500, 0).describe("With time_period: 0 = the current period up to now, -1 = the previous whole one, -2 = the one before"),
+  time_count: num(1, 1, 500).describe("With time_period: how many periods, ending at time_offset"),
   time_from: str().describe('Absolute start, ISO 8601 with offset, e.g. "2026-09-01T00:00:00Z" (inclusive); use with time_to, not with time_last'),
   time_to: str().describe('Absolute end, ISO 8601 with offset (exclusive), e.g. "2026-10-01T00:00:00Z" for all of September'),
   compare: bool(false).describe("For value: also compute the previous period"),
@@ -79,7 +82,8 @@ const QUERY_SHAPE = {
 export function assembleQuery(a: { [K in keyof typeof QUERY_SHAPE]: z.infer<(typeof QUERY_SHAPE)[K]> }): Query {
   if (Boolean(a.time_from) !== Boolean(a.time_to)) throw new Error("time_from and time_to go together: give both, or use time_last");
   const filters = a.filter_dimension ? [{ dimension: a.filter_dimension, op: "eq" as const, value: a.filter_value }] : undefined;
-  const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : a.time_last ? { last: a.time_last } : undefined;
+  const period = a.time_period ? { period: a.time_period, ...(a.time_offset ? { offset: a.time_offset } : {}), ...(a.time_count > 1 ? { count: a.time_count } : {}) } : undefined;
+  const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : period ?? (a.time_last ? { last: a.time_last } : undefined);
   const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);
   const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" ? { measures: more } : {}) };
   switch (a.query_kind) {

@@ -26,9 +26,17 @@ export type FilterClause = z.infer<typeof filterClauseSchema>;
 
 // Relative ranges are resolved against "now" at query time, so a saved board
 // keeps meaning "the last 30 days" rather than freezing the dates it was made.
+// A calendar range counts whole periods in the pack's time zone, weeks from
+// Monday: offset 0 is the current period up to now, -1 the one before it, and
+// count takes that many periods ending at offset ("last month" is month, -1).
 export const timeRangeSchema = z.union([
   z.object({ last: z.string().regex(/^[1-9]\d{0,3}[hdwmy]$/, 'e.g. "30d", "12w", "6m"') }),
   z.object({ from: z.string().datetime({ offset: true }), to: z.string().datetime({ offset: true }) }),
+  z.object({
+    period: z.enum(["day", "week", "month", "quarter", "year"]),
+    offset: z.number().int().min(-500).max(0).optional(),
+    count: z.number().int().min(1).max(500).optional(),
+  }),
 ]);
 export type TimeRange = z.infer<typeof timeRangeSchema>;
 

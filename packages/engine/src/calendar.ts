@@ -3,6 +3,8 @@
 // start and end at. Intl carries the zone rules, so there is no tz database
 // to ship and daylight saving comes out right.
 
+import type { TimeRange } from "@lenspack/core";
+
 const parts = (ms: number, timeZone: string) => {
   const f = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
@@ -38,6 +40,57 @@ export function addMonths(date: string, months: number): string {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
   const last = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
   return new Date(Date.UTC(y, m - 1 + months, Math.min(d, last))).toISOString().slice(0, 10);
+}
+
+/** An instant's local time in `timeZone`, written as UTC: how a naive local timestamp reads. */
+export function localWallClock(ms: number, timeZone: string): number {
+  const p = parts(ms, timeZone);
+  return Date.UTC(p.y, p.m - 1, p.d, p.h, p.mi, p.s);
+}
+
+type CalendarRange = Extract<TimeRange, { period: unknown }>;
+type Period = CalendarRange["period"];
+
+// The local date the period holding `date` starts on; weeks start on Monday.
+function periodStart(date: string, period: Period): string {
+  const month = Number(date.slice(5, 7));
+  switch (period) {
+    case "day":
+      return date;
+    case "week":
+      return addDays(date, -((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7));
+    case "month":
+      return `${date.slice(0, 7)}-01`;
+    case "quarter":
+      return `${date.slice(0, 4)}-${String(month - ((month - 1) % 3)).padStart(2, "0")}-01`;
+    case "year":
+      return `${date.slice(0, 4)}-01-01`;
+  }
+}
+
+function addPeriods(date: string, period: Period, n: number): string {
+  if (period === "day" || period === "week") return addDays(date, period === "week" ? 7 * n : n);
+  return addMonths(date, { month: 1, quarter: 3, year: 12 }[period] * n);
+}
+
+/**
+ * A calendar range as instants, with the span a previous-period comparison
+ * reads: the `count` periods before it, cut as far into itself as a range
+ * running to now is (in local days and time of day, never past its end).
+ */
+export function calendarRange(range: CalendarRange, now: Date, timeZone = "UTC"): { from: Date; to: Date; previous: { from: Date; to: Date } } {
+  const { period, offset = 0, count = 1 } = range;
+  const today = localDate(now, timeZone);
+  const current = periodStart(today, period);
+  const first = addPeriods(current, period, offset - count + 1);
+  const before = addPeriods(first, period, -count);
+  const from = startOfLocalDay(first, timeZone);
+  const previousFrom = startOfLocalDay(before, timeZone);
+  if (offset < 0) return { from, to: startOfLocalDay(addPeriods(current, period, offset + 1), timeZone), previous: { from: previousFrom, to: from } };
+  const days = (Date.parse(today) - Date.parse(first)) / 86400e3;
+  const sinceMidnight = now.getTime() - startOfLocalDay(today, timeZone).getTime();
+  const previousTo = Math.min(startOfLocalDay(addDays(before, days), timeZone).getTime() + sinceMidnight, from.getTime());
+  return { from, to: now, previous: { from: previousFrom, to: new Date(previousTo) } };
 }
 
 /** "from..to" (inclusive local dates) → the half-open window [from 00:00, to+1 00:00). */

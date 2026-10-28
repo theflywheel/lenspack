@@ -21,7 +21,7 @@ export type Expr =
   | { t: "epoch"; unit: "epoch_ms" | "epoch_s"; arg: Expr } // a number of (milli)seconds since 1970, as a naive UTC timestamp
   | { t: "in"; l: Expr; values: Expr[] }
   | { t: "case"; when: Expr; then: Expr } // CASE WHEN when THEN then END (else NULL)
-  | { t: "trunc"; grain: Grain; arg: Expr }
+  | { t: "trunc"; grain: Grain; arg: Expr; zone?: string } // in a time zone other than UTC: its local start, as a naive local timestamp
   | { t: "cast"; arg: Expr; to: "double" | "text" }
   | { t: "nullif0"; arg: Expr }
   | { t: "paren"; arg: Expr };

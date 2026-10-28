@@ -105,6 +105,15 @@ describe("series and value", () => {
     expect(data.compare?.delta).toBeCloseTo(-1 / 3);
   });
 
+  it("buckets at local hours and local months in the pack's zone", async () => {
+    // 10:00 UTC is 15:30 in Kolkata, and 1 February 10:00 UTC is still 31 January in Pago Pago (UTC-11).
+    const inZone = (timeZone: string, query: Parameters<typeof run>[0]) => run(query, { pack: { ...pack, timeZone }, executor, ctx });
+    const hours = await inZone("Asia/Kolkata", { kind: "series", measure: "things", grain: "hour" });
+    expect(hours.rows.map((r) => r.group)).toEqual(["2026-01-05T15:00", "2026-01-06T15:00", "2026-01-20T15:00", "2026-02-01T15:00", "2026-02-10T15:00"]);
+    const months = await inZone("Pacific/Pago_Pago", { kind: "series", measure: "things", grain: "month" });
+    expect(months.rows.map((r) => [r.group, r.value])).toEqual([["2026-01-01", 4], ["2026-02-01", 1]]);
+  });
+
   it("a rate over the whole population is not the mean of group rates", async () => {
     const whole = await q({ kind: "value", measure: "broken_rate" });
     expect(whole.rows[0]?.value).toBeCloseTo(0.4);

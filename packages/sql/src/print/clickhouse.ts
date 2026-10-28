@@ -28,9 +28,11 @@ export const clickhouseRules: DialectRules = {
   },
   // quantileExactInclusive interpolates as percentile_cont does (R-7).
   percentile: (fn, arg) => `quantileExactInclusive(${fn === "median" ? 0.5 : 0.9})(${arg})`,
-  trunc: (grain, arg) => {
+  // In a zone the start is computed and printed there: a DateTime carrying
+  // the zone comes back as local wall-clock text.
+  trunc: (grain, arg, zone) => {
     const start = { hour: "toStartOfHour", day: "toStartOfDay", week: "toMonday", month: "toStartOfMonth", quarter: "toStartOfQuarter", year: "toStartOfYear" }[grain];
-    return `toDateTime(${start}(${arg}), 'UTC')`;
+    return zone ? `toDateTime(${start}(${arg}, ${lit(zone)}), ${lit(zone)})` : `toDateTime(${start}(${arg}), 'UTC')`;
   },
   epoch: (arg, unit) => `fromUnixTimestamp64Milli(CAST(${arg} AS Int64)${unit === "epoch_s" ? " * 1000" : ""}, 'UTC')`,
   segment: (arg, values) => `hasAny(splitByChar('|', ifNull(CAST(${arg} AS String), '')), [${values.join(", ")}])`,

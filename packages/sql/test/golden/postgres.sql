@@ -272,3 +272,36 @@ LIMIT 4;
 SELECT "things"."__d_colour" AS "colour", "things"."__d_nested" AS "nested"
 FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", ("attrs" #>> ARRAY['meta','grade']) AS "__d_nested" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
 LIMIT 20;
+
+-- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT date_trunc('hour', (CAST("things"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+GROUP BY date_trunc('hour', (CAST("things"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"series","measure":"things","grain":"week"} in Asia/Kolkata
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT date_trunc('week', (CAST("things"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+GROUP BY date_trunc('week', (CAST("things"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"series","measure":"things","grain":"month"} in Asia/Kolkata
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT date_trunc('month', (CAST("things"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+GROUP BY date_trunc('month', (CAST("things"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"series","measure":"parts","grain":"day","time":{"period":"month","offset":-1}} in Asia/Kolkata
+-- params: ["ke_1",1767205800000,1769884200000]
+SELECT date_trunc('day', (CAST("parts"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, (to_timestamp("added_ms" / 1000.0) AT TIME ZONE 'UTC') AS "__t", "added_ms" AS "__t_raw" FROM "parts" WHERE ("tenant_id" = $1)) AS "parts"
+WHERE (("parts"."__t_raw" >= CAST($2 AS BIGINT)) AND ("parts"."__t_raw" < CAST($3 AS BIGINT)))
+GROUP BY date_trunc('day', (CAST("parts"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;
