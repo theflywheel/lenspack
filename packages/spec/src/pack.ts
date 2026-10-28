@@ -1,3 +1,4 @@
+import { queryKeys, querySchema } from "@lenspack/core";
 import { z } from "zod";
 
 import { ExprError, expandExpr, operands, parseExpr } from "./expr";
@@ -220,6 +221,15 @@ export const packSchema = z.object({
   // Dimensions that nest, coarse to fine. Picking a value on one level narrows
   // the board to it and moves anything grouped at or above it one level down.
   hierarchies: z.record(slug, z.array(slug).min(2).max(10)).default({}),
+  // What the model is told beyond the keys, reviewed with them: domain rules
+  // the keys cannot say ("never add a measure from one channel to one from
+  // another"), and questions whose right query someone has checked. Both go
+  // into every turn's prompt, so both are bounded.
+  instructions: z.string().max(2000).optional(),
+  examples: z
+    .array(z.object({ question: z.string().min(1).max(200), query: querySchema, note: z.string().max(200).optional() }))
+    .max(12)
+    .default([]),
 });
 
 export type Pack = z.infer<typeof packSchema>;
@@ -333,6 +343,18 @@ export function checkPack(pack: Pack): PackProblem[] {
       const entities = new Set(ops.map((o) => measureEntity.get(o)).filter(Boolean));
       if (entities.size && !entities.has(m.entity)) problems.push({ path, message: `a derived measure's entity is one of its operands' (${[...entities].join(", ")}), not "${m.entity}"` });
     }
+  }
+
+  // An example names only verified keys, the ones the model is shown; the
+  // server also resolves each one when it opens the pack's source.
+  const verifiedDims = new Set(pack.dimensions.filter((d) => d.verified).map((d) => d.key));
+  const verifiedMeasures = new Set(pack.measures.filter((m) => m.verified).map((m) => m.key));
+  for (const [i, { query }] of pack.examples.entries()) {
+    const path = `examples[${i}].query`;
+    const k = queryKeys(query);
+    for (const e of k.entities) if (!entities.has(e)) problems.push({ path, message: `unknown entity "${e}"` });
+    for (const m of k.measures) if (!verifiedMeasures.has(m)) problems.push({ path, message: `no verified measure "${m}"` });
+    for (const d of k.dimensions) if (!verifiedDims.has(d)) problems.push({ path, message: `no verified dimension "${d}"` });
   }
 
   return problems;

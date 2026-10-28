@@ -34,3 +34,12 @@ measures:
   - { key: sla_breach_rate, entity: tickets, agg: avg, sql: { default: "CASE WHEN EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0 > sla_hours THEN 1 ELSE 0 END", mysql: "CASE WHEN TIMESTAMPDIFF(MICROSECOND, created_at, resolved_at) / 3.6e9 > sla_hours THEN 1 ELSE 0 END", sqlite: "CASE WHEN (unixepoch(resolved_at) - unixepoch(created_at)) / 3600.0 > sla_hours THEN 1 ELSE 0 END", clickhouse: "CASE WHEN dateDiff('millisecond', created_at, resolved_at) / 3600000.0 > sla_hours THEN 1 ELSE 0 END" }, filter: "resolved_at IS NOT NULL", format: percent, label: SLA breach rate }
   - { key: mean_first_response_min, entity: tickets, agg: avg, sql: first_response_minutes, format: duration, label: Mean first response (min) }
   - { key: transitions, entity: status_history, agg: count, label: Status changes }
+
+instructions: Compare resolution times on the median or p90, never on a mean; a few long-stuck tickets dominate a mean.
+examples:
+  - question: Which team breaches its SLA most often?
+    query: { kind: breakdown, dimension: team, measure: sla_breach_rate }
+    note: only resolved tickets count
+  - question: How often do tickets get escalated?
+    query: { kind: value, measure: transitions, filters: [{ dimension: transition, op: eq, value: escalated }] }
+    note: tickets by transition would fan out, so count status changes

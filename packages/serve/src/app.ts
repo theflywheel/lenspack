@@ -11,7 +11,7 @@ import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Access, Audit, Principal } from "./auth";
 import { type Provider, publicView, stopOnRepeatedRefusals } from "./llm";
-import { SYSTEM } from "./prompt";
+import { SYSTEM, catalogueText } from "./prompt";
 import { healingPrompt, refusalsFrom, reviewTurn } from "./review";
 
 // The board API that @lenspack/react's host callbacks talk to, for any number
@@ -57,6 +57,8 @@ export type AppOptions = {
   signOutUrl?: string;
   /** How the UI presents itself (lenspack.yaml `ui:`), written into the page it is served in. */
   page?: { mode: "demo" | "app"; title?: string; home?: string };
+  /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. */
+  historyTurns?: number;
 };
 
 const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
@@ -69,6 +71,17 @@ const sameTenant = (b: Ownership, who: Principal) => (b.tenant ?? "") === (who.t
 const visible = (b: Ownership, who: Principal) => !b.owner || (sameTenant(b, who) && (!!b.shared || b.owner === who.user));
 const writable = (b: Ownership, who: Principal) => (b.owner ? b.owner === who.user && sameTenant(b, who) && !!(who.edit || who.maintain) : !!who.maintain);
 const randomId = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+
+/**
+ * The last n user turns and everything after them. A cut falls only before a
+ * user message, and a UI message holds its tool calls with their results, so
+ * no call is parted from its result.
+ */
+export function recentTurns(messages: UIMessage[], n: number): UIMessage[] {
+  let seen = 0;
+  for (let i = messages.length - 1; i >= 0; i--) if (messages[i]!.role === "user" && ++seen === n) return messages.slice(i);
+  return messages;
+}
 
 /** Builds a board from a pack's ops file — the same path the model uses. */
 export function buildBoard(pack: Pack, file: BoardFile): BoardConfig {
@@ -324,7 +337,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const body = (await read(req)) as { messages: UIMessage[] };
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
     const system = SYSTEM(h.pack, h.catalogue, config, h.ctx.now);
-    const modelMessages = await convertToModelMessages(body.messages);
+    const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     const before = summarise(config);
@@ -364,7 +377,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           let review;
           const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
           try {
-            review = await reviewTurn(reviewer.languageModel, { instruction, before, after: summarise(current.config), receipt, refusals: refusalsFrom(steps as never) });
+            review = await reviewTurn(reviewer.languageModel, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals: refusalsFrom(steps as never) });
           } catch (e) {
             review = { satisfied: true, unavailable: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
           } finally {

@@ -56,6 +56,12 @@ measures:
     entity: <entity_key>
     derived: <measure> / <measure>   # ratio of two aggregates on the same entity
     format: …
+
+instructions: <text>        # optional, ≤2000 chars: domain rules the keys cannot say, sent with every chat turn
+examples:                   # optional, ≤12: checked questions and the query (IR) that answers each
+  - question: <text>
+    query: { kind: breakdown, dimension: <key>, measure: <key> }
+    note: <text>            # optional: why this query and not the obvious one
 ```
 
 For example, the median items per order, and the customers with three or more orders:
@@ -84,6 +90,7 @@ Fragments are inlined verbatim inside a subquery over that entity's own table, s
 - A dimension has exactly one of `sql` or `json`; `grains` only on `type: time`.
 - A measure has `agg` (with `sql` unless `count`) or `derived`, not both; derived operands must be non-derived measures on the same entity.
 - A measure with `per` has `agg` and no `sql`, `field`, `filter` or `where` of its own: those belong inside `per`.
+- An example's query names only verified keys the pack has; `lenspack serve` and `check` also resolve it against its source and refuse to start on one that would be refused.
 
 ## Semantics the compiler applies
 

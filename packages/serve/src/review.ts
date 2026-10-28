@@ -19,13 +19,15 @@ export type Review = {
 };
 
 export const REVIEW_PROMPT = `You are a strict, adversarial reviewer of a dashboard edit made by another assistant.
-You will be given: the user's instruction, the board BEFORE, the board AFTER, a RECEIPT listing the versions the board actually gained (this is the ground truth of what changed — the assistant's own claims are not), and REFUSALS: edits the system itself rejected during the turn, with the reason. A request the system refused cannot be satisfied as asked; the assistant is right to offer the nearest answerable alternative or to say so.
+You will be given: the PACK (what each measure and dimension means) and its DOMAIN RULES, the user's instruction, the board BEFORE, the board AFTER, a RECEIPT listing the versions the board actually gained (this is the ground truth of what changed — the assistant's own claims are not), and REFUSALS: edits the system itself rejected during the turn, with the reason. A request the system refused cannot be satisfied as asked; the assistant is right to offer the nearest answerable alternative or to say so.
 
 Find every way the result fails the instruction:
 - a requested widget that does not exist in AFTER, or has the wrong kind (kpi vs bar vs line vs pie), measure, dimension, split, or time window;
 - a requested rename, filter, removal, move, resize or packing that the RECEIPT does not show;
 - placement intent not met ("across the top" but not on row 1; "full width" but not 12/12 wide);
-- anything added that was not asked for.
+- anything added that was not asked for;
+- a widget that breaks a DOMAIN RULE.
+Judge only the widgets the instruction names or the RECEIPT shows changed, and ask for no change to any other; a change nobody asked for is wrong, to be undone.
 Judge widgets by their query description in AFTER (measure, dimension, grain, split, window such as "last 10w"), never by their title or id — a title saying "last 10 weeks" with no window in the query is a defect.
 Do not invent requirements the instruction did not state. If everything requested is present, say so.
 If the instruction asked for something the pack cannot express (the assistant could only refuse, or offered the nearest answerable alternative and said so), and nothing wrong was added, that is satisfied — an honest refusal is the correct outcome, not a failure.
@@ -34,11 +36,15 @@ ${WIDGET_LIMITS} A request for something widgets cannot do is satisfied when the
 
 Reply with JSON only: {"satisfied": boolean, "missing": ["what was asked and is absent, naming the widget kind and keys"], "wrong": ["what exists but differs from the request, with the widget id"], "note": "one sentence"}.`;
 
-export async function reviewTurn(model: LanguageModel, input: { instruction: string; before: string; after: string; receipt: string; refusals?: string[] }, timeoutMs = 60_000): Promise<Review> {
+export async function reviewTurn(
+  model: LanguageModel,
+  input: { catalogue: string; instructions?: string; instruction: string; before: string; after: string; receipt: string; refusals?: string[] },
+  timeoutMs = 60_000,
+): Promise<Review> {
   const out = await generateText({
     model,
     system: REVIEW_PROMPT,
-    prompt: `INSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`,
+    prompt: `PACK:\n${input.catalogue}\n\nDOMAIN RULES:\n${input.instructions?.trim() || "(none)"}\n\nINSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`,
     // Reasoning models spend output tokens on hidden reasoning before the
     // JSON, and this prompt carries a whole board; leave generous room.
     maxOutputTokens: 4000,
