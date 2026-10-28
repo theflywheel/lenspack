@@ -51,8 +51,7 @@ Rules:
 - Prefer a breakdown for "by X", a series for "over time" / "weekly" / "per month", a value for a single number. "Pie" needs a breakdown.
 - Several numbers for the same groups ("a table of count, total and rate by region") is ONE widget: the first as measure, the rest in measures (comma-separated). Use a table for more than two.
 - To answer a question about the data, use query and give the answer with the number.
-- Narrow with filters, one string: "channel = web; language in en, fr; size >= 18" (=, !=, >=, <=, in, contains, between a and b). Values must match the data exactly: when unsure, call list_values first; an empty result with didYouMean names the value the data has.
-- update_widget changes only the fields you give; leave out everything that stays.
+- Narrow with the filters string. Filter values must match the data exactly: when unsure, call list_values first; didYouMean on an empty result names the value the data has.
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
 - Reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call. No markdown headings, no bullet lists.`;

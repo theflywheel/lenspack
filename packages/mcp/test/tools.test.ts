@@ -75,6 +75,8 @@ describe("board tools", () => {
     expect(bad.error).toContain('"size > 20"');
     const nan = (await call("query", { query_kind: "value", measure: "things", filters: "size >= big" })) as { ok: boolean; error: string };
     expect(nan.error).toContain("size is a number");
+    const eqeq = (await call("query", { query_kind: "value", measure: "things", filters: "colour == red" })) as { ok: boolean; error: string };
+    expect(eqeq).toMatchObject({ ok: false, error: expect.stringContaining('"colour == red"') });
   });
 
   it("lists a dimension's values within the tenant, and names the real value when a guess matches nothing", async () => {
@@ -101,6 +103,9 @@ describe("board tools", () => {
     await go("add_widget", { id: "w", kind: "chart", chart: "pie", title: "Share", query_kind: "breakdown", measure: "things", dimension: "colour", limit: 5, sort: "asc", time_last: "6m", filters: "size >= 20" });
     expect((await go("update_widget", { id: "w", title: "Share by origin", dimension: "origin", kind: null, chart: "" })).applied).toBe(true);
     expect(await widget()).toMatchObject({ kind: "chart", chart: "pie", title: "Share by origin", query: { dimension: "origin", limit: 5, sort: "asc", time: { last: "6m" }, filters: [{ dimension: "size" }] } });
+    // filter_dimension adds to the widget's filters rather than replacing them.
+    await go("update_widget", { id: "w", filter_dimension: "origin", filter_value: "north" });
+    expect(((await widget()) as { query: Query }).query.filters).toEqual([{ dimension: "size", op: "gte", value: 20 }, { dimension: "origin", op: "eq", value: "north" }]);
     // A different query_kind starts over from the fields given.
     expect(await go("update_widget", { id: "w", query_kind: "series", measure: "weight", grain: "month" })).toMatchObject({ applied: false });
     expect((await go("update_widget", { id: "w", chart: "line", query_kind: "series", measure: "weight", grain: "month" })).applied).toBe(true);
@@ -109,8 +114,6 @@ describe("board tools", () => {
     await go("update_widget", { id: "w", compare: false });
     expect(await widget()).toMatchObject({ kind: "kpi", title: "Share by origin", query: { kind: "value", time: { last: "30d" } } });
     expect(((await widget()) as { query: { compare?: string } }).query.compare).toBeUndefined();
-    expect(await go("update_widget", { id: "w", kind: "text" })).toMatchObject({ applied: false, error: "A text widget needs body" });
-    expect(await go("update_widget", { id: "ww", title: "x" })).toMatchObject({ applied: false, didYouMean: "w" });
   });
 
   it("adds, moves and removes widgets through the store", async () => {

@@ -73,12 +73,13 @@ const QUERY_SHAPE = {
   limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
   split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars"),
-  filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; size >= 18". Ops: =, !=, >=, <=, in (comma-separated), contains, between <a> and <b>. Values must match exactly: check them with list_values'),
+  filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; size >= 18". Ops: =, !=, >=, <=, in (comma-separated), contains, between <a> and <b>'),
   filter_dimension: str().describe("Optional: narrow by this dimension"),
   filter_value: str().describe("Optional: the value the filter dimension must equal"),
 };
 
-type QueryArgs = { [K in keyof typeof QUERY_SHAPE]: z.infer<(typeof QUERY_SHAPE)[K]> };
+const QUERY = z.object(QUERY_SHAPE);
+type QueryArgs = z.infer<typeof QUERY>;
 
 const OPS = { "=": "eq", "!=": "neq", ">=": "gte", "<=": "lte", in: "in", contains: "contains", between: "between" } as const;
 const CLAUSE = /^([a-z][a-z0-9_]*)\s*(?:(!=|>=|<=|=)|\s(in|contains|between)\s)\s*(.+)$/i;
@@ -93,7 +94,8 @@ function parseFilters(text: string, pack: Pack): FilterClause[] {
     .filter(Boolean)
     .map((clause) => {
       const m = CLAUSE.exec(clause);
-      if (!m) throw new Error(`Cannot read the filter "${clause}": write <dimension> <op> <value>, op one of =, !=, >=, <=, in, contains, between <a> and <b>`);
+      // An unquoted value starting with an operator is a misread op ("==", "=<"), not a value.
+      if (!m || /^[=<>!]/.test(m[4]!)) throw new Error(`Cannot read the filter "${clause}": write <dimension> <op> <value>, op one of =, !=, >=, <=, in, contains, between <a> and <b>`);
       const dimension = m[1]!;
       const op = OPS[(m[2] ?? m[3]!.toLowerCase()) as keyof typeof OPS];
       const values = (op === "in" ? m[4]!.split(",") : op === "between" ? m[4]!.split(/\s+and\s+/i) : [m[4]!]).map(unquote).filter(Boolean);
@@ -167,13 +169,24 @@ function scalarsOf(q: Query) {
   }
 }
 
-function patchQuery(current: Query, changed: Partial<QueryArgs>, pack: Pack): Query {
+function patchQuery(current: Query | undefined, changed: Partial<QueryArgs>, pack: Pack): Query {
+  if (!current || (changed.query_kind && changed.query_kind !== current.kind)) return assembleQuery(QUERY.parse(changed), pack);
   if (Object.keys(changed).length === 0) return current;
-  if (changed.query_kind && changed.query_kind !== current.kind) return assembleQuery(z.object(QUERY_SHAPE).parse(changed), pack);
-  const next = assembleQuery(z.object(QUERY_SHAPE).parse({ ...scalarsOf(current), ...changed }), pack);
+  const next = assembleQuery(QUERY.parse({ ...scalarsOf(current), ...changed }), pack);
+  // A new primary measure leaves the further ones, so it is not listed twice.
+  const more = "measures" in current && !changed.measures ? current.measures?.filter((m) => m !== changed.measure) : undefined;
+  // filter_dimension adds its clause to the widget's filters; a filters string replaces them.
+  const kept = changed.filter_dimension && !changed.filters ? (current.filters ?? []).filter((f) => f.dimension !== changed.filter_dimension) : [];
   // The rebuilt query has the default limit unless one was given, and compare
   // only when it is still asked for, so a patch can turn it off.
-  return querySchema.parse({ ...current, compare: undefined, ...next, ...("limit" in current && !changed.limit ? { limit: current.limit } : {}) });
+  return querySchema.parse({
+    ...current,
+    compare: undefined,
+    ...(more ? { measures: more.length ? more : undefined } : {}),
+    ...next,
+    ...(kept.length ? { filters: [...kept, ...next.filters!] } : {}),
+    ...("limit" in current && !changed.limit ? { limit: current.limit } : {}),
+  });
 }
 
 function fail(e: unknown) {
@@ -221,10 +234,14 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     return next;
   };
 
-  const values = async (dimension: string, q = "", limit = 50) => {
+  // A missing value is grouped as "(none)", which no filter can match, so it is never offered.
+  const values = async (dimension: string, q = "", limit = 50, exact?: string[]) => {
     const query = valuesQuery(dimension, pack, limit, q);
-    return query ? run(query, { pack, connector, ctx, timeoutMs: opts.timeoutMs }) : null;
+    if (!query) return null;
+    const data = await run(exact ? { ...query, filters: [{ dimension, op: "in", value: exact }] } : query, { pack, connector, ctx, timeoutMs: opts.timeoutMs });
+    return { ...data, rows: data.rows.filter((r) => r.group !== "(none)") };
   };
+  const groups = async (dimension: string, q = "", exact?: string[]) => ((await values(dimension, q, 50, exact))?.rows ?? []).map((r) => r.group);
 
   // A guessed value (the wrong case, a near spelling) returns nothing rather
   // than an error. Only when a result is empty, name the value the data has.
@@ -234,13 +251,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       const type = pack.dimensions.find((d) => d.key === f.dimension)?.type;
       if ((f.op !== "eq" && f.op !== "in") || (type !== "string" && type !== "enum")) continue;
       const wanted = (Array.isArray(f.value) ? f.value : [f.value]).map(String);
+      // Looked up exactly, not in the top values: a rare value is still present.
+      const present = await groups(f.dimension, "", wanted);
       let top: string[] | null = null;
       const near: string[] = [];
       for (const v of wanted) {
-        // Searched for, not looked up in the top values: a rare value is still found.
-        const like = ((await values(f.dimension, v))?.rows ?? []).map((r) => r.group);
-        const hit = like.includes(v) ? v : like.find((x) => x.toLowerCase() === v.toLowerCase());
-        near.push(hit ?? nearest(v, (top ??= ((await values(f.dimension))?.rows ?? []).map((r) => r.group))) ?? v);
+        const hit = present.includes(v) ? v : (await groups(f.dimension, v)).find((x) => x.toLowerCase() === v.toLowerCase());
+        near.push(hit ?? nearest(v, (top ??= await groups(f.dimension))) ?? v);
       }
       if (near.some((v, i) => v !== wanted[i])) fixed.push(`${f.dimension} ${f.op === "in" ? "in" : "="} ${near.join(", ")}`);
     }
@@ -268,7 +285,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     defineTool({
       name: "query",
       description: "Run one query against the pack and return its rows plus the native query that ran. Use this to answer questions or to check a widget before adding it.",
-      inputSchema: z.object(QUERY_SHAPE),
+      inputSchema: QUERY,
       async execute(a) {
         try {
           const query = assembleQuery(a, pack);
@@ -295,7 +312,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     defineTool({
       name: "explain",
       description: "Compile a query without running it: the native query, the entities used, and the tenant scope. Cheap; use it to debug a refusal.",
-      inputSchema: z.object(QUERY_SHAPE),
+      inputSchema: QUERY,
       async execute(a) {
         try {
           const query = assembleQuery(a, pack);
@@ -308,7 +325,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
     defineTool({
       name: "list_values",
-      description: "A dimension's most common values with their row counts. Use it before filtering on a value you have not seen: filter values must match exactly.",
+      description: "A dimension's most common values with their row counts.",
       inputSchema: z.object({
         dimension: z.string().describe("The dimension key"),
         q: str().describe("Optional: only values containing this text, any case"),
@@ -364,10 +381,10 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     defineTool({
       name: "update_widget",
       description:
-        "Change a widget in place: give its id and only what changes; every field left out keeps its current value. Query fields change the current query; a different query_kind starts a new query from the fields given.",
+        "Change a widget in place: its id plus only the fields that change. A different query_kind starts a new query from the fields given.",
       inputSchema: z.object({
         id: z.string(),
-        kind: given(z.enum(["chart", "kpi", "table", "text"])).describe("Only to change it; a text widget needs body, any other a query"),
+        kind: given(z.enum(["chart", "kpi", "table", "text"])).describe("Only to change it"),
         title: given(z.string()),
         chart: given(z.enum(["bar", "line", "pie", "area"])),
         body: given(z.string()),
@@ -379,9 +396,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           return await apply(async () => {
             const widgets = (await store.get(boardId))?.config.widgets ?? {};
             const current = widgets[id];
-            const near = nearest(id, Object.keys(widgets));
-            if (!current) return { applied: false, error: `No widget called "${id}"`, ...(near ? { didYouMean: near } : {}) };
-            const to = kind ?? current.kind;
+            if (!current) {
+              const near = nearest(id, Object.keys(widgets));
+              return { applied: false, error: `No widget called "${id}"`, ...(near ? { didYouMean: near } : {}) };
+            }
+            // A chart type alone ("make it a pie") means a chart.
+            const to = kind ?? (chart ? "chart" : current.kind);
             const name = title ?? current.title;
             if (to === "text") {
               const text = body ?? (current.kind === "text" ? current.body : undefined);
@@ -389,7 +409,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
               return [{ op: "update_widget", id, widget: { kind: "text", title: name, body: text } }];
             }
             if (current.kind === "text" && !changed.query_kind) return { applied: false, error: `A ${to} needs a query: give query_kind and its fields` };
-            const query = current.kind === "text" ? assembleQuery(z.object(QUERY_SHAPE).parse(changed), pack) : patchQuery(current.query, changed, pack);
+            const query = patchQuery(current.kind === "text" ? undefined : current.query, changed, pack);
             const widget =
               to === "kpi"
                 ? { aggregate: "last" as const, ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
