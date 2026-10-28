@@ -131,20 +131,16 @@ export const dimensionSchema = z
   })
   .refine(oneSource, { message: "a dimension has exactly one of field, sql or json" });
 
-// A two-stage measure's inner stage: the base rows grouped by `key` into one
-// value each (items per order, questions per user), optionally kept only when
-// that value passes `having`. The measure's own `agg` then aggregates those values.
-export const PER_AGGS = ["count", "count_distinct", "sum", "min", "max", "avg"] as const;
-export const HAVING_OPS = ["eq", "neq", "gt", "gte", "lt", "lte"] as const;
+// The inner stage of a two-stage measure; the outer agg skips a key whose value fails `having`.
 export const perSchema = z
   .object({
     key: z.union([fieldPath, z.object({ sql: fragmentSchema })]),
-    agg: z.enum(PER_AGGS),
+    agg: z.enum(AGGS).exclude(["median", "p90"]),
     sql: fragmentSchema.optional(),
     field: fieldPath.optional(),
     filter: fragmentSchema.optional(),
     where: z.array(whereSchema).max(20).optional(),
-    having: z.object({ op: z.enum(HAVING_OPS), value: z.number() }).optional(),
+    having: z.object({ op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte"]), value: z.number() }).optional(),
   })
   .refine((p) => !(p.sql && p.field), { message: "per has sql or field, not both" })
   .refine((p) => p.agg !== "count" || !p.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })

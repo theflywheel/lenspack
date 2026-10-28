@@ -110,8 +110,8 @@ export function print(ast: Ast, rules: DialectRules): Printed {
     return `(SELECT *${projections} FROM ${s.table}${where}) AS ${q(s.alias)}`;
   };
 
-  // SELECT through GROUP BY (and HAVING), for the statement and for a grouped subquery.
-  const clauses = (a: Omit<Grouped, "alias" | "from" | "having"> & { from: Source | Grouped; having?: Expr[] }) => {
+  // SELECT through GROUP BY, for the statement and for a grouped subquery.
+  const clauses = (a: Ast | Grouped) => {
     const parts = [
       `SELECT ${a.select.map((s) => `${expr(s.expr)} AS ${q(s.alias)}`).join(", ")}`,
       `FROM ${source(a.from)}`,
@@ -119,7 +119,6 @@ export function print(ast: Ast, rules: DialectRules): Printed {
     ];
     if (a.where.length) parts.push(`WHERE ${a.where.map(expr).join(" AND ")}`);
     if (a.groupBy.length) parts.push(`GROUP BY ${a.groupBy.map(expr).join(", ")}`);
-    if (a.having?.length) parts.push(`HAVING ${a.having.map(expr).join(" AND ")}`);
     return parts;
   };
 

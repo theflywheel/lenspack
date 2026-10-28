@@ -50,7 +50,7 @@ measures:
       agg: count | count_distinct | sum | min | max | avg
       sql: <fragment>       # required unless agg is count
       filter: <predicate>   # optional, as on a measure
-      having: { op: eq | neq | gt | gte | lt | lte, value: <number> }   # optional; keeps only keys whose value passes
+      having: { op: eq | neq | gt | gte | lt | lte, value: <number> }   # optional; the outer agg ignores keys whose value fails
   - key: <slug>
     entity: <entity_key>
     derived: <measure> / <measure>   # ratio of two aggregates on the same entity
@@ -91,5 +91,5 @@ Fragments are inlined verbatim inside a subquery over that entity's own table, s
 - Rates (`agg: avg` over a 0/1 expression) are averages over base rows. A rate for the whole population and the same rate per group are computed identically; only the `GROUP BY` differs.
 - `derived: a / b` compiles to `CAST(agg_a AS DOUBLE) / NULLIF(agg_b, 0)`.
 - `filter` folds into `CASE WHEN filter THEN expr END`, so the aggregate ignores rows outside it.
-- A `per` measure groups the rows the query reads (after its time window, filters, tenant and the entity's own predicate) by the key and by the answer's groups (a breakdown's groups, a series' buckets), then aggregates the one value per key. A key with rows in two groups or two buckets counts in each, and `n` counts keys. A filter inside `per` narrows the rows behind each value, not the keys: a key with no matching rows counts 0 under `count`. A previous-period comparison groups each period on its own. A derived measure over a `per` measure computes each operand on its own and combines them per group. Elasticsearch refuses `per` (`NOT_SUPPORTED`).
+- A `per` measure groups the rows the query reads (after its time window, filters, tenant and the entity's own predicate) by the key and by the answer's groups (a breakdown's groups, a series' buckets), then aggregates the one value per key. A key with rows in two groups or two buckets counts in each, rows with no key are not counted, and `n` counts keys. A filter inside `per` narrows the rows behind each value, not the keys: a key with no matching rows counts 0 under `count`. `having` folds into the outer aggregate like a filter, so a group whose keys all fail it still shows, 0 under `count`. A previous-period comparison groups each period on its own.
 - If any entity in the query declares `tenant`, the tenant predicate is pushed into that entity's subquery and a missing tenant is a compile error.

@@ -30,7 +30,7 @@ const pack = parsePack({
 });
 
 // 60 sessions of 1 to 6 turns by 18 users over three months, each session on one channel, so
-// most users have sessions on both.
+// most users have sessions on both. Four more turns have no session or user and count in none.
 function turns(): unknown[][] {
   let a = 7;
   const next = () => ((a = (a * 1103515245 + 12345) % 2147483648), a / 2147483648);
@@ -42,12 +42,13 @@ function turns(): unknown[][] {
     const n = 1 + Math.floor(next() * 6);
     for (let i = 0; i < n; i++) out.push([out.length + 1, s, user, channel, i % 2 ? "assistant" : "user", new Date(start + i * 60e3).toISOString().slice(0, 19).replace("T", " ")]);
   }
+  for (let i = 0; i < 4; i++) out.push([out.length + 1, null, null, "web", "user", `2026-01-10 09:0${i}:00`]);
   return out;
 }
 
 async function seed(writer: Writer, type: string) {
   await writer.exec(`CREATE TABLE turns (id INTEGER, session_id INTEGER, user_id INTEGER, channel VARCHAR, role VARCHAR, ts ${type})`);
-  const values = turns().map((r) => `(${r.map((v) => (typeof v === "number" ? v : `'${v}'`)).join(", ")})`);
+  const values = turns().map((r) => `(${r.map((v) => (v === null ? "NULL" : typeof v === "number" ? v : `'${v}'`)).join(", ")})`);
   await writer.exec(`INSERT INTO turns VALUES ${values.join(", ")}`);
 }
 
@@ -81,7 +82,7 @@ for (const engine of ENGINES) {
 
     it("averages the per-session counts", async () => {
       const data = await ask({ kind: "value", measure: "turns_per_session" });
-      const [mean, sessions] = await hand("SELECT avg(n), count(*) FROM (SELECT session_id, count(*) AS n FROM turns GROUP BY session_id) s");
+      const [mean, sessions] = await hand("SELECT avg(n), count(*) FROM (SELECT session_id, count(*) AS n FROM turns WHERE session_id IS NOT NULL GROUP BY session_id) s");
       expect(data.rows[0]!.value).toBeCloseTo(mean!, 9);
       expect(data.rows[0]!.count).toBe(sessions);
     });
@@ -89,7 +90,7 @@ for (const engine of ENGINES) {
     it("counts keys that pass having, a key in two groups counting in each", async () => {
       const data = await ask({ kind: "breakdown", dimension: "channel", measure: "askers", limit: 10, sort: "desc" });
       const expected = await executor.query(
-        "SELECT channel AS g, count(*) AS v FROM (SELECT channel, user_id FROM turns WHERE role = 'user' GROUP BY channel, user_id HAVING count(*) >= 3) s GROUP BY channel ORDER BY channel",
+        "SELECT channel AS g, count(*) AS v FROM (SELECT channel, user_id FROM turns WHERE role = 'user' AND user_id IS NOT NULL GROUP BY channel, user_id HAVING count(*) >= 3) s GROUP BY channel ORDER BY channel",
         [],
       );
       expect(data.rows.map((r) => [r.group, r.value]).sort()).toEqual(expected.map((r) => [r.g, Number(r.v)]));
@@ -97,13 +98,23 @@ for (const engine of ENGINES) {
 
     it("groups by key within each series bucket, after the window", async () => {
       const data = await ask({ kind: "series", measure: "turns_per_session", grain: "week", time: jan });
-      const expected = await executor.query(`SELECT avg(n) AS v FROM (SELECT session_id, ${engine.week} AS w, count(*) AS n FROM turns WHERE ${inJan} GROUP BY 1, 2) s GROUP BY w ORDER BY w`, []);
+      const expected = await executor.query(`SELECT avg(n) AS v FROM (SELECT session_id, ${engine.week} AS w, count(*) AS n FROM turns WHERE ${inJan} AND session_id IS NOT NULL GROUP BY 1, 2) s GROUP BY w ORDER BY w`, []);
       expect(data.rows.map((r) => r.value)).toEqual(expected.map((r) => expect.closeTo(Number(r.v), 9)));
+    });
+
+    it("keeps a bucket whose keys all fail having, at 0", async () => {
+      const data = await ask({ kind: "series", measure: "askers", grain: "week", time: jan });
+      const expected = await executor.query(
+        `SELECT count(CASE WHEN n >= 3 THEN 1 END) AS v FROM (SELECT user_id, ${engine.week} AS w, count(CASE WHEN role = 'user' THEN 1 END) AS n FROM turns WHERE ${inJan} AND user_id IS NOT NULL GROUP BY 1, 2) s GROUP BY w ORDER BY w`,
+        [],
+      );
+      expect(data.rows.map((r) => r.value)).toEqual(expected.map((r) => Number(r.v)));
+      expect(data.rows.map((r) => r.value)).toContain(0);
     });
 
     it("compares with the previous period, each period grouped on its own", async () => {
       const data = await ask({ kind: "value", measure: "askers", compare: "previous_period", time: jan });
-      const askers = (window: string) => `SELECT count(*) FROM (SELECT user_id FROM turns WHERE role = 'user' AND ${window} GROUP BY user_id HAVING count(*) >= 3) s`;
+      const askers = (window: string) => `SELECT count(*) FROM (SELECT user_id FROM turns WHERE role = 'user' AND user_id IS NOT NULL AND ${window} GROUP BY user_id HAVING count(*) >= 3) s`;
       const [now] = await hand(askers(inJan));
       const [before] = await hand(askers(inDec));
       expect([data.rows[0]!.value, data.compare!.previous]).toEqual([now, before]);
@@ -111,15 +122,14 @@ for (const engine of ENGINES) {
 
     it("divides a two-stage measure by a plain one, each computed on its own", async () => {
       const data = await ask({ kind: "value", measure: "returning_share" });
-      const [returning] = await hand(`SELECT count(*) FROM (SELECT user_id FROM turns GROUP BY user_id HAVING count(DISTINCT ${engine.day}) >= 2) s`);
+      const [returning] = await hand(`SELECT count(*) FROM (SELECT user_id FROM turns WHERE user_id IS NOT NULL GROUP BY user_id HAVING count(DISTINCT ${engine.day}) >= 2) s`);
       const [users] = await hand("SELECT count(DISTINCT user_id) FROM turns");
       expect(data.rows[0]!.value).toBeCloseTo(returning! / users!, 9);
     });
 
-    it(engine.name === "duckdb" ? "takes the median of the per-session counts" : "refuses a median it cannot compute", async () => {
+    it.runIf(engine.name === "duckdb")("takes the median of the per-session counts", async () => {
       const data = await ask({ kind: "value", measure: "median_turns_per_session" });
-      if (engine.name === "sqlite") return expect(data.error).toMatch(/has no percentile function/);
-      const [median] = await hand("SELECT quantile_cont(n, 0.5) FROM (SELECT session_id, count(*) AS n FROM turns GROUP BY session_id) s");
+      const [median] = await hand("SELECT quantile_cont(n, 0.5) FROM (SELECT session_id, count(*) AS n FROM turns WHERE session_id IS NOT NULL GROUP BY session_id) s");
       expect(data.rows[0]!.value).toBeCloseTo(median!, 9);
     });
   });

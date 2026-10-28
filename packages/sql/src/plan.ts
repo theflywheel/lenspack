@@ -65,7 +65,7 @@ type Aggregated = Pick<PackMeasure, "key" | "agg" | "field" | "sql" | "filter" |
 // simply ignores rows outside it; `count` gets a literal 1 to count.
 // A counted `field` counts its non-null values.
 function measureRowExpr(m: Aggregated): Expr | null {
-  if (m.derived) return null;
+  if (m.derived || m.per) return null;
   const value: Expr | null = m.field ? col("", m.field) : m.sql ? raw(m.sql) : null;
   const base: Expr = value ?? { t: "lit", value: 1 };
   const when = allOf([...(m.filter ? [raw(m.filter)] : []), ...(m.where ?? []).map(whereExpr)]);
@@ -164,11 +164,14 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   if (per && windowed) project(root, W, { t: "case", when: inWindow(bound.time!, epoch ? col("", epoch.field) : timeExpr(bound.rootEntity.time!)), then: { t: "lit", value: 1 } });
 
   // Aggregates over the root's projected measure columns, or over the inner
-  // query's value per key for a two-stage measure.
+  // query's value per key for a two-stage measure. `having` folds into a CASE
+  // like a filter, so a group whose keys all fail it still shows (0 under count).
+  const perValue = (p: NonNullable<Aggregated["per"]>): Expr =>
+    p.having ? { t: "case", when: { t: "bin", op: HAVING[p.having.op], l: col(N, V), r: param(p.having.value) }, then: col(N, V) } : col(N, V);
   const aggOf = (m: Aggregated, cond: Expr | null): Expr => {
-    const rowExpr = m.per ? null : measureRowExpr(m);
+    const rowExpr = measureRowExpr(m);
     if (rowExpr) project(root, M(m.key), rowExpr);
-    const ref: Expr | null = m.per ? col(N, V) : rowExpr ? col(root, M(m.key)) : null;
+    const ref: Expr | null = m.per ? perValue(m.per) : rowExpr ? col(root, M(m.key)) : null;
     let agg: Expr;
     if (m.agg === "count") {
       const arg: Expr = cond ? { t: "case", when: cond, then: ref ?? { t: "lit", value: 1 } } : (ref ?? { t: "star" });
@@ -267,11 +270,11 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
 
   if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, orderBy, limit }, shape };
 
-  // Two stages: the rows (windowed and filtered as for any measure) grouped by
-  // key and by the answer's groups into one value per key, then the measure's
-  // aggregate over those values. `n` counts keys.
+  // Two stages: one value per key and group, then the measure's agg over those;
+  // n counts keys, and rows with no key are not counted.
   project(root, K, typeof per.key === "string" ? col("", per.key) : raw(per.key.sql));
-  const value = aggOf({ key: bound.measure!.def.key, agg: per.agg, field: per.field, sql: per.sql, filter: per.filter, where: per.where }, null);
+  where.push({ t: "notnull", arg: col(root, K) });
+  const value = aggOf({ ...per, key: bound.measure!.def.key }, null);
   const groups = select.filter((s) => groupBy.includes(s.expr));
   const mark = windowed ? [{ alias: W, expr: col(root, W) }] : [];
   const inner: Grouped = {
@@ -281,7 +284,6 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     joins,
     where,
     groupBy: [...groupBy, col(root, K), ...mark.map((m) => m.expr)],
-    having: per.having ? [{ t: "bin", op: HAVING[per.having.op], l: value, r: param(per.having.value) }] : [],
   };
   const outer = select.map((s) => (groups.includes(s) ? { alias: s.alias, expr: col(N, s.alias) } : s));
   return { ast: { select: outer, from: inner, joins: [], where: [], groupBy: groups.map((s) => col(N, s.alias)), orderBy, limit }, shape };

@@ -46,8 +46,8 @@ export type Ast = {
 };
 
 // The inner stage of a two-stage measure: the root's rows grouped by the key
-// and the answer's groups, one value per key, kept by HAVING.
-export type Grouped = Omit<Ast, "from" | "orderBy" | "limit"> & { alias: string; from: Source; having: Expr[] };
+// and the answer's groups, one value per key.
+export type Grouped = Omit<Ast, "from" | "orderBy" | "limit"> & { alias: string; from: Source };
 
 export const and = (exprs: Expr[]): Expr | null =>
   exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r }));

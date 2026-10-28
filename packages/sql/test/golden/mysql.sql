@@ -273,21 +273,20 @@ SELECT `__n`.`group` AS `group`, avg(CAST(`__n`.`__v` AS DOUBLE)) AS `value`, co
 FROM (SELECT `owners`.`__d_tier` AS `group`, count(*) AS `__v`
 FROM (SELECT *, `made_at` AS `__t`, `size` AS `__d_size`, `owner_id` AS `__k` FROM `app`.`things` WHERE (((`tenant_id` = ?) OR (`tenant_id` LIKE ?))) AND (deleted = false) AND (NOT (`kind` <=> ?))) AS `things`
 LEFT JOIN (SELECT *, (upper(tier)) AS `__d_tier` FROM `Owners`) AS `owners` ON `things`.`owner_id` = `owners`.`id`
-WHERE (`things`.`__d_size` >= ?)
+WHERE (`things`.`__d_size` >= ?) AND (`things`.`__k` IS NOT NULL)
 GROUP BY `owners`.`__d_tier`, `things`.`__k`) AS `__n`
 GROUP BY `__n`.`group`
 ORDER BY `value` DESC, `group` IS NULL, `group` ASC
 LIMIT 10;
 
 -- {"kind":"breakdown","dimension":"colour","measure":"heavy_owners","by":"tier","limit":10,"sort":"desc","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
--- params: ["broken","ke_1","ke\\_1.%","test","2026-01-01 00:00:00.000","2026-02-01 00:00:00.000",500]
-SELECT `__n`.`group` AS `group`, `__n`.`series` AS `series`, count(`__n`.`__v`) AS `value`, count(*) AS `n`
+-- params: [500,"broken","ke_1","ke\\_1.%","test","2026-01-01 00:00:00.000","2026-02-01 00:00:00.000"]
+SELECT `__n`.`group` AS `group`, `__n`.`series` AS `series`, count(CASE WHEN (`__n`.`__v` >= ?) THEN `__n`.`__v` END) AS `value`, count(*) AS `n`
 FROM (SELECT `things`.`__d_colour` AS `group`, `owners`.`__d_tier` AS `series`, sum(`things`.`__m_heavy_owners`) AS `__v`
 FROM (SELECT *, `made_at` AS `__t`, (colour) AS `__d_colour`, `owner_id` AS `__k`, CASE WHEN (NOT (`status` <=> ?)) THEN `size` END AS `__m_heavy_owners` FROM `app`.`things` WHERE (((`tenant_id` = ?) OR (`tenant_id` LIKE ?))) AND (deleted = false) AND (NOT (`kind` <=> ?))) AS `things`
 LEFT JOIN (SELECT *, (upper(tier)) AS `__d_tier` FROM `Owners`) AS `owners` ON `things`.`owner_id` = `owners`.`id`
-WHERE ((`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3))))
-GROUP BY `things`.`__d_colour`, `owners`.`__d_tier`, `things`.`__k`
-HAVING (sum(`things`.`__m_heavy_owners`) >= ?)) AS `__n`
+WHERE ((`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3)))) AND (`things`.`__k` IS NOT NULL)
+GROUP BY `things`.`__d_colour`, `owners`.`__d_tier`, `things`.`__k`) AS `__n`
 GROUP BY `__n`.`group`, `__n`.`series`
 ORDER BY `value` DESC, `group` IS NULL, `group` ASC, `series` IS NULL, `series` ASC
 LIMIT 10;
@@ -297,7 +296,7 @@ LIMIT 10;
 SELECT `__n`.`bucket` AS `bucket`, `__n`.`series` AS `series`, avg(CAST(`__n`.`__v` AS DOUBLE)) AS `value`, count(*) AS `n`
 FROM (SELECT CAST(DATE_FORMAT(`things`.`__t`, '%Y-%m-01') AS DATETIME) AS `bucket`, `things`.`__d_colour` AS `series`, count(*) AS `__v`
 FROM (SELECT *, `made_at` AS `__t`, (colour) AS `__d_colour`, `owner_id` AS `__k` FROM `app`.`things` WHERE (((`tenant_id` = ?) OR (`tenant_id` LIKE ?))) AND (deleted = false) AND (NOT (`kind` <=> ?))) AS `things`
-WHERE ((`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3))))
+WHERE ((`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3)))) AND (`things`.`__k` IS NOT NULL)
 GROUP BY CAST(DATE_FORMAT(`things`.`__t`, '%Y-%m-01') AS DATETIME), `things`.`__d_colour`, `things`.`__k`) AS `__n`
 GROUP BY `__n`.`bucket`, `__n`.`series`
 ORDER BY `bucket` IS NULL, `bucket` ASC, `series` IS NULL, `series` ASC
@@ -307,13 +306,12 @@ LIMIT 5000;
 -- refused (NOT_SUPPORTED): "median_colours_per_owner" is a median, and this source has no percentile function, so it is not computed here
 
 -- {"kind":"value","measure":"heavy_owners","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
--- params: ["2026-01-01 00:00:00.000","2026-02-01 00:00:00.000","broken","ke_1","ke\\_1.%","test","2025-12-01 00:00:00.000","2026-02-01 00:00:00.000",500]
-SELECT count(CASE WHEN (`__n`.`__w` IS NOT NULL) THEN `__n`.`__v` END) AS `value`, count(CASE WHEN (`__n`.`__w` IS NOT NULL) THEN 1 END) AS `n`, count(CASE WHEN (`__n`.`__w` IS NULL) THEN `__n`.`__v` END) AS `previous`
+-- params: [500,500,"2026-01-01 00:00:00.000","2026-02-01 00:00:00.000","broken","ke_1","ke\\_1.%","test","2025-12-01 00:00:00.000","2026-02-01 00:00:00.000"]
+SELECT count(CASE WHEN (`__n`.`__w` IS NOT NULL) THEN CASE WHEN (`__n`.`__v` >= ?) THEN `__n`.`__v` END END) AS `value`, count(CASE WHEN (`__n`.`__w` IS NOT NULL) THEN 1 END) AS `n`, count(CASE WHEN (`__n`.`__w` IS NULL) THEN CASE WHEN (`__n`.`__v` >= ?) THEN `__n`.`__v` END END) AS `previous`
 FROM (SELECT `things`.`__w` AS `__w`, sum(`things`.`__m_heavy_owners`) AS `__v`
 FROM (SELECT *, `made_at` AS `__t`, CASE WHEN ((`made_at` >= CAST(? AS DATETIME(3))) AND (`made_at` < CAST(? AS DATETIME(3)))) THEN 1 END AS `__w`, `owner_id` AS `__k`, CASE WHEN (NOT (`status` <=> ?)) THEN `size` END AS `__m_heavy_owners` FROM `app`.`things` WHERE (((`tenant_id` = ?) OR (`tenant_id` LIKE ?))) AND (deleted = false) AND (NOT (`kind` <=> ?))) AS `things`
-WHERE (`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3)))
-GROUP BY `things`.`__k`, `things`.`__w`
-HAVING (sum(`things`.`__m_heavy_owners`) >= ?)) AS `__n`
+WHERE (`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3))) AND (`things`.`__k` IS NOT NULL)
+GROUP BY `things`.`__k`, `things`.`__w`) AS `__n`
 LIMIT 1;
 
 -- {"kind":"value","measure":"heavy_share"}
