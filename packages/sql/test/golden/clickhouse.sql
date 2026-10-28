@@ -272,3 +272,34 @@ LIMIT 4;
 SELECT "things"."__d_colour" AS "colour", "things"."__d_nested" AS "nested"
 FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", JSONExtract("attrs", 'meta', 'grade', 'Nullable(String)') AS "__d_nested" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 LIMIT 20;
+
+-- {"kind":"breakdown","dimension":"colour","measure":"weight","limit":10,"sort":"asc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: ["2026-01-01 00:00:00.000","2026-02-01 00:00:00.000","2026-01-01 00:00:00.000","2026-02-01 00:00:00.000","2025-12-01 00:00:00.000","2026-01-01 00:00:00.000","ke_1","ke\\\\_1.%","test","2025-12-01 00:00:00.000","2026-02-01 00:00:00.000","2026-01-01 00:00:00.000","2026-02-01 00:00:00.000"]
+SELECT "things"."__d_colour" AS "group", sum(CASE WHEN (("things"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "things"."__m_weight" END) AS "value", count(CASE WHEN (("things"."__t" >= CAST({p3:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p4:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "n", sum(CASE WHEN (("things"."__t" >= CAST({p5:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p6:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "things"."__m_weight" END) AS "previous"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", (weight_g / 1000.0) AS "__m_weight" FROM "app"."things" WHERE ((("tenant_id" = {p7:String}) OR ("tenant_id" LIKE {p8:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p9:String})) AS "things"
+WHERE ("things"."__t" >= CAST({p10:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p11:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))
+GROUP BY "things"."__d_colour"
+HAVING (count(CASE WHEN (("things"."__t" >= CAST({p12:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p13:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) > 0)
+ORDER BY "value" ASC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"breakdown","dimension":"tier","by":"colour","measure":"per_thing","limit":10,"sort":"desc","compare":"previous_period","time":{"last":"30d"}}
+-- params: ["2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2025-12-17 12:34:56.000","2026-01-16 12:34:56.000","2025-12-17 12:34:56.000","2026-01-16 12:34:56.000","2025-12-17 12:34:56.000","2026-01-16 12:34:56.000","ke_1","ke\\\\_1.%","test","2025-12-17 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000"]
+SELECT "owners"."__d_tier" AS "group", "things"."__d_colour" AS "series", (((CAST(sum(CASE WHEN (("things"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "things"."__m_weight" END) AS Float64) - CAST(count(CASE WHEN (("things"."__t" >= CAST({p3:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p4:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "things"."__m_broken" END) AS Float64)) / NULLIF(CAST(count(CASE WHEN (("things"."__t" >= CAST({p5:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p6:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS Float64), 0)) * 100) AS "value", count(CASE WHEN (("things"."__t" >= CAST({p7:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p8:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "n", (((CAST(sum(CASE WHEN (("things"."__t" >= CAST({p9:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p10:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "things"."__m_weight" END) AS Float64) - CAST(count(CASE WHEN (("things"."__t" >= CAST({p11:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p12:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "things"."__m_broken" END) AS Float64)) / NULLIF(CAST(count(CASE WHEN (("things"."__t" >= CAST({p13:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p14:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS Float64), 0)) * 100) AS "previous"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", (weight_g / 1000.0) AS "__m_weight", CASE WHEN (status = 'broken') THEN 1 END AS "__m_broken" FROM "app"."things" WHERE ((("tenant_id" = {p15:String}) OR ("tenant_id" LIKE {p16:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p17:String})) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+WHERE ("things"."__t" >= CAST({p18:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p19:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))
+GROUP BY "owners"."__d_tier", "things"."__d_colour"
+HAVING (count(CASE WHEN (("things"."__t" >= CAST({p20:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p21:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) > 0)
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"breakdown","dimension":"part_kind","measure":"parts","limit":10,"sort":"desc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: ["1767225600000","1769904000000","1767225600000","1769904000000","1764547200000","1767225600000","ke_1","1764547200000","1769904000000","1767225600000","1769904000000"]
+SELECT "parts"."__d_part_kind" AS "group", count(CASE WHEN (("parts"."__t_raw" >= CAST({p1:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p2:Int64} AS Int64))) THEN 1 END) AS "value", count(CASE WHEN (("parts"."__t_raw" >= CAST({p3:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p4:Int64} AS Int64))) THEN 1 END) AS "n", count(CASE WHEN (("parts"."__t_raw" >= CAST({p5:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p6:Int64} AS Int64))) THEN 1 END) AS "previous"
+FROM (SELECT *, fromUnixTimestamp64Milli(CAST("added_ms" AS Int64), 'UTC') AS "__t", "added_ms" AS "__t_raw", "kind" AS "__d_part_kind" FROM "parts" WHERE ("tenant_id" = {p7:String})) AS "parts"
+WHERE ("parts"."__t_raw" >= CAST({p8:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p9:Int64} AS Int64))
+GROUP BY "parts"."__d_part_kind"
+HAVING (count(CASE WHEN (("parts"."__t_raw" >= CAST({p10:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p11:Int64} AS Int64))) THEN 1 END) > 0)
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;

@@ -105,6 +105,18 @@ describe("series and value", () => {
     expect(data.compare?.delta).toBeCloseTo(-1 / 3);
   });
 
+  it("compares each group of a breakdown, keeping only the current period's groups, with share and other", async () => {
+    const feb = { from: "2026-02-01T00:00:00Z", to: "2026-03-01T00:00:00Z" };
+    // Red had rows only in January: it is not a row, even sorted lowest first.
+    const data = await q({ kind: "breakdown", dimension: "colour", measure: "things", limit: 2, sort: "asc", compare: "previous_period", share: true, other: true, time: feb });
+    expect(data.rows).toEqual([
+      { group: "blue", value: 1, count: 1, compare: { previous: 1, delta: 0 }, share: 0.5 },
+      { group: "green", value: 1, count: 1, compare: { previous: 0, delta: null }, share: 0.5 },
+      { group: "(other)", value: 0, count: 0, compare: { previous: 2, delta: -1 }, share: 0, other: true },
+    ]);
+    expect(data.total).toBe(2);
+  });
+
   it("a rate over the whole population is not the mean of group rates", async () => {
     const whole = await q({ kind: "value", measure: "broken_rate" });
     expect(whole.rows[0]?.value).toBeCloseTo(0.4);

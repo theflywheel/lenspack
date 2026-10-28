@@ -5,7 +5,7 @@ import type { Widget } from "@lenspack/core";
 import { buildChartSpec } from "./charts";
 import { formatDelta, formatValue } from "./format";
 import { useBoard } from "./provider";
-import type { WidgetData } from "./types";
+import type { DataRow, WidgetData } from "./types";
 
 // Every option is mapped explicitly rather than spread from the config, which
 // is what makes the schema closed in practice and not just on paper. Colours
@@ -46,7 +46,8 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
   const measureLabel = catalogue.measures.find((m) => m.key === measureKey)?.label;
   const labelOf = (key: string) => catalogue.measures.find((m) => m.key === key)?.label;
   const target = widget.query.kind === "breakdown" ? drillTarget(widget.query.dimension) : null;
-  const onSelect = target?.selects ? (group: string) => group !== "(none)" && drill(target.selects!, group) : undefined;
+  const other = data.rows.find((r) => r.other)?.group;
+  const onSelect = target?.selects ? (group: string) => group !== "(none)" && group !== other && drill(target.selects!, group) : undefined;
   const spec = buildChartSpec(widget, data, { currency, measureLabel, labelOf, onSelect });
   if (!spec) return <Empty>Nothing to draw yet.</Empty>;
   const Chart = charts.Chart;
@@ -101,8 +102,8 @@ export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
 export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
   const { catalogue, drill, drillTarget } = useBoard();
   const target = widget.query.kind === "breakdown" ? drillTarget(widget.query.dimension) : null;
-  const rowProps = (group: string) =>
-    target?.selects && group !== "(none)"
+  const rowProps = ({ group, other }: DataRow) =>
+    target?.selects && group !== "(none)" && !other
       ? { className: "lp-drillable", onClick: () => drill(target.selects!, group), title: `Drill into ${group}` }
       : {};
   if (!data) return <Empty>Loading…</Empty>;
@@ -124,10 +125,29 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
       </div>
     );
   }
+  const label = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
+  // An Other row is the rest after every group, so no group is paged away from it.
+  const page = data.rows.some((r) => r.other) ? data.rows : data.rows.slice(0, widget.pageSize);
+  // A breakdown's comparison and share follow its measure's own column.
+  const compared = data.rows.some((r) => r.compare);
+  const shared = data.rows.some((r) => r.share !== undefined);
+  const moreHeads = (
+    <>
+      {compared && <th className="lp-num">Previous</th>}
+      {compared && <th className="lp-num">Change</th>}
+      {shared && <th className="lp-num">Share</th>}
+    </>
+  );
+  const more = (row: DataRow) => (
+    <>
+      {compared && <td className="lp-num lp-muted">{formatValue(row.compare?.previous ?? null, data.format, { currency })}</td>}
+      {compared && <td className={`lp-num lp-delta ${(row.compare?.delta ?? 0) >= 0 ? "lp-up" : "lp-down"}`}>{formatDelta(row.compare?.delta) ?? "—"}</td>}
+      {shared && <td className="lp-num">{formatValue(row.share ?? null, "percent")}</td>}
+    </>
+  );
   if (data.measures?.length) {
     // One column per measure, labelled from the catalogue, each in its own format.
     const dim = widget.query.kind === "breakdown" ? (target?.at ?? widget.query.dimension) : widget.query.kind === "series" ? widget.query.grain : "";
-    const label = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
     const dimLabel = (key: string) => catalogue.dimensions.find((d) => d.key === key)?.label ?? key;
     // A table split by a second dimension shows it as its own column.
     const by = widget.query.kind === "breakdown" ? widget.query.by : undefined;
@@ -138,16 +158,24 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
             <tr>
               <th>{dimLabel(dim)}</th>
               {by && <th>{dimLabel(by)}</th>}
-              {data.measures.map((m) => <th key={m.key} className="lp-num">{label(m.key)}</th>)}
+              {data.measures.map((m, i) => (
+                <React.Fragment key={m.key}>
+                  <th className="lp-num">{label(m.key)}</th>
+                  {i === 0 && moreHeads}
+                </React.Fragment>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {data.rows.slice(0, widget.pageSize).map((row) => (
-              <tr key={`${row.group}|${row.series ?? ""}`} {...rowProps(row.group)}>
+            {page.map((row) => (
+              <tr key={`${row.group}|${row.series ?? ""}`} {...rowProps(row)}>
                 <td>{row.group}</td>
                 {by && <td>{row.series ?? ""}</td>}
                 {data.measures!.map((m, i) => (
-                  <td key={m.key} className="lp-num">{formatValue(i === 0 ? row.value : (row.values?.[m.key] ?? null), m.format, { currency })}</td>
+                  <React.Fragment key={m.key}>
+                    <td className="lp-num">{formatValue(i === 0 ? row.value : (row.values?.[m.key] ?? null), m.format, { currency })}</td>
+                    {i === 0 && more(row)}
+                  </React.Fragment>
                 ))}
               </tr>
             ))}
@@ -159,11 +187,22 @@ export function TableWidget({ widget, data, currency }: WidgetProps<"table">) {
   return (
     <div className="lp-table-wrap">
       <table className="lp-table">
+        {(compared || shared) && (
+          <thead>
+            <tr>
+              <th />
+              <th className="lp-num">{widget.query.kind === "rows" ? "" : label(widget.query.measure)}</th>
+              {moreHeads}
+              <th />
+            </tr>
+          </thead>
+        )}
         <tbody>
-          {data.rows.slice(0, widget.pageSize).map((row) => (
-            <tr key={`${row.group}|${row.series ?? ""}`} {...rowProps(row.group)}>
+          {page.map((row) => (
+            <tr key={`${row.group}|${row.series ?? ""}`} {...rowProps(row)}>
               <td>{row.series ? `${row.group} · ${row.series}` : row.group}</td>
               <td className="lp-num">{formatValue(row.value, data.format, { currency })}</td>
+              {more(row)}
               <td className="lp-muted lp-num">n={row.count.toLocaleString()}</td>
             </tr>
           ))}

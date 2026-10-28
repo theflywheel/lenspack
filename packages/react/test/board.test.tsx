@@ -108,6 +108,32 @@ describe("<Board>", () => {
   });
 });
 
+describe("a compared breakdown table", () => {
+  it("shows previous, change and share after the measure, and the Other row past the page", async () => {
+    const r = applyOps(
+      emptyBoard({ pack: "fx", version: 1 }, "Compared"),
+      [{ op: "add_widget", id: "t", widget: { kind: "table", title: "Vs last month", query: { kind: "breakdown", dimension: "region", measure: "count", limit: 5, sort: "desc", compare: "previous_period", share: true, other: true, time: { last: "30d" } }, pageSize: 5 } }],
+      catalogue,
+    );
+    if (!r.ok) throw new Error(r.error);
+    const rows = [
+      ...["a", "b", "c", "d", "e"].map((group) => ({ group, value: 0, count: 0 })),
+      { group: "north", value: 6, count: 6, compare: { previous: 4, delta: 0.5 }, share: 0.6 },
+      { group: "(other)", value: 4, count: 4, compare: { previous: 5, delta: -0.2 }, share: 0.4, other: true as const },
+    ];
+    render(
+      <BoardProvider board={board(r.config)} catalogue={catalogue} host={host({ loadBoardData: async () => ({ t: { rows, total: 10, format: "number" } }) })}>
+        <Board />
+      </BoardProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("(other)")).toBeTruthy());
+    expect(Array.from(document.querySelectorAll(".lp-table th"), (th) => th.textContent)).toEqual(["", "Count", "Previous", "Change", "Share", ""]);
+    expect(screen.getByText("+50%")).toBeTruthy();
+    expect(screen.getByText("-20%")).toBeTruthy();
+    expect(screen.getByText("60%")).toBeTruthy();
+  });
+});
+
 describe("<FilterBar>", () => {
   it("loads options and reloads data with the selection", async () => {
     const h = host();

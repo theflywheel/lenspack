@@ -1,8 +1,8 @@
-import type { BoardConfig, BoardOp, Query, Widget } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type Query, type Widget, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
-import type { DataRow, WidgetData } from "./data";
+import { type DataRow, type WidgetData, compared } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
 import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, resolve } from "./resolve";
 
@@ -35,6 +35,11 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   const expr = expandedExpr(pack, def.key);
   const measures = operands(expr).map((k) => pack.measures.find((m) => m.key === k)).filter((m): m is PackMeasure => !!m);
   if (new Set(measures.map((m) => m.entity)).size < 2) return null;
+  // A group can have rows in one period and not the other on either side, and
+  // a breakdown with compare keeps only the groups of the current period, so
+  // the previous value of a ratio per group would be computed from part of it.
+  if (query.kind === "breakdown" && query.compare)
+    throw new ResolveError("NOT_SUPPORTED", `"${def.key}" combines measures on several entities, so it is compared to the previous period as one number, not per group`, def.key, "value");
   const base = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
   const sides = measures.map((m): AcrossSide => {
     const home = m.entity === def.entity;
@@ -127,6 +132,7 @@ const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: 
 export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
   // Per-level measures are read at the level this query views.
   const view = { ...opts, pack: packAtLevel(opts.pack, viewedLevel(query, opts.pack)) };
+  if (query.kind === "breakdown" && (query.share || query.other)) return withWhole(query, view);
   const data = query.kind !== "rows" && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
   return query.kind === "breakdown" ? withoutEmptyGroups(data, query.measure, view.pack) : data;
 }
@@ -145,6 +151,72 @@ function withoutEmptyGroups(data: WidgetData, measure: string, pack: Pack): Widg
   return rows.length === data.rows.length ? data : { ...data, rows, total: rows.reduce((n, r) => n + r.count, 0) };
 }
 
+const OTHER = "(other)";
+
+/**
+ * Share and Other measure the groups against the whole population, so both
+ * need a measure that adds up over groups. Other is the whole minus the groups
+ * shown: a count or a sum. A distinct count still has a share (its group over
+ * the whole), though the shares sum past 1 when one thing is in several groups.
+ * An average, a percentile, a minimum, a percentage or a ratio has no whole to
+ * share out.
+ */
+export function wholeRefusal(query: Query, pack: Pack): ResolveError | null {
+  if (query.kind !== "breakdown" || (!query.share && !query.other)) return null;
+  let m = pack.measures.find((x) => x.key === query.measure);
+  // A one-key alias (a per-level measure at this level) is the measure it names.
+  if (m?.derived && /^\s*[a-z][a-z0-9_]*\s*$/.test(m.derived)) m = pack.measures.find((x) => x.key === m!.derived!.trim());
+  if (!m) return null;
+  const asked = query.other ? "other" : "share";
+  const fits = (x: PackMeasure) => !x.derived && x.format !== "percent" && (x.agg === "count" || x.agg === "sum" || (asked === "share" && x.agg === "count_distinct"));
+  if (!fits(m)) {
+    const near = pack.measures.filter((x) => x.entity === m!.entity && fits(x)).map((x) => x.key);
+    const what = m.derived ? "arithmetic over other measures" : m.format === "percent" ? "a percentage" : `agg: ${m.agg}`;
+    return new ResolveError(
+      "NOT_SUPPORTED",
+      `"${query.measure}" is ${what}, which does not add up over groups, so it has no ${asked === "other" ? "Other row" : "share"}; that needs a count or a sum${asked === "share" ? " (or a distinct count)" : ""}`,
+      query.measure,
+      nearest(query.measure, near) ?? near[0],
+    );
+  }
+  if (query.other && query.by) return new ResolveError("NOT_SUPPORTED", "An Other row is one row for the rest of the population, so it is not split by a second dimension", query.by, "share");
+  if (query.other && query.measures?.length) return new ResolveError("NOT_SUPPORTED", "An Other row is computed for the primary measure only, so it does not go with further measures", query.measures[0], "share");
+  return null;
+}
+
+// The whole population: the breakdown's measure, window and filters as one value.
+const wholeOf = (query: Extract<Query, { kind: "breakdown" }>): Query => ({
+  kind: "value",
+  measure: query.measure,
+  ...(query.compare ? { compare: query.compare } : {}),
+  ...(query.time ? { time: query.time } : {}),
+  ...(query.filters ? { filters: query.filters } : {}),
+});
+
+// The breakdown and its whole run side by side, on one clock so both read the
+// same window, and at the breakdown's level.
+async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: RunOptions): Promise<WidgetData> {
+  const refused = wholeRefusal(query, opts.pack);
+  if (refused) return refusal(refused);
+  const { share, other, ...groups } = query;
+  const ctx = { ...opts.ctx, now: opts.ctx?.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3) };
+  const [data, whole] = await Promise.all([run(groups, { ...opts, ctx }), runOne(wholeOf(query), { ...opts, ctx })]);
+  if (data.error) return data;
+  if (whole.error) return whole;
+  const all = whole.rows[0]?.value ?? null;
+  const ratio = (v: number | null) => (v === null || !all ? null : v / all);
+  const rows: DataRow[] = data.rows.map((r) => (share ? { ...r, share: ratio(r.value) } : r));
+  if (other) {
+    const shown = (f: (r: DataRow) => number | null | undefined) => data.rows.reduce((n, r) => n + (f(r) ?? 0), 0);
+    const value = all === null ? null : all - shown((r) => r.value);
+    const row: DataRow = { group: OTHER, value, count: whole.total - shown((r) => r.count), other: true };
+    if (whole.compare) row.compare = compared(value, whole.compare.previous === null ? null : whole.compare.previous - shown((r) => r.compare?.previous));
+    if (share) row.share = ratio(value);
+    rows.push(row);
+  }
+  return { ...data, rows, total: rows.reduce((n, r) => n + r.count, 0), approximate: data.approximate || whole.approximate || undefined };
+}
+
 /** The query without its further measures, and one query per further measure. */
 export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { key: string; query: Query }[] } {
   if (query.kind === "rows" || !query.measures?.length) return { primary: query, extras: [] };
@@ -160,7 +232,8 @@ export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extr
   return {
     primary: primary as Query,
     extras: measures.map((key) => {
-      let q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT } : { ...primary, measure: key }) as Query;
+      // Only the primary is compared: the others fill in its groups as they are now.
+      let q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT, compare: undefined } : { ...primary, measure: key }) as Query;
       if (timeless(key)) {
         const { time: _t, ...rest } = q as Query & { time?: unknown; compare?: unknown };
         q = (q.kind === "series" ? { kind: "value", measure: key, filters: rest.filters } : q.kind === "value" ? { kind: "value", measure: key, filters: rest.filters } : rest) as Query;
@@ -228,6 +301,13 @@ export type Explained = { text: string; root: string; entities: string[]; tenant
 /** What would run, without running it. Throws ResolveError for a refusal. */
 export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
   const opts = { ...given, pack: packAtLevel(given.pack, viewedLevel(query, given.pack)) };
+  if (query.kind === "breakdown" && (query.share || query.other)) {
+    const refused = wholeRefusal(query, opts.pack);
+    if (refused) throw refused;
+    const { share: _s, other: _o, ...groups } = query;
+    const [main, whole] = await Promise.all([explain(groups, opts), explain(wholeOf(query), opts)]);
+    return { ...main, text: `${main.text}\n-- the whole population, for share and other\n${whole.text}`, approximate: main.approximate || whole.approximate };
+  }
   const { primary, extras } = splitMeasures(query, opts.pack);
   if (extras.length) {
     const parts = await Promise.all([explain(primary, opts), ...extras.map((e) => explain(e.query, opts))]);
@@ -263,6 +343,8 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
 /** Resolution only: every refusal a query would get, with no backend call. */
 export function check(query: Query, given: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
   const pack = packAtLevel(given, viewedLevel(query, given));
+  const refused = wholeRefusal(query, pack);
+  if (refused) throw refused;
   const { primary, extras } = splitMeasures(query, pack);
   if (extras.length) {
     for (const q of [primary, ...extras.map((e) => e.query)]) check(q, pack, opts);

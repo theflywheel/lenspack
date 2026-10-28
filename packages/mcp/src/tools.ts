@@ -69,7 +69,9 @@ const QUERY_SHAPE = {
   time_last: str().describe('Relative window like "30d", "12w", "6m". Always set it when the request names a period ("last 10 weeks" -> "10w", "past month" -> "30d"); empty means all time. For a named calendar period use time_from and time_to instead'),
   time_from: str().describe('Absolute start, ISO 8601 with offset, e.g. "2026-09-01T00:00:00Z" (inclusive); use with time_to, not with time_last'),
   time_to: str().describe('Absolute end, ISO 8601 with offset (exclusive), e.g. "2026-10-01T00:00:00Z" for all of September'),
-  compare: bool(false).describe("For value: also compute the previous period"),
+  compare: bool(false).describe("For value or breakdown: also compute the previous period (each group gets its previous value and change)"),
+  share: bool(false).describe("For breakdown: each group's share of the whole population, not of the groups shown (count, sum or distinct count measures)"),
+  other: bool(false).describe('For breakdown: one more row, "(other)", for everything outside the groups shown (count or sum measures)'),
   limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
   filter_dimension: str().describe("Optional: narrow by this dimension"),
@@ -84,7 +86,17 @@ export function assembleQuery(a: { [K in keyof typeof QUERY_SHAPE]: z.infer<(typ
   const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" ? { measures: more } : {}) };
   switch (a.query_kind) {
     case "breakdown":
-      return querySchema.parse({ kind: "breakdown", dimension: a.dimension, measure: a.measure, sort: a.sort, ...(a.limit ? { limit: a.limit } : {}), ...base });
+      return querySchema.parse({
+        kind: "breakdown",
+        dimension: a.dimension,
+        measure: a.measure,
+        sort: a.sort,
+        ...(a.limit ? { limit: a.limit } : {}),
+        ...(a.compare ? { compare: "previous_period" } : {}),
+        ...(a.share ? { share: true } : {}),
+        ...(a.other ? { other: true } : {}),
+        ...base,
+      });
     case "series":
       return querySchema.parse({ kind: "series", measure: a.measure, grain: a.grain, ...(a.dimension ? { by: a.dimension } : {}), ...base });
     case "value":

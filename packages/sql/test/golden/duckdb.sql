@@ -272,3 +272,34 @@ LIMIT 4;
 SELECT "things"."__d_colour" AS "colour", "things"."__d_nested" AS "nested"
 FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", json_extract_string("attrs", '$."meta"."grade"') AS "__d_nested" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2 ESCAPE '\'))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
 LIMIT 20;
+
+-- {"kind":"breakdown","dimension":"colour","measure":"weight","limit":10,"sort":"asc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: ["2026-01-01 00:00:00.000","2026-02-01 00:00:00.000","2026-01-01 00:00:00.000","2026-02-01 00:00:00.000","2025-12-01 00:00:00.000","2026-01-01 00:00:00.000","ke_1","ke\\_1.%","test","2025-12-01 00:00:00.000","2026-02-01 00:00:00.000","2026-01-01 00:00:00.000","2026-02-01 00:00:00.000"]
+SELECT "things"."__d_colour" AS "group", sum(CASE WHEN (("things"."__t" >= CAST($1 AS TIMESTAMP)) AND ("things"."__t" < CAST($2 AS TIMESTAMP))) THEN "things"."__m_weight" END) AS "value", count(CASE WHEN (("things"."__t" >= CAST($3 AS TIMESTAMP)) AND ("things"."__t" < CAST($4 AS TIMESTAMP))) THEN 1 END) AS "n", sum(CASE WHEN (("things"."__t" >= CAST($5 AS TIMESTAMP)) AND ("things"."__t" < CAST($6 AS TIMESTAMP))) THEN "things"."__m_weight" END) AS "previous"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", (weight_g / 1000.0) AS "__m_weight" FROM "app"."things" WHERE ((("tenant_id" = $7) OR ("tenant_id" LIKE $8 ESCAPE '\'))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $9)) AS "things"
+WHERE ("things"."__t" >= CAST($10 AS TIMESTAMP)) AND ("things"."__t" < CAST($11 AS TIMESTAMP))
+GROUP BY "things"."__d_colour"
+HAVING (count(CASE WHEN (("things"."__t" >= CAST($12 AS TIMESTAMP)) AND ("things"."__t" < CAST($13 AS TIMESTAMP))) THEN 1 END) > 0)
+ORDER BY "value" ASC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"breakdown","dimension":"tier","by":"colour","measure":"per_thing","limit":10,"sort":"desc","compare":"previous_period","time":{"last":"30d"}}
+-- params: ["2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000","2025-12-17 12:34:56.000","2026-01-16 12:34:56.000","2025-12-17 12:34:56.000","2026-01-16 12:34:56.000","2025-12-17 12:34:56.000","2026-01-16 12:34:56.000","ke_1","ke\\_1.%","test","2025-12-17 12:34:56.000","2026-02-15 12:34:56.000","2026-01-16 12:34:56.000","2026-02-15 12:34:56.000"]
+SELECT "owners"."__d_tier" AS "group", "things"."__d_colour" AS "series", (((CAST(sum(CASE WHEN (("things"."__t" >= CAST($1 AS TIMESTAMP)) AND ("things"."__t" < CAST($2 AS TIMESTAMP))) THEN "things"."__m_weight" END) AS DOUBLE) - CAST(count(CASE WHEN (("things"."__t" >= CAST($3 AS TIMESTAMP)) AND ("things"."__t" < CAST($4 AS TIMESTAMP))) THEN "things"."__m_broken" END) AS DOUBLE)) / NULLIF(CAST(count(CASE WHEN (("things"."__t" >= CAST($5 AS TIMESTAMP)) AND ("things"."__t" < CAST($6 AS TIMESTAMP))) THEN 1 END) AS DOUBLE), 0)) * 100) AS "value", count(CASE WHEN (("things"."__t" >= CAST($7 AS TIMESTAMP)) AND ("things"."__t" < CAST($8 AS TIMESTAMP))) THEN 1 END) AS "n", (((CAST(sum(CASE WHEN (("things"."__t" >= CAST($9 AS TIMESTAMP)) AND ("things"."__t" < CAST($10 AS TIMESTAMP))) THEN "things"."__m_weight" END) AS DOUBLE) - CAST(count(CASE WHEN (("things"."__t" >= CAST($11 AS TIMESTAMP)) AND ("things"."__t" < CAST($12 AS TIMESTAMP))) THEN "things"."__m_broken" END) AS DOUBLE)) / NULLIF(CAST(count(CASE WHEN (("things"."__t" >= CAST($13 AS TIMESTAMP)) AND ("things"."__t" < CAST($14 AS TIMESTAMP))) THEN 1 END) AS DOUBLE), 0)) * 100) AS "previous"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", (weight_g / 1000.0) AS "__m_weight", CASE WHEN (status = 'broken') THEN 1 END AS "__m_broken" FROM "app"."things" WHERE ((("tenant_id" = $15) OR ("tenant_id" LIKE $16 ESCAPE '\'))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $17)) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+WHERE ("things"."__t" >= CAST($18 AS TIMESTAMP)) AND ("things"."__t" < CAST($19 AS TIMESTAMP))
+GROUP BY "owners"."__d_tier", "things"."__d_colour"
+HAVING (count(CASE WHEN (("things"."__t" >= CAST($20 AS TIMESTAMP)) AND ("things"."__t" < CAST($21 AS TIMESTAMP))) THEN 1 END) > 0)
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"breakdown","dimension":"part_kind","measure":"parts","limit":10,"sort":"desc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: ["1767225600000n","1769904000000n","1767225600000n","1769904000000n","1764547200000n","1767225600000n","ke_1","1764547200000n","1769904000000n","1767225600000n","1769904000000n"]
+SELECT "parts"."__d_part_kind" AS "group", count(CASE WHEN (("parts"."__t_raw" >= CAST($1 AS BIGINT)) AND ("parts"."__t_raw" < CAST($2 AS BIGINT))) THEN 1 END) AS "value", count(CASE WHEN (("parts"."__t_raw" >= CAST($3 AS BIGINT)) AND ("parts"."__t_raw" < CAST($4 AS BIGINT))) THEN 1 END) AS "n", count(CASE WHEN (("parts"."__t_raw" >= CAST($5 AS BIGINT)) AND ("parts"."__t_raw" < CAST($6 AS BIGINT))) THEN 1 END) AS "previous"
+FROM (SELECT *, epoch_ms(CAST("added_ms" AS BIGINT)) AS "__t", "added_ms" AS "__t_raw", "kind" AS "__d_part_kind" FROM "parts" WHERE ("tenant_id" = $7)) AS "parts"
+WHERE ("parts"."__t_raw" >= CAST($8 AS BIGINT)) AND ("parts"."__t_raw" < CAST($9 AS BIGINT))
+GROUP BY "parts"."__d_part_kind"
+HAVING (count(CASE WHEN (("parts"."__t_raw" >= CAST($10 AS BIGINT)) AND ("parts"."__t_raw" < CAST($11 AS BIGINT))) THEN 1 END) > 0)
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;

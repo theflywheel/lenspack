@@ -256,18 +256,18 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   } else if (query.kind === "series") {
     if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so nothing on it can be plotted over time`, query.measure);
     if (query.by) dimension = bind(query.by);
-  } else if (query.kind === "value") {
-    if (query.compare) {
-      if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so there is no previous period`, query.measure);
-      if (!query.time) throw new ResolveError("NEEDS_TIME_RANGE", "A previous-period comparison needs a time range", query.measure, 'time: { last: "30d" }');
-    }
-  } else {
+  } else if (query.kind === "rows") {
     for (const key of query.columns) {
       const bound = bind(key);
       if (bound.def.entity !== root) throw new ResolveError("WRONG_ENTITY", `"${key}" belongs to "${bound.def.entity}", not "${root}"`, key);
       columns.push(bound);
     }
     if (query.orderBy) orderBy = { dimension: bind(query.orderBy.key), dir: query.orderBy.dir };
+  }
+  const compare = (query.kind === "value" || query.kind === "breakdown") && !!query.compare;
+  if (compare) {
+    if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so there is no previous period`, query.measure);
+    if (!query.time) throw new ResolveError("NEEDS_TIME_RANGE", "A previous-period comparison needs a time range", query.measure, 'time: { last: "30d" }');
   }
 
   const filters: BoundFilter[] = (query.filters ?? []).map((f) => ({ dimension: bind(f.dimension), op: f.op, value: f.value })) as BoundFilter[];
@@ -288,7 +288,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     throw new ResolveError("NO_TIME", `"${root}" has no time column, so a time range cannot apply`, query.kind === "rows" ? query.entity : query.measure);
 
   const time = window(query, now);
-  const previous = query.kind === "value" && query.compare && time ? { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } : null;
+  const previous = compare && time ? { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } : null;
 
   const entitiesUsed = [...new Set([root, ...[dimension, split, ...columns, orderBy?.dimension ?? null, ...filters.map((f) => f.dimension)].filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
 
