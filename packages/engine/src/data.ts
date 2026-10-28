@@ -101,7 +101,7 @@ export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?:
         for (const r of rows) totals.set(r.series!, (totals.get(r.series!) ?? 0) + (r.value ?? 0));
         const keep = new Set([...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_SERIES).map(([k]) => k));
         rows = rows.filter((r) => keep.has(r.series!));
-        if (totals.size > keep.size) notes = [`${totals.size - keep.size} of ${totals.size} series left out: only the top ${keep.size} by total are drawn`];
+        if (totals.size > keep.size) notes = [`top ${keep.size} of ${totals.size} series by total; ${totals.size - keep.size} left out`];
       }
       return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, ...(notes ? { notes } : {}) };
     }

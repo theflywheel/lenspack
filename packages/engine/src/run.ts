@@ -2,7 +2,7 @@ import type { BoardConfig, BoardOp, Query, Widget } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
-import type { DataRow, WidgetData } from "./data";
+import { type DataRow, MAX_SERIES, type WidgetData } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
 import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, resolve } from "./resolve";
 
@@ -14,6 +14,8 @@ const ACROSS_LIMIT = 10_000;
 
 export type AcrossSide = {
   measure: PackMeasure;
+  /** The operand as the pack names it: a per-level measure by its levels key. */
+  named: string;
   query: Query;
   /** The operand's entity has no time: one number for every period (per series if split). */
   timeless: boolean;
@@ -36,17 +38,19 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   const measures = operands(expr).map((k) => pack.measures.find((m) => m.key === k)).filter((m): m is PackMeasure => !!m);
   if (new Set(measures.map((m) => m.entity)).size < 2) return null;
   const base = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
+  const named = (key: string) => pack.measures.find((m) => m.derived?.trim() === key)?.key ?? key;
+  // A filter on a dimension another operand's entity does not have (a kind
+  // of item, when the goal is set per region) narrows the home operand only,
+  // and only where that reads right (below). Explain and the data say so.
+  const has = (entity: string, dimension: string) => {
+    const d = pack.dimensions.find((x) => x.key === dimension);
+    return !d || d.entity === entity || !!d.also?.[entity];
+  };
+  const filters = query.filters ?? [];
   const sides = measures.map((m): AcrossSide => {
     const home = m.entity === def.entity;
-    // A filter on a dimension another operand's entity does not have (a kind
-    // of item, when the goal is set per region) narrows the home operand only,
-    // and only where that reads right (below). Explain and the data say so.
-    const has = (dimension: string) => {
-      const d = pack.dimensions.find((x) => x.key === dimension);
-      return !d || d.entity === m.entity || !!d.also?.[m.entity];
-    };
-    const kept = home ? (query.filters ?? []) : (query.filters ?? []).filter((f) => has(f.dimension));
-    const unfiltered = home ? [] : [...new Set((query.filters ?? []).filter((f) => !has(f.dimension)).map((f) => f.dimension))];
+    const kept = home ? filters : filters.filter((f) => has(m.entity, f.dimension));
+    const unfiltered = home ? [] : [...new Set(filters.filter((f) => !has(m.entity, f.dimension)).map((f) => f.dimension))];
     let q = { ...base(m.key), filters: kept.length ? kept : undefined } as Query;
     // An operand with no time (a target, a capacity) is the same in every
     // period: each bucket, and the previous period, use that one number.
@@ -58,22 +62,24 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
       else if (q.kind === "value") q = { kind: "value", measure: m.key, filters: rest.filters };
       else q = rest as Query;
     }
-    return { measure: m, query: q, timeless, unfiltered };
+    return { measure: m, named: named(m.key), query: q, timeless, unfiltered };
   });
   // Left whole, an operand that only divides reads as "this kind over the
-  // whole goal". Anything else would add or subtract rows the filter excludes
-  // elsewhere, as would a divisor beside another that the filter does narrow.
+  // whole goal" when it is a reference value (a target, a capacity), not
+  // events counted over time. Anything else would add or subtract rows the
+  // filter excludes elsewhere, as would a divisor beside another that the
+  // filter does narrow.
   const { divides, counts } = placed(expr);
+  const events = (m: PackMeasure) => (m.agg === "count" || m.agg === "count_distinct") && !!pack.entities[m.entity]?.time;
   for (const s of sides)
     for (const dimension of s.unfiltered) {
-      const reference = divides.has(s.measure.key) && !counts.has(s.measure.key);
-      if (reference && sides.every((t) => !divides.has(t.measure.key) || t.unfiltered.includes(dimension))) continue;
-      const narrowable = sides.filter((t) => !t.unfiltered.length).map((t) => t.measure.key);
+      if (!counts.has(s.measure.key) && !events(s.measure) && sides.every((t) => !divides.has(t.measure.key) || t.unfiltered.includes(dimension))) continue;
+      const answer = sides.filter((t) => filters.every((f) => has(t.measure.entity, f.dimension))).map((t) => t.named);
       throw new ResolveError(
         "NOT_SUPPORTED",
-        `"${def.key}" cannot be narrowed by "${dimension}": its operand ${s.measure.key} lives on "${s.measure.entity}", which has no such dimension. Measures that can be: ${narrowable.join(", ")}.`,
+        `"${def.key}" cannot be narrowed by "${dimension}": its operand ${s.named} lives on "${s.measure.entity}", which has no such dimension. ${answer.length ? `Measures that can be: ${answer.join(", ")}.` : "None of its operands takes every filter."}`,
         def.key,
-        narrowable[0],
+        answer[0],
       );
     }
   return { def, expr, sides };
@@ -91,7 +97,7 @@ function placed(e: MeasureExpr, under = false, out = { divides: new Set<string>(
   return out;
 }
 
-const unnarrowed = (s: AcrossSide) => `${s.measure.key} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`;
+const unnarrowed = (s: AcrossSide) => `${s.named} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`;
 const notesOf = (data: WidgetData[], more: string[] = []) => {
   const notes = [...new Set([...data.flatMap((d) => d.notes ?? []), ...more])];
   return notes.length ? notes : undefined;
@@ -105,7 +111,10 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   const { def, expr, sides } = across;
   const format = def.format ?? "number";
   const approximate = data.some((d) => d.approximate) || undefined;
-  const notes = notesOf(data, sides.filter((s) => s.unfiltered.length).map(unnarrowed));
+  // Each operand of a split series keeps its own top series, so the combined
+  // answer cannot count what was left out, only say which operand lost some.
+  const lost = sides.filter((_, i) => data[i]!.notes).map((s) => `${s.named} keeps only its top ${MAX_SERIES} series; the others are computed without it`);
+  const notes = notesOf([], [...sides.filter((s) => s.unfiltered.length).map(unnarrowed), ...lost]);
   const homeIndex = Math.max(0, sides.findIndex((s) => s.measure.entity === def.entity));
   const home = data[homeIndex]!;
   const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;

@@ -23,7 +23,7 @@ type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 
 Relative `time` is resolved against `now` at query time, so a saved board keeps meaning "the last 30 days".
 
-A derived measure whose operands live on different entities runs one query per operand and combines the results per group. A filter must narrow every operand, or the query is refused (`NOT_SUPPORTED`, naming the operands that can be narrowed), at edit time as at run time. The one exception is an operand that only divides (a target, a capacity: `delivered / target`) when no other divisor is narrowed by that filter: it stays whole ("this kind over the whole goal") and the answer's `notes` say so.
+A filter must narrow every operand of a cross-entity derived measure, or the query is refused (`NOT_SUPPORTED`, naming the operands that can be narrowed), at edit time as at run time. The one exception is a reference value that only divides (a target, a capacity: `delivered / target`, not a count of events over time) when no other divisor is narrowed by that filter: it stays whole ("this kind over the whole goal") and the answer's `notes` say so.
 
 ## Compiler
 

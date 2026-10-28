@@ -84,12 +84,16 @@ describe("ratios across entities", () => {
       pack: "sum",
       version: 1,
       entities: { chat: { source: "chat", time: "at" }, voice: { source: "voice", time: "at" } },
-      dimensions: [{ key: "language", entity: "chat", field: "language" }],
+      dimensions: [
+        { key: "language", entity: "chat", field: "language" },
+        { key: "channel", entity: "voice", field: "channel" },
+      ],
       measures: [
         { key: "chat_turns", entity: "chat", agg: "count" },
         { key: "voice_questions", entity: "voice", agg: "count" },
         { key: "questions", entity: "chat", derived: "chat_turns + voice_questions" },
         { key: "per_call", entity: "chat", derived: "chat_turns / (chat_turns + voice_questions)" },
+        { key: "per_voice", entity: "chat", derived: "chat_turns / voice_questions" },
       ],
     });
     const c = stub(() => [{ value: 1, n: 1 }]);
@@ -98,8 +102,12 @@ describe("ratios across entities", () => {
     expect(data.error).toMatch(/"questions" cannot be narrowed by "language".*voice_questions.*chat_turns/);
     expect(data.hint).toBe("chat_turns");
     expect(c.seen).toEqual([]);
-    // A divisor that counts some narrowed rows is no reference either.
+    // A divisor that counts some narrowed rows is no reference either, nor is one counting events over time.
     expect((await run({ kind: "value", measure: "per_call", filters }, { pack: sum, connector: c })).error).toMatch(/cannot be narrowed/);
+    expect((await run({ kind: "value", measure: "per_voice", filters }, { pack: sum, connector: c })).error).toMatch(/cannot be narrowed/);
+    const both = await run({ kind: "value", measure: "questions", filters: [...filters, { dimension: "channel", op: "eq", value: "y" }] }, { pack: sum, connector: c });
+    expect(both.error).toMatch(/None of its operands takes every filter/);
+    expect(both.hint).toBeUndefined();
     expect(() => check({ kind: "value", measure: "questions", filters }, sum)).toThrow(/cannot be narrowed by "language"/);
   });
 
@@ -140,7 +148,7 @@ describe("split series", () => {
     const raw = Array.from({ length: 14 }, (_, i) => ({ bucket: "2026-08-01", series: `s${i}`, value: i, n: 1 }));
     const data = shapeRows(raw, { kind: "series", measure: "done_n", grain: "day", by: "kind" }, "number");
     expect(new Set(data.rows.map((r) => r.series)).size).toBe(12);
-    expect(data.notes).toEqual(["2 of 14 series left out: only the top 12 by total are drawn"]);
+    expect(data.notes).toEqual(["top 12 of 14 series by total; 2 left out"]);
     expect(shapeRows(raw.slice(0, 12), { kind: "series", measure: "done_n", grain: "day", by: "kind" }, "number").notes).toBeUndefined();
   });
 });
