@@ -1,17 +1,22 @@
 import type { BoardConfig, Catalogue } from "@lenspack/core";
-import { summarise } from "@lenspack/core";
+import { describeQuery, summarise } from "@lenspack/core";
 import type { Pack } from "@lenspack/spec";
 
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 6;
+export const PROMPT_VERSION = 7;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
 // an invented chart type or a claim that the system already does it.
 export const WIDGET_LIMITS =
   "Widgets have no settings beyond kind (bar, line, pie or area chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover. Colours, fonts, axes and other labels cannot be set.";
+
+// Above this many keys a catalogue is inlined as keys and labels only, and
+// the model reads meanings from list_metrics when it needs them.
+export const INLINE_KEYS = 150;
+const tooLarge = (catalogue: Catalogue) => catalogue.dimensions.filter((d) => d.verified).length + catalogue.measures.filter((m) => m.verified).length > INLINE_KEYS;
 
 // The schema, in context, once. A pack is the "figure out the structure
 // first" step — done by people, stored as data — so the model reads it here
@@ -22,27 +27,39 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
     const joins = e.joins.map((j) => `→ ${j.to} (${j.type.replace(/_/g, "-")})`).join(", ");
     return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${joins ? `; joins ${joins}` : ""}`;
   });
-  const dims = catalogue.dimensions.filter((d) => d.verified).map((d) => `- ${d.key} (${d.entity}, ${d.type}${d.grains ? `, grains ${d.grains.join("/")}` : ""}): ${d.label}${d.synonyms?.length ? ` [${d.synonyms.join(", ")}]` : ""}${d.hint ? ` — ${d.hint}` : ""}`);
-  const measures = catalogue.measures.filter((m) => m.verified).map((m) => `- ${m.key} (${m.entity}, ${m.format}): ${m.label}${m.synonyms?.length ? ` [${m.synonyms.join(", ")}]` : ""}${m.hint ? ` — ${m.hint}` : ""}`);
+  // A large catalogue: one line per entity, and a label that only restates its key left out.
+  const large = tooLarge(catalogue);
+  const brief = (xs: { key: string; label: string; entity: string; verified?: boolean }[]) =>
+    Object.keys(pack.entities).flatMap((e) => {
+      const keys = xs.filter((x) => x.verified && x.entity === e).map((x) => (x.label.toLowerCase() === x.key.replace(/_/g, " ") ? x.key : `${x.key} (${x.label})`));
+      return keys.length ? [`- ${e}: ${keys.join(", ")}`] : [];
+    });
+  const dims = large ? brief(catalogue.dimensions) : catalogue.dimensions.filter((d) => d.verified).map((d) => `- ${d.key} (${d.entity}, ${d.type}${d.grains ? `, grains ${d.grains.join("/")}` : ""}): ${d.label}${d.synonyms?.length ? ` [${d.synonyms.join(", ")}]` : ""}${d.hint ? ` — ${d.hint}` : ""}`);
+  const measures = large ? brief(catalogue.measures) : catalogue.measures.filter((m) => m.verified).map((m) => `- ${m.key} (${m.entity}, ${m.format}): ${m.label}${m.synonyms?.length ? ` [${m.synonyms.join(", ")}]` : ""}${m.hint ? ` — ${m.hint}` : ""}`);
   return [
     `ENTITIES (a measure is computed at its entity's grain; a dimension on another entity needs a many-to-one path):`,
     ...entities,
-    `DIMENSIONS (key (entity, type): label [synonyms] — hint):`,
+    large ? `DIMENSIONS by entity (key (label)):` : `DIMENSIONS (key (entity, type): label [synonyms] — hint):`,
     ...dims,
-    `MEASURES (key (entity, format): label [synonyms] — hint):`,
+    large ? `MEASURES by entity (key (label)):` : `MEASURES (key (entity, format): label [synonyms] — hint):`,
     ...measures,
   ].join("\n");
 }
 
+// An example as the board summary words a query, with its filters, which
+// that summary leaves out.
+const exampleLine = (e: Pack["examples"][number]) =>
+  `- "${e.question}" → ${e.query.kind} ${describeQuery(e.query)}${(e.query.filters ?? []).map((f) => ` where ${f.dimension} ${f.op} ${JSON.stringify(f.value)}`).join("")}${e.note ? ` (${e.note})` : ""}`;
+
 export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()) => `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}: write time_from and time_to with its offset.
-${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}
-${catalogueText(pack, catalogue)}
+${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
+${catalogueText(pack, catalogue)}${pack.examples.length ? `\n\nEXAMPLES (checked questions and the query that answers each):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
 
 ${board ? `CURRENT BOARD:\n${summarise(board)}` : ""}
 
 Rules:
-- Use only the keys listed above. The schema is complete; do not call list_metrics unless you need to search a key you cannot find here. The current board is shown above; call get_board only after your edits, to verify.
+- Use only the keys listed above. ${tooLarge(catalogue) ? "Only keys and labels are listed: call list_metrics with q for what a key means when its label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown above; call get_board only after your edits, to verify.
 - Every edit is a tool call. Never describe an edit you did not make. Do not ask permission for straightforward edits; just make them and say what changed.
 - If a tool returns applied:false with didYouMean, retry once with that key. If a query is refused for fan-out, use a measure on the other entity instead (the hints say which).
 - A tool result with applied:false or an error means that edit did NOT happen. Fix the arguments and call it again; never move on as if it worked.

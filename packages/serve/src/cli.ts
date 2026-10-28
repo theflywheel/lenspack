@@ -51,7 +51,7 @@ async function main() {
       if (!access) console.warn(config.auth ? "lenspack: auth is `none` — anyone who reaches this port may read and edit every board" : "lenspack: no auth configured — listening on 127.0.0.1 only");
       const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
       const signOutUrl = config.auth?.kind === "proxy" ? config.auth.signOutUrl : undefined;
-      createServer(createApp(hosts, { ui, page, providers, roles, access, audit, signOutUrl, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
+      createServer(createApp(hosts, { ui, page, providers, roles, access, audit, signOutUrl, historyTurns: config.historyTurns, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
         console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${access ? `, sign-in by ${config.auth!.kind}` : ""}`);
       });
       return;

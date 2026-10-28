@@ -87,4 +87,6 @@ measures:
   });
   it("rejects grains on a non-time dimension", () => bad((p) => (p.dimensions[0].grains = ["day"]), "only apply to a time dimension"));
   it("rejects an uppercase key", () => bad((p) => (p.dimensions[0].key = "Region"), "lowercase"));
+  it("rejects an example that names a key the pack does not have", () =>
+    bad((p) => (p.examples = [{ question: "By colour?", query: { kind: "breakdown", dimension: "colour", measure: "amount" } }]), 'examples[0].query: unknown dimension "colour"'));
 });

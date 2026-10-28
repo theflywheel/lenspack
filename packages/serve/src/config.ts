@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { type BoardStore, memoryStore } from "@lenspack/core";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
-import type { Connector } from "@lenspack/engine";
+import { type Connector, check } from "@lenspack/engine";
 import { fileProposals } from "@lenspack/mcp";
 import { parsePackText } from "@lenspack/spec";
 import { type Executor, type Writer, driverFor, openSource, sqlStore } from "@lenspack/sql";
@@ -84,6 +84,8 @@ export const configSchema = z.object({
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
+  /** How many of the latest user turns the chat model is sent (default 8). */
+  historyTurns: z.number().int().min(1).max(100).optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
   proposals: z.string().optional(),
 });
@@ -163,6 +165,15 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
     if (!connector) throw new Error(`pack ${p.pack} names source "${p.source}", which lenspack.yaml does not define`);
     const packYaml = readFileSync(at(p.pack), "utf8");
     const pack = parsePackText(packYaml);
+    // An example the source would refuse must not be shown to the model as
+    // checked. Nothing runs, so a stand-in tenant serves an unpinned pack.
+    for (const [i, ex] of pack.examples.entries()) {
+      try {
+        check(ex.query, pack, { ctx: { tenant: p.tenant ?? "_" }, capabilities: connector.capabilities });
+      } catch (e) {
+        throw new Error(`pack ${p.pack} examples[${i}] ("${ex.question}"): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
     const name = p.name ?? pack.pack;
     hosts.push({
       name,
