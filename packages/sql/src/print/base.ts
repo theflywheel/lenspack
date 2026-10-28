@@ -131,6 +131,7 @@ export function print(ast: Ast, rules: DialectRules): Printed {
   };
 
   const parts = clauses(ast);
+  if (ast.having.length) parts.push(`HAVING ${ast.having.map(expr).join(" AND ")}`);
   const order = rules.orderBy ?? ((e: string, dir: "asc" | "desc") => `${e} ${dir.toUpperCase()} NULLS LAST`);
   const selected = (e: Expr) => {
     const s = e.t === "col" && !e.alias ? ast.select.find((x) => x.alias === e.col) : undefined;

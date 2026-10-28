@@ -4,7 +4,7 @@ import type { Board, BoardConfig, BoardOp, BoardVersion, Catalogue, LayoutItem, 
 // fetch or save arrives through these callbacks, so it works in front of any
 // host: a Next.js route, an Express server, a Tauri command.
 
-export type DataRow = { group: string; series?: string; value: number | null; count: number; values?: Record<string, number | null> };
+export type DataRow = { group: string; series?: string; value: number | null; count: number; values?: Record<string, number | null>; compare?: { previous: number | null; delta: number | null }; share?: number | null; other?: true };
 type Format = "number" | "percent" | "currency" | "compact" | "duration";
 export type WidgetData = {
   rows: DataRow[];

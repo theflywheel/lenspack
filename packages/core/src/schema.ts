@@ -68,6 +68,12 @@ export const querySchema = z.discriminatedUnion("kind", [
     // keeps the source's grouping order: both for a migrated dashboard that
     // must list tied rows exactly as the system it replaces did.
     sortBy: z.enum(["value", "measure", "group", "none"]).optional(),
+    // Each group beside its previous-period value, its share of the whole
+    // population, and one "(other)" row for the population outside the groups
+    // shown: numbers the reader would otherwise work out by hand, and get wrong.
+    compare: z.enum(["previous_period"]).optional(),
+    share: z.boolean().optional(),
+    other: z.boolean().optional(),
     ...alsoMeasures,
     ...common,
   }),

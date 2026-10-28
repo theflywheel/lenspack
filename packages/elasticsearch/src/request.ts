@@ -260,11 +260,17 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         return { ...dimensionSource(d, env), ...missing, size, ...(order ? { order } : {}) };
       };
       const byGroup = query.sortBy === "group";
-      // With a second dimension, or an order the terms aggregation cannot
-      // express, every group comes back and the rows are sorted and cut here.
-      const sortAfter = metricAggs.order === null || !!bound.split;
+      // A comparison reads each group's two windows as filter buckets; the
+      // groups are the current period's, so one with no current rows is dropped.
+      const windows = bound.previous ? { cur: { filter: range(bound.time!), aggs: metricAggs.aggs }, prev: { filter: range(bound.previous), aggs: metricAggs.aggs } } : null;
+      const read = (b: Bucket): Row =>
+        windows ? { value: metricAggs.read(b.cur ?? {}), n: b.cur?.doc_count ?? 0, previous: metricAggs.read(b.prev ?? {}) } : { value: metricAggs.read(b), n: b.doc_count };
+      // With a second dimension, a comparison, or an order the terms aggregation
+      // cannot express, every group comes back and the rows are sorted and cut here.
+      const sortAfter = metricAggs.order === null || !!bound.split || !!windows;
       const order = byGroup ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, ...(query.sortBy === "measure" ? [] : [{ _key: "asc" }])];
-      const inner = bound.split ? { s: { terms: termsOf(bound.split.def, 1000), aggs: metricAggs.aggs } } : metricAggs.aggs;
+      const leaf = windows ?? metricAggs.aggs;
+      const inner = bound.split ? { s: { terms: termsOf(bound.split.def, 1000), aggs: leaf } } : leaf;
       body.aggs = { g: { terms: termsOf(dim, sortAfter ? 10_000 : query.limit, order), aggs: inner } };
       return {
         index: entity.source,
@@ -273,8 +279,9 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         decode(r) {
           const groups = (r.aggregations?.g?.buckets ?? []) as Bucket[];
           let rows: Row[] = bound.split
-            ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), value: metricAggs.read(b), n: b.doc_count })))
-            : groups.map((b) => ({ group: groupKey(b), value: metricAggs.read(b), n: b.doc_count }));
+            ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), ...read(b) })))
+            : groups.map((b) => ({ group: groupKey(b), ...read(b) }));
+          if (windows) rows = rows.filter((r) => (r.n as number) > 0);
           if (sortAfter && query.sortBy !== "none") {
             const dir = query.sort === "asc" ? 1 : -1;
             const cmp = (x: unknown, y: unknown) => String(x).localeCompare(String(y));

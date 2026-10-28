@@ -202,9 +202,14 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     };
     return build(m.expr);
   };
+  // Which period a row is in; a two-stage measure reads its inner query's mark.
+  const inCurrent = (): Expr => (per ? { t: "notnull", arg: col(N, W) } : inWindow(bound.time!));
+  const inPrevious = (): Expr => (per ? { t: "isnull", arg: col(N, W) } : inWindow(bound.previous!));
+  const rowsIn = (cond: Expr | null): Expr => ({ t: "agg", fn: "count", arg: cond ? { t: "case", when: cond, then: { t: "lit", value: 1 } } : { t: "star" } });
 
   const select: Ast["select"] = [];
   const groupBy: Expr[] = [];
+  const having: Expr[] = [];
   const orderBy: Ast["orderBy"] = [];
   let limit: number;
   let shape: Shape;
@@ -219,7 +224,14 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
         select.push({ alias: "series", expr: s });
         groupBy.push(s);
       }
-      select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
+      // With a comparison the groups are the current period's: one seen only
+      // in the previous period is not a row.
+      const current = windowed ? inCurrent() : null;
+      select.push({ alias: "value", expr: valueExpr(current) }, { alias: "n", expr: rowsIn(current) });
+      if (windowed) {
+        select.push({ alias: "previous", expr: valueExpr(inPrevious()) });
+        having.push({ t: "bin", op: ">", l: rowsIn(current), r: { t: "lit", value: 0 } });
+      }
       // Ties broken by name so the same data always prints the same rows.
       if (query.sortBy === "group") orderBy.push({ expr: col("", "group"), dir: query.sort });
       else if (query.sortBy === "measure") orderBy.push({ expr: col("", "value"), dir: query.sort });
@@ -246,10 +258,10 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       break;
     }
     case "value": {
-      const current: Expr | null = windowed ? (per ? { t: "notnull", arg: col(N, W) } : inWindow(bound.time!)) : null;
+      const current = windowed ? inCurrent() : null;
       select.push({ alias: "value", expr: valueExpr(current) });
-      select.push({ alias: "n", expr: { t: "agg", fn: "count", arg: current ? { t: "case", when: current, then: { t: "lit", value: 1 } } : { t: "star" } } });
-      if (windowed) select.push({ alias: "previous", expr: valueExpr(per ? { t: "isnull", arg: col(N, W) } : inWindow(bound.previous!)) });
+      select.push({ alias: "n", expr: rowsIn(current) });
+      if (windowed) select.push({ alias: "previous", expr: valueExpr(inPrevious()) });
       limit = 1;
       shape = "value";
       break;
@@ -268,7 +280,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     }
   }
 
-  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, orderBy, limit }, shape };
+  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, having, orderBy, limit }, shape };
 
   // Two stages: one value per key and group, then the measure's agg over those;
   // n counts keys, and rows with no key are not counted.
@@ -286,7 +298,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     groupBy: [...groupBy, col(root, K), ...mark.map((m) => m.expr)],
   };
   const outer = select.map((s) => (groups.includes(s) ? { alias: s.alias, expr: col(N, s.alias) } : s));
-  return { ast: { select: outer, from: inner, joins: [], where: [], groupBy: groups.map((s) => col(N, s.alias)), orderBy, limit }, shape };
+  return { ast: { select: outer, from: inner, joins: [], where: [], groupBy: groups.map((s) => col(N, s.alias)), having, orderBy, limit }, shape };
 }
 
 function filterExpr(ref: Expr, f: BoundFilter): Expr {

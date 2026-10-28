@@ -314,8 +314,41 @@ WHERE ("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))
 GROUP BY "things"."__k", "things"."__w") AS "__n"
 LIMIT 1;
 
+-- {"kind":"breakdown","dimension":"colour","measure":"heavy_owners","limit":10,"sort":"desc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: [500,500,"2026-01-01 00:00:00","2026-02-01 00:00:00","broken","ke_1","ke\\_1.%","test","2025-12-01 00:00:00","2026-02-01 00:00:00"]
+SELECT "__n"."group" AS "group", count(CASE WHEN ("__n"."__w" IS NOT NULL) THEN CASE WHEN ("__n"."__v" >= ?) THEN "__n"."__v" END END) AS "value", count(CASE WHEN ("__n"."__w" IS NOT NULL) THEN 1 END) AS "n", count(CASE WHEN ("__n"."__w" IS NULL) THEN CASE WHEN ("__n"."__v" >= ?) THEN "__n"."__v" END END) AS "previous"
+FROM (SELECT "things"."__d_colour" AS "group", "things"."__w" AS "__w", sum("things"."__m_heavy_owners") AS "__v"
+FROM (SELECT *, "made_at" AS "__t", CASE WHEN (("made_at" >= CAST(? AS TEXT)) AND ("made_at" < CAST(? AS TEXT))) THEN 1 END AS "__w", (colour) AS "__d_colour", "owner_id" AS "__k", CASE WHEN ("status" IS NOT ?) THEN "size" END AS "__m_heavy_owners" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+WHERE ("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT)) AND ("things"."__k" IS NOT NULL)
+GROUP BY "things"."__d_colour", "things"."__k", "things"."__w") AS "__n"
+GROUP BY "__n"."group"
+HAVING (count(CASE WHEN ("__n"."__w" IS NOT NULL) THEN 1 END) > 0)
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
 -- {"kind":"value","measure":"heavy_share"}
 -- refused (NOT_SUPPORTED): "heavy_share" combines a per-key measure with others; it is computed by run(), not compiled as one query
+
+-- {"kind":"breakdown","dimension":"colour","measure":"weight","limit":10,"sort":"asc","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: ["2026-01-01 00:00:00","2026-02-01 00:00:00","2026-01-01 00:00:00","2026-02-01 00:00:00","2025-12-01 00:00:00","2026-01-01 00:00:00","ke_1","ke\\_1.%","test","2025-12-01 00:00:00","2026-02-01 00:00:00","2026-01-01 00:00:00","2026-02-01 00:00:00"]
+SELECT "things"."__d_colour" AS "group", sum(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN "things"."__m_weight" END) AS "value", count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "n", sum(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN "things"."__m_weight" END) AS "previous"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", (weight_g / 1000.0) AS "__m_weight" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+WHERE ("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))
+GROUP BY "things"."__d_colour"
+HAVING (count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN 1 END) > 0)
+ORDER BY "value" ASC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"breakdown","dimension":"tier","by":"colour","measure":"per_thing","limit":10,"sort":"desc","compare":"previous_period","time":{"last":"30d"}}
+-- params: ["2026-01-16 12:34:56","2026-02-15 12:34:56","2026-01-16 12:34:56","2026-02-15 12:34:56","2026-01-16 12:34:56","2026-02-15 12:34:56","2026-01-16 12:34:56","2026-02-15 12:34:56","2025-12-17 12:34:56","2026-01-16 12:34:56","2025-12-17 12:34:56","2026-01-16 12:34:56","2025-12-17 12:34:56","2026-01-16 12:34:56","ke_1","ke\\_1.%","test","2025-12-17 12:34:56","2026-02-15 12:34:56","2026-01-16 12:34:56","2026-02-15 12:34:56"]
+SELECT "owners"."__d_tier" AS "group", "things"."__d_colour" AS "series", (((CAST(sum(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN "things"."__m_weight" END) AS REAL) - CAST(count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN "things"."__m_broken" END) AS REAL)) / NULLIF(CAST(count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN 1 END) AS REAL), 0)) * 100) AS "value", count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "n", (((CAST(sum(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN "things"."__m_weight" END) AS REAL) - CAST(count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN "things"."__m_broken" END) AS REAL)) / NULLIF(CAST(count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN 1 END) AS REAL), 0)) * 100) AS "previous"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", (weight_g / 1000.0) AS "__m_weight", CASE WHEN (status = 'broken') THEN 1 END AS "__m_broken" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+WHERE ("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))
+GROUP BY "owners"."__d_tier", "things"."__d_colour"
+HAVING (count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN 1 END) > 0)
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 10;
 
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
 -- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here

@@ -59,6 +59,9 @@ const queries: Query[] = [
   { kind: "breakdown", dimension: "locality", measure: "visits", limit: 10, sort: "desc", filters: [{ dimension: "district", op: "contains", value: "pat" }] },
   { kind: "breakdown", dimension: "not_delivered_reason", measure: "households_not_delivered", limit: 6, sort: "desc", filters: [{ dimension: "not_delivered_reason", op: "neq", value: "" }] },
   { kind: "breakdown", dimension: "district", measure: "household_coverage", limit: 12, sort: "desc", filters: [{ dimension: "product_variant", op: "eq", value: "PVAR-NET-SINGLE" }] },
+  { kind: "breakdown", dimension: "district", measure: "visits", limit: 5, sort: "desc", compare: "previous_period", time: { from: "2026-08-01T00:00:00Z", to: "2026-08-15T00:00:00Z" } },
+  { kind: "breakdown", dimension: "province", measure: "nets_distributed", limit: 3, sort: "asc", compare: "previous_period", share: true, other: true, time: { last: "30d" } },
+  { kind: "breakdown", dimension: "district", measure: "distributors_active", limit: 5, sort: "desc", share: true },
 ];
 
 const APPROXIMATE = new Set(["distributors_active"]);
@@ -84,6 +87,8 @@ function agree(sql: WidgetData, es: WidgetData, q: Query) {
     for (const [k, v] of Object.entries(r.values ?? {}))
       expect(close(v, other.values?.[k] ?? null, APPROXIMATE.has(k)), `${key(r)} ${k}: sql ${v} vs es ${other.values?.[k]}`).toBe(true);
     expect(other.count).toBe(r.count);
+    expect(close(r.compare?.previous ?? null, other.compare?.previous ?? null, approximate), `${key(r)} previous`).toBe(true);
+    expect(close(r.share ?? null, other.share ?? null, approximate), `${key(r)} share`).toBe(true);
   }
   if (sql.compare) {
     expect(close(sql.compare.previous, es.compare!.previous, approximate)).toBe(true);

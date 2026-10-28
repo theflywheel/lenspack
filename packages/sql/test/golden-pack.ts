@@ -127,7 +127,10 @@ export const GOLDEN_QUERIES: Query[] = [
   { kind: "series", measure: "things_per_owner", grain: "month", by: "colour", time: { last: "12w" } },
   { kind: "value", measure: "median_colours_per_owner" },
   { kind: "value", measure: "heavy_owners", compare: "previous_period", time: between },
+  { kind: "breakdown", dimension: "colour", measure: "heavy_owners", limit: 10, sort: "desc", compare: "previous_period", time: between },
   { kind: "value", measure: "heavy_share" },
+  { kind: "breakdown", dimension: "colour", measure: "weight", limit: 10, sort: "asc", compare: "previous_period", time: between },
+  { kind: "breakdown", dimension: "tier", by: "colour", measure: "per_thing", limit: 10, sort: "desc", compare: "previous_period", time: { last: "30d" } },
 ];
 
 // The same pack in a zone half an hour off UTC: buckets start at local hours

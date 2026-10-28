@@ -189,9 +189,11 @@ function window(query: Query, now: Date, timeZone?: string): { time: TimeWindow;
   return { time, previous: { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } };
 }
 
+// The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
+export const nowOf = (ctx: Ctx = {}) => ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
+
 export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilities = SQL_CAPABILITIES): BoundPlan {
-  // The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
-  const now = ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
+  const now = nowOf(ctx);
   const dimKeys = pack.dimensions.map((d) => d.key);
   const measureKeys = pack.measures.map((m) => m.key);
   const graph = edges(pack);
@@ -280,18 +282,18 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     if (caps.zonedBuckets === false && bucketZone(pack.timeZone))
       throw new ResolveError("NOT_SUPPORTED", `Pack "${pack.pack}" starts its days in ${pack.timeZone}, and this source can only bucket time by UTC days, so a series is not drawn here`, query.measure);
     if (query.by) dimension = bind(query.by);
-  } else if (query.kind === "value") {
-    if (query.compare) {
-      if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so there is no previous period`, query.measure);
-      if (!query.time) throw new ResolveError("NEEDS_TIME_RANGE", "A previous-period comparison needs a time range", query.measure, 'time: { last: "30d" }');
-    }
-  } else {
+  } else if (query.kind === "rows") {
     for (const key of query.columns) {
       const bound = bind(key);
       if (bound.def.entity !== root) throw new ResolveError("WRONG_ENTITY", `"${key}" belongs to "${bound.def.entity}", not "${root}"`, key);
       columns.push(bound);
     }
     if (query.orderBy) orderBy = { dimension: bind(query.orderBy.key), dir: query.orderBy.dir };
+  }
+  const compare = (query.kind === "value" || query.kind === "breakdown") && !!query.compare;
+  if (compare) {
+    if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so there is no previous period`, query.measure);
+    if (!query.time) throw new ResolveError("NEEDS_TIME_RANGE", "A previous-period comparison needs a time range", query.measure, 'time: { last: "30d" }');
   }
 
   const filters: BoundFilter[] = (query.filters ?? []).map((f) => ({ dimension: bind(f.dimension), op: f.op, value: f.value })) as BoundFilter[];
@@ -313,7 +315,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
 
   const windows = window(query, now, pack.timeZone);
   const time = windows?.time ?? null;
-  const previous = query.kind === "value" && query.compare ? (windows?.previous ?? null) : null;
+  const previous = compare ? (windows?.previous ?? null) : null;
 
   const entitiesUsed = [...new Set([root, ...[dimension, split, ...columns, orderBy?.dimension ?? null, ...filters.map((f) => f.dimension)].filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
 

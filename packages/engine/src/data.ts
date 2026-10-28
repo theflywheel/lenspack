@@ -14,6 +14,12 @@ export type DataRow = {
   count: number;
   /** A query's further measures for this group, by key. */
   values?: Record<string, number | null>;
+  /** The same group in the previous period (a breakdown with compare). */
+  compare?: { previous: number | null; delta: number | null };
+  /** value over the whole population's value (a breakdown with share). */
+  share?: number | null;
+  /** The "(other)" row: the population outside the groups shown. */
+  other?: true;
 };
 
 export type Format = "number" | "percent" | "currency" | "compact" | "duration";
@@ -36,6 +42,11 @@ export type WidgetData = {
 };
 
 export const MAX_SERIES = 12;
+
+/** A value against its previous period; delta is the relative change. */
+export function compared(value: number | null, previous: number | null): { previous: number | null; delta: number | null } {
+  return { previous, delta: value !== null && previous !== null && previous !== 0 ? (value - previous) / Math.abs(previous) : null };
+}
 
 export function toNumber(v: unknown): number | null {
   if (v === null || v === undefined) return null;
@@ -83,7 +94,10 @@ export function groupLabel(v: unknown): string {
 export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?: string): WidgetData {
   switch (query.kind) {
     case "breakdown": {
-      const rows = raw.map((r) => ({ group: groupLabel(r.group), ...("series" in r ? { series: groupLabel(r.series) } : {}), value: toNumber(r.value), count: toNumber(r.n) ?? 0 }));
+      const rows = raw.map((r): DataRow => {
+        const value = toNumber(r.value);
+        return { group: groupLabel(r.group), ...("series" in r ? { series: groupLabel(r.series) } : {}), value, count: toNumber(r.n) ?? 0, ...("previous" in r ? { compare: compared(value, toNumber(r.previous)) } : {}) };
+      });
       return { rows, total: rows.reduce((s, r) => s + r.count, 0), format };
     }
     case "series": {
@@ -110,10 +124,7 @@ export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?:
       const value = toNumber(r.value);
       const count = toNumber(r.n) ?? 0;
       const data: WidgetData = { rows: [{ group: measureKey ?? "value", value, count }], total: count, format };
-      if ("previous" in r) {
-        const previous = toNumber(r.previous);
-        data.compare = { previous, delta: value !== null && previous !== null && previous !== 0 ? (value - previous) / Math.abs(previous) : null };
-      }
+      if ("previous" in r) data.compare = compared(value, toNumber(r.previous));
       return data;
     }
     case "rows": {

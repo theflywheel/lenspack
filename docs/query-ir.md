@@ -4,7 +4,7 @@ The intermediate representation is a closed union. Every string in it is a key t
 
 ```ts
 type Query =
-  | { kind: "breakdown"; dimension: string; measure: string; limit?: number; sort?: "asc"|"desc"; time?: TimeRange; filters?: Filter[] }
+  | { kind: "breakdown"; dimension: string; measure: string; limit?: number; sort?: "asc"|"desc"; compare?: "previous_period"; share?: boolean; other?: boolean; time?: TimeRange; filters?: Filter[] }
   | { kind: "series";    measure: string; grain?: Grain; by?: string; time?: TimeRange; filters?: Filter[] }
   | { kind: "value";     measure: string; compare?: "previous_period"; time?: TimeRange; filters?: Filter[] }
   | { kind: "rows";      entity: string; columns: string[]; limit?: number; orderBy?: { key: string; dir: "asc"|"desc" }; time?: TimeRange; filters?: Filter[] };
@@ -19,9 +19,9 @@ type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 
 | shape | answers | notes |
 |---|---|---|
-| `breakdown` | a measure per group | `limit` 2–50 (default 12); ties broken by group name; time dimensions are refused (use `series`) |
+| `breakdown` | a measure per group | `limit` 2–50 (default 12); ties broken by group name; time dimensions are refused (use `series`). `compare` adds `compare: { previous, delta }` per row; groups are the current period's. `share`: value over the whole population's (count, sum, count_distinct, whose shares can sum past 1). `other`: one `"(other)"` row (`other: true`) for the rest, count and sum only, not with `by` or `measures`. Otherwise `NOT_SUPPORTED`, as is `compare` on a cross-entity ratio |
 | `series` | a measure per time bucket | uses the root entity's `time` column; `by` splits into at most 12 series (top by total, the rest dropped, never bucketed as "other"; on SQL sources the answer's `notes` say how many) |
-| `value` | one number | `compare` needs a `time` range and returns `previous` and `delta` from one statement |
+| `value` | one number | `compare` needs a `time` range and returns `previous` and `delta` from one statement; the previous span is set out under Time below |
 | `rows` | records | `columns` are dimension keys on that entity; `limit` 1–500 |
 
 Relative `time` is resolved against `now` at query time, so a saved board keeps meaning "the last 30 days".
