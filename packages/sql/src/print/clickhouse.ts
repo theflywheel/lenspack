@@ -9,6 +9,7 @@ import { type DialectRules, type Printed, printerFor } from "./base";
 const quote = (id: string) => `"${id.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 const lit = (s: string) => `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 const TS = "DateTime64(3, 'UTC')";
+const START = { hour: "toStartOfHour", day: "toStartOfDay", week: "toMonday", month: "toStartOfMonth", quarter: "toStartOfQuarter", year: "toStartOfYear" };
 
 function typeOf(v: unknown): string {
   if (v instanceof Date) return TS;
@@ -28,10 +29,10 @@ export const clickhouseRules: DialectRules = {
   },
   // quantileExactInclusive interpolates as percentile_cont does (R-7).
   percentile: (fn, arg) => `quantileExactInclusive(${fn === "median" ? 0.5 : 0.9})(${arg})`,
-  trunc: (grain, arg) => {
-    const start = { hour: "toStartOfHour", day: "toStartOfDay", week: "toMonday", month: "toStartOfMonth", quarter: "toStartOfQuarter", year: "toStartOfYear" }[grain];
-    return `toDateTime(${start}(${arg}), 'UTC')`;
-  },
+  trunc: (grain, arg) => `toDateTime(${START[grain]}(${arg}), 'UTC')`,
+  // The start is computed and printed in the zone: a DateTime carrying the
+  // zone comes back as local wall-clock text.
+  zonedTrunc: (grain, arg, zone) => `toDateTime(${START[grain]}(${arg}, ${lit(zone)}), ${lit(zone)})`,
   epoch: (arg, unit) => `fromUnixTimestamp64Milli(CAST(${arg} AS Int64)${unit === "epoch_s" ? " * 1000" : ""}, 'UTC')`,
   segment: (arg, values) => `hasAny(splitByChar('|', ifNull(CAST(${arg} AS String), '')), [${values.join(", ")}])`,
   param: (i, v) => `{p${i}:${typeOf(v)}}`,

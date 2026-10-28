@@ -55,6 +55,7 @@ type Connection = {
 | `param(i, value)` / `paramValue(v)` | the placeholder (`$1`, `?`, `{p1:String}`) and how a value is bound |
 | `cast(to)` | type names for double, text, timestamp, int, bigint |
 | `trunc(grain, x)` | the start of an hour, day, week (Monday), month, quarter or year |
+| `zonedTrunc(grain, x, zone)` | the same start in the pack's `timeZone`, as a naive local time; leave it out (and say `zonedBuckets: false`) when the database cannot, and a zoned series is refused |
 | `epoch(x, unit)` | a number of seconds or milliseconds since 1970 as a UTC timestamp |
 | `json(col, path)` | a JSON path as text |
 | `segment(x, values)` | "one of these is a whole `\|`-separated segment of x" |
@@ -90,6 +91,7 @@ These are belts. The braces are a database role that can only read what lenspack
 | `count_distinct` | exact | exact | exact | exact | exact (`uniqExact`) |
 | `median`, `p90` | `percentile_cont` | `quantile_cont` | **refused** (`NOT_SUPPORTED`) | **refused** (`NOT_SUPPORTED`) | `quantileExactInclusive` (same interpolation) |
 | time buckets hour to year, Monday weeks | `date_trunc` | `date_trunc` | `strftime` on ISO text | `DATE_FORMAT`, `WEEKDAY` | `toStartOf…`, `toMonday` |
+| buckets in a pack `timeZone` | `AT TIME ZONE` | `AT TIME ZONE` (ICU) | **refused** (`NOT_SUPPORTED`) | **refused** (`NOT_SUPPORTED`) | `toStartOf…(x, zone)` |
 | epoch-second and -millisecond times | `to_timestamp` | `epoch_ms` | `strftime(…, 'unixepoch')` | `TIMESTAMPADD` from 1970 (no session time zone) | `fromUnixTimestamp64Milli` |
 | JSON paths | `->>`, `#>>` | `json_extract_string` | `json_extract` | `JSON_UNQUOTE(JSON_EXTRACT())` | `JSONExtract(…, 'Nullable(String)')` |
 | parameters | `$1` | `$1` | `?` | `?` (server-side prepared) | `{p1:Type}` |

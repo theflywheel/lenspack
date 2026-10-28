@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { compile } from "../src/compile";
 import type { Dialect } from "../src/print/base";
-import { GOLDEN_QUERIES, ctx, pack } from "./golden-pack";
+import { GOLDEN_QUERIES, ZONED_QUERIES, ctx, pack, zonedPack } from "./golden-pack";
 
 // The printer's output, byte for byte, for every node the planner can emit,
 // in every dialect. The Postgres and DuckDB files were written before
@@ -14,13 +14,14 @@ import { GOLDEN_QUERIES, ctx, pack } from "./golden-pack";
 const stringify = (v: unknown) => JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? `${x}n` : x));
 
 export function goldenText(dialect: Dialect) {
-  return GOLDEN_QUERIES.map((query) => {
+  const cases = [...GOLDEN_QUERIES.map((query) => ({ query, pack, zone: "" })), ...ZONED_QUERIES.map((query) => ({ query, pack: zonedPack, zone: ` in ${zonedPack.timeZone}` }))];
+  return cases.map(({ query, pack, zone }) => {
     try {
       const c = compile(query, pack, { dialect, ctx });
-      return `-- ${JSON.stringify(query)}\n-- params: ${stringify(c.params)}\n${c.sql};\n`;
+      return `-- ${JSON.stringify(query)}${zone}\n-- params: ${stringify(c.params)}\n${c.sql};\n`;
     } catch (e) {
       if (!(e instanceof ResolveError)) throw e;
-      return `-- ${JSON.stringify(query)}\n-- refused (${e.code}): ${e.message}\n`;
+      return `-- ${JSON.stringify(query)}${zone}\n-- refused (${e.code}): ${e.message}\n`;
     }
   }).join("\n");
 }

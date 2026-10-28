@@ -6,6 +6,7 @@ A pack is one YAML or JSON document describing a dataset so that a model can que
 pack: <slug>                # lowercase, [a-z][a-z0-9_]*
 version: <int>              # bump when keys change; boards record the version they were built against
 description: <text>         # optional
+timeZone: <IANA zone>       # optional, e.g. Africa/Nairobi: where days start for calendar ranges and series buckets; UTC when absent
 
 entities:
   <entity_key>:

@@ -1,4 +1,4 @@
-import type { BoardConfig, Query } from "./schema";
+import type { BoardConfig, Query, TimeRange } from "./schema";
 
 // A compact picture of the board rather than its JSON. The model works from
 // this by default and only asks for detail when it edits — which is what keeps
@@ -25,7 +25,7 @@ export function summarise(config: BoardConfig) {
 }
 
 export function describeQuery(query: Query) {
-  const time = query.time ? ("last" in query.time ? ` last ${query.time.last}` : ` ${query.time.from.slice(0, 10)}→${query.time.to.slice(0, 10)}`) : "";
+  const time = query.time ? ` ${describeTime(query.time)}` : "";
   switch (query.kind) {
     case "breakdown":
       return `${withMore(query)} by ${query.dimension}${query.by ? ` and ${query.by}` : ""}${query.sortBy === "group" ? ` in ${query.dimension} order` : ""}${query.sort === "asc" ? " (lowest first)" : ""}${query.limit !== 12 ? ` top ${query.limit}` : ""}${time}`;
@@ -36,6 +36,13 @@ export function describeQuery(query: Query) {
     case "rows":
       return `${query.entity} rows [${query.columns.join(", ")}]${time}`;
   }
+}
+
+function describeTime(t: TimeRange) {
+  if ("last" in t) return `last ${t.last}`;
+  if ("from" in t) return `${t.from.slice(0, 10)}→${t.to.slice(0, 10)}`;
+  const at = !t.offset ? `this ${t.period}` : t.offset === -1 ? `last ${t.period}` : `${t.period} ${t.offset}`;
+  return (t.count ?? 1) > 1 ? `${t.count} ${t.period}s to ${at}` : at;
 }
 
 function withMore(query: { measure: string; measures?: string[] }) {

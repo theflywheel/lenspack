@@ -120,3 +120,10 @@ export const GOLDEN_QUERIES: Query[] = [
   { kind: "rows", entity: "things", columns: ["colour", "nested"], limit: 20 },
 ];
 
+// The same pack in a zone half an hour off UTC: buckets start at local hours
+// and local midnight, and a calendar range is local dates.
+export const zonedPack = parsePack({ ...goldenPackInput, timeZone: "Asia/Kolkata" });
+export const ZONED_QUERIES: Query[] = [
+  ...(["hour", "week", "month"] as const).map((grain): Query => ({ kind: "series", measure: "things", grain })),
+  { kind: "series", measure: "parts", grain: "day", time: { period: "month", offset: -1 } },
+];

@@ -272,3 +272,36 @@ LIMIT 4;
 SELECT "things"."__d_colour" AS "colour", "things"."__d_nested" AS "nested"
 FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", JSONExtract("attrs", 'meta', 'grade', 'Nullable(String)') AS "__d_nested" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 LIMIT 20;
+
+-- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
+-- params: ["ke_1","ke\\\\_1.%","test"]
+SELECT toDateTime(toStartOfHour("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
+GROUP BY toDateTime(toStartOfHour("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"series","measure":"things","grain":"week"} in Asia/Kolkata
+-- params: ["ke_1","ke\\\\_1.%","test"]
+SELECT toDateTime(toMonday("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
+GROUP BY toDateTime(toMonday("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"series","measure":"things","grain":"month"} in Asia/Kolkata
+-- params: ["ke_1","ke\\\\_1.%","test"]
+SELECT toDateTime(toStartOfMonth("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
+GROUP BY toDateTime(toStartOfMonth("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"series","measure":"parts","grain":"day","time":{"period":"month","offset":-1}} in Asia/Kolkata
+-- params: ["ke_1","1767205800000","1769884200000"]
+SELECT toDateTime(toStartOfDay("parts"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, fromUnixTimestamp64Milli(CAST("added_ms" AS Int64), 'UTC') AS "__t", "added_ms" AS "__t_raw" FROM "parts" WHERE ("tenant_id" = {p1:String})) AS "parts"
+WHERE (("parts"."__t_raw" >= CAST({p2:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p3:Int64} AS Int64)))
+GROUP BY toDateTime(toStartOfDay("parts"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
+ORDER BY "bucket" ASC NULLS LAST
+LIMIT 5000;

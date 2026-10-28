@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { compile } from "../src/compile";
+import { registerDialect } from "../src/dialects";
+import { postgresRules } from "../src/print/postgres";
 import { run as runWith } from "@lenspack/engine";
 
 import { type Executor, sqlConnector } from "../src/executor";
@@ -105,6 +107,15 @@ describe("series and value", () => {
     expect(data.compare?.delta).toBeCloseTo(-1 / 3);
   });
 
+  it("buckets at local hours and local months in the pack's zone", async () => {
+    // 10:00 UTC is 15:30 in Kolkata, and 1 February 10:00 UTC is still 31 January in Pago Pago (UTC-11).
+    const inZone = (timeZone: string, query: Parameters<typeof run>[0]) => run(query, { pack: { ...pack, timeZone }, executor, ctx });
+    const hours = await inZone("Asia/Kolkata", { kind: "series", measure: "things", grain: "hour" });
+    expect(hours.rows.map((r) => r.group)).toEqual(["2026-01-05T15:00", "2026-01-06T15:00", "2026-01-20T15:00", "2026-02-01T15:00", "2026-02-10T15:00"]);
+    const months = await inZone("Pacific/Pago_Pago", { kind: "series", measure: "things", grain: "month" });
+    expect(months.rows.map((r) => [r.group, r.value])).toEqual([["2026-01-01", 4], ["2026-02-01", 1]]);
+  });
+
   it("a rate over the whole population is not the mean of group rates", async () => {
     const whole = await q({ kind: "value", measure: "broken_rate" });
     expect(whole.rows[0]?.value).toBeCloseTo(0.4);
@@ -168,6 +179,14 @@ describe("refusals", () => {
 
   it("refuses a series on an entity without time", () => {
     fails({ kind: "series", measure: "owners", grain: "day" }, "NO_TIME");
+  });
+
+  it("cuts zoned buckets only where the dialect says how", () => {
+    // A driver written before zonedTrunc existed refuses rather than drawing UTC days; UTC spelled otherwise is UTC.
+    registerDialect({ ...postgresRules, dialect: "pg_utc_only", zonedTrunc: undefined });
+    const series = { kind: "series", measure: "things", grain: "day" } as const;
+    expect(() => compile(series, { ...pack, timeZone: "Asia/Kolkata" }, { dialect: "pg_utc_only", ctx })).toThrow(/UTC days/);
+    expect(compile(series, { ...pack, timeZone: "Etc/UTC" }, { dialect: "pg_utc_only", ctx }).sql).toBe(compile(series, pack, { dialect: "postgres", ctx }).sql);
   });
 
   it("returns resolution errors as data from run()", async () => {

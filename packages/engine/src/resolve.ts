@@ -1,6 +1,8 @@
 import { type FilterClause, type Query, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
+import { bucketZone, calendarRange } from "./calendar";
+
 // Resolution binds every key in a query to a pack object and finds a join path
 // for every dimension. It is where the model's mistakes surface as loud
 // errors with a `nearest` suggestion — and where a fan-out is refused rather
@@ -46,6 +48,8 @@ export type Capabilities = {
    * rather than estimated some other way. Absent means true.
    */
   percentiles?: boolean;
+  /** Series buckets can start at local hours and days in the pack's time zone; false refuses a zoned series rather than drawing it in UTC. Absent means true. */
+  zonedBuckets?: boolean;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true };
@@ -163,14 +167,24 @@ function joinPath(pack: Pack, graph: Map<string, Edge[]>, root: string, target: 
 
 const UNITS: Record<string, number> = { h: 3600e3, d: 86400e3, w: 7 * 86400e3, m: 30 * 86400e3, y: 365 * 86400e3 };
 
-function window(query: Query, now: Date): TimeWindow | null {
+// The window and the one a comparison reads. A calendar range is compared
+// with the calendar span before it; any other window with the same length
+// of time just before it.
+function window(query: Query, now: Date, timeZone?: string): { time: TimeWindow; previous: TimeWindow } | null {
   if (!query.time) return null;
+  if ("period" in query.time) {
+    const { previous, ...time } = calendarRange(query.time, now, timeZone);
+    return { time, previous };
+  }
+  let time: TimeWindow;
   if ("last" in query.time) {
     const n = Number(query.time.last.slice(0, -1));
     const unit = query.time.last.slice(-1);
-    return { from: new Date(now.getTime() - n * UNITS[unit]!), to: now };
+    time = { from: new Date(now.getTime() - n * UNITS[unit]!), to: now };
+  } else {
+    time = { from: new Date(query.time.from), to: new Date(query.time.to) };
   }
-  return { from: new Date(query.time.from), to: new Date(query.time.to) };
+  return { time, previous: { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } };
 }
 
 export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilities = SQL_CAPABILITIES): BoundPlan {
@@ -255,6 +269,8 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     if (query.by) split = bind(query.by);
   } else if (query.kind === "series") {
     if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so nothing on it can be plotted over time`, query.measure);
+    if (caps.zonedBuckets === false && bucketZone(pack.timeZone))
+      throw new ResolveError("NOT_SUPPORTED", `Pack "${pack.pack}" starts its days in ${pack.timeZone}, and this source can only bucket time by UTC days, so a series is not drawn here`, query.measure);
     if (query.by) dimension = bind(query.by);
   } else if (query.kind === "value") {
     if (query.compare) {
@@ -287,8 +303,9 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   if (query.time && !rootEntity.time)
     throw new ResolveError("NO_TIME", `"${root}" has no time column, so a time range cannot apply`, query.kind === "rows" ? query.entity : query.measure);
 
-  const time = window(query, now);
-  const previous = query.kind === "value" && query.compare && time ? { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } : null;
+  const windows = window(query, now, pack.timeZone);
+  const time = windows?.time ?? null;
+  const previous = query.kind === "value" && query.compare ? (windows?.previous ?? null) : null;
 
   const entitiesUsed = [...new Set([root, ...[dimension, split, ...columns, orderBy?.dimension ?? null, ...filters.map((f) => f.dimension)].filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
 

@@ -10,7 +10,10 @@ type Query =
   | { kind: "rows";      entity: string; columns: string[]; limit?: number; orderBy?: { key: string; dir: "asc"|"desc" }; time?: TimeRange; filters?: Filter[] };
 
 type Filter    = { dimension: string; op: "eq"|"neq"|"in"|"gte"|"lte"|"between"|"contains"; value: Scalar | Scalar[] };
-type TimeRange = { last: "30d" | "12w" | "6m" | "2y" | "48h" } | { from: ISO8601; to: ISO8601 };
+type TimeRange =
+  | { last: "30d" | "12w" | "6m" | "2y" | "48h" }
+  | { from: ISO8601; to: ISO8601 }
+  | { period: "day"|"week"|"month"|"quarter"|"year"; offset?: number /* <= 0, default 0 */; count?: number /* default 1 */ };
 type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 ```
 
@@ -24,6 +27,13 @@ type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 Relative `time` is resolved against `now` at query time, so a saved board keeps meaning "the last 30 days".
 
 A filter must narrow every operand of a cross-entity derived measure, or the query is refused (`NOT_SUPPORTED`, naming the operands that can be narrowed), at edit time as at run time. The one exception is a reference value that only divides (a target, a capacity: `delivered / target`, not a count of events over time) when no other divisor is narrowed by that filter: it stays whole ("this kind over the whole goal") and the answer's `notes` say so.
+
+### Time
+
+- `last` rolls back from now by a fixed length: `h` hours, `d` days, `w` 7 days, `m` 30 days, `y` 365 days.
+- `period` is calendar time in the pack's `timeZone` (UTC when absent), weeks from Monday. `offset: 0` is the current period up to now, `-1` the previous whole one; `count` takes that many periods ending at `offset`. "Last month" is `{ period: "month", offset: -1 }`, month to date `{ period: "month" }`, the three whole months before this one `{ period: "month", offset: -1, count: 3 }`.
+- `compare: "previous_period"` reads the span just before the window. For `last` and `from`/`to` it is the same length of time; for `period`, the `count` periods before it. A range that runs to now is compared as far into the previous span as now is into the current one, in local days and time of day, and never past that span's end: this month to the 28th at noon against last month to the 28th at noon, the 31st against the whole of a shorter month.
+- Series buckets start at local midnight, local Monday and the local first of the month in the pack's `timeZone`, and hour buckets at local hours (30-minute zones included); a bucket's label is its local date. SQLite and MySQL bucket in UTC only, so a series in any other zone is refused there (`NOT_SUPPORTED`).
 
 ## Compiler
 

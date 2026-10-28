@@ -266,3 +266,15 @@ LIMIT 4;
 SELECT `things`.`__d_colour` AS `colour`, `things`.`__d_nested` AS `nested`
 FROM (SELECT *, `made_at` AS `__t`, (colour) AS `__d_colour`, JSON_UNQUOTE(JSON_EXTRACT(`attrs`, '$."meta"."grade"')) AS `__d_nested` FROM `app`.`things` WHERE (((`tenant_id` = ?) OR (`tenant_id` LIKE ?))) AND (deleted = false) AND (NOT (`kind` <=> ?))) AS `things`
 LIMIT 20;
+
+-- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
+
+-- {"kind":"series","measure":"things","grain":"week"} in Asia/Kolkata
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
+
+-- {"kind":"series","measure":"things","grain":"month"} in Asia/Kolkata
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
+
+-- {"kind":"series","measure":"parts","grain":"day","time":{"period":"month","offset":-1}} in Asia/Kolkata
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here

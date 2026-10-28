@@ -1,4 +1,4 @@
-import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock } from "@lenspack/engine";
 import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/spec";
 
 // The query IR, compiled to one search request. Every structural decision —
@@ -290,14 +290,18 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
     }
     case "series": {
       const metricAggs = measureAggs(bound, env);
-      const histogram = { date_histogram: { field: timeField!, [interval]: query.grain, min_doc_count: 1 }, aggs: metricAggs.aggs };
+      // In a zone, buckets start at local midnight and are keyed by that
+      // instant; the key is read back as local time, as SQL returns it.
+      const zone = bucketZone(pack.timeZone);
+      const local = (key: number) => (zone ? localWallClock(key, zone) : key);
+      const histogram = { date_histogram: { field: timeField!, [interval]: query.grain, min_doc_count: 1, ...(zone ? { time_zone: zone } : {}) }, aggs: metricAggs.aggs };
       if (!bound.dimension) {
         body.aggs = { t: histogram };
         return {
           index: entity.source,
           body,
           approximate: metricAggs.approximate,
-          decode: (r) => ((r.aggregations?.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: b.key, value: metricAggs.read(b), n: b.doc_count })),
+          decode: (r) => ((r.aggregations?.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), value: metricAggs.read(b), n: b.doc_count })),
         };
       }
       // The top series by the measure over the whole window, each over time:
@@ -311,7 +315,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         approximate: metricAggs.approximate,
         decode: (r) =>
           ((r.aggregations?.s?.buckets ?? []) as Bucket[])
-            .flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: b.key, series: groupKey(s), value: metricAggs.read(b), n: b.doc_count })))
+            .flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count })))
             .sort((a, b) => a.bucket - b.bucket || String(a.series).localeCompare(String(b.series))),
       };
     }

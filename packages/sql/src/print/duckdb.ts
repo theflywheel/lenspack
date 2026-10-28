@@ -1,5 +1,6 @@
 import type { Ast } from "../ast";
 import { type DialectRules, type Printed, printerFor } from "./base";
+import { zoned } from "./postgres";
 
 const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
@@ -14,6 +15,8 @@ export const duckdbRules: DialectRules = {
   },
   percentile: (fn, arg) => `quantile_cont(${arg}, ${fn === "median" ? 0.5 : 0.9})`,
   trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
+  // AT TIME ZONE as Postgres spells it; DuckDB reads it with its bundled ICU.
+  zonedTrunc: (grain, arg, zone) => `date_trunc('${grain}', ${zoned(arg, zone)})`,
   segment: (arg, values) => `list_has_any(string_split(CAST(${arg} AS VARCHAR), '|'), [${values.join(", ")}])`,
   epoch: (arg, unit) => `epoch_ms(CAST(${arg} AS BIGINT)${unit === "epoch_s" ? " * 1000" : ""})`,
   // DuckDB's LIKE has no escape character unless told; the planner escapes

@@ -50,7 +50,8 @@ export const sqliteRules: DialectRules = {
     LIKE: (l, r) => `(${l} LIKE ${r} ESCAPE '\\')`,
     "IS DISTINCT FROM": (l, r) => `(${l} IS NOT ${r})`,
   },
-  capabilities: { percentiles: false },
+  // SQLite has no time zone rules, only fixed offsets, which daylight saving breaks.
+  capabilities: { percentiles: false, zonedBuckets: false },
 };
 
 export const printSqlite: (ast: Ast) => Printed = printerFor(sqliteRules);

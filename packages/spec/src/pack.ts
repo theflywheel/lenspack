@@ -173,13 +173,28 @@ export const measureSchema = z
   .refine((m) => m.agg !== "count" || !m.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })
   .refine((m) => !m.agg || m.agg === "count" || !!m.sql || !!m.field, { message: "an aggregate other than count needs sql or field" });
 
+function knownZone(timeZone: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const packSchema = z.object({
   pack: slug,
   version: z.number().int().min(1),
   description: z.string().max(500).optional(),
   // Where a day starts: calendar windows (a board's date range, "a month
-  // ago → today") are local dates in this zone. UTC when absent.
-  timeZone: z.string().max(64).optional(),
+  // ago → today", "last month") and series buckets are local dates in this
+  // zone. UTC when absent. An IANA name, never an offset like "+03:00", which
+  // Postgres reads with its sign reversed.
+  timeZone: z
+    .string()
+    .max(64)
+    .refine((tz) => /^[A-Za-z]/.test(tz) && knownZone(tz), 'an IANA time zone, e.g. "Africa/Nairobi"')
+    .optional(),
   entities: z.record(slug, entitySchema),
   dimensions: z.array(dimensionSchema).default([]),
   measures: z.array(measureSchema).default([]),

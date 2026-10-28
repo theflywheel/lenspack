@@ -21,6 +21,12 @@ export type DialectRules = {
   percentile?(fn: "median" | "p90", arg: string): string;
   /** The start of the bucket a timestamp falls in; weeks start on Monday. */
   trunc(grain: Grain, arg: string): string;
+  /**
+   * The same start in an IANA zone, read as a naive local time, so the
+   * bucket's label is the local date. Absent when the dialect cannot: a
+   * series in a zone other than UTC is refused.
+   */
+  zonedTrunc?(grain: Grain, arg: string, zone: string): string;
   epoch(arg: string, unit: "epoch_ms" | "epoch_s"): string;
   segment(arg: string, values: string[]): string;
   /** The placeholder for the index-th parameter (1-based); some dialects type it by its value. */
@@ -85,7 +91,9 @@ export function print(ast: Ast, rules: DialectRules): Printed {
       case "case":
         return `CASE WHEN ${expr(e.when)} THEN ${expr(e.then)} END`;
       case "trunc":
-        return rules.trunc(e.grain, expr(e.arg));
+        if (!e.zone) return rules.trunc(e.grain, expr(e.arg));
+        if (!rules.zonedTrunc) throw new ResolveError("NOT_SUPPORTED", `${rules.dialect} can only bucket time by UTC days, so a series in ${e.zone} is not drawn here`);
+        return rules.zonedTrunc(e.grain, expr(e.arg), e.zone);
       case "cast":
         return `CAST(${expr(e.arg)} AS ${rules.cast(e.to)})`;
       case "nullif0":

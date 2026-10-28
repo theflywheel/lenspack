@@ -50,7 +50,8 @@ export const mysqlRules: DialectRules = {
   // NULLs sort first ascending and last descending; only ascending needs help.
   // MariaDB cannot test an aggregate's alias for NULL, so the test repeats the expression.
   orderBy: (e, dir, selected) => (dir === "asc" ? `${selected ? selected() : e} IS NULL, ${e} ASC` : `${e} DESC`),
-  capabilities: { percentiles: false },
+  // Time zone names need the server's zone tables, which are often not loaded.
+  capabilities: { percentiles: false, zonedBuckets: false },
 };
 
 export const printMysql: (ast: Ast) => Printed = printerFor(mysqlRules);
