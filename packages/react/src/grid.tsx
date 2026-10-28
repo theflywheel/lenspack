@@ -34,6 +34,7 @@ export function WidgetFrame({ id, widget, registry, showQuery }: { id: string; w
         {/* What this widget is actually asking for. Naming it in the frame
             keeps the vocabulary visible while someone edits the board. */}
         {showQuery && widget.kind !== "text" && <span className="lp-widget-query">{describeQuery(widget.query)}</span>}
+        {data[id]?.notes?.map((n) => <span key={n} className="lp-widget-note">{n}</span>)}
       </div>
       <div className="lp-widget-body">
         <Body widget={widget} data={data[id]} currency={currency} />

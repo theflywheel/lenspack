@@ -14,6 +14,7 @@
 .lp-widget-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; cursor: move; }
 .lp-widget-title { font-size: 14px; font-weight: 500; }
 .lp-widget-query { font-family: var(--lp-mono, ui-monospace, monospace); font-size: 11px; color: var(--lp-key, var(--lp-muted)); }
+.lp-widget-note { font-size: 11px; color: var(--lp-muted); }
 .lp-widget-body { flex: 1; min-height: 0; }
 .lp-empty, .lp-empty-board { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--lp-muted); font-size: 13px; text-align: center; }
 .lp-problem { display: flex; height: 100%; flex-direction: column; justify-content: center; gap: 6px; }

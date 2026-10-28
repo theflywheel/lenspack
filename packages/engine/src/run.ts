@@ -2,7 +2,7 @@ import type { BoardConfig, BoardOp, Query, Widget } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
-import type { DataRow, WidgetData } from "./data";
+import { type DataRow, MAX_SERIES, type WidgetData } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
 import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, resolve } from "./resolve";
 
@@ -14,6 +14,8 @@ const ACROSS_LIMIT = 10_000;
 
 export type AcrossSide = {
   measure: PackMeasure;
+  /** The operand as the pack names it: a per-level measure by its levels key. */
+  named: string;
   query: Query;
   /** The operand's entity has no time: one number for every period (per series if split). */
   timeless: boolean;
@@ -36,17 +38,19 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   const measures = operands(expr).map((k) => pack.measures.find((m) => m.key === k)).filter((m): m is PackMeasure => !!m);
   if (new Set(measures.map((m) => m.entity)).size < 2) return null;
   const base = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
+  const named = (key: string) => pack.measures.find((m) => m.derived?.trim() === key)?.key ?? key;
+  // A filter on a dimension another operand's entity does not have (a kind
+  // of item, when the goal is set per region) narrows the home operand only,
+  // and only where that reads right (below). Explain and the data say so.
+  const has = (entity: string, dimension: string) => {
+    const d = pack.dimensions.find((x) => x.key === dimension);
+    return !d || d.entity === entity || !!d.also?.[entity];
+  };
+  const filters = query.filters ?? [];
   const sides = measures.map((m): AcrossSide => {
     const home = m.entity === def.entity;
-    // A filter on a dimension another operand's entity does not have (a kind
-    // of item, when the goal is set per region) narrows the home operand only:
-    // this kind over the whole goal. Explain says so.
-    const has = (dimension: string) => {
-      const d = pack.dimensions.find((x) => x.key === dimension);
-      return !d || d.entity === m.entity || !!d.also?.[m.entity];
-    };
-    const kept = home ? (query.filters ?? []) : (query.filters ?? []).filter((f) => has(f.dimension));
-    const unfiltered = home ? [] : [...new Set((query.filters ?? []).filter((f) => !has(f.dimension)).map((f) => f.dimension))];
+    const kept = home ? filters : filters.filter((f) => has(m.entity, f.dimension));
+    const unfiltered = home ? [] : [...new Set(filters.filter((f) => !has(m.entity, f.dimension)).map((f) => f.dimension))];
     let q = { ...base(m.key), filters: kept.length ? kept : undefined } as Query;
     // An operand with no time (a target, a capacity) is the same in every
     // period: each bucket, and the previous period, use that one number.
@@ -58,10 +62,46 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
       else if (q.kind === "value") q = { kind: "value", measure: m.key, filters: rest.filters };
       else q = rest as Query;
     }
-    return { measure: m, query: q, timeless, unfiltered };
+    return { measure: m, named: named(m.key), query: q, timeless, unfiltered };
   });
+  // Left whole, an operand that only divides reads as "this kind over the
+  // whole goal" when it is a reference value (a target, a capacity), not
+  // events counted over time. Anything else would add or subtract rows the
+  // filter excludes elsewhere, as would a divisor beside another that the
+  // filter does narrow.
+  const { divides, counts } = placed(expr);
+  const events = (m: PackMeasure) => (m.agg === "count" || m.agg === "count_distinct") && !!pack.entities[m.entity]?.time;
+  for (const s of sides)
+    for (const dimension of s.unfiltered) {
+      if (!counts.has(s.measure.key) && !events(s.measure) && sides.every((t) => !divides.has(t.measure.key) || t.unfiltered.includes(dimension))) continue;
+      const answer = sides.filter((t) => filters.every((f) => has(t.measure.entity, f.dimension))).map((t) => t.named);
+      throw new ResolveError(
+        "NOT_SUPPORTED",
+        `"${def.key}" cannot be narrowed by "${dimension}": its operand ${s.named} lives on "${s.measure.entity}", which has no such dimension. ${answer.length ? `Measures that can be: ${answer.join(", ")}.` : "None of its operands takes every filter."}`,
+        def.key,
+        answer[0],
+      );
+    }
   return { def, expr, sides };
 }
+
+// Operands under an odd number of divisors (b in a / b, b and c in
+// a / (b + c)) scale the answer; the rest count into it. One can do both.
+function placed(e: MeasureExpr, under = false, out = { divides: new Set<string>(), counts: new Set<string>() }) {
+  if (e.t === "measure") (under ? out.divides : out.counts).add(e.key);
+  else if (e.t === "neg") placed(e.arg, under, out);
+  else if (e.t === "op") {
+    placed(e.l, under, out);
+    placed(e.r, e.op === "/" ? !under : under, out);
+  }
+  return out;
+}
+
+const unnarrowed = (s: AcrossSide) => `${s.named} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`;
+const notesOf = (data: WidgetData[], more: string[] = []) => {
+  const notes = [...new Set([...data.flatMap((d) => d.notes ?? []), ...more])];
+  return notes.length ? notes : undefined;
+};
 
 // A group missing from an operand had no rows there: zero for a count, a
 // distinct count or a sum (nothing delivered yet), unknown for anything else.
@@ -71,6 +111,10 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   const { def, expr, sides } = across;
   const format = def.format ?? "number";
   const approximate = data.some((d) => d.approximate) || undefined;
+  // Each operand of a split series keeps its own top series, so the combined
+  // answer cannot count what was left out, only say which operand lost some.
+  const lost = sides.filter((_, i) => data[i]!.notes).map((s) => `${s.named} keeps only its top ${MAX_SERIES} series; the others are computed without it`);
+  const notes = notesOf([], [...sides.filter((s) => s.unfiltered.length).map(unnarrowed), ...lost]);
   const homeIndex = Math.max(0, sides.findIndex((s) => s.measure.entity === def.entity));
   const home = data[homeIndex]!;
   const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
@@ -78,7 +122,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   if (query.kind === "value") {
     const now = (i: number) => data[i]!.rows[0]?.value ?? null;
     const value = evaluate(expr, (k) => now(sides.findIndex((s) => s.measure.key === k)));
-    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate };
+    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate, notes };
     if (sides.every((s, i) => s.timeless || data[i]!.compare)) {
       const previous = evaluate(expr, (k) => {
         const i = sides.findIndex((s) => s.measure.key === k);
@@ -118,7 +162,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   } else {
     rows.sort((a, b) => a.group.localeCompare(b.group) || (a.series ?? "").localeCompare(b.series ?? ""));
   }
-  return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate };
+  return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate, notes };
 }
 
 const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: "number", error: e.message, hint: e.nearest });
@@ -198,6 +242,7 @@ async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOpt
     rows,
     measures: [{ key: query.measure, format: main!.format }, ...extras.map((e, i) => ({ key: e.key, format: others[i]!.format }))],
     approximate: main!.approximate || others.some((o) => o.approximate) || undefined,
+    notes: notesOf([main!, ...others]),
   };
 }
 
@@ -243,7 +288,7 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
   if (across) {
     const parts = await Promise.all(across.sides.map((s) => explain(s.query, opts)));
     const notes = across.sides.flatMap((s) => [
-      ...(s.unfiltered.length ? [`-- ${s.measure.key} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`] : []),
+      ...(s.unfiltered.length ? [`-- ${unnarrowed(s)}`] : []),
       ...(s.timeless ? [`-- "${s.measure.entity}" has no time: every period uses the same ${s.measure.key}`] : []),
     ]);
     return {

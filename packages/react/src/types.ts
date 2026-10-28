@@ -16,6 +16,8 @@ export type WidgetData = {
   approximate?: boolean;
   /** Every measure drawn when a query has further measures, the primary first. */
   measures?: { key: string; format: Format }[];
+  /** What the answer leaves out on purpose, shown beside the widget's title. */
+  notes?: string[];
   error?: string;
   hint?: string;
 };
