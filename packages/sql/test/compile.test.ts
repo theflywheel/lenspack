@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { compile } from "../src/compile";
+import { registerDialect } from "../src/dialects";
+import { postgresRules } from "../src/print/postgres";
 import { run as runWith } from "@lenspack/engine";
 
 import { type Executor, sqlConnector } from "../src/executor";
@@ -177,6 +179,14 @@ describe("refusals", () => {
 
   it("refuses a series on an entity without time", () => {
     fails({ kind: "series", measure: "owners", grain: "day" }, "NO_TIME");
+  });
+
+  it("cuts zoned buckets only where the dialect says how", () => {
+    // A driver written before zonedTrunc existed refuses rather than drawing UTC days; UTC spelled otherwise is UTC.
+    registerDialect({ ...postgresRules, dialect: "pg_utc_only", zonedTrunc: undefined });
+    const series = { kind: "series", measure: "things", grain: "day" } as const;
+    expect(() => compile(series, { ...pack, timeZone: "Asia/Kolkata" }, { dialect: "pg_utc_only", ctx })).toThrow(/UTC days/);
+    expect(compile(series, { ...pack, timeZone: "Etc/UTC" }, { dialect: "pg_utc_only", ctx }).sql).toBe(compile(series, pack, { dialect: "postgres", ctx }).sql);
   });
 
   it("returns resolution errors as data from run()", async () => {

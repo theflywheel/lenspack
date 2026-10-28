@@ -42,7 +42,7 @@ function describeTime(t: TimeRange) {
   if ("last" in t) return `last ${t.last}`;
   if ("from" in t) return `${t.from.slice(0, 10)}→${t.to.slice(0, 10)}`;
   const at = !t.offset ? `this ${t.period}` : t.offset === -1 ? `last ${t.period}` : `${t.period} ${t.offset}`;
-  return t.count && t.count > 1 ? `${t.count} ${t.period}s to ${at}` : at;
+  return (t.count ?? 1) > 1 ? `${t.count} ${t.period}s to ${at}` : at;
 }
 
 function withMore(query: { measure: string; measures?: string[] }) {

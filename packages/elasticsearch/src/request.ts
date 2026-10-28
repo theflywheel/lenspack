@@ -1,4 +1,4 @@
-import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, localWallClock } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock } from "@lenspack/engine";
 import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/spec";
 
 // The query IR, compiled to one search request. Every structural decision —
@@ -292,7 +292,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const metricAggs = measureAggs(bound, env);
       // In a zone, buckets start at local midnight and are keyed by that
       // instant; the key is read back as local time, as SQL returns it.
-      const zone = pack.timeZone && pack.timeZone !== "UTC" ? pack.timeZone : undefined;
+      const zone = bucketZone(pack.timeZone);
       const local = (key: number) => (zone ? localWallClock(key, zone) : key);
       const histogram = { date_histogram: { field: timeField!, [interval]: query.grain, min_doc_count: 1, ...(zone ? { time_zone: zone } : {}) }, aggs: metricAggs.aggs };
       if (!bound.dimension) {

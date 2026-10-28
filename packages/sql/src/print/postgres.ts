@@ -19,7 +19,8 @@ export const postgresRules: DialectRules = {
     return `(${col} #>> ARRAY[${path.map(lit).join(",")}])`;
   },
   percentile: (fn, arg) => `percentile_cont(${fn === "median" ? 0.5 : 0.9}) WITHIN GROUP (ORDER BY ${arg})`,
-  trunc: (grain, arg, zone) => `date_trunc('${grain}', ${zone ? zoned(arg, zone) : arg})`,
+  trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
+  zonedTrunc: (grain, arg, zone) => `date_trunc('${grain}', ${zoned(arg, zone)})`,
   // The split-and-match form, which the planner estimates as it does CCRS's.
   segment: (arg, values) => `EXISTS (SELECT 1 FROM unnest(string_to_array(CAST(${arg} AS TEXT), '|')) AS seg WHERE seg IN (${values.join(", ")}))`,
   epoch: (arg, unit) => `(to_timestamp(${arg}${unit === "epoch_ms" ? " / 1000.0" : ""}) AT TIME ZONE 'UTC')`,

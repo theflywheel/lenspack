@@ -54,7 +54,8 @@ type Connection = {
 | `quote(id)` | identifier quoting: `"x"`, `` `x` `` |
 | `param(i, value)` / `paramValue(v)` | the placeholder (`$1`, `?`, `{p1:String}`) and how a value is bound |
 | `cast(to)` | type names for double, text, timestamp, int, bigint |
-| `trunc(grain, x, zone?)` | the start of an hour, day, week (Monday), month, quarter or year; with the pack's `timeZone`, its local start there as a naive local time (or say `zonedBuckets: false`) |
+| `trunc(grain, x)` | the start of an hour, day, week (Monday), month, quarter or year |
+| `zonedTrunc(grain, x, zone)` | the same start in the pack's `timeZone`, as a naive local time; leave it out (and say `zonedBuckets: false`) when the database cannot, and a zoned series is refused |
 | `epoch(x, unit)` | a number of seconds or milliseconds since 1970 as a UTC timestamp |
 | `json(col, path)` | a JSON path as text |
 | `segment(x, values)` | "one of these is a whole `\|`-separated segment of x" |

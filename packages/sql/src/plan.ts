@@ -1,7 +1,7 @@
 import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/spec";
 
 import { type Ast, type Expr, type Join, type Source } from "./ast";
-import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, type TimeWindow, bucketZone } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
 // projects the pack's dimension and measure fragments under reserved aliases,
@@ -213,8 +213,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       break;
     }
     case "series": {
-      const zone = pack.timeZone && pack.timeZone !== "UTC" ? pack.timeZone : undefined;
-      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol!, zone };
+      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol!, zone: bucketZone(pack.timeZone) };
       select.push({ alias: "bucket", expr: bucket });
       groupBy.push(bucket);
       if (bound.dimension) {

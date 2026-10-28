@@ -11,16 +11,22 @@ const parts = (ms: number, timeZone: string) => {
   return { y: +p.year!, m: +p.month!, d: +p.day!, h: +p.hour!, mi: +p.minute!, s: +p.second! };
 };
 
+/** An instant's local time in `timeZone`, written as UTC: how a naive local timestamp reads. */
+export function localWallClock(ms: number, timeZone: string): number {
+  const p = parts(ms, timeZone);
+  return Date.UTC(p.y, p.m - 1, p.d, p.h, p.mi, p.s);
+}
+
+/** The zone series buckets are cut in: none for UTC, however it is spelled ("Etc/UTC", "GMT"). */
+export const bucketZone = (timeZone?: string) =>
+  timeZone && new Intl.DateTimeFormat("en-US", { timeZone }).resolvedOptions().timeZone !== "UTC" ? timeZone : undefined;
+
 /** The instant a local date begins in `timeZone`. */
 export function startOfLocalDay(date: string, timeZone = "UTC"): Date {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
   let guess = Date.UTC(y, m - 1, d);
   // Two passes settle the zone offset, including across a DST change.
-  for (let i = 0; i < 2; i++) {
-    const p = parts(guess, timeZone);
-    const asUtc = Date.UTC(p.y, p.m - 1, p.d, p.h, p.mi, p.s);
-    guess -= asUtc - Date.UTC(y, m - 1, d);
-  }
+  for (let i = 0; i < 2; i++) guess -= localWallClock(guess, timeZone) - Date.UTC(y, m - 1, d);
   return new Date(guess);
 }
 
@@ -40,12 +46,6 @@ export function addMonths(date: string, months: number): string {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
   const last = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
   return new Date(Date.UTC(y, m - 1 + months, Math.min(d, last))).toISOString().slice(0, 10);
-}
-
-/** An instant's local time in `timeZone`, written as UTC: how a naive local timestamp reads. */
-export function localWallClock(ms: number, timeZone: string): number {
-  const p = parts(ms, timeZone);
-  return Date.UTC(p.y, p.m - 1, p.d, p.h, p.mi, p.s);
 }
 
 type CalendarRange = Extract<TimeRange, { period: unknown }>;

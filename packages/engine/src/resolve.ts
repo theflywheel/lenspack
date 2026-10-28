@@ -1,7 +1,7 @@
 import { type FilterClause, type Query, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
-import { calendarRange } from "./calendar";
+import { bucketZone, calendarRange } from "./calendar";
 
 // Resolution binds every key in a query to a pack object and finds a join path
 // for every dimension. It is where the model's mistakes surface as loud
@@ -48,11 +48,7 @@ export type Capabilities = {
    * rather than estimated some other way. Absent means true.
    */
   percentiles?: boolean;
-  /**
-   * Series buckets can be cut at local midnight (week, month) in the pack's
-   * time zone. A dialect that truncates in UTC only says false, and a series
-   * in any other zone is refused rather than drawn in UTC days. Absent means true.
-   */
+  /** Series buckets can start at local hours and days in the pack's time zone; false refuses a zoned series rather than drawing it in UTC. Absent means true. */
   zonedBuckets?: boolean;
 };
 
@@ -273,7 +269,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     if (query.by) split = bind(query.by);
   } else if (query.kind === "series") {
     if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so nothing on it can be plotted over time`, query.measure);
-    if (caps.zonedBuckets === false && pack.timeZone && pack.timeZone !== "UTC")
+    if (caps.zonedBuckets === false && bucketZone(pack.timeZone))
       throw new ResolveError("NOT_SUPPORTED", `Pack "${pack.pack}" starts its days in ${pack.timeZone}, and this source can only bucket time by UTC days, so a series is not drawn here`, query.measure);
     if (query.by) dimension = bind(query.by);
   } else if (query.kind === "value") {
