@@ -37,13 +37,17 @@ export type Join = { source: Source; on: { left: Expr; right: Expr } };
 
 export type Ast = {
   select: { alias: string; expr: Expr }[];
-  from: Source;
+  from: Source | Grouped;
   joins: Join[];
   where: Expr[];
   groupBy: Expr[];
   orderBy: { expr: Expr; dir: "asc" | "desc" }[];
   limit: number;
 };
+
+// The inner stage of a two-stage measure: the root's rows grouped by the key
+// and the answer's groups, one value per key, kept by HAVING.
+export type Grouped = Omit<Ast, "from" | "orderBy" | "limit"> & { alias: string; from: Source; having: Expr[] };
 
 export const and = (exprs: Expr[]): Expr | null =>
   exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r }));

@@ -1,7 +1,7 @@
 import { type Capabilities, ResolveError } from "@lenspack/engine";
 import { maybeFragmentFor } from "@lenspack/spec";
 
-import type { Ast, Expr, Grain, Source } from "../ast";
+import type { Ast, Expr, Grain, Grouped, Join, Source } from "../ast";
 
 /** The SQL dialects lenspack ships; a driver registered from outside adds its own name. */
 export type Dialect = "postgres" | "duckdb" | "mysql" | "sqlite" | "clickhouse" | (string & {});
@@ -103,19 +103,27 @@ export function print(ast: Ast, rules: DialectRules): Printed {
     }
   };
 
-  const source = (s: Source) => {
+  const source = (s: Source | Grouped): string => {
+    if ("from" in s) return `(${clauses(s).join("\n")}) AS ${q(s.alias)}`;
     const projections = s.projections.map((p) => `, ${expr(p.expr)} AS ${q(p.alias)}`).join("");
     const where = s.where.length ? ` WHERE ${s.where.map(expr).join(" AND ")}` : "";
     return `(SELECT *${projections} FROM ${s.table}${where}) AS ${q(s.alias)}`;
   };
 
-  const parts = [
-    `SELECT ${ast.select.map((s) => `${expr(s.expr)} AS ${q(s.alias)}`).join(", ")}`,
-    `FROM ${source(ast.from)}`,
-    ...ast.joins.map((j) => `LEFT JOIN ${source(j.source)} ON ${expr(j.on.left)} = ${expr(j.on.right)}`),
-  ];
-  if (ast.where.length) parts.push(`WHERE ${ast.where.map(expr).join(" AND ")}`);
-  if (ast.groupBy.length) parts.push(`GROUP BY ${ast.groupBy.map(expr).join(", ")}`);
+  // SELECT through GROUP BY (and HAVING), for the statement and for a grouped subquery.
+  const clauses = (a: Omit<Grouped, "alias" | "from" | "having"> & { from: Source | Grouped; having?: Expr[] }) => {
+    const parts = [
+      `SELECT ${a.select.map((s) => `${expr(s.expr)} AS ${q(s.alias)}`).join(", ")}`,
+      `FROM ${source(a.from)}`,
+      ...a.joins.map((j) => `LEFT JOIN ${source(j.source)} ON ${expr(j.on.left)} = ${expr(j.on.right)}`),
+    ];
+    if (a.where.length) parts.push(`WHERE ${a.where.map(expr).join(" AND ")}`);
+    if (a.groupBy.length) parts.push(`GROUP BY ${a.groupBy.map(expr).join(", ")}`);
+    if (a.having?.length) parts.push(`HAVING ${a.having.map(expr).join(" AND ")}`);
+    return parts;
+  };
+
+  const parts = clauses(ast);
   const order = rules.orderBy ?? ((e: string, dir: "asc" | "desc") => `${e} ${dir.toUpperCase()} NULLS LAST`);
   const selected = (e: Expr) => {
     const s = e.t === "col" && !e.alias ? ast.select.find((x) => x.alias === e.col) : undefined;
@@ -152,5 +160,7 @@ export function quoteTable(table: string, quote: (s: string) => string) {
 /** A dialect's printer: quotes the pack's table names with its own quoting, then prints. */
 export function printerFor(rules: DialectRules): (ast: Ast) => Printed {
   const fix = (s: Source): Source => ({ ...s, table: quoteTable(s.table, rules.quote) });
-  return (ast) => print({ ...ast, from: fix(ast.from), joins: ast.joins.map((j) => ({ ...j, source: fix(j.source) })) }, rules);
+  const fixJoins = (joins: Join[]) => joins.map((j) => ({ ...j, source: fix(j.source) }));
+  const fixFrom = (f: Source | Grouped): Source | Grouped => ("from" in f ? { ...f, from: fix(f.from), joins: fixJoins(f.joins) } : fix(f));
+  return (ast) => print({ ...ast, from: fixFrom(ast.from), joins: fixJoins(ast.joins) }, rules);
 }

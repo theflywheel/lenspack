@@ -24,9 +24,9 @@ export type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] 
 
 /**
  * Arithmetic whose operands live on different entities (delivered per target,
- * where deliveries and targets are separate tables or indexes). Each operand
- * is the same query over its own measure; the results are combined per group.
- * Returns null for anything else.
+ * where deliveries and targets are separate tables or indexes), or that uses a
+ * per-key measure. Each operand is the same query over its own measure; the
+ * results are combined per group. Returns null for anything else.
  */
 export function acrossEntities(query: Query, pack: Pack): Across | null {
   if (query.kind === "rows") return null;
@@ -34,7 +34,7 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   if (!def?.derived) return null;
   const expr = expandedExpr(pack, def.key);
   const measures = operands(expr).map((k) => pack.measures.find((m) => m.key === k)).filter((m): m is PackMeasure => !!m);
-  if (new Set(measures.map((m) => m.entity)).size < 2) return null;
+  if (new Set(measures.map((m) => m.entity)).size < 2 && !measures.some((m) => m.per)) return null;
   const base = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
   const sides = measures.map((m): AcrossSide => {
     const home = m.entity === def.entity;
@@ -335,9 +335,9 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
 export async function dimensionValues(dimension: string, opts: RunOptions, limit = 50) {
   const dim = opts.pack.dimensions.find((d) => d.key === dimension);
   const measure =
-    opts.pack.measures.find((m) => m.agg === "count" && !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
-    opts.pack.measures.find((m) => m.agg === "count" && m.entity === dim?.entity) ??
-    opts.pack.measures.find((m) => m.agg === "count");
+    opts.pack.measures.find((m) => m.agg === "count" && !m.per && !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
+    opts.pack.measures.find((m) => m.agg === "count" && !m.per && m.entity === dim?.entity) ??
+    opts.pack.measures.find((m) => m.agg === "count" && !m.per);
   if (!measure) return [];
   const data = await run({ kind: "breakdown", dimension, measure: measure.key, limit: Math.min(50, limit), sort: "desc" }, opts);
   return data.rows.map((r) => ({ value: r.group, count: r.count }));

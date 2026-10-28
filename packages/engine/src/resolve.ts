@@ -46,6 +46,8 @@ export type Capabilities = {
    * rather than estimated some other way. Absent means true.
    */
   percentiles?: boolean;
+  /** Measures with `per` (one value per key, then an aggregate over those). Absent means true. */
+  twoStage?: boolean;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true };
@@ -208,6 +210,9 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
       // computes each on its own and combines the aggregates (acrossEntities).
       if (new Set(measure.operands.map((o) => o.entity)).size > 1)
         throw new ResolveError("NOT_SUPPORTED", `"${def.key}" combines measures on several entities; it is computed by run(), not compiled as one query`, def.key);
+      // A per-key operand is aggregated over its own inner query, so it too is computed on its own.
+      if (measure.operands.some((o) => o.per))
+        throw new ResolveError("NOT_SUPPORTED", `"${def.key}" combines a per-key measure with others; it is computed by run(), not compiled as one query`, def.key);
     } else {
       measure = { kind: "simple", def };
     }
@@ -225,6 +230,9 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
         pct.key,
       );
   }
+
+  if (measure?.kind === "simple" && measure.def.per && caps.twoStage === false)
+    throw new ResolveError("NOT_SUPPORTED", `"${measure.def.key}" aggregates one value per key, and this source cannot aggregate in two stages`, measure.def.key);
 
   const bind = (key: string): BoundDimension => {
     const def = findDimension(key);

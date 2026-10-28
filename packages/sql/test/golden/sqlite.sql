@@ -266,3 +266,55 @@ LIMIT 4;
 SELECT "things"."__d_colour" AS "colour", "things"."__d_nested" AS "nested"
 FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", CAST(json_extract("attrs", '$."meta"."grade"') AS TEXT) AS "__d_nested" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
 LIMIT 20;
+
+-- {"kind":"breakdown","dimension":"tier","measure":"things_per_owner","limit":10,"sort":"desc","filters":[{"dimension":"size","op":"gte","value":5}]}
+-- params: ["ke_1","ke\\_1.%","test",5]
+SELECT "__n"."group" AS "group", avg("__n"."__v") AS "value", count(*) AS "n"
+FROM (SELECT "owners"."__d_tier" AS "group", count(*) AS "__v"
+FROM (SELECT *, "made_at" AS "__t", "size" AS "__d_size", "owner_id" AS "__k" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+WHERE ("things"."__d_size" >= ?)
+GROUP BY "owners"."__d_tier", "things"."__k") AS "__n"
+GROUP BY "__n"."group"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"breakdown","dimension":"colour","measure":"heavy_owners","by":"tier","limit":10,"sort":"desc","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: ["broken","ke_1","ke\\_1.%","test","2026-01-01 00:00:00","2026-02-01 00:00:00",500]
+SELECT "__n"."group" AS "group", "__n"."series" AS "series", count("__n"."__v") AS "value", count(*) AS "n"
+FROM (SELECT "things"."__d_colour" AS "group", "owners"."__d_tier" AS "series", sum("things"."__m_heavy_owners") AS "__v"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "owner_id" AS "__k", CASE WHEN ("status" IS NOT ?) THEN "size" END AS "__m_heavy_owners" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+WHERE (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT)))
+GROUP BY "things"."__d_colour", "owners"."__d_tier", "things"."__k"
+HAVING (sum("things"."__m_heavy_owners") >= ?)) AS "__n"
+GROUP BY "__n"."group", "__n"."series"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"series","measure":"things_per_owner","grain":"month","by":"colour","time":{"last":"12w"}}
+-- params: ["ke_1","ke\\_1.%","test","2025-11-23 12:34:56","2026-02-15 12:34:56"]
+SELECT "__n"."bucket" AS "bucket", "__n"."series" AS "series", avg("__n"."__v") AS "value", count(*) AS "n"
+FROM (SELECT strftime('%Y-%m-01 00:00:00', "things"."__t") AS "bucket", "things"."__d_colour" AS "series", count(*) AS "__v"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "owner_id" AS "__k" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+WHERE (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT)))
+GROUP BY strftime('%Y-%m-01 00:00:00', "things"."__t"), "things"."__d_colour", "things"."__k") AS "__n"
+GROUP BY "__n"."bucket", "__n"."series"
+ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"value","measure":"median_colours_per_owner"}
+-- refused (NOT_SUPPORTED): "median_colours_per_owner" is a median, and this source has no percentile function, so it is not computed here
+
+-- {"kind":"value","measure":"heavy_owners","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: ["2026-01-01 00:00:00","2026-02-01 00:00:00","broken","ke_1","ke\\_1.%","test","2025-12-01 00:00:00","2026-02-01 00:00:00",500]
+SELECT count(CASE WHEN ("__n"."__w" IS NOT NULL) THEN "__n"."__v" END) AS "value", count(CASE WHEN ("__n"."__w" IS NOT NULL) THEN 1 END) AS "n", count(CASE WHEN ("__n"."__w" IS NULL) THEN "__n"."__v" END) AS "previous"
+FROM (SELECT "things"."__w" AS "__w", sum("things"."__m_heavy_owners") AS "__v"
+FROM (SELECT *, "made_at" AS "__t", CASE WHEN (("made_at" >= CAST(? AS TEXT)) AND ("made_at" < CAST(? AS TEXT))) THEN 1 END AS "__w", "owner_id" AS "__k", CASE WHEN ("status" IS NOT ?) THEN "size" END AS "__m_heavy_owners" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+WHERE ("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))
+GROUP BY "things"."__k", "things"."__w"
+HAVING (sum("things"."__m_heavy_owners") >= ?)) AS "__n"
+LIMIT 1;
+
+-- {"kind":"value","measure":"heavy_share"}
+-- refused (NOT_SUPPORTED): "heavy_share" combines a per-key measure with others; it is computed by run(), not compiled as one query
