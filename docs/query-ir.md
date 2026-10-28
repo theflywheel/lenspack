@@ -43,7 +43,7 @@ plan    : (BoundPlan, Pack) → Ast                           one subquery per e
 print   : (Ast, Dialect) → { sql, params }                  postgres | duckdb | sqlite | mysql | clickhouse | a registered driver's
 ```
 
-`ResolveError` carries `{ code, key, nearest }`. Codes: `UNKNOWN_MEASURE`, `UNKNOWN_DIMENSION`, `UNKNOWN_ENTITY`, `NO_JOIN_PATH`, `FANOUT_REFUSED`, `TENANT_REQUIRED`, `NO_TIME`, `NEEDS_TIME_RANGE`, `WRONG_ENTITY`, `TIME_DIMENSION`, `NEEDS_JOIN`, `OUT_OF_SCOPE`, and `NOT_SUPPORTED` (what the source cannot compute: a percentile on MySQL or SQLite, a fragment with no entry for its dialect).
+`ResolveError` carries `{ code, key, nearest }`. Codes: `UNKNOWN_MEASURE`, `UNKNOWN_DIMENSION`, `UNKNOWN_ENTITY`, `NO_JOIN_PATH`, `FANOUT_REFUSED`, `TENANT_REQUIRED`, `NO_TIME`, `NEEDS_TIME_RANGE`, `WRONG_ENTITY`, `TIME_DIMENSION`, `NEEDS_JOIN`, `OUT_OF_SCOPE`, and `NOT_SUPPORTED` (what the source cannot compute: a percentile on MySQL or SQLite, a two-stage `per` measure on Elasticsearch, a fragment with no entry for its dialect).
 
 ### Invariants
 

@@ -68,6 +68,9 @@ measures:
   it("rejects a measure with neither agg nor derived", () => bad((p) => delete p.measures[0].agg, "agg"));
   it("rejects a non-count aggregate without sql", () => bad((p) => delete p.measures[1].sql, "needs sql"));
   it("rejects a time zone that is an offset rather than an IANA name", () => bad((p) => (p.timeZone = "+03:00"), "IANA time zone"));
+  it("rejects a two-stage measure with row-level sql outside per", () =>
+    bad((p) => (p.measures[1].per = { key: "owner_id", agg: "count" }), "go inside per"));
+  it("rejects a per stage summing nothing", () => bad((p) => p.measures.push({ key: "big", entity: "items", agg: "max", per: { key: "owner_id", agg: "sum" } }), "needs sql or field"));
   it("rejects a derived measure that does not live with one of its operands", () => {
     bad((p) => {
       p.measures.push({ key: "owner_n", entity: "owners", agg: "count" });

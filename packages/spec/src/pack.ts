@@ -131,6 +131,21 @@ export const dimensionSchema = z
   })
   .refine(oneSource, { message: "a dimension has exactly one of field, sql or json" });
 
+// The inner stage of a two-stage measure; the outer agg skips a key whose value fails `having`.
+export const perSchema = z
+  .object({
+    key: z.union([fieldPath, z.object({ sql: fragmentSchema })]),
+    agg: z.enum(AGGS).exclude(["median", "p90"]),
+    sql: fragmentSchema.optional(),
+    field: fieldPath.optional(),
+    filter: fragmentSchema.optional(),
+    where: z.array(whereSchema).max(20).optional(),
+    having: z.object({ op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte"]), value: z.number() }).optional(),
+  })
+  .refine((p) => !(p.sql && p.field), { message: "per has sql or field, not both" })
+  .refine((p) => p.agg !== "count" || !p.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })
+  .refine((p) => p.agg === "count" || !!p.sql || !!p.field, { message: "an aggregate other than count needs sql or field" });
+
 export const measureSchema = z
   .object({
     key: slug,
@@ -160,6 +175,9 @@ export const measureSchema = z
     // the source keeps a row per level (targets set per region and per
     // sub-region): `levels: { region: target_at_region, subregion: target_at_subregion }`.
     levels: z.record(slug, slug).optional(),
+    // One value per key first, then `agg` over those values:
+    // `agg: median, per: { key: order_id, agg: count }` is the median items per order.
+    per: perSchema.optional(),
     // Multiplies the aggregate, e.g. people per item handed out.
     scale: z.number().refine((n) => n !== 0 && Number.isFinite(n), "a non-zero number").optional(),
     format: z.enum(FORMATS).default("number"),
@@ -171,7 +189,8 @@ export const measureSchema = z
   .refine((m) => (m.agg ? true : !m.sql && !m.field && !m.filter && !m.where && !m.scale), { message: "sql, field, filter, where and scale belong to a measure with agg" })
   .refine((m) => !(m.sql && m.field), { message: "a measure has sql or field, not both" })
   .refine((m) => m.agg !== "count" || !m.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })
-  .refine((m) => !m.agg || m.agg === "count" || !!m.sql || !!m.field, { message: "an aggregate other than count needs sql or field" });
+  .refine((m) => !m.per || (!!m.agg && !m.sql && !m.field && !m.filter && !m.where), { message: "a measure with per takes agg over the per-key values; its sql, field, filter and where go inside per" })
+  .refine((m) => !m.agg || m.agg === "count" || !!m.sql || !!m.field || !!m.per, { message: "an aggregate other than count needs sql or field" });
 
 function knownZone(timeZone: string) {
   try {

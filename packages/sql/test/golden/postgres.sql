@@ -273,6 +273,62 @@ SELECT "things"."__d_colour" AS "colour", "things"."__d_nested" AS "nested"
 FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", ("attrs" #>> ARRAY['meta','grade']) AS "__d_nested" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
 LIMIT 20;
 
+-- {"kind":"breakdown","dimension":"tier","measure":"things_per_owner","limit":10,"sort":"desc","filters":[{"dimension":"size","op":"gte","value":5}]}
+-- params: ["ke_1","ke\\_1.%","test",5]
+SELECT "__n"."group" AS "group", avg("__n"."__v") AS "value", count(*) AS "n"
+FROM (SELECT "owners"."__d_tier" AS "group", count(*) AS "__v"
+FROM (SELECT *, "made_at" AS "__t", "size" AS "__d_size", "owner_id" AS "__k" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+WHERE ("things"."__d_size" >= $4) AND ("things"."__k" IS NOT NULL)
+GROUP BY "owners"."__d_tier", "things"."__k") AS "__n"
+GROUP BY "__n"."group"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"breakdown","dimension":"colour","measure":"heavy_owners","by":"tier","limit":10,"sort":"desc","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: [500,"broken","ke_1","ke\\_1.%","test","2026-01-01T00:00:00.000Z","2026-02-01T00:00:00.000Z"]
+SELECT "__n"."group" AS "group", "__n"."series" AS "series", count(CASE WHEN ("__n"."__v" >= $1) THEN "__n"."__v" END) AS "value", count(*) AS "n"
+FROM (SELECT "things"."__d_colour" AS "group", "owners"."__d_tier" AS "series", sum("things"."__m_heavy_owners") AS "__v"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "owner_id" AS "__k", CASE WHEN ("status" IS DISTINCT FROM $2) THEN "size" END AS "__m_heavy_owners" FROM "app"."things" WHERE ((("tenant_id" = $3) OR ("tenant_id" LIKE $4))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $5)) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+WHERE (("things"."__t" >= CAST($6 AS TIMESTAMP)) AND ("things"."__t" < CAST($7 AS TIMESTAMP))) AND ("things"."__k" IS NOT NULL)
+GROUP BY "things"."__d_colour", "owners"."__d_tier", "things"."__k") AS "__n"
+GROUP BY "__n"."group", "__n"."series"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 10;
+
+-- {"kind":"series","measure":"things_per_owner","grain":"month","by":"colour","time":{"last":"12w"}}
+-- params: ["ke_1","ke\\_1.%","test","2025-11-23T12:34:56.000Z","2026-02-15T12:34:56.000Z"]
+SELECT "__n"."bucket" AS "bucket", "__n"."series" AS "series", avg("__n"."__v") AS "value", count(*) AS "n"
+FROM (SELECT date_trunc('month', "things"."__t") AS "bucket", "things"."__d_colour" AS "series", count(*) AS "__v"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "owner_id" AS "__k" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+WHERE (("things"."__t" >= CAST($4 AS TIMESTAMP)) AND ("things"."__t" < CAST($5 AS TIMESTAMP))) AND ("things"."__k" IS NOT NULL)
+GROUP BY date_trunc('month', "things"."__t"), "things"."__d_colour", "things"."__k") AS "__n"
+GROUP BY "__n"."bucket", "__n"."series"
+ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 5000;
+
+-- {"kind":"value","measure":"median_colours_per_owner"}
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT (CAST(percentile_cont(0.5) WITHIN GROUP (ORDER BY "__n"."__v") AS DOUBLE PRECISION) * 2) AS "value", count(*) AS "n"
+FROM (SELECT count(DISTINCT "things"."__m_median_colours_per_owner") AS "__v"
+FROM (SELECT *, "made_at" AS "__t", (owner_id) AS "__k", CASE WHEN (status = 'ok') THEN (colour) END AS "__m_median_colours_per_owner" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+WHERE ("things"."__k" IS NOT NULL)
+GROUP BY "things"."__k") AS "__n"
+LIMIT 1;
+
+-- {"kind":"value","measure":"heavy_owners","compare":"previous_period","time":{"from":"2026-01-01T00:00:00Z","to":"2026-02-01T00:00:00Z"}}
+-- params: [500,500,"2026-01-01T00:00:00.000Z","2026-02-01T00:00:00.000Z","broken","ke_1","ke\\_1.%","test","2025-12-01T00:00:00.000Z","2026-02-01T00:00:00.000Z"]
+SELECT count(CASE WHEN ("__n"."__w" IS NOT NULL) THEN CASE WHEN ("__n"."__v" >= $1) THEN "__n"."__v" END END) AS "value", count(CASE WHEN ("__n"."__w" IS NOT NULL) THEN 1 END) AS "n", count(CASE WHEN ("__n"."__w" IS NULL) THEN CASE WHEN ("__n"."__v" >= $2) THEN "__n"."__v" END END) AS "previous"
+FROM (SELECT "things"."__w" AS "__w", sum("things"."__m_heavy_owners") AS "__v"
+FROM (SELECT *, "made_at" AS "__t", CASE WHEN (("made_at" >= CAST($3 AS TIMESTAMP)) AND ("made_at" < CAST($4 AS TIMESTAMP))) THEN 1 END AS "__w", "owner_id" AS "__k", CASE WHEN ("status" IS DISTINCT FROM $5) THEN "size" END AS "__m_heavy_owners" FROM "app"."things" WHERE ((("tenant_id" = $6) OR ("tenant_id" LIKE $7))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $8)) AS "things"
+WHERE ("things"."__t" >= CAST($9 AS TIMESTAMP)) AND ("things"."__t" < CAST($10 AS TIMESTAMP)) AND ("things"."__k" IS NOT NULL)
+GROUP BY "things"."__k", "things"."__w") AS "__n"
+LIMIT 1;
+
+-- {"kind":"value","measure":"heavy_share"}
+-- refused (NOT_SUPPORTED): "heavy_share" combines a per-key measure with others; it is computed by run(), not compiled as one query
+
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT date_trunc('hour', (CAST("things"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"

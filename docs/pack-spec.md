@@ -45,8 +45,24 @@ measures:
     format: number | percent | currency | compact | duration
   - key: <slug>
     entity: <entity_key>
+    agg: <any agg above>    # over the per-key values
+    per:                    # two stages: one value per key first
+      key: <column>         # or { sql: <fragment> }
+      agg: count | count_distinct | sum | min | max | avg
+      sql: <fragment>       # required unless agg is count
+      filter: <predicate>   # optional, as on a measure
+      having: { op: eq | neq | gt | gte | lt | lte, value: <number> }   # optional; the outer agg ignores keys whose value fails
+  - key: <slug>
+    entity: <entity_key>
     derived: <measure> / <measure>   # ratio of two aggregates on the same entity
     format: …
+```
+
+For example, the median items per order, and the customers with three or more orders:
+
+```yaml
+  - { key: median_items_per_order, entity: order_items, agg: median, per: { key: order_id, agg: count } }
+  - { key: repeat_customers, entity: orders, agg: count, per: { key: customer_id, agg: count, having: { op: gte, value: 3 } } }
 ```
 
 ## Fragments
@@ -67,6 +83,7 @@ Fragments are inlined verbatim inside a subquery over that entity's own table, s
 - Every `entity` reference exists; every join's `on` names exactly the two entities involved.
 - A dimension has exactly one of `sql` or `json`; `grains` only on `type: time`.
 - A measure has `agg` (with `sql` unless `count`) or `derived`, not both; derived operands must be non-derived measures on the same entity.
+- A measure with `per` has `agg` and no `sql`, `field`, `filter` or `where` of its own: those belong inside `per`.
 
 ## Semantics the compiler applies
 
@@ -75,4 +92,5 @@ Fragments are inlined verbatim inside a subquery over that entity's own table, s
 - Rates (`agg: avg` over a 0/1 expression) are averages over base rows. A rate for the whole population and the same rate per group are computed identically; only the `GROUP BY` differs.
 - `derived: a / b` compiles to `CAST(agg_a AS DOUBLE) / NULLIF(agg_b, 0)`.
 - `filter` folds into `CASE WHEN filter THEN expr END`, so the aggregate ignores rows outside it.
+- A `per` measure groups the rows the query reads (after its time window, filters, tenant and the entity's own predicate) by the key and by the answer's groups (a breakdown's groups, a series' buckets), then aggregates the one value per key. A key with rows in two groups or two buckets counts in each, rows with no key are not counted, and `n` counts keys. A filter inside `per` narrows the rows behind each value, not the keys: a key with no matching rows counts 0 under `count`. `having` folds into the outer aggregate like a filter, so a group whose keys all fail it still shows, 0 under `count`. A previous-period comparison groups each period on its own.
 - If any entity in the query declares `tenant`, the tenant predicate is pushed into that entity's subquery and a missing tenant is a compile error.

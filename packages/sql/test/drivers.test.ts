@@ -224,13 +224,13 @@ for (const engine of ENGINES) {
         const b = await run(query, { pack, connector: mine, ctx });
         expect(a.error, JSON.stringify(query)).toBeUndefined();
         if (b.error && mine.capabilities.percentiles === false && /has no percentile function/.test(b.error)) {
-          expect(["median_size", "p90_size"]).toContain((query as { measure: string }).measure);
+          expect(["median_size", "p90_size", "median_colours_per_owner"]).toContain((query as { measure: string }).measure);
           refused++;
           continue;
         }
         if (!close(sorted(b), sorted(a))) expect(sorted(b), JSON.stringify(query)).toEqual(sorted(a));
       }
-      expect(refused).toBe(mine.capabilities.percentiles === false ? 2 : 0);
+      expect(refused).toBe(mine.capabilities.percentiles === false ? 3 : 0);
     });
 
     it("refuses a write, and a second statement, whatever the caller sends", async ({ skip }) => {

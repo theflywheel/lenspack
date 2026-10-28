@@ -4,7 +4,7 @@ import { parsePack } from "@lenspack/spec";
 // One pack and one list of queries that between them reach every node the
 // planner can emit: every aggregate, every filter and where operator, every
 // grain, epoch times in seconds and milliseconds, a fragment time, a subtree
-// tenant, an entity filter, joins, a split, sorts, rows. The golden files
+// tenant, an entity filter, joins, a split, sorts, rows, two-stage measures. The golden files
 // print them; the driver suite runs them on every database.
 
 /** The golden pack as written; the driver suite runs it against unqualified tables. */
@@ -63,6 +63,10 @@ export const goldenPackInput = {
     { key: "logs", entity: "logs", agg: "count" },
     { key: "events", entity: "events", agg: "count" },
     { key: "owners", entity: "owners", agg: "count" },
+    { key: "things_per_owner", entity: "things", agg: "avg", per: { key: "owner_id", agg: "count" } },
+    { key: "heavy_owners", entity: "things", agg: "count", per: { key: "owner_id", agg: "sum", field: "size", where: [{ field: "status", op: "neq", value: "broken" }], having: { op: "gte", value: 500 } } },
+    { key: "median_colours_per_owner", entity: "things", agg: "median", scale: 2, per: { key: { sql: "owner_id" }, agg: "count_distinct", sql: "colour", filter: "status = 'ok'" } },
+    { key: "heavy_share", entity: "things", derived: "heavy_owners / distinct_owners" },
   ],
 };
 export const pack = parsePack(goldenPackInput);
@@ -118,6 +122,12 @@ export const GOLDEN_QUERIES: Query[] = [
   },
   { kind: "rows", entity: "things", columns: ["colour", "size", "origin"], limit: 4, orderBy: { key: "size", dir: "desc" } },
   { kind: "rows", entity: "things", columns: ["colour", "nested"], limit: 20 },
+  { kind: "breakdown", dimension: "tier", measure: "things_per_owner", limit: 10, sort: "desc", filters: [{ dimension: "size", op: "gte", value: 5 }] },
+  { kind: "breakdown", dimension: "colour", measure: "heavy_owners", by: "tier", limit: 10, sort: "desc", time: between },
+  { kind: "series", measure: "things_per_owner", grain: "month", by: "colour", time: { last: "12w" } },
+  { kind: "value", measure: "median_colours_per_owner" },
+  { kind: "value", measure: "heavy_owners", compare: "previous_period", time: between },
+  { kind: "value", measure: "heavy_share" },
 ];
 
 // The same pack in a zone half an hour off UTC: buckets start at local hours
