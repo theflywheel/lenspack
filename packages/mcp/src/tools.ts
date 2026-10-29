@@ -127,6 +127,8 @@ function parseFilters(text: string, pack: Pack): FilterClause[] {
 // and stays a string on a code.
 function typedValue(pack: Pack, dimension: string, v: string, clause: string) {
   const type = pack.dimensions.find((d) => d.key === dimension)?.type;
+  // A time compared as text fails in the database; the window has its own arguments.
+  if (type === "time") throw new Error(`Cannot read the filter "${clause}": ${dimension} is a time; give the window as time_from and time_to (or time_period, time_last), not as a filter`);
   if (type === "number") {
     if (!v.trim() || !Number.isFinite(Number(v))) throw new Error(`Cannot read the filter "${clause}": ${dimension} is a number, "${v}" is not`);
     return Number(v);

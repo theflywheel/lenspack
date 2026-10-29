@@ -75,6 +75,8 @@ describe("board tools", () => {
     expect(bad.error).toContain('"size > 20"');
     const nan = (await call("query", { query_kind: "value", measure: "things", filters: "size >= big" })) as { ok: boolean; error: string };
     expect(nan.error).toContain("size is a number");
+    const time = (await call("query", { query_kind: "value", measure: "things", filters: "made between 2026-01-01T00:00:00Z and 2026-02-01T00:00:00Z" })) as { ok: boolean; error: string };
+    expect(time).toMatchObject({ ok: false, error: expect.stringContaining("give the window as time_from and time_to") });
     const eqeq = (await call("query", { query_kind: "value", measure: "things", filters: "colour == red" })) as { ok: boolean; error: string };
     expect(eqeq).toMatchObject({ ok: false, error: expect.stringContaining('"colour == red"') });
   });
