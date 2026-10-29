@@ -45,8 +45,10 @@ export type BoardToolsOptions = {
 };
 
 // Lenient scalars: a null, a numeric string or a "true" from a weaker model
-// is an argument to accept and coerce, not a reason to end the turn.
-const str = (fallback = "") => z.string().nullish().transform((v) => v ?? fallback);
+// is an argument to accept and coerce, not a reason to end the turn. A model
+// clearing an argument writes "null" or "none" as text: that is empty too.
+const EMPTY = /^\s*(null|none|undefined)\s*$/i;
+const str = (fallback = "") => z.string().nullish().transform((v) => (v == null || EMPTY.test(v) ? fallback : v));
 const num = (fallback: number, min: number, max: number) =>
   z
     .union([z.number(), z.string(), z.null(), z.undefined()])
