@@ -202,7 +202,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
         return json(res, 403, { error: "you may view these boards but not change them" });
       }
-      if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h), catalogue });
+      if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, instructions: h.pack.instructions, boards: await boardsOf(h), catalogue });
       if (boardId === "pack") return json(res, 200, { yaml: h.packYaml });
       // Compile one query without running it: the real native query, or the
       // real refusal.

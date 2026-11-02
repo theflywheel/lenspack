@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { ArrowUp, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, SendHorizontal, Share2, Trash2, X } from "lucide-react";
+import { ArrowUp, BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, SendHorizontal, Share2, Trash2, X } from "lucide-react";
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
@@ -22,6 +22,8 @@ import { Separator } from "./components/ui/separator";
 import { ADAPTER_NAMES, type AdapterName, isAdapter, useChartAdapter } from "./adapters";
 import { appMode, page } from "./page";
 import type { ModelInfo } from "./chat";
+import { MetricsReference } from "./metrics";
+import { ProfileMenu } from "./profile";
 
 const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
 
@@ -298,6 +300,8 @@ export function App() {
   const [problem, setProblem] = React.useState<string | null>(null);
   const [me, setMe] = React.useState<Me | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  // The board, or the pack's metrics reference in its place.
+  const [view, setView] = React.useState<"board" | "metrics">(params.get("view") === "metrics" ? "metrics" : "board");
   const loadIndex = React.useCallback(async () => {
     const r = await api("/");
     setCatalog(r.examples);
@@ -356,8 +360,8 @@ export function App() {
     if (!example || !boardId) return;
     // An app keeps its own path and leaves the chart library out of the URL.
     const path = appMode ? location.pathname : "/app";
-    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}`);
-  }, [example, boardId, adapterName, model]);
+    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}${view === "metrics" ? "&view=metrics" : ""}`);
+  }, [example, boardId, adapterName, model, view]);
   React.useEffect(() => {
     if (appMode && state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
   }, [state]);
@@ -507,24 +511,18 @@ export function App() {
                 <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
               </Select>
             )}
-            {me && (
-              <span className="text-xs text-muted-foreground" data-testid="signed-in">
-                {me.user}
-                {me.signOut && (
-                  <>
-                    {" · "}
-                    <a className="underline underline-offset-4 hover:text-foreground" href={me.signOut}>
-                      Sign out
-                    </a>
-                  </>
-                )}
-              </span>
-            )}
+            <Button variant={view === "metrics" ? "secondary" : "ghost"} size="sm" onClick={() => setView(view === "metrics" ? "board" : "metrics")} aria-pressed={view === "metrics"} data-testid="metrics-view">
+              <BookOpen /> Metrics
+            </Button>
+            <ProfileMenu user={me?.user} signOut={me?.signOut} />
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6">
+        {view === "metrics" ? (
+          <MetricsReference example={example} load={api} onClose={() => setView("board")} />
+        ) : (
         <div className={chatEnabled ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]" : ""}>
           <div className={chatEnabled ? "order-1 min-w-0" : "min-w-0"}>
             <BoardProvider key={`${base}:${state.board.version}:${writable}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts} editable={writable}>
@@ -598,6 +596,7 @@ export function App() {
             </div>
           )}
         </div>
+        )}
       </main>
       {!appMode && (
         <footer className="mx-auto max-w-7xl px-4 pb-10 text-xs text-muted-foreground">

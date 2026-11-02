@@ -6,9 +6,11 @@
   --lp-sequential-5: #22c55e; --lp-sequential-6: #4ade80; --lp-sequential-7: #86efac; --lp-sequential-8: #bbf7d0;
   --lp-bg: #fff; --lp-fg: #1c1917; --lp-muted: #6b6b66; --lp-border: #e7e5e4; --lp-hover: #fafaf9; --lp-radius: 4px;
 }
+/* Dark follows the system unless the host page picks one with <html data-theme>. */
 @media (prefers-color-scheme: dark) {
-  :root { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
+  :root:not([data-theme="light"]) { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
 }
+:root[data-theme="dark"] { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
 .lp-board { color: var(--lp-fg); }
 .lp-widget { display: flex; flex-direction: column; height: 100%; overflow: hidden; border: 1px solid var(--lp-border); border-radius: var(--lp-radius); background: var(--lp-bg); padding: 12px 14px; }
 .lp-widget-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; cursor: move; }
