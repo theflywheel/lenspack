@@ -52,6 +52,7 @@ measures:
       sql: <fragment>       # required unless agg is count
       filter: <predicate>   # optional, as on a measure
       having: { op: eq | neq | gt | gte | lt | lte, value: <number> }   # optional; the outer agg ignores keys whose value fails
+                            # or { op: between, value: [<low>, <high>] }, both ends kept
   - key: <slug>
     entity: <entity_key>
     derived: <measure> / <measure>   # ratio of two aggregates on the same entity

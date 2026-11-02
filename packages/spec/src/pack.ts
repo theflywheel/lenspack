@@ -141,7 +141,13 @@ export const perSchema = z
     field: fieldPath.optional(),
     filter: fragmentSchema.optional(),
     where: z.array(whereSchema).max(20).optional(),
-    having: z.object({ op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte"]), value: z.number() }).optional(),
+    having: z
+      .union([
+        z.object({ op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte"]), value: z.number() }),
+        // Both ends kept: sessions per user "3-5" is { op: between, value: [3, 5] }.
+        z.object({ op: z.literal("between"), value: z.tuple([z.number(), z.number()]) }).refine((h) => h.value[0] <= h.value[1], { message: "between takes [low, high] with low <= high" }),
+      ])
+      .optional(),
   })
   .refine((p) => !(p.sql && p.field), { message: "per has sql or field, not both" })
   .refine((p) => p.agg !== "count" || !p.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })

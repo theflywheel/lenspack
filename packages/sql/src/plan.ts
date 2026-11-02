@@ -166,8 +166,11 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   // Aggregates over the root's projected measure columns, or over the inner
   // query's value per key for a two-stage measure. `having` folds into a CASE
   // like a filter, so a group whose keys all fail it still shows (0 under count).
-  const perValue = (p: NonNullable<Aggregated["per"]>): Expr =>
-    p.having ? { t: "case", when: { t: "bin", op: HAVING[p.having.op], l: col(N, V), r: param(p.having.value) }, then: col(N, V) } : col(N, V);
+  const passes = (h: NonNullable<NonNullable<Aggregated["per"]>["having"]>): Expr =>
+    h.op === "between"
+      ? { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: col(N, V), r: param(h.value[0]) }, r: { t: "bin", op: "<=", l: col(N, V), r: param(h.value[1]) } }
+      : { t: "bin", op: HAVING[h.op], l: col(N, V), r: param(h.value) };
+  const perValue = (p: NonNullable<Aggregated["per"]>): Expr => (p.having ? { t: "case", when: passes(p.having), then: col(N, V) } : col(N, V));
   const aggOf = (m: Aggregated, cond: Expr | null): Expr => {
     const rowExpr = measureRowExpr(m);
     if (rowExpr) project(root, M(m.key), rowExpr);

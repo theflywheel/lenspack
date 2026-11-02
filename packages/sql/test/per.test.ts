@@ -26,6 +26,10 @@ const pack = parsePack({
     { key: "askers", entity: "turns", agg: "count", per: { key: "user_id", agg: "count", where: [{ field: "role", op: "eq", value: "user" }], having: { op: "gte", value: 3 } } },
     { key: "returning", entity: "turns", agg: "count", per: { key: "user_id", agg: "count_distinct", sql: { duckdb: "CAST(ts AS DATE)", sqlite: "date(ts)" }, having: { op: "gte", value: 2 } } },
     { key: "returning_share", entity: "turns", derived: "returning / users" },
+    { key: "users_3_to_5", entity: "turns", agg: "count", per: { key: "user_id", agg: "count_distinct", sql: "session_id", having: { op: "between", value: [3, 5] } } },
+    { key: "users_3_plus", entity: "turns", agg: "count", per: { key: "user_id", agg: "count_distinct", sql: "session_id", having: { op: "gte", value: 3 } } },
+    { key: "users_6_plus", entity: "turns", agg: "count", per: { key: "user_id", agg: "count_distinct", sql: "session_id", having: { op: "gte", value: 6 } } },
+    { key: "users_3_to_5_by_difference", entity: "turns", derived: "users_3_plus - users_6_plus" },
   ],
 });
 
@@ -127,6 +131,15 @@ for (const engine of ENGINES) {
       expect(data.rows[0]!.value).toBeCloseTo(returning! / users!, 9);
     });
 
+    it("counts keys whose value is in a range, both ends kept, as the difference of two thresholds does", async () => {
+      const [inRange, atEnds] = await hand(
+        "SELECT count(CASE WHEN n BETWEEN 3 AND 5 THEN 1 END), count(CASE WHEN n IN (3, 5) THEN 1 END) FROM (SELECT user_id, count(DISTINCT session_id) AS n FROM turns WHERE user_id IS NOT NULL GROUP BY user_id) s",
+      );
+      expect(atEnds).toBeGreaterThan(0);
+      expect((await ask({ kind: "value", measure: "users_3_to_5" })).rows[0]!.value).toBe(inRange);
+      expect((await ask({ kind: "value", measure: "users_3_to_5_by_difference" })).rows[0]!.value).toBe(inRange);
+    });
+
     it.runIf(engine.name === "duckdb")("takes the median of the per-session counts", async () => {
       const data = await ask({ kind: "value", measure: "median_turns_per_session" });
       const [median] = await hand("SELECT quantile_cont(n, 0.5) FROM (SELECT session_id, count(*) AS n FROM turns WHERE session_id IS NOT NULL GROUP BY session_id) s");
@@ -134,6 +147,13 @@ for (const engine of ENGINES) {
     });
   });
 }
+
+it("takes a range low to high only", () => {
+  const range = (value: number[]) => ({ ...pack, measures: [{ key: "some", entity: "turns", agg: "count", per: { key: "user_id", agg: "count", having: { op: "between", value } } }] });
+  expect(() => parsePack(range([5, 3]))).toThrow(/low <= high/);
+  expect(() => parsePack(range([3]))).toThrow();
+  expect(parsePack(range([3, 3])).measures[0]!.per!.having).toEqual({ op: "between", value: [3, 3] });
+});
 
 it("is refused by a source that cannot aggregate in two stages", () => {
   const caps = { joins: false, exactDistinct: false, exactPercentiles: false, twoStage: false };
