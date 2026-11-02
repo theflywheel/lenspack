@@ -299,8 +299,9 @@ async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOpt
     ...r,
     values: Object.fromEntries(
       extras.map((e, i) => {
-        // A timeless measure beside a series is one number for every bucket.
-        const flat = e.query.kind === "value" && query.kind === "series";
+        // A timeless measure beside a series is one number for every bucket; beside a value
+        // it is that value's other column. Either way its one row is named after its own key.
+        const flat = e.query.kind === "value" && query.kind !== "breakdown";
         const hit = flat ? (others[i]!.rows[0]?.value ?? null) : lookups[i]!.get(keyOf(r));
         return [e.key, hit !== undefined ? hit : defs[i] && additive(defs[i]!) ? 0 : null];
       }),

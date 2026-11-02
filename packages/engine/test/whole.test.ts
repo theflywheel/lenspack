@@ -95,4 +95,10 @@ describe("share and other", () => {
     expect(data.rows).toEqual([{ group: "north", value: 5, count: 5, compare: { previous: 4, delta: 0.25 }, values: { goal_n: 9 } }]);
     expect(c.seen.find((q) => q.kind === "breakdown" && q.measure === "goal_n")).not.toHaveProperty("compare", "previous_period");
   });
+
+  it("fills a value query's further measures from their own one row", async () => {
+    const c = stub((q) => [{ value: q.kind === "value" ? { done_n: 12, done_qty: 50, done_people: 7 }[q.measure] : null, n: 12 }]);
+    const data = await run({ kind: "value", measure: "done_n", measures: ["done_qty", "done_people"], time }, { pack, connector: c });
+    expect(data.rows).toEqual([{ group: "done_n", value: 12, count: 12, values: { done_qty: 50, done_people: 7 } }]);
+  });
 });
