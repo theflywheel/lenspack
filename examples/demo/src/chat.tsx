@@ -1,16 +1,16 @@
 import * as React from "react";
 
 import { Chat, useChat } from "@ai-sdk/react";
+import { changesSince, listInWords } from "@lenspack/core";
 import type { BoardVersion } from "@lenspack/react";
 import { DefaultChatTransport } from "ai";
-import { ArrowUp, ChevronDown, SendHorizontal, X } from "lucide-react";
+import { Hand, PanelRightClose, SendHorizontal } from "lucide-react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
-import { Separator } from "./components/ui/separator";
 
 // The chat panel, in a chunk of its own: the AI SDK loads when a board with
 // chat is opened, not with the landing page or the board.
@@ -102,10 +102,18 @@ function labelFor(name: string, models: ModelInfo[]) {
   return collides ? name : mine;
 }
 
+// Once the user's own edits have settled, one line in the transcript says
+// what the assistant will be told with the next message. Local: no model call.
+const SETTLE_MS = 15_000;
+type Notice = { at: number; text: string };
+
 export function ChatPanel({
   base,
   suggestions,
   onTurnEnd,
+  boardVersion,
+  edits,
+  onHide,
   models,
   model,
   onModelChange,
@@ -115,6 +123,11 @@ export function ChatPanel({
   base: string;
   suggestions: string[];
   onTurnEnd: () => void;
+  /** The board's version when the panel opened. */
+  boardVersion: number;
+  /** Counts the edits made by hand (not by chat); each one restarts the settle timer. */
+  edits: number;
+  onHide?: () => void;
   models: ModelInfo[];
   model: string;
   onModelChange: (m: string) => void;
@@ -135,39 +148,92 @@ export function ChatPanel({
   // The receipt: what the board actually gained during a turn, read back from
   // the version log. A model's claim and the receipt are shown side by side.
   const startVersion = React.useRef<number | null>(null);
+  // The version the last turn started at: the server tells the next turn what
+  // the user changed by hand after it (the chat's own edits are left out).
+  const lastTurnFrom = React.useRef<number | null>(null);
   const [receipts, setReceipts] = React.useState<Record<string, BoardVersion[] | "none">>({});
   React.useEffect(() => {
     if (wasBusy.current && !busy) {
       onTurnEnd();
       const last = messages[messages.length - 1];
       const from = startVersion.current;
+      lastTurnFrom.current = from;
       if (last?.role === "assistant" && from !== null) {
         void fetch(`/api${base}/versions`)
           .then((r) => r.json())
           .then((vs: (BoardVersion & { createdAt: string })[]) => {
-            const gained = vs.filter((v) => v.version > from).map((v) => ({ ...v, createdAt: new Date(v.createdAt) })).reverse();
+            // Only the chat's own versions: what the user did meanwhile is not this turn's receipt.
+            const gained = vs.filter((v) => v.version > from && v.source === "chat").map((v) => ({ ...v, createdAt: new Date(v.createdAt) })).reverse();
             setReceipts((prev) => ({ ...prev, [last.id]: gained.length ? gained : "none" }));
           });
       }
     }
     wasBusy.current = busy;
   }, [busy, onTurnEnd, messages, base]);
+
+  // Hand edits since the last notice (or since the panel opened, or the last
+  // message was sent: from then on the assistant sees the board as it is).
+  const noticedFrom = React.useRef(boardVersion);
+  const [notices, setNotices] = React.useState<Notice[]>([]);
+  const busyRef = React.useRef(busy);
+  busyRef.current = busy;
+  const countRef = React.useRef(messages.length);
+  countRef.current = messages.length;
+  React.useEffect(() => {
+    if (edits === 0) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const settle = () => {
+      // Mid-turn, wait: the turn's end moves the board on as well.
+      if (busyRef.current) return void (timer = setTimeout(settle, SETTLE_MS));
+      void fetch(`/api${base}/versions`)
+        .then((r) => r.json())
+        .then((vs: BoardVersion[]) => {
+          const changes = changesSince(vs, noticedFrom.current);
+          if (changes.length === 0) return;
+          noticedFrom.current = Math.max(...vs.map((v) => v.version));
+          const said = listInWords(changes.map((c) => c.text));
+          setNotices((prev) => [...prev, { at: countRef.current, text: `You ${said}. The assistant will see this with your next message.` }]);
+        })
+        .catch(() => {});
+    };
+    timer = setTimeout(settle, SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [edits, base]);
+
   React.useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [messages, busy]);
+  }, [messages, busy, notices]);
   const ask = async (text: string) => {
     if (!text.trim() || busy) return;
     const b = await (await fetch(`/api${base}`)).json();
     startVersion.current = b.board?.version ?? null;
-    void sendMessage({ text });
+    // The model sees the board as it is now; a notice pending for edits before this is moot.
+    if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
+    void sendMessage({ text }, lastTurnFrom.current !== null ? { body: { since: lastTurnFrom.current } } : undefined);
     setInput("");
   };
+  const noticesAt = (at: number) =>
+    notices
+      .filter((n) => n.at === at)
+      .map((n, i) => (
+        <p key={`n${at}.${i}`} className="flex items-start gap-1.5 border-l-2 border-rule pl-2 text-xs leading-5 text-muted-foreground" data-testid="edit-notice">
+          <Hand className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+          <span>{n.text}</span>
+        </p>
+      ));
   return (
-    <Card className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col gap-0 rounded-md py-0" data-testid="chat">
+    <Card className="sticky top-[4.5rem] flex max-h-[calc(100vh-5.5rem)] flex-col gap-0 rounded-md py-0" data-testid="chat">
       {/* Title on its own line, the model and its effort under it: side by side in a 320px panel, the
           model's name had no room left and showed as an empty box. */}
       <CardHeader className="flex flex-col items-stretch gap-2 border-b py-3 [.border-b]:pb-3">
-        <CardTitle className="font-mono text-xs font-medium text-muted-foreground">build with chat</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="font-mono text-xs font-medium text-muted-foreground">build with chat</CardTitle>
+          {onHide && (
+            <Button variant="ghost" size="icon" className="-my-1 -mr-2 size-7 text-muted-foreground" onClick={onHide} aria-label="Hide chat" title="Hide chat" data-testid="chat-hide">
+              <PanelRightClose />
+            </Button>
+          )}
+        </div>
         {(models.length > 1 || efforts) && (
           <div className="flex min-w-0 items-center gap-2">
             {models.length > 1 && (
@@ -225,8 +291,11 @@ export function ChatPanel({
               ))}
             </div>
           )}
-          {messages.map((m) => (
-            <div key={m.id} className="space-y-1.5">
+          {noticesAt(0)}
+          {messages.map((m, mi) => (
+            <React.Fragment key={m.id}>
+            {mi > 0 && noticesAt(mi)}
+            <div className="space-y-1.5">
               <p className="font-mono text-2xs text-muted-foreground">{m.role === "user" ? "you" : "lenspack"}</p>
               {(m.parts as Part[]).filter((p) => p.type.startsWith("tool-")).map((p, i) => (
                 <StepBadge key={i} name={p.type.slice(5)} part={p} />
@@ -259,7 +328,9 @@ export function ChatPanel({
                 </div>
               )}
             </div>
+            </React.Fragment>
           ))}
+          {messages.length > 0 && noticesAt(messages.length)}
           {busy && <p className="text-xs text-muted-foreground">Working…</p>}
           {error && <p className="text-xs text-destructive">{error.message}</p>}
           <div ref={bottom} />

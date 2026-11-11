@@ -1,10 +1,10 @@
 import * as React from "react";
 
-import { ArrowUp, BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, SendHorizontal, Share2, Trash2, X } from "lucide-react";
+import { ArrowUp, BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, Share2, Trash2, Undo2, X } from "lucide-react";
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
-import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type ChartAdapter, type FilterOption, type WidgetData } from "@lenspack/react";
+import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type FilterOption, type RemovedWidget, type WidgetData } from "@lenspack/react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -24,6 +24,7 @@ import { appMode, page } from "./page";
 import { type ModelInfo, effortOf } from "./chat";
 import { MetricsReference } from "./metrics";
 import { ProfileMenu } from "./profile";
+import { SplitView } from "./split";
 import { UsagePage } from "./usage";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 
@@ -290,6 +291,33 @@ function boardGroups(boards: Entry[], me: Me | null): [string, Entry[]][] {
   ];
 }
 
+// "Removed … · Undo": no confirmation before a removal, because every change is
+// a version; this is the quick way back. It goes by itself after a while.
+function UndoToast({ title, onUndo, onClose }: { title: string; onUndo?: () => void; onClose: () => void }) {
+  React.useEffect(() => {
+    const t = setTimeout(onClose, 10_000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div role="status" aria-live="polite" className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-1 rounded-md border bg-popover py-1 pr-1 pl-3 text-sm text-popover-foreground shadow-lg" data-testid="undo-toast">
+      <span className="truncate">
+        Removed <span className="font-medium">“{title}”</span>
+      </span>
+      {onUndo && (
+        <>
+          <span className="px-1 text-muted-foreground" aria-hidden="true">·</span>
+          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={onUndo} data-testid="undo-remove">
+            <Undo2 /> Undo
+          </Button>
+        </>
+      )}
+      <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={onClose} aria-label="Dismiss">
+        <X />
+      </Button>
+    </div>
+  );
+}
+
 export function App() {
   const params = new URLSearchParams(location.search);
   const [catalog, setCatalog] = React.useState<Catalog>([]);
@@ -309,6 +337,13 @@ export function App() {
   const [problem, setProblem] = React.useState<string | null>(null);
   const [me, setMe] = React.useState<Me | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  // Edits made by hand (a drag, an ×, a rollback, the ops box): the chat says
+  // what it will be told once they settle. Chat's own edits do not count.
+  const [edits, setEdits] = React.useState(0);
+  const noteEdit = React.useCallback(() => setEdits((n) => n + 1), []);
+  // The widget just removed by its ×, until undone or dismissed.
+  const [removed, setRemoved] = React.useState<(RemovedWidget & { key: number }) | null>(null);
+  const dismissRemoved = React.useCallback(() => setRemoved(null), []);
   // The board, or in its place the pack's metrics reference or what the AI has cost.
   const [view, setView] = React.useState<View>(isView(params.get("view")) ? (params.get("view") as View) : "board");
   const loadIndex = React.useCallback(async () => {
@@ -392,8 +427,8 @@ export function App() {
         if (r.ok) r.board.updatedAt = new Date(r.board.updatedAt);
         return r;
       },
-      saveLayout: async (layout) => {
-        const b = await api(`${base}/layout`, { method: "POST", body: JSON.stringify({ layout }) });
+      saveLayout: async (layout, summary) => {
+        const b = await api(`${base}/layout`, { method: "POST", body: JSON.stringify({ layout, summary }) });
         return { ...b, updatedAt: new Date(b.updatedAt) };
       },
       loadFilterOptions: (field) => {
@@ -460,6 +495,14 @@ export function App() {
     ].filter(Boolean);
   }, [state]);
 
+  const undoRemove = async () => {
+    if (!removed || !host.revertTo) return;
+    setRemoved(null);
+    await host.revertTo(removed.restore);
+    noteEdit();
+    reloadBoard();
+  };
+
   if (problem) return <div className="mx-auto max-w-6xl p-6 text-sm text-destructive">{problem}</div>;
   if (!state || !charts) return <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">Loading…</div>;
 
@@ -477,7 +520,7 @@ export function App() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <header className="sticky top-0 z-30 border-b border-rule bg-background/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+        <div className="mx-auto flex max-w-[2400px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 lg:px-5">
           <div className="flex shrink-0 items-center gap-2">
             <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
               {page.title ?? "lenspack"}
@@ -554,15 +597,16 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="mx-auto max-w-[2400px] px-4 py-6 lg:px-5">
         {view === "metrics" ? (
           <MetricsReference example={example} load={api} onClose={() => setView("board")} />
         ) : view === "usage" ? (
           <UsagePage load={api} onClose={() => setView("board")} />
         ) : (
-        <div className={chatEnabled ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]" : ""}>
-          <div className={chatEnabled ? "order-1 min-w-0" : "min-w-0"}>
-            <BoardProvider key={`${base}:${state.board.version}:${writable}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts} editable={writable}>
+        <SplitView
+          enabled={chatEnabled}
+          main={
+            <BoardProvider key={`${base}:${state.board.version}:${writable}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts} editable={writable} onEdit={noteEdit}>
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h1 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground">{state.board.config.title}</h1>
@@ -591,11 +635,11 @@ export function App() {
                     </>
                   )}
                   {writable && <LayoutMode />}
-                  <VersionHistory onReverted={() => reloadBoard()} />
+                  <VersionHistory onReverted={() => (noteEdit(), reloadBoard())} />
                 </div>
               </div>
               <div className="space-y-3">
-                <PreviewBanner onReverted={() => reloadBoard()} />
+                <PreviewBanner onReverted={() => (noteEdit(), reloadBoard())} />
                 <FilterBar />
                 {writable && !appMode && (
                 <details className="group">
@@ -610,32 +654,50 @@ export function App() {
                 )}
               </div>
               <Separator className="my-4" />
-              <Board showQueries={!appMode} />
+              <Board showQueries={!appMode} onWidgetRemoved={(r) => setRemoved({ ...r, key: Date.now() })} />
             </BoardProvider>
-          </div>
-          {chatEnabled && (
-            <div className="order-2 min-w-0">
-              {writable ? (
-                <React.Suspense fallback={<div className="rounded-md border p-4 text-sm text-muted-foreground">Loading chat…</div>}>
-                  <ChatPanel key={`${base}:${model}:${effort}`} base={base} suggestions={suggestions} onTurnEnd={() => reloadBoard()} models={models} model={model} onModelChange={setModel} effort={effort} onEffortChange={setEffort} />
-                </React.Suspense>
-              ) : (
-                <div className="rounded-md border p-4 text-sm text-muted-foreground" data-testid="chat-read-only">
-                  Chat changes the board it sits beside, and this one is read-only.
-                  {canMake && (
-                    <Button size="sm" className="mt-3 w-full" onClick={copyBoard}>
-                      <Copy /> Save a copy to change it with chat
-                    </Button>
-                  )}
+          }
+          side={(hide) =>
+            writable ? (
+              <React.Suspense fallback={<div className="rounded-md border p-4 text-sm text-muted-foreground">Loading chat…</div>}>
+                <ChatPanel
+                  key={`${base}:${model}:${effort}`}
+                  base={base}
+                  suggestions={suggestions}
+                  onTurnEnd={() => reloadBoard()}
+                  boardVersion={state.board.version}
+                  edits={edits}
+                  onHide={hide}
+                  models={models}
+                  model={model}
+                  onModelChange={setModel}
+                  effort={effort}
+                  onEffortChange={setEffort}
+                />
+              </React.Suspense>
+            ) : (
+              <div className="sticky top-[4.5rem] rounded-md border p-4 text-sm text-muted-foreground" data-testid="chat-read-only">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">build with chat</span>
+                  <Button variant="ghost" size="sm" className="-my-1 -mr-2 h-7 px-2 text-xs" onClick={hide} aria-label="Hide chat" data-testid="chat-hide">
+                    Hide
+                  </Button>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+                Chat changes the board it sits beside, and this one is read-only.
+                {canMake && (
+                  <Button size="sm" className="mt-3 w-full" onClick={copyBoard}>
+                    <Copy /> Save a copy to change it with chat
+                  </Button>
+                )}
+              </div>
+            )
+          }
+        />
         )}
       </main>
+      {removed && <UndoToast key={removed.key} title={removed.title} onUndo={host.revertTo ? undoRemove : undefined} onClose={dismissRemoved} />}
       {!appMode && (
-        <footer className="mx-auto max-w-7xl px-4 pb-10 text-xs text-muted-foreground">
+        <footer className="mx-auto max-w-[2400px] px-4 pb-10 text-xs text-muted-foreground lg:px-5">
           <a className="underline underline-offset-4" href="/">lenspack</a> — a dashboard is data, not code. Build boards with the chat, edit with the ops box, drag widgets, restore versions, switch the charting library.
         </footer>
       )}
