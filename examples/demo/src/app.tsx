@@ -25,6 +25,7 @@ import { type ModelInfo, effortOf } from "./chat";
 import { MetricsReference } from "./metrics";
 import { ProfileMenu } from "./profile";
 import { UsagePage } from "./usage";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 
 const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
 
@@ -476,27 +477,36 @@ export function App() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <header className="sticky top-0 z-30 border-b border-rule bg-background/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+          <div className="flex shrink-0 items-center gap-2">
             <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
               {page.title ?? "lenspack"}
             </a>
             {!appMode && <span className="font-mono text-xs text-muted-foreground">/ demo</span>}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={example}
-              onValueChange={(v) => {
-                const next = catalog.find((c) => c.example === v);
-                setExample(v);
-                setBoardId(boardGroups(next?.boards ?? [], me).flatMap(([, list]) => list)[0]?.id ?? "");
-              }}
-            >
-              <SelectTrigger size="sm" className="w-36 font-mono text-xs" aria-label="Example pack"><SelectValue /></SelectTrigger>
-              <SelectContent>{catalog.map((c) => <SelectItem key={c.example} value={c.example}>{c.example}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={boardId} onValueChange={setBoardId}>
-              <SelectTrigger size="sm" className="w-52 text-xs" aria-label="Board"><SelectValue /></SelectTrigger>
+          {/* Each control says what it picks. One pack needs no pack menu; the chart library is a demo's to switch. */}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {catalog.length > 1 && (
+              <Select
+                value={example}
+                onValueChange={(v) => {
+                  const next = catalog.find((c) => c.example === v);
+                  setExample(v);
+                  setBoardId(boardGroups(next?.boards ?? [], me).flatMap(([, list]) => list)[0]?.id ?? "");
+                }}
+              >
+                <SelectTrigger size="sm" className="max-w-56 text-xs" aria-label="Pack" data-testid="pack-select">
+                  <span className="shrink-0 text-muted-foreground">Pack</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>{catalog.map((c) => <SelectItem key={c.example} value={c.example}>{c.example}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
+            <Select value={boardId} onValueChange={(v) => { setBoardId(v); setView("board"); }}>
+              <SelectTrigger size="sm" className="max-w-80 min-w-0 text-xs" aria-label="Board" data-testid="board-select">
+                <span className="shrink-0 text-muted-foreground">Board</span>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {boardGroups(current?.boards ?? [], me).map(([label, list]) =>
                   list.length === 0 ? null : (
@@ -513,20 +523,32 @@ export function App() {
                 )}
               </SelectContent>
             </Select>
-            {canMake && (
-              <Button variant="outline" size="sm" onClick={newBoard} data-testid="new-board">
-                <Plus /> New board
-              </Button>
-            )}
             {!appMode && (
               <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
-                <SelectTrigger size="sm" className="w-40 font-mono text-xs" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
-                <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
+                <SelectTrigger size="sm" className="text-xs" aria-label="Charting library" data-testid="charts-select">
+                  <span className="shrink-0 text-muted-foreground">Charts</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
               </Select>
             )}
-            <Button variant={view === "metrics" ? "secondary" : "ghost"} size="sm" onClick={() => setView(view === "metrics" ? "board" : "metrics")} aria-pressed={view === "metrics"} data-testid="metrics-view">
+            <Button variant={view === "metrics" ? "secondary" : "ghost"} size="sm" className="text-xs" onClick={() => setView(view === "metrics" ? "board" : "metrics")} aria-pressed={view === "metrics"} data-testid="metrics-view">
               <BookOpen /> Metrics
             </Button>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {canMake && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="icon" className="size-8 rounded-full" onClick={newBoard} aria-label="New board" data-testid="new-board">
+                      <Plus />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">New board</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             <ProfileMenu user={me?.user} signOut={me?.signOut} onUsage={canSeeUsage ? () => setView("usage") : undefined} />
           </div>
         </div>
