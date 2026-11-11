@@ -31,6 +31,15 @@ describe("describeChanges", () => {
     expect(describeChanges(board.config, r.board.config)).toEqual(["removed “Alpha”"]);
   });
 
+  it("does not call widgets moved that the grid moved into a removed widget's place", () => {
+    const base = { version: 2 as const, pack: "fixture", packVersion: 1, title: "T", grid: { cols: 12, rowHeight: 40, density: "comfortable" as const, fill: false }, filters: [] };
+    const widgets = Object.fromEntries(["a", "b", "c", "d"].map((id) => [id, { kind: "text" as const, title: id.toUpperCase(), body: "" }]));
+    // "b" sits alone on the right; removing the full-width "c" lets "d" rise into the empty left column, ahead of "b".
+    const before = { ...base, widgets, layout: [{ i: "a", x: 0, y: 0, w: 12, h: 3 }, { i: "b", x: 6, y: 3, w: 6, h: 8 }, { i: "c", x: 0, y: 11, w: 12, h: 8 }, { i: "d", x: 0, y: 19, w: 6, h: 8 }] };
+    const after = { ...base, widgets, layout: [{ i: "a", x: 0, y: 0, w: 12, h: 3 }, { i: "d", x: 0, y: 3, w: 6, h: 8 }, { i: "b", x: 6, y: 3, w: 6, h: 8 }] };
+    expect(describeChanges(before, after)).toEqual(["removed “C”"]);
+  });
+
   it("reports a widget dragged to another place, and a resize", async () => {
     const { board } = await boardWithThree();
     const layout = board.config.layout.map((l) => (l.i === "c" ? { ...l, y: 0, w: 6 } : l.i === "a" || l.i === "b" ? { ...l, y: l.y + 4 } : l));

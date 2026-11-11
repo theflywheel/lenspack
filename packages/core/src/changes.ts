@@ -40,20 +40,27 @@ export function describeChanges(before: BoardConfig, after: BoardConfig): string
   if (before.title !== after.title) out.push(`renamed the board to “${after.title}”`);
   const was = new Map(before.layout.map((l) => [l.i, l]));
   const now = new Map(after.layout.map((l) => [l.i, l]));
-  for (const l of after.layout) if (!was.has(l.i) && after.widgets[l.i]) out.push(`added ${title(after, l.i)}`);
-  for (const l of before.layout) if (!now.has(l.i) && before.widgets[l.i]) out.push(`removed ${title(before, l.i)}`);
+  const added = after.layout.filter((l) => !was.has(l.i) && after.widgets[l.i]);
+  const removed = before.layout.filter((l) => !now.has(l.i) && before.widgets[l.i]);
+  for (const l of added) out.push(`added ${title(after, l.i)}`);
+  for (const l of removed) out.push(`removed ${title(before, l.i)}`);
   const common = after.layout.filter((l) => was.has(l.i)).map((l) => l.i);
   const shared = new Set(common);
-  const moved = outOfOrder(
-    readingOrder(after.layout).filter((i) => shared.has(i)),
-    readingOrder(before.layout).filter((i) => shared.has(i)),
-  );
+  // When a widget comes or goes, the grid closes or opens the gap, and the
+  // others can change places in doing so: none of that is a move anyone made.
+  const moved =
+    added.length || removed.length
+      ? new Set<string>()
+      : outOfOrder(
+          readingOrder(after.layout).filter((i) => shared.has(i)),
+          readingOrder(before.layout).filter((i) => shared.has(i)),
+        );
   for (const id of common) {
     const a = was.get(id)!;
     const b = now.get(id)!;
     const resized = a.w !== b.w || a.h !== b.h;
     // Only a reading-order change, or a sideways step within the same row, counts as a move.
-    const isMoved = moved.has(id) || (a.y === b.y && a.x !== b.x && !resized);
+    const isMoved = moved.has(id) || (!added.length && !removed.length && a.y === b.y && a.x !== b.x && !resized);
     const wa = before.widgets[id];
     const wb = after.widgets[id];
     if (wa && wb && wa.title !== wb.title) out.push(`renamed “${wa.title}” to “${wb.title}”`);
