@@ -28,7 +28,7 @@ export default defineConfig({
     ],
   },
   test: {
-    include: ["packages/*/test/**/*.test.{ts,tsx}", "examples/test/**/*.test.ts", "scripts/**/*.test.ts"],
+    include: ["packages/*/test/**/*.test.{ts,tsx}", "examples/test/**/*.test.ts", "examples/demo/test/**/*.test.ts", "scripts/**/*.test.ts"],
     environmentMatchGlobs: [["packages/react/**", "jsdom"]],
     testTimeout: 60_000,
     hookTimeout: 120_000,

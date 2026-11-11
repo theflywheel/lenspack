@@ -11,6 +11,7 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { Markdown } from "./markdown";
 
 // The chat panel, in a chunk of its own: the AI SDK loads when a board with
 // chat is opened, not with the landing page or the board.
@@ -302,7 +303,8 @@ export function ChatPanel({
               ))}
               {(m.parts as Part[]).map((p, i) =>
                 p.type === "text" && p.text?.trim() ? (
-                  <p key={i} className="text-sm leading-6">{p.text}</p>
+                  // The assistant's replies may carry a short list or bold names; what a person typed stays as typed.
+                  m.role === "assistant" ? <Markdown key={i} text={p.text} /> : <p key={i} className="whitespace-pre-wrap text-sm leading-6">{p.text}</p>
                 ) : p.type === "data-review" ? (
                   <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
                 ) : p.type === "data-usage" ? (
