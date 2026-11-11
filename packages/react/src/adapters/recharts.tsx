@@ -9,6 +9,8 @@ import { type ChartAdapter, type ChartSpec, axisWidth } from "../charts";
 function RechartsChart({ spec }: { spec: ChartSpec }) {
   const { rows, keys, palette, format } = spec;
   const axis = { tick: { fontSize: 11 }, tickLine: false, axisLine: false } as const;
+  // The swatch carries the series; its name stays in the card's ink, at the axis's size.
+  const legend = { iconSize: 8, wrapperStyle: { fontSize: 11, lineHeight: "16px" }, formatter: (name: unknown) => <span style={{ color: "var(--lp-fg)" }}>{String(name)}</span> } as const;
 
   if (spec.chart === "pie") {
     return (
@@ -24,7 +26,7 @@ function RechartsChart({ spec }: { spec: ChartSpec }) {
             ))}
           </Pie>
           <Tooltip formatter={(value, name) => [format(Number(value ?? 0)), String(name)]} />
-          {spec.legend && <Legend />}
+          {spec.legend && <Legend {...legend} />}
         </PieChart>
       </ResponsiveContainer>
     );
@@ -37,7 +39,7 @@ function RechartsChart({ spec }: { spec: ChartSpec }) {
     <XAxis key="x" dataKey={spec.groupKey} {...axis} />,
     <YAxis key="y" {...axis} width={axisWidth(spec)} tickFormatter={(v: number) => format(v)} />,
     <Tooltip key="t" formatter={(value, name) => [format(Number(value ?? 0)), spec.label(String(name))]} />,
-    ...(spec.legend && keys.length > 1 ? [<Legend key="l" />] : []),
+    ...(spec.legend && keys.length > 1 ? [<Legend key="l" {...legend} />] : []),
   ];
 
   if (spec.chart === "line")
