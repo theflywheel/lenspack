@@ -276,7 +276,8 @@ export function turnCost(calls: CallRecord[], queries: QueryMeter = emptyQueryMe
 // --- the ledger -----------------------------------------------------------
 
 type Key = { day: string; user: string; pack: string };
-type Entry = Key & { turnIds: Set<string>; llm: Usage; byProvider: Record<string, Usage>; byRole: Partial<Record<Role, Usage>>; queries: QueryMeter };
+/** byEffort: the calls that ran at an effort, by provider and then effort. */
+type Entry = Key & { turnIds: Set<string>; llm: Usage; byProvider: Record<string, Usage>; byRole: Partial<Record<Role, Usage>>; byEffort: Record<string, Record<string, Usage>>; queries: QueryMeter };
 
 const dayOf = (at: Date | string) => (typeof at === "string" ? at : at.toISOString()).slice(0, 10);
 
@@ -292,7 +293,7 @@ export function usageLedger() {
   const entry = (k: Key) => {
     const id = `${k.day}\u0000${k.user}\u0000${k.pack}`;
     let e = entries.get(id);
-    if (!e) entries.set(id, (e = { ...k, turnIds: new Set(), llm: emptyUsage(), byProvider: {}, byRole: {}, queries: emptyQueryMeter() }));
+    if (!e) entries.set(id, (e = { ...k, turnIds: new Set(), llm: emptyUsage(), byProvider: {}, byRole: {}, byEffort: {}, queries: emptyQueryMeter() }));
     return e;
   };
   const record = (r: CallRecord) => {
@@ -301,6 +302,7 @@ export function usageLedger() {
     addUsage(e.llm, u);
     addUsage((e.byProvider[r.provider] ??= emptyUsage()), u);
     addUsage((e.byRole[r.role] ??= emptyUsage()), u);
+    if (r.effort) addUsage(((e.byEffort[r.provider] ??= {})[r.effort] ??= emptyUsage()), u);
     if (r.turn) e.turnIds.add(r.turn);
   };
   return {
@@ -346,6 +348,7 @@ export function usageLedger() {
           llm: rounded(e.llm),
           byProvider: Object.fromEntries(Object.entries(e.byProvider).map(([k, u]) => [k, rounded(u)])),
           byRole: Object.fromEntries(Object.entries(e.byRole).map(([k, u]) => [k, rounded(u!)])),
+          byEffort: Object.fromEntries(Object.entries(e.byEffort).map(([p, levels]) => [p, Object.fromEntries(Object.entries(levels).map(([k, u]) => [k, rounded(u)]))])),
           queries: { ...e.queries, ms: Math.round(e.queries.ms) },
         })),
       };
@@ -401,6 +404,13 @@ export function readUsageFile(path: string, at = new Date()): CallRecord[] {
 
 /** Daily caps on priced spend, in US dollars, per UTC day. */
 export type Budget = { usdPerDay?: number; usdPerUserPerDay?: number };
+
+/** The caps and today's priced spend against them: the server's, and each user's. */
+export function budgetReport(ledger: UsageLedger, budget: Budget, at = new Date()) {
+  const users: Record<string, number> = {};
+  for (const row of ledger.report().turns) if (row.day === dayOf(at) && row.user !== "-") users[row.user] = round((users[row.user] ?? 0) + row.llm.usd);
+  return { ...budget, day: dayOf(at), spent: round(ledger.spent({ at })), users };
+}
 
 /** Why chat must wait until tomorrow, or null. Only priced calls count; probes have no user, so never count against one. */
 export function overBudget(ledger: UsageLedger, budget: Budget | undefined, user: string, at = new Date()): string | null {

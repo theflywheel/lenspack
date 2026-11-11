@@ -12,7 +12,7 @@ import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Access, Audit, Principal } from "./auth";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
-import { type Budget, type CallRecord, type UsageLedger, type UsageSink, overBudget, turnCost, usageLedger, withMeter } from "./metering";
+import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, turnCost, usageLedger, withMeter } from "./metering";
 import { catalogueText, systemParts } from "./prompt";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
 
@@ -201,7 +201,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       // What chat has cost since the server started: maintainers only, as it names every user.
       if (packName === "_usage" && req.method === "GET") {
         if (!who.maintain) return json(res, 403, { error: "usage is for maintainers" });
-        return json(res, 200, ledger.report());
+        // The caps go with it, so whoever watches spend sees how near they are.
+        return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
       }
       const h = byName.get(packName);
       // A pack the caller may not open looks the same as one that is not there.

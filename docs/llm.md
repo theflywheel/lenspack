@@ -128,7 +128,7 @@ await withMeter({ role: "build", user, pack, board, turn }, () => streamText({ m
 
 A sink is `{ record(call) }`. lenspack ships two.
 
-**The ledger** keeps totals by UTC day, user and pack, with breakdowns by provider and role and each pack's query counts (board loads included). It is served at **`GET /api/_usage`**, for maintainers only because it names every user.
+**The ledger** keeps totals by UTC day, user and pack, with breakdowns by provider, role and (where a call recorded one) effort, and each pack's query counts (board loads included). It is served at **`GET /api/_usage`**, for maintainers only because it names every user. On an open server (`auth: { kind: none }`) everyone counts as a maintainer. The demo shows it on its Usage page, from the profile menu.
 
 **The usage file** is append-only JSONL with one line per call, so usage survives restarts. Name it in `lenspack.yaml` (the path is relative to the config file):
 
@@ -149,9 +149,12 @@ Each chat turn also gets a summary of its own calls, one line per role and provi
   "since": "2026-11-11T00:00:04.000Z",
   "total": { "turns": 12, "calls": 30, "failed": 0, "inputTokens": 412000, "cachedInputTokens": 351000, "cacheWriteTokens": 41000, "outputTokens": 5200, "reasoningTokens": 1900, "usd": 0.31, "unpriced": 0 },
   "packs": { "ops": { "queries": 88, "failed": 0, "ms": 5120, "rows": 1400 } },
-  "turns": [{ "day": "2026-11-11", "user": "someone", "pack": "ops", "turns": 12, "llm": { "…": "as total" }, "byProvider": { "claude-sonnet-5-5": { "…": "as total" } }, "byRole": { "build": { "…": "as total" }, "review": { "…": "as total" } }, "queries": { "queries": 40, "failed": 0, "ms": 2300, "rows": 610 } }]
+  "turns": [{ "day": "2026-11-11", "user": "someone", "pack": "ops", "turns": 12, "llm": { "…": "as total" }, "byProvider": { "claude-sonnet-5-5": { "…": "as total" } }, "byRole": { "build": { "…": "as total" }, "review": { "…": "as total" } }, "byEffort": { "claude-sonnet-5-5": { "medium": { "…": "as total" } } }, "queries": { "queries": 40, "failed": 0, "ms": 2300, "rows": 610 } }],
+  "budget": { "usdPerDay": 20, "usdPerUserPerDay": 2, "day": "2026-11-11", "spent": 0.31, "users": { "someone": 0.31 } }
 }
 ```
+
+`budget` is there only when one is set (below): the caps, and today's priced spend against them, the server's and each user's.
 
 The startup probes have no user or pack, so they appear under `"-"`.
 

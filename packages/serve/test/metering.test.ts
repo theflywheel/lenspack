@@ -14,6 +14,7 @@ import {
   type Pricing,
   type Provider,
   addUsageSink,
+  budgetReport,
   buildProvider,
   configSchema,
   createApp,
@@ -175,6 +176,20 @@ describe("the budget", () => {
     expect(overBudget(ledger, { usdPerDay: 1 }, "a", new Date(Date.now() + 86_400_000))).toBeNull();
   });
 
+  it("reports the caps beside today's spend, the server's and each user's; a probe has no user", () => {
+    const ledger = usageLedger();
+    ledger.record(record({ user: "a", usd: 1.25, effort: "high" }));
+    ledger.record(record({ user: "a", usd: 0.5, role: "review", effort: "high" }));
+    ledger.record(record({ user: "b", usd: 2 }));
+    ledger.record(record({ role: "probe", usd: 0.25 }));
+    expect(budgetReport(ledger, { usdPerDay: 25, usdPerUserPerDay: 10 })).toEqual({ usdPerDay: 25, usdPerUserPerDay: 10, day: new Date().toISOString().slice(0, 10), spent: 4, users: { a: 1.75, b: 2 } });
+    expect(budgetReport(ledger, { usdPerDay: 25 }, new Date(Date.now() + 86_400_000))).toMatchObject({ spent: 0, users: {} });
+    // The effort a call ran at, by provider, where one was recorded.
+    const a = ledger.report().turns.find((t) => t.user === "a")!;
+    expect(a.byEffort).toEqual({ sonnet: { high: expect.objectContaining({ calls: 2, usd: 1.75 }) } });
+    expect(ledger.report().turns.find((t) => t.user === "b")!.byEffort).toEqual({});
+  });
+
   const tickets = fileURLToPath(new URL("../../../examples/tickets/pack.yaml", import.meta.url));
   let host: Host;
   let close: () => Promise<void>;
@@ -202,5 +217,11 @@ describe("the budget", () => {
     expect(res.status).toBe(429);
     expect((await res.json()).error).toMatch(/today's budget for this server .* resets at 00:00 UTC/);
     expect(model.doStreamCalls).toHaveLength(0);
+    // Whoever may read usage sees the caps beside it; a server with no budget says nothing of one.
+    expect((await (await fetch(`${base}/_usage`)).json()).budget).toMatchObject({ usdPerDay: 5, spent: 5, users: { "someone else": 5 } });
+    const open = createServer(createApp([host], { ledger }));
+    servers.push(open);
+    await new Promise<void>((r) => open.listen(0, "127.0.0.1", r));
+    expect(await (await fetch(`http://127.0.0.1:${(open.address() as { port: number }).port}/api/_usage`)).json()).not.toHaveProperty("budget");
   });
 });
