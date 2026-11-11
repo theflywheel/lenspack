@@ -1,18 +1,20 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, join, normalize } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 
 import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
-import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, explain, resolveBoard } from "@lenspack/engine";
+import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Access, Audit, Principal } from "./auth";
-import { type Provider, publicView, stopOnRepeatedRefusals } from "./llm";
-import { SYSTEM, catalogueText } from "./prompt";
-import { healingPrompt, refusalsFrom, reviewTurn } from "./review";
+import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
+import { type Budget, type CallRecord, type UsageLedger, type UsageSink, overBudget, turnCost, usageLedger, withMeter } from "./metering";
+import { catalogueText, systemParts } from "./prompt";
+import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
 
 // The board API that @lenspack/react's host callbacks talk to, for any number
 // of packs, each bound to its own source. Nothing here knows which backend a
@@ -59,6 +61,12 @@ export type AppOptions = {
   page?: { mode: "demo" | "app"; title?: string; home?: string };
   /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. */
   historyTurns?: number;
+  /** Where each chat turn's cost and each pack's queries are counted (GET /api/_usage), and the budget is checked. One is made if absent. */
+  ledger?: UsageLedger;
+  /** More sinks for the chat's model calls (the usage file). Process-wide sinks (addUsageSink) receive them anyway. */
+  usageSinks?: UsageSink[];
+  /** Daily caps on priced chat spend; over one, chat answers 429 before any model call. */
+  budget?: Budget;
 };
 
 const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
@@ -137,9 +145,12 @@ const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".j
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function serveStatic(root: string, pathname: string, res: ServerResponse, page?: AppOptions["page"]) {
+  // Resolved first: join() would normalise a root like "../dist", and the containment check would then never match.
+  const base = resolve(root);
   const safe = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, "");
-  let file = join(root, safe);
-  if (!file.startsWith(root) || !existsSync(file) || statSync(file).isDirectory()) file = join(root, "index.html");
+  let file = join(base, safe);
+  const inside = file === base || file.startsWith(base + sep);
+  if (!inside || !existsSync(file) || statSync(file).isDirectory()) file = join(base, "index.html");
   if (!existsSync(file)) return json(res, 404, { error: "not found" });
   res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
   if (!page || !file.endsWith("index.html")) return res.end(readFileSync(file));
@@ -150,7 +161,9 @@ function serveStatic(root: string, pathname: string, res: ServerResponse, page?:
 }
 
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
-  const byName = new Map(hosts.map((h) => [h.name, { ...h, catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
+  const ledger = opts.ledger ?? usageLedger();
+  // Every query a pack runs, from a board load or a chat tool, is counted against it.
+  const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
   const providers = opts.providers ?? [];
   const defaultProvider = () => providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
   const provider = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
@@ -184,6 +197,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         // Absent on an open server: there is no one to name.
         const me = opts.access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, ...(opts.signOutUrl ? { signOut: opts.signOutUrl } : {}) } : undefined;
         return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), ...(me ? { me } : {}) });
+      }
+      // What chat has cost since the server started: maintainers only, as it names every user.
+      if (packName === "_usage" && req.method === "GET") {
+        if (!who.maintain) return json(res, 403, { error: "usage is for maintainers" });
+        return json(res, 200, ledger.report());
       }
       const h = byName.get(packName);
       // A pack the caller may not open looks the same as one that is not there.
@@ -324,6 +342,19 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const builderModel = provider(url.searchParams.get("model")) ?? defaultProvider();
     if (!builderModel) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
     if (builderModel.available === false) return json(res, 503, { error: `${builderModel.name} is unavailable: ${builderModel.error}` });
+    // ?effort= is for the chosen model; one without an effort setting ignores it.
+    let effort: string | undefined;
+    try {
+      effort = effortFor(builderModel, url.searchParams.get("effort"));
+    } catch (e) {
+      return json(res, 400, { error: (e as Error).message });
+    }
+    // Before any model call: a paid key behind a public demo stops at the cap, not at the invoice.
+    const over = overBudget(ledger, opts.budget, user);
+    if (over) {
+      audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: "budget" });
+      return json(res, 429, { error: over });
+    }
     // Roles. The builder is small and fast by default; the reviewer and the
     // escalation model (used for the heal round) can be larger. ?review=off
     // disables review.
@@ -335,8 +366,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // At most 3: each round is a build and a review, both model calls.
     const maxRounds = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("rounds") ?? 1)) || 1));
     const body = (await read(req)) as { messages: UIMessage[] };
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
-    const system = SYSTEM(h.pack, h.catalogue, config, h.ctx.now);
+    // What this turn costs: every model call made in its scope, and the queries its tools run.
+    const calls: CallRecord[] = [];
+    const queries = emptyQueryMeter();
+    const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
+    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now);
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
@@ -345,53 +380,71 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // Build, then review, then heal — all in one response stream. The
     // reviewer's verdict is written as a data part the UI renders.
     const stream = createUIMessageStream({
-      execute: async ({ writer }) => {
+      execute: ({ writer }) => withMeter(scope, async () => {
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdict.
         const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; review?: unknown } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [] };
-        for (let round = 1; round <= Math.max(1, maxRounds); round++) {
-          const builder = round === 1 ? builderModel : escalate;
-          writer.write({ type: "data-round", data: { round, builder: builder.name } });
-          const result = streamText({ model: builder.languageModel, system, messages, tools: tools as ToolSet, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)] });
-          // A rejected tool call shows its reason (a chart kind that does not exist, a missing title), not "An error occurred.".
-          writer.merge(result.toUIMessageStream({ sendStart: round === 1, sendFinish: false, onError: (e) => (e instanceof Error ? e.message : String(e)).slice(0, 300) }));
-          const steps = await result.steps;
-          turn.answer = (await result.text).slice(0, 2000);
-          turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));
-          const refused = refusalsFrom(steps as never);
-          turn.refusals.push(...refused);
-          // Stopped by the refusal guard before the model said a word: say what was refused, so no turn is silent.
-          if (!turn.answer.trim() && refused.length) {
-            const id = `refused-${round}`;
-            turn.answer = `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
-            writer.write({ type: "text-start", id });
-            writer.write({ type: "text-delta", id, delta: turn.answer });
-            writer.write({ type: "text-end", id });
+        try {
+          for (let round = 1; round <= Math.max(1, maxRounds); round++) {
+            const builder = round === 1 ? builderModel : escalate;
+            // The asked-for effort goes with the chosen model; a different escalation model runs at its own default.
+            const roundEffort = builder === builderModel ? effort : effortFor(builder);
+            writer.write({ type: "data-round", data: { round, builder: builder.name, ...(roundEffort ? { effort: roundEffort } : {}) } });
+            // Shaped per round: the escalation model may speak another API.
+            const call = shapeCall(builder, { system, messages, tools: tools as ToolSet, loop: true, effort: roundEffort });
+            // The stream is started and read inside the round's scope, so every step of its tool loop is attributed to it.
+            const result = withMeter({ role: round === 1 ? "build" : "escalate", effort: roundEffort }, () => {
+              const r = streamText({ model: builder.languageModel, ...call, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)] });
+              // A rejected tool call shows its reason (a chart kind that does not exist, a missing title), not "An error occurred.".
+              writer.merge(r.toUIMessageStream({ sendStart: round === 1, sendFinish: false, onError: (e) => (e instanceof Error ? e.message : String(e)).slice(0, 300) }));
+              return r;
+            });
+            const steps = await result.steps;
+            turn.answer = (await result.text).slice(0, 2000);
+            turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));
+            const refused = refusalsFrom(steps as never);
+            turn.refusals.push(...refused);
+            // The provider's own safety check declined the turn: say so, rather than end it in silence.
+            const declined = !turn.answer.trim() && (await result.finishReason) === "content-filter";
+            // Stopped by the refusal guard before the model said a word: say what was refused, so no turn is silent.
+            if (!turn.answer.trim() && (refused.length || declined)) {
+              const id = `refused-${round}`;
+              turn.answer = declined ? `${builder.name} declined to answer this request.` : `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
+              writer.write({ type: "text-start", id });
+              writer.write({ type: "text-delta", id, delta: turn.answer });
+              writer.write({ type: "text-end", id });
+            }
+            if (!reviewer) break;
+            const current = (await h.store.get(boardId))!;
+            const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion);
+            const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
+            // Questions get no review: there is nothing on the board to check.
+            if (versions.length === 0 && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
+            let review: Review;
+            const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
+            try {
+              // The reviewer keeps its own configuration, effort included.
+              review = await withMeter({ role: "review", effort: effortFor(reviewer) }, () => reviewTurn(reviewer, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals: refusalsFrom(steps as never) }));
+            } catch (e) {
+              review = { satisfied: true, unavailable: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
+            } finally {
+              clearInterval(beat);
+            }
+            writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...review, raw: undefined } });
+            turn.review = { satisfied: review.satisfied, unavailable: review.unavailable, missing: review.missing, wrong: review.wrong, note: review.note };
+            if (review.satisfied || review.unavailable || round === maxRounds) break;
+            // Another round with the review as the instruction; the model keeps its own history.
+            messages = [...messages, ...steps.flatMap((s) => s.response.messages), { role: "user", content: healingPrompt(review) }];
           }
-          if (!reviewer) break;
-          const current = (await h.store.get(boardId))!;
-          const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion);
-          const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
-          // Questions get no review: there is nothing on the board to check.
-          if (versions.length === 0 && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
-          let review;
-          const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
-          try {
-            review = await reviewTurn(reviewer.languageModel, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals: refusalsFrom(steps as never) });
-          } catch (e) {
-            review = { satisfied: true, unavailable: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
-          } finally {
-            clearInterval(beat);
-          }
-          writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...review, raw: undefined } });
-          turn.review = { satisfied: review.satisfied, unavailable: review.unavailable, missing: review.missing, wrong: review.wrong, note: review.note };
-          if (review.satisfied || review.unavailable || round === maxRounds) break;
-          // Another round with the review as the instruction; the model keeps its own history.
-          messages = [...messages, ...steps.flatMap((s) => s.response.messages), { role: "user", content: healingPrompt(review) }];
+        } finally {
+          // Counted even when the turn failed part-way: the tokens were spent.
+          const cost = turnCost(calls, queries);
+          ledger.turn({ user, pack: h.name }, cost);
+          audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, cost }) });
+          writer.write({ type: "data-usage", data: cost });
         }
-        audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...turn }) });
         writer.write({ type: "finish" });
-      },
+      }),
       onError: (e) => (e instanceof Error ? e.message : String(e)),
     });
     const response = createUIMessageStreamResponse({ stream });

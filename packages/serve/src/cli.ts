@@ -10,6 +10,7 @@ import { buildBoard, createApp, seedBoards } from "./app";
 import { accessFrom, fileAudit } from "./auth";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { buildProvider, probe, providersFromEnv } from "./llm";
+import { addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";
 
 const USAGE = `lenspack <command>
 
@@ -37,7 +38,18 @@ async function main() {
       // As a container's PID 1, node ignores SIGTERM unless told otherwise: close the
       // sources and the board store (a database file is checkpointed) and exit.
       for (const sig of ["SIGTERM", "SIGINT"] as const) process.once(sig, () => void close().finally(() => process.exit(0)));
+      // Every model call is metered into the ledger (GET /api/_usage, the budget) and,
+      // with usage: in the config, a file that outlives the process. Process-wide, so
+      // the startup probes are counted too.
+      const ledger = usageLedger();
+      addUsageSink(ledger);
+      if (config.usage) {
+        const usageFile = resolve(dir, config.usage);
+        ledger.restore(readUsageFile(usageFile));
+        addUsageSink(jsonlUsageSink(usageFile));
+      }
       const providers = providersFromEnv().map(buildProvider);
+      if (config.budget && providers.some((p) => !p.pricing)) console.warn(`lenspack: budget set, but ${providers.filter((p) => !p.pricing).map((p) => p.name).join(", ")} has no price, so its spend does not count toward it`);
       void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
       const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
       const uiDir = typeof config.ui === "string" ? config.ui : config.ui?.dir;
@@ -51,7 +63,7 @@ async function main() {
       if (!access) console.warn(config.auth ? "lenspack: auth is `none` — anyone who reaches this port may read and edit every board" : "lenspack: no auth configured — listening on 127.0.0.1 only");
       const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
       const signOutUrl = config.auth?.kind === "proxy" ? config.auth.signOutUrl : undefined;
-      createServer(createApp(hosts, { ui, page, providers, roles, access, audit, signOutUrl, historyTurns: config.historyTurns, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
+      createServer(createApp(hosts, { ui, page, providers, roles, access, audit, signOutUrl, historyTurns: config.historyTurns, ledger, budget: config.budget, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
         console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${access ? `, sign-in by ${config.auth!.kind}` : ""}`);
       });
       return;

@@ -29,6 +29,14 @@ To get the chat panel locally, give the demo any OpenAI-compatible endpoint (the
 LENSPACK_LLM_BASE_URL=https://openrouter.ai/api/v1 LENSPACK_LLM_API_KEY=… LENSPACK_LLM_MODEL=z-ai/glm-4.5 pnpm demo
 ```
 
+or Claude, through Anthropic's API (prompt caching, thinking and effort handled by its adapter):
+
+```bash
+LENSPACK_LLM_PROVIDERS='[{"name":"claude-sonnet-5-5","kind":"anthropic","model":"claude-sonnet-5-5","apiKeyFile":"/path/to/anthropic.key"}]' pnpm demo
+```
+
+[docs/llm.md](docs/llm.md) covers providers, the adapters and adding one, and what each chat turn costs (`GET /api/_usage`).
+
 Or point an MCP client at it and let the model build the board:
 
 ```bash
@@ -235,6 +243,7 @@ Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec 
 - **Boards have owners.** A board someone makes is theirs, hidden until they share it and read-only to others after (they save a copy). The pack's own boards, from its board files, are everyone's to read and a `maintain`er's to change.
 - **Row scope** (`ctx.scope`) narrows every query, filter menus included, on every connector. A number the scope cannot reach is refused (`OUT_OF_SCOPE`), never shown unnarrowed.
 - Every change, refused change and denied request is passed to an `audit` hook with the user (`audit: file.jsonl` in the config).
+- Every model call is metered (`usage: file.jsonl` keeps one line per call), and `budget:` caps a day's spend for the server and per user: over a cap, chat answers 429 before calling a model. See [docs/llm.md](docs/llm.md#metering).
 - `run_sql` is off by default; when on, it is one SELECT/WITH, read-only, timeboxed, row-capped, and its results can never become a widget. It bypasses the pack, so on a tenant-scoped pack it is refused unless enabled as `role-scoped`, meaning the database role is the fence.
 - Pack `sql` fragments are trusted code. Review them like code.
 
@@ -246,6 +255,8 @@ auth:
     - { user: ops,  token: env:OPS_TOKEN, edit: true, maintain: true }
     - { user: kenya, token: env:KE_TOKEN, tenant: ke, scope: [{ dimension: province, op: in, value: [Nairobi] }] }
 audit: ./audit.jsonl
+usage: ./usage.jsonl
+budget: { usdPerDay: 20, usdPerUserPerDay: 2 }
 ```
 
 More in [docs/security.md](docs/security.md).

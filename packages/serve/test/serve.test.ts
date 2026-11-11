@@ -144,6 +144,22 @@ describe("the UI as an app", () => {
     expect(html).toContain("<title>Boards &#60;/script&#62;&#60;b&#62;</title>");
     expect(js).toBe("console.log(1)");
   });
+
+  it("serves files from a ui directory given with .. in it, and nothing outside it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lenspack-ui-"));
+    mkdirSync(join(dir, "dist"));
+    mkdirSync(join(dir, "other"));
+    writeFileSync(join(dir, "dist", "index.html"), "<!doctype html><html><head></head><body>index</body></html>");
+    writeFileSync(join(dir, "dist", "app.js"), "console.log(2)");
+    writeFileSync(join(dir, "secret.txt"), "outside");
+    const { server, base } = await listen(createApp([], { ui: join(dir, "other", "..", "dist") }));
+    const at = (path: string) => fetch(base.replace("/api", path)).then((r) => r.text());
+    const [js, escaped, encoded] = [await at("/app.js"), await at("/../secret.txt"), await at("/%2e%2e/secret.txt")];
+    server.close();
+    expect(js).toBe("console.log(2)");
+    expect(escaped).toContain("index");
+    expect(encoded).toContain("index");
+  });
 });
 
 describe("boards kept in a database", () => {

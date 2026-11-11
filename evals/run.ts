@@ -16,8 +16,8 @@ import { run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 
 import { SMALL, contextFor, examples } from "../examples/index";
-import { type ProviderConfig, buildProvider, probe, providersFromEnv, stopOnRepeatedRefusals } from "@lenspack/serve";
-import { PROMPT_VERSION, SYSTEM, catalogueText } from "@lenspack/serve";
+import { type CallRecord, type ProviderConfig, type TurnCost, type Usage, addUsage, buildProvider, emptyUsage, probe, providersFromEnv, shapeCall, stopOnRepeatedRefusals, turnCost, withMeter } from "@lenspack/serve";
+import { PROMPT_VERSION, catalogueText, systemParts } from "@lenspack/serve";
 import { screenshotBoard } from "./screenshot";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "@lenspack/serve";
 import { type HcmFacts, hcmTasks } from "./tasks-hcm";
@@ -66,6 +66,8 @@ type Result = {
   visual?: VisualVerdict;
   review?: Review & { agrees: boolean };
   healed?: { pass: boolean; note: string | null; latencyMs: number };
+  /** Every model call the task made (build, review, heal, visual judge), from the metering every provider carries. */
+  usage?: Omit<TurnCost, "queries">;
 };
 
 async function main() {
@@ -123,15 +125,17 @@ async function main() {
       const tools = toVercelAI(boardTools({ pack: ex.pack, executor: db.executor, store, boardId: "b", ctx })) as unknown as ToolSet;
       const started = Date.now();
       let r: Result;
+      // The task's model calls, attributed by role as the chat's are.
+      const metered: CallRecord[] = [];
+      const as = <T>(role: CallRecord["role"], fn: () => T) => withMeter({ role, pack: packName, turn: `${cfg.name}/${t.id}`, collect: metered }, fn);
       try {
-        const out = await generateText({
+        const out = await as("eval", () => generateText({
           model: provider.languageModel,
-          system: SYSTEM(ex.pack, catalogue, seeded.board.config),
-          prompt: t.prompt,
-          tools,
+          // As the chat sends it: an adapter may add prompt-cache breakpoints.
+          ...shapeCall(provider, { system: systemParts(ex.pack, catalogue, seeded.board.config), messages: [{ role: "user", content: t.prompt }], tools, loop: true }),
           stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)],
           abortSignal: AbortSignal.timeout(120_000),
-        });
+        }));
         const calls = out.steps.flatMap((s) => s.toolCalls);
         const outputs = out.steps.flatMap((s) => s.toolResults);
         const toolErrors = outputs.filter((o) => {
@@ -142,23 +146,21 @@ async function main() {
         const note = t.check(board.config as never, out.text, facts as never);
         r = { provider: cfg.name, task: t.id, pass: note === null, note, steps: out.steps.length, toolCalls: calls.length, toolErrors, narrated: NARRATION.test(out.text), latencyMs: Date.now() - started, reply: out.text.slice(0, 300) };
         if ((reviewFlag || heal) && (t.kind ?? "edit") === "edit") {
-          const reviewerModel = (fixedReviewer ?? provider).languageModel;
+          const reviewer = fixedReviewer ?? provider;
           const versions = (await store.versions("b")).filter((v) => v.version > seeded.board.version);
           const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
-          const review = await reviewTurn(reviewerModel, { catalogue: catalogueText(ex.pack, catalogue), instructions: ex.pack.instructions, instruction: t.prompt, before: summarise(seeded.board.config), after: summarise(board.config), receipt, refusals: refusalsFrom(out.steps as never) });
+          const review = await as("review", () => reviewTurn(reviewer, { catalogue: catalogueText(ex.pack, catalogue), instructions: ex.pack.instructions, instruction: t.prompt, before: summarise(seeded.board.config), after: summarise(board.config), receipt, refusals: refusalsFrom(out.steps as never) }));
           // Does the reviewer agree with the deterministic check?
           r.review = { ...review, raw: undefined, agrees: review.unavailable ? false : review.satisfied === r.pass };
           if (heal && !review.satisfied && !review.unavailable) {
             const healStart = Date.now();
             const history = out.steps.flatMap((st) => st.response.messages);
-            const again = await generateText({
+            const again = await as("escalate", () => generateText({
               model: (escalateProvider ?? provider).languageModel,
-              system: SYSTEM(ex.pack, catalogue, seeded.board.config),
-              messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: healingPrompt(review) }],
-              tools,
+              ...shapeCall(escalateProvider ?? provider, { system: systemParts(ex.pack, catalogue, seeded.board.config), messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: healingPrompt(review) }], tools, loop: true }),
               stopWhen: stepCountIs(12),
               abortSignal: AbortSignal.timeout(120_000),
-            });
+            }));
             const healedBoard = (await store.get("b"))!;
             const healedNote = t.check(healedBoard.config as never, again.text, facts as never);
             r.healed = { pass: healedNote === null, note: healedNote, latencyMs: Date.now() - healStart };
@@ -167,7 +169,7 @@ async function main() {
         if (judge && (t.kind ?? "edit") !== "question") {
           try {
             const png = await screenshotBoard(board.config, { baseUrl: demoUrl, example: packName });
-            r.visual = await judgeScreenshot(judge.languageModel, png, t.prompt);
+            r.visual = await as("judge", () => judgeScreenshot(judge.languageModel, png, t.prompt));
           } catch (e) {
             r.visual = { ok: false, score: 0, issues: [`visual check failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`], seen: "", raw: "" };
           }
@@ -175,8 +177,10 @@ async function main() {
       } catch (e) {
         r = { provider: cfg.name, task: t.id, pass: false, note: "threw", steps: 0, toolCalls: 0, toolErrors: 0, narrated: false, latencyMs: Date.now() - started, reply: "", error: (e instanceof Error ? e.message : String(e)).slice(0, 200) };
       }
+      const { queries: _, ...usage } = turnCost(metered);
+      r.usage = usage;
       results.push(r);
-      console.log(`  ${r.pass ? "PASS" : "FAIL"}  ${t.id.padEnd(16)} ${String(r.latencyMs).padStart(6)}ms  steps=${r.steps} calls=${r.toolCalls} errs=${r.toolErrors}${r.narrated ? " NARRATED" : ""}${r.review ? `  review=${r.review.satisfied ? "ok" : "no"}${r.review.agrees ? "" : "(disagrees)"}` : ""}${r.healed ? `  healed=${r.healed.pass ? "PASS" : "FAIL"} +${r.healed.latencyMs}ms` : ""}${r.visual ? `  visual=${r.visual.ok ? "ok" : "no"}(${r.visual.score})${r.visual.issues.length ? ` ${r.visual.issues.join("; ").slice(0, 100)}` : ""}` : ""}${r.note ? `  — ${r.note}` : ""}${r.error ? `  — ${r.error}` : ""}`);
+      console.log(`  ${r.pass ? "PASS" : "FAIL"}  ${t.id.padEnd(16)} ${String(r.latencyMs).padStart(6)}ms  steps=${r.steps} calls=${r.toolCalls} errs=${r.toolErrors}${r.narrated ? " NARRATED" : ""}${r.review ? `  review=${r.review.satisfied ? "ok" : "no"}${r.review.agrees ? "" : "(disagrees)"}` : ""}${r.healed ? `  healed=${r.healed.pass ? "PASS" : "FAIL"} +${r.healed.latencyMs}ms` : ""}${r.visual ? `  visual=${r.visual.ok ? "ok" : "no"}(${r.visual.score})${r.visual.issues.length ? ` ${r.visual.issues.join("; ").slice(0, 100)}` : ""}` : ""}${r.note ? `  — ${r.note}` : ""}${r.error ? `  — ${r.error}` : ""}  ${cost(r.usage!.total)}`);
     }
   }
   await db.close();
@@ -189,8 +193,8 @@ async function main() {
   const names = [...new Set(results.map((r) => r.provider))];
   const taskIds = [...new Set(results.map((r) => r.task))];
   const lines = [
-    `| model | pass | after heal | reviewer agrees | avg latency | avg steps | tool errors | narrated | visual ok |`,
-    `|---|---|---|---|---|---|---|---|---|`,
+    `| model | pass | after heal | reviewer agrees | avg latency | avg steps | tool errors | narrated | visual ok | tokens in / out | cost |`,
+    `|---|---|---|---|---|---|---|---|---|---|---|`,
     ...names.map((n) => {
       const rs = results.filter((r) => r.provider === n);
       const ran = rs.filter((r) => !r.error || r.note !== "provider unavailable");
@@ -198,7 +202,8 @@ async function main() {
       const vis = rs.filter((r) => r.visual);
       const rev = rs.filter((r) => r.review);
       const finalPass = rs.filter((r) => (r.healed ? r.healed.pass : r.pass)).length;
-      return `| ${n} | ${rs.filter((r) => r.pass).length}/${rs.length} | ${rs.some((r) => r.healed) ? `${finalPass}/${rs.length}` : "—"} | ${rev.length ? `${rev.filter((r) => r.review!.agrees).length}/${rev.length}` : "—"} | ${avg((r) => r.latencyMs)} ms | ${avg((r) => r.steps)} | ${rs.reduce((s, r) => s + r.toolErrors, 0)} | ${rs.filter((r) => r.narrated).length} | ${vis.length ? `${vis.filter((r) => r.visual!.ok).length}/${vis.length}` : "—"} |`;
+      const spent = rs.reduce((t, r) => (r.usage ? addUsage(t, r.usage.total) : t), emptyUsage());
+      return `| ${n} | ${rs.filter((r) => r.pass).length}/${rs.length} | ${rs.some((r) => r.healed) ? `${finalPass}/${rs.length}` : "—"} | ${rev.length ? `${rev.filter((r) => r.review!.agrees).length}/${rev.length}` : "—"} | ${avg((r) => r.latencyMs)} ms | ${avg((r) => r.steps)} | ${rs.reduce((s, r) => s + r.toolErrors, 0)} | ${rs.filter((r) => r.narrated).length} | ${vis.length ? `${vis.filter((r) => r.visual!.ok).length}/${vis.length}` : "—"} | ${spent.inputTokens} / ${spent.outputTokens} | ${cost(spent)} |`;
     }),
     ``,
     `| task | ${names.join(" | ")} |`,
@@ -208,6 +213,12 @@ async function main() {
   const md = lines.join("\n");
   writeFileSync(join(dir, `${stamp}.md`), md);
   console.log(`\n${md}\n\nwritten to evals/results/${stamp}.{json,md}`);
+}
+
+/** Dollars, or "unpriced" for the calls a provider has no price for. */
+function cost(u: Usage) {
+  const usd = `$${u.usd.toFixed(4)}`;
+  return u.unpriced === 0 ? usd : u.unpriced === u.calls ? "unpriced" : `${usd} + ${u.unpriced} unpriced`;
 }
 
 main().catch((e) => {

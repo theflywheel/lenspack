@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 8;
+export const PROMPT_VERSION = 9;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -57,15 +57,20 @@ const exampleLine = ({ question, query: q, note }: Pack["examples"][number]) => 
   return `- "${question}" → ${q.kind === "rows" ? "" : `${q.kind} `}${describeQuery(q)}${order}${filters}${note ? ` (${note})` : ""}`;
 };
 
-export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()) => `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
+/**
+ * The system prompt in two parts: what holds for every turn on this pack
+ * (the catalogue, the examples, the rules), then the current board, which
+ * changes with every edit. Stable first, so a provider's prompt cache keeps
+ * the long first part across edits; joined, it is SYSTEM.
+ */
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()): [stable: string, board: string] => [
+  `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
 ${catalogueText(pack, catalogue)}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
 
-${board ? `CURRENT BOARD:\n${summarise(board)}` : ""}
-
 Rules:
-- Use only the keys listed above. ${tooLarge(catalogue) ? "Meanings are not listed: call list_metrics with q when a label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown above; call get_board only after your edits, to verify.
+- Use only the keys listed above. ${tooLarge(catalogue) ? "Meanings are not listed: call list_metrics with q when a label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown below; call get_board only after your edits, to verify.
 - Every edit is a tool call. Never describe an edit you did not make. Do not ask permission for straightforward edits; just make them and say what changed.
 - If a tool returns applied:false with didYouMean, retry once with that key. If a query is refused for fan-out, use a measure on the other entity instead (the hints say which).
 - A tool result with applied:false or an error means that edit did NOT happen. Fix the arguments and call it again; never move on as if it worked.
@@ -78,4 +83,8 @@ Rules:
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Do every part of a request that can be done, even when another part cannot; then name the part that could not and why.
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
-- Reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call. No markdown headings, no bullet lists.`;
+- Reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call. No markdown headings, no bullet lists.`,
+  board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : "",
+];
+
+export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()) => systemParts(pack, catalogue, board, now).join("");

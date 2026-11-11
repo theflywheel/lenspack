@@ -21,7 +21,7 @@ import { Separator } from "./components/ui/separator";
 
 import { ADAPTER_NAMES, type AdapterName, isAdapter, useChartAdapter } from "./adapters";
 import { appMode, page } from "./page";
-import type { ModelInfo } from "./chat";
+import { type ModelInfo, effortOf } from "./chat";
 import { MetricsReference } from "./metrics";
 import { ProfileMenu } from "./profile";
 
@@ -290,6 +290,9 @@ export function App() {
   const [chatEnabled, setChatEnabled] = React.useState(false);
   const [models, setModels] = React.useState<ModelInfo[]>([]);
   const [model, setModel] = React.useState<string>(params.get("model") ?? "");
+  // Remembered like the model; sent only to a model that takes it.
+  const [effortWanted, setEffort] = React.useState<string>(params.get("effort") ?? "");
+  const effort = effortOf(models.find((m) => m.name === model), effortWanted);
   // A URL naming nothing opens the deployment's home board, if it has one.
   const [home] = React.useState(() => (params.get("example") || params.get("board") || !page.home ? null : page.home.split("/")));
   const [example, setExample] = React.useState<string>(params.get("example") ?? home?.[0] ?? "");
@@ -360,8 +363,8 @@ export function App() {
     if (!example || !boardId) return;
     // An app keeps its own path and leaves the chart library out of the URL.
     const path = appMode ? location.pathname : "/app";
-    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}${view === "metrics" ? "&view=metrics" : ""}`);
-  }, [example, boardId, adapterName, model, view]);
+    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}${effortWanted ? `&effort=${encodeURIComponent(effortWanted)}` : ""}${view === "metrics" ? "&view=metrics" : ""}`);
+  }, [example, boardId, adapterName, model, effortWanted, view]);
   React.useEffect(() => {
     if (appMode && state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
   }, [state]);
@@ -581,7 +584,7 @@ export function App() {
             <div className="order-2 min-w-0">
               {writable ? (
                 <React.Suspense fallback={<div className="rounded-md border p-4 text-sm text-muted-foreground">Loading chat…</div>}>
-                  <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={() => reloadBoard()} models={models} model={model} onModelChange={setModel} />
+                  <ChatPanel key={`${base}:${model}:${effort}`} base={base} suggestions={suggestions} onTurnEnd={() => reloadBoard()} models={models} model={model} onModelChange={setModel} effort={effort} onEffortChange={setEffort} />
                 </React.Suspense>
               ) : (
                 <div className="rounded-md border p-4 text-sm text-muted-foreground" data-testid="chat-read-only">

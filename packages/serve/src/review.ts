@@ -1,5 +1,6 @@
-import { type LanguageModel, generateText } from "ai";
+import { type LanguageModel, type LanguageModelUsage, generateText } from "ai";
 
+import { type Provider, shapeCall } from "./llm";
 import { WIDGET_LIMITS } from "./prompt";
 
 // The adversarial reviewer. It never sees pixels; it sees the instruction,
@@ -16,6 +17,8 @@ export type Review = {
   /** The reviewer produced no usable verdict; never treat as a failure. */
   unavailable?: boolean;
   raw?: string;
+  /** Tokens the review call used, for metering; absent when the call never returned. */
+  usage?: LanguageModelUsage;
 };
 
 export const REVIEW_PROMPT = `You are a strict, adversarial reviewer of a dashboard edit made by another assistant.
@@ -36,28 +39,31 @@ ${WIDGET_LIMITS} A request for something widgets cannot do is satisfied when the
 
 Reply with JSON only: {"satisfied": boolean, "missing": ["what was asked and is absent, naming the widget kind and keys"], "wrong": ["what exists but differs from the request, with the widget id"], "note": "one sentence"}.`;
 
+/** `reviewer` is a model, or a provider, whose adapter may shape the call (a cache breakpoint on the fixed prompt). */
 export async function reviewTurn(
-  model: LanguageModel,
+  reviewer: LanguageModel | Pick<Provider, "languageModel" | "prepare">,
   input: { catalogue: string; instructions?: string; instruction: string; before: string; after: string; receipt: string; refusals?: string[] },
   timeoutMs = 60_000,
 ): Promise<Review> {
+  const provider = typeof reviewer === "object" && "languageModel" in reviewer ? reviewer : { languageModel: reviewer };
+  const prompt = `PACK:\n${input.catalogue}\n\nDOMAIN RULES:\n${input.instructions?.trim() || "(none)"}\n\nINSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`;
   const out = await generateText({
-    model,
-    system: REVIEW_PROMPT,
-    prompt: `PACK:\n${input.catalogue}\n\nDOMAIN RULES:\n${input.instructions?.trim() || "(none)"}\n\nINSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`,
+    model: provider.languageModel,
+    ...shapeCall(provider, { system: [REVIEW_PROMPT], messages: [{ role: "user", content: prompt }] }),
     // Reasoning models spend output tokens on hidden reasoning before the
     // JSON, and this prompt carries a whole board; leave generous room.
     maxOutputTokens: 4000,
     abortSignal: AbortSignal.timeout(timeoutMs),
   });
   const raw = out.text.trim();
+  const usage = out.totalUsage;
   const m = /\{[\s\S]*\}/.exec(raw);
   try {
     const p = JSON.parse(m ? m[0] : raw) as Partial<Review>;
     if (typeof p.satisfied !== "boolean") throw new Error("no verdict");
-    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw };
+    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw, usage };
   } catch {
-    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw };
+    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw, usage };
   }
 }
 

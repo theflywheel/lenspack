@@ -84,6 +84,10 @@ export const configSchema = z.object({
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
+  /** Append a JSON line per model call (tokens, US$, who, what for) to this file; today's totals are read back at startup. */
+  usage: z.string().optional(),
+  /** Daily caps (UTC) on priced model spend, in US$. Over one, chat answers 429 until midnight UTC. */
+  budget: z.object({ usdPerDay: z.number().positive().optional(), usdPerUserPerDay: z.number().positive().optional() }).strict().optional(),
   /** How many of the latest user turns the chat model is sent (default 8). */
   historyTurns: z.number().int().positive().optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */

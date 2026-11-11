@@ -11,6 +11,7 @@
   "files": ["dist"],
   "scripts": { "build": "tsup src/index.ts src/cli.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.67",
     "@ai-sdk/openai-compatible": "^3.0.53",
     "@lenspack/core": "workspace:*",
     "@lenspack/dss": "workspace:*",

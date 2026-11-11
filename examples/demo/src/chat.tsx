@@ -52,6 +52,23 @@ function ReviewBlock({ r, onApply }: { r: ReviewData; onApply?: (text: string) =
   );
 }
 
+type UsageData = { total: { inputTokens: number; cachedInputTokens: number; outputTokens: number; usd: number; unpriced: number }; models?: { role: string; effort?: string }[]; queries: { queries: number } };
+
+const kilo = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+// What the turn cost, as the server metered it: one quiet line under the reply.
+function UsageLine({ u }: { u: UsageData }) {
+  const t = u.total;
+  const cost = t.unpriced > 0 && t.usd === 0 ? "unpriced" : `$${t.usd < 0.01 ? t.usd.toFixed(4) : t.usd.toFixed(2)}${t.unpriced > 0 ? " + unpriced" : ""}`;
+  const effort = u.models?.find((m) => m.role === "build")?.effort;
+  return (
+    <p className="font-mono text-[11px] text-muted-foreground" data-testid="usage">
+      {kilo(t.inputTokens)} in{t.cachedInputTokens ? ` (${kilo(t.cachedInputTokens)} cached)` : ""} · {kilo(t.outputTokens)} out · {cost} · {u.queries.queries} {u.queries.queries === 1 ? "query" : "queries"}
+      {effort ? ` · ${effort} effort` : ""}
+    </p>
+  );
+}
+
 function StepBadge({ name, part }: { name: string; part: Part }) {
   const r = part.output as { applied?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
   const failed = part.errorText !== undefined || r?.applied === false || r?.ok === false;
@@ -68,7 +85,12 @@ function StepBadge({ name, part }: { name: string; part: Part }) {
 
 // Chat beside the thing it edits. The model only ever calls the board tools;
 // when its turn ends the board is fetched again and re-rendered.
-export type ModelInfo = { name: string; model: string; available: boolean | null; latencyMs?: number; error?: string };
+export type ModelInfo = { name: string; model: string; available: boolean | null; latencyMs?: number; error?: string; efforts?: { levels: string[]; default: string } };
+
+/** The effort a turn asks for: the remembered one if this model takes it; "" leaves it to the server's default. */
+export function effortOf(info: ModelInfo | undefined, remembered: string) {
+  return info?.efforts?.levels.includes(remembered) ? remembered : "";
+}
 
 // Provider names carry the host in parentheses ("glm-5.3-flash (openrouter)")
 // so roles and URLs can name them exactly; the menu shows just the model,
@@ -87,6 +109,8 @@ export function ChatPanel({
   models,
   model,
   onModelChange,
+  effort,
+  onEffortChange,
 }: {
   base: string;
   suggestions: string[];
@@ -94,8 +118,15 @@ export function ChatPanel({
   models: ModelInfo[];
   model: string;
   onModelChange: (m: string) => void;
+  /** A level the model takes, or "" for its default. */
+  effort: string;
+  onEffortChange: (e: string) => void;
 }) {
-  const chat = React.useMemo(() => new Chat({ transport: new DefaultChatTransport({ api: `/api${base}/chat?model=${encodeURIComponent(model)}` }) }), [base, model]);
+  const efforts = models.find((m) => m.name === model)?.efforts;
+  const chat = React.useMemo(
+    () => new Chat({ transport: new DefaultChatTransport({ api: `/api${base}/chat?model=${encodeURIComponent(model)}${effort ? `&effort=${encodeURIComponent(effort)}` : ""}` }) }),
+    [base, model, effort],
+  );
   const { messages, sendMessage, status, error } = useChat({ chat });
   const busy = status === "submitted" || status === "streaming";
   const [input, setInput] = React.useState("");
@@ -151,6 +182,22 @@ export function ChatPanel({
             </SelectContent>
           </Select>
         )}
+        {/* Only for a model with an effort setting; choosing its default goes back to asking for none. */}
+        {efforts && (
+          <Select value={effort || efforts.default} onValueChange={(e) => onEffortChange(e === efforts.default ? "" : e)}>
+            <SelectTrigger size="sm" className="h-7 w-auto shrink-0 text-xs" aria-label="Effort" title="How hard the model thinks: higher is slower and costs more" data-testid="effort-select">
+              <SelectValue>{effort || efforts.default}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {efforts.levels.map((l) => (
+                <SelectItem key={l} value={l}>
+                  {l}
+                  {l === efforts.default ? " (default)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </CardHeader>
       {/* A plain scrolling box: inside a card with only a max height, a scroll area never gets a height of
           its own, and a long conversation spills over the input and takes its clicks. */}
@@ -179,6 +226,8 @@ export function ChatPanel({
                   <p key={i} className="text-sm leading-6">{p.text}</p>
                 ) : p.type === "data-review" ? (
                   <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
+                ) : p.type === "data-usage" ? (
+                  <UsageLine key={i} u={p.data as UsageData} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
                   <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
                 ) : null,
