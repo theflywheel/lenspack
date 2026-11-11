@@ -322,7 +322,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
     defineTool({
       name: "query",
-      description: "Run one query against the pack and return its rows plus the native query that ran. Use this to answer questions or to check a widget before adding it.",
+      description:
+        "Run one query against the pack and return its rows plus the native query that ran. Use this to answer questions or to check a widget before adding it. Each row's value is the measure; its count is the number of records in that group. records is how many records lie behind the rows shown: it is not the measure's total, and a breakdown with a limit shows only its top groups. For the measure over everything, run a value query.",
       inputSchema: QUERY,
       async execute(a) {
         try {
@@ -336,7 +337,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
             query,
             ...(closest ? { didYouMean: closest } : {}),
             rows: data.records ?? data.rows,
-            total: data.total,
+            // Records behind the rows shown, not the measure's total: named so a model cannot read it as one.
+            records: data.total,
             format: data.format,
             compare: data.compare,
             ...(data.approximate ? { approximate: true } : {}),
