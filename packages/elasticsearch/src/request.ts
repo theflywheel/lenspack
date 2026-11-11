@@ -301,7 +301,24 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       // instant; the key is read back as local time, as SQL returns it.
       const zone = bucketZone(pack.timeZone);
       const local = (key: number) => (zone ? localWallClock(key, zone) : key);
-      const histogram = { date_histogram: { field: timeField!, [interval]: query.grain, min_doc_count: 1, ...(zone ? { time_zone: zone } : {}) }, aggs: metricAggs.aggs };
+      // A numeric field (epoch milliseconds) takes no time_zone in a
+      // date_histogram, so in a zone it is read through a date-typed runtime
+      // field (7.11+). Without runtime fields the zoned series is refused
+      // rather than bucketed at UTC midnight under a local label.
+      let histogramField = timeField!;
+      if (zone && env.typeOf(timeField!) !== "date" && env.typeOf(timeField!) !== "date_nanos") {
+        const { major, minor } = env.version;
+        if (major < 7 || (major === 7 && minor < 11))
+          refuse(`"${root}" keeps time as epoch numbers, which this source cannot bucket in ${pack.timeZone}; it needs Elasticsearch 7.11+ (runtime fields)`, root);
+        histogramField = "__lenspack_time";
+        body.runtime_mappings = {
+          [histogramField]: {
+            type: "date",
+            script: { source: "def f = doc[params.f]; if (f.size() > 0) emit(f.value.longValue())", params: { f: timeField! } },
+          },
+        };
+      }
+      const histogram = { date_histogram: { field: histogramField, [interval]: query.grain, min_doc_count: 1, ...(zone ? { time_zone: zone } : {}) }, aggs: metricAggs.aggs };
       if (!bound.dimension) {
         body.aggs = { t: histogram };
         return {
