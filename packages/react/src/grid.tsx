@@ -10,8 +10,10 @@ const Grid = WidthProvider(Responsive);
 
 // A board authored on a wide screen is unreadable as twelve columns on a
 // phone. Below `md` the grid collapses to a single column and every widget
-// takes the full width, in the order the author laid them out.
-const BREAKPOINTS = { lg: 1000, md: 680, sm: 480, xs: 0 };
+// takes the full width, in the order the author laid them out. The widths are
+// the board's own, not the window's: a board beside a wide side panel keeps
+// its columns down to 600px.
+const BREAKPOINTS = { lg: 1000, md: 600, sm: 480, xs: 0 };
 const COLS = { lg: 12, md: 12, sm: 6, xs: 1 };
 
 export function narrowLayout(layout: Layout[], cols: number): Layout[] {
