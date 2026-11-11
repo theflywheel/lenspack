@@ -164,39 +164,49 @@ export function ChatPanel({
   };
   return (
     <Card className="sticky top-4 flex max-h-[calc(100vh-6rem)] flex-col gap-0 rounded-md py-0" data-testid="chat">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 border-b py-3 [.border-b]:pb-3">
-        <CardTitle className="shrink-0 whitespace-nowrap font-mono text-xs font-medium text-muted-foreground">build with chat</CardTitle>
-        {models.length > 1 && (
-          <Select value={model} onValueChange={onModelChange}>
-            <SelectTrigger size="sm" className="h-7 min-w-0 flex-1 text-xs [&>span]:truncate" aria-label="Model" data-testid="model-select">
-              <SelectValue>{labelFor(model, models)}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {models
-                .filter((m) => m.available !== false)
-                .map((m) => (
-                  <SelectItem key={m.name} value={m.name}>
-                    {labelFor(m.name, models)}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        )}
-        {/* Only for a model with an effort setting; choosing its default goes back to asking for none. */}
-        {efforts && (
-          <Select value={effort || efforts.default} onValueChange={(e) => onEffortChange(e === efforts.default ? "" : e)}>
-            <SelectTrigger size="sm" className="h-7 w-auto shrink-0 text-xs" aria-label="Effort" title="How hard the model thinks: higher is slower and costs more" data-testid="effort-select">
-              <SelectValue>{effort || efforts.default}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {efforts.levels.map((l) => (
-                <SelectItem key={l} value={l}>
-                  {l}
-                  {l === efforts.default ? " (default)" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {/* Title on its own line, the model and its effort under it: side by side in a 320px panel, the
+          model's name had no room left and showed as an empty box. */}
+      <CardHeader className="flex flex-col items-stretch gap-2 border-b py-3 [.border-b]:pb-3">
+        <CardTitle className="font-mono text-xs font-medium text-muted-foreground">build with chat</CardTitle>
+        {(models.length > 1 || efforts) && (
+          <div className="flex min-w-0 items-center gap-2">
+            {models.length > 1 && (
+              <Select value={model} onValueChange={onModelChange}>
+                <SelectTrigger size="sm" className="h-7 min-w-0 flex-1 gap-1 px-2 text-xs" aria-label="Model" title={model} data-testid="model-select">
+                  <SelectValue>
+                    <span className="truncate">{labelFor(model, models)}</span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {models
+                    .filter((m) => m.available !== false)
+                    .map((m) => (
+                      <SelectItem key={m.name} value={m.name}>
+                        {labelFor(m.name, models)}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            )}
+            {/* Only for a model with an effort setting; choosing its default goes back to asking for none. */}
+            {efforts && (
+              <Select value={effort || efforts.default} onValueChange={(e) => onEffortChange(e === efforts.default ? "" : e)}>
+                <SelectTrigger size="sm" className="h-7 w-auto shrink-0 gap-1 px-2 text-xs *:data-[slot=select-value]:gap-1" aria-label="Effort" title="How hard the model thinks: higher is slower and costs more" data-testid="effort-select">
+                  <SelectValue>
+                    <span className="text-muted-foreground">Effort</span> {effort || efforts.default}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {efforts.levels.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {l}
+                      {l === efforts.default ? " (default)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         )}
       </CardHeader>
       {/* A plain scrolling box: inside a card with only a max height, a scroll area never gets a height of

@@ -194,8 +194,12 @@ body { background: var(--paper); color: var(--body); font-family: var(--font-san
   border-radius: 2px;
 }
 
-/* Tailwind preflight resets these; the library's own controls expect them. */
-button, select, input { font: inherit; }
+/* The library's own controls expect these to inherit. In the base layer, so a
+   text-xs or text-sm on a control still wins: unlayered, this beat every utility
+   and set each button in the page's 16px. */
+@layer base {
+  button, select, input { font: inherit; }
+}
 
 /* The board's cards take the same surface tokens, so the library's renderer
    and the page around it are one design rather than two. As specific as the
