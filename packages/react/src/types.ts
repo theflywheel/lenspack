@@ -29,8 +29,8 @@ export type BoardHost = {
   loadBoardData(config: BoardConfig, selections: Record<string, string>): Promise<Record<string, WidgetData>>;
   /** Apply ops and return the new board (a new version). */
   applyOps?(ops: BoardOp[]): Promise<PatchResult>;
-  /** Save a drag/resize as a version of its own. */
-  saveLayout?(layout: LayoutItem[]): Promise<Board>;
+  /** Save a drag/resize as a version of its own; `summary` says what it did ("moved “Total”"). */
+  saveLayout?(layout: LayoutItem[], summary?: string): Promise<Board>;
   /** Distinct values for a filter control. */
   loadFilterOptions?(field: string): Promise<FilterOption[]>;
   loadVersions?(): Promise<BoardVersion[]>;

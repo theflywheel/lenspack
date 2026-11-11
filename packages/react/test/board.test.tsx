@@ -108,6 +108,42 @@ describe("<Board>", () => {
   });
 });
 
+describe("removing a widget by hand", () => {
+  it("offers an × per widget on a writable board, removes through ops, and hands the host the version to undo to", async () => {
+    const store = memoryStore();
+    await store.create({ id: "b", pack: { pack: "fx", version: 1 }, config: config(), title: "x" });
+    const applyOps = vi.fn((ops: Parameters<NonNullable<BoardHost["applyOps"]>>[0]) => store.patch({ id: "b", ops, catalogue }));
+    const onRemoved = vi.fn();
+    const onEdit = vi.fn();
+    render(
+      <BoardProvider board={(await store.get("b"))!} catalogue={catalogue} host={host({ applyOps, saveLayout: async () => (await store.get("b"))! })} onEdit={onEdit}>
+        <Board onWidgetRemoved={onRemoved} />
+      </BoardProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Remove By region" }));
+    });
+    expect(applyOps).toHaveBeenCalledWith([{ op: "remove_widget", id: "c" }]);
+    await waitFor(() => expect(onRemoved).toHaveBeenCalledWith({ id: "c", title: "By region", restore: 1 }));
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ version: 2 }));
+    expect(screen.queryByText("By region")).toBeNull();
+    expect(screen.getByTestId("lp-board").dataset.editable).toBe("true");
+  });
+
+  it("shows neither × nor handles on a read-only board", () => {
+    const store = memoryStore();
+    render(
+      <BoardProvider board={board()} catalogue={catalogue} host={host({ applyOps: (ops) => store.patch({ id: "b", ops, catalogue }) })} editable={false}>
+        <Board />
+      </BoardProvider>,
+    );
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+    expect(screen.getByTestId("lp-board").dataset.editable).toBeUndefined();
+    // The grid keeps its resize handles in the page, marked hidden.
+    expect(document.querySelectorAll(".react-grid-item:not(.react-resizable-hide) > .react-resizable-handle")).toHaveLength(0);
+  });
+});
+
 describe("a compared breakdown table", () => {
   it("shows previous, change and share after the measure, and the Other row past the page", async () => {
     const r = applyOps(
