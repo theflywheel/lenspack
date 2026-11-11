@@ -24,6 +24,7 @@ import { appMode, page } from "./page";
 import { type ModelInfo, effortOf } from "./chat";
 import { MetricsReference } from "./metrics";
 import { ProfileMenu } from "./profile";
+import { UsagePage } from "./usage";
 
 const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
 
@@ -267,6 +268,10 @@ function PreviewBanner({ onReverted }: { onReverted: () => void }) {
   );
 }
 
+const VIEWS = ["board", "metrics", "usage"] as const;
+type View = (typeof VIEWS)[number];
+const isView = (v: string | null): v is View => (VIEWS as readonly string[]).includes(v ?? "");
+
 type Entry = { id: string; title: string; owner?: string; shared?: boolean; writable?: boolean };
 type Catalog = { example: string; description?: string; boards: Entry[] }[];
 /** Who the server says is signed in; absent on an open server. */
@@ -303,8 +308,8 @@ export function App() {
   const [problem, setProblem] = React.useState<string | null>(null);
   const [me, setMe] = React.useState<Me | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-  // The board, or the pack's metrics reference in its place.
-  const [view, setView] = React.useState<"board" | "metrics">(params.get("view") === "metrics" ? "metrics" : "board");
+  // The board, or in its place the pack's metrics reference or what the AI has cost.
+  const [view, setView] = React.useState<View>(isView(params.get("view")) ? (params.get("view") as View) : "board");
   const loadIndex = React.useCallback(async () => {
     const r = await api("/");
     setCatalog(r.examples);
@@ -363,7 +368,7 @@ export function App() {
     if (!example || !boardId) return;
     // An app keeps its own path and leaves the chart library out of the URL.
     const path = appMode ? location.pathname : "/app";
-    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}${effortWanted ? `&effort=${encodeURIComponent(effortWanted)}` : ""}${view === "metrics" ? "&view=metrics" : ""}`);
+    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}${effortWanted ? `&effort=${encodeURIComponent(effortWanted)}` : ""}${view !== "board" ? `&view=${view}` : ""}`);
   }, [example, boardId, adapterName, model, effortWanted, view]);
   React.useEffect(() => {
     if (appMode && state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
@@ -410,6 +415,8 @@ export function App() {
 
   // Making, copying, sharing and deleting boards: what owners need.
   const canMake = me ? me.edit : true;
+  // Usage names everyone, so the server shows it to maintainers; on an open server that is everyone.
+  const canSeeUsage = me ? me.maintain : true;
   const entry = catalog.find((c) => c.example === example)?.boards.find((b) => b.id === boardId);
   const open = async (r: { id?: string; error?: string }) => {
     if (!r.id) return setNotice(r.error ?? "That did not work");
@@ -520,7 +527,7 @@ export function App() {
             <Button variant={view === "metrics" ? "secondary" : "ghost"} size="sm" onClick={() => setView(view === "metrics" ? "board" : "metrics")} aria-pressed={view === "metrics"} data-testid="metrics-view">
               <BookOpen /> Metrics
             </Button>
-            <ProfileMenu user={me?.user} signOut={me?.signOut} />
+            <ProfileMenu user={me?.user} signOut={me?.signOut} onUsage={canSeeUsage ? () => setView("usage") : undefined} />
           </div>
         </div>
       </header>
@@ -528,6 +535,8 @@ export function App() {
       <main className="mx-auto max-w-7xl px-4 py-6">
         {view === "metrics" ? (
           <MetricsReference example={example} load={api} onClose={() => setView("board")} />
+        ) : view === "usage" ? (
+          <UsagePage load={api} onClose={() => setView("board")} />
         ) : (
         <div className={chatEnabled ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]" : ""}>
           <div className={chatEnabled ? "order-1 min-w-0" : "min-w-0"}>

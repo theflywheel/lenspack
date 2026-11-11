@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { ChevronRight, Gauge, LogOut, Monitor, Moon, Sun, UserRound } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { cn } from "./lib/utils";
@@ -12,31 +12,48 @@ const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "System", icon: Monitor },
 ];
 
-// The signed-in person's corner: who they are, the theme, and the way out.
-// On an open server there is no one to name, so it holds the theme alone.
-export function ProfileMenu({ user, signOut }: { user?: string; signOut?: string }) {
+// The person's corner: who they are, the theme, what the AI has cost (for
+// those who may see it), and the way out. On an open server there is no one
+// signed in, so it names a guest, and there is no way out to offer.
+export function ProfileMenu({ user, signOut, onUsage }: { user?: string; signOut?: string; onUsage?: () => void }) {
   const [theme, setTheme] = useTheme();
+  const [open, setOpen] = React.useState(false);
   const initial = (user ?? "").trim().charAt(0).toUpperCase();
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={user ? `Account: ${user}` : "Appearance"}
+          aria-label={user ? `Account: ${user}` : "Guest: theme and usage"}
+          title={user ?? "Guest"}
           data-testid="profile-menu"
-          className="flex size-8 items-center justify-center rounded-full border border-rule-strong bg-muted text-xs font-semibold text-foreground hover:bg-accent"
+          className="flex size-8 shrink-0 items-center justify-center rounded-full border border-rule-strong bg-muted text-xs font-semibold text-foreground hover:bg-accent"
         >
-          {initial || <Sun className="size-4" />}
+          {initial || <UserRound className="size-4" />}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-0">
-        {user && (
-          <div className="border-b border-rule px-4 py-3">
-            <div className="text-2xs text-muted-foreground">Signed in as</div>
-            <div className="truncate text-sm font-medium text-foreground" data-testid="signed-in">
-              {user}
-            </div>
+        <div className="border-b border-rule px-4 py-3">
+          <div className="text-2xs text-muted-foreground">{user ? "Signed in as" : "Browsing as"}</div>
+          <div className="truncate text-sm font-medium text-foreground" data-testid="signed-in">
+            {user ?? "Guest"}
           </div>
+          {!user && <div className="text-2xs text-muted-foreground">This server is open: no sign-in.</div>}
+        </div>
+        {onUsage && (
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onUsage();
+            }}
+            className="flex w-full items-center gap-2 border-b border-rule px-4 py-2.5 text-left text-sm text-foreground hover:bg-accent"
+            data-testid="usage-open"
+          >
+            <Gauge className="size-4 text-muted-foreground" />
+            <span className="flex-1">AI usage</span>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </button>
         )}
         <div className="px-4 py-3">
           <div className="mb-2 text-2xs text-muted-foreground">Theme</div>
