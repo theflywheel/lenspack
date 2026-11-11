@@ -1,11 +1,11 @@
-import type { BoardConfig, Catalogue } from "@lenspack/core";
+import type { BoardChange, BoardConfig, Catalogue } from "@lenspack/core";
 import { describeQuery, summarise } from "@lenspack/core";
 import type { Pack } from "@lenspack/spec";
 
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 9;
+export const PROMPT_VERSION = 10;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -57,13 +57,26 @@ const exampleLine = ({ question, query: q, note }: Pack["examples"][number]) => 
   return `- "${question}" → ${q.kind === "rows" ? "" : `${q.kind} `}${describeQuery(q)}${order}${filters}${note ? ` (${note})` : ""}`;
 };
 
+const BY: Record<string, string> = { layout: "by hand", ops: "by hand", revert: "rollback", file: "board file" };
+
+/**
+ * What the user changed by hand since the chat's last turn (from the version
+ * log: changesSince), as the board part's last section. Empty when nothing.
+ */
+export function userChangesText(changes: BoardChange[] = []) {
+  if (changes.length === 0) return "";
+  const lines = changes.map((c) => `- v${c.version} (${BY[c.source] ?? c.source}): ${c.text}`);
+  return `\n\nCHANGES MADE BY THE USER SINCE YOUR LAST TURN (the current board above already includes them):\n${lines.join("\n")}`;
+}
+
 /**
  * The system prompt in two parts: what holds for every turn on this pack
  * (the catalogue, the examples, the rules), then the current board, which
- * changes with every edit. Stable first, so a provider's prompt cache keeps
- * the long first part across edits; joined, it is SYSTEM.
+ * changes with every edit, and the user's own edits since the last turn.
+ * Stable first, so a provider's prompt cache keeps the long first part across
+ * edits; joined, it is SYSTEM.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()): [stable: string, board: string] => [
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = []): [stable: string, board: string] => [
   `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
@@ -83,8 +96,10 @@ Rules:
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Do every part of a request that can be done, even when another part cannot; then name the part that could not and why.
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
-- Reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call. No markdown headings, no bullet lists.`,
-  board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : "",
+- When the board part lists changes the user made since your last turn, they are deliberate: keep them, never undo them unless asked, and mention them only when they bear on the request.
+- After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
+- An informational answer (what the data holds, several numbers side by side) may use a short bullet list and **bold** for names; keep it brief. Never use markdown headings or tables.`,
+  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}`,
 ];
 
-export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date()) => systemParts(pack, catalogue, board, now).join("");
+export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = []) => systemParts(pack, catalogue, board, now, changes).join("");

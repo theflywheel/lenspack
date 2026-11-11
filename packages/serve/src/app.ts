@@ -5,7 +5,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 
 import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
@@ -311,8 +311,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           return json(res, 200, patched);
         }
         case "POST layout": {
-          const body = (await read(req)) as { layout: BoardOp[] };
-          const saved = await h.store.replaceConfig({ id: boardId, config: { ...board.config, layout: body.layout as never } });
+          const body = (await read(req)) as { layout: BoardOp[]; summary?: unknown };
+          const config = { ...board.config, layout: body.layout as never };
+          // What the drag did, in the words its widget is known by: the client's
+          // own line ("moved “X”"), else what the layouts differ by. One line, short.
+          const said = typeof body.summary === "string" ? body.summary.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+          const summary = said || describeChanges(board.config, config).join(", ").slice(0, 200) || undefined;
+          const saved = await h.store.replaceConfig({ id: boardId, config, ...(summary ? { summary } : {}) });
           audit({ user: who.user, pack: packName, board: boardId, action: "layout", outcome: "ok" });
           return json(res, 200, saved);
         }
@@ -366,13 +371,17 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // from the reviewer must not be able to damage a correct board on its own.
     // At most 3: each round is a build and a review, both model calls.
     const maxRounds = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("rounds") ?? 1)) || 1));
-    const body = (await read(req)) as { messages: UIMessage[] };
+    // since: the board's version when this conversation's last turn ended, so
+    // the model is told what the user changed by hand in between.
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown };
     // What this turn costs: every model call made in its scope, and the queries its tools run.
     const calls: CallRecord[] = [];
     const queries = emptyQueryMeter();
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
-    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now);
+    const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
+    const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
+    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes);
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();

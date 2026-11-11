@@ -3,11 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { emptyBoard } from "@lenspack/core";
 import { catalogueFrom, loadPack, parsePack } from "@lenspack/spec";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
-import { INLINE_KEYS, SYSTEM, configSchema, openConfig, recentTurns } from "../src";
+import { INLINE_KEYS, PROMPT_VERSION, SYSTEM, configSchema, openConfig, recentTurns, systemParts, userChangesText } from "../src";
 
 const tickets = fileURLToPath(new URL("../../../examples/tickets/pack.yaml", import.meta.url));
 
@@ -26,6 +27,48 @@ describe("the system prompt", () => {
     expect(system).toContain("- t: m0 (First), m1, m2,");
     expect(system).not.toContain("a long meaning");
     expect(system).toContain("Meanings are not listed: call list_metrics");
+  });
+});
+
+describe("the system prompt's parts", () => {
+  const board = (title: string) => ({ ...emptyBoard({ pack: "tickets", version: 1 }, title) });
+  const changes = [
+    { version: 7, source: "layout", text: "moved “Open by team”" },
+    { version: 8, source: "ops", text: "removed “Backlog”" },
+    { version: 9, source: "revert", text: "restored v7 (added “Backlog”)" },
+  ];
+
+  it("keeps the stable part identical across boards and the user's changes, so a prompt cache keeps it", async () => {
+    const pack = await loadPack(tickets);
+    const catalogue = catalogueFrom(pack);
+    const now = new Date("2026-01-02T00:00:00Z");
+    const [stableA, boardA] = systemParts(pack, catalogue, board("One"), now);
+    const [stableB, boardB] = systemParts(pack, catalogue, board("Two"), now, changes);
+    expect(stableA).toBe(stableB);
+    expect(stableA).not.toContain("CURRENT BOARD");
+    expect(stableA).not.toContain("CHANGES MADE BY THE USER");
+    expect(boardA).not.toContain("CHANGES MADE BY THE USER");
+    // The board first, then the user's edits since the last turn, last of all.
+    expect(boardB.indexOf("CURRENT BOARD:")).toBe(2);
+    expect(boardB.indexOf("CHANGES MADE BY THE USER")).toBeGreaterThan(boardB.indexOf("Board: “Two”"));
+    expect(SYSTEM(pack, catalogue, board("Two"), now, changes)).toBe(stableB + boardB);
+  });
+
+  it("words the user's changes by version and by who made them", () => {
+    expect(userChangesText([])).toBe("");
+    expect(userChangesText(changes)).toBe(
+      "\n\nCHANGES MADE BY THE USER SINCE YOUR LAST TURN (the current board above already includes them):\n- v7 (by hand): moved “Open by team”\n- v8 (by hand): removed “Backlog”\n- v9 (rollback): restored v7 (added “Backlog”)",
+    );
+  });
+
+  it("keeps replies after edits to plain sentences, and allows short lists and bold for an informational answer", async () => {
+    const pack = await loadPack(tickets);
+    const [stable] = systemParts(pack, catalogueFrom(pack));
+    expect(PROMPT_VERSION).toBe(10);
+    expect(stable).toContain("After edits, reply in one or two plain sentences with the outcome only.");
+    expect(stable).toContain("may use a short bullet list and **bold**");
+    expect(stable).toContain("Never use markdown headings or tables.");
+    expect(stable).toContain("they are deliberate: keep them, never undo them unless asked");
   });
 });
 
