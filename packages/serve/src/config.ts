@@ -61,6 +61,9 @@ export const configSchema = z.object({
    * default) is the lenspack demo; app opens the boards at "/", without the
    * demo's landing page, chart-library switch, ops box and query captions.
    * home ("pack/board") is the board "/" opens; title names the page.
+   * intro is the deployment's own line under a board's title: without it the
+   * demo shows the pack's description (written for the model) and an app
+   * shows nothing.
    */
   ui: z
     .union([
@@ -70,6 +73,7 @@ export const configSchema = z.object({
         mode: z.enum(["demo", "app"]).default("demo"),
         title: z.string().max(80).optional(),
         home: z.string().regex(/^[a-z][a-z0-9_-]*\/[^/]+$/).optional(),
+        intro: z.string().max(600).optional(),
       }),
     ])
     .optional(),

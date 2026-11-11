@@ -132,9 +132,10 @@ describe("the UI as an app", () => {
     const dir = mkdtempSync(join(tmpdir(), "lenspack-ui-"));
     writeFileSync(join(dir, "index.html"), "<!doctype html><html><head><title>lenspack</title></head><body></body></html>");
     writeFileSync(join(dir, "app.js"), "console.log(1)");
-    const page = { mode: "app" as const, title: "Boards </script><b>", home: "campaign/overview" };
+    const page = { mode: "app" as const, title: "Boards </script><b>", home: "campaign/overview", intro: "Read me </script>" };
     expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: { title: "T" } }).ui).toEqual({ mode: "demo", title: "T" });
     expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: "./dist" }).ui).toBe("./dist");
+    expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: { mode: "app", intro: "Our boards." } }).ui).toEqual({ mode: "app", intro: "Our boards." });
     const { server, base } = await listen(createApp([], { ui: dir, page }));
     const html = await (await fetch(base.replace("/api", "/"))).text();
     const js = await (await fetch(base.replace("/api", "/app.js"))).text();

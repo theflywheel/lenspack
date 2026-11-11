@@ -436,6 +436,9 @@ export function App() {
   };
 
   const current = catalog.find((c) => c.example === example);
+  // The deployment's own line under the title. Without one, the demo shows the pack's
+  // description (written for the model) and an app shows nothing.
+  const intro = page.intro ?? (appMode ? undefined : current?.description);
   const suggestions = React.useMemo(() => {
     if (!state) return [];
     const m = state.catalogue.measures;
@@ -532,8 +535,7 @@ export function App() {
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h1 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground">{state.board.config.title}</h1>
-                  {/* A pack's description is written for the model; the demo shows it, an app does not. */}
-                  {!appMode && current?.description && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">{current.description}</p>}
+                  {intro && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground" data-testid="intro">{intro}</p>}
                   {!writable && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="read-only">
                       <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board, shared with everyone.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}

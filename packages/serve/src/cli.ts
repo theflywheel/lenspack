@@ -54,7 +54,7 @@ async function main() {
       const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
       const uiDir = typeof config.ui === "string" ? config.ui : config.ui?.dir;
       const ui = flag("ui") ?? (uiDir ? resolve(dir, uiDir) : undefined);
-      const page = typeof config.ui === "object" ? { mode: config.ui.mode, ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}) } : undefined;
+      const page = typeof config.ui === "object" ? { mode: config.ui.mode, ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}), ...(config.ui.intro ? { intro: config.ui.intro } : {}) } : undefined;
       const port = Number(flag("port") ?? config.port ?? process.env.PORT ?? 8787);
       const access = config.auth ? accessFrom(resolveSecrets(config.auth)) : undefined;
       // No auth block: local use only. An open API on the network is a choice

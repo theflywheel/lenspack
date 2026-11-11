@@ -58,7 +58,7 @@ export type AppOptions = {
   /** The UI's sign-out link (auth.proxy signOutUrl). */
   signOutUrl?: string;
   /** How the UI presents itself (lenspack.yaml `ui:`), written into the page it is served in. */
-  page?: { mode: "demo" | "app"; title?: string; home?: string };
+  page?: { mode: "demo" | "app"; title?: string; home?: string; intro?: string };
   /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. */
   historyTurns?: number;
   /** Where each chat turn's cost and each pack's queries are counted (GET /api/_usage), and the budget is checked. One is made if absent. */
