@@ -5,3 +5,6 @@ node_modules
 *.duckdb.wal
 **/dist
 .claude
+.env
+.env.*
+**/coverage

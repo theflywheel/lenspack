@@ -21,14 +21,21 @@ Anything else is rejected before it reaches a database.
 
 Every identifier from the pack; every value a bound parameter; tenant predicate present or compile error; `LIMIT` always; fan-out refused. See [query-ir.md](query-ir.md).
 
-## The executor's guarantees
+## The driver's guarantees
 
-- Postgres: `BEGIN TRANSACTION READ ONLY` and `SET LOCAL statement_timeout` around every statement. Use a read-only database role in production; the transaction mode is a belt, the role is the braces.
-- DuckDB: the executor only runs compiled statements and interrupts the connection on timeout. Seeding and the board store use a separate `Writer` that is never handed to a tool.
+Every SQL source is opened through a driver, and the driver, not the SQL, enforces four things on every statement: read-only, exactly one statement, a statement timeout and a row cap (a result over it is an error, not a shorter answer). How each database does it is in [drivers.md](drivers.md#the-guards-are-the-drivers); in short:
+
+- Postgres: `BEGIN TRANSACTION READ ONLY` and `SET LOCAL statement_timeout` around every statement, always over the extended protocol, which takes one statement.
+- DuckDB: one statement, prepared and run only if it is a `SELECT`; interrupted on timeout. A source file is opened `READ_ONLY` with external access off, so nothing can read past it.
+- SQLite: the file is opened read-only, every statement must be one SQLite marks read-only, and the connection runs in a worker thread that is ended on timeout.
+- MySQL and MariaDB: a read-only session and a read-only transaction per statement, the server's statement timer, prepared statements.
+- ClickHouse: `readonly=2`, `max_execution_time` and `max_result_rows` on every request.
+
+Use a read-only database role in production; these are belts, the role is the braces. Seeding and the board store use a separate `Writer` that is never handed to a tool.
 
 ## `run_sql`
 
-Off by default, and refused on a pack with tenant-scoped entities or a caller scope: raw SQL does not pass through the pack, so neither applies to it. There it can be enabled only as `runSql: "role-scoped"` (`--run-sql-role-scoped`), which states that the database role behind the connection already limits what it can read. When enabled: one statement, `SELECT`/`WITH` by shape, wrapped in `SELECT * FROM (…) LIMIT n`, executed through the read-only executor. No keyword denylist — a denylist cannot know what a function does; the role and the transaction mode are the guards. Results are returned to the caller and cannot be attached to a widget: if an answer is worth keeping, `propose_measure` it and let a human promote it.
+Off by default, and refused on a pack with tenant-scoped entities or a caller scope: raw SQL does not pass through the pack, so neither applies to it. There it can be enabled only as `runSql: "role-scoped"` (`--run-sql-role-scoped`), which states that the database role behind the connection already limits what it can read. When enabled: one statement, `SELECT`/`WITH` by shape, wrapped in `SELECT * FROM (…) LIMIT n`, executed through the read-only driver, whose own guards apply as well. No keyword denylist — a denylist cannot know what a function does; the role and the transaction mode are the guards. Results are returned to the caller and cannot be attached to a widget: if an answer is worth keeping, `propose_measure` it and let a human promote it.
 
 ## Tenancy
 
@@ -42,12 +49,13 @@ lenspack keeps no users. The deployment identifies each caller through an `acces
 - `proxy`: a login proxy in front names the user in a header. The header is believed only when the request carries the proxy's shared secret (16+ characters), so a caller who reaches lenspack directly cannot claim to be anyone.
 - `none`: open, and it must be written down. With no `auth:` block the server listens on 127.0.0.1 only.
 
-The answer is a principal: `{ user, tenant?, scope?, edit?, packs? }`.
+The answer is a principal: `{ user, tenant?, scope?, edit?, maintain?, packs? }`.
 
 - **Unknown caller:** 401 on every API path. A pack outside `packs` answers 404, as if it did not exist.
 - **Tenant:** narrows the pack's tenancy; it can never move a pack the config pins to another tenant (403).
 - **Scope:** filter clauses added to every query in resolution — boards, filter menus, explain, chat tools — on every connector. A query whose root cannot be narrowed by a scope dimension is refused with `OUT_OF_SCOPE` rather than answered for all rows. Cached results are keyed by the compiled statement and its parameters, so one caller's rows are never served to another.
-- **Edit:** every non-GET request (ops, layout, revert, chat, create, delete) needs it; a viewer gets 403.
+- **Edit:** every non-GET request (ops, layout, revert, chat, create, copy, share, delete) needs it; a viewer gets 403. It lets a caller make boards of their own and change, share and delete those.
+- **Boards have owners:** a board someone makes is theirs. Until they share it, nobody else sees it (404, as if it did not exist); once shared, others in the same tenant may read it and save a copy, not change it. The pack's own boards, from its board files, have no owner: everyone reads them, and only a caller with `maintain` changes them. A changed board file lands as a new version at the next start, so an edit made in the app stays in the history. In `proxy` mode, `editors` and `maintainers` name who gets which (`"*"` for everyone signed in); with no `auth:` block, the one local user has both.
 - **Audit:** every change, refused change and denied request goes to the `audit` hook with the user, pack, board and outcome (`audit: ./audit.jsonl` appends JSON lines).
 
 ## Pack fragments are code

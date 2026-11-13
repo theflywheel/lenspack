@@ -1,4 +1,7 @@
-import { type LanguageModel, generateText } from "ai";
+import { type LanguageModel, type LanguageModelUsage, generateText } from "ai";
+
+import { type Provider, shapeCall } from "./llm";
+import { WIDGET_LIMITS } from "./prompt";
 
 // The adversarial reviewer. It never sees pixels; it sees the instruction,
 // the board before and after (the same summary the builder works from), and
@@ -14,41 +17,53 @@ export type Review = {
   /** The reviewer produced no usable verdict; never treat as a failure. */
   unavailable?: boolean;
   raw?: string;
+  /** Tokens the review call used, for metering; absent when the call never returned. */
+  usage?: LanguageModelUsage;
 };
 
 export const REVIEW_PROMPT = `You are a strict, adversarial reviewer of a dashboard edit made by another assistant.
-You will be given: the user's instruction, the board BEFORE, the board AFTER, a RECEIPT listing the versions the board actually gained (this is the ground truth of what changed — the assistant's own claims are not), and REFUSALS: edits the system itself rejected during the turn, with the reason. A request the system refused cannot be satisfied as asked; the assistant is right to offer the nearest answerable alternative or to say so.
+You will be given: the PACK (what each measure and dimension means) and its DOMAIN RULES, the user's instruction, the board BEFORE, the board AFTER, a RECEIPT listing the versions the board actually gained (this is the ground truth of what changed — the assistant's own claims are not), and REFUSALS: edits the system itself rejected during the turn, with the reason. A request the system refused cannot be satisfied as asked; the assistant is right to offer the nearest answerable alternative or to say so.
 
 Find every way the result fails the instruction:
 - a requested widget that does not exist in AFTER, or has the wrong kind (kpi vs bar vs line vs pie), measure, dimension, split, or time window;
 - a requested rename, filter, removal, move, resize or packing that the RECEIPT does not show;
 - placement intent not met ("across the top" but not on row 1; "full width" but not 12/12 wide);
-- anything added that was not asked for.
+- anything added that was not asked for;
+- a widget that breaks a DOMAIN RULE.
+Judge only the widgets the instruction names or the RECEIPT shows changed, and ask for no change to any other; a change nobody asked for is wrong, to be undone.
 Judge widgets by their query description in AFTER (measure, dimension, grain, split, window such as "last 10w"), never by their title or id — a title saying "last 10 weeks" with no window in the query is a defect.
 Do not invent requirements the instruction did not state. If everything requested is present, say so.
 If the instruction asked for something the pack cannot express (the assistant could only refuse, or offered the nearest answerable alternative and said so), and nothing wrong was added, that is satisfied — an honest refusal is the correct outcome, not a failure.
 If the instruction was a question about the data (not an edit) and the assistant answered it, that is satisfied.
+${WIDGET_LIMITS} A request for something widgets cannot do is satisfied when the assistant says so.
 
 Reply with JSON only: {"satisfied": boolean, "missing": ["what was asked and is absent, naming the widget kind and keys"], "wrong": ["what exists but differs from the request, with the widget id"], "note": "one sentence"}.`;
 
-export async function reviewTurn(model: LanguageModel, input: { instruction: string; before: string; after: string; receipt: string; refusals?: string[] }, timeoutMs = 60_000): Promise<Review> {
+/** `reviewer` is a model, or a provider, whose adapter may shape the call (a cache breakpoint on the fixed prompt). */
+export async function reviewTurn(
+  reviewer: LanguageModel | Pick<Provider, "languageModel" | "prepare">,
+  input: { catalogue: string; instructions?: string; instruction: string; before: string; after: string; receipt: string; refusals?: string[] },
+  timeoutMs = 60_000,
+): Promise<Review> {
+  const provider = typeof reviewer === "object" && "languageModel" in reviewer ? reviewer : { languageModel: reviewer };
+  const prompt = `PACK:\n${input.catalogue}\n\nDOMAIN RULES:\n${input.instructions?.trim() || "(none)"}\n\nINSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`;
   const out = await generateText({
-    model,
-    system: REVIEW_PROMPT,
-    prompt: `INSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`,
+    model: provider.languageModel,
+    ...shapeCall(provider, { system: [REVIEW_PROMPT], messages: [{ role: "user", content: prompt }] }),
     // Reasoning models spend output tokens on hidden reasoning before the
     // JSON, and this prompt carries a whole board; leave generous room.
     maxOutputTokens: 4000,
     abortSignal: AbortSignal.timeout(timeoutMs),
   });
   const raw = out.text.trim();
+  const usage = out.totalUsage;
   const m = /\{[\s\S]*\}/.exec(raw);
   try {
     const p = JSON.parse(m ? m[0] : raw) as Partial<Review>;
     if (typeof p.satisfied !== "boolean") throw new Error("no verdict");
-    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw };
+    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw, usage };
   } catch {
-    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw };
+    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw, usage };
   }
 }
 

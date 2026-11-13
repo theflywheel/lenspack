@@ -4,48 +4,60 @@ The intermediate representation is a closed union. Every string in it is a key t
 
 ```ts
 type Query =
-  | { kind: "breakdown"; dimension: string; measure: string; limit?: number; sort?: "asc"|"desc"; time?: TimeRange; filters?: Filter[] }
+  | { kind: "breakdown"; dimension: string; measure: string; limit?: number; sort?: "asc"|"desc"; compare?: "previous_period"; share?: boolean; other?: boolean; time?: TimeRange; filters?: Filter[] }
   | { kind: "series";    measure: string; grain?: Grain; by?: string; time?: TimeRange; filters?: Filter[] }
   | { kind: "value";     measure: string; compare?: "previous_period"; time?: TimeRange; filters?: Filter[] }
   | { kind: "rows";      entity: string; columns: string[]; limit?: number; orderBy?: { key: string; dir: "asc"|"desc" }; time?: TimeRange; filters?: Filter[] };
 
 type Filter    = { dimension: string; op: "eq"|"neq"|"in"|"gte"|"lte"|"between"|"contains"; value: Scalar | Scalar[] };
-type TimeRange = { last: "30d" | "12w" | "6m" | "2y" | "48h" } | { from: ISO8601; to: ISO8601 };
+type TimeRange =
+  | { last: "30d" | "12w" | "6m" | "2y" | "48h" }
+  | { from: ISO8601; to: ISO8601 }
+  | { period: "day"|"week"|"month"|"quarter"|"year"; offset?: number /* <= 0, default 0 */; count?: number /* default 1 */ };
 type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 ```
 
 | shape | answers | notes |
 |---|---|---|
-| `breakdown` | a measure per group | `limit` 2–50 (default 12); ties broken by group name; time dimensions are refused (use `series`) |
-| `series` | a measure per time bucket | uses the root entity's `time` column; `by` splits into at most 12 series (top by total, the rest dropped — never bucketed as "other") |
-| `value` | one number | `compare` needs a `time` range and returns `previous` and `delta` from one statement |
+| `breakdown` | a measure per group | `limit` 2–50 (default 12); ties broken by group name; time dimensions are refused (use `series`). `compare` adds `compare: { previous, delta }` per row; groups are the current period's. `share`: value over the whole population's (count, sum, count_distinct, whose shares can sum past 1). `other`: one `"(other)"` row (`other: true`) for the rest, count and sum only, not with `by` or `measures`. Otherwise `NOT_SUPPORTED`, as is `compare` on a cross-entity ratio |
+| `series` | a measure per time bucket | uses the root entity's `time` column; `by` splits into at most 12 series (top by total, the rest dropped, never bucketed as "other"; on SQL sources the answer's `notes` say how many) |
+| `value` | one number | `compare` needs a `time` range and returns `previous` and `delta` from one statement; the previous span is set out under Time below |
 | `rows` | records | `columns` are dimension keys on that entity; `limit` 1–500 |
 
 Relative `time` is resolved against `now` at query time, so a saved board keeps meaning "the last 30 days".
+
+A filter must narrow every operand of a cross-entity derived measure, or the query is refused (`NOT_SUPPORTED`, naming the operands that can be narrowed), at edit time as at run time. The one exception is a reference value that only divides (a target, a capacity: `delivered / target`, not a count of events over time) when no other divisor is narrowed by that filter: it stays whole ("this kind over the whole goal") and the answer's `notes` say so.
+
+### Time
+
+- `last` rolls back from now by a fixed length: `h` hours, `d` days, `w` 7 days, `m` 30 days, `y` 365 days.
+- `period` is calendar time in the pack's `timeZone` (UTC when absent), weeks from Monday. `offset: 0` is the current period up to now, `-1` the previous whole one; `count` takes that many periods ending at `offset`. "Last month" is `{ period: "month", offset: -1 }`, month to date `{ period: "month" }`, the three whole months before this one `{ period: "month", offset: -1, count: 3 }`.
+- `compare: "previous_period"` reads the span just before the window. For `last` and `from`/`to` it is the same length of time; for `period`, the `count` periods before it. A range that runs to now is compared as far into the previous span as now is into the current one, in local days and time of day, and never past that span's end: this month to the 28th at noon against last month to the 28th at noon, the 31st against the whole of a shorter month.
+- Series buckets start at local midnight, local Monday and the local first of the month in the pack's `timeZone`, and hour buckets at local hours (30-minute zones included); a bucket's label is its local date. SQLite and MySQL bucket in UTC only, so a series in any other zone is refused there (`NOT_SUPPORTED`).
 
 ## Compiler
 
 ```
 resolve : (Query, Pack, Ctx) → BoundPlan | ResolveError    keys, join paths, tenant, windows
 plan    : (BoundPlan, Pack) → Ast                           one subquery per entity, projections, aggregates
-print   : (Ast, Dialect) → { sql, params }                  postgres | duckdb
+print   : (Ast, Dialect) → { sql, params }                  postgres | duckdb | sqlite | mysql | clickhouse | a registered driver's
 ```
 
-`ResolveError` carries `{ code, key, nearest }`. Codes: `UNKNOWN_MEASURE`, `UNKNOWN_DIMENSION`, `UNKNOWN_ENTITY`, `NO_JOIN_PATH`, `FANOUT_REFUSED`, `TENANT_REQUIRED`, `NO_TIME`, `NEEDS_TIME_RANGE`, `WRONG_ENTITY`, `TIME_DIMENSION`.
+`ResolveError` carries `{ code, key, nearest }`. Codes: `UNKNOWN_MEASURE`, `UNKNOWN_DIMENSION`, `UNKNOWN_ENTITY`, `NO_JOIN_PATH`, `FANOUT_REFUSED`, `TENANT_REQUIRED`, `NO_TIME`, `NEEDS_TIME_RANGE`, `WRONG_ENTITY`, `TIME_DIMENSION`, `NEEDS_JOIN`, `OUT_OF_SCOPE`, and `NOT_SUPPORTED` (what the source cannot compute: a percentile on MySQL or SQLite, a two-stage `per` measure on Elasticsearch, a fragment with no entry for its dialect).
 
 ### Invariants
 
 1. Every identifier in emitted SQL originates from the pack.
-2. Every request value is a bound parameter (`$n` on both engines).
+2. Every request value is a bound parameter (`$n`, `?` or a typed `{pN:Type}`, as the dialect binds).
 3. A declared tenant is always present in the predicate, or compilation fails.
 4. `LIMIT` is always emitted.
-5. Read-only transaction and statement timeout are applied by the executor, never expressed in SQL.
+5. Read-only, one statement, a statement timeout and a row cap are applied by the driver, never expressed in SQL.
 6. Fan-out is refused, not computed.
 7. Population and per-group rates share the same base rows.
 
 ### What the printer owns
 
-Identifier quoting, JSON access (`->>`/`#>>` vs `json_extract_string`), `date_trunc` and week start, casts (`DOUBLE PRECISION` vs `DOUBLE`), `percentile_cont … WITHIN GROUP` vs `quantile_cont`, `count(DISTINCT …)`. Nothing above the printer mentions a dialect.
+Identifier quoting, placeholders, JSON access, time buckets and week start, epoch conversion, casts, percentiles (or their refusal), `LIKE` escapes, `IS DISTINCT FROM`, NULL ordering. Each dialect is a table of rules ([drivers.md](drivers.md)); nothing above the printer mentions a dialect, and golden files pin what each one prints.
 
 ### Shape of the SQL
 

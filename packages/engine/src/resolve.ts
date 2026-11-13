@@ -1,6 +1,8 @@
 import { type FilterClause, type Query, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
+import { bucketZone, calendarRange } from "./calendar";
+
 // Resolution binds every key in a query to a pack object and finds a join path
 // for every dimension. It is where the model's mistakes surface as loud
 // errors with a `nearest` suggestion — and where a fan-out is refused rather
@@ -40,6 +42,16 @@ export type Capabilities = {
   exactDistinct: boolean;
   /** median / p90 are exact. */
   exactPercentiles: boolean;
+  /**
+   * median / p90 can be computed at all. A SQL dialect with no percentile
+   * function (MySQL, SQLite) says false, and such a measure is refused
+   * rather than estimated some other way. Absent means true.
+   */
+  percentiles?: boolean;
+  /** Series buckets can start at local hours and days in the pack's time zone; false refuses a zoned series rather than drawing it in UTC. Absent means true. */
+  zonedBuckets?: boolean;
+  /** Measures with `per` (one value per key, then an aggregate over those). Absent means true. */
+  twoStage?: boolean;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true };
@@ -157,18 +169,31 @@ function joinPath(pack: Pack, graph: Map<string, Edge[]>, root: string, target: 
 
 const UNITS: Record<string, number> = { h: 3600e3, d: 86400e3, w: 7 * 86400e3, m: 30 * 86400e3, y: 365 * 86400e3 };
 
-function window(query: Query, now: Date): TimeWindow | null {
+// The window and the one a comparison reads. A calendar range is compared
+// with the calendar span before it; any other window with the same length
+// of time just before it.
+function window(query: Query, now: Date, timeZone?: string): { time: TimeWindow; previous: TimeWindow } | null {
   if (!query.time) return null;
+  if ("period" in query.time) {
+    const { previous, ...time } = calendarRange(query.time, now, timeZone);
+    return { time, previous };
+  }
+  let time: TimeWindow;
   if ("last" in query.time) {
     const n = Number(query.time.last.slice(0, -1));
     const unit = query.time.last.slice(-1);
-    return { from: new Date(now.getTime() - n * UNITS[unit]!), to: now };
+    time = { from: new Date(now.getTime() - n * UNITS[unit]!), to: now };
+  } else {
+    time = { from: new Date(query.time.from), to: new Date(query.time.to) };
   }
-  return { from: new Date(query.time.from), to: new Date(query.time.to) };
+  return { time, previous: { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } };
 }
 
+// The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
+export const nowOf = (ctx: Ctx = {}) => ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
+
 export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilities = SQL_CAPABILITIES): BoundPlan {
-  const now = ctx.now ?? new Date();
+  const now = nowOf(ctx);
   const dimKeys = pack.dimensions.map((d) => d.key);
   const measureKeys = pack.measures.map((m) => m.key);
   const graph = edges(pack);
@@ -201,11 +226,29 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
       // computes each on its own and combines the aggregates (acrossEntities).
       if (new Set(measure.operands.map((o) => o.entity)).size > 1)
         throw new ResolveError("NOT_SUPPORTED", `"${def.key}" combines measures on several entities; it is computed by run(), not compiled as one query`, def.key);
+      // A per-key operand is aggregated over its own inner query, so it too is computed on its own.
+      if (measure.operands.some((o) => o.per))
+        throw new ResolveError("NOT_SUPPORTED", `"${def.key}" combines a per-key measure with others; it is computed by run(), not compiled as one query`, def.key);
     } else {
       measure = { kind: "simple", def };
     }
   }
   const rootEntity = pack.entities[root]!;
+
+  // A percentile the source cannot compute is refused, never approximated by
+  // something that would print a different number under the same label.
+  if (measure && caps.percentiles === false) {
+    const pct = (measure.kind === "simple" ? [measure.def] : measure.operands).find((m) => m.agg === "median" || m.agg === "p90");
+    if (pct)
+      throw new ResolveError(
+        "NOT_SUPPORTED",
+        `"${pct.key}" is a ${pct.agg === "p90" ? "90th percentile" : "median"}, and this source has no percentile function, so it is not computed here`,
+        pct.key,
+      );
+  }
+
+  if (measure?.kind === "simple" && measure.def.per && caps.twoStage === false)
+    throw new ResolveError("NOT_SUPPORTED", `"${measure.def.key}" aggregates one value per key, and this source cannot aggregate in two stages`, measure.def.key);
 
   const bind = (key: string): BoundDimension => {
     const def = findDimension(key);
@@ -236,19 +279,21 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     if (query.by) split = bind(query.by);
   } else if (query.kind === "series") {
     if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so nothing on it can be plotted over time`, query.measure);
+    if (caps.zonedBuckets === false && bucketZone(pack.timeZone))
+      throw new ResolveError("NOT_SUPPORTED", `Pack "${pack.pack}" starts its days in ${pack.timeZone}, and this source can only bucket time by UTC days, so a series is not drawn here`, query.measure);
     if (query.by) dimension = bind(query.by);
-  } else if (query.kind === "value") {
-    if (query.compare) {
-      if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so there is no previous period`, query.measure);
-      if (!query.time) throw new ResolveError("NEEDS_TIME_RANGE", "A previous-period comparison needs a time range", query.measure, 'time: { last: "30d" }');
-    }
-  } else {
+  } else if (query.kind === "rows") {
     for (const key of query.columns) {
       const bound = bind(key);
       if (bound.def.entity !== root) throw new ResolveError("WRONG_ENTITY", `"${key}" belongs to "${bound.def.entity}", not "${root}"`, key);
       columns.push(bound);
     }
     if (query.orderBy) orderBy = { dimension: bind(query.orderBy.key), dir: query.orderBy.dir };
+  }
+  const compare = (query.kind === "value" || query.kind === "breakdown") && !!query.compare;
+  if (compare) {
+    if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so there is no previous period`, query.measure);
+    if (!query.time) throw new ResolveError("NEEDS_TIME_RANGE", "A previous-period comparison needs a time range", query.measure, 'time: { last: "30d" }');
   }
 
   const filters: BoundFilter[] = (query.filters ?? []).map((f) => ({ dimension: bind(f.dimension), op: f.op, value: f.value })) as BoundFilter[];
@@ -268,8 +313,9 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   if (query.time && !rootEntity.time)
     throw new ResolveError("NO_TIME", `"${root}" has no time column, so a time range cannot apply`, query.kind === "rows" ? query.entity : query.measure);
 
-  const time = window(query, now);
-  const previous = query.kind === "value" && query.compare && time ? { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } : null;
+  const windows = window(query, now, pack.timeZone);
+  const time = windows?.time ?? null;
+  const previous = compare ? (windows?.previous ?? null) : null;
 
   const entitiesUsed = [...new Set([root, ...[dimension, split, ...columns, orderBy?.dimension ?? null, ...filters.map((f) => f.dimension)].filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
 

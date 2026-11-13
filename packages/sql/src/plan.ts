@@ -1,7 +1,7 @@
 import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/spec";
 
-import { type Ast, type Expr, type Join, type Source } from "./ast";
-import type { BoundDimension, BoundFilter, BoundPlan, TimeWindow } from "@lenspack/engine";
+import { type Ast, type Expr, type Grouped, type Join, type Source } from "./ast";
+import { type BoundDimension, type BoundFilter, type BoundPlan, type TimeWindow, bucketZone } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
 // projects the pack's dimension and measure fragments under reserved aliases,
@@ -12,6 +12,12 @@ const D = (key: string) => `__d_${key}`;
 const M = (key: string) => `__m_${key}`;
 const T = "__t";
 const TRAW = "__t_raw";
+// A two-stage measure's inner query, its key, its value per key, and its period mark.
+const N = "__n";
+const K = "__k";
+const V = "__v";
+const W = "__w";
+const HAVING = { eq: "=", neq: "<>", gt: ">", gte: ">=", lt: "<", lte: "<=" } as const;
 
 const col = (alias: string, name: string): Expr => ({ t: "col", alias, col: name });
 const raw = (sql: Fragment): Expr => ({ t: "raw", sql });
@@ -52,11 +58,14 @@ export function whereExpr(w: Where): Expr {
 
 const allOf = (exprs: Expr[]): Expr | null => (exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r })));
 
+// What one aggregate reads: a measure, or a two-stage measure's inner stage.
+type Aggregated = Pick<PackMeasure, "key" | "agg" | "field" | "sql" | "filter" | "where" | "scale" | "derived" | "per">;
+
 // A measure's row-level value. A `filter` folds into a CASE so the aggregate
 // simply ignores rows outside it; `count` gets a literal 1 to count.
 // A counted `field` counts its non-null values.
-function measureRowExpr(m: PackMeasure): Expr | null {
-  if (m.derived) return null;
+function measureRowExpr(m: Aggregated): Expr | null {
+  if (m.derived || m.per) return null;
   const value: Expr | null = m.field ? col("", m.field) : m.sql ? raw(m.sql) : null;
   const base: Expr = value ?? { t: "lit", value: 1 };
   const when = allOf([...(m.filter ? [raw(m.filter)] : []), ...(m.where ?? []).map(whereExpr)]);
@@ -132,11 +141,11 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   if (epoch) project(root, TRAW, col("", epoch.field));
   const bound_ = (d: Date): Expr => (epoch ? param(epoch.unit === "epoch_ms" ? d.getTime() : Math.floor(d.getTime() / 1000), "bigint") : param(d, "timestamp"));
   const windowCol = epoch ? col(root, TRAW) : timeCol;
-  const inWindow = (w: TimeWindow): Expr => ({
+  const inWindow = (w: TimeWindow, c: Expr = windowCol!): Expr => ({
     t: "bin",
     op: "AND",
-    l: { t: "bin", op: ">=", l: windowCol!, r: bound_(w.from) },
-    r: { t: "bin", op: "<", l: windowCol!, r: bound_(w.to) },
+    l: { t: "bin", op: ">=", l: c, r: bound_(w.from) },
+    r: { t: "bin", op: "<", l: c, r: bound_(w.to) },
   });
 
   for (const f of bound.filters) where.push(filterExpr(dimRef(f.dimension), f));
@@ -149,12 +158,23 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     where.push({ t: "bin", op: ">=", l: windowCol!, r: bound_(bound.previous!.from) });
     where.push({ t: "bin", op: "<", l: windowCol!, r: bound_(bound.time!.to) });
   }
+  // A two-stage measure groups each key's rows per period instead: the root
+  // marks this period's rows, so a key with rows in both counts in each.
+  const per = bound.measure?.kind === "simple" ? bound.measure.def.per : undefined;
+  if (per && windowed) project(root, W, { t: "case", when: inWindow(bound.time!, epoch ? col("", epoch.field) : timeExpr(bound.rootEntity.time!)), then: { t: "lit", value: 1 } });
 
-  // Aggregates over the root's projected measure columns.
-  const aggOf = (m: PackMeasure, cond: Expr | null): Expr => {
+  // Aggregates over the root's projected measure columns, or over the inner
+  // query's value per key for a two-stage measure. `having` folds into a CASE
+  // like a filter, so a group whose keys all fail it still shows (0 under count).
+  const passes = (h: NonNullable<NonNullable<Aggregated["per"]>["having"]>): Expr =>
+    h.op === "between"
+      ? { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: col(N, V), r: param(h.value[0]) }, r: { t: "bin", op: "<=", l: col(N, V), r: param(h.value[1]) } }
+      : { t: "bin", op: HAVING[h.op], l: col(N, V), r: param(h.value) };
+  const perValue = (p: NonNullable<Aggregated["per"]>): Expr => (p.having ? { t: "case", when: passes(p.having), then: col(N, V) } : col(N, V));
+  const aggOf = (m: Aggregated, cond: Expr | null): Expr => {
     const rowExpr = measureRowExpr(m);
     if (rowExpr) project(root, M(m.key), rowExpr);
-    const ref: Expr | null = rowExpr ? col(root, M(m.key)) : null;
+    const ref: Expr | null = m.per ? perValue(m.per) : rowExpr ? col(root, M(m.key)) : null;
     let agg: Expr;
     if (m.agg === "count") {
       const arg: Expr = cond ? { t: "case", when: cond, then: ref ?? { t: "lit", value: 1 } } : (ref ?? { t: "star" });
@@ -185,9 +205,14 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     };
     return build(m.expr);
   };
+  // Which period a row is in; a two-stage measure reads its inner query's mark.
+  const inCurrent = (): Expr => (per ? { t: "notnull", arg: col(N, W) } : inWindow(bound.time!));
+  const inPrevious = (): Expr => (per ? { t: "isnull", arg: col(N, W) } : inWindow(bound.previous!));
+  const rowsIn = (cond: Expr | null): Expr => ({ t: "agg", fn: "count", arg: cond ? { t: "case", when: cond, then: { t: "lit", value: 1 } } : { t: "star" } });
 
   const select: Ast["select"] = [];
   const groupBy: Expr[] = [];
+  const having: Expr[] = [];
   const orderBy: Ast["orderBy"] = [];
   let limit: number;
   let shape: Shape;
@@ -202,7 +227,14 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
         select.push({ alias: "series", expr: s });
         groupBy.push(s);
       }
-      select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
+      // With a comparison the groups are the current period's: one seen only
+      // in the previous period is not a row.
+      const current = windowed ? inCurrent() : null;
+      select.push({ alias: "value", expr: valueExpr(current) }, { alias: "n", expr: rowsIn(current) });
+      if (windowed) {
+        select.push({ alias: "previous", expr: valueExpr(inPrevious()) });
+        having.push({ t: "bin", op: ">", l: rowsIn(current), r: { t: "lit", value: 0 } });
+      }
       // Ties broken by name so the same data always prints the same rows.
       if (query.sortBy === "group") orderBy.push({ expr: col("", "group"), dir: query.sort });
       else if (query.sortBy === "measure") orderBy.push({ expr: col("", "value"), dir: query.sort });
@@ -213,7 +245,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       break;
     }
     case "series": {
-      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol! };
+      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol!, zone: bucketZone(pack.timeZone) };
       select.push({ alias: "bucket", expr: bucket });
       groupBy.push(bucket);
       if (bound.dimension) {
@@ -229,10 +261,10 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       break;
     }
     case "value": {
-      const current = windowed ? inWindow(bound.time!) : null;
+      const current = windowed ? inCurrent() : null;
       select.push({ alias: "value", expr: valueExpr(current) });
-      select.push({ alias: "n", expr: { t: "agg", fn: "count", arg: current ? { t: "case", when: current, then: { t: "lit", value: 1 } } : { t: "star" } } });
-      if (windowed) select.push({ alias: "previous", expr: valueExpr(inWindow(bound.previous!)) });
+      select.push({ alias: "n", expr: rowsIn(current) });
+      if (windowed) select.push({ alias: "previous", expr: valueExpr(inPrevious()) });
       limit = 1;
       shape = "value";
       break;
@@ -251,7 +283,25 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     }
   }
 
-  return { ast: { select, from: rootSource, joins, where, groupBy, orderBy, limit }, shape };
+  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, having, orderBy, limit }, shape };
+
+  // Two stages: one value per key and group, then the measure's agg over those;
+  // n counts keys, and rows with no key are not counted.
+  project(root, K, typeof per.key === "string" ? col("", per.key) : raw(per.key.sql));
+  where.push({ t: "notnull", arg: col(root, K) });
+  const value = aggOf({ ...per, key: bound.measure!.def.key }, null);
+  const groups = select.filter((s) => groupBy.includes(s.expr));
+  const mark = windowed ? [{ alias: W, expr: col(root, W) }] : [];
+  const inner: Grouped = {
+    alias: N,
+    select: [...groups, ...mark, { alias: V, expr: value }],
+    from: rootSource,
+    joins,
+    where,
+    groupBy: [...groupBy, col(root, K), ...mark.map((m) => m.expr)],
+  };
+  const outer = select.map((s) => (groups.includes(s) ? { alias: s.alias, expr: col(N, s.alias) } : s));
+  return { ast: { select: outer, from: inner, joins: [], where: [], groupBy: groups.map((s) => col(N, s.alias)), having, orderBy, limit }, shape };
 }
 
 function filterExpr(ref: Expr, f: BoundFilter): Expr {

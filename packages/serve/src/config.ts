@@ -3,10 +3,10 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { type BoardStore, memoryStore } from "@lenspack/core";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
-import type { Connector } from "@lenspack/engine";
+import { type Connector, check } from "@lenspack/engine";
 import { fileProposals } from "@lenspack/mcp";
 import { parsePackText } from "@lenspack/spec";
-import { type Executor, type Writer, sqlConnector, sqlStore } from "@lenspack/sql";
+import { type Executor, type Writer, driverFor, openSource, sqlStore } from "@lenspack/sql";
 import YAML from "yaml";
 import { z } from "zod";
 
@@ -18,18 +18,26 @@ import { authSchema } from "./auth";
 // the environment when the server starts.
 //
 //   sources:
+//     shop:   { url: env:DATABASE_URL }            # postgres://, mysql://, clickhouse://, …
+//     local:  { url: "duckdb:./data/shop.duckdb" }  # relative to this file
 //     search: { kind: elasticsearch, url: env:ES_URL, apiKey: env:ES_API_KEY }
-//     local:  { kind: duckdb, path: ./data/shop.duckdb }
 //   packs:
 //     - { pack: ./packs/campaign/pack.yaml, source: search, boards: ./packs/campaign/boards }
 //   store: { kind: duckdb, path: ./data/boards.duckdb }
+//
+// A SQL source is a connection URL and its scheme picks the driver; `kind:`
+// may still be written, and must then agree. Elasticsearch stays a connector
+// of its own: its SQL API cannot join, and the native one is proven in CI.
 
 const secret = z.string().min(1);
-const sourceSchema = z.discriminatedUnion("kind", [
+const limits = { timeoutMs: z.number().int().positive().optional(), maxRows: z.number().int().positive().optional(), cacheTtlMs: z.number().int().positive().optional() };
+const SEARCH = ["elasticsearch", "opensearch"];
+const sourceSchema = z.union([
   z.object({ kind: z.literal("elasticsearch"), url: secret, apiKey: secret.optional(), username: secret.optional(), password: secret.optional(), timeoutMs: z.number().int().positive().optional() }),
   z.object({ kind: z.literal("opensearch"), url: secret, username: secret.optional(), password: secret.optional(), timeoutMs: z.number().int().positive().optional() }),
-  z.object({ kind: z.literal("postgres"), url: secret }),
-  z.object({ kind: z.literal("duckdb"), path: z.string().min(1) }),
+  z.object({ kind: z.string().refine((k) => !SEARCH.includes(k)).optional(), url: secret, ...limits }),
+  // The form before URLs: a DuckDB or SQLite file by path.
+  z.object({ kind: z.enum(["duckdb", "sqlite"]), path: z.string().min(1), ...limits }),
 ]);
 
 export const configSchema = z.object({
@@ -48,7 +56,27 @@ export const configSchema = z.object({
     )
     .min(1),
   store: z.union([z.object({ kind: z.literal("memory") }), z.object({ kind: z.literal("duckdb"), path: z.string().min(1) }), z.object({ kind: z.literal("postgres"), url: secret })]).default({ kind: "memory" }),
-  ui: z.string().optional(),
+  /**
+   * The bundled UI: its directory, or how it presents itself. mode demo (the
+   * default) is the lenspack demo; app opens the boards at "/", without the
+   * demo's landing page, chart-library switch, ops box and query captions.
+   * home ("pack/board") is the board "/" opens; title names the page.
+   * intro is the deployment's own line under a board's title: without it the
+   * demo shows the pack's description (written for the model) and an app
+   * shows nothing.
+   */
+  ui: z
+    .union([
+      z.string(),
+      z.object({
+        dir: z.string().optional(),
+        mode: z.enum(["demo", "app"]).default("demo"),
+        title: z.string().max(80).optional(),
+        home: z.string().regex(/^[a-z][a-z0-9_-]*\/[^/]+$/).optional(),
+        intro: z.string().max(600).optional(),
+      }),
+    ])
+    .optional(),
   port: z.number().int().positive().optional(),
   /**
    * Who may use the API. Absent: the server listens on 127.0.0.1 only, for
@@ -60,6 +88,14 @@ export const configSchema = z.object({
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
+  /** Append a JSON line per model call (tokens, US$, who, what for) to this file; today's totals are read back at startup. */
+  usage: z.string().optional(),
+  /** Daily caps (UTC) on priced model spend, in US$. Over one, chat answers 429 until midnight UTC. */
+  budget: z.object({ usdPerDay: z.number().positive().optional(), usdPerUserPerDay: z.number().positive().optional() }).strict().optional(),
+  /** How many of the latest user turns the chat model is sent (default 8). */
+  historyTurns: z.number().int().positive().optional(),
+  /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
+  proposals: z.string().optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 
@@ -97,33 +133,38 @@ export function readBoards(dir: string): BoardFile[] {
 }
 
 /** Opens every source and store a config names, and binds each pack to its source. */
-export async function openConfig(config: LenspackConfig, dir: string, env = process.env): Promise<{ hosts: Host[]; close(): Promise<void> }> {
+export async function openConfig(config: LenspackConfig, dir: string, env = process.env): Promise<{ hosts: Host[]; sources: Map<string, Connector>; close(): Promise<void> }> {
   const at = (p: string) => (isAbsolute(p) ? p : join(dir, p));
   const closers: (() => Promise<void>)[] = [];
   const connectors = new Map<string, Connector>();
   for (const [name, raw] of Object.entries(config.sources)) {
     const src = resolveSecrets(raw, env);
     if (src.kind === "elasticsearch" || src.kind === "opensearch") {
-      connectors.set(name, elasticsearchConnector({ url: src.url, apiKey: "apiKey" in src ? src.apiKey : undefined, username: src.username, password: src.password, defaultTimeoutMs: src.timeoutMs }));
-    } else {
-      const db = await openSql(src.kind, src.kind === "duckdb" ? at(src.path) : src.url);
-      closers.push(() => db.close());
-      connectors.set(name, sqlConnector(db.executor));
+      const es = src as { url: string; apiKey?: string; username?: string; password?: string; timeoutMs?: number };
+      connectors.set(name, elasticsearchConnector({ url: es.url, apiKey: es.apiKey, username: es.username, password: es.password, defaultTimeoutMs: es.timeoutMs }));
+      continue;
     }
+    const url = "url" in src ? src.url : `${src.kind}:${at(src.path)}`;
+    const driver = driverFor(url);
+    if (src.kind && src.kind !== driver.name && !driver.schemes.includes(src.kind))
+      throw new Error(`source "${name}" says kind: ${src.kind}, but its URL is a ${driver.name} URL`);
+    const { connector, connection } = await openSource(url, { base: dir, defaultTimeoutMs: src.timeoutMs, maxRows: "maxRows" in src ? src.maxRows : undefined, cacheTtlMs: "cacheTtlMs" in src ? src.cacheTtlMs : undefined });
+    closers.push(connection.close);
+    connectors.set(name, connector);
   }
 
   // Boards live apart from the data: a pack's source is read-only to lenspack.
-  let store: () => BoardStore;
+  // Each pack gets its own store, or its own space in a shared database: a pack
+  // lists only its boards, and two packs' boards with one id stay two boards.
+  let store: (name: string) => BoardStore;
   if (config.store.kind === "memory") {
-    const shared = memoryStore();
-    store = () => shared;
+    store = () => memoryStore();
   } else {
     const s = resolveSecrets(config.store, env);
     const db = await openSql(s.kind, s.kind === "duckdb" ? at(s.path) : s.url);
     closers.push(() => db.close());
-    const shared = sqlStore(db);
-    await shared.migrate();
-    store = () => shared;
+    await sqlStore(db).migrate();
+    store = (name) => sqlStore(db, { space: name });
   }
 
   const hosts: Host[] = [];
@@ -132,17 +173,26 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
     if (!connector) throw new Error(`pack ${p.pack} names source "${p.source}", which lenspack.yaml does not define`);
     const packYaml = readFileSync(at(p.pack), "utf8");
     const pack = parsePackText(packYaml);
+    // An example the source would refuse must not be shown to the model as
+    // checked. Nothing runs, so a stand-in tenant serves an unpinned pack.
+    for (const [i, ex] of pack.examples.entries()) {
+      try {
+        check(ex.query, pack, { ctx: { tenant: p.tenant ?? "_" }, capabilities: connector.capabilities });
+      } catch (e) {
+        throw new Error(`pack ${p.pack} examples[${i}] ("${ex.question}"): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
     const name = p.name ?? pack.pack;
     hosts.push({
       name,
       pack,
       packYaml,
       connector,
-      store: store(),
+      store: store(name),
       ctx: { ...(p.tenant ? { tenant: p.tenant } : {}), ...(p.now ? { now: new Date(p.now) } : {}) },
       boards: p.boards ? readBoards(at(p.boards)) : [],
-      proposals: fileProposals(at(`${name}.proposals.json`)),
+      proposals: fileProposals(at(join(config.proposals ?? ".", `${name}.proposals.json`))),
     });
   }
-  return { hosts, close: async () => void (await Promise.all(closers.map((c) => c()))) };
+  return { hosts, sources: connectors, close: async () => void (await Promise.all(closers.map((c) => c()))) };
 }

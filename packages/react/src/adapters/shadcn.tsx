@@ -67,7 +67,10 @@ export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOption
               dataKey="value"
               nameKey="slice"
               innerRadius="45%"
-              outerRadius="80%"
+              outerRadius="72%"
+              label={({ value }: { value?: unknown }) => spec.format(Number(value ?? 0))}
+              labelLine
+              fontSize={11}
               paddingAngle={1}
               stroke="none"
               isAnimationActive={false}

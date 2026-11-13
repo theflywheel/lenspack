@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Dark is a choice on <html data-theme>, set before first paint (index.html) from the
+   viewer's pick or the system's; shadcn's dark: classes follow the same attribute. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /* ── lenspack design tokens ──────────────────────────────────────────────
    One idea carries this design: colour is provenance.
 
@@ -12,6 +16,7 @@
    ────────────────────────────────────────────────────────────────────── */
 
 :root {
+  color-scheme: light;
   --paper: #fcfcfa;
   --raised: #ffffff;
   --ink: #000000;
@@ -70,46 +75,45 @@
 
 /* Dark is tinted toward the signal rather than toward grey: the ground is
    the declared blue taken almost to black, so the accent belongs to it. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #0b0e1a;
-    --raised: #121628;
-    --ink: #f6f7fb;
-    --body: #c8cbd8;
-    --mute: #9096a8;
-    --rule: #232a43;
-    --rule-strong: #333c5c;
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0b0e1a;
+  --raised: #121628;
+  --ink: #f6f7fb;
+  --body: #c8cbd8;
+  --mute: #9096a8;
+  --rule: #232a43;
+  --rule-strong: #333c5c;
 
-    --declared: #8fa2ff;
-    --declared-soft: #182046;
-    --refused: #e0a35e;
-    --refused-soft: #2a1f12;
+  --declared: #8fa2ff;
+  --declared-soft: #182046;
+  --refused: #e0a35e;
+  --refused-soft: #2a1f12;
 
-    --lp-series-1: oklch(0.72 0.16 266);
-    --lp-series-2: oklch(0.76 0.12 192);
-    --lp-series-3: oklch(0.76 0.13 58);
-    --lp-series-4: oklch(0.72 0.15 322);
-    --lp-series-5: oklch(0.78 0.13 142);
-    --lp-series-6: oklch(0.70 0.15 24);
-    --lp-series-7: oklch(0.74 0.09 243);
-    --lp-series-8: oklch(0.76 0.11 92);
+  --lp-series-1: oklch(0.72 0.16 266);
+  --lp-series-2: oklch(0.76 0.12 192);
+  --lp-series-3: oklch(0.76 0.13 58);
+  --lp-series-4: oklch(0.72 0.15 322);
+  --lp-series-5: oklch(0.78 0.13 142);
+  --lp-series-6: oklch(0.70 0.15 24);
+  --lp-series-7: oklch(0.74 0.09 243);
+  --lp-series-8: oklch(0.76 0.11 92);
 
-    --lp-sequential-1: oklch(0.90 0.05 266);
-    --lp-sequential-2: oklch(0.82 0.09 266);
-    --lp-sequential-3: oklch(0.74 0.13 266);
-    --lp-sequential-4: oklch(0.66 0.16 266);
-    --lp-sequential-5: oklch(0.58 0.18 266);
-    --lp-sequential-6: oklch(0.50 0.19 266);
-    --lp-sequential-7: oklch(0.42 0.17 266);
-    --lp-sequential-8: oklch(0.34 0.14 266);
+  --lp-sequential-1: oklch(0.90 0.05 266);
+  --lp-sequential-2: oklch(0.82 0.09 266);
+  --lp-sequential-3: oklch(0.74 0.13 266);
+  --lp-sequential-4: oklch(0.66 0.16 266);
+  --lp-sequential-5: oklch(0.58 0.18 266);
+  --lp-sequential-6: oklch(0.50 0.19 266);
+  --lp-sequential-7: oklch(0.42 0.17 266);
+  --lp-sequential-8: oklch(0.34 0.14 266);
 
-    --muted: #171c30;
-    --accent: #1a2038;
-    --secondary: #1a2038;
-    --primary: #f6f7fb;
-    --primary-foreground: #0b0e1a;
-    --destructive: #e0a35e;
-  }
+  --muted: #171c30;
+  --accent: #1a2038;
+  --secondary: #1a2038;
+  --primary: #f6f7fb;
+  --primary-foreground: #0b0e1a;
+  --destructive: #e0a35e;
 }
 
 @theme inline {
@@ -190,12 +194,17 @@ body { background: var(--paper); color: var(--body); font-family: var(--font-san
   border-radius: 2px;
 }
 
-/* Tailwind preflight resets these; the library's own controls expect them. */
-button, select, input { font: inherit; }
+/* The library's own controls expect these to inherit. In the base layer, so a
+   text-xs or text-sm on a control still wins: unlayered, this beat every utility
+   and set each button in the page's 16px. */
+@layer base {
+  button, select, input { font: inherit; }
+}
 
 /* The board's cards take the same surface tokens, so the library's renderer
-   and the page around it are one design rather than two. */
-:root {
+   and the page around it are one design rather than two. As specific as the
+   library's own [data-theme] rule, so these win in both themes. */
+:root, :root[data-theme] {
   --lp-bg: var(--card);
   --lp-fg: var(--card-foreground);
   --lp-muted: var(--mute);

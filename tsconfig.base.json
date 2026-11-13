@@ -24,6 +24,9 @@
       "@lenspack/sql": ["packages/sql/src/index.ts"],
       "@lenspack/sql/pg": ["packages/sql/src/executors/pg.ts"],
       "@lenspack/sql/duckdb": ["packages/sql/src/executors/duckdb.ts"],
+      "@lenspack/sql/mysql": ["packages/sql/src/executors/mysql.ts"],
+      "@lenspack/sql/sqlite": ["packages/sql/src/executors/sqlite.ts"],
+      "@lenspack/sql/clickhouse": ["packages/sql/src/executors/clickhouse.ts"],
       "@lenspack/mcp": ["packages/mcp/src/index.ts"],
       "@lenspack/react": ["packages/react/src/index.tsx"],
       "@lenspack/react/adapters/*": ["packages/react/src/adapters/*.tsx"]

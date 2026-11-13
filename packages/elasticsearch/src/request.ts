@@ -1,4 +1,4 @@
-import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock } from "@lenspack/engine";
 import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/spec";
 
 // The query IR, compiled to one search request. Every structural decision —
@@ -260,11 +260,17 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         return { ...dimensionSource(d, env), ...missing, size, ...(order ? { order } : {}) };
       };
       const byGroup = query.sortBy === "group";
-      // With a second dimension, or an order the terms aggregation cannot
-      // express, every group comes back and the rows are sorted and cut here.
-      const sortAfter = metricAggs.order === null || !!bound.split;
+      // A comparison reads each group's two windows as filter buckets; the
+      // groups are the current period's, so one with no current rows is dropped.
+      const windows = bound.previous ? { cur: { filter: range(bound.time!), aggs: metricAggs.aggs }, prev: { filter: range(bound.previous), aggs: metricAggs.aggs } } : null;
+      const read = (b: Bucket): Row =>
+        windows ? { value: metricAggs.read(b.cur ?? {}), n: b.cur?.doc_count ?? 0, previous: metricAggs.read(b.prev ?? {}) } : { value: metricAggs.read(b), n: b.doc_count };
+      // With a second dimension, a comparison, or an order the terms aggregation
+      // cannot express, every group comes back and the rows are sorted and cut here.
+      const sortAfter = metricAggs.order === null || !!bound.split || !!windows;
       const order = byGroup ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, ...(query.sortBy === "measure" ? [] : [{ _key: "asc" }])];
-      const inner = bound.split ? { s: { terms: termsOf(bound.split.def, 1000), aggs: metricAggs.aggs } } : metricAggs.aggs;
+      const leaf = windows ?? metricAggs.aggs;
+      const inner = bound.split ? { s: { terms: termsOf(bound.split.def, 1000), aggs: leaf } } : leaf;
       body.aggs = { g: { terms: termsOf(dim, sortAfter ? 10_000 : query.limit, order), aggs: inner } };
       return {
         index: entity.source,
@@ -273,8 +279,9 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         decode(r) {
           const groups = (r.aggregations?.g?.buckets ?? []) as Bucket[];
           let rows: Row[] = bound.split
-            ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), value: metricAggs.read(b), n: b.doc_count })))
-            : groups.map((b) => ({ group: groupKey(b), value: metricAggs.read(b), n: b.doc_count }));
+            ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), ...read(b) })))
+            : groups.map((b) => ({ group: groupKey(b), ...read(b) }));
+          if (windows) rows = rows.filter((r) => (r.n as number) > 0);
           if (sortAfter && query.sortBy !== "none") {
             const dir = query.sort === "asc" ? 1 : -1;
             const cmp = (x: unknown, y: unknown) => String(x).localeCompare(String(y));
@@ -290,14 +297,35 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
     }
     case "series": {
       const metricAggs = measureAggs(bound, env);
-      const histogram = { date_histogram: { field: timeField!, [interval]: query.grain, min_doc_count: 1 }, aggs: metricAggs.aggs };
+      // In a zone, buckets start at local midnight and are keyed by that
+      // instant; the key is read back as local time, as SQL returns it.
+      const zone = bucketZone(pack.timeZone);
+      const local = (key: number) => (zone ? localWallClock(key, zone) : key);
+      // A numeric field (epoch milliseconds) takes no time_zone in a
+      // date_histogram, so in a zone it is read through a date-typed runtime
+      // field (7.11+). Without runtime fields the zoned series is refused
+      // rather than bucketed at UTC midnight under a local label.
+      let histogramField = timeField!;
+      if (zone && env.typeOf(timeField!) !== "date" && env.typeOf(timeField!) !== "date_nanos") {
+        const { major, minor } = env.version;
+        if (major < 7 || (major === 7 && minor < 11))
+          refuse(`"${root}" keeps time as epoch numbers, which this source cannot bucket in ${pack.timeZone}; it needs Elasticsearch 7.11+ (runtime fields)`, root);
+        histogramField = "__lenspack_time";
+        body.runtime_mappings = {
+          [histogramField]: {
+            type: "date",
+            script: { source: "def f = doc[params.f]; if (f.size() > 0) emit(f.value.longValue())", params: { f: timeField! } },
+          },
+        };
+      }
+      const histogram = { date_histogram: { field: histogramField, [interval]: query.grain, min_doc_count: 1, ...(zone ? { time_zone: zone } : {}) }, aggs: metricAggs.aggs };
       if (!bound.dimension) {
         body.aggs = { t: histogram };
         return {
           index: entity.source,
           body,
           approximate: metricAggs.approximate,
-          decode: (r) => ((r.aggregations?.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: b.key, value: metricAggs.read(b), n: b.doc_count })),
+          decode: (r) => ((r.aggregations?.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), value: metricAggs.read(b), n: b.doc_count })),
         };
       }
       // The top series by the measure over the whole window, each over time:
@@ -311,7 +339,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         approximate: metricAggs.approximate,
         decode: (r) =>
           ((r.aggregations?.s?.buckets ?? []) as Bucket[])
-            .flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: b.key, series: groupKey(s), value: metricAggs.read(b), n: b.doc_count })))
+            .flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count })))
             .sort((a, b) => a.bucket - b.bucket || String(a.series).localeCompare(String(b.series))),
       };
     }

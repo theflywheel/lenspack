@@ -1,10 +1,10 @@
 import * as React from "react";
 
-import { ArrowUp, ChevronDown, History, LayoutGrid, RotateCcw, SendHorizontal, X } from "lucide-react";
+import { ArrowUp, BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, Share2, Trash2, Undo2, X } from "lucide-react";
 
 import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
 import { opSchema } from "@lenspack/core";
-import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type ChartAdapter, type FilterOption, type WidgetData } from "@lenspack/react";
+import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type FilterOption, type RemovedWidget, type WidgetData } from "@lenspack/react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { ScrollArea } from "./components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Separator } from "./components/ui/separator";
 
 // The board app, built from shadcn components. The board itself is rendered
@@ -20,7 +20,13 @@ import { Separator } from "./components/ui/separator";
 // is host UI, and the provider's hooks give it all it needs.
 
 import { ADAPTER_NAMES, type AdapterName, isAdapter, useChartAdapter } from "./adapters";
-import type { ModelInfo } from "./chat";
+import { appMode, page } from "./page";
+import { type ModelInfo, effortOf } from "./chat";
+import { MetricsReference } from "./metrics";
+import { ProfileMenu } from "./profile";
+import { SplitView } from "./split";
+import { UsagePage } from "./usage";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 
 const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
 
@@ -36,8 +42,23 @@ const takeBoot = <K extends "index" | "board">(key: K, path?: string) => {
 
 const api = async (path: string, init?: RequestInit) => {
   const r = await fetch(`/api${path}`, { headers: { "content-type": "application/json" }, ...init });
-  return r.json();
+  if (r.status === 401 && reloadToSignIn()) return new Promise<never>(() => {});
+  return r.json().catch(() => ({ error: `${r.status} ${r.statusText}` }));
 };
+
+// Signed out behind a login proxy: loading the page again goes through its
+// sign-in. At most once in 30 s, so a server that turns everyone away shows
+// its error instead of reloading forever.
+function reloadToSignIn() {
+  try {
+    if (Date.now() - Number(sessionStorage.getItem("lenspack-signin") ?? 0) < 30_000) return false;
+    sessionStorage.setItem("lenspack-signin", String(Date.now()));
+  } catch {
+    return false;
+  }
+  location.reload();
+  return true;
+}
 
 // The same eight ops a model emits, typed as JSON: anything can drive a board.
 function OpsBox() {
@@ -249,7 +270,53 @@ function PreviewBanner({ onReverted }: { onReverted: () => void }) {
   );
 }
 
-type Catalog = { example: string; description?: string; boards: { id: string; title: string }[] }[];
+const VIEWS = ["board", "metrics", "usage"] as const;
+type View = (typeof VIEWS)[number];
+const isView = (v: string | null): v is View => (VIEWS as readonly string[]).includes(v ?? "");
+
+type Entry = { id: string; title: string; owner?: string; shared?: boolean; writable?: boolean };
+type Catalog = { example: string; description?: string; boards: Entry[] }[];
+/** Who the server says is signed in; absent on an open server. */
+type Me = { user: string; edit: boolean; maintain: boolean; signOut?: string };
+
+// The board menu: the pack's own boards, yours, and those others shared.
+// Temporary boards (previews, evals) stay out of it.
+function boardGroups(boards: Entry[], me: Me | null): [string, Entry[]][] {
+  const listed = boards.filter((b) => !b.id.startsWith("tmp_"));
+  const mine = (b: Entry) => !!b.owner && (!me || b.owner === me.user);
+  return [
+    ["The pack's boards", listed.filter((b) => !b.owner)],
+    ["Yours", listed.filter(mine)],
+    ["Shared by others", listed.filter((b) => b.owner && !mine(b))],
+  ];
+}
+
+// "Removed … · Undo": no confirmation before a removal, because every change is
+// a version; this is the quick way back. It goes by itself after a while.
+function UndoToast({ title, onUndo, onClose }: { title: string; onUndo?: () => void; onClose: () => void }) {
+  React.useEffect(() => {
+    const t = setTimeout(onClose, 10_000);
+    return () => clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div role="status" aria-live="polite" className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-1 rounded-md border bg-popover py-1 pr-1 pl-3 text-sm text-popover-foreground shadow-lg" data-testid="undo-toast">
+      <span className="truncate">
+        Removed <span className="font-medium">“{title}”</span>
+      </span>
+      {onUndo && (
+        <>
+          <span className="px-1 text-muted-foreground" aria-hidden="true">·</span>
+          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={onUndo} data-testid="undo-remove">
+            <Undo2 /> Undo
+          </Button>
+        </>
+      )}
+      <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={onClose} aria-label="Dismiss">
+        <X />
+      </Button>
+    </div>
+  );
+}
 
 export function App() {
   const params = new URLSearchParams(location.search);
@@ -257,16 +324,42 @@ export function App() {
   const [chatEnabled, setChatEnabled] = React.useState(false);
   const [models, setModels] = React.useState<ModelInfo[]>([]);
   const [model, setModel] = React.useState<string>(params.get("model") ?? "");
-  const [example, setExample] = React.useState<string>(params.get("example") ?? "");
-  const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? "");
+  // Remembered like the model; sent only to a model that takes it.
+  const [effortWanted, setEffort] = React.useState<string>(params.get("effort") ?? "");
+  const effort = effortOf(models.find((m) => m.name === model), effortWanted);
+  // A URL naming nothing opens the deployment's home board, if it has one.
+  const [home] = React.useState(() => (params.get("example") || params.get("board") || !page.home ? null : page.home.split("/")));
+  const [example, setExample] = React.useState<string>(params.get("example") ?? home?.[0] ?? "");
+  const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? home?.[1] ?? "");
   const [adapterName, setAdapterName] = React.useState<AdapterName>(isAdapter(params.get("charts")) ? (params.get("charts") as AdapterName) : "recharts");
   const charts = useChartAdapter(adapterName);
-  const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue } | null>(null);
+  const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue; writable: boolean } | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
+  const [me, setMe] = React.useState<Me | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  // Edits made by hand (a drag, an ×, a rollback, the ops box): the chat says
+  // what it will be told once they settle. Chat's own edits do not count.
+  const [edits, setEdits] = React.useState(0);
+  const noteEdit = React.useCallback(() => setEdits((n) => n + 1), []);
+  // The widget just removed by its ×, until undone or dismissed.
+  const [removed, setRemoved] = React.useState<(RemovedWidget & { key: number }) | null>(null);
+  const dismissRemoved = React.useCallback(() => setRemoved(null), []);
+  // The board, or in its place the pack's metrics reference or what the AI has cost.
+  const [view, setView] = React.useState<View>(isView(params.get("view")) ? (params.get("view") as View) : "board");
+  const loadIndex = React.useCallback(async () => {
+    const r = await api("/");
+    setCatalog(r.examples);
+    return r.examples as Catalog;
+  }, []);
 
   React.useEffect(() => {
-    void (takeBoot("index") ?? api("/")).then((r) => {
+    // The page's own early request cannot follow a sign-in; on any failure, ask again.
+    const index = Promise.resolve(takeBoot("index") ?? api("/")).catch(() => api("/"));
+    void index.then((r) => {
+      // Signed out, or not let in: say so rather than wait.
+      if (!r.examples) return setProblem(r.error ?? "The board API did not answer");
       setCatalog(r.examples);
+      setMe(r.me ?? null);
       setChatEnabled(!!r.chat);
       const ms: ModelInfo[] = r.models ?? [];
       setModels(ms);
@@ -278,7 +371,7 @@ export function App() {
       if (!known) return setProblem("No examples are seeded on this server. Run: pnpm seed commerce ./commerce.duckdb");
       if (known.example !== example || !known.boards.some((b: { id: string }) => b.id === boardId)) {
         setExample(known.example);
-        setBoardId(known.boards[0]?.id ?? "");
+        setBoardId(boardGroups(known.boards, r.me ?? null).flatMap(([, list]) => list)[0]?.id ?? "");
       }
     });
   }, []);
@@ -289,11 +382,14 @@ export function App() {
   const primer = React.useRef<{ config: string; data: Record<string, WidgetData>; options: Record<string, FilterOption[]> } | null>(null);
   const reloadBoard = React.useCallback(
     (withData = false) => {
-      void ((withData && takeBoot("board", base)) || api(`${base}${withData ? "?include=data,options" : ""}`)).then((r) => {
+      const fetchBoard = () => api(`${base}${withData ? "?include=data,options" : ""}`);
+      const first = Promise.resolve((withData && takeBoot("board", base)) || fetchBoard()).catch(fetchBoard);
+      void first.then((r) => {
         if (!r.board) return setProblem(r.error ?? "This board does not exist");
         setProblem(null);
         if (withData && r.data) primer.current = { config: JSON.stringify(r.board.config), data: r.data, options: r.options ?? {} };
-        setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue });
+        // A server from before owners says nothing: everything is writable there.
+        setState({ board: { ...r.board, updatedAt: new Date(r.board.updatedAt) }, catalogue: r.catalogue, writable: r.writable !== false });
       });
     },
     [base],
@@ -306,9 +402,15 @@ export function App() {
   }, [example, boardId, reloadBoard]);
   React.useEffect(() => {
     if (!example || !boardId) return;
-    history.replaceState(null, "", `/app?example=${example}&board=${boardId}&charts=${adapterName}${model ? `&model=${encodeURIComponent(model)}` : ""}`);
-  }, [example, boardId, adapterName, model]);
+    // An app keeps its own path and leaves the chart library out of the URL.
+    const path = appMode ? location.pathname : "/app";
+    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}${effortWanted ? `&effort=${encodeURIComponent(effortWanted)}` : ""}${view !== "board" ? `&view=${view}` : ""}`);
+  }, [example, boardId, adapterName, model, effortWanted, view]);
+  React.useEffect(() => {
+    if (appMode && state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
+  }, [state]);
 
+  const writable = state?.writable ?? false;
   const host = React.useMemo<BoardHost>(
     () => ({
       loadBoardData: (config, selections) => {
@@ -325,8 +427,8 @@ export function App() {
         if (r.ok) r.board.updatedAt = new Date(r.board.updatedAt);
         return r;
       },
-      saveLayout: async (layout) => {
-        const b = await api(`${base}/layout`, { method: "POST", body: JSON.stringify({ layout }) });
+      saveLayout: async (layout, summary) => {
+        const b = await api(`${base}/layout`, { method: "POST", body: JSON.stringify({ layout, summary }) });
         return { ...b, updatedAt: new Date(b.updatedAt) };
       },
       loadFilterOptions: (field) => {
@@ -334,15 +436,52 @@ export function App() {
         return hit ? Promise.resolve(hit) : api(`${base}/options?field=${encodeURIComponent(field)}`);
       },
       loadVersions: async () => (await api(`${base}/versions`)).map((v: { createdAt: string }) => ({ ...v, createdAt: new Date(v.createdAt) })),
-      revertTo: async (version) => {
-        const b = await api(`${base}/revert`, { method: "POST", body: JSON.stringify({ version }) });
-        return b ? { ...b, updatedAt: new Date(b.updatedAt) } : null;
-      },
+      // Read-only boards show their history without the restore buttons.
+      ...(writable
+        ? {
+            revertTo: async (version: number) => {
+              const b = await api(`${base}/revert`, { method: "POST", body: JSON.stringify({ version }) });
+              return b ? { ...b, updatedAt: new Date(b.updatedAt) } : null;
+            },
+          }
+        : {}),
     }),
-    [base],
+    [base, writable],
   );
 
+  // Making, copying, sharing and deleting boards: what owners need.
+  const canMake = me ? me.edit : true;
+  // Usage names everyone, so the server shows it to maintainers; on an open server that is everyone.
+  const canSeeUsage = me ? me.maintain : true;
+  const entry = catalog.find((c) => c.example === example)?.boards.find((b) => b.id === boardId);
+  const open = async (r: { id?: string; error?: string }) => {
+    if (!r.id) return setNotice(r.error ?? "That did not work");
+    setNotice(null);
+    await loadIndex();
+    setBoardId(r.id);
+  };
+  const newBoard = async () => {
+    const title = window.prompt("Name the new board", "Untitled board");
+    if (title) await open(await api(`/${example}/boards`, { method: "POST", body: JSON.stringify({ title }) }));
+  };
+  const copyBoard = async () => open(await api(`${base}/copy`, { method: "POST", body: "{}" }));
+  const shareBoard = async (shared: boolean) => {
+    const r = await api(`${base}/share`, { method: "POST", body: JSON.stringify({ shared }) });
+    setNotice(r.error ?? null);
+    await loadIndex();
+  };
+  const deleteBoard = async () => {
+    if (!window.confirm(`Delete “${state?.board.config.title}”? Its history goes with it.`)) return;
+    const r = await api(base, { method: "DELETE" });
+    if (r.error) return setNotice(r.error);
+    const next = await loadIndex();
+    setBoardId(next.find((c) => c.example === example)?.boards.find((b) => !b.owner)?.id ?? "");
+  };
+
   const current = catalog.find((c) => c.example === example);
+  // The deployment's own line under the title. Without one, the demo shows the pack's
+  // description (written for the model) and an app shows nothing.
+  const intro = page.intro ?? (appMode ? undefined : current?.description);
   const suggestions = React.useMemo(() => {
     if (!state) return [];
     const m = state.catalogue.measures;
@@ -355,6 +494,14 @@ export function App() {
       "Make the first chart full width",
     ].filter(Boolean);
   }, [state]);
+
+  const undoRemove = async () => {
+    if (!removed || !host.revertTo) return;
+    setRemoved(null);
+    await host.revertTo(removed.restore);
+    noteEdit();
+    reloadBoard();
+  };
 
   if (problem) return <div className="mx-auto max-w-6xl p-6 text-sm text-destructive">{problem}</div>;
   if (!state || !charts) return <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -373,54 +520,128 @@ export function App() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       <header className="sticky top-0 z-30 border-b border-rule bg-background/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5">
-          <div className="flex min-w-0 items-center gap-2">
+        <div className="mx-auto flex max-w-[2400px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 lg:px-5">
+          <div className="flex shrink-0 items-center gap-2">
             <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
-              lenspack
+              {page.title ?? "lenspack"}
             </a>
-            <span className="font-mono text-xs text-muted-foreground">/ demo</span>
+            {!appMode && <span className="font-mono text-xs text-muted-foreground">/ demo</span>}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={example}
-              onValueChange={(v) => {
-                const next = catalog.find((c) => c.example === v);
-                setExample(v);
-                setBoardId(next?.boards[0]?.id ?? "");
-              }}
-            >
-              <SelectTrigger size="sm" className="w-36 font-mono text-xs" aria-label="Example pack"><SelectValue /></SelectTrigger>
-              <SelectContent>{catalog.map((c) => <SelectItem key={c.example} value={c.example}>{c.example}</SelectItem>)}</SelectContent>
+          {/* Each control says what it picks. One pack needs no pack menu; the chart library is a demo's to switch. */}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {catalog.length > 1 && (
+              <Select
+                value={example}
+                onValueChange={(v) => {
+                  const next = catalog.find((c) => c.example === v);
+                  setExample(v);
+                  setBoardId(boardGroups(next?.boards ?? [], me).flatMap(([, list]) => list)[0]?.id ?? "");
+                }}
+              >
+                <SelectTrigger size="sm" className="max-w-56 text-xs" aria-label="Pack" data-testid="pack-select">
+                  <span className="shrink-0 text-muted-foreground">Pack</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>{catalog.map((c) => <SelectItem key={c.example} value={c.example}>{c.example}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
+            <Select value={boardId} onValueChange={(v) => { setBoardId(v); setView("board"); }}>
+              <SelectTrigger size="sm" className="max-w-80 min-w-0 text-xs" aria-label="Board" data-testid="board-select">
+                <span className="shrink-0 text-muted-foreground">Board</span>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {boardGroups(current?.boards ?? [], me).map(([label, list]) =>
+                  list.length === 0 ? null : (
+                    <SelectGroup key={label}>
+                      <SelectLabel>{label}</SelectLabel>
+                      {list.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.title}
+                          {b.owner && me && b.owner !== me.user && <span className="text-muted-foreground"> · {b.owner}</span>}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ),
+                )}
+              </SelectContent>
             </Select>
-            <Select value={boardId} onValueChange={setBoardId}>
-              <SelectTrigger size="sm" className="w-52 text-xs" aria-label="Board"><SelectValue /></SelectTrigger>
-              <SelectContent>{(current?.boards ?? []).map((b) => <SelectItem key={b.id} value={b.id}>{b.title}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
-              <SelectTrigger size="sm" className="w-40 font-mono text-xs" aria-label="Charting library" data-testid="charts-select"><SelectValue /></SelectTrigger>
-              <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>charts: {n}</SelectItem>)}</SelectContent>
-            </Select>
+            {!appMode && (
+              <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
+                <SelectTrigger size="sm" className="text-xs" aria-label="Charting library" data-testid="charts-select">
+                  <span className="shrink-0 text-muted-foreground">Charts</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
+            <Button variant={view === "metrics" ? "secondary" : "ghost"} size="sm" className="text-xs" onClick={() => setView(view === "metrics" ? "board" : "metrics")} aria-pressed={view === "metrics"} data-testid="metrics-view">
+              <BookOpen /> Metrics
+            </Button>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {canMake && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="icon" className="size-8 rounded-full" onClick={newBoard} aria-label="New board" data-testid="new-board">
+                      <Plus />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">New board</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            <ProfileMenu user={me?.user} signOut={me?.signOut} onUsage={canSeeUsage ? () => setView("usage") : undefined} />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        <div className={chatEnabled ? "grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]" : ""}>
-          <div className={chatEnabled ? "order-1 min-w-0" : "min-w-0"}>
-            <BoardProvider key={`${base}:${state.board.version}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts}>
+      <main className="mx-auto max-w-[2400px] px-4 py-6 lg:px-5">
+        {view === "metrics" ? (
+          <MetricsReference example={example} load={api} onClose={() => setView("board")} />
+        ) : view === "usage" ? (
+          <UsagePage load={api} onClose={() => setView("board")} />
+        ) : (
+        <SplitView
+          enabled={chatEnabled}
+          main={
+            <BoardProvider key={`${base}:${state.board.version}:${writable}`} board={state.board} catalogue={state.catalogue} host={host} charts={charts} editable={writable} onEdit={noteEdit}>
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h1 className="font-mono text-lg font-semibold tracking-[-0.02em] text-foreground">{state.board.config.title}</h1>
-                  {current?.description && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground">{current.description}</p>}
+                  {intro && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground" data-testid="intro">{intro}</p>}
+                  {!writable && (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="read-only">
+                      <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board, shared with everyone.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}
+                    </p>
+                  )}
+                  {notice && <p className="mt-1 text-xs text-destructive">{notice}</p>}
                 </div>
-                <div className="flex items-center gap-2">
-                  <LayoutMode />
-                  <VersionHistory onReverted={() => reloadBoard()} />
+                <div className="flex flex-wrap items-center gap-2">
+                  {canMake && (
+                    <Button variant={writable ? "ghost" : "default"} size="sm" onClick={copyBoard} data-testid="copy-board">
+                      <Copy /> Save a copy
+                    </Button>
+                  )}
+                  {writable && state.board.owner && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => shareBoard(!entry?.shared)} data-testid="share-board" aria-pressed={!!entry?.shared}>
+                        <Share2 /> {entry?.shared ? "Shared: stop sharing" : "Share with everyone"}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={deleteBoard} data-testid="delete-board" aria-label="Delete board">
+                        <Trash2 />
+                      </Button>
+                    </>
+                  )}
+                  {writable && <LayoutMode />}
+                  <VersionHistory onReverted={() => (noteEdit(), reloadBoard())} />
                 </div>
               </div>
               <div className="space-y-3">
-                <PreviewBanner onReverted={() => reloadBoard()} />
+                <PreviewBanner onReverted={() => (noteEdit(), reloadBoard())} />
                 <FilterBar />
+                {writable && !appMode && (
                 <details className="group">
                   <summary className="w-fit cursor-pointer list-none font-mono text-xs text-muted-foreground hover:text-foreground">
                     <span className="group-open:hidden">Edit with an operation instead</span>
@@ -430,23 +651,56 @@ export function App() {
                     <OpsBox />
                   </div>
                 </details>
+                )}
               </div>
               <Separator className="my-4" />
-              <Board showQueries />
+              <Board showQueries={!appMode} onWidgetRemoved={(r) => setRemoved({ ...r, key: Date.now() })} />
             </BoardProvider>
-          </div>
-          {chatEnabled && (
-            <div className="order-2 min-w-0">
+          }
+          side={(hide) =>
+            writable ? (
               <React.Suspense fallback={<div className="rounded-md border p-4 text-sm text-muted-foreground">Loading chat…</div>}>
-                <ChatPanel key={`${base}:${model}`} base={base} suggestions={suggestions} onTurnEnd={() => reloadBoard()} models={models} model={model} onModelChange={setModel} />
+                <ChatPanel
+                  key={`${base}:${model}:${effort}`}
+                  base={base}
+                  suggestions={suggestions}
+                  onTurnEnd={() => reloadBoard()}
+                  boardVersion={state.board.version}
+                  edits={edits}
+                  onHide={hide}
+                  models={models}
+                  model={model}
+                  onModelChange={setModel}
+                  effort={effort}
+                  onEffortChange={setEffort}
+                />
               </React.Suspense>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="sticky top-[4.5rem] rounded-md border p-4 text-sm text-muted-foreground" data-testid="chat-read-only">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs">build with chat</span>
+                  <Button variant="ghost" size="sm" className="-my-1 -mr-2 h-7 px-2 text-xs" onClick={hide} aria-label="Hide chat" data-testid="chat-hide">
+                    Hide
+                  </Button>
+                </div>
+                Chat changes the board it sits beside, and this one is read-only.
+                {canMake && (
+                  <Button size="sm" className="mt-3 w-full" onClick={copyBoard}>
+                    <Copy /> Save a copy to change it with chat
+                  </Button>
+                )}
+              </div>
+            )
+          }
+        />
+        )}
       </main>
-      <footer className="mx-auto max-w-7xl px-4 pb-10 text-xs text-muted-foreground">
-        <a className="underline underline-offset-4" href="/">lenspack</a> — a dashboard is data, not code. Build boards with the chat, edit with the ops box, drag widgets, restore versions, switch the charting library.
-      </footer>
+      {removed && <UndoToast key={removed.key} title={removed.title} onUndo={host.revertTo ? undoRemove : undefined} onClose={dismissRemoved} />}
+      {!appMode && (
+        <footer className="mx-auto max-w-[2400px] px-4 pb-10 text-xs text-muted-foreground lg:px-5">
+          <a className="underline underline-offset-4" href="/">lenspack</a> — a dashboard is data, not code. Build boards with the chat, edit with the ops box, drag widgets, restore versions, switch the charting library.
+        </footer>
+      )}
     </div>
   );
 }

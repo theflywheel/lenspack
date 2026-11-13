@@ -1,10 +1,10 @@
-import type { BoardConfig, BoardOp, Query, Widget } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type Query, type Widget, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
-import type { DataRow, WidgetData } from "./data";
+import { type DataRow, MAX_SERIES, type WidgetData, compared } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
-import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, resolve } from "./resolve";
+import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, nowOf, resolve } from "./resolve";
 
 export type RunOptions = { pack: Pack; connector: Connector; ctx?: Ctx; timeoutMs?: number };
 
@@ -14,6 +14,8 @@ const ACROSS_LIMIT = 10_000;
 
 export type AcrossSide = {
   measure: PackMeasure;
+  /** The operand as the pack names it: a per-level measure by its levels key. */
+  named: string;
   query: Query;
   /** The operand's entity has no time: one number for every period (per series if split). */
   timeless: boolean;
@@ -24,9 +26,9 @@ export type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] 
 
 /**
  * Arithmetic whose operands live on different entities (delivered per target,
- * where deliveries and targets are separate tables or indexes). Each operand
- * is the same query over its own measure; the results are combined per group.
- * Returns null for anything else.
+ * where deliveries and targets are separate tables or indexes), or that uses a
+ * per-key measure. Each operand is the same query over its own measure; the
+ * results are combined per group. Returns null for anything else.
  */
 export function acrossEntities(query: Query, pack: Pack): Across | null {
   if (query.kind === "rows") return null;
@@ -34,19 +36,26 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
   if (!def?.derived) return null;
   const expr = expandedExpr(pack, def.key);
   const measures = operands(expr).map((k) => pack.measures.find((m) => m.key === k)).filter((m): m is PackMeasure => !!m);
-  if (new Set(measures.map((m) => m.entity)).size < 2) return null;
+  if (new Set(measures.map((m) => m.entity)).size < 2 && !measures.some((m) => m.per)) return null;
+  // A group can have rows in one period and not the other on either side, and
+  // a breakdown with compare keeps only the groups of the current period, so
+  // the previous value of a ratio per group would be computed from part of it.
+  if (query.kind === "breakdown" && query.compare)
+    throw new ResolveError("NOT_SUPPORTED", `"${def.key}" combines measures on several entities, so it is compared to the previous period as one number, not per group`, def.key, "value");
   const base = (key: string): Query => (query.kind === "breakdown" ? { ...query, measure: key, limit: ACROSS_LIMIT } : { ...query, measure: key });
+  const named = (key: string) => pack.measures.find((m) => m.derived?.trim() === key)?.key ?? key;
+  // A filter on a dimension another operand's entity does not have (a kind
+  // of item, when the goal is set per region) narrows the home operand only,
+  // and only where that reads right (below). Explain and the data say so.
+  const has = (entity: string, dimension: string) => {
+    const d = pack.dimensions.find((x) => x.key === dimension);
+    return !d || d.entity === entity || !!d.also?.[entity];
+  };
+  const filters = query.filters ?? [];
   const sides = measures.map((m): AcrossSide => {
     const home = m.entity === def.entity;
-    // A filter on a dimension another operand's entity does not have (a kind
-    // of item, when the goal is set per region) narrows the home operand only:
-    // this kind over the whole goal. Explain says so.
-    const has = (dimension: string) => {
-      const d = pack.dimensions.find((x) => x.key === dimension);
-      return !d || d.entity === m.entity || !!d.also?.[m.entity];
-    };
-    const kept = home ? (query.filters ?? []) : (query.filters ?? []).filter((f) => has(f.dimension));
-    const unfiltered = home ? [] : [...new Set((query.filters ?? []).filter((f) => !has(f.dimension)).map((f) => f.dimension))];
+    const kept = home ? filters : filters.filter((f) => has(m.entity, f.dimension));
+    const unfiltered = home ? [] : [...new Set(filters.filter((f) => !has(m.entity, f.dimension)).map((f) => f.dimension))];
     let q = { ...base(m.key), filters: kept.length ? kept : undefined } as Query;
     // An operand with no time (a target, a capacity) is the same in every
     // period: each bucket, and the previous period, use that one number.
@@ -58,19 +67,59 @@ export function acrossEntities(query: Query, pack: Pack): Across | null {
       else if (q.kind === "value") q = { kind: "value", measure: m.key, filters: rest.filters };
       else q = rest as Query;
     }
-    return { measure: m, query: q, timeless, unfiltered };
+    return { measure: m, named: named(m.key), query: q, timeless, unfiltered };
   });
+  // Left whole, an operand that only divides reads as "this kind over the
+  // whole goal" when it is a reference value (a target, a capacity), not
+  // events counted over time. Anything else would add or subtract rows the
+  // filter excludes elsewhere, as would a divisor beside another that the
+  // filter does narrow.
+  const { divides, counts } = placed(expr);
+  const events = (m: PackMeasure) => (m.agg === "count" || m.agg === "count_distinct") && !!pack.entities[m.entity]?.time;
+  for (const s of sides)
+    for (const dimension of s.unfiltered) {
+      if (!counts.has(s.measure.key) && !events(s.measure) && sides.every((t) => !divides.has(t.measure.key) || t.unfiltered.includes(dimension))) continue;
+      const answer = sides.filter((t) => filters.every((f) => has(t.measure.entity, f.dimension))).map((t) => t.named);
+      throw new ResolveError(
+        "NOT_SUPPORTED",
+        `"${def.key}" cannot be narrowed by "${dimension}": its operand ${s.named} lives on "${s.measure.entity}", which has no such dimension. ${answer.length ? `Measures that can be: ${answer.join(", ")}.` : "None of its operands takes every filter."}`,
+        def.key,
+        answer[0],
+      );
+    }
   return { def, expr, sides };
 }
 
-// A group missing from an operand had no rows there: zero for an additive
-// operand (nothing delivered yet), unknown for anything else.
-const additive = (m: PackMeasure) => m.agg === "count" || m.agg === "sum";
+// Operands under an odd number of divisors (b in a / b, b and c in
+// a / (b + c)) scale the answer; the rest count into it. One can do both.
+function placed(e: MeasureExpr, under = false, out = { divides: new Set<string>(), counts: new Set<string>() }) {
+  if (e.t === "measure") (under ? out.divides : out.counts).add(e.key);
+  else if (e.t === "neg") placed(e.arg, under, out);
+  else if (e.t === "op") {
+    placed(e.l, under, out);
+    placed(e.r, e.op === "/" ? !under : under, out);
+  }
+  return out;
+}
+
+const unnarrowed = (s: AcrossSide) => `${s.named} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`;
+const notesOf = (data: WidgetData[], more: string[] = []) => {
+  const notes = [...new Set([...data.flatMap((d) => d.notes ?? []), ...more])];
+  return notes.length ? notes : undefined;
+};
+
+// A group missing from an operand had no rows there: zero for a count, a
+// distinct count or a sum (nothing delivered yet), unknown for anything else.
+const additive = (m: PackMeasure) => m.agg === "count" || m.agg === "count_distinct" || m.agg === "sum";
 
 function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   const { def, expr, sides } = across;
   const format = def.format ?? "number";
   const approximate = data.some((d) => d.approximate) || undefined;
+  // Each operand of a split series keeps its own top series, so the combined
+  // answer cannot count what was left out, only say which operand lost some.
+  const lost = sides.filter((_, i) => data[i]!.notes).map((s) => `${s.named} keeps only its top ${MAX_SERIES} series; the others are computed without it`);
+  const notes = notesOf([], [...sides.filter((s) => s.unfiltered.length).map(unnarrowed), ...lost]);
   const homeIndex = Math.max(0, sides.findIndex((s) => s.measure.entity === def.entity));
   const home = data[homeIndex]!;
   const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
@@ -78,7 +127,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   if (query.kind === "value") {
     const now = (i: number) => data[i]!.rows[0]?.value ?? null;
     const value = evaluate(expr, (k) => now(sides.findIndex((s) => s.measure.key === k)));
-    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate };
+    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate, notes };
     if (sides.every((s, i) => s.timeless || data[i]!.compare)) {
       const previous = evaluate(expr, (k) => {
         const i = sides.findIndex((s) => s.measure.key === k);
@@ -118,7 +167,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   } else {
     rows.sort((a, b) => a.group.localeCompare(b.group) || (a.series ?? "").localeCompare(b.series ?? ""));
   }
-  return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate };
+  return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate, notes };
 }
 
 const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: "number", error: e.message, hint: e.nearest });
@@ -127,9 +176,13 @@ const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: 
 export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
   // Per-level measures are read at the level this query views.
   const view = { ...opts, pack: packAtLevel(opts.pack, viewedLevel(query, opts.pack)) };
+  if (query.kind === "breakdown" && (query.share || query.other)) return withWhole(query, view);
   const data = query.kind !== "rows" && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
   return query.kind === "breakdown" ? withoutEmptyGroups(data, query.measure, view.pack) : data;
 }
+
+// A derived measure that is one other key: a per-level measure at this level.
+const ALIAS = /^\s*[a-z][a-z0-9_]*\s*$/;
 
 // A measure's where narrows the rows it counts, not the groups: a group with
 // no rows for it at all (a per-level target's other levels) comes back empty.
@@ -138,11 +191,70 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
 function withoutEmptyGroups(data: WidgetData, measure: string, pack: Pack): WidgetData {
   const m = pack.measures.find((x) => x.key === measure);
   if (!m || data.error) return data;
-  const plain = !m.derived || /^\s*[a-z][a-z0-9_]*\s*$/.test(m.derived);
+  const plain = !m.derived || ALIAS.test(m.derived);
   if (!plain) return data;
   // With several measures, a group is empty only when every one of them is.
   const rows = data.rows.filter((r) => r.value !== null || r.count === 0 || Object.values(r.values ?? {}).some((v) => v !== null));
   return rows.length === data.rows.length ? data : { ...data, rows, total: rows.reduce((n, r) => n + r.count, 0) };
+}
+
+// Share needs a measure that adds up over groups (or a distinct count, whose
+// shares can sum past 1); Other needs a count or a sum. A per-key measure is
+// like a distinct count: a key in two groups counts in each.
+function wholeRefusal(query: Query, pack: Pack): ResolveError | null {
+  if (query.kind !== "breakdown" || (!query.share && !query.other)) return null;
+  let m = pack.measures.find((x) => x.key === query.measure);
+  if (m?.derived && ALIAS.test(m.derived)) m = pack.measures.find((x) => x.key === m!.derived!.trim());
+  if (!m) return null;
+  const asked = query.other ? "other" : "share";
+  const adds = (x: PackMeasure) => x.agg === "count" || x.agg === "sum";
+  const fits = (x: PackMeasure) => !x.derived && x.format !== "percent" && ((adds(x) && !x.per) || (asked === "share" && (x.agg === "count_distinct" || adds(x))));
+  if (!fits(m)) {
+    const near = pack.measures.filter((x) => x.entity === m!.entity && fits(x)).map((x) => x.key);
+    const what = m.derived ? "arithmetic over other measures" : m.format === "percent" ? "a percentage" : m.per ? "one value per key" : `agg: ${m.agg}`;
+    return new ResolveError(
+      "NOT_SUPPORTED",
+      `"${query.measure}" is ${what}, which does not add up over groups, so it has no ${asked === "other" ? "Other row" : "share"}; that needs a count or a sum${asked === "share" ? " (or a distinct count)" : ""}`,
+      query.measure,
+      nearest(query.measure, near) ?? near[0],
+    );
+  }
+  if (query.other && query.by) return new ResolveError("NOT_SUPPORTED", "An Other row is one row for the rest of the population, so it is not split by a second dimension", query.by, "share");
+  if (query.other && query.measures?.length) return new ResolveError("NOT_SUPPORTED", "An Other row is computed for the primary measure only, so it does not go with further measures", query.measures[0], "share");
+  return null;
+}
+
+// The whole population: the breakdown's measure, window and filters as one value.
+const wholeOf = (query: Extract<Query, { kind: "breakdown" }>): Query => ({ kind: "value", measure: query.measure, compare: query.compare, time: query.time, filters: query.filters });
+
+// The breakdown and its whole run side by side, on one clock so both read the
+// same window, and at the breakdown's level.
+async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: RunOptions): Promise<WidgetData> {
+  const refused = wholeRefusal(query, opts.pack);
+  if (refused) return refusal(refused);
+  const { share, other, ...groups } = query;
+  const ctx = { ...opts.ctx, now: nowOf(opts.ctx) };
+  const [data, whole] = await Promise.all([run(groups, { ...opts, ctx }), runOne(wholeOf(query), { ...opts, ctx })]);
+  if (data.error) return data;
+  if (whole.error) return whole;
+  const all = whole.rows[0]?.value ?? null;
+  const ratio = (v: number | null) => (v === null || !all ? null : v / all);
+  const rows: DataRow[] = data.rows.map((r) => (share ? { ...r, share: ratio(r.value) } : r));
+  if (other) {
+    // The whole minus the groups shown, with float residue snapped to 0 so
+    // groups that cover everything leave an Other of 0, not 1e-16.
+    const rest = (of: number | null, f: (r: DataRow) => number | null | undefined) => {
+      if (of === null) return null;
+      const left = of - data.rows.reduce((n, r) => n + (f(r) ?? 0), 0);
+      return Math.abs(left) <= 1e-9 * Math.abs(of) ? 0 : left;
+    };
+    const value = rest(all, (r) => r.value);
+    const row: DataRow = { group: "(other)", value, count: rest(whole.total, (r) => r.count)!, other: true };
+    if (whole.compare) row.compare = compared(value, rest(whole.compare.previous, (r) => r.compare?.previous));
+    if (share) row.share = ratio(value);
+    rows.push(row);
+  }
+  return { ...data, rows, total: rows.reduce((n, r) => n + r.count, 0), approximate: data.approximate || whole.approximate || undefined };
 }
 
 /** The query without its further measures, and one query per further measure. */
@@ -160,7 +272,8 @@ export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extr
   return {
     primary: primary as Query,
     extras: measures.map((key) => {
-      let q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT } : { ...primary, measure: key }) as Query;
+      // Only the primary is compared: the others fill in its groups as they are now.
+      let q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT, compare: undefined } : { ...primary, measure: key }) as Query;
       if (timeless(key)) {
         const { time: _t, ...rest } = q as Query & { time?: unknown; compare?: unknown };
         q = (q.kind === "series" ? { kind: "value", measure: key, filters: rest.filters } : q.kind === "value" ? { kind: "value", measure: key, filters: rest.filters } : rest) as Query;
@@ -186,8 +299,9 @@ async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOpt
     ...r,
     values: Object.fromEntries(
       extras.map((e, i) => {
-        // A timeless measure beside a series is one number for every bucket.
-        const flat = e.query.kind === "value" && query.kind === "series";
+        // A timeless measure beside a series is one number for every bucket; beside a value
+        // it is that value's other column. Either way its one row is named after its own key.
+        const flat = e.query.kind === "value" && query.kind !== "breakdown";
         const hit = flat ? (others[i]!.rows[0]?.value ?? null) : lookups[i]!.get(keyOf(r));
         return [e.key, hit !== undefined ? hit : defs[i] && additive(defs[i]!) ? 0 : null];
       }),
@@ -198,6 +312,7 @@ async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOpt
     rows,
     measures: [{ key: query.measure, format: main!.format }, ...extras.map((e, i) => ({ key: e.key, format: others[i]!.format }))],
     approximate: main!.approximate || others.some((o) => o.approximate) || undefined,
+    notes: notesOf([main!, ...others]),
   };
 }
 
@@ -228,6 +343,13 @@ export type Explained = { text: string; root: string; entities: string[]; tenant
 /** What would run, without running it. Throws ResolveError for a refusal. */
 export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
   const opts = { ...given, pack: packAtLevel(given.pack, viewedLevel(query, given.pack)) };
+  if (query.kind === "breakdown" && (query.share || query.other)) {
+    const refused = wholeRefusal(query, opts.pack);
+    if (refused) throw refused;
+    const { share: _s, other: _o, ...groups } = query;
+    const [main, whole] = await Promise.all([explain(groups, opts), explain(wholeOf(query), opts)]);
+    return { ...main, text: `${main.text}\n-- the whole population, for share and other\n${whole.text}`, approximate: main.approximate || whole.approximate };
+  }
   const { primary, extras } = splitMeasures(query, opts.pack);
   if (extras.length) {
     const parts = await Promise.all([explain(primary, opts), ...extras.map((e) => explain(e.query, opts))]);
@@ -243,7 +365,7 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
   if (across) {
     const parts = await Promise.all(across.sides.map((s) => explain(s.query, opts)));
     const notes = across.sides.flatMap((s) => [
-      ...(s.unfiltered.length ? [`-- ${s.measure.key} is not narrowed by ${s.unfiltered.join(", ")}: "${s.measure.entity}" has no such dimension`] : []),
+      ...(s.unfiltered.length ? [`-- ${unnarrowed(s)}`] : []),
       ...(s.timeless ? [`-- "${s.measure.entity}" has no time: every period uses the same ${s.measure.key}`] : []),
     ]);
     return {
@@ -263,6 +385,8 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
 /** Resolution only: every refusal a query would get, with no backend call. */
 export function check(query: Query, given: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
   const pack = packAtLevel(given, viewedLevel(query, given));
+  const refused = wholeRefusal(query, pack);
+  if (refused) throw refused;
   const { primary, extras } = splitMeasures(query, pack);
   if (extras.length) {
     for (const q of [primary, ...extras.map((e) => e.query)]) check(q, pack, opts);
@@ -331,14 +455,21 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
   return data;
 }
 
+/** The query behind a dimension's values: its groups by a count, largest first, optionally those containing q. */
+export function valuesQuery(dimension: string, pack: Pack, limit = 50, q = ""): Query | null {
+  const dim = pack.dimensions.find((d) => d.key === dimension);
+  const measure =
+    pack.measures.find((m) => m.agg === "count" && !m.per && !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
+    pack.measures.find((m) => m.agg === "count" && !m.per && m.entity === dim?.entity) ??
+    pack.measures.find((m) => m.agg === "count" && !m.per);
+  if (!measure) return null;
+  return { kind: "breakdown", dimension, measure: measure.key, limit: Math.min(50, limit), sort: "desc", ...(q ? { filters: [{ dimension, op: "contains" as const, value: q }] } : {}) };
+}
+
 /** Distinct values of a dimension, for filter controls. */
 export async function dimensionValues(dimension: string, opts: RunOptions, limit = 50) {
-  const dim = opts.pack.dimensions.find((d) => d.key === dimension);
-  const measure =
-    opts.pack.measures.find((m) => m.agg === "count" && !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
-    opts.pack.measures.find((m) => m.agg === "count" && m.entity === dim?.entity) ??
-    opts.pack.measures.find((m) => m.agg === "count");
-  if (!measure) return [];
-  const data = await run({ kind: "breakdown", dimension, measure: measure.key, limit: Math.min(50, limit), sort: "desc" }, opts);
+  const query = valuesQuery(dimension, opts.pack, limit);
+  if (!query) return [];
+  const data = await run(query, opts);
   return data.rows.map((r) => ({ value: r.group, count: r.count }));
 }

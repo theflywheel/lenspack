@@ -6,14 +6,17 @@ A pack is one YAML or JSON document describing a dataset so that a model can que
 pack: <slug>                # lowercase, [a-z][a-z0-9_]*
 version: <int>              # bump when keys change; boards record the version they were built against
 description: <text>         # optional
+timeZone: <IANA zone>       # optional, e.g. Africa/Nairobi: where days start for calendar ranges and series buckets; UTC when absent
 
 entities:
   <entity_key>:
     source: <table|schema.table|view>
     grain: <one line, surfaced to the model>      # optional but recommended
     time: <column>          # default time column for series, windows and comparisons
-    # …or an expression, when time is stored as something else (epoch milliseconds in a BIGINT):
-    # time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)" } }
+    # …or a field holding epoch numbers, which every connector converts:
+    # time: { field: createdtime, unit: epoch_ms }
+    # …or an expression, one per dialect where they differ:
+    # time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)", … } }
     tenant: <column>        # when present, every query over this entity MUST carry a tenant
     filter: <predicate>     # carried by every query over this entity, e.g. soft deletes: isdeleted = false
     joins:
@@ -25,7 +28,7 @@ dimensions:
   - key: <slug>
     entity: <entity_key>
     sql: <fragment>         # OR
-    json: [<column>, <key>, <key>…]   # JSON path; the printer emits ->> / #>> or json_extract_string
+    json: [<column>, <key>, <key>…]   # JSON path; each dialect reads it its own way
     type: string | number | boolean | time | enum   # default string
     grains: [hour, day, week, month, quarter, year] # time dimensions only
     label: <text>           # default: key title-cased
@@ -42,8 +45,31 @@ measures:
     format: number | percent | currency | compact | duration
   - key: <slug>
     entity: <entity_key>
+    agg: <any agg above>    # over the per-key values
+    per:                    # two stages: one value per key first
+      key: <column>         # or { sql: <fragment> }
+      agg: count | count_distinct | sum | min | max | avg
+      sql: <fragment>       # required unless agg is count
+      filter: <predicate>   # optional, as on a measure
+      having: { op: eq | neq | gt | gte | lt | lte, value: <number> }   # optional; the outer agg ignores keys whose value fails
+                            # or { op: between, value: [<low>, <high>] }, both ends kept
+  - key: <slug>
+    entity: <entity_key>
     derived: <measure> / <measure>   # ratio of two aggregates on the same entity
     format: …
+
+instructions: <text>        # optional, ≤2000 chars: domain rules the keys cannot say, sent with every chat turn
+examples:                   # optional, ≤12: checked questions and the query (IR) that answers each
+  - question: <text>
+    query: { kind: breakdown, dimension: <key>, measure: <key> }
+    note: <text>            # optional: why this query and not the obvious one
+```
+
+For example, the median items per order, and the customers with three or more orders:
+
+```yaml
+  - { key: median_items_per_order, entity: order_items, agg: median, per: { key: order_id, agg: count } }
+  - { key: repeat_customers, entity: orders, agg: count, per: { key: customer_id, agg: count, having: { op: gte, value: 3 } } }
 ```
 
 ## Fragments
@@ -51,8 +77,10 @@ measures:
 A `sql`, `filter` or dimension `sql` value is either a string or a per-dialect map:
 
 ```yaml
-sql: { postgres: "EXTRACT(HOUR FROM ts)::int", duckdb: "hour(ts)", default: "…" }
+sql: { postgres: "EXTRACT(HOUR FROM ts)::int", duckdb: "hour(ts)", mysql: "HOUR(ts)", sqlite: "CAST(strftime('%H', ts) AS INTEGER)", clickhouse: "toHour(ts)" }
 ```
+
+A fragment must be **portable or per-dialect**. A bare string is read by every SQL driver, so write it in SQL they all accept (`CASE WHEN status = 'refunded' THEN 1 ELSE 0 END`, not `(status = 'refunded')::int`). Where they genuinely differ, the map gives each its own entry: `postgres`, `duckdb`, `mysql` (MariaDB too), `sqlite`, `clickhouse`, the name of any driver registered from outside, or `elasticsearch` (query DSL or Painless); `default` serves the SQL dialects not named. A query that needs a fragment its source has no entry for is refused with `NOT_SUPPORTED`, naming the fragment. A YAML anchor writes a map once and reuses it. [drivers.md](drivers.md) lists what differs.
 
 Fragments are inlined verbatim inside a subquery over that entity's own table, so unqualified column names are unambiguous even under joins. **They are trusted code.** They come from the pack file, never from a request, and should be reviewed like code.
 
@@ -62,6 +90,8 @@ Fragments are inlined verbatim inside a subquery over that entity's own table, s
 - Every `entity` reference exists; every join's `on` names exactly the two entities involved.
 - A dimension has exactly one of `sql` or `json`; `grains` only on `type: time`.
 - A measure has `agg` (with `sql` unless `count`) or `derived`, not both; derived operands must be non-derived measures on the same entity.
+- A measure with `per` has `agg` and no `sql`, `field`, `filter` or `where` of its own: those belong inside `per`.
+- An example's query names only verified keys the pack has; `lenspack serve` and `check` also resolve it against its source and refuse to start on one that would be refused.
 
 ## Semantics the compiler applies
 
@@ -70,4 +100,5 @@ Fragments are inlined verbatim inside a subquery over that entity's own table, s
 - Rates (`agg: avg` over a 0/1 expression) are averages over base rows. A rate for the whole population and the same rate per group are computed identically; only the `GROUP BY` differs.
 - `derived: a / b` compiles to `CAST(agg_a AS DOUBLE) / NULLIF(agg_b, 0)`.
 - `filter` folds into `CASE WHEN filter THEN expr END`, so the aggregate ignores rows outside it.
+- A `per` measure groups the rows the query reads (after its time window, filters, tenant and the entity's own predicate) by the key and by the answer's groups (a breakdown's groups, a series' buckets), then aggregates the one value per key. A key with rows in two groups or two buckets counts in each, rows with no key are not counted, and `n` counts keys. A filter inside `per` narrows the rows behind each value, not the keys: a key with no matching rows counts 0 under `count`. `having` folds into the outer aggregate like a filter, so a group whose keys all fail it still shows, 0 under `count`. A previous-period comparison groups each period on its own.
 - If any entity in the query declares `tenant`, the tenant predicate is pushed into that entity's subquery and a missing tenant is a compile error.

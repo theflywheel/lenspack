@@ -20,7 +20,7 @@ export type ElasticsearchOptions = {
   fetch?: typeof fetch;
 };
 
-export const ELASTICSEARCH_CAPABILITIES: Capabilities = { joins: false, exactDistinct: false, exactPercentiles: false };
+export const ELASTICSEARCH_CAPABILITIES: Capabilities = { joins: false, exactDistinct: false, exactPercentiles: false, twoStage: false };
 
 type Mapping = Map<string, string>;
 
