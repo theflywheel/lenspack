@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 10;
+export const PROMPT_VERSION = 11;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -96,6 +96,7 @@ Rules:
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Do every part of a request that can be done, even when another part cannot; then name the part that could not and why.
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
+- "Reset", "start over", "back to the original/default", "undo my changes": restore_version with to: baseline. "Undo that" / "go back to how it was before X": list_versions, then restore_version with that version. A restore is one call; never rebuild a past board widget by widget.
 - When the board part lists changes the user made since your last turn, they are deliberate: keep them, never undo them unless asked, and mention them only when they bear on the request.
 - After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
 - An informational answer (what the data holds, several numbers side by side) may use a short bullet list and **bold** for names; keep it brief. Never use markdown headings or tables.`,

@@ -223,7 +223,7 @@ export function effortFor(p: Pick<Provider, "name" | "efforts">, wanted?: string
 }
 
 // Calls that only look: a step of these beside a failure made no progress.
-const READS = new Set(["get_board", "list_metrics", "list_values", "explain"]);
+const READS = new Set(["get_board", "list_metrics", "list_values", "explain", "list_versions"]);
 
 /**
  * Stops a tool loop that is going nowhere: when the last `n` steps each had a

@@ -191,4 +191,26 @@ describe("board tools", () => {
     expect((await proposals.list())[0]?.verified).toBe(false);
     expect(pack.measures.some((m) => m.key === "heavy_rate")).toBe(false);
   });
+
+  it("restores the baseline or a numbered version, as a new version", async () => {
+    const store = memoryStore();
+    await store.create({ id: "r", pack, title: "Restore board" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "r", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const run = (name: string, args: Record<string, unknown> = {}) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    expect((await run("add_widget", { id: "one", kind: "kpi", title: "One", query_kind: "value", measure: "things" })).applied).toBe(true);
+    expect((await run("add_widget", { id: "two", kind: "kpi", title: "Two", query_kind: "value", measure: "weight" })).applied).toBe(true);
+    const listed = await run("list_versions");
+    expect(listed.current).toBe(3);
+    expect(listed.baseline).toBe(1);
+    const back = await run("restore_version", { to: "2" });
+    expect(back).toMatchObject({ applied: true, restored: 2, version: 4 });
+    expect(Object.keys((await store.get("r"))!.config.widgets)).toHaveLength(1);
+    const reset = await run("restore_version", { to: "baseline" });
+    expect(reset).toMatchObject({ applied: true, restored: 1, version: 5 });
+    expect(Object.keys((await store.get("r"))!.config.widgets)).toHaveLength(0);
+    // Nothing is lost: the version before the reset is still there to go back to.
+    expect((await run("restore_version", { to: "v3" })).applied).toBe(true);
+    expect(Object.keys((await store.get("r"))!.config.widgets)).toHaveLength(2);
+    expect((await run("restore_version", { to: "99" })).applied).toBe(false);
+  });
 });
