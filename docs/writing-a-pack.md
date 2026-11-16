@@ -45,7 +45,7 @@ Anything you would put in `SELECT` with an aggregate:
 measures:
   - { key: invoices,   entity: invoices, agg: count }
   - { key: billed,     entity: invoices, agg: sum, sql: amount_cents / 100.0, format: currency }
-  - { key: overdue_rate, entity: invoices, agg: avg, sql: "(status = 'overdue')::int", format: percent }
+  - { key: overdue_rate, entity: invoices, agg: avg, sql: "CASE WHEN status = 'overdue' THEN 1 ELSE 0 END", format: percent }
   - { key: avg_invoice, entity: invoices, derived: billed / invoices, format: currency }
   - { key: p90_days_to_pay, entity: invoices, agg: p90, sql: "EXTRACT(EPOCH FROM (paid_at - issued_at)) / 86400.0", format: duration }
 ```
@@ -54,7 +54,7 @@ Rules of thumb:
 - A rate is `agg: avg` over a 0/1 expression. Never precompute per-group rates in a view and average them.
 - A ratio of two aggregates is `derived`.
 - A count of a subset is `agg: count` with a `filter`.
-- If Postgres and DuckDB disagree on a function, use a per-dialect fragment: `sql: { postgres: "…", duckdb: "…" }`.
+- Write fragments every database reads (`CASE WHEN … THEN 1 ELSE 0 END`, not `::int`). Where databases genuinely disagree on a function, use a per-dialect fragment: `sql: { default: "…", mysql: "…", sqlite: "…", clickhouse: "…" }`. See [drivers.md](drivers.md).
 
 ## 5. Tenancy
 

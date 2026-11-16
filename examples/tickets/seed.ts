@@ -6,14 +6,12 @@ export async function seed(writer: Writer, dialect: Dialect, opts: { tickets?: n
   const r = rng(31);
   const now = opts.now ?? new Date("2026-09-01T00:00:00Z");
   const n = opts.tickets ?? 4000;
-  void dialect;
-
   await execAll(writer, [
     "DROP TABLE IF EXISTS status_history",
     "DROP TABLE IF EXISTS tickets",
     "CREATE TABLE tickets (id INTEGER PRIMARY KEY, created_at TIMESTAMP, team VARCHAR, priority VARCHAR, status VARCHAR, channel VARCHAR, resolved_at TIMESTAMP, sla_hours INTEGER, first_response_minutes INTEGER)",
     "CREATE TABLE status_history (id INTEGER PRIMARY KEY, ticket_id INTEGER, status VARCHAR, changed_at TIMESTAMP)",
-  ]);
+  ], dialect);
 
   const tickets: unknown[][] = [];
   const history: unknown[][] = [];

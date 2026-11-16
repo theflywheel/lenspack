@@ -21,7 +21,7 @@ export type Expr =
   | { t: "epoch"; unit: "epoch_ms" | "epoch_s"; arg: Expr } // a number of (milli)seconds since 1970, as a naive UTC timestamp
   | { t: "in"; l: Expr; values: Expr[] }
   | { t: "case"; when: Expr; then: Expr } // CASE WHEN when THEN then END (else NULL)
-  | { t: "trunc"; grain: Grain; arg: Expr }
+  | { t: "trunc"; grain: Grain; arg: Expr; zone?: string }
   | { t: "cast"; arg: Expr; to: "double" | "text" }
   | { t: "nullif0"; arg: Expr }
   | { t: "paren"; arg: Expr };
@@ -37,13 +37,18 @@ export type Join = { source: Source; on: { left: Expr; right: Expr } };
 
 export type Ast = {
   select: { alias: string; expr: Expr }[];
-  from: Source;
+  from: Source | Grouped;
   joins: Join[];
   where: Expr[];
   groupBy: Expr[];
+  having: Expr[];
   orderBy: { expr: Expr; dir: "asc" | "desc" }[];
   limit: number;
 };
+
+// The inner stage of a two-stage measure: the root's rows grouped by the key
+// and the answer's groups, one value per key.
+export type Grouped = Omit<Ast, "from" | "having" | "orderBy" | "limit"> & { alias: string; from: Source };
 
 export const and = (exprs: Expr[]): Expr | null =>
   exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r }));

@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>lenspack — a dashboard is data, not code</title>
     <meta name="description" content="Pack-driven, AI-editable dashboards over Postgres and DuckDB. The model names keys, never writes SQL." />
+    <script>
+      // The theme before first paint: the viewer's pick (src/theme.ts), else the system's.
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem("lenspack-theme"); } catch (e) {}
+        var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      })();
+    </script>
     <link rel="preload" href="/fonts/IBMPlexSans-var.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/IBMPlexMono-400.woff2" as="font" type="font/woff2" crossorigin />
   </head>

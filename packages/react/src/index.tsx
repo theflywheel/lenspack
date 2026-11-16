@@ -1,5 +1,5 @@
 export { BoardProvider, useBoard, useBoardOps } from "./provider";
-export { Board, WidgetFrame } from "./grid";
+export { Board, WidgetFrame, type RemovedWidget } from "./grid";
 export { DrillPath, FilterBar } from "./filter-bar";
 export { VersionHistory } from "./versions";
 export { ChartWidget, KpiWidget, TableWidget, TextWidget, defaultWidgets, type WidgetProps, type WidgetRegistry } from "./widgets";

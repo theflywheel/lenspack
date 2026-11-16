@@ -6,14 +6,18 @@
   --lp-sequential-5: #22c55e; --lp-sequential-6: #4ade80; --lp-sequential-7: #86efac; --lp-sequential-8: #bbf7d0;
   --lp-bg: #fff; --lp-fg: #1c1917; --lp-muted: #6b6b66; --lp-border: #e7e5e4; --lp-hover: #fafaf9; --lp-radius: 4px;
 }
+/* Dark follows the system unless the host page picks one with <html data-theme>. */
 @media (prefers-color-scheme: dark) {
-  :root { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
+  :root:not([data-theme="light"]) { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
 }
+:root[data-theme="dark"] { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
 .lp-board { color: var(--lp-fg); }
-.lp-widget { display: flex; flex-direction: column; height: 100%; overflow: hidden; border: 1px solid var(--lp-border); border-radius: var(--lp-radius); background: var(--lp-bg); padding: 12px 14px; }
-.lp-widget-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; cursor: move; }
+.lp-widget { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; border: 1px solid var(--lp-border); border-radius: var(--lp-radius); background: var(--lp-bg); padding: 12px 14px; }
+.lp-widget-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
+.lp-widget:has(.lp-widget-remove) .lp-widget-head { padding-right: 22px; }
 .lp-widget-title { font-size: 14px; font-weight: 500; }
 .lp-widget-query { font-family: var(--lp-mono, ui-monospace, monospace); font-size: 11px; color: var(--lp-key, var(--lp-muted)); }
+.lp-widget-note { font-size: 11px; color: var(--lp-muted); }
 .lp-widget-body { flex: 1; min-height: 0; }
 .lp-empty, .lp-empty-board { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--lp-muted); font-size: 13px; text-align: center; }
 .lp-problem { display: flex; height: 100%; flex-direction: column; justify-content: center; gap: 6px; }
@@ -77,3 +81,36 @@ tr.lp-drillable:hover { background: var(--lp-hover); }
 .lp-svg-pie { flex-direction: row; align-items: center; gap: 12px; }
 .lp-svg-pie .lp-svg { flex: 1 1 0; min-width: 0; height: 100%; }
 .lp-svg-pie .lp-svg-legend { flex: 0 1 auto; max-width: 45%; max-height: 100%; overflow: auto; flex-direction: column; flex-wrap: nowrap; justify-content: center; padding-top: 0; }
+
+/* Editing by hand: the title bar is the handle, the corner resizes, the ×
+   removes. All three show on hover or focus, and always on a touch screen. */
+.lp-board[data-editable] .lp-drag-handle { cursor: grab; }
+.lp-board[data-editable] .react-draggable-dragging .lp-drag-handle { cursor: grabbing; }
+.lp-widget-remove {
+  position: absolute; top: 8px; right: 8px; z-index: 2; display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--lp-radius); background: transparent; color: var(--lp-muted);
+  cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.lp-widget-remove:hover { background: var(--lp-hover); color: var(--lp-fg); }
+.lp-widget-remove:focus-visible { opacity: 1; }
+.lp-widget:hover .lp-widget-remove, .lp-widget:focus-within .lp-widget-remove { opacity: 1; }
+@media (hover: none) { .lp-widget-remove { opacity: 1; } }
+
+/* The grid library's own rules that matter, in the board's colours (its stylesheet is not needed). */
+.react-grid-layout { position: relative; }
+.react-grid-item { box-sizing: border-box; }
+.lp-board[data-gesture] .react-grid-item { transition: transform 180ms ease, width 180ms ease, height 180ms ease; }
+.lp-board[data-gesture] .react-grid-item.react-draggable-dragging, .lp-board[data-gesture] .react-grid-item.resizing { transition: none; }
+.react-grid-item.react-draggable-dragging { z-index: 3; will-change: transform; }
+.react-grid-item.react-draggable-dragging .lp-widget { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16); }
+.react-grid-item.resizing { z-index: 3; }
+.react-grid-item.react-grid-placeholder {
+  z-index: 2; user-select: none; border: 1px dashed var(--lp-key, var(--lp-muted)); border-radius: var(--lp-radius);
+  background: color-mix(in srgb, var(--lp-key, var(--lp-muted)) 10%, transparent);
+}
+.react-grid-item.dropping { visibility: hidden; }
+.react-grid-item > .react-resizable-handle { position: absolute; z-index: 2; right: 0; bottom: 0; width: 18px; height: 18px; cursor: se-resize; opacity: 0; transition: opacity 120ms ease; }
+.react-grid-item > .react-resizable-handle::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 6px; height: 6px; border-right: 2px solid var(--lp-muted); border-bottom: 2px solid var(--lp-muted); }
+.react-grid-item:hover > .react-resizable-handle, .react-grid-item.resizing > .react-resizable-handle { opacity: 1; }
+@media (hover: none) { .react-grid-item > .react-resizable-handle { opacity: 1; } }
+.react-resizable-hide > .react-resizable-handle { display: none; }

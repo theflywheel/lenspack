@@ -26,9 +26,17 @@ export type FilterClause = z.infer<typeof filterClauseSchema>;
 
 // Relative ranges are resolved against "now" at query time, so a saved board
 // keeps meaning "the last 30 days" rather than freezing the dates it was made.
+// A calendar range counts whole periods in the pack's time zone, weeks from
+// Monday: offset 0 is the current period up to now, -1 the one before it, and
+// count takes that many periods ending at offset ("last month" is month, -1).
 export const timeRangeSchema = z.union([
   z.object({ last: z.string().regex(/^[1-9]\d{0,3}[hdwmy]$/, 'e.g. "30d", "12w", "6m"') }),
   z.object({ from: z.string().datetime({ offset: true }), to: z.string().datetime({ offset: true }) }),
+  z.object({
+    period: z.enum(["day", "week", "month", "quarter", "year"]),
+    offset: z.number().int().min(-500).max(0).optional(),
+    count: z.number().int().min(1).max(500).optional(),
+  }),
 ]);
 export type TimeRange = z.infer<typeof timeRangeSchema>;
 
@@ -60,6 +68,12 @@ export const querySchema = z.discriminatedUnion("kind", [
     // keeps the source's grouping order: both for a migrated dashboard that
     // must list tied rows exactly as the system it replaces did.
     sortBy: z.enum(["value", "measure", "group", "none"]).optional(),
+    // Each group beside its previous-period value, its share of the whole
+    // population, and one "(other)" row for the population outside the groups
+    // shown: numbers the reader would otherwise work out by hand, and get wrong.
+    compare: z.enum(["previous_period"]).optional(),
+    share: z.boolean().optional(),
+    other: z.boolean().optional(),
     ...alsoMeasures,
     ...common,
   }),
@@ -212,9 +226,11 @@ export function queryKeys(query: Query): { dimensions: string[]; measures: strin
   const measures = new Set<string>();
   const entities = new Set<string>();
   for (const f of query.filters ?? []) dimensions.add(f.dimension);
+  if (query.kind !== "rows") for (const m of query.measures ?? []) measures.add(m);
   switch (query.kind) {
     case "breakdown":
       dimensions.add(query.dimension);
+      if (query.by) dimensions.add(query.by);
       measures.add(query.measure);
       break;
     case "series":

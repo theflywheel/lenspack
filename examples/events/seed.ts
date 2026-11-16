@@ -10,12 +10,10 @@ export async function seed(writer: Writer, dialect: Dialect, opts: { rows?: numb
   const r = rng(11);
   const now = opts.now ?? new Date("2026-09-01T00:00:00Z");
   const rows = opts.rows ?? Number(process.env.LENSPACK_EVENTS_ROWS ?? 200_000);
-  void dialect;
-
   await execAll(writer, [
     "DROP TABLE IF EXISTS pageviews",
     "CREATE TABLE pageviews (id INTEGER PRIMARY KEY, ts TIMESTAMP, session_id VARCHAR, user_id VARCHAR, path VARCHAR, referrer VARCHAR, country VARCHAR, device VARCHAR, duration_ms INTEGER, bounced BOOLEAN)",
-  ]);
+  ], dialect);
 
   // Sessions of 1–6 views each, spread over 90 days with a daily cycle.
   const batch: unknown[][] = [];

@@ -24,7 +24,7 @@ function toOption(spec: ChartSpec, el: HTMLElement): echarts.EChartsCoreOption {
       animation: false,
       tooltip: { trigger: "item", valueFormatter: (v: number) => spec.format(v) },
       legend: spec.legend ? { bottom: 0, textStyle: { color: fg } } : undefined,
-      series: [{ type: "pie", radius: ["45%", "80%"], data: spec.rows.map((r) => ({ name: String(r.group), value: r.value })), label: { show: false } }],
+      series: [{ type: "pie", radius: ["40%", "68%"], data: spec.rows.map((r) => ({ name: String(r.group), value: r.value })), label: { show: true, color: fg, formatter: (p: { value: number }) => spec.format(p.value) } }],
     };
   }
   const series = spec.keys.map((k) => ({

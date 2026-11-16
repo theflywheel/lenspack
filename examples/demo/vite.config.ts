@@ -34,7 +34,8 @@ function bootstrapApp(): Plugin {
         const files = [...new Set([...closure(entryOf("src/app.tsx")), ...closure(entryOf("adapters/recharts.tsx"))])];
         const script = `<script>
 (function () {
-  if (location.pathname.indexOf("/app") !== 0) return;
+  var ui = window.__lenspackUi || {};
+  if (location.pathname.indexOf("/app") !== 0 && ui.mode !== "app") return;
   var files = ${JSON.stringify(files)};
   for (var i = 0; i < files.length; i++) {
     var l = document.createElement("link");
@@ -42,7 +43,8 @@ function bootstrapApp(): Plugin {
     l.href = "/" + files[i];
     document.head.appendChild(l);
   }
-  var q = new URLSearchParams(location.search), ex = q.get("example"), b = q.get("board");
+  var q = new URLSearchParams(location.search), home = (ui.home || "/").split("/");
+  var ex = q.get("example") || (q.get("board") ? null : home[0]), b = q.get("board") || (q.get("example") ? null : home[1]);
   var get = function (u) { return fetch(u).then(function (r) { return r.json(); }); };
   window.__lenspackBoot = { index: get("/api/"), board: ex && b ? get("/api/" + ex + "/" + b + "?include=data,options") : null, path: ex && b ? "/" + ex + "/" + b : null };
 })();

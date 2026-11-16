@@ -20,7 +20,7 @@ type State = {
   drillTarget(dimension: string): { at: string; selects: string | null };
   clearSelections(): void;
   apply(ops: BoardOp[]): Promise<PatchResult>;
-  saveLayout(layout: LayoutItem[]): Promise<void>;
+  saveLayout(layout: LayoutItem[], summary?: string): Promise<void>;
   refresh(): Promise<void>;
   host: BoardHost;
   editable: boolean;
@@ -55,6 +55,7 @@ export function BoardProvider({
   charts = svgAdapter,
   initialSelections = {},
   onSelectionsChange,
+  onEdit,
   children,
 }: {
   board: Board;
@@ -67,6 +68,8 @@ export function BoardProvider({
   /** Selections are session state, not configuration; the host may keep them in the URL. */
   initialSelections?: Record<string, string>;
   onSelectionsChange?(selections: Record<string, string>): void;
+  /** Told after every edit made through the provider (ops, a drag), with the board it made. */
+  onEdit?(board: Board): void;
   children: React.ReactNode;
 }) {
   const [current, setBoard] = React.useState(initial);
@@ -106,20 +109,22 @@ export function BoardProvider({
       if (result.ok) {
         setBoard(result.board);
         setPreviewing(null);
+        onEdit?.(result.board);
       }
       return result;
     },
-    [host],
+    [host, onEdit],
   );
 
   const saveLayout = React.useCallback(
-    async (layout: LayoutItem[]) => {
+    async (layout: LayoutItem[], summary?: string) => {
       if (!host.saveLayout) return;
       if (previewing) return;
-      const next = await host.saveLayout(layout);
+      const next = await host.saveLayout(layout, summary);
       setBoard(next);
+      onEdit?.(next);
     },
-    [host, previewing],
+    [host, previewing, onEdit],
   );
 
   const setSelection = React.useCallback(

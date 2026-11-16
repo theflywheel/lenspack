@@ -36,7 +36,7 @@ measures:
   - { key: orders,      entity: orders, agg: count, label: Orders }
   - { key: revenue,     entity: orders, agg: sum, sql: total_cents / 100.0, format: currency, label: Revenue, synonyms: [sales, gmv] }
   - { key: aov,         entity: orders, derived: revenue / orders, format: currency, label: Average order value, hint: Revenue divided by orders. }
-  - { key: refund_rate, entity: orders, agg: avg, sql: "(status = 'refunded')::int", format: percent, label: Refund rate }
+  - { key: refund_rate, entity: orders, agg: avg, sql: "CASE WHEN status = 'refunded' THEN 1 ELSE 0 END", format: percent, label: Refund rate }
   - { key: p90_order,   entity: orders, agg: p90, sql: total_cents / 100.0, format: currency, label: 90th percentile order value }
   - { key: customers,   entity: customers, agg: count, label: Customers }
   - { key: units,       entity: order_items, agg: sum, sql: qty, label: Units sold }

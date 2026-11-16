@@ -10,12 +10,13 @@ import { buildBoard, createApp, seedBoards } from "./app";
 import { accessFrom, fileAudit } from "./auth";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { buildProvider, probe, providersFromEnv } from "./llm";
+import { addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";
 
 const USAGE = `lenspack <command>
 
   serve  --config lenspack.yaml [--port 8787]   the board API (and --ui dir, or ui: in the config)
   check  --config lenspack.yaml                 draw every board against its source; exit 1 on any error
-  sources --config lenspack.yaml [--source s]   what each source holds: tables or indexes, fields, types
+  sources --config lenspack.yaml [--source s]   what each source holds: tables or indexes, fields, types, rows
   dss    ChartApiConfig.json [--dashboards MasterDashboardConfig.json]
          [--placeholders PVAR,…] [--pack name] --out dir
                                                 DIGIT DSS chart configs → pack.yaml, boards/, report.md
@@ -32,12 +33,28 @@ async function main() {
   switch (command) {
     case "serve": {
       const { config, dir } = readConfig(flag("config") ?? "lenspack.yaml");
-      const { hosts } = await openConfig(config, dir);
+      const { hosts, close } = await openConfig(config, dir);
       for (const h of hosts) await seedBoards(h);
+      // As a container's PID 1, node ignores SIGTERM unless told otherwise: close the
+      // sources and the board store (a database file is checkpointed) and exit.
+      for (const sig of ["SIGTERM", "SIGINT"] as const) process.once(sig, () => void close().finally(() => process.exit(0)));
+      // Every model call is metered into the ledger (GET /api/_usage, the budget) and,
+      // with usage: in the config, a file that outlives the process. Process-wide, so
+      // the startup probes are counted too.
+      const ledger = usageLedger();
+      addUsageSink(ledger);
+      if (config.usage) {
+        const usageFile = resolve(dir, config.usage);
+        ledger.restore(readUsageFile(usageFile));
+        addUsageSink(jsonlUsageSink(usageFile));
+      }
       const providers = providersFromEnv().map(buildProvider);
+      if (config.budget && providers.some((p) => !p.pricing)) console.warn(`lenspack: budget set, but ${providers.filter((p) => !p.pricing).map((p) => p.name).join(", ")} has no price, so its spend does not count toward it`);
       void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
       const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
-      const ui = flag("ui") ?? (config.ui ? resolve(dir, config.ui) : undefined);
+      const uiDir = typeof config.ui === "string" ? config.ui : config.ui?.dir;
+      const ui = flag("ui") ?? (uiDir ? resolve(dir, uiDir) : undefined);
+      const page = typeof config.ui === "object" ? { mode: config.ui.mode, ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}), ...(config.ui.intro ? { intro: config.ui.intro } : {}) } : undefined;
       const port = Number(flag("port") ?? config.port ?? process.env.PORT ?? 8787);
       const access = config.auth ? accessFrom(resolveSecrets(config.auth)) : undefined;
       // No auth block: local use only. An open API on the network is a choice
@@ -45,7 +62,8 @@ async function main() {
       const host = flag("host") ?? config.host ?? (config.auth ? "0.0.0.0" : "127.0.0.1");
       if (!access) console.warn(config.auth ? "lenspack: auth is `none` — anyone who reaches this port may read and edit every board" : "lenspack: no auth configured — listening on 127.0.0.1 only");
       const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
-      createServer(createApp(hosts, { ui, providers, roles, access, audit })).listen(port, host, () => {
+      const signOutUrl = config.auth?.kind === "proxy" ? config.auth.signOutUrl : undefined;
+      createServer(createApp(hosts, { ui, page, providers, roles, access, audit, signOutUrl, historyTurns: config.historyTurns, ledger, budget: config.budget, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
         console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${access ? `, sign-in by ${config.auth!.kind}` : ""}`);
       });
       return;
@@ -72,15 +90,17 @@ async function main() {
     }
     case "sources": {
       const { config, dir } = readConfig(flag("config") ?? "lenspack.yaml");
-      const { hosts, close } = await openConfig(config, dir);
+      const { sources, close } = await openConfig(config, dir);
       const only = flag("source");
-      for (const h of hosts) {
-        if (!h.connector.introspect) {
-          console.log(`${h.name}: ${h.connector.kind} does not describe itself yet`);
+      for (const [name, connector] of sources) {
+        if (only && name !== only) continue;
+        if (!connector.introspect) {
+          console.log(`${name} (${connector.kind}) does not describe itself yet`);
           continue;
         }
-        const schema = await h.connector.introspect();
-        for (const c of schema.collections) if (!only || c.name.includes(only)) console.log(`${c.name}${c.rows !== undefined ? ` (${c.rows} rows)` : ""}\n${c.fields.map((f) => `  ${f.path}: ${f.type}`).join("\n")}`);
+        const schema = await connector.introspect();
+        console.log(`${name} (${connector.kind})`);
+        for (const c of schema.collections) console.log(`  ${c.name}${c.rows !== undefined ? ` (~${c.rows} rows)` : ""}\n${c.fields.map((f) => `    ${f.path}: ${f.type}`).join("\n")}`);
       }
       await close();
       return;

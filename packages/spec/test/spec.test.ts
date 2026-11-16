@@ -67,6 +67,10 @@ measures:
   it("rejects a dimension with both sql and json", () => bad((p) => (p.dimensions[0].json = ["a"]), "exactly one of field, sql or json"));
   it("rejects a measure with neither agg nor derived", () => bad((p) => delete p.measures[0].agg, "agg"));
   it("rejects a non-count aggregate without sql", () => bad((p) => delete p.measures[1].sql, "needs sql"));
+  it("rejects a time zone that is an offset rather than an IANA name", () => bad((p) => (p.timeZone = "+03:00"), "IANA time zone"));
+  it("rejects a two-stage measure with row-level sql outside per", () =>
+    bad((p) => (p.measures[1].per = { key: "owner_id", agg: "count" }), "go inside per"));
+  it("rejects a per stage summing nothing", () => bad((p) => p.measures.push({ key: "big", entity: "items", agg: "max", per: { key: "owner_id", agg: "sum" } }), "needs sql or field"));
   it("rejects a derived measure that does not live with one of its operands", () => {
     bad((p) => {
       p.measures.push({ key: "owner_n", entity: "owners", agg: "count" });
@@ -87,4 +91,12 @@ measures:
   });
   it("rejects grains on a non-time dimension", () => bad((p) => (p.dimensions[0].grains = ["day"]), "only apply to a time dimension"));
   it("rejects an uppercase key", () => bad((p) => (p.dimensions[0].key = "Region"), "lowercase"));
+  it("rejects an example that names a key the pack does not have", () =>
+    bad((p) => (p.examples = [{ question: "By colour?", query: { kind: "breakdown", dimension: "colour", measure: "amount" } }]), 'examples[0].query: no verified dimension "colour"'));
+
+  it("rejects an example that names an unverified key, which the model is not shown", () =>
+    bad((p) => {
+      p.measures[1].verified = false;
+      p.examples = [{ question: "Count and amount by region?", query: { kind: "breakdown", dimension: "region", measure: "count", measures: ["amount"] } }];
+    }, 'examples[0].query: no verified measure "amount"'));
 });

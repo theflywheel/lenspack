@@ -1,3 +1,4 @@
+import { queryKeys, querySchema } from "@lenspack/core";
 import { z } from "zod";
 
 import { ExprError, expandExpr, operands, parseExpr } from "./expr";
@@ -23,20 +24,32 @@ export const FORMATS = ["number", "percent", "currency", "compact", "duration"] 
 export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as const;
 
 // A fragment is one string, or one per dialect when the engines genuinely
-// differ (a date difference, a regex). `default` covers the rest.
+// differ (a date difference, a regex). `default` covers the rest. A driver
+// added outside lenspack reads the entry named after its dialect.
+const dialectFragment = z.string().min(1).max(500).optional();
 export const fragmentSchema = z.union([
   z.string().min(1).max(500),
   z
     .object({
-      default: z.string().min(1).max(500).optional(),
-      postgres: z.string().min(1).max(500).optional(),
-      duckdb: z.string().min(1).max(500).optional(),
+      default: dialectFragment,
+      postgres: dialectFragment,
+      duckdb: dialectFragment,
+      mysql: dialectFragment,
+      sqlite: dialectFragment,
+      clickhouse: dialectFragment,
       // Query DSL JSON for a filter; a Painless script for a dimension or measure.
       elasticsearch: z.string().min(1).max(2000).optional(),
     })
-    .refine((f) => f.default || f.postgres || f.duckdb || f.elasticsearch, { message: "a per-dialect fragment needs at least one entry" }),
+    .catchall(z.string().min(1).max(2000))
+    .refine((f) => Object.values(f).some(Boolean), { message: "a per-dialect fragment needs at least one entry" }),
 ]);
 export type Fragment = z.infer<typeof fragmentSchema>;
+
+// The dialects a bare string (or `default`) serves. Every SQL driver adds its
+// own when it is registered; a search engine never does.
+const SQL_DIALECTS = new Set(["postgres", "duckdb", "mysql", "sqlite", "clickhouse"]);
+export const registerSqlDialect = (dialect: string) => void SQL_DIALECTS.add(dialect);
+export const isSqlDialect = (dialect: string) => SQL_DIALECTS.has(dialect);
 
 export function fragmentFor(fragment: Fragment, dialect: string): string {
   const chosen = maybeFragmentFor(fragment, dialect);
@@ -46,7 +59,7 @@ export function fragmentFor(fragment: Fragment, dialect: string): string {
 
 /** A bare string is SQL: it serves every SQL dialect but never a non-SQL one. */
 export function maybeFragmentFor(fragment: Fragment, dialect: string): string | undefined {
-  const sql = dialect === "postgres" || dialect === "duckdb";
+  const sql = isSqlDialect(dialect);
   if (typeof fragment === "string") return sql ? fragment : undefined;
   return (fragment as Record<string, string | undefined>)[dialect] ?? (sql ? fragment.default : undefined);
 }
@@ -119,6 +132,27 @@ export const dimensionSchema = z
   })
   .refine(oneSource, { message: "a dimension has exactly one of field, sql or json" });
 
+// The inner stage of a two-stage measure; the outer agg skips a key whose value fails `having`.
+export const perSchema = z
+  .object({
+    key: z.union([fieldPath, z.object({ sql: fragmentSchema })]),
+    agg: z.enum(AGGS).exclude(["median", "p90"]),
+    sql: fragmentSchema.optional(),
+    field: fieldPath.optional(),
+    filter: fragmentSchema.optional(),
+    where: z.array(whereSchema).max(20).optional(),
+    having: z
+      .union([
+        z.object({ op: z.enum(["eq", "neq", "gt", "gte", "lt", "lte"]), value: z.number() }),
+        // Both ends kept: sessions per user "3-5" is { op: between, value: [3, 5] }.
+        z.object({ op: z.literal("between"), value: z.tuple([z.number(), z.number()]) }).refine((h) => h.value[0] <= h.value[1], { message: "between takes [low, high] with low <= high" }),
+      ])
+      .optional(),
+  })
+  .refine((p) => !(p.sql && p.field), { message: "per has sql or field, not both" })
+  .refine((p) => p.agg !== "count" || !p.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })
+  .refine((p) => p.agg === "count" || !!p.sql || !!p.field, { message: "an aggregate other than count needs sql or field" });
+
 export const measureSchema = z
   .object({
     key: slug,
@@ -148,6 +182,9 @@ export const measureSchema = z
     // the source keeps a row per level (targets set per region and per
     // sub-region): `levels: { region: target_at_region, subregion: target_at_subregion }`.
     levels: z.record(slug, slug).optional(),
+    // One value per key first, then `agg` over those values:
+    // `agg: median, per: { key: order_id, agg: count }` is the median items per order.
+    per: perSchema.optional(),
     // Multiplies the aggregate, e.g. people per item handed out.
     scale: z.number().refine((n) => n !== 0 && Number.isFinite(n), "a non-zero number").optional(),
     format: z.enum(FORMATS).default("number"),
@@ -159,21 +196,46 @@ export const measureSchema = z
   .refine((m) => (m.agg ? true : !m.sql && !m.field && !m.filter && !m.where && !m.scale), { message: "sql, field, filter, where and scale belong to a measure with agg" })
   .refine((m) => !(m.sql && m.field), { message: "a measure has sql or field, not both" })
   .refine((m) => m.agg !== "count" || !m.sql, { message: "count takes no sql; count a field (non-null values), or use count_distinct or sum" })
-  .refine((m) => !m.agg || m.agg === "count" || !!m.sql || !!m.field, { message: "an aggregate other than count needs sql or field" });
+  .refine((m) => !m.per || (!!m.agg && !m.sql && !m.field && !m.filter && !m.where), { message: "a measure with per takes agg over the per-key values; its sql, field, filter and where go inside per" })
+  .refine((m) => !m.agg || m.agg === "count" || !!m.sql || !!m.field || !!m.per, { message: "an aggregate other than count needs sql or field" });
+
+function knownZone(timeZone: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export const packSchema = z.object({
   pack: slug,
   version: z.number().int().min(1),
   description: z.string().max(500).optional(),
   // Where a day starts: calendar windows (a board's date range, "a month
-  // ago → today") are local dates in this zone. UTC when absent.
-  timeZone: z.string().max(64).optional(),
+  // ago → today", "last month") and series buckets are local dates in this
+  // zone. UTC when absent. An IANA name, never an offset like "+03:00", which
+  // Postgres reads with its sign reversed.
+  timeZone: z
+    .string()
+    .max(64)
+    .refine((tz) => /^[A-Za-z]/.test(tz) && knownZone(tz), 'an IANA time zone, e.g. "Africa/Nairobi"')
+    .optional(),
   entities: z.record(slug, entitySchema),
   dimensions: z.array(dimensionSchema).default([]),
   measures: z.array(measureSchema).default([]),
   // Dimensions that nest, coarse to fine. Picking a value on one level narrows
   // the board to it and moves anything grouped at or above it one level down.
   hierarchies: z.record(slug, z.array(slug).min(2).max(10)).default({}),
+  // What the model is told beyond the keys, reviewed with them: domain rules
+  // the keys cannot say ("never add a measure from one channel to one from
+  // another"), and questions whose right query someone has checked. Both go
+  // into every turn's prompt, so both are bounded.
+  instructions: z.string().max(2000).optional(),
+  examples: z
+    .array(z.object({ question: z.string().min(1).max(200), query: querySchema, note: z.string().max(200).optional() }))
+    .max(12)
+    .default([]),
 });
 
 export type Pack = z.infer<typeof packSchema>;
@@ -287,6 +349,18 @@ export function checkPack(pack: Pack): PackProblem[] {
       const entities = new Set(ops.map((o) => measureEntity.get(o)).filter(Boolean));
       if (entities.size && !entities.has(m.entity)) problems.push({ path, message: `a derived measure's entity is one of its operands' (${[...entities].join(", ")}), not "${m.entity}"` });
     }
+  }
+
+  // An example names only verified keys, the ones the model is shown; the
+  // server also resolves each one when it opens the pack's source.
+  const verifiedDims = new Set(pack.dimensions.filter((d) => d.verified).map((d) => d.key));
+  const verifiedMeasures = new Set(pack.measures.filter((m) => m.verified).map((m) => m.key));
+  for (const [i, { query }] of pack.examples.entries()) {
+    const path = `examples[${i}].query`;
+    const k = queryKeys(query);
+    for (const e of k.entities) if (!entities.has(e)) problems.push({ path, message: `unknown entity "${e}"` });
+    for (const m of k.measures) if (!verifiedMeasures.has(m)) problems.push({ path, message: `no verified measure "${m}"` });
+    for (const d of k.dimensions) if (!verifiedDims.has(d)) problems.push({ path, message: `no verified dimension "${d}"` });
   }
 
   return problems;

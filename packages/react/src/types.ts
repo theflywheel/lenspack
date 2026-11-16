@@ -4,7 +4,7 @@ import type { Board, BoardConfig, BoardOp, BoardVersion, Catalogue, LayoutItem, 
 // fetch or save arrives through these callbacks, so it works in front of any
 // host: a Next.js route, an Express server, a Tauri command.
 
-export type DataRow = { group: string; series?: string; value: number | null; count: number; values?: Record<string, number | null> };
+export type DataRow = { group: string; series?: string; value: number | null; count: number; values?: Record<string, number | null>; compare?: { previous: number | null; delta: number | null }; share?: number | null; other?: true };
 type Format = "number" | "percent" | "currency" | "compact" | "duration";
 export type WidgetData = {
   rows: DataRow[];
@@ -16,6 +16,8 @@ export type WidgetData = {
   approximate?: boolean;
   /** Every measure drawn when a query has further measures, the primary first. */
   measures?: { key: string; format: Format }[];
+  /** What the answer leaves out on purpose, shown beside the widget's title. */
+  notes?: string[];
   error?: string;
   hint?: string;
 };
@@ -27,8 +29,8 @@ export type BoardHost = {
   loadBoardData(config: BoardConfig, selections: Record<string, string>): Promise<Record<string, WidgetData>>;
   /** Apply ops and return the new board (a new version). */
   applyOps?(ops: BoardOp[]): Promise<PatchResult>;
-  /** Save a drag/resize as a version of its own. */
-  saveLayout?(layout: LayoutItem[]): Promise<Board>;
+  /** Save a drag/resize as a version of its own; `summary` says what it did ("moved “Total”"). */
+  saveLayout?(layout: LayoutItem[], summary?: string): Promise<Board>;
   /** Distinct values for a filter control. */
   loadFilterOptions?(field: string): Promise<FilterOption[]>;
   loadVersions?(): Promise<BoardVersion[]>;
