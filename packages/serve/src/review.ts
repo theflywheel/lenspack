@@ -35,6 +35,7 @@ Judge widgets by their query description in AFTER (measure, dimension, grain, sp
 Do not invent requirements the instruction did not state. If everything requested is present, say so.
 If the instruction asked for something the pack cannot express (the assistant could only refuse, or offered the nearest answerable alternative and said so), and nothing wrong was added, that is satisfied — an honest refusal is the correct outcome, not a failure.
 If the instruction was a question about the data (not an edit) and the assistant answered it, that is satisfied.
+If the instruction asked to reset, undo or restore an earlier version and the RECEIPT shows a restore ("restored vN") to the right version, that is satisfied: the whole board changing back is the requested change, not unasked-for edits.
 ${WIDGET_LIMITS} A request for something widgets cannot do is satisfied when the assistant says so.
 
 Reply with JSON only: {"satisfied": boolean, "missing": ["what was asked and is absent, naming the widget kind and keys"], "wrong": ["what exists but differs from the request, with the widget id"], "note": "one sentence"}.`;

@@ -227,6 +227,11 @@ function patchQuery(current: Query | undefined, changed: Partial<QueryArgs>, pac
   });
 }
 
+// A board's original: the newest version its board file wrote, else the
+// version it was created (or copied) as. Versions arrive newest first.
+const baselineOf = <V extends { source: string; version: number }>(versions: V[]) =>
+  versions.find((v) => v.source === "file") ?? versions.find((v) => v.source === "create") ?? versions.at(-1);
+
 function fail(e: unknown) {
   if (e && typeof e === "object" && "code" in e && "message" in e) {
     const err = e as { message: string; nearest?: string };
@@ -256,7 +261,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // the last write would win. Edits queue per tool set instead, and a patch
   // passes a function so it reads the board inside the queue.
   let queue: Promise<unknown> = Promise.resolve();
-  const apply = (edit: BoardOp[] | (() => Promise<BoardOp[] | ReturnType<typeof fail>>)) => {
+  const apply = (edit: BoardOp[] | (() => Promise<BoardOp[] | ReturnType<typeof fail> | { applied: true; [k: string]: unknown }>)) => {
     const work = async () => {
       const ops = Array.isArray(edit) ? edit : await edit();
       if (!Array.isArray(ops)) return ops;
@@ -388,6 +393,40 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         if (!board) return { error: "This board no longer exists" };
         return { board: summarise(board.config), version: board.version };
       },
+    }),
+    defineTool({
+      name: "list_versions",
+      description:
+        "The board's saved versions, newest first: number, who or what made it (chat, by hand, board file, rollback) and what changed. Call this before restore_version when the user names a point in the history rather than the original.",
+      inputSchema: z.object({ limit: num(20, 1, 100).describe("How many versions, newest first (default 20)") }),
+      async execute({ limit }) {
+        const all = await store.versions(boardId);
+        if (all.length === 0) return { error: "This board has no history" };
+        const base = baselineOf(all);
+        return {
+          current: all[0]!.version,
+          baseline: base?.version ?? null,
+          versions: all.slice(0, limit).map((v) => ({ version: v.version, source: v.source, summary: v.summary, at: new Date(v.createdAt).toISOString() })),
+        };
+      },
+    }),
+    defineTool({
+      name: "restore_version",
+      description:
+        'Put the board back as it was at an earlier version. to: "baseline" restores the original (as its board file defines it, or as it was when this copy was made) and undoes every later change; a number restores that version. Nothing is lost: the restore is saved as a new version, so it can itself be undone.',
+      inputSchema: z.object({ to: str("baseline").describe('"baseline", or a version number from list_versions') }),
+      execute: ({ to }) =>
+        // Queued with the edits, so a restore never interleaves with a patch.
+        apply(async () => {
+          const all = await store.versions(boardId);
+          const wanted = to.trim().toLowerCase();
+          const target = /^(baseline|original|default|reset|start)$/.test(wanted) ? baselineOf(all) : all.find((v) => v.version === Number(wanted.replace(/^v/, "")));
+          if (!target) return fail(new Error(`No version "${to}". Versions run from ${all.at(-1)?.version ?? 1} to ${all[0]?.version ?? 1}; call list_versions.`));
+          const before = all[0]?.version;
+          const board = await store.revertTo(boardId, target.version);
+          if (!board) return fail(new Error(`Version ${target.version} could not be restored`));
+          return { applied: true as const, restored: target.version, version: board.version, unchanged: board.version === before, board: summarise(board.config) };
+        }),
     }),
     defineTool({
       name: "add_widget",
