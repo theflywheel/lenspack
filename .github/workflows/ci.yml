@@ -8,7 +8,9 @@ jobs:
     services:
       postgres:
         image: postgres:16
-        env: { POSTGRES_USER: lenspack, POSTGRES_PASSWORD: lenspack, POSTGRES_DB: lenspack_test }
+        # C collation: the golden queries break ties by group name in byte order, as DuckDB does;
+        # en_US (the image default) sorts "RED-ED" among the lowercase names and picks other rows at a limit.
+        env: { POSTGRES_USER: lenspack, POSTGRES_PASSWORD: lenspack, POSTGRES_DB: lenspack_test, POSTGRES_INITDB_ARGS: "--locale=C" }
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U lenspack" --health-interval 5s --health-timeout 5s --health-retries 10
