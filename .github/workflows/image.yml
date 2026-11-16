@@ -1,14 +1,12 @@
 name: image
 # Builds the lenspack server image (Dockerfile at the root) and publishes it to
-# ghcr.io/theflywheel/lenspack. Tags: the short commit SHA on every build, the
-# branch name, `latest` from main, and the version from a v* tag. Config, packs and
+# ghcr.io/theflywheel/lenspack, from main only: features are merged into main and
+# deployments run what main built. Tags: the short commit SHA and `latest`. Config, packs and
 # boards are mounted at run time, so one image serves every deployment.
 # Auth is the workflow's own GITHUB_TOKEN.
 on:
   push:
-    branches: [main, egov/es-demo]
-    tags: ["v*"]
-  workflow_dispatch:
+    branches: [main]
 
 permissions:
   contents: read
@@ -35,9 +33,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,prefix=,format=short
-            type=ref,event=branch
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=latest
       - uses: docker/build-push-action@v6
         with:
           context: .
