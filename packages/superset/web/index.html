@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lenspack on Superset</title>
+<script>/*__VARS__*/</script>
+<style>
+  :root{--fg:#1f2328;--mute:#667085;--line:#e4e7ec;--bg:#f5f7fa;--acc:#1a85a0}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:40px 16px}
+  h1{font-size:24px;margin:0 0 6px}
+  .lede{color:var(--mute);margin:0 0 28px;max-width:640px}
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:28px}
+  .mode{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .mode h2{font-size:15px;margin:0 0 4px}
+  .mode p{margin:0;color:var(--mute);font-size:13px}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:14px}
+  th{font-size:12px;color:var(--mute);font-weight:600;background:#fafbfc}
+  tr:last-child td{border-bottom:0}
+  a{color:var(--acc);text-decoration:none;font-weight:600}
+  a:hover{text-decoration:underline}
+  .when{color:var(--mute);font-size:13px}
+  @media (max-width:640px){.modes{grid-template-columns:1fr}th:nth-child(2),td:nth-child(2){display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lenspack on Superset</h1>
+  <p class="lede">Ask for charts and changes in plain words; Lenspack edits the Superset dashboard itself. The catalogue is Superset's datasets and saved metrics, and every number is computed by Superset. Superset is stock 5.0: no fork.</p>
+  <div class="modes">
+    <div class="mode"><h2>Beside</h2><p>Lenspack's page: the chat on the left, the Superset dashboard in an iframe on the right.</p></div>
+    <div class="mode"><h2>Inside</h2><p>Superset's own page, with an “Ask Lenspack” button added by one script tag in Superset's overridable template.</p></div>
+  </div>
+  <table><thead><tr><th>Dashboard</th><th>Changed</th><th>Beside</th><th>Inside</th></tr></thead><tbody id="rows"><tr><td colspan="4" class="when">Loading…</td></tr></tbody></table>
+</div>
+<script>
+  const v = window.__lp;
+  const superset = `${location.protocol}//${location.hostname}:${v.supersetPort}`;
+  fetch("/_superset/dashboards").then((r) => r.json()).then((list) => {
+    const rows = document.getElementById("rows");
+    rows.innerHTML = "";
+    for (const d of list) {
+      const tr = document.createElement("tr");
+      const td = (child) => { const c = document.createElement("td"); if (typeof child === "string") { c.textContent = child; c.className = "when"; } else c.append(child); return c; };
+      const a = (href, text) => { const x = document.createElement("a"); x.href = href; x.textContent = text; return x; };
+      const name = document.createElement("span"); name.textContent = d.title;
+      tr.append(td(name), td(d.changed || ""), td(a(`/superset/${d.id}`, "Open beside →")), td(a(`${superset}/superset/dashboard/${d.id}/`, "Open in Superset →")));
+      rows.append(tr);
+    }
+    if (!list.length) rows.innerHTML = '<tr><td colspan="4" class="when">No dashboards yet.</td></tr>';
+  });
+</script>
+</body>
+</html>
