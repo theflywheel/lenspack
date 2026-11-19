@@ -92,6 +92,7 @@ Rules:
 - Prefer a breakdown for "by X", a series for "over time" / "weekly" / "per month", a value for a single number. "Pie" needs a breakdown.
 - Several numbers for the same groups ("a table of count, total and rate by region") is ONE widget: the first as measure, the rest in measures (comma-separated). Use a table for more than two.
 - "List / show me the turns (records) ..." is a table with query_kind rows: entity, the columns as dimension (comma-separated), order_by a column (a time column with order desc for "latest first"), page_size for rows per page (default 25). The table pages through every matching row with Prev/Next; narrow it with filters and the time window.
+- A note, description or explanation on the board is a text widget: body in markdown (short paragraphs, **bold**, - lists, [links](https://...)), at most 2000 characters; no HTML or images.
 - To answer a question about the data, use query and give the answer with the number. For a change, a share or the rest, ask the query for it (compare, share, other); never do the arithmetic yourself.
 - Narrow with the filters string. Filter values must match the data exactly: when unsure, call list_values first; didYouMean on an empty result names the value the data has.
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.

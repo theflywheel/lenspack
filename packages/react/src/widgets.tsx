@@ -4,6 +4,7 @@ import type { Widget } from "@lenspack/core";
 
 import { buildChartSpec } from "./charts";
 import { formatDelta, formatValue } from "./format";
+import { Markdown, type MarkdownClasses } from "./markdown";
 import { useBoard } from "./provider";
 import type { DataRow, WidgetData, WidgetPage } from "./types";
 
@@ -289,9 +290,11 @@ export function TableWidget({ id, widget, data, currency }: WidgetProps<"table">
   );
 }
 
+// A note's markdown: built as React elements, never HTML from the text.
+const NOTE: MarkdownClasses = { root: "lp-text lp-md", code: "lp-md-code", heading: "lp-md-h", pre: "lp-md-pre", quote: "lp-md-quote" };
+
 export function TextWidget({ widget }: WidgetProps<"text">) {
-  // A text node, never markup.
-  return <p className="lp-text">{widget.body}</p>;
+  return <Markdown text={widget.body} classes={NOTE} />;
 }
 
 export const defaultWidgets: Required<WidgetRegistry> = { chart: ChartWidget, kpi: KpiWidget, table: TableWidget, text: TextWidget };

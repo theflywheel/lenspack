@@ -92,3 +92,28 @@ describe("an aggregate table", () => {
     expect(groups()).toEqual(["north", "south"]);
   });
 });
+
+describe("a text widget", () => {
+  it("renders markdown as elements, never markup from the text, and links safely", async () => {
+    const body = 'A **bold** note\n\n- one\n- two\n\n<script>alert(1)</script> [docs](https://example.org) [x](javascript:alert(1))';
+    const c = config([{ op: "add_widget", id: "n", widget: { kind: "text", title: "Note", body } }]);
+    mount(c, { loadBoardData: async () => ({}) });
+    const md = await screen.findByTestId("markdown");
+    expect(md.querySelector("strong")?.textContent).toBe("bold");
+    expect(md.querySelectorAll("li").length).toBe(2);
+    expect(md.querySelector("script")).toBeNull();
+    expect(md.textContent).toContain("<script>alert(1)</script>");
+    const links = md.querySelectorAll("a");
+    expect(links.length).toBe(1);
+    expect(links[0]!.getAttribute("href")).toBe("https://example.org");
+    expect(links[0]!.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("shows a plain note as the same text it always did", async () => {
+    const c = config([{ op: "add_widget", id: "n", widget: { kind: "text", title: "Note", body: "Counts are per day.\nSource: the telemetry store." } }]);
+    mount(c, { loadBoardData: async () => ({}) });
+    const md = await screen.findByTestId("markdown");
+    expect(md.className).toBe("lp-text lp-md");
+    expect(md.innerHTML).toBe("<p>Counts are per day.<br>Source: the telemetry store.</p>");
+  });
+});

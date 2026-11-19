@@ -43,6 +43,15 @@
 .lp-num { text-align: right !important; font-variant-numeric: tabular-nums; }
 .lp-muted { color: var(--lp-muted); font-size: 12px; }
 .lp-text { font-size: 14px; line-height: 1.5; color: var(--lp-muted); white-space: pre-wrap; }
+.lp-md { white-space: normal; overflow: auto; height: 100%; }
+.lp-md > * + * { margin-top: 6px; }
+.lp-md p, .lp-md ul, .lp-md ol, .lp-md blockquote, .lp-md pre { margin: 0; }
+.lp-md ul, .lp-md ol { padding-left: 20px; }
+.lp-md strong, .lp-md .lp-md-h { color: var(--lp-fg, inherit); font-weight: 600; }
+.lp-md a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.lp-md-code { font-family: ui-monospace, monospace; font-size: 0.9em; padding: 0 3px; border-radius: 3px; background: var(--lp-border); }
+.lp-md-pre { font-family: ui-monospace, monospace; font-size: 12px; padding: 6px 8px; border-radius: 4px; background: var(--lp-border); overflow-x: auto; white-space: pre; }
+.lp-md-quote { border-left: 2px solid var(--lp-border); padding-left: 8px; }
 .lp-filter-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: var(--lp-radius); }
 .lp-filter { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .lp-filter-label { color: var(--lp-muted); }
