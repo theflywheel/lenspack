@@ -170,8 +170,8 @@ describe("sign-in from lenspack.yaml", () => {
   it("trusts a proxy's user header only with the proxy's secret", async () => {
     const access = accessFrom(authSchema.parse({ kind: "proxy", secret: "s".repeat(32), editors: ["*"], maintainers: ["amina"] }))!;
     const as = (user: string) => access(req({ "x-lenspack-proxy-secret": "s".repeat(32), "x-forwarded-user": user }));
-    expect(await as("amina")).toEqual({ user: "amina", edit: true, maintain: true });
-    expect(await as("bo")).toEqual({ user: "bo", edit: true });
+    expect(await as("amina")).toEqual({ user: "amina", roles: [], edit: true, maintain: true, usage: true });
+    expect(await as("bo")).toEqual({ user: "bo", roles: [], edit: true, usage: false });
     expect(await access(req({ "x-forwarded-user": "amina" }))).toBeNull();
     expect(() => accessFrom(authSchema.parse({ kind: "proxy", secret: "short" }))).toThrow(/16 characters/);
   });

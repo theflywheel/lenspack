@@ -7,7 +7,7 @@ import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
 import { buildBoard, createApp, seedBoards } from "./app";
-import { accessFrom, fileAudit } from "./auth";
+import { authFrom, fileAudit } from "./auth";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { buildProvider, probe, providersFromEnv } from "./llm";
 import { addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";
@@ -56,14 +56,13 @@ async function main() {
       const ui = flag("ui") ?? (uiDir ? resolve(dir, uiDir) : undefined);
       const page = typeof config.ui === "object" ? { mode: config.ui.mode, ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}), ...(config.ui.intro ? { intro: config.ui.intro } : {}) } : undefined;
       const port = Number(flag("port") ?? config.port ?? process.env.PORT ?? 8787);
-      const access = config.auth ? accessFrom(resolveSecrets(config.auth)) : undefined;
+      const { access, signIn, signOutUrl } = config.auth ? authFrom(resolveSecrets(config.auth)) : {};
       // No auth block: local use only. An open API on the network is a choice
       // the config has to spell out (auth: { kind: none }).
       const host = flag("host") ?? config.host ?? (config.auth ? "0.0.0.0" : "127.0.0.1");
       if (!access) console.warn(config.auth ? "lenspack: auth is `none` — anyone who reaches this port may read and edit every board" : "lenspack: no auth configured — listening on 127.0.0.1 only");
       const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
-      const signOutUrl = config.auth?.kind === "proxy" ? config.auth.signOutUrl : undefined;
-      createServer(createApp(hosts, { ui, page, providers, roles, access, audit, signOutUrl, historyTurns: config.historyTurns, ledger, budget: config.budget, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
+      createServer(createApp(hosts, { ui, page, providers, roles, access, signIn, audit, signOutUrl, historyTurns: config.historyTurns, ledger, budget: config.budget, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
         console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${access ? `, sign-in by ${config.auth!.kind}` : ""}`);
       });
       return;

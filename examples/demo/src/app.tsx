@@ -277,7 +277,7 @@ const isView = (v: string | null): v is View => (VIEWS as readonly string[]).inc
 type Entry = { id: string; title: string; owner?: string; shared?: boolean; writable?: boolean };
 type Catalog = { example: string; description?: string; boards: Entry[] }[];
 /** Who the server says is signed in; absent on an open server. */
-type Me = { user: string; edit: boolean; maintain: boolean; signOut?: string };
+type Me = { user: string; edit: boolean; maintain: boolean; usage?: boolean; signOut?: string };
 
 // The board menu: the pack's own boards, yours, and those others shared.
 // Temporary boards (previews, evals) stay out of it.
@@ -452,7 +452,7 @@ export function App() {
   // Making, copying, sharing and deleting boards: what owners need.
   const canMake = me ? me.edit : true;
   // Usage names everyone, so the server shows it to maintainers; on an open server that is everyone.
-  const canSeeUsage = me ? me.maintain : true;
+  const canSeeUsage = me ? (me.usage ?? me.maintain) : true;
   const entry = catalog.find((c) => c.example === example)?.boards.find((b) => b.id === boardId);
   const open = async (r: { id?: string; error?: string }) => {
     if (!r.id) return setNotice(r.error ?? "That did not work");

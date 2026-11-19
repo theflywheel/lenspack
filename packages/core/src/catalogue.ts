@@ -72,6 +72,28 @@ export function verifiedOnly(catalogue: Catalogue): Catalogue {
 }
 
 /**
+ * The catalogue as one caller may see it: without the keys they may not use.
+ * A hierarchy stops above its first hidden level, so a drill never steps
+ * into one.
+ */
+export function withoutKeys(catalogue: Catalogue, hidden?: ReadonlySet<string>): Catalogue {
+  if (!hidden?.size) return catalogue;
+  const { hierarchies, ...rest } = catalogue;
+  const cut = Object.entries(hierarchies ?? {})
+    .map(([name, levels]) => {
+      const first = levels.findIndex((l) => hidden.has(l));
+      return [name, first < 0 ? levels : levels.slice(0, first)] as const;
+    })
+    .filter(([, levels]) => levels.length > 1);
+  return {
+    ...rest,
+    ...(cut.length ? { hierarchies: Object.fromEntries(cut) } : {}),
+    dimensions: catalogue.dimensions.filter((d) => !hidden.has(d.key)),
+    measures: catalogue.measures.filter((m) => !hidden.has(m.key)),
+  };
+}
+
+/**
  * Where a grouping stands under the current selections: a grouping at or above
  * the deepest selected level of its hierarchy steps one level below it (or
  * stays at the finest level). Used by the engine to build the drilled query
