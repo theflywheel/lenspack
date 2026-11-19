@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +8,6 @@ import { boardTools } from "@lenspack/mcp";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { parsePackText } from "@lenspack/spec";
 import { MockLanguageModelV4 } from "ai/test";
-import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { seed } from "../../../examples/campaign/seed";
@@ -55,13 +54,18 @@ describe("pack access by role", () => {
     const db = await openDuckdb(join(dir, "campaign.duckdb"));
     await seed(db.writer, "duckdb", { households: 3000 });
     await db.close();
+    // The example pack, with one example on a hidden key and one on visible keys: the prompt shows only the second.
+    writeFileSync(
+      join(dir, "pack.yaml"),
+      `${readFileSync(`${campaign}pack.yaml`, "utf8")}\nexamples:\n  - { question: "Who visited the most households?", query: { kind: breakdown, dimension: delivered_by, measure: visits } }\n  - { question: "Nets by province", query: { kind: breakdown, dimension: province, measure: nets_distributed } }\n`,
+    );
     const file = join(dir, "lenspack.yaml");
     writeFileSync(
       file,
       `sources:
   data: { kind: duckdb, path: ${join(dir, "campaign.duckdb")} }
 packs:
-  - pack: ${campaign}pack.yaml
+  - pack: ${join(dir, "pack.yaml")}
     source: data
     boards: ${campaign}boards
     now: "2026-09-01T00:00:00Z"
@@ -237,10 +241,13 @@ store: { kind: memory }
       return prompts.slice(before).join("");
     };
     const theirs = await turn(partner, made.body.id);
-    expect(theirs).toContain("province");
+    expect(theirs).toContain("Nets by province");
+    expect(theirs).not.toContain("Who visited the most");
     for (const k of HIDDEN) expect(theirs).not.toContain(k);
     const mine = await call(staff, "/campaign/boards", post({ title: "Chat" }));
-    expect(await turn(staff, mine.body.id)).toContain("delivered_by");
+    const staffs = await turn(staff, mine.body.id);
+    expect(staffs).toContain("delivered_by");
+    expect(staffs).toContain("Who visited the most");
   });
 
   it("stops at startup on a rule that names a key the pack does not have", async () => {
@@ -265,6 +272,9 @@ store: { kind: memory }
     expect(await run("add_widget", { id: "x", kind: "table", title: "x", query_kind: "breakdown", measure: "visits", dimension: "delivered_by" })).toMatchObject({ applied: false });
     expect(await run("add_filter", { field: "delivered_by" })).toMatchObject({ applied: false });
     expect((await run("list_values", { dimension: "province" })).ok).toBe(true);
+    // A dimension's values are counted with a measure the caller may use, even when the usual one is hidden.
+    const noVisits = Object.fromEntries(boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId: board.id, ctx: { ...h.ctx, hidden: new Set(["visits"]) } }).map((t) => [t.name, t]));
+    expect(await noVisits.list_values!.execute(noVisits.list_values!.inputSchema.parse({ dimension: "province" }) as never)).toMatchObject({ ok: true });
     expect(() => boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId: board.id, ctx: { hidden }, runSql: "role-scoped" })).toThrow(/run_sql/);
   });
 });
