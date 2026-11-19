@@ -5,12 +5,12 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 
 import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, queryKeys, querySchema, summarise, withoutHiddenValues, withoutKeys } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
-import type { Access, Audit, Principal } from "./auth";
+import { type Access, type Audit, type AuthAdapter, FULL_GRANT, type Grant, type PackRule, type Principal, type Rights, grantOf, withRights } from "./auth";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, turnCost, usageLedger, withMeter } from "./metering";
 import { catalogueText, systemParts } from "./prompt";
@@ -37,6 +37,8 @@ export type Host = {
   boards: BoardFile[];
   proposals?: ProposalStore;
   catalogue?: Catalogue;
+  /** Who may open the pack and what of it they see (lenspack.yaml packs[].access). */
+  access?: PackRule[];
 };
 
 export type AppOptions = {
@@ -55,8 +57,16 @@ export type AppOptions = {
   access?: Access;
   /** Told of every change, refused change and denied request, with the user. */
   audit?: Audit;
-  /** The UI's sign-out link (auth.proxy signOutUrl). */
+  /** The UI's sign-out link, when the access hook has none of its own. */
   signOutUrl?: string;
+  /**
+   * How people sign in (lenspack.yaml auth:): who a request is, the adapter's
+   * own /auth/ routes, and where a page without a session is sent. Takes the
+   * place of access; rights are applied above it.
+   */
+  auth?: AuthAdapter;
+  /** Rights by user and role (editors, maintainers, usage), for whoever the adapter names. */
+  rights?: Rights;
   /** How the UI presents itself (lenspack.yaml `ui:`), written into the page it is served in. */
   page?: { mode: "demo" | "app"; title?: string; home?: string; intro?: string };
   /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. */
@@ -69,7 +79,22 @@ export type AppOptions = {
   budget?: Budget;
 };
 
-const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
+const OPEN: Principal = { user: "anonymous", edit: true, maintain: true, usage: true };
+
+// The pack as the chat model is shown it: no example that uses a key the caller may not.
+const shownPacks = new WeakMap<Grant, Pack>();
+function packFor(pack: Pack, grant: Grant): Pack {
+  if (!grant.hidden.size) return pack;
+  let shown = shownPacks.get(grant);
+  if (!shown) {
+    const uses = (q: Pack["examples"][number]["query"]) => {
+      const k = queryKeys(q);
+      return [...k.dimensions, ...k.measures].some((x) => grant.hidden.has(x));
+    };
+    shownPacks.set(grant, (shown = { ...pack, examples: pack.examples.filter((e) => !uses(e.query)) }));
+  }
+  return shown;
+}
 
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
 // to change. A board someone made is theirs to change, and everyone's to read
@@ -161,6 +186,9 @@ function serveStatic(root: string, pathname: string, res: ServerResponse, page?:
 }
 
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
+  if (opts.auth && opts.access) throw new Error("createApp takes auth or access, not both");
+  const access: Access | undefined = opts.auth ? withRights(opts.auth, opts.rights ?? { editors: [], maintainers: [] }) : opts.access;
+  const signOutUrl = opts.auth?.signOutUrl ?? opts.signOutUrl;
   const ledger = opts.ledger ?? usageLedger();
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
@@ -180,10 +208,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const url = new URL(req.url ?? "/", "http://x");
     const [, api, packName, boardId, action] = url.pathname.split("/");
     try {
-      if (api !== "api") return opts.ui ? serveStatic(opts.ui, url.pathname, res, opts.page) : json(res, 404, { error: "not found" });
-      const who = opts.access ? await opts.access(req) : OPEN;
+      if (opts.auth?.handle && (await opts.auth.handle(req, res, url))) return;
+      if (api !== "api") {
+        if (!opts.ui) return json(res, 404, { error: "not found" });
+        // With lenspack's own sign-in, a page without a session goes to sign in first.
+        if (opts.auth?.signInPath && access && !(await access(req))) {
+          res.writeHead(302, { location: opts.auth.signInPath(url), "cache-control": "no-store" });
+          return res.end();
+        }
+        return serveStatic(opts.ui, url.pathname, res, opts.page);
+      }
+      const who = access ? await access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
-      const mayOpen = (name: string) => !who.packs || who.packs.includes(name);
+      // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
+      const grantFor = (h: Host): Grant | null => (who.packs && !who.packs.includes(h.name) ? null : access ? grantOf(h.pack, h.access, who) : FULL_GRANT);
       // The pack's own boards first, in board-file order; then people's, latest first.
       const boardsOf = async (h: Host) => {
         const order = (b: Ownership & { id: string }) => (b.owner ? h.boards.length : Math.max(0, h.boards.findIndex((f) => f.id === b.id)));
@@ -192,28 +230,34 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       };
       if (!packName) {
         const list = await Promise.all(
-          [...byName.values()].filter((h) => mayOpen(h.name)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),
+          [...byName.values()].filter((h) => grantFor(h)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),
         );
         // Absent on an open server: there is no one to name.
-        const me = opts.access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, ...(opts.signOutUrl ? { signOut: opts.signOutUrl } : {}) } : undefined;
+        const me = access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, usage: !!(who.usage ?? who.maintain), ...(signOutUrl ? { signOut: signOutUrl } : {}) } : undefined;
         return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), ...(me ? { me } : {}) });
       }
-      // What chat has cost since the server started: maintainers only, as it names every user.
+      // What chat has cost since the server started: for those given the usage right (maintainers, unless said otherwise), as it names every user.
       if (packName === "_usage" && req.method === "GET") {
-        if (!who.maintain) return json(res, 403, { error: "usage is for maintainers" });
+        if (!(who.usage ?? who.maintain)) return json(res, 403, { error: "usage is not shown to you" });
         // The caps go with it, so whoever watches spend sees how near they are.
         return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
       }
       const h = byName.get(packName);
+      const grant = h ? grantFor(h) : null;
       // A pack the caller may not open looks the same as one that is not there.
-      if (!h || !mayOpen(packName)) return json(res, 404, { error: "no such pack" });
-      const catalogue = h.catalogue;
+      if (!h || !grant) return json(res, 404, { error: "no such pack" });
+      // Everything the caller is shown of the pack's vocabulary leaves out what they may not use.
+      const catalogue = withoutKeys(h.catalogue, grant.hidden);
+      // Every board config they are sent keeps a hidden key's filter, not its value.
+      const shown = <B extends { config: BoardConfig } | null>(b: B): B => (b && grant.hidden.size ? { ...b, config: withoutHiddenValues(b.config, grant.hidden) } : b);
       // The caller's tenant may narrow a pack, never move a pinned one elsewhere.
       if (who.tenant && h.ctx.tenant && who.tenant !== h.ctx.tenant) {
         audit({ user: who.user, pack: packName, action: "open", outcome: "denied", detail: "tenant" });
         return json(res, 403, { error: "this pack belongs to another tenant" });
       }
-      const ctx = { ...h.ctx, ...(who.tenant ? { tenant: who.tenant } : {}), ...(who.scope?.length ? { scope: [...(h.ctx.scope ?? []), ...who.scope] } : {}) };
+      // The caller's scope and their grant's narrow every query; hidden keys are refused in resolution, on every path.
+      const scope = [...(h.ctx.scope ?? []), ...(who.scope ?? []), ...grant.scope];
+      const ctx = { ...h.ctx, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(grant.hidden.size ? { hidden: grant.hidden } : {}) };
       const run = { pack: h.pack, connector: h.connector, ctx };
       // Everything but reading changes a board: those need the edit right.
       const writes = req.method !== "GET" && req.method !== "HEAD";
@@ -222,13 +266,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         return json(res, 403, { error: "you may view these boards but not change them" });
       }
       if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, instructions: h.pack.instructions, boards: await boardsOf(h), catalogue });
-      if (boardId === "pack") return json(res, 200, { yaml: h.packYaml });
+      // The pack file defines every key: not for a caller some are hidden from.
+      if (boardId === "pack") return grant.hidden.size ? json(res, 403, { error: "the pack file is not shown to you" }) : json(res, 200, { yaml: h.packYaml });
       // Compile one query without running it: the real native query, or the
       // real refusal.
       if (boardId === "explain" && req.method === "GET") {
         try {
           const query = querySchema.parse(JSON.parse(url.searchParams.get("q") ?? "{}"));
           const e = await explain(query, run);
+          // The compiled statement reads like the pack file, which such a caller is not shown either.
+          if (grant.hidden.size) return json(res, 200, { ok: true, source: h.connector.kind, entities: e.entities, approximate: e.approximate });
           return json(res, 200, { ok: true, source: h.connector.kind, sql: e.text, native: e.text, entities: e.entities, approximate: e.approximate });
         } catch (e) {
           if (e instanceof ResolveError) return json(res, 200, { ok: false, code: e.code, error: e.message, nearest: e.nearest, key: e.key });
@@ -251,7 +298,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         if (!file) return json(res, 404, { error: "no such board file" });
         const config = buildBoard(h.pack, file);
         const data = await resolveBoard(config, run);
-        return json(res, 200, { board: { id: boardId, pack: h.pack.pack, config, version: 0, updatedAt: new Date() }, catalogue, data });
+        return json(res, 200, { board: shown({ id: boardId, pack: h.pack.pack, config, version: 0, updatedAt: new Date() }), catalogue, data });
       }
       const board = await h.store.get(boardId);
       // A board the caller may not see looks the same as one that is not there.
@@ -281,14 +328,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // response, instead of a board request followed by two more.
           const include = new Set((url.searchParams.get("include") ?? "").split(",").filter(Boolean));
           const mine = writable(board, who);
-          if (include.size === 0) return json(res, 200, { board, catalogue, writable: mine });
+          if (include.size === 0) return json(res, 200, { board: shown(board), catalogue, writable: mine });
           const [data, options] = await Promise.all([
             include.has("data") ? resolveBoard(board.config, run) : undefined,
             include.has("options")
               ? Promise.all(board.config.filters.map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
               : undefined,
           ]);
-          return json(res, 200, { board, catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });
+          return json(res, 200, { board: shown(board), catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });
         }
         case "GET data": {
           const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
@@ -297,7 +344,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         case "GET options":
           return json(res, 200, await dimensionValues(url.searchParams.get("field") ?? "", run));
         case "GET versions":
-          return json(res, 200, await h.store.versions(boardId));
+          return json(res, 200, (await h.store.versions(boardId)).map(shown));
         case "POST ops": {
           const body = (await read(req)) as { ops: unknown[] };
           const ops = body.ops.map((o) => opSchema.parse(o)) as BoardOp[];
@@ -308,7 +355,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           }
           const patched = await h.store.patch({ id: boardId, ops, catalogue, source: "ops" });
           audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "ok", detail: ops.map((o) => o.op).join(",") });
-          return json(res, 200, patched);
+          return json(res, 200, patched.ok ? { ...patched, board: shown(patched.board) } : patched);
         }
         case "POST layout": {
           const body = (await read(req)) as { layout: BoardOp[]; summary?: unknown };
@@ -319,24 +366,24 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const summary = said || describeChanges(board.config, config).join(", ").slice(0, 200) || undefined;
           const saved = await h.store.replaceConfig({ id: boardId, config, ...(summary ? { summary } : {}) });
           audit({ user: who.user, pack: packName, board: boardId, action: "layout", outcome: "ok" });
-          return json(res, 200, saved);
+          return json(res, 200, shown(saved));
         }
         case "POST share": {
           const body = (await read(req)) as { shared?: boolean };
           if (!board.owner) return json(res, 403, { error: "The pack's own boards are everyone's already" });
           const shared = await h.store.share(boardId, body.shared === true);
           audit({ user: who.user, pack: packName, board: boardId, action: body.shared === true ? "share" : "unshare", outcome: "ok" });
-          return json(res, 200, shared);
+          return json(res, 200, shown(shared));
         }
         case "POST revert": {
           const body = (await read(req)) as { version: number };
           const reverted = await h.store.revertTo(boardId, body.version);
           audit({ user: who.user, pack: packName, board: boardId, action: "revert", outcome: "ok", detail: `to v${body.version}` });
-          return json(res, 200, reverted);
+          return json(res, 200, shown(reverted));
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId, who.user);
+          return chat(req, res, url, { ...h, pack: packFor(h.pack, grant), catalogue, ctx }, board.config, board.version, boardId, who.user);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {

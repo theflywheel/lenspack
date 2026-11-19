@@ -7,16 +7,18 @@ import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
 import { buildBoard, createApp, seedBoards } from "./app";
-import { accessFrom, fileAudit } from "./auth";
+import { authFrom, effectiveAuth, fileAudit } from "./auth";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { buildProvider, probe, providersFromEnv } from "./llm";
 import { addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";
+import { hashPassword } from "./password";
 
 const USAGE = `lenspack <command>
 
   serve  --config lenspack.yaml [--port 8787]   the board API (and --ui dir, or ui: in the config)
   check  --config lenspack.yaml                 draw every board against its source; exit 1 on any error
   sources --config lenspack.yaml [--source s]   what each source holds: tables or indexes, fields, types, rows
+  hash-password                                 a scrypt hash of the password on stdin, for LENSPACK_ADMIN_PASSWORD_HASH
   dss    ChartApiConfig.json [--dashboards MasterDashboardConfig.json]
          [--placeholders PVAR,…] [--pack name] --out dir
                                                 DIGIT DSS chart configs → pack.yaml, boards/, report.md
@@ -56,15 +58,17 @@ async function main() {
       const ui = flag("ui") ?? (uiDir ? resolve(dir, uiDir) : undefined);
       const page = typeof config.ui === "object" ? { mode: config.ui.mode, ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}), ...(config.ui.intro ? { intro: config.ui.intro } : {}) } : undefined;
       const port = Number(flag("port") ?? config.port ?? process.env.PORT ?? 8787);
-      const access = config.auth ? accessFrom(resolveSecrets(config.auth)) : undefined;
-      // No auth block: local use only. An open API on the network is a choice
-      // the config has to spell out (auth: { kind: none }).
-      const host = flag("host") ?? config.host ?? (config.auth ? "0.0.0.0" : "127.0.0.1");
-      if (!access) console.warn(config.auth ? "lenspack: auth is `none` — anyone who reaches this port may read and edit every board" : "lenspack: no auth configured — listening on 127.0.0.1 only");
+      // Sign-in: auth.kind (or LENSPACK_AUTH); with neither, the built-in admin and a password.
+      const auth = effectiveAuth(config.auth ? resolveSecrets(config.auth) : undefined);
+      const { adapter, rights } = authFrom(auth, { dir, log: (m) => console.log(`lenspack: ${m}`) });
+      // Open (none) is for a local demo: 127.0.0.1 unless the host is given on purpose.
+      // Opened by LENSPACK_AUTH over a config's sign-in, only --host moves it off loopback.
+      const openedByEnv = !adapter && config.auth?.kind !== "none";
+      const host = flag("host") ?? (openedByEnv ? "127.0.0.1" : (config.host ?? (adapter ? "0.0.0.0" : "127.0.0.1")));
+      if (!adapter) console.warn(`lenspack: auth is \`none\`: anyone who reaches ${host}:${port} may read and edit every board`);
       const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
-      const signOutUrl = config.auth?.kind === "proxy" ? config.auth.signOutUrl : undefined;
-      createServer(createApp(hosts, { ui, page, providers, roles, access, audit, signOutUrl, historyTurns: config.historyTurns, ledger, budget: config.budget, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
-        console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${access ? `, sign-in by ${config.auth!.kind}` : ""}`);
+      createServer(createApp(hosts, { ui, page, providers, roles, auth: adapter, rights, audit, historyTurns: config.historyTurns, ledger, budget: config.budget, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
+        console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}`);
       });
       return;
     }
@@ -103,6 +107,15 @@ async function main() {
         for (const c of schema.collections) console.log(`  ${c.name}${c.rows !== undefined ? ` (~${c.rows} rows)` : ""}\n${c.fields.map((f) => `    ${f.path}: ${f.type}`).join("\n")}`);
       }
       await close();
+      return;
+    }
+    case "hash-password": {
+      // Read from stdin, so the password is never an argument in the process list or shell history.
+      let input = "";
+      for await (const chunk of process.stdin) input += chunk;
+      const password = input.replace(/\r?\n$/, "");
+      if (password.length < 12) throw new Error("the password must be at least 12 characters");
+      console.log(hashPassword(password));
       return;
     }
     case "dss": {

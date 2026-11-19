@@ -9,3 +9,5 @@ packs:
     boards: ./boards
     now: "2026-09-01T00:00:00Z"
 store: { kind: memory }
+# Open, for a local look on 127.0.0.1. Remove for the default sign-in (admin and a password).
+auth: { kind: none }

@@ -201,7 +201,7 @@ function withoutEmptyGroups(data: WidgetData, measure: string, pack: Pack): Widg
 // Share needs a measure that adds up over groups (or a distinct count, whose
 // shares can sum past 1); Other needs a count or a sum. A per-key measure is
 // like a distinct count: a key in two groups counts in each.
-function wholeRefusal(query: Query, pack: Pack): ResolveError | null {
+function wholeRefusal(query: Query, pack: Pack, hidden?: ReadonlySet<string>): ResolveError | null {
   if (query.kind !== "breakdown" || (!query.share && !query.other)) return null;
   let m = pack.measures.find((x) => x.key === query.measure);
   if (m?.derived && ALIAS.test(m.derived)) m = pack.measures.find((x) => x.key === m!.derived!.trim());
@@ -210,7 +210,7 @@ function wholeRefusal(query: Query, pack: Pack): ResolveError | null {
   const adds = (x: PackMeasure) => x.agg === "count" || x.agg === "sum";
   const fits = (x: PackMeasure) => !x.derived && x.format !== "percent" && ((adds(x) && !x.per) || (asked === "share" && (x.agg === "count_distinct" || adds(x))));
   if (!fits(m)) {
-    const near = pack.measures.filter((x) => x.entity === m!.entity && fits(x)).map((x) => x.key);
+    const near = pack.measures.filter((x) => x.entity === m!.entity && fits(x)).map((x) => x.key).filter((k) => !hidden?.has(k));
     const what = m.derived ? "arithmetic over other measures" : m.format === "percent" ? "a percentage" : m.per ? "one value per key" : `agg: ${m.agg}`;
     return new ResolveError(
       "NOT_SUPPORTED",
@@ -230,7 +230,7 @@ const wholeOf = (query: Extract<Query, { kind: "breakdown" }>): Query => ({ kind
 // The breakdown and its whole run side by side, on one clock so both read the
 // same window, and at the breakdown's level.
 async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: RunOptions): Promise<WidgetData> {
-  const refused = wholeRefusal(query, opts.pack);
+  const refused = wholeRefusal(query, opts.pack, opts.ctx?.hidden);
   if (refused) return refusal(refused);
   const { share, other, ...groups } = query;
   const ctx = { ...opts.ctx, now: nowOf(opts.ctx) };
@@ -344,7 +344,7 @@ export type Explained = { text: string; root: string; entities: string[]; tenant
 export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
   const opts = { ...given, pack: packAtLevel(given.pack, viewedLevel(query, given.pack)) };
   if (query.kind === "breakdown" && (query.share || query.other)) {
-    const refused = wholeRefusal(query, opts.pack);
+    const refused = wholeRefusal(query, opts.pack, opts.ctx?.hidden);
     if (refused) throw refused;
     const { share: _s, other: _o, ...groups } = query;
     const [main, whole] = await Promise.all([explain(groups, opts), explain(wholeOf(query), opts)]);
@@ -385,7 +385,7 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
 /** Resolution only: every refusal a query would get, with no backend call. */
 export function check(query: Query, given: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
   const pack = packAtLevel(given, viewedLevel(query, given));
-  const refused = wholeRefusal(query, pack);
+  const refused = wholeRefusal(query, pack, opts.ctx?.hidden);
   if (refused) throw refused;
   const { primary, extras } = splitMeasures(query, pack);
   if (extras.length) {
@@ -456,19 +456,21 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
 }
 
 /** The query behind a dimension's values: its groups by a count, largest first, optionally those containing q. */
-export function valuesQuery(dimension: string, pack: Pack, limit = 50, q = ""): Query | null {
+export function valuesQuery(dimension: string, pack: Pack, limit = 50, q = "", hidden?: ReadonlySet<string>): Query | null {
   const dim = pack.dimensions.find((d) => d.key === dimension);
+  // A count the caller may use: a hidden one would refuse a dimension they may see.
+  const counts = pack.measures.filter((m) => m.agg === "count" && !m.per && !hidden?.has(m.key));
   const measure =
-    pack.measures.find((m) => m.agg === "count" && !m.per && !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
-    pack.measures.find((m) => m.agg === "count" && !m.per && m.entity === dim?.entity) ??
-    pack.measures.find((m) => m.agg === "count" && !m.per);
+    counts.find((m) => !m.field && !m.where && !m.filter && m.entity === dim?.entity) ??
+    counts.find((m) => m.entity === dim?.entity) ??
+    counts[0];
   if (!measure) return null;
   return { kind: "breakdown", dimension, measure: measure.key, limit: Math.min(50, limit), sort: "desc", ...(q ? { filters: [{ dimension, op: "contains" as const, value: q }] } : {}) };
 }
 
 /** Distinct values of a dimension, for filter controls. */
 export async function dimensionValues(dimension: string, opts: RunOptions, limit = 50) {
-  const query = valuesQuery(dimension, opts.pack, limit);
+  const query = valuesQuery(dimension, opts.pack, limit, "", opts.ctx?.hidden);
   if (!query) return [];
   const data = await run(query, opts);
   return data.rows.map((r) => ({ value: r.group, count: r.count }));
