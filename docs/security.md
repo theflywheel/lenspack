@@ -49,7 +49,7 @@ The deployment identifies each caller through an `access(request)` hook, or `aut
 - `tokens`: bearer tokens the deployment issues, each an `env:` reference, compared in constant time.
 - `oidc`: lenspack signs people in with an OpenID Connect provider itself (code flow with PKCE, the ID token's signature and claims checked, a signed session cookie). Roles come from the token's claims.
 - `proxy`: a login proxy in front names the user in a header, and optionally their roles in another. The headers are believed only when the request carries the proxy's shared secret (16+ characters), so a caller who reaches lenspack directly cannot claim to be anyone.
-- `none`: open, for a local demo, and it must be written down. It listens on 127.0.0.1 unless `host:` says otherwise; opened by `LENSPACK_AUTH` over a config that names another kind, only `--host` moves it.
+- `none`: open, for a local demo, and it must be written down. It listens on 127.0.0.1 unless `host:` says otherwise; opened by `LENSPACK_AUTH` (over a config that names another kind or none at all), only `--host` moves it.
 
 The answer is a principal: `{ user, roles?, tenant?, scope?, edit?, maintain?, usage?, packs? }`.
 

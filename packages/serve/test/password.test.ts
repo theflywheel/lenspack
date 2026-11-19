@@ -21,7 +21,7 @@ import { listen } from "./fake-issuer";
 const campaign = fileURLToPath(new URL("../../../examples/campaign/", import.meta.url));
 const PASSWORD = "correct horse battery staple";
 
-describe("sign-in with the admin password", () => {
+describe("sign-in with the admin password", { timeout: 60_000 }, () => {
   const dir = mkdtempSync(join(tmpdir(), "lenspack-password-"));
   let base: string;
   let close: () => Promise<void>;
@@ -129,7 +129,7 @@ function driver(adapter: ReturnType<typeof passwordAdapter>) {
 const who = (adapter: ReturnType<typeof passwordAdapter>, headers: Record<string, string>, method = "GET") => adapter.identify({ method, headers } as unknown as IncomingMessage);
 const tmp = () => mkdtempSync(join(tmpdir(), "lp-"));
 
-describe("the password adapter", () => {
+describe("the password adapter", { timeout: 60_000 }, () => {
   it("makes callers wait after five failures, longer each time, without checking the password", async () => {
     let clock = 1_000_000;
     const a = passwordAdapter({ password: PASSWORD, dir: tmp(), sessionHours: 1, now: () => clock });

@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
-import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { type Stats, closeSync, constants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isIPv6 } from "node:net";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -83,13 +83,30 @@ const present = (path: string) => {
  * be shared with a group (a Kubernetes volume with fsGroup is), but not with
  * everyone.
  */
-function checkOwn(path: string, what: "dir" | "file") {
-  const st = lstatSync(path);
+function checkOwn(path: string, what: "dir" | "file", st: Stats = lstatSync(path), dirOwner?: number) {
   const uid = process.getuid?.();
   if (st.isSymbolicLink() || (what === "dir" ? !st.isDirectory() : !st.isFile())) throw new Error(`${path} must be a plain ${what === "dir" ? "folder" : "file"}, not a link`);
   if (st.mode & 0o002) throw new Error(`${path} must not be writable by everyone; give it to lenspack's user or group, or set LENSPACK_ADMIN_PASSWORD and sessionSecret to need no folder`);
-  if (what === "file" && uid !== undefined && uid !== 0 && st.uid !== uid) throw new Error(`${path} must belong to the user lenspack runs as`);
+  // Run as root, a file of root's or of the folder's owner (the image's user) is taken; nobody else's.
+  if (what === "file" && uid !== undefined && st.uid !== uid && !(uid === 0 && st.uid === dirOwner)) throw new Error(`${path} must belong to the user lenspack runs as`);
   if (what === "file" && st.mode & 0o020) throw new Error(`${path} must not be writable by others`);
+}
+
+/** Reads a state file through one open that refuses a link, checking what was opened, not what was looked at. */
+function readOwn(path: string, dirOwner: number): string {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ELOOP") throw new Error(`${path} must be a plain file, not a link`);
+    throw e;
+  }
+  try {
+    checkOwn(path, "file", fstatSync(fd), dirOwner);
+    return readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**
@@ -104,7 +121,14 @@ function claim(path: string, data: string): boolean {
     linkSync(tmp, path);
     return true;
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") return false;
+    // A filesystem without hard links (some network mounts): put it in place by rename, which a
+    // replica starting at the same moment could overwrite.
+    if ((code === "EPERM" || code === "ENOTSUP" || code === "EOPNOTSUPP") && !present(path)) {
+      renameSync(tmp, path);
+      return true;
+    }
     throw e;
   } finally {
     rmSync(tmp, { force: true });
@@ -144,10 +168,7 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
       checked = true;
     }
   };
-  const readOwn = (path: string) => {
-    checkOwn(path, "file");
-    return readFileSync(path, "utf8");
-  };
+  const read = (path: string) => readOwn(path, lstatSync(o.dir).uid);
 
   // How the password is checked: against the plain one given, or a hash.
   let check: (attempt: string) => Promise<boolean>;
@@ -175,7 +196,7 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
         } else rmSync(plainTmp, { force: true });
       }
       ensureDir();
-      stored = readOwn(hashFile);
+      stored = read(hashFile);
     }
     const parsed = parseHash(stored);
     check = (attempt) => verifyHash(attempt, parsed);
@@ -187,7 +208,7 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
     const keyFile = join(o.dir, "session.key");
     ensureDir();
     if (!present(keyFile)) claim(keyFile, randomBytes(32).toString("hex"));
-    secret = readOwn(keyFile).trim();
+    secret = read(keyFile).trim();
   }
   if (secret.length < 32) throw new Error("the session secret must be at least 32 characters");
   const { seal, unseal } = sealer(secret, now);
