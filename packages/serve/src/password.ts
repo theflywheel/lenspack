@@ -1,5 +1,6 @@
-import { createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, createHmac, randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
+import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { isIPv6 } from "node:net";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
@@ -76,13 +77,51 @@ const present = (path: string) => {
   }
 };
 
-/** Refuses a state file or folder another user could have planted or may change. */
+/**
+ * Refuses a state file or folder another user could have planted or may
+ * change. A file must be this user's and writable by no one else. A folder may
+ * be shared with a group (a Kubernetes volume with fsGroup is), but not with
+ * everyone.
+ */
 function checkOwn(path: string, what: "dir" | "file") {
   const st = lstatSync(path);
   const uid = process.getuid?.();
   if (st.isSymbolicLink() || (what === "dir" ? !st.isDirectory() : !st.isFile())) throw new Error(`${path} must be a plain ${what === "dir" ? "folder" : "file"}, not a link`);
-  if (uid !== undefined && st.uid !== uid) throw new Error(`${path} must belong to the user lenspack runs as`);
-  if (st.mode & 0o022) throw new Error(`${path} must not be writable by others`);
+  if (st.mode & 0o002) throw new Error(`${path} must not be writable by everyone; give it to lenspack's user or group, or set LENSPACK_ADMIN_PASSWORD and sessionSecret to need no folder`);
+  if (what === "file" && uid !== undefined && uid !== 0 && st.uid !== uid) throw new Error(`${path} must belong to the user lenspack runs as`);
+  if (what === "file" && st.mode & 0o020) throw new Error(`${path} must not be writable by others`);
+}
+
+/**
+ * Puts a file in place only if none is there, whole: written under a random
+ * name, then linked to its own, which fails if another start (a replica on the
+ * same volume) got there first. True if this one won.
+ */
+function claim(path: string, data: string): boolean {
+  const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+  writePrivate(tmp, data);
+  try {
+    linkSync(tmp, path);
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw e;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+/** Who a failed try counts against: an IPv4 address, or an IPv6 /64 (one host often holds the whole block). */
+export function addressKey(addr: string | undefined): string {
+  if (!addr) return "?";
+  const v4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(addr);
+  if (v4) return v4[1]!;
+  if (!isIPv6(addr)) return addr;
+  const [head = "", tail = ""] = addr.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const full = addr.includes("::") ? [...h, ...Array(8 - h.length - t.length).fill("0"), ...t] : h;
+  return `${full.slice(0, 4).map((x) => x.toLowerCase().replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "password" } {
@@ -111,14 +150,13 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
   };
 
   // How the password is checked: against the plain one given, or a hash.
-  // The password's fingerprint goes into each session, so a new password ends every session made with the old one.
   let check: (attempt: string) => Promise<boolean>;
-  let fingerprint: string;
+  let material: Buffer;
   if (o.password !== undefined) {
     if (o.password.length < MIN_LENGTH) throw new Error(`the admin password must be at least ${MIN_LENGTH} characters`);
     const want = digest(o.password);
     check = async (attempt) => timingSafeEqual(digest(attempt), want);
-    fingerprint = digest(`password:${want.toString("hex")}`).subarray(0, 12).toString("base64url");
+    material = Buffer.concat([Buffer.from("password:"), want]);
   } else {
     let stored = o.passwordHash;
     if (stored === undefined) {
@@ -127,54 +165,64 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
         ensureDir();
         const made = randomBytes(18).toString("base64url");
         const plainFile = join(o.dir, "admin-password.txt");
-        // The password file first, then the hash, renamed into place whole: a crash
-        // between leaves no hash, and the next start makes a new pair.
-        rmSync(plainFile, { force: true });
-        writePrivate(plainFile, `${made}\n`);
-        const tmp = `${hashFile}.${process.pid}.tmp`;
-        rmSync(tmp, { force: true });
-        writePrivate(tmp, `${hashPassword(made)}\n`);
-        renameSync(tmp, hashFile);
-        log(`made a password for ${ADMIN}; it is in ${plainFile}, readable by this user only. Read it, then delete the file. Set LENSPACK_ADMIN_PASSWORD to choose one.`);
+        // Only the start whose hash lands writes the password file, over any old one,
+        // so the file always holds the password of the hash in place.
+        const plainTmp = `${plainFile}.${randomBytes(6).toString("hex")}.tmp`;
+        writePrivate(plainTmp, `${made}\n`);
+        if (claim(hashFile, `${hashPassword(made)}\n`)) {
+          renameSync(plainTmp, plainFile);
+          log(`made a password for ${ADMIN}; it is in ${plainFile}, readable by this user only. Read it, then delete the file. Set LENSPACK_ADMIN_PASSWORD to choose one.`);
+        } else rmSync(plainTmp, { force: true });
       }
       ensureDir();
       stored = readOwn(hashFile);
     }
     const parsed = parseHash(stored);
     check = (attempt) => verifyHash(attempt, parsed);
-    fingerprint = digest(`hash:${parsed.hash.toString("hex")}`).subarray(0, 12).toString("base64url");
+    material = Buffer.concat([Buffer.from("hash:"), parsed.hash]);
   }
 
   let secret = o.sessionSecret;
   if (secret === undefined) {
     const keyFile = join(o.dir, "session.key");
     ensureDir();
-    if (!present(keyFile)) writePrivate(keyFile, randomBytes(32).toString("hex"));
+    if (!present(keyFile)) claim(keyFile, randomBytes(32).toString("hex"));
     secret = readOwn(keyFile).trim();
   }
   if (secret.length < 32) throw new Error("the session secret must be at least 32 characters");
   const { seal, unseal } = sealer(secret, now);
   const ttl = Math.round(o.sessionHours * 3600);
+  // The password's fingerprint goes into each session, so a new password ends every session made
+  // with the old one. Keyed by the session secret: a leaked cookie gives no hash to guess against.
+  const fingerprint = createHmac("sha256", secret).update(material).digest().subarray(0, 12).toString("base64url");
 
   // Brute force. Each try counts as a failure before the password is checked
-  // (a burst sent at once cannot slip past); success forgets them. After
-  // five failures, a caller waits longer for each (1 s, doubling, at most 15
-  // minutes); failures are forgotten after an hour without one. A caller is
-  // its address, or, once it has signed in on this browser, the device cookie
-  // set then: an attacker sharing the address (behind a proxy, everyone does)
-  // cannot hold the admin's own browser up. Few passwords are checked at once,
-  // so a flood cannot take the server's memory or threads.
+  // (a burst sent at once cannot slip past). After five failures, a caller
+  // waits longer for each (1 s, doubling, at most 15 minutes); failures are
+  // forgotten after an hour without one. A caller is its address (an IPv6
+  // /64), or, once it has signed in from this browser, the device cookie set
+  // then: success clears a device's failures, never an address's, which
+  // attackers may share. Callers without a device cookie also share a budget
+  // of 100 failures in 10 minutes, and only a few of their passwords are
+  // checked at once; a known browser is held up by neither.
   const tries = new Map<string, { fails: number; until: number; last: number }>();
   const MAX_CHECKING = 4;
+  const BUDGET = { fails: 100, windowMs: 10 * 60_000 };
   let checking = 0;
-  const waitFor = (key: string) => {
+  let strangers: number[] = [];
+  const waitFor = (key: string, known: boolean) => {
     const t = now();
     const mine = tries.get(key);
     if (mine && t - mine.last > 60 * 60_000) tries.delete(key);
-    return mine && mine.until > t ? mine.until - t : 0;
+    const own = mine && mine.until > t ? mine.until - t : 0;
+    if (known) return own;
+    strangers = strangers.filter((at) => t - at < BUDGET.windowMs);
+    const all = strangers.length >= BUDGET.fails ? strangers[0]! + BUDGET.windowMs - t : 0;
+    return Math.max(own, all);
   };
-  const failed = (key: string) => {
+  const failed = (key: string, known: boolean) => {
     const t = now();
+    if (!known) strangers.push(t);
     const mine = tries.get(key) ?? { fails: 0, until: 0, last: t };
     mine.fails++;
     mine.last = t;
@@ -182,6 +230,14 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
     tries.set(key, mine);
     // Old entries go, so the map cannot grow without end.
     if (tries.size > 10_000) for (const [k, v] of tries) if (t - v.last > 60 * 60_000 || tries.size > 10_000) tries.delete(k);
+  };
+  const succeeded = (key: string, known: boolean) => {
+    if (known) tries.delete(key);
+    else {
+      strangers.pop();
+      const mine = tries.get(key);
+      if (mine) mine.fails--;
+    }
   };
 
   const secureFor = (req: IncomingMessage) => origin?.startsWith("https:") || !!(req.socket as { encrypted?: boolean }).encrypted || req.headers["x-forwarded-proto"] === "https";
@@ -237,16 +293,17 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
           return true;
         }
         const device = unseal<{ d?: string }>("device", cookies(req)[DEVICE])?.d;
-        const key = device ? `device:${device}` : `addr:${req.socket.remoteAddress ?? "?"}`;
-        const wait = waitFor(key);
+        const known = !!device;
+        const key = known ? `device:${device}` : `addr:${addressKey(req.socket.remoteAddress)}`;
+        const wait = waitFor(key, known);
         // While waiting, the password is not even checked: a right guess then teaches nothing.
         // A known device is not held up by others' checks in flight.
-        if (wait > 0 || (!device && checking >= MAX_CHECKING)) {
+        if (wait > 0 || (!known && checking >= MAX_CHECKING)) {
           const s = Math.max(1, Math.ceil(wait / 1000));
           form(res, 429, ret, `Too many tries. Wait ${s} s.`, { "retry-after": String(s) });
           return true;
         }
-        failed(key);
+        failed(key, known);
         checking++;
         let ok: boolean;
         try {
@@ -258,7 +315,7 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
           form(res, 401, ret, "Wrong password.");
           return true;
         }
-        tries.delete(key);
+        succeeded(key, known);
         res.writeHead(303, {
           location: ret,
           "cache-control": "no-store",

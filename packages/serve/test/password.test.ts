@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -10,7 +11,7 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { seed } from "../../../examples/campaign/seed";
-import { type AuthConfig, authFrom, authSchema, createApp, effectiveAuth, hashPassword, openConfig, passwordAdapter, readConfig, seedBoards } from "../src";
+import { type AuthConfig, addressKey, authFrom, authSchema, createApp, effectiveAuth, hashPassword, openConfig, passwordAdapter, readConfig, seedBoards } from "../src";
 import { listen } from "./fake-issuer";
 
 // The default sign-in: the built-in admin and a password. The page, the
@@ -143,10 +144,13 @@ describe("the password adapter", () => {
     expect((await login("wrong password!")).status).toBe(401);
     expect((await login(PASSWORD)).headers["retry-after"]).toBe("2");
     clock += 2_001;
-    expect((await login(PASSWORD)).status).toBe(303);
-    // Success forgets the failures.
-    expect((await login("wrong password!")).status).toBe(401);
-    // And so does an hour without one.
+    const ok = await login(PASSWORD);
+    expect(ok.status).toBe(303);
+    // Success does not clear the address, which an attacker may share; the browser's device cookie gets its own count.
+    expect((await login(PASSWORD)).status).toBe(429);
+    const device = ok.jar.split("; ").find((c) => c.startsWith("lenspack_device="))!;
+    expect((await login(PASSWORD, "10.0.0.1", { cookie: device })).status).toBe(303);
+    // An hour without a failure forgets them.
     for (let i = 0; i < 6; i++) await login("wrong password!", "10.0.0.3");
     expect((await login(PASSWORD, "10.0.0.3")).status).toBe(429);
     clock += 61 * 60_000;
@@ -162,7 +166,8 @@ describe("the password adapter", () => {
   });
 
   it("checks only a few passwords at once from anywhere, but lets a known browser in past an attacker on its address", async () => {
-    const a = passwordAdapter({ passwordHash: hashPassword(PASSWORD), dir: tmp(), sessionHours: 1 });
+    const clock = 1_000_000;
+    const a = passwordAdapter({ passwordHash: hashPassword(PASSWORD), dir: tmp(), sessionHours: 1, now: () => clock });
     const login = driver(a);
     const ok = await login(PASSWORD, "10.0.0.9");
     expect(ok.status).toBe(303);
@@ -176,6 +181,28 @@ describe("the password adapter", () => {
     expect((await login(PASSWORD, "10.0.0.9", { cookie: device })).status).toBe(303);
     // A forged device cookie is someone without one.
     expect((await login(PASSWORD, "10.0.0.9", { cookie: `${device.slice(0, -2)}xx` })).status).toBe(429);
+  });
+
+  it("gives callers without a device cookie 100 failures in 10 minutes between them, wherever they come from", async () => {
+    let clock = 9_000_000;
+    const a = passwordAdapter({ password: PASSWORD, dir: tmp(), sessionHours: 1, now: () => clock });
+    const login = driver(a);
+    const ok = await login(PASSWORD, "10.0.0.1");
+    const device = ok.jar.split("; ").find((c) => c.startsWith("lenspack_device="))!;
+    for (let i = 0; i < 100; i++) expect((await login("wrong password!", `10.3.${i}.1`)).status).toBe(401);
+    expect((await login(PASSWORD, "10.9.9.9")).status).toBe(429);
+    // A browser that signed in before is not held up.
+    expect((await login(PASSWORD, "10.9.9.9", { cookie: device })).status).toBe(303);
+    clock += 10 * 60_000 + 1;
+    expect((await login(PASSWORD, "10.9.9.9")).status).toBe(303);
+  });
+
+  it("counts an IPv6 /64 as one caller", () => {
+    expect(addressKey("2001:db8:aa:bb:1::2")).toBe("2001:db8:aa:bb::/64");
+    expect(addressKey("2001:0db8:00aa:00bb:ffff:1:2:3")).toBe("2001:db8:aa:bb::/64");
+    expect(addressKey("2001:db8::1")).toBe("2001:db8:0:0::/64");
+    expect(addressKey("::ffff:10.1.2.3")).toBe("10.1.2.3");
+    expect(addressKey("10.1.2.3")).toBe("10.1.2.3");
   });
 
   it("makes a password at first start: the hash and a one-time file, each readable by this user only", async () => {
@@ -217,7 +244,44 @@ describe("the password adapter", () => {
     expect(() => passwordAdapter({ password: PASSWORD, dir, sessionHours: 1 })).toThrow(/not a link/);
     const open = tmp();
     chmodSync(open, 0o777);
-    expect(() => passwordAdapter({ password: PASSWORD, dir: open, sessionHours: 1 })).toThrow(/writable by others/);
+    expect(() => passwordAdapter({ password: PASSWORD, dir: open, sessionHours: 1 })).toThrow(/writable by everyone/);
+    // A folder shared with a group, as a Kubernetes volume with fsGroup is, is fine; its files are still this user's alone.
+    const group = tmp();
+    chmodSync(group, 0o2775);
+    expect(() => passwordAdapter({ password: PASSWORD, dir: group, sessionHours: 1 })).not.toThrow();
+    chmodSync(join(group, "session.key"), 0o660);
+    expect(() => passwordAdapter({ password: PASSWORD, dir: group, sessionHours: 1 })).toThrow(/writable by others/);
+  });
+
+  it("needs no folder with a password and a session secret", () => {
+    const dir = join(tmp(), "never");
+    passwordAdapter({ password: PASSWORD, sessionSecret: "s".repeat(32), dir, sessionHours: 1 });
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("leaves one matching password and hash when several start at once on one folder", async () => {
+    const dir = join(tmp(), "shared");
+    const src = fileURLToPath(new URL("../src/password.ts", import.meta.url));
+    const script = `import { passwordAdapter } from ${JSON.stringify(src)}; passwordAdapter({ dir: ${JSON.stringify(dir)}, sessionHours: 1 });`;
+    const run = () =>
+      new Promise<number>((done) => {
+        const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { stdio: "ignore" });
+        child.on("exit", (code) => done(code ?? 1));
+      });
+    expect(await Promise.all([run(), run(), run(), run()])).toEqual([0, 0, 0, 0]);
+    const made = readFileSync(join(dir, "admin-password.txt"), "utf8").trim();
+    const a = passwordAdapter({ dir, sessionHours: 1 });
+    expect((await driver(a)(made)).status).toBe(303);
+    expect(readdirSync(dir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("keys the session's password fingerprint, so a leaked cookie gives nothing to guess against", async () => {
+    const fingerprint = async (sessionSecret: string) => {
+      const a = passwordAdapter({ password: PASSWORD, sessionSecret, dir: tmp(), sessionHours: 1 });
+      const body = (await driver(a)(PASSWORD)).jar.split("; ").find((c) => c.startsWith("lenspack_session="))!.split("=")[1]!.split(".")[0]!;
+      return JSON.parse(Buffer.from(body, "base64url").toString()).f;
+    };
+    expect(await fingerprint("a".repeat(32))).not.toBe(await fingerprint("b".repeat(32)));
   });
 
   it("ends every session when the password changes", async () => {

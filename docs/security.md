@@ -45,11 +45,11 @@ An entity that declares `tenant` cannot be queried without one; the predicate is
 
 The deployment identifies each caller through an `access(request)` hook, or `auth:` in `lenspack.yaml` (`LENSPACK_AUTH` overrides its kind):
 
-- `password`, the default: one built-in user, `admin`, with a password from `LENSPACK_ADMIN_PASSWORD` (or a scrypt hash in `LENSPACK_ADMIN_PASSWORD_HASH`). With neither, a random one is made at first start: only its hash is kept, and the password is written once to a 0600 file whose name is logged. The comparison is constant-time, wrong passwords back off per address (or per signed-in browser), and a new password ends old sessions. Put TLS in front. lenspack keeps no other users.
+- `password`, the default: one built-in user, `admin`, with a password from `LENSPACK_ADMIN_PASSWORD` (or a scrypt hash in `LENSPACK_ADMIN_PASSWORD_HASH`). With neither, a random one is made at first start: only its hash is kept, and the password is written once to a 0600 file whose name is logged. The comparison is constant-time, wrong passwords back off per address (or per signed-in browser) and against a shared budget, and a new password ends old sessions. Put TLS in front. lenspack keeps no other users.
 - `tokens`: bearer tokens the deployment issues, each an `env:` reference, compared in constant time.
 - `oidc`: lenspack signs people in with an OpenID Connect provider itself (code flow with PKCE, the ID token's signature and claims checked, a signed session cookie). Roles come from the token's claims.
 - `proxy`: a login proxy in front names the user in a header, and optionally their roles in another. The headers are believed only when the request carries the proxy's shared secret (16+ characters), so a caller who reaches lenspack directly cannot claim to be anyone.
-- `none`: open, for a local demo, and it must be written down. It listens on 127.0.0.1 unless `host:` says otherwise.
+- `none`: open, for a local demo, and it must be written down. It listens on 127.0.0.1 unless `host:` says otherwise; opened by `LENSPACK_AUTH` over a config that names another kind, only `--host` moves it.
 
 The answer is a principal: `{ user, roles?, tenant?, scope?, edit?, maintain?, usage?, packs? }`.
 
