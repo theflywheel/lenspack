@@ -114,7 +114,7 @@ function readOwn(path: string, dirOwner: number): string {
  * name, then linked to its own, which fails if another start (a replica on the
  * same volume) got there first. True if this one won.
  */
-function claim(path: string, data: string): boolean {
+export function claim(path: string, data: string): boolean {
   const tmp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
   writePrivate(tmp, data);
   try {

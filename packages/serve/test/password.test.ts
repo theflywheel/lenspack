@@ -11,7 +11,7 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { seed } from "../../../examples/campaign/seed";
-import { type AuthConfig, addressKey, authFrom, authSchema, createApp, effectiveAuth, hashPassword, openConfig, passwordAdapter, readConfig, seedBoards } from "../src";
+import { type AuthConfig, addressKey, authFrom, claim, authSchema, createApp, effectiveAuth, hashPassword, openConfig, passwordAdapter, readConfig, seedBoards } from "../src";
 import { listen } from "./fake-issuer";
 
 // The default sign-in: the built-in admin and a password. The page, the
@@ -154,6 +154,7 @@ describe("the password adapter", { timeout: 60_000 }, () => {
     for (let i = 0; i < 6; i++) await login("wrong password!", "10.0.0.3");
     expect((await login(PASSWORD, "10.0.0.3")).status).toBe(429);
     clock += 61 * 60_000;
+    expect((await login("wrong password!", "10.0.0.3")).status).toBe(401);
     expect((await login(PASSWORD, "10.0.0.3")).status).toBe(303);
   });
 
@@ -178,6 +179,10 @@ describe("the password adapter", { timeout: 60_000 }, () => {
     // Behind a proxy everyone shares one address: the attacker holds it up, not the admin's browser.
     for (let i = 0; i < 6; i++) await login("wrong password!", "10.0.0.9");
     expect((await login(PASSWORD, "10.0.0.9")).status).toBe(429);
+    expect((await login(PASSWORD, "10.0.0.9", { cookie: device })).status).toBe(303);
+    // A known browser's own failures are cleared by its success.
+    for (let i = 0; i < 4; i++) expect((await login("wrong password!", "10.0.0.9", { cookie: device })).status).toBe(401);
+    expect((await login(PASSWORD, "10.0.0.9", { cookie: device })).status).toBe(303);
     expect((await login(PASSWORD, "10.0.0.9", { cookie: device })).status).toBe(303);
     // A forged device cookie is someone without one.
     expect((await login(PASSWORD, "10.0.0.9", { cookie: `${device.slice(0, -2)}xx` })).status).toBe(429);
@@ -251,6 +256,13 @@ describe("the password adapter", { timeout: 60_000 }, () => {
     expect(() => passwordAdapter({ password: PASSWORD, dir: group, sessionHours: 1 })).not.toThrow();
     chmodSync(join(group, "session.key"), 0o660);
     expect(() => passwordAdapter({ password: PASSWORD, dir: group, sessionHours: 1 })).toThrow(/writable by others/);
+  });
+
+  it("puts a state file in place only where none is", () => {
+    const file = join(tmp(), "f");
+    expect(claim(file, "first")).toBe(true);
+    expect(claim(file, "second")).toBe(false);
+    expect(readFileSync(file, "utf8")).toBe("first");
   });
 
   it("needs no folder with a password and a session secret", () => {
