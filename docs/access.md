@@ -21,10 +21,10 @@ auth:
   issuer: https://idp.example.com/realms/acme      # reads /.well-known/openid-configuration
   clientId: lenspack
   clientSecret: env:LENSPACK_OIDC_SECRET           # absent for a public client
-  baseUrl: https://lens.example.com                # the provider sends people back to <baseUrl>/auth/callback
+  baseUrl: https://lens.example.com                # an origin, no path; the provider sends people back to <baseUrl>/auth/callback
   sessionSecret: env:LENSPACK_SESSION_SECRET       # 32+ characters; signs the session cookie
   sessionHours: 8                                  # default 8; roles are read again at the next sign-in
-  userClaim: preferred_username                    # default
+  userClaim: preferred_username                    # default; must be a name users cannot change (else use sub)
   rolesClaims: [groups, realm_access.roles]        # dotted paths; default [groups]
   editors: ["*"]
   maintainers: ["role:lens-maintainers"]
@@ -74,6 +74,7 @@ packs:
 ```
 
 - `hide` names dimensions and measures the caller may not use; `only` names the ones they may. A measure computed from a hidden one (derived, or a per-level measure) is hidden with it. A key the pack does not have stops the server at startup, so a typo cannot leave a key showing.
+- A measure over the same column as a hidden dimension is not hidden by itself: a distinct count of it is an aggregate, but a `min` or `max` of a text column returns its values. Hide such measures too, or prefer `only`.
 - `scope` adds row filters to every query the caller runs, like a principal's own scope. It may filter on a hidden key: the server set it, not the caller.
 
 Put the most trusted rule first.
@@ -84,9 +85,11 @@ Resolution refuses any query that names a hidden key (`NOT_PERMITTED`), whatever
 
 - the catalogue in every API response, its hierarchies cut above the first hidden level (a drill never steps into one), and suggestions in refusals;
 - the chat model's prompt (catalogue and the pack's examples) and its `list_metrics` tool; `run_sql` is refused for such a caller, as raw SQL does not pass through the pack;
-- the pack file (`GET /api/<pack>/pack`), which is refused to a caller with any hidden key.
+- the pack file (`GET /api/<pack>/pack`), which is refused to a caller with any hidden key, and the compiled statement in explain, which reads like it.
 
-A board that has a widget on a hidden key still opens: that widget draws as "not available to you" and the rest as usual. This holds for shared boards and for a copy of one. Board configs and versions name keys but carry no data.
+A board that has a widget on a hidden key still opens: that widget draws as "not available to you" and the rest as usual. This holds for shared boards and for a copy of one. In every board config and version sent to such a caller, a widget filter on a hidden key keeps its key and shows its value as `(hidden)`. Titles and text widgets are what their authors wrote: they are shown as written.
+
+Hidden keys are kept from use, not secret as names: a widget error names its key, and explain answers a hidden key differently from an unknown one.
 
 Pack descriptions, instructions and hints are shown to everyone who may open the pack: keep values out of them.
 

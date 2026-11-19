@@ -5,7 +5,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 
 import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, queryKeys, querySchema, summarise, withoutKeys } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, queryKeys, querySchema, summarise, withoutHiddenValues, withoutKeys } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
@@ -240,6 +240,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       if (!h || !grant) return json(res, 404, { error: "no such pack" });
       // Everything the caller is shown of the pack's vocabulary leaves out what they may not use.
       const catalogue = withoutKeys(h.catalogue, grant.hidden);
+      // Every board config they are sent keeps a hidden key's filter, not its value.
+      const shown = <B extends { config: BoardConfig } | null>(b: B): B => (b && grant.hidden.size ? { ...b, config: withoutHiddenValues(b.config, grant.hidden) } : b);
       // The caller's tenant may narrow a pack, never move a pinned one elsewhere.
       if (who.tenant && h.ctx.tenant && who.tenant !== h.ctx.tenant) {
         audit({ user: who.user, pack: packName, action: "open", outcome: "denied", detail: "tenant" });
@@ -264,6 +266,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         try {
           const query = querySchema.parse(JSON.parse(url.searchParams.get("q") ?? "{}"));
           const e = await explain(query, run);
+          // The compiled statement reads like the pack file, which such a caller is not shown either.
+          if (grant.hidden.size) return json(res, 200, { ok: true, source: h.connector.kind, entities: e.entities, approximate: e.approximate });
           return json(res, 200, { ok: true, source: h.connector.kind, sql: e.text, native: e.text, entities: e.entities, approximate: e.approximate });
         } catch (e) {
           if (e instanceof ResolveError) return json(res, 200, { ok: false, code: e.code, error: e.message, nearest: e.nearest, key: e.key });
@@ -286,7 +290,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         if (!file) return json(res, 404, { error: "no such board file" });
         const config = buildBoard(h.pack, file);
         const data = await resolveBoard(config, run);
-        return json(res, 200, { board: { id: boardId, pack: h.pack.pack, config, version: 0, updatedAt: new Date() }, catalogue, data });
+        return json(res, 200, { board: shown({ id: boardId, pack: h.pack.pack, config, version: 0, updatedAt: new Date() }), catalogue, data });
       }
       const board = await h.store.get(boardId);
       // A board the caller may not see looks the same as one that is not there.
@@ -316,14 +320,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // response, instead of a board request followed by two more.
           const include = new Set((url.searchParams.get("include") ?? "").split(",").filter(Boolean));
           const mine = writable(board, who);
-          if (include.size === 0) return json(res, 200, { board, catalogue, writable: mine });
+          if (include.size === 0) return json(res, 200, { board: shown(board), catalogue, writable: mine });
           const [data, options] = await Promise.all([
             include.has("data") ? resolveBoard(board.config, run) : undefined,
             include.has("options")
               ? Promise.all(board.config.filters.map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
               : undefined,
           ]);
-          return json(res, 200, { board, catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });
+          return json(res, 200, { board: shown(board), catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });
         }
         case "GET data": {
           const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
@@ -332,7 +336,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         case "GET options":
           return json(res, 200, await dimensionValues(url.searchParams.get("field") ?? "", run));
         case "GET versions":
-          return json(res, 200, await h.store.versions(boardId));
+          return json(res, 200, (await h.store.versions(boardId)).map(shown));
         case "POST ops": {
           const body = (await read(req)) as { ops: unknown[] };
           const ops = body.ops.map((o) => opSchema.parse(o)) as BoardOp[];
@@ -343,7 +347,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           }
           const patched = await h.store.patch({ id: boardId, ops, catalogue, source: "ops" });
           audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "ok", detail: ops.map((o) => o.op).join(",") });
-          return json(res, 200, patched);
+          return json(res, 200, patched.ok ? { ...patched, board: shown(patched.board) } : patched);
         }
         case "POST layout": {
           const body = (await read(req)) as { layout: BoardOp[]; summary?: unknown };
@@ -354,20 +358,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const summary = said || describeChanges(board.config, config).join(", ").slice(0, 200) || undefined;
           const saved = await h.store.replaceConfig({ id: boardId, config, ...(summary ? { summary } : {}) });
           audit({ user: who.user, pack: packName, board: boardId, action: "layout", outcome: "ok" });
-          return json(res, 200, saved);
+          return json(res, 200, shown(saved));
         }
         case "POST share": {
           const body = (await read(req)) as { shared?: boolean };
           if (!board.owner) return json(res, 403, { error: "The pack's own boards are everyone's already" });
           const shared = await h.store.share(boardId, body.shared === true);
           audit({ user: who.user, pack: packName, board: boardId, action: body.shared === true ? "share" : "unshare", outcome: "ok" });
-          return json(res, 200, shared);
+          return json(res, 200, shown(shared));
         }
         case "POST revert": {
           const body = (await read(req)) as { version: number };
           const reverted = await h.store.revertTo(boardId, body.version);
           audit({ user: who.user, pack: packName, board: boardId, action: "revert", outcome: "ok", detail: `to v${body.version}` });
-          return json(res, 200, reverted);
+          return json(res, 200, shown(reverted));
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });

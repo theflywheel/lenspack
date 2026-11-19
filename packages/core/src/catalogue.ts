@@ -94,6 +94,24 @@ export function withoutKeys(catalogue: Catalogue, hidden?: ReadonlySet<string>):
 }
 
 /**
+ * A board as one caller may be shown it: a widget's filter on a key they may
+ * not use keeps its key but not its value, which is that key's data. The
+ * widget itself is refused when drawn; this keeps the value out of the config.
+ */
+export function withoutHiddenValues<C extends { widgets: Record<string, unknown> }>(config: C, hidden?: ReadonlySet<string>): C {
+  if (!hidden?.size) return config;
+  const widgets = Object.fromEntries(
+    Object.entries(config.widgets).map(([id, w]) => {
+      const q = (w as { query?: { filters?: { dimension: string; value: unknown }[] } }).query;
+      if (!q?.filters?.some((f) => hidden.has(f.dimension))) return [id, w];
+      const filters = q.filters.map((f) => (hidden.has(f.dimension) ? { ...f, value: Array.isArray(f.value) ? ["(hidden)"] : "(hidden)" } : f));
+      return [id, { ...(w as object), query: { ...q, filters } }];
+    }),
+  );
+  return { ...config, widgets };
+}
+
+/**
  * Where a grouping stands under the current selections: a grouping at or above
  * the deepest selected level of its hierarchy steps one level below it (or
  * stays at the finest level). Used by the engine to build the drilled query

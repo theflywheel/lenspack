@@ -173,6 +173,11 @@ describe("sign-in from lenspack.yaml", () => {
     expect(await as("amina")).toEqual({ user: "amina", roles: [], edit: true, maintain: true, usage: true });
     expect(await as("bo")).toEqual({ user: "bo", roles: [], edit: true, usage: false });
     expect(await access(req({ "x-forwarded-user": "amina" }))).toBeNull();
+    // A role: entry is for roles: a user named like one gets nothing from it.
+    const byRole = accessFrom(authSchema.parse({ kind: "proxy", secret: "s".repeat(32), rolesHeader: "x-forwarded-groups", maintainers: ["role:admins"] }))!;
+    const with_ = (user: string, groups: string) => byRole(req({ "x-lenspack-proxy-secret": "s".repeat(32), "x-forwarded-user": user, "x-forwarded-groups": groups }));
+    expect(await with_("role:admins", "")).toEqual({ user: "role:admins", roles: [], edit: false, usage: false });
+    expect(await with_("kofi", "staff, admins")).toMatchObject({ roles: ["staff", "admins"], maintain: true });
     expect(() => accessFrom(authSchema.parse({ kind: "proxy", secret: "short" }))).toThrow(/16 characters/);
   });
 });

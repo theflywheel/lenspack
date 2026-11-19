@@ -212,9 +212,12 @@ describe("sign-in with OpenID Connect", () => {
     // A state from elsewhere, with this browser's sign-in cookie, is still refused.
     const forged = atIdp.headers.get("location")!.replace(/state=[^&]+/, "state=forged");
     expect((await go(forged)).status).toBe(400);
-    jar = {};
-    const back = await signIn("//evil.example/");
-    expect(back.headers.get("location")).toBe("/");
+    // A browser drops a tab or newline from a URL, so "/\t/evil" would read as "//evil".
+    for (const evil of ["//evil.example/", "/\t/evil.example/", "/\\evil.example/", "/ /evil.example/"]) {
+      jar = {};
+      const back = await signIn(evil);
+      expect(back.headers.get("location"), JSON.stringify(evil)).toBe("/");
+    }
   });
 
   it("believes no altered session cookie, and no change from another site", async () => {
@@ -261,6 +264,7 @@ describe("sign-in with OpenID Connect", () => {
       server.close();
     }
     expect(() => oidcSignIn({ issuer: "http://x", clientId: "c", baseUrl: "http://lens", sessionSecret: "short", sessionHours: 1, scopes: [], userClaim: "sub", rolesClaims: [] })).toThrow(/32 characters/);
+    expect(() => oidcSignIn({ issuer: "http://x", clientId: "c", baseUrl: "http://lens/sub", sessionSecret: "s".repeat(32), sessionHours: 1, scopes: [], userClaim: "sub", rolesClaims: [] })).toThrow(/origin/);
   });
 });
 
@@ -277,6 +281,9 @@ describe("verifyJwt", () => {
   it("checks an ES256 signature, the audience list and azp", () => {
     expect(verifyJwt(token({ iss: "https://idp", aud: ["c", "x"], azp: "c", exp: 2000 }), [jwk], expect_)).toMatchObject({ aud: ["c", "x"] });
     expect(() => verifyJwt(token({ iss: "https://idp", aud: ["c", "x"], azp: "x", exp: 2000 }), [jwk], expect_)).toThrow(/another client/);
+    expect(() => verifyJwt(token({ iss: "https://idp", aud: "c", azp: "x", exp: 2000 }), [jwk], expect_)).toThrow(/another client/);
+    // An issuer ending in "/" is compared as written.
+    expect(verifyJwt(token({ iss: "https://idp/", aud: "c", exp: 2000 }), [jwk], { ...expect_, issuer: "https://idp/" })).toMatchObject({ iss: "https://idp/" });
     expect(() => verifyJwt(token({ iss: "https://idp", aud: "c", exp: 2000 }, "HS256"), [jwk], expect_)).toThrow(/not accepted/);
     expect(() => verifyJwt(token({ iss: "https://idp", aud: "c", exp: 2000, nbf: 5000 }), [jwk], expect_)).toThrow(/not valid yet/);
   });

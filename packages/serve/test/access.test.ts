@@ -155,6 +155,12 @@ store: { kind: memory }
       { kind: "rows", entity: "task", columns: ["province", "village"] },
       { kind: "value", measure: "visits", measures: ["distributors_active"] },
     ];
+    // Allowed queries compile, but the statement is not shown to a caller kept from the pack file.
+    expect((await explain(staff, { kind: "value", measure: "visits" })).sql).toBeTruthy();
+    const compiled = await explain(partner, { kind: "value", measure: "visits" });
+    expect(compiled.ok).toBe(true);
+    expect(compiled).not.toHaveProperty("sql");
+    expect(compiled).not.toHaveProperty("native");
     for (const q of queries) {
       expect(await explain(staff, q)).toMatchObject({ ok: true });
       const refused = await explain(partner, q);
@@ -203,10 +209,23 @@ store: { kind: memory }
     // A selection on a hidden board filter refuses the widgets rather than answering for that user.
     expect((await call(partner, `/campaign/${id}/data?f_delivered_by=${user}`)).body.who.error).toMatch(/not available/);
 
+    // A widget filtered on one distributor: the partner sees the filter's key, not its value.
+    const pinned = { kind: "kpi", title: "One distributor", query: { kind: "value", measure: "visits", filters: [{ dimension: "delivered_by", op: "in", value: [user] }] } };
+    const ops = await call(staff, `/campaign/${id}/ops`, post({ ops: [{ op: "add_widget", id: "one", widget: pinned }] }));
+    expect(JSON.stringify(ops.body)).toContain(user);
+    for (const path of [`/campaign/${id}`, `/campaign/${id}?include=data`, `/campaign/${id}/versions`]) {
+      const r = await call(partner, path);
+      expect(r.text, path).not.toContain(user);
+      expect(r.text, path).toContain("(hidden)");
+    }
+
     const copy = await call(partner, `/campaign/${id}/copy`, post({}));
     expect(copy.status).toBe(200);
     const theirs = await call(partner, `/campaign/${copy.body.id}?include=data`);
     expect(theirs.body.data.who.error).toMatch(/not available/);
+    expect(theirs.text).not.toContain(user);
+    // Their own edit on the copy answers with the board, values still kept back.
+    expect((await call(partner, `/campaign/${copy.body.id}/ops`, post({ ops: [{ op: "set_title", title: "Mine" }] }))).text).not.toContain(user);
     expect((await call(partner, `/campaign/${copy.body.id}/versions`)).text).not.toContain(user);
   });
 

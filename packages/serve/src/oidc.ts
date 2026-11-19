@@ -101,7 +101,7 @@ export function verifyJwt(token: string, keys: Jwk[], expect: { issuer: string; 
   if (claims.iss !== expect.issuer) throw new TokenError("the token is from another issuer");
   const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   if (!aud.includes(expect.audience)) throw new TokenError("the token is for another client");
-  if (aud.length > 1 && claims.azp !== undefined && claims.azp !== expect.audience) throw new TokenError("the token was issued to another client");
+  if (claims.azp !== undefined && claims.azp !== expect.audience) throw new TokenError("the token was issued to another client");
   if (typeof claims.exp !== "number" || claims.exp + SKEW_S < expect.nowS) throw new TokenError("the token has expired");
   if (typeof claims.nbf === "number" && claims.nbf - SKEW_S > expect.nowS) throw new TokenError("the token is not valid yet");
   return claims;
@@ -138,7 +138,8 @@ function cookies(req: IncomingMessage): Record<string, string> {
 }
 
 // A return path stays on this server: one absolute path, never another origin or the sign-in itself.
-const safeReturn = (r: string | null) => (r && /^\/(?![/\\])/.test(r) && !r.startsWith("/auth/") ? r : "/");
+// Control characters, spaces and backslashes are refused outright: a browser drops a tab from "/\t/x" and reads "//x".
+const safeReturn = (r: string | null) => (r && /^\/(?![/\\])/.test(r) && !/[\x00-\x20\x7f\\]/.test(r) && !r.startsWith("/auth/") ? r : "/");
 
 const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 function page(res: ServerResponse, status: number, text: string, cookies: string[] = []) {
@@ -151,9 +152,12 @@ export function oidcSignIn(o: OidcOptions) {
   const now = o.now ?? Date.now;
   const base = o.baseUrl.replace(/\/+$/, "");
   const origin = new URL(base).origin;
+  // The sign-in routes and cookies live at the root: a path prefix would break them, so it is refused.
+  if (base !== origin) throw new Error("auth.oidc baseUrl must be an origin (https://host[:port]), with no path");
   const callback = `${base}/auth/callback`;
   const secure = base.startsWith("https:");
-  const issuer = o.issuer.replace(/\/+$/, "");
+  // Compared exactly as written (some issuers end in "/"); only the discovery URL is built without the slash.
+  const issuer = o.issuer;
 
   const mac = (s: string) => createHmac("sha256", o.sessionSecret).update(s).digest();
   // purpose is signed in, so a sign-in cookie can never pass for a session.
@@ -182,7 +186,7 @@ export function oidcSignIn(o: OidcOptions) {
   let meta: Promise<Meta> | null = null;
   const discover = () =>
     (meta ??= (async () => {
-      const r = await fetch(`${issuer}/.well-known/openid-configuration`);
+      const r = await fetch(`${issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000) });
       if (!r.ok) throw new Error(`discovery answered ${r.status}`);
       const m = (await r.json()) as Meta;
       if (m.issuer !== issuer) throw new Error(`the issuer calls itself ${m.issuer}, not ${issuer}`);
@@ -195,7 +199,7 @@ export function oidcSignIn(o: OidcOptions) {
   const keysFor = async (kid: string | undefined) => {
     // A key that is not known yet may be a rotation: fetch again, at most every 30 s.
     if (!jwks || (kid && !jwks.keys.some((k) => k.kid === kid) && now() - jwks.at > 30_000)) {
-      const r = await fetch((await discover()).jwks_uri);
+      const r = await fetch((await discover()).jwks_uri, { signal: AbortSignal.timeout(10_000) });
       if (!r.ok) throw new Error(`the issuer's keys answered ${r.status}`);
       jwks = { keys: ((await r.json()) as { keys: Jwk[] }).keys ?? [], at: now() };
     }
@@ -237,7 +241,7 @@ export function oidcSignIn(o: OidcOptions) {
     const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded", accept: "application/json" };
     // client_secret_basic, each part form-encoded first (RFC 6749 2.3.1).
     if (o.clientSecret) headers.authorization = `Basic ${Buffer.from(`${encodeURIComponent(o.clientId)}:${encodeURIComponent(o.clientSecret)}`).toString("base64")}`;
-    const r = await fetch(m.token_endpoint, { method: "POST", headers, body: form });
+    const r = await fetch(m.token_endpoint, { method: "POST", headers, body: form, signal: AbortSignal.timeout(10_000) });
     const tokens = (await r.json().catch(() => ({}))) as { id_token?: string; error?: string };
     if (!r.ok || !tokens.id_token) return page(res, 502, `The identity provider refused the code (${String(tokens.error ?? r.status).slice(0, 80)}).`, [clearLogin]);
     let claims: Record<string, unknown>;

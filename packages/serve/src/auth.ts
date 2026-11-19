@@ -65,7 +65,8 @@ type RoleRules = { editors: string[]; maintainers: string[]; usage?: string[] };
 
 /** The principal a user with these roles is, under a sign-in's role rules. */
 export function principalOf(user: string, roles: string[], rules: RoleRules, tenant?: string): Principal {
-  const among = (list: string[]) => list.some((e) => e === "*" || e === user || (e.startsWith("role:") && roles.includes(e.slice(5))));
+  // A role: entry matches roles only, so a user named like one gets nothing from it.
+  const among = (list: string[]) => list.some((e) => e === "*" || (e.startsWith("role:") ? roles.includes(e.slice(5)) : e === user));
   const maintain = among(rules.maintainers);
   const usage = rules.usage ? among(rules.usage) : maintain;
   return { user, roles, edit: maintain || among(rules.editors), ...(maintain ? { maintain } : {}), usage, ...(tenant ? { tenant } : {}) };
