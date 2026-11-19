@@ -10,10 +10,9 @@ import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, empt
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
-import { type Access, type Audit, FULL_GRANT, type Grant, type PackRule, type Principal, grantOf } from "./auth";
+import { type Access, type Audit, type AuthAdapter, FULL_GRANT, type Grant, type PackRule, type Principal, type Rights, grantOf, withRights } from "./auth";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, turnCost, usageLedger, withMeter } from "./metering";
-import type { SignIn } from "./oidc";
 import { catalogueText, systemParts } from "./prompt";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
 
@@ -58,10 +57,16 @@ export type AppOptions = {
   access?: Access;
   /** Told of every change, refused change and denied request, with the user. */
   audit?: Audit;
-  /** The UI's sign-out link (auth.proxy signOutUrl, or lenspack's own with oidc). */
+  /** The UI's sign-out link, when the access hook has none of its own. */
   signOutUrl?: string;
-  /** lenspack's own sign-in (auth.oidc): its /auth/ routes, and where a page without a session is sent. */
-  signIn?: SignIn;
+  /**
+   * How people sign in (lenspack.yaml auth:): who a request is, the adapter's
+   * own /auth/ routes, and where a page without a session is sent. Takes the
+   * place of access; rights are applied above it.
+   */
+  auth?: AuthAdapter;
+  /** Rights by user and role (editors, maintainers, usage), for whoever the adapter names. */
+  rights?: Rights;
   /** How the UI presents itself (lenspack.yaml `ui:`), written into the page it is served in. */
   page?: { mode: "demo" | "app"; title?: string; home?: string; intro?: string };
   /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. */
@@ -181,6 +186,9 @@ function serveStatic(root: string, pathname: string, res: ServerResponse, page?:
 }
 
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
+  if (opts.auth && opts.access) throw new Error("createApp takes auth or access, not both");
+  const access: Access | undefined = opts.auth ? withRights(opts.auth, opts.rights ?? { editors: [], maintainers: [] }) : opts.access;
+  const signOutUrl = opts.auth?.signOutUrl ?? opts.signOutUrl;
   const ledger = opts.ledger ?? usageLedger();
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
@@ -200,20 +208,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const url = new URL(req.url ?? "/", "http://x");
     const [, api, packName, boardId, action] = url.pathname.split("/");
     try {
-      if (opts.signIn && (await opts.signIn.handle(req, res, url))) return;
+      if (opts.auth?.handle && (await opts.auth.handle(req, res, url))) return;
       if (api !== "api") {
         if (!opts.ui) return json(res, 404, { error: "not found" });
         // With lenspack's own sign-in, a page without a session goes to sign in first.
-        if (opts.signIn && opts.access && !(await opts.access(req))) {
-          res.writeHead(302, { location: opts.signIn.signInPath(url), "cache-control": "no-store" });
+        if (opts.auth?.signInPath && access && !(await access(req))) {
+          res.writeHead(302, { location: opts.auth.signInPath(url), "cache-control": "no-store" });
           return res.end();
         }
         return serveStatic(opts.ui, url.pathname, res, opts.page);
       }
-      const who = opts.access ? await opts.access(req) : OPEN;
+      const who = access ? await access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
-      const grantFor = (h: Host): Grant | null => (who.packs && !who.packs.includes(h.name) ? null : opts.access ? grantOf(h.pack, h.access, who) : FULL_GRANT);
+      const grantFor = (h: Host): Grant | null => (who.packs && !who.packs.includes(h.name) ? null : access ? grantOf(h.pack, h.access, who) : FULL_GRANT);
       // The pack's own boards first, in board-file order; then people's, latest first.
       const boardsOf = async (h: Host) => {
         const order = (b: Ownership & { id: string }) => (b.owner ? h.boards.length : Math.max(0, h.boards.findIndex((f) => f.id === b.id)));
@@ -225,7 +233,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           [...byName.values()].filter((h) => grantFor(h)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),
         );
         // Absent on an open server: there is no one to name.
-        const me = opts.access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, usage: !!(who.usage ?? who.maintain), ...(opts.signOutUrl ? { signOut: opts.signOutUrl } : {}) } : undefined;
+        const me = access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, usage: !!(who.usage ?? who.maintain), ...(signOutUrl ? { signOut: signOutUrl } : {}) } : undefined;
         return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), ...(me ? { me } : {}) });
       }
       // What chat has cost since the server started: for those given the usage right (maintainers, unless said otherwise), as it names every user.

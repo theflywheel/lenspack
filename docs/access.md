@@ -4,14 +4,39 @@ Who may sign in, what they may do in the app, and what of each pack's data they 
 
 ## Sign-in
 
-`auth:` in `lenspack.yaml` names how a caller is identified. Every kind ends in the same principal: a user, their roles, and the rights below.
+`auth.kind` in `lenspack.yaml` picks the sign-in; the environment variable `LENSPACK_AUTH` overrides it (`LENSPACK_AUTH=none` for a quick local look). With neither, it is `password`. Every kind ends in the same principal: a user, their roles, and the rights below. The rights and the pack rules work the same whichever kind named the caller.
 
 | kind | who the caller is | roles from |
 |---|---|---|
+| `password` (default) | the one built-in user, `admin`, with a password | `admin` |
 | `oidc` | lenspack signs people in with an OpenID Connect provider (Keycloak, Entra ID, any issuer with discovery) | claims in the ID token |
 | `proxy` | a login proxy in front names the user in a header, believed only with the proxy's shared secret | a header (`rolesHeader`), comma-separated |
 | `tokens` | bearer tokens the deployment issues | `roles:` per token |
-| `none` | open, on purpose | none: the one local user sees everything |
+| `none` | open, for a local demo; listens on 127.0.0.1 unless `host:` says otherwise | none: the one local user sees everything |
+
+### `password`
+
+For a deployment with no identity provider. There is one user, `admin`, with every right (editor, maintainer, usage) and the role `admin`, which pack rules can match. lenspack keeps no other users and has no user management: for named people, use `oidc` or a login proxy.
+
+```yaml
+auth:
+  kind: password            # the default; the block can be left out
+  sessionHours: 8           # default 8
+  baseUrl: https://lens.example.com   # optional: the address people use; see below
+  dir: /var/lib/lenspack    # default LENSPACK_STATE_DIR, else .lenspack next to lenspack.yaml (relative: from lenspack.yaml's folder)
+```
+
+The password comes from the block if it names one (`password: env:NAME` or `passwordHash:`), else from the environment:
+
+1. `LENSPACK_ADMIN_PASSWORD`, at least 12 characters;
+2. `LENSPACK_ADMIN_PASSWORD_HASH`, a scrypt hash. `read -rs P; printf %s "$P" | lenspack hash-password` prints one without the password reaching the shell history. A password, where both are set, wins over a hash;
+3. neither: at first start lenspack makes a random password, keeps only its hash in `<dir>/admin-password.hash`, and writes the password once to `<dir>/admin-password.txt`. Both files are readable by the server's user only (0600), and the folder gets a `.gitignore` so it is not committed with the config. The log names the file, never the password. Read it, then delete the file; it is not written again. To start over, delete the hash file.
+
+lenspack refuses a state folder or file that is a link, belongs to another user or is writable by others. The session cookie is signed with a key kept in `<dir>/session.key` (or `sessionSecret:`). A new password ends every session made with the old one. Several replicas need the same `<dir>` (or the same password and `sessionSecret`), or a session from one is unknown to the others.
+
+Sign-in is a form at `GET /auth/login`; `GET /auth/logout` signs out. Every try counts as a failure until the password checks out, so a burst sent at once is counted too. After five failures, each further try waits longer (1 s, doubling, at most 15 minutes); failures are forgotten after an hour without one, or on success. A caller is its address, or, once it has signed in from that browser, a long-lived signed device cookie: behind a reverse proxy every caller shares the proxy's address, and an attacker there holds up the address, not the admin's own browser. Only a few passwords are checked at a time.
+
+A change request must come from the server's own address: `baseUrl` when set (which also marks the cookie `Secure` on https), else the `Host` the request was sent to, or the `X-Forwarded-Host` a proxy set. Put TLS in front: the form sends the password as it is typed.
 
 ### `oidc`
 
@@ -39,7 +64,7 @@ lenspack answers three paths itself:
 - `GET /auth/callback`: back from the provider. On success, a session cookie and a redirect to the return path, which must be a path on this server.
 - `GET /auth/logout`: clears the session and goes to the provider's `end_session_endpoint` with `client_id`, `post_logout_redirect_uri` (`<baseUrl>/`) and the ID token as `id_token_hint` when it fits in a cookie.
 
-The session is a signed cookie (`HttpOnly`, `SameSite=Lax`, `Secure` on https) holding the user, roles and tenant; nothing is kept on the server. A change request (anything but GET) carrying an `Origin` other than `baseUrl`'s is refused. Removing someone at the provider takes effect at their next sign-in, at most `sessionHours` later.
+The session is a signed cookie (`HttpOnly`, `SameSite=Lax`, `Secure` on https, the same code as `password`'s) holding the user, roles and tenant; nothing is kept on the server. A change request (anything but GET) carrying an `Origin` other than `baseUrl`'s is refused. Removing someone at the provider takes effect at their next sign-in, at most `sessionHours` later.
 
 ### `proxy`
 
@@ -47,7 +72,7 @@ Unchanged, plus `rolesHeader` (oauth2-proxy can inject a `groups` claim as `X-Fo
 
 ## App rights
 
-`editors`, `maintainers` and `usage` list user names, `role:<name>` for anyone with that role or group, or `"*"`.
+`editors`, `maintainers` and `usage` list user names, `role:<name>` for anyone with that role or group, or `"*"`. Every kind takes them; a token's own `edit`, `maintain` and `usage` add to them, and `admin` under `password` has all three.
 
 | right | lets a caller |
 |---|---|

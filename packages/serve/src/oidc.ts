@@ -1,5 +1,8 @@
-import { type KeyObject, constants, createHash, createHmac, createPublicKey, randomBytes, timingSafeEqual, verify } from "node:crypto";
+import { type KeyObject, constants, createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+
+import type { AuthAdapter, Identity } from "./auth";
+import { cookie as makeCookie, cookies, escapeHtml, safeReturn, sameSite, sealer } from "./session";
 
 // Sign-in with an OpenID Connect provider (Keycloak, Entra ID, Google, any
 // issuer with discovery), so a deployment needs no login proxy in front.
@@ -30,7 +33,6 @@ export type OidcOptions = {
   now?: () => number;
 };
 
-export type Session = { user: string; roles: string[]; tenant?: string };
 
 type Meta = { issuer: string; authorization_endpoint: string; token_endpoint: string; jwks_uri: string; end_session_endpoint?: string };
 type Jwk = { kid?: string; kty: string; alg?: string; use?: string; [k: string]: unknown };
@@ -128,23 +130,9 @@ export function rolesFrom(claims: Record<string, unknown>, paths: string[]): str
   return [...out];
 }
 
-function cookies(req: IncomingMessage): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const part of (req.headers.cookie ?? "").split(";")) {
-    const i = part.indexOf("=");
-    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
-  }
-  return out;
-}
-
-// A return path stays on this server: one absolute path, never another origin or the sign-in itself.
-// Control characters, spaces and backslashes are refused outright: a browser drops a tab from "/\t/x" and reads "//x".
-const safeReturn = (r: string | null) => (r && /^\/(?![/\\])/.test(r) && !/[\x00-\x20\x7f\\]/.test(r) && !r.startsWith("/auth/") ? r : "/");
-
-const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 function page(res: ServerResponse, status: number, text: string, cookies: string[] = []) {
   res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...(cookies.length ? { "set-cookie": cookies } : {}) });
-  res.end(`<!doctype html><meta charset="utf-8"><title>Sign-in</title><p>${escape(text)}</p><p><a href="/">Try again</a></p>`);
+  res.end(`<!doctype html><meta charset="utf-8"><title>Sign-in</title><p>${escapeHtml(text)}</p><p><a href="/">Try again</a></p>`);
 }
 
 export function oidcSignIn(o: OidcOptions) {
@@ -159,28 +147,8 @@ export function oidcSignIn(o: OidcOptions) {
   // Compared exactly as written (some issuers end in "/"); only the discovery URL is built without the slash.
   const issuer = o.issuer;
 
-  const mac = (s: string) => createHmac("sha256", o.sessionSecret).update(s).digest();
-  // purpose is signed in, so a sign-in cookie can never pass for a session.
-  const seal = (purpose: string, value: object, ttlS: number) => {
-    const body = b64url(JSON.stringify({ ...value, p: purpose, exp: Math.floor(now() / 1000) + ttlS }));
-    return `${body}.${b64url(mac(body))}`;
-  };
-  const unseal = <T>(purpose: string, sealed: string | undefined): T | null => {
-    if (!sealed) return null;
-    const [body, sig] = sealed.split(".");
-    if (!body || !sig) return null;
-    const want = mac(body);
-    const got = Buffer.from(sig, "base64url");
-    if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
-    try {
-      const v = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { p?: string; exp?: number };
-      return v.p === purpose && typeof v.exp === "number" && v.exp > now() / 1000 ? (v as T) : null;
-    } catch {
-      return null;
-    }
-  };
-  const cookie = (name: string, value: string, path: string, maxAgeS: number) =>
-    `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}; Max-Age=${maxAgeS}`;
+  const { seal, unseal } = sealer(o.sessionSecret, now);
+  const cookie = (name: string, value: string, path: string, maxAgeS: number) => makeCookie(name, value, { path, maxAgeS, secure });
 
   // Discovery and keys are fetched when first needed, so the server starts while the issuer is down.
   let meta: Promise<Meta> | null = null;
@@ -255,7 +223,7 @@ export function oidcSignIn(o: OidcOptions) {
     const user = claimAt(claims, o.userClaim);
     if (typeof user !== "string" || !user) return page(res, 401, `Your account has no ${o.userClaim}.`, [clearLogin]);
     const tenant = o.tenantClaim ? claimAt(claims, o.tenantClaim) : undefined;
-    const session: Session = { user, roles: rolesFrom(claims, o.rolesClaims), ...(typeof tenant === "string" && tenant ? { tenant } : {}) };
+    const session: Identity = { user, roles: rolesFrom(claims, o.rolesClaims), ...(typeof tenant === "string" && tenant ? { tenant } : {}) };
     const ttl = Math.round(o.sessionHours * 3600);
     const sealed = seal("session", session, ttl);
     if (sealed.length > MAX_COOKIE) return page(res, 500, "Your account carries too many roles to keep in a session. Narrow the roles claims or the identity provider's mapper.", [clearLogin]);
@@ -283,13 +251,12 @@ export function oidcSignIn(o: OidcOptions) {
   }
 
   return {
+    kind: "oidc",
     signOutUrl: "/auth/logout",
     /** Who the session cookie names, or null. A change from another site (its Origin) is not believed. */
-    session(req: IncomingMessage): Session | null {
-      const writes = req.method !== "GET" && req.method !== "HEAD";
-      const from = req.headers.origin;
-      if (writes && from && from !== origin) return null;
-      const s = unseal<Session>("session", cookies(req)[SESSION]);
+    identify(req: IncomingMessage): Identity | null {
+      if (!sameSite(req, origin)) return null;
+      const s = unseal<Identity>("session", cookies(req)[SESSION]);
       return s && typeof s.user === "string" ? { user: s.user, roles: Array.isArray(s.roles) ? s.roles : [], ...(s.tenant ? { tenant: s.tenant } : {}) } : null;
     },
     /** Answers /auth/login, /auth/callback and /auth/logout; false for any other path. */
@@ -312,4 +279,4 @@ export function oidcSignIn(o: OidcOptions) {
   };
 }
 
-export type SignIn = Pick<ReturnType<typeof oidcSignIn>, "handle" | "signInPath">;
+export const oidcAdapter = (o: OidcOptions): AuthAdapter => oidcSignIn(o);

@@ -81,12 +81,11 @@ export const configSchema = z.object({
     .optional(),
   port: z.number().int().positive().optional(),
   /**
-   * Who may use the API. Absent: the server listens on 127.0.0.1 only, for
-   * local use. `{ kind: none }` opens it to the network with no sign-in —
-   * say so explicitly; `tokens` or `proxy` identify each caller.
+   * How callers sign in. Absent: `password`, the built-in admin. `{ kind:
+   * none }` is open, for a local demo; LENSPACK_AUTH overrides the kind.
    */
   auth: authSchema.optional(),
-  /** Interface to listen on; defaults to 127.0.0.1 without auth, 0.0.0.0 with it. */
+  /** Interface to listen on; defaults to 127.0.0.1 when open (none), 0.0.0.0 with a sign-in. */
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),

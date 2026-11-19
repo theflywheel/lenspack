@@ -6,3 +6,5 @@ sources:
 packs:
   - { pack: ./pack.yaml, source: pgr, boards: ./boards, tenant: ke }
 store: { kind: memory }
+# Open, for a local look on 127.0.0.1. Remove for the default sign-in (admin and a password).
+auth: { kind: none }

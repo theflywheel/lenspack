@@ -161,8 +161,8 @@ describe("sign-in from lenspack.yaml", () => {
 
   it("knows a bearer token's user, rights and scope", async () => {
     const access = accessFrom(authSchema.parse({ kind: "tokens", users: [{ user: "ops", token: "t-ops", edit: true }, { user: "ke", token: "t-ke", tenant: "ke" }] }))!;
-    expect(await access(req({ authorization: "Bearer t-ops" }))).toEqual({ user: "ops", edit: true });
-    expect(await access(req({ authorization: "Bearer t-ke" }))).toEqual({ user: "ke", edit: false, tenant: "ke" });
+    expect(await access(req({ authorization: "Bearer t-ops" }))).toEqual({ user: "ops", roles: [], edit: true, usage: false });
+    expect(await access(req({ authorization: "Bearer t-ke" }))).toEqual({ user: "ke", roles: [], edit: false, usage: false, tenant: "ke" });
     expect(await access(req({ authorization: "Bearer nope" }))).toBeNull();
     expect(await access(req({}))).toBeNull();
   });
