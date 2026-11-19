@@ -273,6 +273,22 @@ SELECT "things"."__d_colour" AS "colour", "things"."__d_nested" AS "nested"
 FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", json_extract_string("attrs", '$."meta"."grade"') AS "__d_nested" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2 ESCAPE '\'))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
 LIMIT 20;
 
+-- {"kind":"rows","entity":"things","columns":["colour","size","origin"],"limit":26,"offset":50,"orderBy":{"key":"size","dir":"desc"}}
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT "things"."__d_colour" AS "colour", "things"."__d_size" AS "size", "things"."__d_origin" AS "origin"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "size" AS "__d_size", json_extract_string("attrs", '$."origin"') AS "__d_origin" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2 ESCAPE '\'))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+ORDER BY "things"."__d_size" DESC NULLS LAST, "things"."__d_colour" ASC NULLS LAST, "things"."__d_origin" ASC NULLS LAST
+LIMIT 26
+OFFSET 50;
+
+-- {"kind":"rows","entity":"things","columns":["colour","size"],"limit":6,"offset":5}
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT "things"."__d_colour" AS "colour", "things"."__d_size" AS "size"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "size" AS "__d_size" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2 ESCAPE '\'))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+ORDER BY "things"."__d_colour" ASC NULLS LAST, "things"."__d_size" ASC NULLS LAST
+LIMIT 6
+OFFSET 5;
+
 -- {"kind":"breakdown","dimension":"tier","measure":"things_per_owner","limit":10,"sort":"desc","filters":[{"dimension":"size","op":"gte","value":5}]}
 -- params: ["ke_1","ke\\_1.%","test",5]
 SELECT "__n"."group" AS "group", avg("__n"."__v") AS "value", count(*) AS "n"

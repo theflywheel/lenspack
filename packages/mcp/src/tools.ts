@@ -93,6 +93,8 @@ const QUERY_SHAPE = {
   limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
   split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars"),
+  order_by: str().describe('For rows: the column to order the list by, e.g. a time column to list newest first; empty keeps the source order'),
+  order: oneOf(["asc", "desc"], "desc").describe('For rows with order_by: "desc" = newest or largest first (default), "asc" = oldest or smallest first'),
   filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; size >= 18". Ops: =, !=, >=, <=, in (comma-separated), contains, between <a> and <b>'),
   filter_dimension: str().describe("Optional: narrow by this dimension"),
   filter_value: str().describe("Optional: the value the filter dimension must equal"),
@@ -176,6 +178,7 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
         kind: "rows",
         entity: a.entity,
         columns: a.dimension.split(",").map((s) => s.trim()).filter(Boolean),
+        ...(a.order_by ? { orderBy: { key: a.order_by, dir: a.order } } : {}),
         ...(a.limit ? { limit: a.limit } : {}),
         ...base,
       });
@@ -201,7 +204,7 @@ function scalarsOf(q: Query) {
     case "value":
       return { query_kind: q.kind, measure: q.measure, compare: !!q.compare };
     case "rows":
-      return { query_kind: q.kind, entity: q.entity, dimension: q.columns.join(",") };
+      return { query_kind: q.kind, entity: q.entity, dimension: q.columns.join(","), order_by: q.orderBy?.key ?? "", order: q.orderBy?.dir ?? "desc" };
   }
 }
 
@@ -238,6 +241,15 @@ function fail(e: unknown) {
     return { applied: false, error: err.message, ...(err.nearest ? { didYouMean: err.nearest } : {}) };
   }
   return { applied: false, error: e instanceof Error ? e.message : String(e) };
+}
+
+// Rows per page of a table. A table of rows reads one row past its first
+// page with the board, so Prev/Next know whether another page exists.
+export const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE = num(0, 0, 200).describe("For a table: rows per page, up to 200; 0 for the default (25). A table of rows pages through all matching rows with Prev/Next");
+function tableOf(title: string, query: Query, pageSize: number, limitGiven: boolean) {
+  const rows = query.kind === "rows" && !limitGiven ? { ...query, limit: Math.min(1000, Math.max(query.limit, pageSize + 1)) } : query;
+  return { kind: "table" as const, title, query: rows, pageSize: Math.max(5, pageSize) };
 }
 
 export function boardTools(opts: BoardToolsOptions): Tool[] {
@@ -441,6 +453,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         place: PLACE,
         width: WIDTH,
         height: num(0, 0, 20).describe("Rows tall; 0 lets the server choose"),
+        page_size: PAGE_SIZE,
       }),
       async execute(a) {
         try {
@@ -450,7 +463,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
               : a.kind === "kpi"
                 ? { kind: "kpi" as const, title: a.title, query: assembleQuery(a, pack), aggregate: "last" as const }
                 : a.kind === "table"
-                  ? { kind: "table" as const, title: a.title, query: assembleQuery(a, pack), pageSize: 10 }
+                  ? tableOf(a.title, assembleQuery(a, pack), a.page_size || DEFAULT_PAGE_SIZE, a.limit > 0)
                   : { kind: "chart" as const, chart: a.chart as "bar" | "line" | "pie" | "area", title: a.title, query: assembleQuery(a, pack), options: { legend: true, colorScheme: "default" as const } };
           return apply([{ op: "add_widget", id: a.id, widget, placement: { place: a.place, width: a.width as "full" | "half" | "third" | "quarter", ...(a.height > 0 ? { height: a.height } : {}) } }]);
         } catch (e) {
@@ -468,9 +481,10 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         title: given(z.string()),
         chart: given(z.enum(["bar", "line", "pie", "area"])),
         body: given(z.string()),
+        page_size: given(PAGE_SIZE),
         ...PATCH_SHAPE,
       }),
-      async execute({ id, kind, title, chart, body, ...fields }) {
+      async execute({ id, kind, title, chart, body, page_size, ...fields }) {
         const changed = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) as Partial<QueryArgs>;
         try {
           return await apply(async () => {
@@ -494,7 +508,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
               to === "kpi"
                 ? { aggregate: "last" as const, ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
                 : to === "table"
-                  ? { pageSize: 10, ...(current.kind === "table" ? current : {}), kind: "table" as const, title: name, query }
+                  ? tableOf(name, query, page_size || (current.kind === "table" ? current.pageSize : DEFAULT_PAGE_SIZE), !page_size || !!changed.limit)
                   : {
                       options: { legend: true, colorScheme: "default" as const },
                       ...(current.kind === "chart" ? current : {}),

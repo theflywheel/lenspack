@@ -431,6 +431,8 @@ export function App() {
         const b = await api(`${base}/layout`, { method: "POST", body: JSON.stringify({ layout, summary }) });
         return { ...b, updatedAt: new Date(b.updatedAt) };
       },
+      loadWidgetPage: (id, page, selections) =>
+        api(`${base}/page?${new URLSearchParams({ widget: id, page: String(page), ...Object.fromEntries(Object.entries(selections).map(([k, v]) => [`f_${k}`, v])) })}`),
       loadFilterOptions: (field) => {
         const hit = primer.current?.options[field];
         return hit ? Promise.resolve(hit) : api(`${base}/options?field=${encodeURIComponent(field)}`);

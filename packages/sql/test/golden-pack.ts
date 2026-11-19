@@ -122,6 +122,9 @@ export const GOLDEN_QUERIES: Query[] = [
   },
   { kind: "rows", entity: "things", columns: ["colour", "size", "origin"], limit: 4, orderBy: { key: "size", dir: "desc" } },
   { kind: "rows", entity: "things", columns: ["colour", "nested"], limit: 20 },
+  // A later page of rows: LIMIT then OFFSET; with no order, the columns order it so pages line up.
+  { kind: "rows", entity: "things", columns: ["colour", "size", "origin"], limit: 26, offset: 50, orderBy: { key: "size", dir: "desc" } },
+  { kind: "rows", entity: "things", columns: ["colour", "size"], limit: 6, offset: 5 },
   { kind: "breakdown", dimension: "tier", measure: "things_per_owner", limit: 10, sort: "desc", filters: [{ dimension: "size", op: "gte", value: 5 }] },
   { kind: "breakdown", dimension: "colour", measure: "heavy_owners", by: "tier", limit: 10, sort: "desc", time: between },
   { kind: "series", measure: "things_per_owner", grain: "month", by: "colour", time: { last: "12w" } },

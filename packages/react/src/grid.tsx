@@ -37,7 +37,7 @@ const CrossIcon = () => (
 
 export function WidgetFrame({ id, widget, registry, showQuery, onRemove }: { id: string; widget: Widget; registry: WidgetRegistry; showQuery?: boolean; onRemove?: () => void }) {
   const { data, currency } = useBoard();
-  const Body = (registry[widget.kind] ?? defaultWidgets[widget.kind]) as React.ComponentType<{ widget: Widget; data?: unknown; currency?: string }>;
+  const Body = (registry[widget.kind] ?? defaultWidgets[widget.kind]) as React.ComponentType<{ id?: string; widget: Widget; data?: unknown; currency?: string }>;
   return (
     <div className="lp-widget" data-widget={id} data-kind={widget.kind}>
       <div className="lp-widget-head lp-drag-handle">
@@ -54,7 +54,7 @@ export function WidgetFrame({ id, widget, registry, showQuery, onRemove }: { id:
         </button>
       )}
       <div className="lp-widget-body">
-        <Body widget={widget} data={data[id]} currency={currency} />
+        <Body id={id} widget={widget} data={data[id]} currency={currency} />
       </div>
     </div>
   );

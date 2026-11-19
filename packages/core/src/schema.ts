@@ -100,6 +100,10 @@ export const querySchema = z.discriminatedUnion("kind", [
     columns: z.array(z.string()).min(1).max(20),
     limit: z.number().int().min(1).max(1000).default(50),
     orderBy: z.object({ key: z.string(), dir: z.enum(["asc", "desc"]).default("desc") }).optional(),
+    // Rows skipped before the first one returned: a later page of a paged
+    // table. Set per request, not stored on a board. Capped so a deep page
+    // stays a small top-N sort in the source.
+    offset: z.number().int().min(0).max(10000).optional(),
     ...common,
   }),
 ]);
@@ -157,7 +161,9 @@ export const widgetSchema = z.discriminatedUnion("kind", [
     ...baseWidget,
     kind: z.literal("table"),
     query: querySchema,
-    pageSize: z.number().int().min(5).max(50).default(10),
+    // Rows per page. A rows query pages through the source (Prev/Next), a
+    // breakdown pages through the groups it fetched.
+    pageSize: z.number().int().min(5).max(200).default(10),
   }),
   z.object({
     ...baseWidget,
