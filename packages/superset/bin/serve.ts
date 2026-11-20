@@ -141,7 +141,7 @@ createServer(async (req, res) => {
     // What a settings page (Superset's Settings → Manage → AI assistant) shows. No secrets: which
     // variable the LLM key came from, never the key.
     if (url.pathname === "/_superset/settings") {
-      const llmFrom = process.env.LENSPACK_LLM_PROVIDERS ? "LENSPACK_LLM_PROVIDERS" : process.env.LENSPACK_LLM_API_KEY ? "LENSPACK_LLM_API_KEY" : process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null;
+      const llmFrom = process.env.LENSPACK_LLM_KEY_SOURCE || (process.env.LENSPACK_LLM_PROVIDERS ? "LENSPACK_LLM_PROVIDERS" : process.env.LENSPACK_LLM_API_KEY ? "LENSPACK_LLM_API_KEY" : process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null);
       return send(res, 200, JSON.stringify({
         pack: pack.pack,
         datasets: datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: binding.entityOf.get(d.id) ?? null })),
