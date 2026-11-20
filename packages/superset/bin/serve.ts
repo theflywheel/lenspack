@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { memoryStore } from "@lenspack/core";
-import { addUsageSink, buildProvider, createApp, probe, providersFromEnv, usageLedger } from "@lenspack/serve";
+import { addUsageSink, buildProvider, createApp, probe, providersFromEnv, publicView, usageLedger } from "@lenspack/serve";
 import YAML from "yaml";
 
 import { type Overlay, fetchDatasets, packFromDatasets, supersetBoards, supersetClient, supersetConnector } from "../src/index";
@@ -138,6 +138,23 @@ createServer(async (req, res) => {
     const supersetPort = config.superset.publicPort ?? Number(new URL(config.superset.url).port);
     const vars = { pack: pack.pack, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? null, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
     if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples }));
+    // What a settings page (Superset's Settings → Manage → AI assistant) shows. No secrets: which
+    // variable the LLM key came from, never the key.
+    if (url.pathname === "/_superset/settings") {
+      const llmFrom = process.env.LENSPACK_LLM_PROVIDERS ? "LENSPACK_LLM_PROVIDERS" : process.env.LENSPACK_LLM_API_KEY ? "LENSPACK_LLM_API_KEY" : process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null;
+      return send(res, 200, JSON.stringify({
+        pack: pack.pack,
+        datasets: datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: binding.entityOf.get(d.id) ?? null })),
+        dimensions: pack.dimensions.length,
+        measures: pack.measures.map((m) => ({ key: m.key, label: m.label, agg: m.agg })),
+        providers: providers.map(publicView),
+        llmFrom,
+        budget: config.budget ?? null,
+        superset: { url: config.superset.url, username: config.superset.username },
+        dashboards: Object.values(dashboards),
+        publicPath: base,
+      }));
+    }
     if (url.pathname === "/_superset/bind") return send(res, 200, JSON.stringify(await bind(url.searchParams.get("dashboard") ?? "")));
     if (url.pathname === "/_superset/dashboards") {
       const list = await client.get<{ result: { id: number; dashboard_title: string; changed_on_delta_humanized: string }[] }>("/api/v1/dashboard/?q=(page_size:100,order_column:changed_on_delta_humanized,order_direction:desc)");

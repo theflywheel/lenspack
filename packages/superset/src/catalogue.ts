@@ -59,7 +59,9 @@ const COUNT_STAR = /^\s*count\s*\(\s*\*?\s*\)\s*$/i;
 // ClickHouse spells some aggregates as functions: the -If combinator (countIf(cond), sumIf(x, cond))
 // and the uniq family for distinct counts.
 const CH_SUM = new Set(["countif", "sumif"]);
-const CH_DISTINCT = new Set(["uniq", "uniqexact", "uniqcombined", "uniqcombined64", "uniqhll12", "uniqtheta", "countdistinct"]);
+// The -Merge forms read a stored AggregateFunction state (uniqExactMerge(col) in a pre-aggregated mart).
+const CH_DISTINCT = new Set(["uniq", "uniqexact", "uniqcombined", "uniqcombined64", "uniqhll12", "uniqtheta", "countdistinct", "uniqmerge", "uniqexactmerge", "uniqcombinedmerge", "uniqcombined64merge", "uniqhll12merge"]);
+const CH_SUM_MERGE = new Set(["summerge", "countmerge"]);
 
 /** The aggregate a metric's expression behaves like, for what lenspack lets you do with it (share, Other, totals). */
 export function aggOf(expression: string): "count" | "sum" | "avg" | "min" | "max" | "count_distinct" {
@@ -70,7 +72,7 @@ export function aggOf(expression: string): "count" | "sum" | "avg" | "min" | "ma
   const balanced = outer ? closesAtEnd(e) : false;
   if (!balanced) return "avg";
   if (outer === "count") return /^count\s*\(\s*distinct\b/i.test(e) ? "count_distinct" : "sum";
-  if (outer === "sum" || CH_SUM.has(outer!)) return "sum";
+  if (outer === "sum" || CH_SUM.has(outer!) || CH_SUM_MERGE.has(outer!)) return "sum";
   if (CH_DISTINCT.has(outer!)) return "count_distinct";
   if (outer === "min" || outer === "minif") return "min";
   if (outer === "max" || outer === "maxif") return "max";

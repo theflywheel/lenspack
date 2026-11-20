@@ -35,6 +35,8 @@ describe("superset catalogue", () => {
     expect(aggOf("uniqExact(field_worker)")).toBe("count_distinct");
     expect(aggOf("uniq(field_worker)")).toBe("count_distinct");
     expect(aggOf("maxIf(x, y)")).toBe("max");
+    expect(aggOf("uniqExactMerge(administered_uniq)")).toBe("count_distinct");
+    expect(aggOf("sumMerge(s)")).toBe("sum");
     expect(aggOf("countIf(is_delivered) / nullIf(count(), 0)")).toBe("avg");
     expect(aggOf("SUM(a) / SUM(b)")).toBe("avg");
     expect(aggOf("COUNT(*) FILTER (WHERE d)::float / NULLIF(COUNT(*), 0)")).toBe("avg");
