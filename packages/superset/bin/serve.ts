@@ -18,19 +18,44 @@ import YAML from "yaml";
 import { type Overlay, fetchDatasets, packFromDatasets, supersetBoards, supersetClient, supersetConnector } from "../src/index";
 
 type Config = {
-  superset: { url: string; publicPort?: number; username: string; passwordEnv?: string; password?: string };
-  datasets: number[];
+  superset: {
+    /** Where this server reaches Superset's API (in compose: http://superset:8088). */
+    url: string;
+    /** Where browsers reach Superset, when that differs from url (behind an ingress: https://superset.example.org). */
+    publicUrl?: string;
+    /** Superset's port as browsers see it, when publicUrl is not set (same host, another port). */
+    publicPort?: number;
+    username: string;
+    passwordEnv?: string;
+    password?: string;
+  };
+  /** Superset datasets by id, or by table name (schema.table or table). */
+  datasets: (number | string)[];
   dashboards?: number[];
   overlay?: Overlay;
   host?: string;
   port?: number;
+  /** The path browsers reach this server under, when a proxy mounts it below Superset's own host (/lenspack). */
+  publicPath?: string;
   state?: string;
   budget?: { usdPerDay?: number; usdPerUserPerDay?: number };
 };
 
 const file = resolve(process.argv[2] ?? "superset.yaml");
 const dir = dirname(file);
-const config = YAML.parse(readFileSync(file, "utf8")) as Config;
+// Any string "env:NAME" in the config reads the environment variable NAME, so secrets and
+// per-deployment URLs stay out of the file.
+const fromEnv = (v: unknown): unknown => {
+  if (typeof v === "string" && v.startsWith("env:")) {
+    const value = process.env[v.slice(4)];
+    if (value === undefined) throw new Error(`${file}: environment variable ${v.slice(4)} is not set`);
+    return value;
+  }
+  if (Array.isArray(v)) return v.map(fromEnv);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fromEnv(x)]));
+  return v;
+};
+const config = fromEnv(YAML.parse(readFileSync(file, "utf8"))) as Config;
 const here = dirname(fileURLToPath(import.meta.url));
 const web = join(here, "..", "web");
 const log = (s: string) => console.error(`lenspack-superset: ${s}`);
@@ -75,18 +100,23 @@ const send = (res: ServerResponse, status: number, body: string, type = "applica
   res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
   res.end(body);
 };
+const base = (config.publicPath ?? "").replace(/\/+$/, "");
 const page = (name: string, vars: Record<string, unknown>) =>
-  readFileSync(join(web, name), "utf8").replace("/*__VARS__*/", `window.__lp=${JSON.stringify(vars).replace(/</g, "\\u003c")};`);
+  readFileSync(join(web, name), "utf8")
+    .replaceAll("__BASE__", base)
+    .replace("/*__VARS__*/", `window.__lp=${JSON.stringify(vars).replace(/</g, "\\u003c")};`);
 
 // The overlay runs on Superset's origin and calls this server: allow exactly
-// that origin (same host, Superset's port).
+// that origin (publicUrl's, else the same host on Superset's port). Mounted
+// under Superset's own host (publicPath), the calls are same-origin and need none of this.
 function cors(req: IncomingMessage, res: ServerResponse) {
   const origin = req.headers.origin;
   if (!origin) return;
   try {
     const o = new URL(origin);
     const supersetPort = String(config.superset.publicPort ?? new URL(config.superset.url).port);
-    if (o.port === supersetPort) {
+    const allowed = config.superset.publicUrl ? o.origin === new URL(config.superset.publicUrl).origin : o.port === supersetPort;
+    if (allowed) {
       res.setHeader("access-control-allow-origin", origin);
       res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
       res.setHeader("access-control-allow-headers", "content-type");
@@ -97,7 +127,7 @@ function cors(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-const port = config.port ?? 8795;
+const port = Number(config.port ?? 8795);
 const host = config.host ?? "127.0.0.1";
 createServer(async (req, res) => {
   cors(req, res);
@@ -106,7 +136,7 @@ createServer(async (req, res) => {
   try {
     if (url.pathname.startsWith("/api/")) return await api(req, res);
     const supersetPort = config.superset.publicPort ?? Number(new URL(config.superset.url).port);
-    const vars = { pack: pack.pack, supersetPort, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
+    const vars = { pack: pack.pack, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? null, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
     if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples }));
     if (url.pathname === "/_superset/bind") return send(res, 200, JSON.stringify(await bind(url.searchParams.get("dashboard") ?? "")));
     if (url.pathname === "/_superset/dashboards") {

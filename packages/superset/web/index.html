@@ -38,8 +38,8 @@
 </div>
 <script>
   const v = window.__lp;
-  const superset = `${location.protocol}//${location.hostname}:${v.supersetPort}`;
-  fetch("/_superset/dashboards").then((r) => r.json()).then((list) => {
+  const superset = v.supersetUrl || `${location.protocol}//${location.hostname}:${v.supersetPort}`;
+  fetch(`${v.base}/_superset/dashboards`).then((r) => r.json()).then((list) => {
     const rows = document.getElementById("rows");
     rows.innerHTML = "";
     for (const d of list) {
@@ -47,7 +47,7 @@
       const td = (child) => { const c = document.createElement("td"); if (typeof child === "string") { c.textContent = child; c.className = "when"; } else c.append(child); return c; };
       const a = (href, text) => { const x = document.createElement("a"); x.href = href; x.textContent = text; return x; };
       const name = document.createElement("span"); name.textContent = d.title;
-      tr.append(td(name), td(d.changed || ""), td(a(`/superset/${d.id}`, "Open beside →")), td(a(`${superset}/superset/dashboard/${d.id}/`, "Open in Superset →")));
+      tr.append(td(name), td(d.changed || ""), td(a(`${v.base}/superset/${d.id}`, "Open beside →")), td(a(`${superset}/superset/dashboard/${d.id}/`, "Open in Superset →")));
       rows.append(tr);
     }
     if (!list.length) rows.innerHTML = '<tr><td colspan="4" class="when">No dashboards yet.</td></tr>';

@@ -28,6 +28,14 @@ describe("superset catalogue", () => {
     expect(aggOf("SUM(x)")).toBe("sum");
     expect(aggOf("COUNT(*) FILTER (WHERE y)")).toBe("sum");
     expect(aggOf("COUNT(DISTINCT u)")).toBe("count_distinct");
+    // ClickHouse spellings.
+    expect(aggOf("count()")).toBe("count");
+    expect(aggOf("countIf(is_delivered)")).toBe("sum");
+    expect(aggOf("sumIf(quantity, is_delivered = 1)")).toBe("sum");
+    expect(aggOf("uniqExact(field_worker)")).toBe("count_distinct");
+    expect(aggOf("uniq(field_worker)")).toBe("count_distinct");
+    expect(aggOf("maxIf(x, y)")).toBe("max");
+    expect(aggOf("countIf(is_delivered) / nullIf(count(), 0)")).toBe("avg");
     expect(aggOf("SUM(a) / SUM(b)")).toBe("avg");
     expect(aggOf("COUNT(*) FILTER (WHERE d)::float / NULLIF(COUNT(*), 0)")).toBe("avg");
   });

@@ -7,7 +7,8 @@
   window.__lenspackOverlay = true;
   var src = document.currentScript && document.currentScript.src;
   if (!src) return;
-  var origin = new URL(src).origin;
+  // Where this script came from, path included: Lenspack may sit under a path of Superset's own host (/lenspack).
+  var origin = src.replace(/\/overlay\.js(?:[?#].*)?$/, "");
   var OPEN = "lenspack-overlay-open";
   var WIDTH = 400;
 

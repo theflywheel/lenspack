@@ -1,7 +1,7 @@
 import { type Pack, parsePack } from "@lenspack/spec";
 import YAML from "yaml";
 
-import type { SupersetClient } from "./client";
+import { type SupersetClient, rison } from "./client";
 
 // Superset's datasets are the catalogue: a dataset is an entity, its saved
 // metrics are measures, its groupable columns are dimensions. The pack built
@@ -18,7 +18,7 @@ export type Overlay = {
   description?: string;
   instructions?: string;
   timeZone?: string;
-  /** Entity key per dataset id, instead of the slugged table name. */
+  /** Entity key per dataset id or table name, instead of the slugged table name. */
   entities?: Record<string, string>;
   /** Hints and labels by key, over Superset's descriptions and verbose names. */
   hints?: Record<string, string>;
@@ -53,7 +53,13 @@ export const slug = (s: string) =>
     .replace(/^_/, "k") || "k";
 
 const COLUMN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const COUNT_STAR = /^\s*count\s*\(\s*\*\s*\)\s*$/i;
+// COUNT(*), or ClickHouse's count().
+const COUNT_STAR = /^\s*count\s*\(\s*\*?\s*\)\s*$/i;
+
+// ClickHouse spells some aggregates as functions: the -If combinator (countIf(cond), sumIf(x, cond))
+// and the uniq family for distinct counts.
+const CH_SUM = new Set(["countif", "sumif"]);
+const CH_DISTINCT = new Set(["uniq", "uniqexact", "uniqcombined", "uniqcombined64", "uniqhll12", "uniqtheta", "countdistinct"]);
 
 /** The aggregate a metric's expression behaves like, for what lenspack lets you do with it (share, Other, totals). */
 export function aggOf(expression: string): "count" | "sum" | "avg" | "min" | "max" | "count_distinct" {
@@ -64,9 +70,10 @@ export function aggOf(expression: string): "count" | "sum" | "avg" | "min" | "ma
   const balanced = outer ? closesAtEnd(e) : false;
   if (!balanced) return "avg";
   if (outer === "count") return /^count\s*\(\s*distinct\b/i.test(e) ? "count_distinct" : "sum";
-  if (outer === "sum") return "sum";
-  if (outer === "min") return "min";
-  if (outer === "max") return "max";
+  if (outer === "sum" || CH_SUM.has(outer!)) return "sum";
+  if (CH_DISTINCT.has(outer!)) return "count_distinct";
+  if (outer === "min" || outer === "minif") return "min";
+  if (outer === "max" || outer === "maxif") return "max";
   return "avg";
 }
 
@@ -101,8 +108,17 @@ const typeOf = (c: SupersetColumn) => {
 };
 const cut = (s: string | null | undefined, n: number) => (s ? (s.length > n ? `${s.slice(0, n - 1)}…` : s) : undefined);
 
-export async function fetchDatasets(client: SupersetClient, ids: number[]): Promise<SupersetDataset[]> {
-  return Promise.all(ids.map(async (id) => (await client.get<{ result: SupersetDataset }>(`/api/v1/dataset/${id}`)).result));
+/** Datasets by id, or by table name ("schema.table" or "table"), which stays the same when Superset is set up again. */
+export async function fetchDatasets(client: SupersetClient, refs: (number | string)[]): Promise<SupersetDataset[]> {
+  const idOf = async (ref: number | string): Promise<number> => {
+    if (typeof ref === "number" || /^\d+$/.test(ref)) return Number(ref);
+    const [schema, table] = ref.includes(".") ? ref.split(".", 2) : [null, ref];
+    const filters = [{ col: "table_name", opr: "eq", value: table }, ...(schema ? [{ col: "schema", opr: "eq", value: schema }] : [])];
+    const found = await client.get<{ result: { id: number }[] }>(`/api/v1/dataset/?q=${encodeURIComponent(rison({ filters, columns: ["id"] }))}`);
+    if (found.result.length !== 1) throw new Error(`Superset dataset "${ref}": ${found.result.length ? "more than one matches; name the schema" : "not found"}`);
+    return found.result[0]!.id;
+  };
+  return Promise.all(refs.map(async (ref) => (await client.get<{ result: SupersetDataset }>(`/api/v1/dataset/${await idOf(ref)}`)).result));
 }
 
 /** Datasets → a pack and the binding back to Superset names. */
@@ -114,7 +130,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
   const usedMeasureKeys = new Set<string>();
 
   for (const ds of datasets) {
-    const entity = overlay.entities?.[String(ds.id)] ?? slug(ds.table_name);
+    const entity = overlay.entities?.[String(ds.id)] ?? overlay.entities?.[ds.table_name] ?? slug(ds.table_name);
     const time = ds.main_dttm_col && COLUMN.test(ds.main_dttm_col) ? ds.main_dttm_col : null;
     const countMetric = ds.metrics.find((m) => COUNT_STAR.test(m.expression))?.metric_name ?? null;
     entities[entity] = { source: `ds_${ds.id}`, grain: cut(ds.description ?? `one row of ${ds.table_name}`, 200), ...(time ? { time } : {}) };

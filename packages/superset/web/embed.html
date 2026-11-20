@@ -26,20 +26,20 @@
 <div class="app">
   <aside class="side" id="chat"></aside>
   <main class="main">
-    <div class="bar"><h1 id="title">Superset dashboard</h1><span class="tag">Superset, in an iframe</span><a id="all" href="/">All dashboards</a><a id="open" target="_blank" rel="noopener">Open in Superset ↗</a></div>
+    <div class="bar"><h1 id="title">Superset dashboard</h1><span class="tag">Superset, in an iframe</span><a id="all" href="__BASE__/">All dashboards</a><a id="open" target="_blank" rel="noopener">Open in Superset ↗</a></div>
     <div class="kept" id="kept"></div>
     <iframe id="frame" title="Superset dashboard"></iframe>
   </main>
 </div>
-<script src="/chat.js"></script>
+<script src="__BASE__/chat.js"></script>
 <script>
   const v = window.__lp;
-  const superset = `${location.protocol}//${location.hostname}:${v.supersetPort}`;
+  const superset = v.supersetUrl || `${location.protocol}//${location.hostname}:${v.supersetPort}`;
   const frame = document.getElementById("frame");
   const url = `${superset}/superset/dashboard/${v.dashboard}/`;
   document.getElementById("open").href = url;
   frame.src = `${url}?standalone=1`;
-  fetch(`/_superset/bind?dashboard=${v.dashboard}`).then((r) => r.json()).then((b) => {
+  fetch(`${v.base}/_superset/bind?dashboard=${v.dashboard}`).then((r) => r.json()).then((b) => {
     if (b.error) throw new Error(b.error);
     document.getElementById("title").textContent = b.title;
     document.title = `${b.title} · Lenspack`;
@@ -48,7 +48,7 @@
       k.textContent = `Kept as Superset has them (Lenspack can move or remove these, not edit them): ${b.notes.join("; ")}`;
       k.style.display = "block";
     }
-    LenspackChat.mount(document.getElementById("chat"), { pack: v.pack, board: b.board, title: b.title, examples: v.examples, onChanged: () => { frame.src = `${url}?standalone=1&t=${Date.now()}`; } });
+    LenspackChat.mount(document.getElementById("chat"), { api: v.base, pack: v.pack, board: b.board, title: b.title, examples: v.examples, onChanged: () => { frame.src = `${url}?standalone=1&t=${Date.now()}`; } });
   }).catch((e) => { document.getElementById("chat").textContent = `Could not open this dashboard: ${e.message}`; });
 </script>
 </body>
