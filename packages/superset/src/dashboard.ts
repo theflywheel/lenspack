@@ -175,6 +175,13 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
       continue;
     }
     if (was && same(was, now) && chartId) continue;
+    // A rename only renames: rewriting the chart would replace the formats and options
+    // Superset's author chose with the ones Lenspack would pick.
+    if (was && chartId && was.title !== now.title && same({ ...was, title: now.title }, now)) {
+      await client.put(`/api/v1/chart/${chartId}`, { slice_name: now.title });
+      log(`chart ${chartId} renamed`);
+      continue;
+    }
     const spec = widgetToChart(now, pack, binding);
     if (!spec) continue;
     const body = { slice_name: now.title, viz_type: spec.viz_type, params: JSON.stringify(spec.params), query_context: JSON.stringify(queryContextOf(spec)), datasource_id: spec.datasetId, datasource_type: "table" };
