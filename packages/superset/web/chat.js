@@ -167,6 +167,26 @@
       const calls = {};
       let bot = null;
       let answer = "";
+      // The store writes to Superset inside the edit tool, so by the time a tool's output
+      // arrives the board version has moved: say "saved" then, not after the reviewer.
+      let savedAt = null;
+      let saving = null;
+      const checkSaved = async () => {
+        if (savedAt !== null || before === null) return;
+        let v = null;
+        try {
+          v = await version();
+        } catch (e) {}
+        if (v === null || v <= before || savedAt !== null) return;
+        savedAt = v;
+        since = v;
+        persist();
+        if (opts.reloadsPage) note("Saved to Superset. The dashboard refreshes when the reviewer finishes.", "sync");
+        else {
+          note("Saved to Superset. Refreshing the dashboard…", "sync");
+          if (opts.onChanged) opts.onChanged();
+        }
+      };
       try {
         const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, ...(typeof since === "number" ? { since } : {}) }) });
         if (!res.ok || !res.body) {
@@ -225,6 +245,7 @@
                   const bad = o.applied === false || o.ok === false || o.error;
                   s.className = `lpc-step ${bad ? "bad" : "ok"}`;
                   if (bad && o.error) s.textContent += ` (${String(o.error).slice(0, 140)})`;
+                  if (!bad) saving = checkSaved();
                   break;
                 }
                 case "tool-output-error": {
@@ -255,13 +276,23 @@
         const text = [...full].slice(-3).map((b) => b.textContent).join("\n\n") || answer;
         history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: answer || text || "(no answer)" }] });
         status.textContent = "";
+        if (saving) await saving;
         let after = null;
         try {
           after = await version();
         } catch (e) {}
         since = after ?? since;
         persist();
-        if (before !== null && after !== null && after > before) {
+        if (savedAt !== null) {
+          // Already said "saved" mid-turn. Beside refreshed then; refresh again only if a later
+          // edit in this turn moved the version further. Inside reloads now the reviewer is done.
+          if (opts.reloadsPage) {
+            try {
+              sessionStorage.setItem(key, JSON.stringify({ messages: history.slice(-30), since, notice: "Saved to Superset." }));
+            } catch (e) {}
+            if (opts.onChanged) opts.onChanged();
+          } else if (after !== null && after > savedAt && opts.onChanged) opts.onChanged();
+        } else if (before !== null && after !== null && after > before) {
           const msg = "Saved to Superset. Refreshing the dashboard…";
           // The page is about to reload: say so again once it is back.
           if (opts.reloadsPage)
