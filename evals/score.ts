@@ -8,7 +8,9 @@ import type { Question, QueryExpect, Truth, TruthValue, Unit, WidgetExpect } fro
 
 // ── numbers in text ──────────────────────────────────────────────────────
 
-export type Num = { value: number; pct: boolean; raw: string; index: number; sig: number; decimals: number };
+export type Num = { value: number; pct: boolean; raw: string; index: number; sig: number; decimals: number; word?: boolean };
+
+const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
 
 const MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december";
 // Dates and times say when, not how much: blank them out before reading numbers.
@@ -40,7 +42,11 @@ export function numbersIn(text: string): Num[] {
     else sig = Math.max(sig, decimals > 0 ? sig : 0);
     out.push({ value, pct: suffix === "%" || suffix === "percent" || suffix === "pp", raw: m[0].trim(), index: m.index ?? 0, sig, decimals });
   }
-  return out;
+  // Counts written as words ("Eight wards are above 95%"); "one" is too common to mean a count.
+  for (const m of t.matchAll(new RegExp(`\\b(${WORDS.slice(2).join("|")})\\b`, "gi"))) {
+    out.push({ value: WORDS.indexOf(m[1]!.toLowerCase()), pct: false, raw: m[0], index: m.index ?? 0, sig: 2, decimals: 0, word: true });
+  }
+  return out.sort((a, b) => a.index - b.index);
 }
 
 /** Does a number written in a reply state this true value? */
@@ -159,15 +165,16 @@ function scoreValue(value: TruthValue, truth: Truth, text: string): AnswerScore 
     }
     case "list": {
       const rows = (value as [string, number | null][]).slice(0, truth.k ?? undefined);
+      const dayOf = (k: string) => (truth.dayOne && /^\d{4}-\d{2}-\d{2}/.test(k) ? Math.round((Date.parse(k.slice(0, 10)) - Date.parse(truth.dayOne)) / 86_400_000) + 1 : undefined);
       let found = 0;
       let last = -1;
       let ordered = true;
       const flat = loose(text);
       for (const [k, v] of rows) {
-        const r = inSegs(k, v);
+        const r = inSegs(k, v, dayOf(k));
         if (r.key && (r.value || v === null || rows.length > 1)) found++;
         else missing.push(`${k}=${v}`);
-        const at = Math.min(...spellings(k).map((f) => flat.indexOf(f)).filter((i) => i >= 0), Infinity);
+        const at = Math.min(...spellings(k, dayOf(k)).map((f) => flat.indexOf(f)).filter((i) => i >= 0), Infinity);
         if (at !== Infinity) {
           if (at < last) ordered = false;
           last = at;
@@ -232,7 +239,7 @@ export function toolNumbers(outputs: unknown[]): number[] {
 /** Which numbers in the reply appear in no tool result (allowing rounding, percent form, sums of two). */
 export function grounding(reply: string, outputs: unknown[]): { total: number; grounded: number; ungrounded: string[] } {
   const pool = toolNumbers(outputs);
-  const nums = numbersIn(reply).filter((n) => !(Number.isInteger(n.value) && Math.abs(n.value) <= 12 && !n.pct));
+  const nums = numbersIn(reply).filter((n) => !n.word && !(Number.isInteger(n.value) && Math.abs(n.value) <= 12 && !n.pct));
   const near = (a: number, b: number, n: Num) => Math.abs(a - b) <= Math.max(Math.abs(b) * 0.005, 0.5 * 10 ** -n.decimals * (n.pct ? 0.01 : 1));
   const ungrounded: string[] = [];
   for (const n of nums) {

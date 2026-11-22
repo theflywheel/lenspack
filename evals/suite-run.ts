@@ -332,7 +332,7 @@ export function report(meta: Record<string, unknown>, rs: Result[]): string {
     ``,
     `pack ${meta.pack} · truth ${meta.truthComputed} · clock ${meta.now ?? "real"} · effort ${meta.effort ?? "default"} · decline labels ${meta.judge ? `judge ${meta.judge}` : "heuristic"} · repeats ${meta.repeats}${meta.stopped ? ` · **${meta.stopped}**` : ""}`,
     ``,
-    `| model | n | right | partial | declined ok | confidently wrong | wrong | error | pass | turn cost | total | per right | latency p50 / p95 | steps | tool errors |`,
+    `| model | n | right | partial (def. unsaid) | declined ok | confidently wrong | wrong | error | pass | turn cost | total | per right | latency p50 / p95 | steps | tool errors |`,
     `|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|`,
   ];
   for (const m of models) {
@@ -342,7 +342,7 @@ export function report(meta: Record<string, unknown>, rs: Result[]): string {
     const turns = x.reduce((s, r) => s + r.usd, 0);
     const right = c("correct") + c("declined_ok");
     lines.push(
-      `| ${m} | ${x.length} | ${c("correct")} | ${c("partial")} | ${c("declined_ok")} | ${c("confidently_wrong")} | ${c("wrong")} | ${c("error")} | ${pct(right, x.length)} | ${usd(turns / Math.max(1, x.length))} | ${usd(total)} | ${right ? usd(total / right) : "—"} | ${q(x.map((r) => r.latencyMs), 0.5)} / ${q(x.map((r) => r.latencyMs), 0.95)} ms | ${(x.reduce((s, r) => s + r.steps, 0) / Math.max(1, x.length)).toFixed(1)} | ${x.reduce((s, r) => s + r.toolErrors, 0)} |`,
+      `| ${m} | ${x.length} | ${c("correct")} | ${c("partial")} (${x.filter((r) => r.detail.startsWith("right number, definition not said")).length}) | ${c("declined_ok")} | ${c("confidently_wrong")} | ${c("wrong")} | ${c("error")} | ${pct(right, x.length)} | ${usd(turns / Math.max(1, x.length))} | ${usd(total)} | ${right ? usd(total / right) : "—"} | ${q(x.map((r) => r.latencyMs), 0.5)} / ${q(x.map((r) => r.latencyMs), 0.95)} ms | ${(x.reduce((s, r) => s + r.steps, 0) / Math.max(1, x.length)).toFixed(1)} | ${x.reduce((s, r) => s + r.toolErrors, 0)} |`,
     );
   }
   lines.push(``, `Pass = right + declined ok. Turn cost excludes the judge. Unpriced calls: ${rs.reduce((s, r) => s + r.unpriced, 0)}.`, ``);

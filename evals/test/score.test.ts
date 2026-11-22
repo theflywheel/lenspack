@@ -13,6 +13,8 @@ describe("numbers in a reply", () => {
     ]);
     expect(n("about 31.6k").value).toBe(31600);
     expect(numbersIn("Day 3 had the most")).toEqual([]);
+    expect(numbersIn("Eight branches are above target").map((x) => [x.value, x.word])).toEqual([[8, true]]);
+    expect(numbersIn("the only one")).toEqual([]);
   });
 
   it("holds ratios to ±0.1 pp, or half the precision shown, never looser than ±0.5 pp", () => {
@@ -64,6 +66,12 @@ describe("answers against truth", () => {
     const t: Truth = { shape: "series", unit: "count", value: { "2026-10-12": 5120, "2026-10-13": 5988 } };
     expect(scoreAnswer(t, "- 12 Oct: 5,120\n- 13 Oct: 5,988").correct).toBe(true);
     expect(scoreAnswer(t, "Day 1: 5,120\nDay 2: 5,988").correct).toBe(true);
+  });
+
+  it("reads a top day written as Day N when the suite names day one", () => {
+    const t: Truth = { shape: "list", unit: "count", k: 1, value: [["2026-03-04", 5120]], dayOne: "2026-03-02" };
+    expect(scoreAnswer(t, "Day 3 had the most orders, 5,120.").correct).toBe(true);
+    expect(scoreAnswer(t, "Day 2 had the most orders, 5,120.").correct).toBe(false);
   });
 
   it("wants a list's keys in order", () => {

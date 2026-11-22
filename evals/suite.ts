@@ -85,12 +85,14 @@ export const suiteSchema = z.object({
   example: z.string().optional(),
   board: z.object({ dashboard: z.number().int().optional(), example_board: z.string().optional() }).default({}),
   now: z.string().optional(),
+  /** ISO date of campaign day 1, for date keys written "Day N". */
+  day_one: z.string().optional(),
   questions: z.array(questionSchema),
 });
 export type Suite = z.infer<typeof suiteSchema>;
 
 export type TruthValue = number | string | null | string[] | [string, number | null][] | Record<string, number | null> | Record<string, Record<string, number | null>>;
-export type Truth = { shape: Shape; unit: Unit; value: TruthValue; k?: number; universe?: string[]; alternatives?: { label: string; value: TruthValue }[] };
+export type Truth = { shape: Shape; unit: Unit; value: TruthValue; k?: number; universe?: string[]; alternatives?: { label: string; value: TruthValue }[]; /** ISO date of day 1, so a date key may be written "Day N". */ dayOne?: string };
 export type TruthFile = { suite: string; computed: string; fingerprint?: Record<string, unknown>; questions: Record<string, Truth> };
 
 export const turnsOf = (q: Question) => q.turns ?? [q.prompt!];
