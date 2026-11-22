@@ -40,7 +40,7 @@ export type Usage = Tokens & {
   unpriced: number;
 };
 
-export type Role = "build" | "escalate" | "review" | "probe" | "eval" | "judge" | "other";
+export type Role = "build" | "escalate" | "review" | "probe" | "eval" | "judge" | "speech" | "other";
 
 /** Who and what a call is for. */
 export type Attribution = {
@@ -177,6 +177,11 @@ function emit(frame: Frame | undefined, r: CallRecord) {
       // A full disk or a broken sink must not fail the call it describes.
     }
   }
+}
+
+/** Records a call made outside a metered model (a transcription): to the process-wide sinks and these, each once. */
+export function recordCall(r: CallRecord, sinks: UsageSink[] = []) {
+  emit({ attribution: {}, sinks, collectors: [] }, r);
 }
 
 /** Starts timing a call in the current scope; end() records it once, however the call ends. */
