@@ -55,7 +55,9 @@ describe("answers against truth", () => {
     expect(scoreAnswer(t, "Below 90%: Old Market, Lakeview and Westfield.").correct).toBe(true);
     const dropped = scoreAnswer(t, "Below 90%: Old Market and Lakeview.");
     expect([dropped.correct, dropped.recall.toFixed(2)]).toEqual([false, "0.67"]);
-    expect(scoreAnswer(t, "Old Market, Lakeview, Westfield and Southbank").precision).toBe(0.75);
+        expect(scoreAnswer(t, "Old Market, Lakeview, Westfield and Southbank").precision).toBe(0.75);
+    // Named as context, not as part of the answer.
+    expect(scoreAnswer(t, "Three wards are below 90%: Old Market, Lakeview and Westfield. The next lowest, Southbank, is at 91.4%.").correct).toBe(true);
   });
 
   it("reads series dates written as days of the month", () => {

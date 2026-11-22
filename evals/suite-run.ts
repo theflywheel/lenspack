@@ -31,6 +31,7 @@ import {
   numbersIn,
   parseJudge,
   scoreAnswer,
+  soundsLikeDecline,
 } from "./score";
 import { stubProvider } from "./stub";
 import { type Question, type Truth, type TruthFile, loadSuite, shapeRows, turnsOf } from "./suite";
@@ -248,12 +249,8 @@ export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve
     }
     const query = bestQuery(queries, q.accept);
     if (em.misses.length === 0 && dataOk !== false) return { ...base, edit: { misses: [], dataOk }, query, outcome: "correct", detail: dataOk ? "board right; widget data matches truth" : "board right" };
-    if (!diff.any) {
-      // An edit Lenspack cannot make (a widget Superset keeps): saying so is right.
-      const d = await label();
-      if ((q.changed || q.removed) && d.label !== "answered") return { ...base, judgeUsd: d.usd, decline: { label: d.label, by: d.by }, edit: { misses: em.misses }, outcome: "declined_ok", detail: `no change; ${d.by}: ${d.label}` };
-      return { ...base, judgeUsd: d.usd, decline: { label: d.label, by: d.by }, edit: { misses: em.misses }, outcome: "wrong", detail: `board unchanged: ${em.misses.join("; ")}` };
-    }
+    // An edit Lenspack cannot make is a decline question in the suite, so an unchanged board here is a miss.
+    if (!diff.any) return { ...base, edit: { misses: em.misses }, outcome: "wrong", detail: `board unchanged${soundsLikeDecline(reply) ? " (declined)" : ""}: ${em.misses.join("; ")}` };
     const close = em.widgetIds.length > 0 && em.misses.length <= 1;
     return { ...base, edit: { misses: em.misses, dataOk }, query, outcome: close ? "partial" : "wrong", detail: [...em.misses, ...(dataOk === false ? ["widget data does not match truth"] : [])].join("; ") };
   }

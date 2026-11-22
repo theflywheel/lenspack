@@ -99,6 +99,8 @@ function findKey(segs: string[], key: string, ordinal?: number): string[] {
   });
 }
 
+const CONTRAST = /\b(next|just above|just below|closest|nearest|narrowly|except|excluding|other than|followed by|by contrast|not below|not above|misses|outside the)\b/i;
+
 // ── answers ──────────────────────────────────────────────────────────────
 
 export type AnswerScore = {
@@ -146,7 +148,10 @@ function scoreValue(value: TruthValue, truth: Truth, text: string): AnswerScore 
     }
     case "set": {
       const keys = value as string[];
-      const named = (truth.universe ?? keys).filter((k) => findKey(segs, k).length > 0);
+      // A key named only as context ("the next lowest, X, is at 91%") is not part of the answer.
+      const clauses = text.split(/(?<=[.;!?])\s+|\n+/).filter(Boolean);
+      const answerClauses = clauses.filter((c) => !CONTRAST.test(c));
+      const named = (truth.universe ?? keys).filter((k) => findKey(keys.includes(k) ? segs : answerClauses, k).length > 0);
       const right = keys.filter((k) => named.includes(k));
       keys.filter((k) => !named.includes(k)).forEach((k) => missing.push(k));
       const precision = named.length ? right.length / named.length : 0;
