@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { memoryStore } from "@lenspack/core";
-import { addUsageSink, buildProvider, createApp, effortFor, pickChatModel, probe, providersFromEnv, publicView, usageLedger } from "@lenspack/serve";
+import { DEFAULT_SPEECH_MODEL, addUsageSink, buildProvider, createApp, effortFor, pickChatModel, probe, providersFromEnv, publicView, speechKeyFromEnv, speechModelAllowed, speechModels, usageLedger } from "@lenspack/serve";
 import YAML from "yaml";
 
 import { type Overlay, fetchDatasets, packFromDatasets, supersetBoards, supersetClient, supersetConnector } from "../src/index";
@@ -40,6 +40,10 @@ type Config = {
   publicPath?: string;
   state?: string;
   budget?: { usdPerDay?: number; usdPerUserPerDay?: number };
+  /** Speech to text for the mic. The model here is the default; the settings page can change it (state/settings.json). */
+  speech?: { model?: string; baseUrl?: string; maxSeconds?: number };
+  /** Language defaults; the settings page can change them (state/settings.json). */
+  language?: { default?: string; titles?: "board" | "speaker"; board?: string };
 };
 
 const file = resolve(process.argv[2] ?? "superset.yaml");
@@ -76,16 +80,42 @@ const dashboards: Record<string, number> = Object.fromEntries((config.dashboards
 const store = supersetBoards({ inner: memoryStore(), client, pack, binding, dashboards, stateFile: statePath, log });
 await store.seed();
 
+// Settings an admin changes on a running server (Superset's AI assistant page), kept beside the board state.
+const settings = settingsStore(dirname(statePath));
+const token = settingsToken();
+
+type SpeechSettings = { model?: string };
+const defaultSpeechModel = config.speech?.model ?? DEFAULT_SPEECH_MODEL;
+const speechModel = () => settings.get<SpeechSettings>("speech")?.model ?? defaultSpeechModel;
+const speechKey = speechKeyFromEnv();
+const speech = { ...speechKey, baseUrl: config.speech?.baseUrl, maxSeconds: config.speech?.maxSeconds ?? 60, model: speechModel };
+const speechView = () => ({
+  enabled: !!speechKey.apiKey,
+  keyFrom: speechKey.keyFrom,
+  provider: "openrouter",
+  model: speechModel(),
+  defaultModel: defaultSpeechModel,
+  source: settings.get<SpeechSettings>("speech")?.model ? "settings" : "default",
+  writable: token.writable,
+});
+
+// Languages: the chat menu's choices and default (auto: no speech hint, reply in the language used),
+// and whether new titles follow the board's language or the speaker's.
+const LANGUAGES = ["auto", "en", "fr", "hi"] as const;
+type LanguageSettings = { default?: string; titles?: "board" | "speaker"; board?: string };
+const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
+const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...settings.get<LanguageSettings>("language") });
+const languageView = () => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: settings.get("language") ? "settings" : "default", writable: token.writable });
+
 const ledger = usageLedger();
 addUsageSink(ledger);
 const providers = providersFromEnv().map(buildProvider);
 void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
 const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
-// Settings an admin changes from Superset's AI assistant page, kept next to the board state.
-const settings = settingsStore(dirname(statePath));
-const settingsGuard = settingsToken();
+// One guard for every settings section (the store and token are made above, with speech and language).
+const settingsGuard = token;
 type ChatSetting = { model?: string; effort?: string };
-const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat") });
+const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat"), speech, language: () => ({ titles: language().titles, board: language().board }) });
 /** The chat section of the settings page: what runs when the client asks for no model. */
 function chatSettings() {
   const saved = settings.get<ChatSetting>("chat");
@@ -158,7 +188,39 @@ createServer(async (req, res) => {
     const supersetPort = config.superset.publicPort ?? Number(new URL(config.superset.url).port);
     const panel = config.overlay?.panel === "dock" ? "dock" : "float";
     const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? null, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
-    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples, panel }));
+    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples, panel, speech: speechKey.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds } : { enabled: false }, language: { default: language().default, options: LANGUAGES } }));
+    if (url.pathname === "/_superset/settings/speech/models") return send(res, 200, JSON.stringify((await speechModels({ baseUrl: speech.baseUrl })).models));
+    if (req.method === "PUT" && (url.pathname === "/_superset/settings/speech" || url.pathname === "/_superset/settings/language")) {
+      const denied = token.check(req);
+      if (denied) return send(res, 403, JSON.stringify({ error: denied }));
+      let body: Record<string, unknown>;
+      try {
+        body = await readJson(req);
+      } catch (e) {
+        return send(res, 400, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+      }
+      if (url.pathname.endsWith("/speech")) {
+        const model = body.model;
+        // null or "" goes back to the default.
+        if (model === null || model === "") settings.set("speech", undefined);
+        else if (typeof model !== "string" || !(await speechModelAllowed(model, { baseUrl: speech.baseUrl }))) return send(res, 400, JSON.stringify({ error: `not a transcription model: ${String(model)}` }));
+        else settings.set("speech", { model });
+        log(`speech model: ${speechModel()}`);
+        return send(res, 200, JSON.stringify(speechView()));
+      }
+      // Language: any of default, titles, board; null resets the field.
+      const next: LanguageSettings = { ...settings.get<LanguageSettings>("language") };
+      for (const [k, ok] of [["default", (v: unknown) => LANGUAGES.includes(v as never)], ["titles", (v: unknown) => v === "board" || v === "speaker"], ["board", (v: unknown) => LANGUAGES.includes(v as never) && v !== "auto"]] as const) {
+        if (!(k in body)) continue;
+        const v = body[k];
+        if (v === null) delete next[k];
+        else if (!ok(v)) return send(res, 400, JSON.stringify({ error: `bad ${k}: ${String(v)}` }));
+        else (next as Record<string, unknown>)[k] = v;
+      }
+      settings.set("language", Object.keys(next).length ? next : undefined);
+      log(`language: ${JSON.stringify(language())}`);
+      return send(res, 200, JSON.stringify(languageView()));
+    }
     // What a settings page (Superset's Settings → Manage → AI assistant) shows. No secrets: which
     // variable the LLM key came from, never the key.
     if (url.pathname === "/_superset/settings") {
@@ -176,6 +238,8 @@ createServer(async (req, res) => {
         publicPath: base,
         panel,
         chat: chatSettings(),
+        speech: speechView(),
+        language: languageView(),
       }));
     }
     if (url.pathname === "/_superset/settings/chat" && req.method === "PUT") {
