@@ -93,7 +93,8 @@ function spellings(key: string, ordinal?: number): string[] {
 /** Lines of a reply, with markdown table rows and list items kept whole. */
 const segmentsOf = (text: string) =>
   text
-    .split(/\n+|(?<=[.;!?])\s+(?=[A-Z*])/)
+    .split(/\n+/)
+    .flatMap((line) => (/^\s*(?:[-*•]|\d+[.)]|\|)\s/.test(line) ? [line] : line.split(/(?<=[.;!?])\s+(?=[A-Z*])/)))
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -102,9 +103,12 @@ function findKey(segs: string[], key: string, ordinal?: number): string[] {
   // A key with sentence punctuation inside it is split across two segments: look at joined pairs too.
   const breaks = (key.match(/[.;!?]\s/g) ?? []).length;
   if (breaks) segs = [...segs, ...segs.slice(breaks).map((_, i) => segs.slice(i, i + breaks + 1).join(" "))];
+  const words = key.includes("_") ? key.toLowerCase().split("_").filter((w) => w.length >= 3) : [];
   return segs.filter((s) => {
     const l = loose(s);
-    return forms.some((f) => l.includes(f));
+    if (forms.some((f) => l.includes(f))) return true;
+    const low = s.toLowerCase();
+    return words.length > 0 && words.every((w) => new RegExp(`\\b${w}`).test(low));
   });
 }
 

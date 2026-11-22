@@ -80,6 +80,14 @@ describe("answers against truth", () => {
     expect(scoreAnswer(t, "- **St. Ann. North Depot:** 39 parcels").correct).toBe(true);
   });
 
+  it("keeps a list item whole across its sentences, and reads code keys as words", () => {
+    const t: Truth = { shape: "table", unit: "ratio", value: { Northgate: { a: 0.912, b: 0.109 } } };
+    expect(scoreAnswer(t, "- **Northgate:** a was 91.2%. Its b was 10.9%.").correct).toBe(true);
+    const c: Truth = { shape: "map", unit: "count", value: { LATE_DELIVERY: 79, NO_STOCK: 12 } };
+    expect(scoreAnswer(c, "- Late or missed delivery: 79\n- Out of stock (no stock left): 12").recall).toBe(1);
+    expect(scoreAnswer(c, "- Late delivery: 79").recall).toBe(0.5);
+  });
+
   it("wants a list's keys in order", () => {
     const t: Truth = { shape: "list", unit: "count", k: 2, value: [["Elmwood", 2411], ["Brookside", 1987]] };
     expect(scoreAnswer(t, "1. Elmwood 2,411\n2. Brookside 1,987").correct).toBe(true);
