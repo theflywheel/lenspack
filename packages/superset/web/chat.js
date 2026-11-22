@@ -8,6 +8,7 @@
 .lpc{--lpc-fg:#1f2328;--lpc-mute:#667085;--lpc-line:#e4e7ec;--lpc-bg:#fff;--lpc-soft:#f5f7fa;--lpc-acc:#1a85a0;--lpc-acc-soft:#e6f4f7;--lpc-bad:#b42318;--lpc-ok:#067647;
   font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI","Noto Sans","Noto Sans Devanagari","Nirmala UI","Kohinoor Devanagari",sans-serif;color:var(--lpc-fg);background:var(--lpc-bg);display:flex;flex-direction:column;height:100%;min-height:0;box-sizing:border-box}
 .lpc *{box-sizing:border-box}
+.lpc [hidden]{display:none!important}
 .lpc-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--lpc-line)}
 .lpc-mark{width:26px;height:26px;border-radius:7px;background:var(--lpc-acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
 .lpc-ttl{flex:1;min-width:0}
