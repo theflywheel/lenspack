@@ -125,6 +125,12 @@ export const layoutItemSchema = z.object({
   w: z.number().int().min(1),
   h: z.number().int().min(1),
   static: z.boolean().optional(),
+  /**
+   * The width the widget had before a packed board (grid.fill) widened it to the row's
+   * edge. Placement treats the extra as free, so the next widget asked for that row can
+   * still sit beside it; the widget gives the room back and the new last one is widened.
+   */
+  fw: z.number().int().min(1).optional(),
 });
 export type LayoutItem = z.infer<typeof layoutItemSchema>;
 
