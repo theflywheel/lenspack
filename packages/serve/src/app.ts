@@ -67,6 +67,12 @@ export type AppOptions = {
   usageSinks?: UsageSink[];
   /** Daily caps on priced chat spend; over one, chat answers 429 before any model call. */
   budget?: Budget;
+  /**
+   * The chat model (a provider name) and effort to use when the client asks for none, read on
+   * every turn so a settings page can change them on a running server. Unset, unknown or
+   * unavailable: the first available provider and its default effort, as before.
+   */
+  chatDefault?: () => { model?: string; effort?: string } | undefined;
 };
 
 const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
@@ -160,13 +166,32 @@ function serveStatic(root: string, pathname: string, res: ServerResponse, page?:
   res.end(html);
 }
 
+type ChatDefault = { model?: string; effort?: string } | undefined;
+type Pickable = Pick<Provider, "name" | "available" | "efforts">;
+
+/**
+ * The model a chat turn runs on: the one the client asked for, else the configured default
+ * (a settings page), else the first available provider, else the first not yet probed. Asked-for
+ * and default models count only when they exist and are not known to be down.
+ */
+export function pickChatModel<P extends Pickable>(providers: P[], asked: string | null | undefined, fallback?: ChatDefault): P | null {
+  const byName = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
+  return byName(asked) ?? byName(fallback?.model) ?? providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
+}
+
+/** The effort to ask for: the client's, else the configured default when it is for this model and one it takes. */
+export function pickEffort(p: Pickable, asked: string | null | undefined, fallback?: ChatDefault): string | null {
+  if (asked) return asked;
+  return fallback?.model === p.name && fallback.effort && p.efforts?.levels.includes(fallback.effort) ? fallback.effort : null;
+}
+
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const ledger = opts.ledger ?? usageLedger();
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
   const providers = opts.providers ?? [];
-  const defaultProvider = () => providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
   const provider = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
+
 
   const audit = (e: Omit<Parameters<Audit>[0], "at">) => {
     try {
@@ -345,13 +370,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   };
 
   async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string) {
-    const builderModel = provider(url.searchParams.get("model")) ?? defaultProvider();
+    const fallback = opts.chatDefault?.();
+    const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
     if (!builderModel) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
     if (builderModel.available === false) return json(res, 503, { error: `${builderModel.name} is unavailable: ${builderModel.error}` });
     // ?effort= is for the chosen model; one without an effort setting ignores it.
     let effort: string | undefined;
     try {
-      effort = effortFor(builderModel, url.searchParams.get("effort"));
+      effort = effortFor(builderModel, pickEffort(builderModel, url.searchParams.get("effort"), fallback));
     } catch (e) {
       return json(res, 400, { error: (e as Error).message });
     }
