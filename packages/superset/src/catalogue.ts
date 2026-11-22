@@ -165,11 +165,16 @@ export async function fetchDatasets(client: SupersetClient, refs: (number | stri
     if (typeof ref === "number" || /^\d+$/.test(ref)) return Promise.resolve(Number(ref));
     const [schema, table] = ref.includes(".") ? ref.split(".", 2) : [null, ref];
     const filters = [{ col: "table_name", opr: "eq", value: table }, ...(schema ? [{ col: "schema", opr: "eq", value: schema }] : [])];
+    // Superset 5's list endpoint (Flask-AppBuilder 4) shares one filter object between the threads of a worker,
+    // so under concurrent list requests it can apply another request's filter and answer with a different
+    // dataset. Ask for the name back and keep only exact matches: a swapped answer is retried, never trusted.
     return retry(`Superset dataset "${ref}"`, async () => {
-      const found = await client.get<{ result: { id: number }[] }>(`/api/v1/dataset/?q=${encodeURIComponent(rison({ filters, columns: ["id"] }))}`);
-      const n = found?.result?.length ?? 0;
-      if (n !== 1) throw new Error(`Superset dataset "${ref}": ${n ? "more than one matches; name the schema" : "not found"}`);
-      return found.result[0]!.id;
+      const found = await client.get<{ result: { id: number; table_name?: string; schema?: string | null }[] }>(`/api/v1/dataset/?q=${encodeURIComponent(rison({ filters, columns: ["id", "table_name", "schema"] }))}`);
+      const rows = found?.result ?? [];
+      const exact = rows.filter((r) => r.table_name === table && (!schema || r.schema === schema));
+      if (exact.length === 1) return exact[0]!.id;
+      if (exact.length > 1) throw new Error(`Superset dataset "${ref}": more than one matches; name the schema`);
+      throw new Error(`Superset dataset "${ref}": ${rows.length ? `the lookup answered with ${rows.map((r) => `"${r.schema ? `${r.schema}.` : ""}${r.table_name}"`).join(", ")}` : "not found"}`);
     });
   };
   const out: SupersetDataset[] = [];

@@ -45,7 +45,8 @@ function flaky(bad: Record<string, (path: string) => unknown> = {}, times = 1): 
       if (n <= times && bad[key]) return bad[key]!(path) as any;
       if (list) {
         const name = /value:([A-Za-z_]+)\)/.exec(decodeURIComponent(path))?.[1] ?? "";
-        return { result: idByName[name] ? [{ id: idByName[name] }] : [] } as any;
+        const d = byId[idByName[name]!];
+        return { result: d ? [{ id: d.id, table_name: d.table_name, schema: d.schema }] : [] } as any;
       }
       const id = Number(/\/api\/v1\/dataset\/(\d+)/.exec(path)?.[1]);
       return { result: structuredClone(byId[id]) } as any;
@@ -69,6 +70,18 @@ describe("fetching datasets from a busy Superset", () => {
     expect((await fetchDatasets(noColumns, [12], fast))[0]!.columns).toHaveLength(4);
     const doubled = flaky({ detail: (p) => { const d = byId[Number(/(\d+)$/.exec(p)![1])]!; return { result: { ...d, columns: [...d.columns, d.columns[1]!] } }; } });
     expect((await fetchDatasets(doubled, [12], fast))[0]!.columns).toHaveLength(4);
+  });
+
+  it("retries a name lookup answered with another dataset (Superset 5 list filters race between threads)", async () => {
+    const swapped = flaky({ list: () => ({ result: [{ id: 13, table_name: "team_stock", schema: "analytics" }] }) }, 2);
+    const got = await fetchDatasets(swapped, ["analytics.child_visits", "analytics.team_stock"], fast);
+    expect(got.map((d) => d.table_name)).toEqual(["child_visits", "team_stock"]);
+  });
+
+  it("never builds from a swapped lookup, even when every answer is swapped", async () => {
+    const always = flaky({ list: () => ({ result: [{ id: 13, table_name: "team_stock", schema: "analytics" }] }) }, 99);
+    await expect(fetchDatasets(always, ["analytics.child_visits"], { ...fast, attempts: 3 })).rejects.toThrow(/"analytics.child_visits": the lookup answered with "analytics.team_stock"/);
+    expect(always.calls.some((c) => c === "/api/v1/dataset/13")).toBe(false);
   });
 
   it("gives up with a clear error naming the dataset", async () => {
