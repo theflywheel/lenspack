@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { grounding, heuristicDecline, numberMatches, numbersIn, parseJudge, queryMisses, scoreAnswer } from "../score";
+import { SAYS_CANT, grounding, heuristicDecline, numberMatches, numbersIn, parseJudge, queryMisses, scoreAnswer } from "../score";
 import type { Truth } from "../suite";
 
 const n = (s: string) => numbersIn(s)[0]!;
@@ -60,6 +60,7 @@ describe("answers against truth", () => {
         expect(scoreAnswer(t, "Old Market, Lakeview, Westfield and Southbank").precision).toBe(0.75);
     // Named as context, not as part of the answer.
     expect(scoreAnswer(t, "Three wards are below 90%: Old Market, Lakeview and Westfield. The next lowest, Southbank, is at 91.4%.").correct).toBe(true);
+    expect(scoreAnswer(t, "Old Market, Lakeview and Westfield are below 90%. The other two range from Southbank at 92.2% up to Elmwood at 95.4%.").correct).toBe(true);
   });
 
   it("reads series dates written as days of the month", () => {
@@ -72,6 +73,11 @@ describe("answers against truth", () => {
     const t: Truth = { shape: "list", unit: "count", k: 1, value: [["2026-03-04", 5120]], dayOne: "2026-03-02" };
     expect(scoreAnswer(t, "Day 3 had the most orders, 5,120.").correct).toBe(true);
     expect(scoreAnswer(t, "Day 2 had the most orders, 5,120.").correct).toBe(false);
+  });
+
+  it("finds a key with a full stop inside it", () => {
+    const t: Truth = { shape: "map", unit: "count", value: { "St. Ann. North Depot": 39 } };
+    expect(scoreAnswer(t, "- **St. Ann. North Depot:** 39 parcels").correct).toBe(true);
   });
 
   it("wants a list's keys in order", () => {
@@ -97,5 +103,7 @@ describe("grounding, queries, declines", () => {
     expect(heuristicDecline("There is no age split in the targets; here are vaccinations by age band: 0-11 months 8,240.", false)).toBe("degraded");
     expect(heuristicDecline("Revenue next quarter will be $1,234,567.", false)).toBe("answered");
     expect(parseJudge("Degraded.")).toBe("degraded");
+    expect(SAYS_CANT.test("No orders were placed in the last 30 days: the data has no records in that window.")).toBe(true);
+    expect(SAYS_CANT.test("Orders rose 12% outside the holiday period.")).toBe(false);
   });
 });

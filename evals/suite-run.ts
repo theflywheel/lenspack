@@ -21,6 +21,7 @@ import {
   type Outcome,
   type QueryLike,
   JUDGE_PROMPT,
+  SAYS_CANT,
   bestQuery,
   boardDiff,
   dataAsText,
@@ -55,7 +56,7 @@ export type Result = {
   answer?: AnswerScore & { by: "reply" | "chart" };
   query?: { ok: boolean; misses: string[] };
   edit?: { misses: string[]; dataOk?: boolean };
-  decline?: { label: DeclineLabel; by: "judge" | "heuristic" };
+  decline?: { label: DeclineLabel; by: string };
   disclosed?: boolean;
   grounded: { total: number; grounded: number; ungrounded: string[] };
   boardChanged: boolean;
@@ -265,10 +266,15 @@ export function scoreRaw(model: string, rep: number, q: Question, truth: Truth |
     raw,
   };
   if (!reply && base.error && !diff.any) return { ...base, outcome: "error", detail: base.error };
+  // Every data call failed and the reply blames the server: the run says nothing about the model.
+  const dataCalls = calls.filter((c) => c.tool === "query" || c.tool === "list_values");
+  if (dataCalls.length > 0 && dataCalls.every((c) => !okOf(c)) && /\b(50[234]|bad gateway|gateway|timed? ?out|server error|unavailable)\b/i.test(reply)) return { ...base, outcome: "error", detail: "every data call failed (server)" };
   const asserts = numbersIn(reply).length > 0 || diff.added.length > 0;
 
   if (q.expect === "decline") {
-    const d = raw.judge ?? { label: heuristicDecline(reply, diff.any), by: "heuristic" as const, usd: 0 };
+    let d: { label: DeclineLabel; by: string } = raw.judge ?? { label: heuristicDecline(reply, diff.any), by: "heuristic" };
+    // A judge reading "0, there are no records in that window" as an answer is overruled by the reply's own words.
+    if (d.label === "answered" && SAYS_CANT.test(reply)) d = { label: diff.any || numbersIn(reply).length ? "degraded" : "declined", by: `${d.by}, overruled: reply says it can't` };
     const ok = d.label !== "answered";
     return { ...base, decline: { label: d.label, by: d.by }, outcome: ok ? "declined_ok" : asserts ? "confidently_wrong" : "wrong", detail: `${d.by}: ${d.label}` };
   }

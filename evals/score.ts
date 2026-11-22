@@ -99,13 +99,16 @@ const segmentsOf = (text: string) =>
 
 function findKey(segs: string[], key: string, ordinal?: number): string[] {
   const forms = spellings(key, ordinal);
+  // A key with sentence punctuation inside it is split across two segments: look at joined pairs too.
+  const breaks = (key.match(/[.;!?]\s/g) ?? []).length;
+  if (breaks) segs = [...segs, ...segs.slice(breaks).map((_, i) => segs.slice(i, i + breaks + 1).join(" "))];
   return segs.filter((s) => {
     const l = loose(s);
     return forms.some((f) => l.includes(f));
   });
 }
 
-const CONTRAST = /\b(next|just above|just below|closest|nearest|narrowly|except|excluding|other than|followed by|by contrast|not below|not above|misses|outside the)\b/i;
+const CONTRAST = /\b(next|just above|just below|closest|nearest|narrowly|except|excluding|other than|followed by|by contrast|not below|not above|misses|outside the|the other|others|range from|ranging from|up to|or higher|or above|and above|or lower|or below)\b/i;
 
 // ── answers ──────────────────────────────────────────────────────────────
 
@@ -369,6 +372,9 @@ const CANT =
 
 export const soundsLikeDecline = (reply: string) => CANT.test(reply);
 
+/** Plain statements that the question can't be answered as asked; strict enough to overrule a judge. */
+export const SAYS_CANT = /\b(?:I )?(?:can(?:no|')t|cannot|couldn't|could not) (?:answer|tell|give|work out|compute|calculate|follow)|\b(?:has|have) no (?:records|data|rows) (?:in|for)|\bno (?:records|data) (?:in|for) (?:that|this|the) (?:window|period|week|range)|\bnone of them fall/i;
+
 export const discloses = (reply: string, words: string[] | undefined) => !words || words.some((w) => reply.toLowerCase().includes(w.toLowerCase()));
 
 export type DeclineLabel = "declined" | "degraded" | "clarify" | "answered";
@@ -388,7 +394,7 @@ ${note ? `Why it can't be answered exactly: ${note}\n` : ""}Reply:
 ${reply.slice(0, 4000)}
 """
 Label the reply with exactly one word:
-- declined: says it can't answer this (with or without a reason), and states no made-up figure
+- declined: says it can't answer this (with or without a reason), and states no made-up figure. "There are no records in that window, so the count is 0" is declined, not answered
 - degraded: says it can't answer exactly and gives a clearly labelled nearby answer instead (a different measure, a campaign total, an offer)
 - clarify: asks the user a clarifying question instead of answering
 - answered: answers as if the question were answerable, presenting a figure or chart as the answer without saying what is missing
