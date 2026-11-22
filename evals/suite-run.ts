@@ -71,12 +71,28 @@ export type Result = {
   reply: string;
   calls: { tool: string; input: unknown; ok?: boolean }[];
   error?: string;
+  raw?: Raw;
 };
 
 async function main() {
   const suitePath = arg("suite");
   if (!suitePath) throw new Error("--suite <file> is required");
   const suite = loadSuite(suitePath);
+  // --rescore <results.json>: score a stored run again (after a scorer or truth fix), no model, no database.
+  if (arg("rescore")) {
+    const file = arg("rescore")!;
+    const stored = JSON.parse(readFileSync(file, "utf8")) as { meta: Record<string, unknown>; results: Result[] };
+    const truth = JSON.parse(readFileSync(arg("truth")!, "utf8")) as TruthFile;
+    const byId = new Map(suite.questions.map((q) => [q.id, q]));
+    const results = stored.results.map((r) => (r.raw && byId.get(r.id) ? scoreRaw(r.model, r.repeat, byId.get(r.id)!, truth.questions[r.id], r.raw) : r));
+    const meta = { ...stored.meta, rescored: new Date().toISOString(), truthComputed: truth.computed };
+    const out = file.replace(/\.json$/, "-rescored");
+    writeFileSync(`${out}.json`, JSON.stringify({ meta, results }, null, 1));
+    const md = report(meta, results);
+    writeFileSync(`${out}.md`, md);
+    console.log(`${md}\nwritten to ${out}.{json,md}`);
+    return;
+  }
   const now = suite.now ? new Date(suite.now) : undefined;
   const only = arg("only")?.split(",");
   const tiers = arg("tiers")?.split(",");
@@ -129,19 +145,27 @@ async function main() {
   const results: Result[] = [];
   let spent = 0;
   let stopped: string | null = null;
+  // Interleaved: each question runs on every model (in parallel) before the next, so a run cut
+  // short by the cap still compares the models on the same questions. The cap is checked
+  // before each batch against the dearest batch so far, so it is never overshot by much.
+  let dearest = 0;
   try {
-    outer: for (const p of providers) {
-      for (let rep = 1; rep <= repeats; rep++) {
-        for (const q of questions) {
-          if (spent >= maxUsd) {
-            stopped = `stopped at $${spent.toFixed(4)}: --max-usd ${maxUsd}`;
-            break outer;
-          }
-          const r = await runQuestion(rig, srv, p, q, truth.questions[q.id], { effort: arg("effort"), judge, rep });
-          spent += r.usd + r.judgeUsd;
-          results.push(r);
-          console.log(`  ${p.name} #${rep} ${q.id.padEnd(5)} ${r.outcome.padEnd(17)} ${String(r.latencyMs).padStart(6)}ms steps=${r.steps} $${(r.usd + r.judgeUsd).toFixed(4)}  ${r.detail.slice(0, 140)}`);
+    outer: for (let rep = 1; rep <= repeats; rep++) {
+      for (const q of questions) {
+        if (spent + dearest > maxUsd) {
+          stopped = `stopped at $${spent.toFixed(4)} before ${q.id} #${rep}: --max-usd ${maxUsd} (dearest batch $${dearest.toFixed(4)})`;
+          break outer;
         }
+        const batch = await Promise.all(providers.map((p) => runQuestion(rig, srv, p, q, truth.questions[q.id], { effort: arg("effort"), judge, rep })));
+        const cost = batch.reduce((t, r) => t + r.usd + r.judgeUsd, 0);
+        dearest = Math.max(dearest, cost);
+        spent += cost;
+        for (const r of batch) {
+          results.push(r);
+          console.log(`  ${r.model} #${rep} ${q.id.padEnd(5)} ${r.outcome.padEnd(17)} ${String(r.latencyMs).padStart(6)}ms steps=${r.steps} $${(r.usd + r.judgeUsd).toFixed(4)}  ${r.detail.slice(0, 140)}`);
+        }
+        // Partial results survive a crash or a kill.
+        writeFileSync(join(outDir, "_partial.json"), JSON.stringify({ spent, results }));
       }
     }
   } finally {
@@ -158,6 +182,18 @@ async function main() {
   console.log(`\n${md}\nwritten to ${join(outDir, stamp)}.{json,md}`);
 }
 
+/** What a question's run left behind, enough to score it again without a model (--rescore). */
+export type Raw = {
+  reply: string;
+  records: { steps: number; latencyMs: number; usage: TurnRecord["usage"]; error?: string }[];
+  calls: TurnRecord["toolCalls"];
+  before: BoardConfig;
+  after: BoardConfig;
+  /** The data each new or changed widget draws, as the board would run it. */
+  widgetRows: Record<string, { group: string; value: number | null; values?: Record<string, number | null> }[] | null>;
+  judge?: { label: DeclineLabel; by: "judge" | "heuristic"; usd: number };
+};
+
 export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve>>, p: Provider, q: Question, truth: Truth | undefined, o: { effort?: string; judge: Provider | null; rep: number }): Promise<Result> {
   const boardId = `eval-${q.id.replace(/\W/g, "_")}-${p.name.replace(/\W/g, "_")}-${o.rep}`;
   const before: BoardConfig = await freshBoard(rig, boardId);
@@ -170,9 +206,29 @@ export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve
     if (record.error && !record.reply) break;
   }
   const after = (await rig.host.store.get(boardId))!.config;
-  const last = records.at(-1)!;
-  const reply = last.reply;
-  const calls = records.flatMap((r) => r.toolCalls);
+  const reply = records.at(-1)!.reply;
+  const diff = boardDiff(before, after);
+  const widgetRows: Raw["widgetRows"] = {};
+  for (const id of [...diff.added, ...diff.changed]) {
+    const w = after.widgets[id];
+    if (w && "query" in w) widgetRows[id] = (await widgetData(rig, w.query))?.rows.map((r) => ({ group: r.group, value: r.value, ...(r.values ? { values: r.values } : {}) })) ?? null;
+  }
+  const raw: Raw = { reply, records: records.map((r) => ({ steps: r.steps, latencyMs: r.latencyMs, usage: r.usage, ...(r.error ? { error: r.error } : {}) })), calls: records.flatMap((r) => r.toolCalls), before, after, widgetRows };
+  // Declines are labelled once, when the run happens; a rescore reuses the label.
+  if (q.expect === "decline") {
+    if (!o.judge) raw.judge = { label: heuristicDecline(reply, diff.any), by: "heuristic", usd: 0 };
+    else {
+      const metered: CallRecord[] = [];
+      const out = await withMeter({ role: "judge", pack: rig.host.name, turn: `judge/${q.id}`, collect: metered }, () => generateText({ model: o.judge!.languageModel, prompt: JUDGE_PROMPT(turnsOf(q).join(" / "), q.note, reply), maxOutputTokens: 10 }));
+      raw.judge = { label: parseJudge(out.text) ?? heuristicDecline(reply, diff.any), by: "judge", usd: turnCost(metered).total.usd };
+    }
+  }
+  return scoreRaw(p.name, o.rep, q, truth, raw);
+}
+
+/** Scores a run from what it left behind: no model, no database. */
+export function scoreRaw(model: string, rep: number, q: Question, truth: Truth | undefined, raw: Raw): Result {
+  const { reply, calls, before, after } = raw;
   const outputs = calls.map((c) => c.output).filter((x) => x !== undefined);
   const okOf = (c: (typeof calls)[number]) => {
     const v = c.output as { ok?: boolean; applied?: boolean } | undefined;
@@ -183,9 +239,10 @@ export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve
     ...calls.filter((c) => c.tool === "query" && okOf(c)).map((c) => (c.output as { query?: QueryLike }).query).filter(Boolean) as QueryLike[],
     ...[...diff.added, ...diff.changed].map((id) => after.widgets[id]).filter((w) => w && "query" in w).map((w) => (w as { query: QueryLike }).query),
   ];
+  const errors = raw.records.map((r) => r.error).filter(Boolean);
   const base = {
-    model: p.name,
-    repeat: o.rep,
+    model,
+    repeat: rep,
     id: q.id,
     tier: q.tier,
     expect: q.expect,
@@ -193,60 +250,48 @@ export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve
     ...(q.why ? { why: q.why } : {}),
     grounded: grounding(reply, outputs),
     boardChanged: diff.any,
-    steps: records.reduce((s, r) => s + r.steps, 0),
+    steps: raw.records.reduce((s, r) => s + r.steps, 0),
     toolCalls: calls.length,
     toolErrors: calls.filter((c) => !okOf(c)).length,
-    latencyMs: records.reduce((s, r) => s + r.latencyMs, 0),
-    usd: records.reduce((s, r) => s + (r.usage?.usd ?? 0), 0),
-    judgeUsd: 0,
-    inputTokens: records.reduce((s, r) => s + (r.usage?.inputTokens ?? 0), 0),
-    outputTokens: records.reduce((s, r) => s + (r.usage?.outputTokens ?? 0), 0),
-    unpriced: records.reduce((s, r) => s + (r.usage?.unpriced ?? 0), 0),
+    latencyMs: raw.records.reduce((s, r) => s + r.latencyMs, 0),
+    usd: raw.records.reduce((s, r) => s + (r.usage?.usd ?? 0), 0),
+    judgeUsd: raw.judge?.usd ?? 0,
+    inputTokens: raw.records.reduce((s, r) => s + (r.usage?.inputTokens ?? 0), 0),
+    outputTokens: raw.records.reduce((s, r) => s + (r.usage?.outputTokens ?? 0), 0),
+    unpriced: raw.records.reduce((s, r) => s + (r.usage?.unpriced ?? 0), 0),
     reply,
     calls: calls.map((c) => ({ tool: c.tool, input: c.input, ok: okOf(c) })),
-    ...(records.some((r) => r.error) ? { error: records.map((r) => r.error).filter(Boolean).join("; ") } : {}),
+    ...(errors.length ? { error: errors.join("; ") } : {}),
+    raw,
   };
   if (!reply && base.error && !diff.any) return { ...base, outcome: "error", detail: base.error };
-
-  // Declines: from a judge when one is configured, else a heuristic.
-  const label = async (): Promise<{ label: DeclineLabel; by: "judge" | "heuristic"; usd: number }> => {
-    if (!o.judge) return { label: heuristicDecline(reply, diff.any), by: "heuristic", usd: 0 };
-    const metered: CallRecord[] = [];
-    const out = await withMeter({ role: "judge", pack: rig.host.name, turn: `judge/${q.id}`, collect: metered }, () => generateText({ model: o.judge!.languageModel, prompt: JUDGE_PROMPT(turnsOf(q).join(" / "), q.note, reply), maxOutputTokens: 10 }));
-    return { label: parseJudge(out.text) ?? heuristicDecline(reply, diff.any), by: "judge", usd: turnCost(metered).total.usd };
-  };
   const asserts = numbersIn(reply).length > 0 || diff.added.length > 0;
 
   if (q.expect === "decline") {
-    const d = await label();
+    const d = raw.judge ?? { label: heuristicDecline(reply, diff.any), by: "heuristic" as const, usd: 0 };
     const ok = d.label !== "answered";
-    return { ...base, judgeUsd: d.usd, decline: { label: d.label, by: d.by }, outcome: ok ? "declined_ok" : asserts ? "confidently_wrong" : "wrong", detail: `${d.by}: ${d.label}` };
+    return { ...base, decline: { label: d.label, by: d.by }, outcome: ok ? "declined_ok" : asserts ? "confidently_wrong" : "wrong", detail: `${d.by}: ${d.label}` };
   }
 
+  const chartScore = (id: string) => {
+    const rows = raw.widgetRows[id];
+    return truth && rows ? scoreAnswer(truth, dataAsText(rows, truth.unit)) : null;
+  };
   // The answer from the reply, or else from what a new or changed widget draws.
-  const answerFrom = async (): Promise<(AnswerScore & { by: "reply" | "chart" }) | undefined> => {
+  const answerFrom = (): (AnswerScore & { by: "reply" | "chart" }) | undefined => {
     if (!truth) return undefined;
     const fromReply = { ...scoreAnswer(truth, reply), by: "reply" as const };
     if (fromReply.correct) return fromReply;
     for (const id of [...diff.added, ...diff.changed]) {
-      const w = after.widgets[id];
-      if (!w || !("query" in w)) continue;
-      const data = await widgetData(rig, w.query);
-      if (!data) continue;
-      const s = { ...scoreAnswer(truth, dataAsText(data.rows, truth.unit)), by: "chart" as const };
-      if (s.correct || s.recall > fromReply.recall) return s;
+      const s = chartScore(id);
+      if (s && (s.correct || s.recall > fromReply.recall)) return { ...s, by: "chart" as const };
     }
     return fromReply;
   };
 
   if (q.expect === "edit") {
     const em = editMisses(q, before, after);
-    let dataOk: boolean | undefined;
-    if (truth && em.widgetIds[0]) {
-      const w = after.widgets[em.widgetIds[0]];
-      const data = w && "query" in w ? await widgetData(rig, w.query) : null;
-      dataOk = data ? scoreAnswer(truth, dataAsText(data.rows, truth.unit)).correct : false;
-    }
+    const dataOk = truth && em.widgetIds[0] ? (chartScore(em.widgetIds[0])?.correct ?? false) : undefined;
     const query = bestQuery(queries, q.accept);
     if (em.misses.length === 0 && dataOk !== false) return { ...base, edit: { misses: [], dataOk }, query, outcome: "correct", detail: dataOk ? "board right; widget data matches truth" : "board right" };
     // An edit Lenspack cannot make is a decline question in the suite, so an unchanged board here is a miss.
@@ -256,7 +301,7 @@ export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve
   }
 
   // expect: answer
-  const answer = await answerFrom();
+  const answer = answerFrom();
   const query = bestQuery(queries, q.accept);
   const ambiguous = q.tags.includes("ambiguous");
   const disclosed = ambiguous ? discloses(reply, q.disclose) : undefined;
