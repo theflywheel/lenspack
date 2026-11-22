@@ -112,8 +112,6 @@ addUsageSink(ledger);
 const providers = providersFromEnv().map(buildProvider);
 void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
 const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
-// One guard for every settings section (the store and token are made above, with speech and language).
-const settingsGuard = token;
 type ChatSetting = { model?: string; effort?: string };
 const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat"), speech, language: () => ({ titles: language().titles, board: language().board }) });
 /** The chat section of the settings page: what runs when the client asks for no model. */
@@ -127,7 +125,7 @@ function chatSettings() {
     effort: effort ?? null,
     defaultModel: fallback?.name ?? null,
     source: saved?.model && current?.name === saved.model ? "settings" : "default",
-    writable: settingsGuard.writable,
+    writable: token.writable,
     options: providers.map(publicView),
   };
 }
@@ -243,7 +241,7 @@ createServer(async (req, res) => {
       }));
     }
     if (url.pathname === "/_superset/settings/chat" && req.method === "PUT") {
-      const denied = settingsGuard.check(req);
+      const denied = token.check(req);
       if (denied) return send(res, 403, JSON.stringify({ error: denied }));
       const body = await readJson(req);
       if (body.model === null) {
