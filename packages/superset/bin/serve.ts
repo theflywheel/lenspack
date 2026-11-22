@@ -136,8 +136,9 @@ createServer(async (req, res) => {
   try {
     if (url.pathname.startsWith("/api/")) return await api(req, res);
     const supersetPort = config.superset.publicPort ?? Number(new URL(config.superset.url).port);
-    const vars = { pack: pack.pack, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? null, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
-    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples }));
+    const panel = config.overlay?.panel === "dock" ? "dock" : "float";
+    const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? null, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
+    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples, panel }));
     // What a settings page (Superset's Settings → Manage → AI assistant) shows. No secrets: which
     // variable the LLM key came from, never the key.
     if (url.pathname === "/_superset/settings") {
@@ -153,6 +154,7 @@ createServer(async (req, res) => {
         superset: { url: config.superset.url, username: config.superset.username },
         dashboards: Object.values(dashboards),
         publicPath: base,
+        panel,
       }));
     }
     if (url.pathname === "/_superset/bind") return send(res, 200, JSON.stringify(await bind(url.searchParams.get("dashboard") ?? "")));

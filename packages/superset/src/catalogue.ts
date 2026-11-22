@@ -25,6 +25,8 @@ export type Overlay = {
   labels?: Record<string, string>;
   hierarchies?: Record<string, string[]>;
   examples?: unknown[];
+  /** How the chat opens on Superset's pages by default: a floating window or a side panel. Each user can change it. */
+  panel?: "float" | "dock";
 };
 
 /** How pack keys map back to Superset names: the connector and the dashboard writer read this. */
