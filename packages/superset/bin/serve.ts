@@ -65,8 +65,23 @@ const password = config.superset.password ?? process.env[config.superset.passwor
 if (!password) throw new Error("No Superset password: set superset.passwordEnv");
 const client = supersetClient({ url: config.superset.url, username: config.superset.username, password });
 
-const datasets = await fetchDatasets(client, config.datasets);
-const { pack, packYaml, binding } = packFromDatasets(datasets, config.overlay);
+// Superset can answer partially under load (a busy worker, a restart). Each dataset is retried inside
+// fetchDatasets; the whole build is retried here too before giving up, so a transient answer doesn't
+// turn into a crash loop.
+async function loadPack() {
+  const waits = [2000, 5000, 10_000];
+  for (let i = 0; ; i++) {
+    try {
+      const datasets = await fetchDatasets(client, config.datasets, { log });
+      return { datasets, ...packFromDatasets(datasets, config.overlay) };
+    } catch (e) {
+      if (i >= waits.length) throw e;
+      log(`building the pack failed (${e instanceof Error ? e.message : String(e)}); trying again in ${waits[i]! / 1000} s`);
+      await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
+}
+const { datasets, pack, packYaml, binding } = await loadPack();
 log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
 const connector = supersetConnector(client, binding);
 

@@ -112,17 +112,80 @@ const typeOf = (c: SupersetColumn) => {
 };
 const cut = (s: string | null | undefined, n: number) => (s ? (s.length > n ? `${s.slice(0, n - 1)}…` : s) : undefined);
 
-/** Datasets by id, or by table name ("schema.table" or "table"), which stays the same when Superset is set up again. */
-export async function fetchDatasets(client: SupersetClient, refs: (number | string)[]): Promise<SupersetDataset[]> {
-  const idOf = async (ref: number | string): Promise<number> => {
-    if (typeof ref === "number" || /^\d+$/.test(ref)) return Number(ref);
+/** Why a dataset response can't be built into a pack, or null when it is complete. */
+export function incompleteDataset(ds: SupersetDataset | undefined, id: number, table?: string): string | null {
+  if (!ds) return "empty response";
+  if (ds.id !== id) return `asked for dataset ${id}, got ${ds.id}`;
+  if (table && ds.table_name !== table) return `asked for "${table}", got "${ds.table_name}"`;
+  if (!Array.isArray(ds.columns) || ds.columns.length === 0) return "no columns";
+  if (!Array.isArray(ds.metrics)) return "no metrics list";
+  const dup = (names: string[]) => names.find((n, i) => names.indexOf(n) !== i);
+  const col = dup(ds.columns.map((c) => c.column_name));
+  if (col) return `column "${col}" listed twice`;
+  const met = dup(ds.metrics.map((m) => m.metric_name));
+  if (met) return `metric "${met}" listed twice`;
+  return null;
+}
+
+export type FetchOptions = {
+  /** Attempts per lookup and per dataset (default 4). */
+  attempts?: number;
+  /** Waits between attempts in ms (default 500, 1000, 2000). */
+  backoffMs?: number[];
+  sleep?: (ms: number) => Promise<void>;
+  log?: (s: string) => void;
+};
+
+/**
+ * Datasets by id, or by table name ("schema.table" or "table"), which stays the same when Superset is set up again.
+ * Under load Superset can answer a name lookup with nothing, or a dataset with no or duplicated columns: each lookup
+ * and each dataset is retried until it comes back complete, so a pack is never built from a partial answer.
+ * Datasets are fetched one at a time, in the order given, to keep the load on Superset low.
+ */
+export async function fetchDatasets(client: SupersetClient, refs: (number | string)[], opts: FetchOptions = {}): Promise<SupersetDataset[]> {
+  const attempts = opts.attempts ?? 4;
+  const backoff = opts.backoffMs ?? [500, 1000, 2000];
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  async function retry<T>(what: string, once: () => Promise<T>): Promise<T> {
+    let last: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await once();
+      } catch (e) {
+        last = e;
+        if (i < attempts - 1) {
+          opts.log?.(`${what}: ${e instanceof Error ? e.message : String(e)}; trying again`);
+          await sleep(backoff[Math.min(i, backoff.length - 1)] ?? 1000);
+        }
+      }
+    }
+    throw last instanceof Error ? last : new Error(String(last));
+  }
+  const idOf = (ref: number | string): Promise<number> => {
+    if (typeof ref === "number" || /^\d+$/.test(ref)) return Promise.resolve(Number(ref));
     const [schema, table] = ref.includes(".") ? ref.split(".", 2) : [null, ref];
     const filters = [{ col: "table_name", opr: "eq", value: table }, ...(schema ? [{ col: "schema", opr: "eq", value: schema }] : [])];
-    const found = await client.get<{ result: { id: number }[] }>(`/api/v1/dataset/?q=${encodeURIComponent(rison({ filters, columns: ["id"] }))}`);
-    if (found.result.length !== 1) throw new Error(`Superset dataset "${ref}": ${found.result.length ? "more than one matches; name the schema" : "not found"}`);
-    return found.result[0]!.id;
+    return retry(`Superset dataset "${ref}"`, async () => {
+      const found = await client.get<{ result: { id: number }[] }>(`/api/v1/dataset/?q=${encodeURIComponent(rison({ filters, columns: ["id"] }))}`);
+      const n = found?.result?.length ?? 0;
+      if (n !== 1) throw new Error(`Superset dataset "${ref}": ${n ? "more than one matches; name the schema" : "not found"}`);
+      return found.result[0]!.id;
+    });
   };
-  return Promise.all(refs.map(async (ref) => (await client.get<{ result: SupersetDataset }>(`/api/v1/dataset/${await idOf(ref)}`)).result));
+  const out: SupersetDataset[] = [];
+  for (const ref of refs) {
+    const id = await idOf(ref);
+    const table = typeof ref === "string" && !/^\d+$/.test(ref) ? (ref.includes(".") ? ref.split(".", 2)[1] : ref) : undefined;
+    out.push(
+      await retry(`Superset dataset ${id}${table ? ` ("${table}")` : ""}`, async () => {
+        const ds = (await client.get<{ result: SupersetDataset }>(`/api/v1/dataset/${id}`))?.result;
+        const why = incompleteDataset(ds, id, table);
+        if (why) throw new Error(`Superset dataset ${id}${table ? ` ("${table}")` : ""} came back incomplete: ${why}`);
+        return ds;
+      }),
+    );
+  }
+  return out;
 }
 
 /** Datasets → a pack and the binding back to Superset names. */
@@ -137,6 +200,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     const entity = overlay.entities?.[String(ds.id)] ?? overlay.entities?.[ds.table_name] ?? slug(ds.table_name);
     const time = ds.main_dttm_col && COLUMN.test(ds.main_dttm_col) ? ds.main_dttm_col : null;
     const countMetric = ds.metrics.find((m) => COUNT_STAR.test(m.expression))?.metric_name ?? null;
+    if (entities[entity]) throw new Error(`Superset datasets ${binding.datasets.get(entity)?.table} and ${ds.table_name} both map to entity "${entity}"; give each its own name in overlay.entities`);
     entities[entity] = { source: `ds_${ds.id}`, grain: cut(ds.description ?? `one row of ${ds.table_name}`, 200), ...(time ? { time } : {}) };
     binding.datasets.set(entity, { id: ds.id, table: ds.table_name, time, countMetric });
     binding.entityOf.set(ds.id, entity);
@@ -149,6 +213,8 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
       const key = slug(c.column_name);
       const source = COLUMN.test(c.column_name) ? { field: c.column_name } : { sql: { superset: c.column_name } };
       const existing = dimensions.find((d) => d.key === key);
+      // Two columns of one entity that come to the same key (Team and team): the first one is the dimension.
+      if (existing && (existing.entity === entity || existing.also?.[entity])) continue;
       if (existing) {
         existing.also = { ...(existing.also ?? {}), [entity]: source };
       } else {
