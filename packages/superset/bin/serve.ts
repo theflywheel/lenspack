@@ -12,10 +12,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { memoryStore } from "@lenspack/core";
-import { addUsageSink, buildProvider, createApp, probe, providersFromEnv, publicView, usageLedger } from "@lenspack/serve";
+import { addUsageSink, buildProvider, createApp, effortFor, pickChatModel, probe, providersFromEnv, publicView, usageLedger } from "@lenspack/serve";
 import YAML from "yaml";
 
 import { type Overlay, fetchDatasets, packFromDatasets, supersetBoards, supersetClient, supersetConnector } from "../src/index";
+import { readJson, settingsStore, settingsToken } from "../src/settings";
 
 type Config = {
   superset: {
@@ -80,7 +81,26 @@ addUsageSink(ledger);
 const providers = providersFromEnv().map(buildProvider);
 void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
 const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
-const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { providers, roles, ledger, budget: config.budget, log });
+// Settings an admin changes from Superset's AI assistant page, kept next to the board state.
+const settings = settingsStore(dirname(statePath));
+const settingsGuard = settingsToken();
+type ChatSetting = { model?: string; effort?: string };
+const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat") });
+/** The chat section of the settings page: what runs when the client asks for no model. */
+function chatSettings() {
+  const saved = settings.get<ChatSetting>("chat");
+  const fallback = pickChatModel(providers, null);
+  const current = pickChatModel(providers, null, saved);
+  const effort = current ? effortFor(current, saved?.model === current.name && saved.effort && current.efforts?.levels.includes(saved.effort) ? saved.effort : null) : undefined;
+  return {
+    model: current?.name ?? null,
+    effort: effort ?? null,
+    defaultModel: fallback?.name ?? null,
+    source: saved?.model && current?.name === saved.model ? "settings" : "default",
+    writable: settingsGuard.writable,
+    options: providers.map(publicView),
+  };
+}
 
 /** Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. */
 async function bind(idOrSlug: string): Promise<{ board: string; dashboard: number; title: string; notes: string[] }> {
@@ -155,7 +175,25 @@ createServer(async (req, res) => {
         dashboards: Object.values(dashboards),
         publicPath: base,
         panel,
+        chat: chatSettings(),
       }));
+    }
+    if (url.pathname === "/_superset/settings/chat" && req.method === "PUT") {
+      const denied = settingsGuard.check(req);
+      if (denied) return send(res, 403, JSON.stringify({ error: denied }));
+      const body = await readJson(req);
+      if (body.model === null) {
+        settings.set("chat", undefined);
+        log("settings: chat model reset to the default");
+        return send(res, 200, JSON.stringify(chatSettings()));
+      }
+      const p = providers.find((x) => x.name === body.model);
+      if (!p) return send(res, 400, JSON.stringify({ error: `unknown model "${String(body.model)}": one of ${providers.map((x) => x.name).join(", ")}` }));
+      const effort = body.effort == null || body.effort === "" ? undefined : String(body.effort);
+      if (effort && !p.efforts?.levels.includes(effort)) return send(res, 400, JSON.stringify({ error: p.efforts ? `effort "${effort}" is not one ${p.name} takes: ${p.efforts.levels.join(", ")}` : `${p.name} has no effort setting` }));
+      settings.set("chat", { model: p.name, ...(effort ? { effort } : {}) });
+      log(`settings: chat model ${p.name}${effort ? ` (${effort})` : ""}`);
+      return send(res, 200, JSON.stringify(chatSettings()));
     }
     if (url.pathname === "/_superset/bind") return send(res, 200, JSON.stringify(await bind(url.searchParams.get("dashboard") ?? "")));
     if (url.pathname === "/_superset/dashboards") {
