@@ -59,7 +59,23 @@ export async function supersetRig(configPath: string, opts: { dashboard?: number
   const password = config.superset.password ?? process.env[config.superset.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"];
   if (!password) throw new Error("No Superset password: set the config's passwordEnv variable");
   const client = sup.supersetClient({ url: config.superset.url, username: config.superset.username, password });
-  const datasets = await sup.fetchDatasets(client, config.datasets);
+  // Under load the dataset lookup has returned the wrong dataset for a name (2026-11-22: ni_members came
+  // back as ni_referrals, and the pack silently lost an entity). Check each one and retry the batch.
+  const want = (ref: number | string) => (typeof ref === "number" || /^\d+$/.test(String(ref)) ? null : String(ref).split(".").at(-1)!);
+  let datasets: Awaited<ReturnType<typeof sup.fetchDatasets>> = [];
+  for (let attempt = 1; ; attempt++) {
+    try {
+      datasets = await sup.fetchDatasets(client, config.datasets);
+      const wrong = config.datasets.map((ref, i) => [ref, datasets[i]?.table_name] as const).filter(([ref, got]) => want(ref) !== null && got !== want(ref));
+      const ids = new Set(datasets.map((d) => d.id));
+      if (wrong.length === 0 && ids.size === datasets.length) break;
+      throw new Error(`datasets came back wrong: ${wrong.map(([r, g]) => `${r} -> ${g}`).join(", ") || "duplicate ids"}`);
+    } catch (e) {
+      if (attempt >= 5) throw e;
+      console.error(`superset rig: ${(e as Error).message}; retrying (${attempt}/5)`);
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
   const { pack, packYaml, binding } = sup.packFromDatasets(datasets, config.overlay as never);
   const connector = sup.supersetConnector(client, binding);
   let seed: BoardConfig | null = null;
