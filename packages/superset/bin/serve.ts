@@ -41,7 +41,7 @@ type Config = {
   state?: string;
   budget?: { usdPerDay?: number; usdPerUserPerDay?: number };
   /** Speech to text for the mic. The model here is the default; the settings page can change it (state/settings.json). */
-  speech?: { model?: string; baseUrl?: string; maxSeconds?: number };
+  speech?: { model?: string; baseUrl?: string; maxSeconds?: number; holdMs?: number };
   /** Language defaults; the settings page can change them (state/settings.json). */
   language?: { default?: string; titles?: "board" | "speaker"; board?: string };
 };
@@ -99,9 +99,13 @@ await store.seed();
 const settings = settingsStore(dirname(statePath));
 const token = settingsToken();
 
-type SpeechSettings = { model?: string };
+type SpeechSettings = { model?: string; holdMs?: number };
 const defaultSpeechModel = config.speech?.model ?? DEFAULT_SPEECH_MODEL;
 const speechModel = () => settings.get<SpeechSettings>("speech")?.model ?? defaultSpeechModel;
+// How long Space is held before the mic listens (a shorter press types a space); each user may pick their own.
+const HOLD_MS = { min: 500, max: 3000 };
+const defaultHoldMs = Math.min(HOLD_MS.max, Math.max(HOLD_MS.min, config.speech?.holdMs ?? 2000));
+const holdMs = () => settings.get<SpeechSettings>("speech")?.holdMs ?? defaultHoldMs;
 const speechKey = speechKeyFromEnv();
 const speech = { ...speechKey, baseUrl: config.speech?.baseUrl, maxSeconds: config.speech?.maxSeconds ?? 60, model: speechModel };
 const speechView = () => ({
@@ -111,6 +115,9 @@ const speechView = () => ({
   model: speechModel(),
   defaultModel: defaultSpeechModel,
   source: settings.get<SpeechSettings>("speech")?.model ? "settings" : "default",
+  holdMs: holdMs(),
+  defaultHoldMs,
+  holdMsRange: HOLD_MS,
   writable: token.writable,
 });
 
@@ -201,7 +208,7 @@ createServer(async (req, res) => {
     const supersetPort = config.superset.publicPort ?? Number(new URL(config.superset.url).port);
     const panel = config.overlay?.panel === "dock" ? "dock" : "float";
     const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? null, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
-    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples, panel, speech: speechKey.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds } : { enabled: false }, language: { default: language().default, options: LANGUAGES } }));
+    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples, panel, speech: speechKey.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds, holdMs: holdMs() } : { enabled: false }, language: { default: language().default, options: LANGUAGES } }));
     if (url.pathname === "/_superset/settings/speech/models") return send(res, 200, JSON.stringify((await speechModels({ baseUrl: speech.baseUrl })).models));
     if (req.method === "PUT" && (url.pathname === "/_superset/settings/speech" || url.pathname === "/_superset/settings/language")) {
       const denied = token.check(req);
@@ -213,12 +220,22 @@ createServer(async (req, res) => {
         return send(res, 400, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
       }
       if (url.pathname.endsWith("/speech")) {
-        const model = body.model;
-        // null or "" goes back to the default.
-        if (model === null || model === "") settings.set("speech", undefined);
-        else if (typeof model !== "string" || !(await speechModelAllowed(model, { baseUrl: speech.baseUrl }))) return send(res, 400, JSON.stringify({ error: `not a transcription model: ${String(model)}` }));
-        else settings.set("speech", { model });
-        log(`speech model: ${speechModel()}`);
+        // Any of model, holdMs; a field left out is kept, and null or "" puts it back to the default.
+        const next: SpeechSettings = { ...settings.get<SpeechSettings>("speech") };
+        if ("model" in body) {
+          const model = body.model;
+          if (model === null || model === "") delete next.model;
+          else if (typeof model !== "string" || !(await speechModelAllowed(model, { baseUrl: speech.baseUrl }))) return send(res, 400, JSON.stringify({ error: `not a transcription model: ${String(model)}` }));
+          else next.model = model;
+        }
+        if ("holdMs" in body) {
+          const v = body.holdMs;
+          if (v === null || v === "") delete next.holdMs;
+          else if (typeof v !== "number" || !Number.isInteger(v) || v < HOLD_MS.min || v > HOLD_MS.max) return send(res, 400, JSON.stringify({ error: `holdMs is a whole number of milliseconds from ${HOLD_MS.min} to ${HOLD_MS.max}` }));
+          else next.holdMs = v;
+        }
+        settings.set("speech", Object.keys(next).length ? next : undefined);
+        log(`speech: model ${speechModel()}, hold ${holdMs()} ms`);
         return send(res, 200, JSON.stringify(speechView()));
       }
       // Language: any of default, titles, board; null resets the field.
