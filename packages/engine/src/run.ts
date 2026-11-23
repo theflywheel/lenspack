@@ -410,6 +410,12 @@ export function checkOps(
   for (const [opIndex, op] of ops.entries()) {
     if (op.op !== "add_widget" && op.op !== "update_widget") continue;
     if (op.widget.kind === "text") continue;
+    if (op.widget.kind === "chart" && op.widget.chart === "heatmap" && op.widget.query.kind === "series" && opts.capabilities?.timeHeatmap === false)
+      return {
+        ok: false,
+        opIndex,
+        error: "This dashboard's heatmap cannot keep a time axis in order once it is bucketed by day, week or month. Make it a breakdown instead: columns a day or date label dimension, if the pack has one, split by the rows",
+      };
     try {
       check(op.widget.query, pack, opts);
     } catch (e) {

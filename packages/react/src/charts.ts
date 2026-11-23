@@ -164,7 +164,7 @@ export function widen(rows: WidgetData["rows"], measures: NonNullable<WidgetData
 }
 
 export function buildChartSpec(
-  widget: Extract<Widget, { kind: "chart" }>,
+  widget: Extract<Widget, { kind: "chart" }> & { chart: ChartKind },
   data: WidgetData,
   opts: { currency?: string; measureLabel?: string; labelOf?: (key: string) => string | undefined; onSelect?: (group: string) => void } = {},
 ): ChartSpec | null {

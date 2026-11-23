@@ -52,6 +52,8 @@ export type Capabilities = {
   zonedBuckets?: boolean;
   /** Measures with `per` (one value per key, then an aggregate over those). Absent means true. */
   twoStage?: boolean;
+  /** A heatmap's columns can be time buckets (a series heatmap). False where the host draws the chart and cannot keep a time axis in order. Absent means true. */
+  timeHeatmap?: boolean;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true };

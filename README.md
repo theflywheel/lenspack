@@ -233,6 +233,8 @@ import { svgAdapter } from "@lenspack/react/adapters/svg";               // no d
 
 Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. The conformance test in `packages/react/test/adapters.test.tsx` runs every adapter through every chart kind.
 
+A heatmap (one measure over two dimensions: a breakdown's dimension as columns and its split as rows, or a series' time buckets as columns) is drawn by lenspack's own `HeatmapChart`, the same under every adapter, on eight steps of `--lp-heat-1..8` (by default the sequential scale, faintest to `--lp-sequential-1`). `--lp-sequential-1` is the colour with the most ink against the page in either theme, so a host's dark theme flips the sequential scale, as the default stylesheet does.
+
 ## Security model
 
 - The model's only outputs are ops and IR, both closed unions validated before anything touches a database.

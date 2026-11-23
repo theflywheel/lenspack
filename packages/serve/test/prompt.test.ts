@@ -64,7 +64,7 @@ describe("the system prompt's parts", () => {
   it("keeps replies after edits to plain sentences, and allows short lists and bold for an informational answer", async () => {
     const pack = await loadPack(tickets);
     const [stable] = systemParts(pack, catalogueFrom(pack));
-    expect(PROMPT_VERSION).toBe(12);
+    expect(PROMPT_VERSION).toBe(13);
     expect(stable).toContain("After edits, reply in one or two plain sentences with the outcome only.");
     expect(stable).toContain("may use a short bullet list and **bold**");
     expect(stable).toContain("Never use markdown headings.");

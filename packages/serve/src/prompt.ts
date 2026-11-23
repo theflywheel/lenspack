@@ -5,13 +5,13 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 12;
+export const PROMPT_VERSION = 13;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
 // an invented chart type or a claim that the system already does it.
 export const WIDGET_LIMITS =
-  "Widgets have no settings beyond kind (bar, line, pie or area chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover. Colours, fonts, axes and other labels cannot be set.";
+  "Widgets have no settings beyond kind (bar, line, pie, area or heatmap chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover; a heatmap shades each cell on one colour scale with a legend, and shows its value on hover. Colours, fonts, axes and other labels cannot be set.";
 
 // Above this many keys a catalogue is inlined as keys and labels only, and
 // the model reads meanings from list_metrics when it needs them.
