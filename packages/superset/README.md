@@ -17,6 +17,17 @@ Apache Superset as a lenspack backend, without forking Superset.
   `groupby`, one saved metric, rows A to Z, one scale across the grid. A heatmap over time is refused before the
   change (capability `timeHeatmap: false`): Superset 5 sorts a time axis by the raw column while grouping by its
   buckets, which the database refuses, so use a breakdown over a day or date label column instead.
+- **Maps.** A dataset with one numeric `latitude`/`lat` column and one `longitude`/`lon`/`lng`/`long` column
+  becomes an entity with a location (`overlay.geo` names other columns per entity, dataset id or table, or turns
+  detection off with `false`). A `map` widget is Superset's `deck_scatter`: `spatial` latlong on those columns,
+  `dimension` for the colour, a saved metric as `point_radius_fixed` for the size (Superset groups by location),
+  the label in `js_columns`, `row_limit`, and `mapbox_style` from `overlay.mapStyle` (default
+  `mapbox://styles/mapbox/light-v9`; Superset 5.0 takes Mapbox styles only and the basemap needs Superset's
+  `MAPBOX_API_KEY`). Lenspack reads a map's points through `/api/v1/chart/data` (`deck_scatter` itself renders
+  through `explore_json`, which refuses a token). A `deck_scatter` made in Explore reads back as a map when every
+  setting maps: latlong on the entity's location columns, a fixed or saved-metric radius, a dimension colour, at
+  most one dimension in `js_columns`, no time grain and no JavaScript; otherwise it stays Superset's. Shaded areas
+  (`deck_polygon`) are not done: they need boundary shapes in a dataset column.
   `pushBoard` sends only what changed: `POST`/`PUT /api/v1/chart`, then the dashboard's layout and title.
 - **Superset stays the record.** `supersetBoards` wraps any `BoardStore`: reads pick up edits made in Superset,
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's

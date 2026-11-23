@@ -176,6 +176,10 @@ tr.lp-drillable:hover { background: var(--lp-hover); }
 .lp-map-key i.lp-map-size { background: none; border: 1.5px solid var(--lp-muted); }
 .lp-map-key i.lp-map-size-s { width: 6px; height: 6px; }
 .lp-map-key i.lp-map-size-l { width: 14px; height: 14px; }
-.lp-map-tip { position: absolute; z-index: 5; transform: translate(-50%, calc(-100% - 10px)); pointer-events: none; background: var(--lp-fg); color: var(--lp-bg); padding: 4px 7px; border-radius: 4px; font-size: 11.5px; line-height: 1.35; white-space: nowrap; display: flex; flex-direction: column; }
+.lp-map-tip { position: absolute; z-index: 5; transform: translate(var(--lp-tip-x, -50%), calc(-100% - 10px)); pointer-events: none; background: var(--lp-fg); color: var(--lp-bg); padding: 4px 7px; border-radius: 4px; font-size: 11.5px; line-height: 1.35; white-space: nowrap; display: flex; flex-direction: column; }
+.lp-map-tip.lp-map-tip-below { --lp-tip-y: 10px; }
+.lp-map-tip.lp-map-tip-l { --lp-tip-x: -12px; }
+.lp-map-tip.lp-map-tip-r { --lp-tip-x: calc(-100% + 12px); }
+.lp-map-tip.lp-map-tip-below { transform: translate(var(--lp-tip-x, -50%), var(--lp-tip-y)); }
 .lp-map-tip b { font-weight: 600; }
 .lp-map-ll { opacity: 0.7; font-variant-numeric: tabular-nums; }

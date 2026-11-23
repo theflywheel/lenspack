@@ -210,7 +210,11 @@ export function MapChart({ spec, tiles }: { spec: MapSpec; tiles?: MapTiles }) {
         )}
         {tiles && <span className="lp-map-attr">{tiles.attribution}</span>}
         {tip && (
-          <div className="lp-map-tip" style={{ left: tip.x, top: tip.y }}>
+          // Above the point, or below it near the top; pinned to a side near the left or right edge.
+          <div
+            className={`lp-map-tip${tip.y < 72 ? " lp-map-tip-below" : ""}${tip.x < 90 ? " lp-map-tip-l" : tip.x > w - 90 ? " lp-map-tip-r" : ""}`}
+            style={{ left: tip.x, top: tip.y }}
+          >
             <b>{tip.p.label ?? "Point"}</b>
             {tip.p.category !== null && spec.colorName && <span>{`${spec.colorName}: ${tip.p.category}`}</span>}
             {tip.p.size !== null && spec.sizeName && <span>{`${spec.sizeName}: ${spec.format(tip.p.size)}`}</span>}

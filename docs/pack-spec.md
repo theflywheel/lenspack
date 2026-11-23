@@ -18,6 +18,7 @@ entities:
     # …or an expression, one per dialect where they differ:
     # time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)", … } }
     tenant: <column>        # when present, every query over this entity MUST carry a tenant
+    geo: { lat: <column>, lon: <column> }  # optional: decimal degrees; lets a points query and a map show each row
     filter: <predicate>     # carried by every query over this entity, e.g. soft deletes: isdeleted = false
     joins:
       - to: <entity_key>
