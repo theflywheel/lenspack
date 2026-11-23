@@ -317,6 +317,8 @@ export function scoreRaw(model: string, rep: number, q: Question, truth: Truth |
     return { ...base, answer, query, ...(ambiguous ? { disclosed } : {}), outcome: "correct", detail: note };
   }
   const d = heuristicDecline(reply, diff.any);
+  // A question that hangs on a definition: asking which one is as good as answering with one named.
+  if (ambiguous && d === "clarify" && q.disclose && discloses(reply, q.disclose)) return { ...base, answer, query, decline: { label: d, by: "heuristic" }, outcome: "declined_ok", detail: "asked which definition" };
   if (answer && (answer.recall > 0 || query.ok)) return { ...base, answer, query, outcome: "partial", detail: `recall ${answer.recall.toFixed(2)}${answer.precision !== undefined && answer.precision < 1 ? `, precision ${answer.precision.toFixed(2)}` : ""}${answer.missing.length ? `; missing ${answer.missing.slice(0, 4).join(", ")}` : ""}; query ${query.ok ? "ok" : query.misses.join(", ")}` };
   if (d === "declined" || d === "clarify" || (d === "degraded" && SAYS_CANT.test(reply))) return { ...base, answer, query, decline: { label: d, by: "heuristic" }, outcome: "wrong", detail: `declined an answerable question (${d})` };
   return { ...base, answer, query, outcome: asserts ? "confidently_wrong" : "wrong", detail: `missing ${answer?.missing.slice(0, 4).join(", ") ?? "?"}; query ${query.ok ? "ok" : query.misses.join(", ")}` };

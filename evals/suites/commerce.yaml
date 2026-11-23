@@ -141,6 +141,24 @@ questions:
       - - { tool: add_widget, input: { id: orders_monthly, kind: chart, chart: line, title: Orders per month, query_kind: series, measure: orders, grain: month } }
         - { text: "Added a monthly line of orders." }
 
+  - id: C15
+    tier: T1
+    prompt: Which country is doing best?
+    expect: answer
+    tags: [ambiguous]
+    accept: { measures: [revenue, orders], dimension: [country] }
+    truth:
+      shape: list
+      unit: number
+      k: 1
+      sql: "SELECT c.country, sum(o.total_cents) / 100.0 r FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.country ORDER BY r DESC LIMIT 1"
+      alternatives:
+        - { label: "most orders", sql: "SELECT c.country, count(*) n FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.country ORDER BY n DESC LIMIT 1" }
+    disclose: [revenue, orders, refund]
+    # "Best" needs a measure: asking which one is a pass (declined_ok on an answer question).
+    stub:
+      - - { text: "Best by revenue, by number of orders, or by lowest refund rate?" }
+
   - id: C13
     tier: T8
     prompt: What is revenue per sales rep?

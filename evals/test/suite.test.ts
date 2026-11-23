@@ -46,6 +46,7 @@ describe("the commerce suite, played by the stub", () => {
     C12: "correct",
     C13: "declined_ok",
     C14: "confidently_wrong",
+    C15: "declined_ok",
   };
 
   for (const q of suite.questions) {
