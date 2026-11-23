@@ -1,5 +1,5 @@
 // Lenspack's own Superset account. On first start Lenspack signs in once as a Superset admin
-// (SUPERSET_ADMIN_USER / SUPERSET_ADMIN_PASSWORD) and asks lenspack_superset.py's bootstrap endpoint to
+// (SUPERSET_ADMIN_USERNAME / SUPERSET_ADMIN_PASSWORD) and asks lenspack_superset.py's bootstrap endpoint to
 // create (or reset) its service user with a password it generates. The password is kept in the state
 // directory (mode 600); from then on the admin credentials can be removed. A password given in the
 // environment (LENSPACK_SUPERSET_PASSWORD) overrides all of this, for deployments that manage the
@@ -49,7 +49,7 @@ export async function serviceAccount(o: BootstrapOptions): Promise<ServiceAccoun
 
   if (!o.admin?.password)
     throw new Error(
-      `No Superset account for Lenspack: set SUPERSET_ADMIN_PASSWORD (and SUPERSET_ADMIN_USER if the admin isn't "admin") for the first start, or LENSPACK_SUPERSET_PASSWORD for an account you manage`,
+      `No Superset account for Lenspack: set SUPERSET_ADMIN_PASSWORD (and SUPERSET_ADMIN_USERNAME if the admin isn't "admin") for the first start, or LENSPACK_SUPERSET_PASSWORD for an account you manage`,
     );
   const admin = make({ url: o.url, username: o.admin.username || "admin", password: o.admin.password });
   const password = randomBytes(24).toString("base64url");

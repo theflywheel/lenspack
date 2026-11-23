@@ -42,7 +42,7 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
   view it may still ask questions; the chat's edit tools then answer "you can view this dashboard but not edit it
   in Superset", which the model passes on. `signed-in`: anyone signed in may edit (the behaviour before).
 - **Settings** writes and the audit log need a Superset admin.
-- **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USER`, default
+- **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
   `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls `POST /api/v1/lenspack/bootstrap`, which makes the
   `lenspack` user (Admin role: it edits dashboards it doesn't own, which Superset allows only owners and admins).
   The generated password stays in `superset-account.json` (mode 600) in the state directory; after that the admin

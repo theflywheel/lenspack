@@ -102,7 +102,7 @@ const account = await retried("signing in to Superset", () =>
     username: config.superset.username ?? "lenspack",
     stateDir,
     password: config.superset.password ?? process.env[config.superset.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"] ?? undefined,
-    admin: { username: process.env.SUPERSET_ADMIN_USER, password: process.env.SUPERSET_ADMIN_PASSWORD },
+    admin: { username: process.env.SUPERSET_ADMIN_USERNAME, password: process.env.SUPERSET_ADMIN_PASSWORD },
     log,
   }),
 );
