@@ -146,6 +146,25 @@ describe("board tools", () => {
     expect(renamed.version).toBeGreaterThan(4);
   });
 
+  it("moves a widget beside another in a full row and says what it narrowed", async () => {
+    const store = memoryStore();
+    await store.create({ id: "m", pack, title: "Move" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "m", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; layout?: string; error?: string; didYouMean?: string; board: string }>;
+    const bar = (id: string, width: string, place = "bottom") => go("add_widget", { id, kind: "chart", title: id, query_kind: "breakdown", measure: "things", dimension: "colour", width, place });
+    // The eval's shape: a bar and a pie half wide on one row, a full-width bar alone further down.
+    await bar("c49", "half");
+    await go("add_widget", { id: "pie", kind: "chart", chart: "pie", title: "pie", query_kind: "breakdown", measure: "things", dimension: "colour", width: "half" });
+    await bar("c50", "full");
+    const moved = await go("move_widget", { id: "c50", place: "after:c49", width: "half" });
+    expect(moved.applied).toBe(true);
+    const layout = (await store.get("m"))!.config.layout;
+    const y = layout.find((item) => item.i === "c49")!.y;
+    expect(layout.filter((item) => item.y === y).sort((a, b) => a.x - b.x).map((item) => [item.i, item.w])).toEqual([["c49", 3], ["c50", 6], ["pie", 3]]);
+    expect(moved.layout).toContain("c50 is now in a row with c49, pie");
+    expect(moved.layout).toContain("also resized: c49 6→3, pie 6→3");
+  });
+
   it("serialises parallel edits so none is lost", async () => {
     const store = memoryStore();
     await store.create({ id: "p", pack, title: "Parallel" });
