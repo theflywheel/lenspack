@@ -259,7 +259,7 @@ export function grounding(reply: string, outputs: unknown[]): { total: number; g
 
 // ── queries ──────────────────────────────────────────────────────────────
 
-export type QueryLike = { kind?: string; measure?: string; measures?: string[]; dimension?: string; by?: string; grain?: string; sort?: string; filters?: { dimension: string; op: string; value: unknown }[] };
+export type QueryLike = { kind?: string; measure?: string; measures?: string[]; dimension?: string; by?: string; grain?: string; sort?: string; filters?: { dimension: string; op: string; value: unknown }[]; size?: string; color?: string; label?: string };
 
 const filterHolds = (q: QueryLike, key: string, want: string | number | boolean) =>
   (q.filters ?? []).some((f) => f.dimension === key && (Array.isArray(f.value) ? f.value.map((x) => loose(String(x))).includes(loose(String(want))) : loose(String(f.value)) === loose(String(want))));
@@ -267,12 +267,13 @@ const filterHolds = (q: QueryLike, key: string, want: string | number | boolean)
 /** What is off about a query, against an expectation; empty when it matches. */
 export function queryMisses(q: QueryLike, e: QueryExpect & { measures?: string[] }): string[] {
   const miss: string[] = [];
-  const measures = [q.measure, ...(q.measures ?? [])].filter(Boolean) as string[];
+  // A points query (a map) sizes by a measure and colours by a dimension: they count as its measure and dimension.
+  const measures = [q.measure, q.size, ...(q.measures ?? [])].filter(Boolean) as string[];
   const wantMeasures = e.measure ?? e.measures;
   if (e.kind && !e.kind.includes(q.kind ?? "")) miss.push(`kind ${q.kind}`);
   if (wantMeasures && !measures.some((m) => wantMeasures.includes(m))) miss.push(`measure ${measures.join("+") || "none"}`);
   if (e.measures_include && !e.measures_include.every((m) => measures.includes(m))) miss.push(`measures lack ${e.measures_include.join(",")}`);
-  if (e.dimension && !e.dimension.includes(q.dimension ?? "") && !e.dimension.includes(q.by ?? "")) miss.push(`dimension ${q.dimension ?? "none"}`);
+  if (e.dimension && !e.dimension.includes(q.dimension ?? "") && !e.dimension.includes(q.by ?? "") && !e.dimension.includes(q.color ?? "")) miss.push(`dimension ${q.dimension ?? q.color ?? "none"}`);
   if (e.grain && !e.grain.includes(q.grain ?? "")) miss.push(`grain ${q.grain ?? "none"}`);
   if (e.sort && !e.sort.includes(q.sort ?? "desc")) miss.push(`sort ${q.sort ?? "desc"}`);
   for (const [k, v] of Object.entries(e.filters ?? {})) if (!filterHolds(q, k, v)) miss.push(`filter ${k}=${v}`);

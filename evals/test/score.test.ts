@@ -106,6 +106,9 @@ describe("grounding, queries, declines", () => {
   it("says what is off about a query", () => {
     expect(queryMisses({ kind: "breakdown", measure: "children_coverage_pct", dimension: "ward", filters: [{ dimension: "lga", op: "eq", value: "Riverside" }] }, { measure: ["children_coverage_pct"], dimension: ["ward"], filters: { lga: "Riverside" } })).toEqual([]);
     expect(queryMisses({ kind: "breakdown", measure: "children_vaccinated", dimension: "lga" }, { measure: ["children_coverage_pct"], dimension: ["ward"] })).toEqual(["measure children_vaccinated", "dimension lga"]);
+    // A map's points query: its size is the measure, its colour the dimension.
+    expect(queryMisses({ kind: "points", size: "zero_dose_children", color: "band" }, { kind: ["points"], measure: ["zero_dose_children"], dimension: ["band"] })).toEqual([]);
+    expect(queryMisses({ kind: "points", color: "band" }, { kind: ["points"], measure: ["zero_dose_children"], dimension: ["ward"] })).toEqual(["measure none", "dimension band"]);
   });
 
   it("labels declines", () => {
