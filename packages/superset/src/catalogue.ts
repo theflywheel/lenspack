@@ -2,6 +2,7 @@ import { type Pack, parsePack } from "@lenspack/spec";
 import YAML from "yaml";
 
 import { type SupersetClient, rison } from "./client";
+import { examplesForPack } from "./examples";
 
 // Superset's datasets are the catalogue: a dataset is an entity, its saved
 // metrics are measures, its groupable columns are dimensions. The pack built
@@ -272,7 +273,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     measures: measures.map((m) => Object.fromEntries(Object.entries(m).filter(([, v]) => v !== undefined))),
     hierarchies,
     ...(overlay.instructions ? { instructions: overlay.instructions } : {}),
-    ...(overlay.examples?.length ? { examples: overlay.examples } : {}),
+    ...(overlay.examples?.length ? { examples: examplesForPack(overlay.examples as { question?: unknown }[]) } : {}),
   };
   const packYaml = YAML.stringify(raw, { lineWidth: 0 });
   return { pack: parsePack(raw), packYaml, binding };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { memoryStore } from "../src/store";
-import { summarise } from "../src/summarise";
+import { summarise, widthWords } from "../src/summarise";
 import { catalogue, packRef } from "./fixtures";
 
 describe("memory store", () => {
@@ -43,7 +43,7 @@ describe("memory store", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const text = summarise(r.board.config);
-    expect(text).toContain("n (text, 6/12 wide) says “Kept as Superset has it: a heatmap of visits by site and day.");
+    expect(text).toContain("n (text, half width (6/12)) says “Kept as Superset has it: a heatmap of visits by site and day.");
     const quoted = /says “(.*?)”/.exec(text)![1]!;
     expect(quoted.length).toBeLessThanOrEqual(200);
     expect(quoted.endsWith("…")).toBe(true);
@@ -63,9 +63,9 @@ describe("memory store", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const text = summarise(r.board.config);
-    expect(text).toContain("row 1: a (kpi, 4/12 wide) count “Total”");
+    expect(text).toContain("row 1: a (kpi, a third width (4/12)) count “Total”");
     // A third and a half fit side by side, so both land on row 1.
-    expect(text).toContain("| b (bar, 6/12 wide) count by region “By region”");
+    expect(text).toContain("| b (bar, half width (6/12)) count by region “By region”");
   });
 });
 
@@ -78,5 +78,19 @@ describe("restoring", () => {
     const same = await store.revertTo("b", 1);
     expect(same?.version).toBe(1);
     expect((await store.versions("b")).length).toBe(before);
+  });
+});
+
+describe("widthWords", () => {
+  it("names the common widths and gives the columns, plain n/12 otherwise", () => {
+    expect(widthWords(12)).toBe("full width (12/12)");
+    expect(widthWords(9)).toBe("three quarters width (9/12)");
+    expect(widthWords(8)).toBe("two thirds width (8/12)");
+    expect(widthWords(6)).toBe("half width (6/12)");
+    expect(widthWords(4)).toBe("a third width (4/12)");
+    expect(widthWords(3)).toBe("a quarter width (3/12)");
+    expect(widthWords(5)).toBe("5/12 width");
+    expect(widthWords(24, 24)).toBe("full width (24/24)");
+    expect(widthWords(6, 24)).toBe("6/24 width");
   });
 });

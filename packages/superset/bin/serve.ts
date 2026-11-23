@@ -15,7 +15,7 @@ import { memoryStore } from "@lenspack/core";
 import { DEFAULT_SPEECH_MODEL, addUsageSink, buildProvider, createApp, effortFor, pickChatModel, probe, providersFromEnv, publicView, speechKeyFromEnv, speechModelAllowed, speechModels, usageLedger } from "@lenspack/serve";
 import YAML from "yaml";
 
-import { type Overlay, fetchDatasets, packFromDatasets, supersetBoards, supersetClient, supersetConnector } from "../src/index";
+import { type Overlay, examplesByLanguage, examplesFor, fetchDatasets, packFromDatasets, supersetBoards, supersetClient, supersetConnector } from "../src/index";
 import { rotatingAudit } from "../src/audit";
 import { identityKey, serviceAccount } from "../src/bootstrap";
 import { type Identity, editPolicyFrom, identityOf, supersetAccess } from "../src/identity";
@@ -276,8 +276,8 @@ createServer(async (req, res) => {
     // Where browsers reach Superset: the config's publicUrl, else what Superset's route says it was reached as.
     const fwd = (h: string) => String(req.headers[h] ?? "").split(",")[0]!.trim();
     const derivedUrl = fwd("x-forwarded-host") ? `${fwd("x-forwarded-proto") || "http"}://${fwd("x-forwarded-host")}` : null;
-    const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? derivedUrl, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
-    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples, panel, speech: speechKey.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds, holdMs: holdMs() } : { enabled: false }, language: { default: language().default, options: LANGUAGES } }));
+    const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? derivedUrl, base, examples: examplesByLanguage(config.overlay?.examples) };
+    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: examplesFor(vars.examples, url.searchParams.get("lang")), examplesByLang: vars.examples, panel, speech: speechKey.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds, holdMs: holdMs() } : { enabled: false }, language: { default: language().default, options: LANGUAGES } }));
     if (url.pathname === "/_superset/settings/speech/models") return send(res, 200, JSON.stringify((await speechModels({ baseUrl: speech.baseUrl })).models));
     if (req.method === "PUT" && (url.pathname === "/_superset/settings/speech" || url.pathname === "/_superset/settings/language")) {
       if (adminOnly()) return;
