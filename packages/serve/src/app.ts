@@ -12,9 +12,10 @@ import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Access, Audit, Principal } from "./auth";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
-import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, turnCost, usageLedger, withMeter } from "./metering";
-import { catalogueText, systemParts } from "./prompt";
+import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, usageLedger, withMeter } from "./metering";
+import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
+import { LANGUAGE, type SpeechOptions, SpeechError, speechRecord, transcribe } from "./speech";
 
 // The board API that @lenspack/react's host callbacks talk to, for any number
 // of packs, each bound to its own source. Nothing here knows which backend a
@@ -73,6 +74,14 @@ export type AppOptions = {
    * unavailable: the first available provider and its default effort, as before.
    */
   chatDefault?: () => { model?: string; effort?: string } | undefined;
+  /** Speech to text for the chat's mic (POST /api/_stt). Absent, or without a key, the mic is off. */
+  speech?: SpeechOptions;
+  /**
+   * The deployment's language rules (settings, read per turn). With it, each
+   * turn's prompt says which language to reply and title in; the request's
+   * `language` ("auto", "fr", …) is the user's pick.
+   */
+  language?: () => Omit<LanguagePolicy, "reply">;
 };
 
 const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
@@ -133,6 +142,21 @@ const json = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
 };
+/** The raw request body, refusing more than max bytes. */
+const readBytes = (req: IncomingMessage, max: number) =>
+  new Promise<Uint8Array>((resolve, reject) => {
+    const parts: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > max) {
+        reject(new SpeechError(413, "clip too long"));
+        req.destroy();
+      } else parts.push(c);
+    });
+    req.on("end", () => resolve(new Uint8Array(Buffer.concat(parts))));
+    req.on("error", reject);
+  });
 const read = (req: IncomingMessage) =>
   new Promise<unknown>((resolve, reject) => {
     let s = "";
@@ -201,6 +225,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
+  // What the client needs to show the mic; null when speech is off.
+  const speechInfo = () => (opts.speech?.apiKey ? { maxSeconds: opts.speech.maxSeconds ?? 60 } : null);
+
   return async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
     const [, api, packName, boardId, action] = url.pathname.split("/");
@@ -221,13 +248,35 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         );
         // Absent on an open server: there is no one to name.
         const me = opts.access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, ...(opts.signOutUrl ? { signOut: opts.signOutUrl } : {}) } : undefined;
-        return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), ...(me ? { me } : {}) });
+        return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), speech: speechInfo(), ...(me ? { me } : {}) });
       }
       // What chat has cost since the server started: maintainers only, as it names every user.
       if (packName === "_usage" && req.method === "GET") {
         if (!who.maintain) return json(res, 403, { error: "usage is for maintainers" });
         // The caps go with it, so whoever watches spend sees how near they are.
         return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
+      }
+      // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
+      if (packName === "_stt") {
+        if (req.method !== "POST") return json(res, 405, { error: "POST a clip" });
+        const speech = opts.speech;
+        if (!speech?.apiKey) return json(res, 503, { error: "speech to text is not configured on this server" });
+        const over = overBudget(ledger, opts.budget, who.user);
+        if (over) return json(res, 429, { error: over });
+        const language = url.searchParams.get("language") || undefined;
+        const pack = url.searchParams.get("pack") || undefined;
+        const sinks = [ledger, ...(opts.usageSinks ?? [])];
+        try {
+          const audio = await readBytes(req, speech.maxBytes ?? 10_000_000);
+          const t = await transcribe(speech, audio, req.headers["content-type"], language);
+          recordCall(speechRecord(t, { user: who.user, pack }), sinks);
+          return json(res, 200, t);
+        } catch (e) {
+          if (!(e instanceof SpeechError)) throw e;
+          if (e.status === 502) recordCall(speechRecord({ model: speech.model(), usd: null, ms: e.ms, ok: false, error: e.message.slice(0, 300) }, { user: who.user, pack }), sinks);
+          opts.log?.(`stt: ${e.message}`);
+          return json(res, e.status, { error: e.message });
+        }
       }
       const h = byName.get(packName);
       // A pack the caller may not open looks the same as one that is not there.
@@ -399,7 +448,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const maxRounds = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("rounds") ?? 1)) || 1));
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown };
     // What this turn costs: every model call made in its scope, and the queries its tools run.
     const calls: CallRecord[] = [];
     const queries = emptyQueryMeter();
@@ -407,7 +456,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
-    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes);
+    const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
+    const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
+    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes, language);
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();

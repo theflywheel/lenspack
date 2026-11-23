@@ -22,6 +22,7 @@ import { screenshotBoard } from "./screenshot";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "@lenspack/serve";
 import { type HcmFacts, hcmTasks } from "./tasks-hcm";
 import { type Facts, tasks } from "./tasks";
+import { type Lang, hcmPrompts, replyVariants } from "./tasks-i18n";
 import { type VisualVerdict, judgeScreenshot } from "./visual";
 
 const arg = (name: string) => {
@@ -43,6 +44,12 @@ const escalateName = arg("escalate");
 const packName = (arg("pack") ?? "commerce") as "commerce" | "hcm";
 const demoUrl = arg("demo") ?? "http://127.0.0.1:8787";
 const modelFilter = arg("models")?.split(",");
+// --lang fr|fr-spoken|hi: ask the hcm tasks in that language (tasks-i18n.ts).
+const lang = (arg("lang") ?? "en") as Lang;
+// --titles board|speaker: pass the chat's language rules (reply in the user's language; titles in
+// the board's, English, or the speaker's). Without it the prompt has no language section, as before.
+const titles = arg("titles") as "board" | "speaker" | undefined;
+const languagePolicy = titles ? { reply: "auto", titles, board: "en" } : undefined;
 const providerConfigs: ProviderConfig[] = arg("providers") ? (JSON.parse(readFileSync(arg("providers")!, "utf8")) as ProviderConfig[]) : providersFromEnv();
 if (providerConfigs.length === 0) {
   console.error("No providers: set LENSPACK_LLM_PROVIDERS or pass --providers file.json");
@@ -62,6 +69,7 @@ type Result = {
   narrated: boolean;
   latencyMs: number;
   reply: string;
+  titles?: string[];
   error?: string;
   visual?: VisualVerdict;
   review?: Review & { agrees: boolean };
@@ -90,7 +98,7 @@ async function main() {
     const hh = await q({ kind: "value", measure: "households" });
     facts = { worstLocality: { locality: worst.group, rate: worst.value ?? 0, tasks: worst.count }, topReason: { reason: top.group, count: top.value ?? 0 }, households: hh.rows[0]!.value ?? 0 };
     console.log(`facts: worst locality ${worst.group} ${((worst.value ?? 0) * 100).toFixed(1)}% (${worst.count} visits); top reason ${top.group} ${top.value}; households ${hh.rows[0]!.value}`);
-    taskList = hcmTasks as never;
+    taskList = (lang === "en" ? hcmTasks : hcmTasks.map((t) => ({ ...t, prompt: hcmPrompts[lang][t.id] ?? t.prompt, check: (c: never, reply: string, f: never) => { let note: string | null = "no variant"; for (const v of replyVariants(reply)) { note = t.check(c, v, f); if (note === null) return null; } return note; } }))) as never;
   } else {
     const refund = await q({ kind: "breakdown", dimension: "country", measure: "refund_rate", limit: 12, sort: "desc" });
     facts = { topRefund: { country: refund.rows[0]!.group, rate: refund.rows[0]!.value ?? 0 } };
@@ -132,7 +140,7 @@ async function main() {
         const out = await as("eval", () => generateText({
           model: provider.languageModel,
           // As the chat sends it: an adapter may add prompt-cache breakpoints.
-          ...shapeCall(provider, { system: systemParts(ex.pack, catalogue, seeded.board.config), messages: [{ role: "user", content: t.prompt }], tools, loop: true }),
+          ...shapeCall(provider, { system: systemParts(ex.pack, catalogue, seeded.board.config, undefined, [], languagePolicy), messages: [{ role: "user", content: t.prompt }], tools, loop: true }),
           stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)],
           abortSignal: AbortSignal.timeout(120_000),
         }));
@@ -144,7 +152,7 @@ async function main() {
         }).length;
         const board = (await store.get("b"))!;
         const note = t.check(board.config as never, out.text, facts as never);
-        r = { provider: cfg.name, task: t.id, pass: note === null, note, steps: out.steps.length, toolCalls: calls.length, toolErrors, narrated: NARRATION.test(out.text), latencyMs: Date.now() - started, reply: out.text.slice(0, 300) };
+        r = { provider: cfg.name, task: t.id, pass: note === null, note, steps: out.steps.length, toolCalls: calls.length, toolErrors, narrated: NARRATION.test(out.text), latencyMs: Date.now() - started, reply: out.text.slice(0, 300), titles: [board.config.title ?? "", ...Object.values(board.config.widgets).map((w) => (w as { title?: string }).title ?? "")] };
         if ((reviewFlag || heal) && (t.kind ?? "edit") === "edit") {
           const reviewer = fixedReviewer ?? provider;
           const versions = (await store.versions("b")).filter((v) => v.version > seeded.board.version);
@@ -157,7 +165,7 @@ async function main() {
             const history = out.steps.flatMap((st) => st.response.messages);
             const again = await as("escalate", () => generateText({
               model: (escalateProvider ?? provider).languageModel,
-              ...shapeCall(escalateProvider ?? provider, { system: systemParts(ex.pack, catalogue, seeded.board.config), messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: healingPrompt(review) }], tools, loop: true }),
+              ...shapeCall(escalateProvider ?? provider, { system: systemParts(ex.pack, catalogue, seeded.board.config, undefined, [], languagePolicy), messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: healingPrompt(review) }], tools, loop: true }),
               stopWhen: stepCountIs(12),
               abortSignal: AbortSignal.timeout(120_000),
             }));
@@ -185,7 +193,7 @@ async function main() {
   }
   await db.close();
 
-  const stamp = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}-${packName}`;
+  const stamp = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}-${packName}${lang === "en" ? "" : `-${lang}`}${titles ? `-titles-${titles}` : ""}`;
   const dir = join(import.meta.dirname, "results");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${stamp}.json`), JSON.stringify(results, null, 2));

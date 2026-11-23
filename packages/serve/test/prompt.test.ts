@@ -8,7 +8,7 @@ import { catalogueFrom, loadPack, parsePack } from "@lenspack/spec";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
-import { INLINE_KEYS, PROMPT_VERSION, SYSTEM, configSchema, openConfig, recentTurns, systemParts, userChangesText } from "../src";
+import { INLINE_KEYS, PROMPT_VERSION, SYSTEM, configSchema, languageText, openConfig, recentTurns, systemParts, userChangesText } from "../src";
 
 const tickets = fileURLToPath(new URL("../../../examples/tickets/pack.yaml", import.meta.url));
 
@@ -90,5 +90,30 @@ describe("pack examples at load", () => {
     const bad = join(mkdtempSync(join(tmpdir(), "lenspack-examples-")), "pack.yaml");
     writeFileSync(bad, readFileSync(tickets, "utf8").replace("measure: transitions, filters", "measure: tickets, filters"));
     await expect(open(bad)).rejects.toThrow(/examples\[1\] \("How often do tickets get escalated\?"\): .*Measure one of these instead: transitions/);
+  });
+});
+
+describe("languageText", () => {
+  it("is empty without a policy, so prompts without one are unchanged", () => {
+    expect(languageText()).toBe("");
+  });
+  it("replies in the user's language on auto and titles in the board's language by default", () => {
+    const t = languageText({ reply: "auto" });
+    expect(t).toContain("Reply in the language of the user's latest message.");
+    expect(t).toContain("titles in English, the board's language");
+  });
+  it("replies in a picked language, and titles follow the reply when the setting says speaker", () => {
+    const t = languageText({ reply: "hi", titles: "speaker", board: "fr" });
+    expect(t).toContain("write every reply in Hindi (Devanagari script)");
+    expect(t).toContain("titles in the language you reply in");
+    expect(t).not.toContain("French");
+  });
+  it("goes in the board part, after the board, never in the cached stable part", async () => {
+    const { systemParts } = await import("../src/prompt");
+    const pack = { pack: "p", entities: {}, dimensions: [], measures: [], examples: [] } as never;
+    const catalogue = { dimensions: [], measures: [] } as never;
+    const [stable, board] = systemParts(pack, catalogue, undefined, new Date(0), [], { reply: "fr", board: "fr" });
+    expect(stable).not.toContain("LANGUAGE:");
+    expect(board).toContain("write every reply in French");
   });
 });

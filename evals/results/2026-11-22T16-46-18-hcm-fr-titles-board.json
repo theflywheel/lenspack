@@ -1,0 +1,1032 @@
+[
+  {
+    "provider": "haiku",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5924,
+    "reply": "J'ai ajouté le graphique à barres « Delivery rate by locality (lowest first) » en bas du tableau de bord, pleine largeur. Il affiche le taux de livraison des lignes de produits par localité, du plus bas au plus haut. Le titre est en anglais, comme le reste du tableau de bord.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Delivery rate by locality (lowest first)"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 45468,
+        "cachedInputTokens": 40123,
+        "cacheWriteTokens": 5337,
+        "outputTokens": 826,
+        "reasoningTokens": 385,
+        "usd": 0.001482,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 45468,
+          "cachedInputTokens": 40123,
+          "cacheWriteTokens": 5337,
+          "outputTokens": 826,
+          "reasoningTokens": 385,
+          "usd": 0.001482,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "fanout-trap",
+    "pass": false,
+    "note": "did not recover with a resources-grain measure by product",
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 3893,
+    "reply": "Je n'ai pas pu ajouter ce camembert : le taux de réussite d'administration est calculé au niveau des tâches, et la variante de produit se trouve sur les lignes de produits, qui peuvent être plusieurs par tâche. Le board ne peut donc pas croiser les deux sans fausser les chiffres. Je n'ai rien modifi",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28463,
+        "cachedInputTokens": 27190,
+        "cacheWriteTokens": 1267,
+        "outputTokens": 612,
+        "reasoningTokens": 314,
+        "usd": 0.000737,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28463,
+          "cachedInputTokens": 27190,
+          "cacheWriteTokens": 1267,
+          "outputTokens": 612,
+          "reasoningTokens": 314,
+          "usd": 0.000737,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5771,
+    "reply": "J'ai mis à jour le graphique « Weekly visits by campaign, last 10 weeks » : c'est maintenant une courbe des visites (tasks) par semaine et par campagne sur les 10 dernières semaines, en pleine largeur. Le tableau de bord confirme la modification.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign, last 10 weeks",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44741,
+        "cachedInputTokens": 42396,
+        "cacheWriteTokens": 2337,
+        "outputTokens": 893,
+        "reasoningTokens": 513,
+        "usd": 0.001163,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44741,
+          "cachedInputTokens": 42396,
+          "cacheWriteTokens": 2337,
+          "outputTokens": 893,
+          "reasoningTokens": 513,
+          "usd": 0.001163,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4912,
+    "reply": "J'ai ajouté deux widgets en bas du tableau de bord : un KPI « P90 visit length (min), last 30 days » (un quart de largeur) et un graphique à barres « Median visit length (min) by project » (pleine largeur). Le board confirme les deux widgets.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "P90 visit length (min), last 30 days",
+      "Median visit length (min) by project"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 47084,
+        "cachedInputTokens": 43570,
+        "cacheWriteTokens": 3506,
+        "outputTokens": 928,
+        "reasoningTokens": 316,
+        "usd": 0.001339,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 47084,
+          "cachedInputTokens": 43570,
+          "cacheWriteTokens": 3506,
+          "outputTokens": 928,
+          "reasoningTokens": 316,
+          "usd": 0.001339,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4901,
+    "reply": "Le graphique à barres « Refusal rate by campaign » est ajouté en bas du board, pleine largeur. Il y avait déjà un filtre Campaign en haut du board, donc je n'en ai pas ajouté un second. Je ne peux pas confirmer depuis ici qu'il s'applique à tous les widgets.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Refusal rate by campaign"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 45453,
+        "cachedInputTokens": 42768,
+        "cacheWriteTokens": 2677,
+        "outputTokens": 830,
+        "reasoningTokens": 412,
+        "usd": 0.001179,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 45453,
+          "cachedInputTokens": 42768,
+          "cacheWriteTokens": 2677,
+          "outputTokens": 830,
+          "reasoningTokens": 412,
+          "usd": 0.001179,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4094,
+    "reply": "La localité avec le taux de réussite d'administration le plus bas parmi celles ayant au moins 100 visites est **NG_ST_LGA1_W2_L6**, avec un taux de **70,8 %** sur **325 visites**. Ce calcul porte sur toute la période et toutes les campagnes, sans le filtre Campagne du tableau de bord. Le plus bas ta",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29838,
+        "cachedInputTokens": 27227,
+        "cacheWriteTokens": 2605,
+        "outputTokens": 793,
+        "reasoningTokens": 450,
+        "usd": 0.000995,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29838,
+          "cachedInputTokens": 27227,
+          "cacheWriteTokens": 2605,
+          "outputTokens": 793,
+          "reasoningTokens": 450,
+          "usd": 0.000995,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2422,
+    "reply": "La raison la plus fréquente est **STOCK_OUT** (rupture de stock), avec 98 lignes non livrées. Les autres raisons principales sont BENEFICIARY_ABSENT (86), SICK (83), INELIGIBLE (72) et REFUSED (67). Ces chiffres portent sur toutes les périodes, sans filtre de campagne.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28841,
+        "cachedInputTokens": 27218,
+        "cacheWriteTokens": 1617,
+        "outputTokens": 385,
+        "reasoningTokens": 106,
+        "usd": 0.000667,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28841,
+          "cachedInputTokens": 27218,
+          "cacheWriteTokens": 1617,
+          "outputTokens": 385,
+          "reasoningTokens": 106,
+          "usd": 0.000667,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3544,
+    "reply": "Je n'ai pas pu ajouter cette carte : le registre ne contient ni coordonnées géographiques ni distance, et il n'a pas de dimension « établissement ». Je ne peux donc pas filtrer les ménages à moins de 2 km de FAC-7. Les ménages ne peuvent être ventilés que par localité, quartier (ward) ou ville, et l",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 1,
+        "failed": 0,
+        "inputTokens": 13861,
+        "cachedInputTokens": 13340,
+        "cacheWriteTokens": 517,
+        "outputTokens": 634,
+        "reasoningTokens": 445,
+        "usd": 0.000515,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 1,
+          "failed": 0,
+          "inputTokens": 13861,
+          "cachedInputTokens": 13340,
+          "cacheWriteTokens": 517,
+          "outputTokens": 634,
+          "reasoningTokens": 445,
+          "usd": 0.000515,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4305,
+    "reply": "J'ai ajouté le graphique « Visits by locality and status » en pleine largeur, en bas du tableau de bord. Il s'agit d'un graphique à barres empilées des visites (tâches) par localité, réparties par statut.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Visits by locality and status"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 45300,
+        "cachedInputTokens": 42666,
+        "cacheWriteTokens": 2626,
+        "outputTokens": 713,
+        "reasoningTokens": 314,
+        "usd": 0.001112,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 45300,
+          "cachedInputTokens": 42666,
+          "cacheWriteTokens": 2626,
+          "outputTokens": 713,
+          "reasoningTokens": 314,
+          "usd": 0.001112,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1291,
+    "reply": "Il y a **574** ménages enregistrés au total.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28359,
+        "cachedInputTokens": 27192,
+        "cacheWriteTokens": 1161,
+        "outputTokens": 90,
+        "reasoningTokens": 0,
+        "usd": 0.000463,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28359,
+          "cachedInputTokens": 27192,
+          "cacheWriteTokens": 1161,
+          "outputTokens": 90,
+          "reasoningTokens": 0,
+          "usd": 0.000463,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2805,
+    "reply": "J'ai ajouté en bas du tableau de bord un graphique à barres du taux de livraison des lignes de produits par localité, trié du plus bas au plus haut. Il s'intitule « Delivered rate by locality (lowest first) » et occupe toute la largeur.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Delivered rate by locality (lowest first)"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28788,
+        "cachedInputTokens": 13863,
+        "cacheWriteTokens": 14919,
+        "outputTokens": 374,
+        "reasoningTokens": 0,
+        "usd": 0.043823,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28788,
+          "cachedInputTokens": 13863,
+          "cacheWriteTokens": 14919,
+          "outputTokens": 374,
+          "reasoningTokens": 0,
+          "usd": 0.043823,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "fanout-trap",
+    "pass": false,
+    "note": "did not recover with a resources-grain measure by product",
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 2,
+    "narrated": false,
+    "latencyMs": 6150,
+    "reply": "Je n'ai rien ajouté au tableau de bord, pour deux raisons :\n\n- **Taux de réussite par variante de produit :** impossible. Le taux de réussite est calculé par visite, et une visite peut contenir plusieurs variantes de produit, ce qui fausserait les chiffres.\n- **Camembert d'un taux :** refusé. Les pa",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44142,
+        "cachedInputTokens": 41708,
+        "cacheWriteTokens": 2426,
+        "outputTokens": 772,
+        "reasoningTokens": 199,
+        "usd": 0.022143,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44142,
+          "cachedInputTokens": 41708,
+          "cacheWriteTokens": 2426,
+          "outputTokens": 772,
+          "reasoningTokens": 199,
+          "usd": 0.022143,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2639,
+    "reply": "J'ai limité la courbe « Weekly visits by campaign » aux 10 dernières semaines. Elle trace toujours les visites par semaine, avec une ligne par campagne.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28242,
+        "cachedInputTokens": 27198,
+        "cacheWriteTokens": 1038,
+        "outputTokens": 254,
+        "reasoningTokens": 94,
+        "usd": 0.010587,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28242,
+          "cachedInputTokens": 27198,
+          "cacheWriteTokens": 1038,
+          "outputTokens": 254,
+          "reasoningTokens": 94,
+          "usd": 0.010587,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4766,
+    "reply": "J'ai ajouté les deux widgets au tableau de bord :\n- **KPI :** « P90 visit length (min), last 30 days ». Il se trouve sur sa propre ligne, sous les autres KPI, parce que la première rangée était déjà pleine.\n- **Graphique à barres :** « Median visit length (min) by project », en bas du tableau, sur t",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "P90 visit length (min), last 30 days",
+      "Median visit length (min) by project"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29955,
+        "cachedInputTokens": 27223,
+        "cacheWriteTokens": 2726,
+        "outputTokens": 641,
+        "reasoningTokens": 0,
+        "usd": 0.018682,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29955,
+          "cachedInputTokens": 27223,
+          "cacheWriteTokens": 2726,
+          "outputTokens": 641,
+          "reasoningTokens": 0,
+          "usd": 0.018682,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 3980,
+    "reply": "J'ai ajouté en bas du tableau de bord un graphique à barres du taux de refus par campagne. Je n'ai pas pu ajouter de second filtre, car le tableau avait déjà un filtre « Campagne » (campaign). Je n'ai pas vérifié si ce filtre s'applique bien à tous les widgets.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Refusal rate by campaign"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29075,
+        "cachedInputTokens": 27213,
+        "cacheWriteTokens": 1856,
+        "outputTokens": 546,
+        "reasoningTokens": 106,
+        "usd": 0.015555,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29075,
+          "cachedInputTokens": 27213,
+          "cacheWriteTokens": 1856,
+          "outputTokens": 546,
+          "reasoningTokens": 106,
+          "usd": 0.015555,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4403,
+    "reply": "Parmi les localités ayant au moins 100 visites, c'est **NG_ST_LGA1_W2_L6** qui a le taux de réussite d'administration le plus bas :\n\n- **Taux de réussite :** 70,8 %\n- **Visites :** 325\n\nLes localités NG_ST_LGA1_W4_L11, W4_L10, W3_L8, W4_L12 et W3_L9 ont des taux plus bas, mais chacune a moins de 100",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29667,
+        "cachedInputTokens": 27227,
+        "cacheWriteTokens": 2434,
+        "outputTokens": 363,
+        "reasoningTokens": 0,
+        "usd": 0.015173,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29667,
+          "cachedInputTokens": 27227,
+          "cacheWriteTokens": 2434,
+          "outputTokens": 363,
+          "reasoningTokens": 0,
+          "usd": 0.015173,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3111,
+    "reply": "La raison la plus fréquente est **STOCK_OUT** (rupture de stock). Elle concerne **98 lignes de produit** non livrées.\n\nElle est suivie de près par BENEFICIARY_ABSENT (86 lignes) et SICK (83 lignes).",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28691,
+        "cachedInputTokens": 27218,
+        "cacheWriteTokens": 1467,
+        "outputTokens": 223,
+        "reasoningTokens": 0,
+        "usd": 0.011353,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28691,
+          "cachedInputTokens": 27218,
+          "cacheWriteTokens": 1467,
+          "outputTokens": 223,
+          "reasoningTokens": 0,
+          "usd": 0.011353,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2591,
+    "reply": "Je ne peux pas ajouter cette carte, et je n'ai rien modifié sur le tableau. Le tableau ne propose que les types de widget suivants : graphique en barres, en courbes, en secteurs ou en aires, indicateur, tableau et texte. Il n'a pas de carte.\n\nDe plus, les données ne contiennent ni coordonnées géogra",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 1,
+        "failed": 0,
+        "inputTokens": 13861,
+        "cachedInputTokens": 13340,
+        "cacheWriteTokens": 517,
+        "outputTokens": 241,
+        "reasoningTokens": 0,
+        "usd": 0.006379,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 1,
+          "failed": 0,
+          "inputTokens": 13861,
+          "cachedInputTokens": 13340,
+          "cacheWriteTokens": 517,
+          "outputTokens": 241,
+          "reasoningTokens": 0,
+          "usd": 0.006379,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5745,
+    "reply": "J'ai ajouté en bas du tableau de bord un graphique à barres empilées, « Visits by locality and status ». Il montre les visites par localité, avec chaque barre découpée par statut de tâche. Il occupe toute la largeur.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Visits by locality and status"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44816,
+        "cachedInputTokens": 42458,
+        "cacheWriteTokens": 2350,
+        "outputTokens": 436,
+        "reasoningTokens": 33,
+        "usd": 0.018743,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44816,
+          "cachedInputTokens": 42458,
+          "cacheWriteTokens": 2350,
+          "outputTokens": 436,
+          "reasoningTokens": 33,
+          "usd": 0.018743,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2304,
+    "reply": "**574 ménages** sont enregistrés au total. Ce chiffre exclut les ménages supprimés.",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28359,
+        "cachedInputTokens": 27192,
+        "cacheWriteTokens": 1161,
+        "outputTokens": 108,
+        "reasoningTokens": 0,
+        "usd": 0.009433,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28359,
+          "cachedInputTokens": 27192,
+          "cacheWriteTokens": 1161,
+          "outputTokens": 108,
+          "reasoningTokens": 0,
+          "usd": 0.009433,
+          "unpriced": 0
+        }
+      ]
+    }
+  }
+]
