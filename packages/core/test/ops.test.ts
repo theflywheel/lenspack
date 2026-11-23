@@ -601,6 +601,22 @@ describe("moving widgets", () => {
     for (const id of ["kpi1", "zd", "line", "notes"]) expect(at(result.config, id)!.w).toBe(board.layout.find((item) => item.i === id)!.w);
   });
 
+  it("keeps the row three across when a narrowed neighbour is widened again (the eval's follow-up)", () => {
+    const board = empty();
+    board.grid.fill = true;
+    for (const [i, x, y, w] of [["c49", 0, 0, 6], ["pie", 6, 0, 6], ["c50", 0, 7, 12]] as const) {
+      board.widgets[i] = widgetSchema.parse(chart({ title: i }));
+      board.layout.push({ i, x, y, w, h: 7 });
+    }
+    const moved = apply(board, [{ op: "resize_widget", id: "c50", width: "half" }, { op: "move_widget", id: "c50", placement: { place: "after:c49", width: "half" } }]);
+    if (!moved.ok) throw new Error(moved.error);
+    const resized = apply(moved.config, [{ op: "resize_widget", id: "c49", width: "half" }]);
+    if (!resized.ok) throw new Error(resized.error);
+    const row = resized.config.layout.filter((item) => item.y === 0).sort((a, b) => a.x - b.x);
+    expect(row.map((item) => [item.i, item.x, item.w])).toEqual([["c49", 0, 6], ["c50", 6, 3], ["pie", 9, 3]]);
+    expect(resized.config.layout).toHaveLength(3);
+  });
+
   it("says the row is full, with the choices, when making room would squeeze a widget too far", () => {
     const board = empty();
     for (const [i, x] of [["a", 0], ["b", 3], ["c", 6], ["d", 9]] as const) {
