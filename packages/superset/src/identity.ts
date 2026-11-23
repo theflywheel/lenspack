@@ -86,16 +86,25 @@ export function identityOf(req: IncomingMessage, key: () => string | null): Iden
 }
 
 /** What one identity may do under a policy. */
-export function principalOf(id: Identity, policy: EditPolicy): Principal {
-  if (policy === "signed-in" || id.a || id.e === true) return { user: id.u, edit: true, maintain: true };
+export const EDITS_OFF_MESSAGE =
+  "Changing dashboards through the chat is turned off on this deployment, so nothing was changed. Make the change in Superset, or ask a question about the data instead.";
+
+/** Whether this person may change the dashboard through the chat: the off switch first, then the policy. */
+export function canEdit(id: Identity, policy: EditPolicy, editsOn = true): boolean {
+  return editsOn && (policy === "signed-in" || id.a || id.e === true);
+}
+
+export function principalOf(id: Identity, policy: EditPolicy, editsOn = true): Principal {
+  if (!editsOn) return { user: id.u, edit: false, maintain: false, readOnly: EDITS_OFF_MESSAGE };
+  if (canEdit(id, policy)) return { user: id.u, edit: true, maintain: true };
   // Asks are fine; every edit tool answers with the refusal, which the model passes on.
   return { user: id.u, edit: false, maintain: false, readOnly: READ_ONLY_MESSAGE };
 }
 
 /** createApp's access: the signed identity under the policy; unsigned requests are not signed in. */
-export function supersetAccess(key: () => string | null, policy: EditPolicy): Access {
+export function supersetAccess(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true): Access {
   return (req) => {
     const id = identityOf(req, key);
-    return id ? principalOf(id, policy) : null;
+    return id ? principalOf(id, policy, editsOn()) : null;
   };
 }

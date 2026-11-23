@@ -56,6 +56,8 @@ export type Capabilities = {
   timeHeatmap?: boolean;
   /** Points queries (a map): each row's latitude and longitude. Absent means false: a connector says it can. */
   points?: boolean;
+  /** Heatmap charts may be made. False where a deployment turned them off. Absent means true. */
+  heatmap?: boolean;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true, points: true };
@@ -224,7 +226,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     root = query.entity;
     if (query.kind === "points") {
       if (!pack.entities[root]!.geo) throw new ResolveError("NOT_SUPPORTED", `"${root}" has no location (latitude and longitude), so it cannot be drawn as points`, root);
-      if (!caps.points) throw new ResolveError("NOT_SUPPORTED", "This source cannot list points for a map", root);
+      if (!caps.points) throw new ResolveError("NOT_SUPPORTED", "Maps are not available here: this source or deployment cannot list points", root);
       if (query.size) {
         const def = findMeasure(query.size);
         if (def.entity !== root) throw new ResolveError("WRONG_ENTITY", `"${query.size}" is measured on "${def.entity}", not "${root}": a point's size must be a measure of the points' own entity`, query.size);

@@ -51,7 +51,8 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
 - **Edits** follow `LENSPACK_EDIT_POLICY` (or `editPolicy` in the config). `superset`, the default: whoever
   Superset lets edit that dashboard, its owners with `can_write` on Dashboard and admins. Everyone else who can
   view it may still ask questions; the chat's edit tools then answer "you can view this dashboard but not edit it
-  in Superset", which the model passes on. `signed-in`: anyone signed in may edit (the behaviour before).
+  in Superset", which the model passes on. `signed-in`: anyone signed in may edit (the behaviour before). The
+  `boardEdits` off switch (below) comes first: off, nobody edits through the chat, admins included.
 - **Settings** writes and the audit log need a Superset admin.
 - **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
   `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls `POST /api/v1/lenspack/bootstrap`, which makes the
@@ -116,9 +117,42 @@ page, which calls:
 | `GET /_superset/settings/speech/models` | the provider's transcription models with a per-minute price (cached an hour) |
 | `PUT /_superset/settings/speech` | any of `{model, holdMs}`; a field left out is kept, `null` puts it back to the default |
 | `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
+| `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}` (below); `null` drops the admin's value |
 
 Reads and writes need a Superset admin's signed identity (above). Settings persist in `settings.json` beside
 the board state.
+
+## Off switches
+
+Each part of the assistant can be turned off; all are on by default. A switch's value comes from, lowest first:
+the default (on), `features:` in the config, `LENSPACK_FEATURES`, then an admin on the settings page. The page
+can turn a switch the environment set back on; `null` hands it back to the environment.
+
+```yaml
+features: { voice: false, reviewer: false }      # in the config
+```
+```sh
+LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON object
+```
+
+| switch | off means | enforced by |
+|---|---|---|
+| `overlay` | no Ask Lenspack button or panel on any dashboard | the page |
+| `voice` | no mic; `/api/_stt` answers 503 | the server (the key is withheld) |
+| `spaceHold` | holding Space doesn't talk; the mic button still does | the page |
+| `languageMenu` | no language picker; the deployment's default language applies, and a pick saved earlier is ignored | the page |
+| `markdown` | replies as plain text | the page |
+| `inPlaceRefresh` | after a change the page reloads instead of redrawing the dashboard | the page |
+| `newChat` | no New chat button | the page |
+| `boardEdits` | the chat answers questions only, for everyone, admins included; edit tools say edits are turned off | the server |
+| `heatmap` | new heatmaps are refused (existing ones stay) | the server |
+| `maps` | map queries are refused (existing deck_scatter charts stay in Superset) | the server |
+| `reviewer` | no second model call checking each change | the server |
+
+`/_superset/info` returns `features` (the effective booleans) for the page. `GET /_superset/settings` returns
+`features: {values, defaults, source, options, writable}`: `defaults` is what the deployment says without the
+admin, `source` is `default`, `config`, `env` or `settings` per switch, and `options` gives each switch's label
+and help text. A page holding an old copy picks up a change on its next dashboard load.
 
 Gaps: board filters are not yet written as Superset native filters; a previous-period KPI is drawn by Superset
 without its comparison; tabs and columns in a dashboard are kept, and new widgets are added below them.

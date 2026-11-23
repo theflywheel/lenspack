@@ -17,6 +17,10 @@ export const emptyQueryMeter = (): QueryMeter => ({ queries: 0, failed: 0, ms: 0
 export function meteredConnector<C extends Connector>(connector: C, ...meters: QueryMeter[]): C {
   return {
     ...connector,
+    // Read through, not copied: a connector's capabilities may change while it runs (a deployment's switches).
+    get capabilities() {
+      return connector.capabilities;
+    },
     async execute(plan, opts) {
       const started = performance.now();
       let failed = true;
