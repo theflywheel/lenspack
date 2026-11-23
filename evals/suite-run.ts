@@ -305,7 +305,7 @@ export function scoreRaw(model: string, rep: number, q: Question, truth: Truth |
     const query = bestQuery(queries, q.accept);
     // The user sees the reply as well as the board: a turn that ends in silence has failed them.
     if (!reply.trim() && diff.any) return { ...base, edit: { misses: em.misses, dataOk }, query, outcome: "wrong", detail: `no reply after the edit${em.misses.length ? `; ${em.misses.join("; ")}` : ""}` };
-    const extra = collateral(q, before, after);
+    const extra = collateral(q, before, after, calls.map((c) => ({ tool: c.tool, input: c.input, ok: okOf(c) })));
     if (em.misses.length === 0 && dataOk !== false && extra.length) return { ...base, edit: { misses: [], dataOk, collateral: extra }, query, outcome: "partial", detail: `board right, but also changed: ${extra.join("; ")}` };
     if (em.misses.length === 0 && dataOk !== false) return { ...base, edit: { misses: [], dataOk }, query, outcome: "correct", detail: dataOk ? "board right; widget data matches truth" : "board right" };
     // A move that can't be made may be declined, but a move claimed and not made is a false claim.

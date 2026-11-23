@@ -151,6 +151,28 @@ describe("moves", () => {
     expect(collateral(q, before, widened)).toEqual(["board fill off", "d width 6→12", "e width 6→12"]);
   });
 
+  it("counts a row-mate the model moved or resized itself", () => {
+    const before = board([{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }, { i: "c", x: 0, y: 7, w: 12, h: 7 }]);
+    // The packing made room: Alpha and Beta narrowed, Gamma between them. Fine, with or without a call naming Beta.
+    const packed = board([{ i: "a", x: 0, y: 0, w: 3, h: 7 }, { i: "c", x: 3, y: 0, w: 6, h: 7 }, { i: "b", x: 9, y: 0, w: 3, h: 7 }]);
+    const move = { tool: "move_widget", input: { id: "c", place: "after:a" } };
+    expect(collateral(q, before, packed, [move])).toEqual([]);
+    // Narrowing Beta itself to make room is what the packing would do anyway.
+    expect(collateral(q, before, packed, [move, { tool: "resize_widget", input: { id: "b", width: "quarter" } }])).toEqual([]);
+    // Widening it is not.
+    const narrow = board([{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 0, w: 3, h: 7 }, { i: "c", x: 0, y: 7, w: 12, h: 7 }]);
+    const wider = board([{ i: "a", x: 0, y: 0, w: 3, h: 7 }, { i: "c", x: 3, y: 0, w: 3, h: 7 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }]);
+    expect(collateral(q, narrow, wider, [move, { tool: "resize_widget", input: { id: "b", width: "half" } }])).toEqual(["b widened 3→6 (the model's own resize_widget)"]);
+    // Beta sent to a row of its own: the packing alone may do that, the model may not.
+    const sent = board([{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "c", x: 6, y: 0, w: 6, h: 7 }, { i: "b", x: 0, y: 7, w: 12, h: 7 }]);
+    expect(collateral(q, before, sent, [move])).toEqual([]);
+    expect(collateral(q, before, sent, [move, { tool: "move_widget", input: { id: "b", place: "below:a" } }])).toEqual(["b moved out of its row, widened 6→12 (the model's own move_widget)"]);
+    // A move the model took back with restore_version doesn't count.
+    expect(collateral(q, before, sent, [{ tool: "move_widget", input: { id: "b", place: "below:a" } }, { tool: "restore_version", input: { to: "3" } }, move])).toEqual([]);
+    // A refused call changed nothing of its own.
+    expect(collateral(q, before, sent, [move, { tool: "move_widget", input: { id: "b" }, ok: false }])).toEqual([]);
+  });
+
   it("reads claims and no-room replies in English and Hindi", () => {
     expect(MOVE_CLAIM.test("I've moved the ward bar next to the LGA bar.")).toBe(true);
     expect(MOVE_CLAIM.test("बार ग्राफ को ऊपर रख दिया है।")).toBe(true);

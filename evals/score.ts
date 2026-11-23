@@ -382,9 +382,14 @@ export function editMisses(q: Question, before: BoardConfig, after: BoardConfig)
 /**
  * Changes an edit made that nobody asked for: the board's fill or density toggled, or a widget the edit had no
  * business with resized or shifted. Widgets the edit touched (added, removed, changed, the moved one and its
- * target) are exempt, and so are their row-mates, which the board's own packing may resize or slide.
+ * target) are exempt. Their row-mates are exempt from what the board's own packing does to them, but not from
+ * the model's own moves and resizes (since 2026-11-23): a row-mate the model itself moved or resized with a
+ * layout tool, and that left the edited row or got wider, is collateral. Narrowing one to make room is what the
+ * packing does anyway, so it is not.
  */
-export function collateral(q: Question, before: BoardConfig, after: BoardConfig): string[] {
+export const LAYOUT_TOOLS = new Set(["move_widget", "resize_widget"]);
+export const RESTORE_TOOLS = new Set(["restore_version"]);
+export function collateral(q: Question, before: BoardConfig, after: BoardConfig, calls: { tool: string; input: unknown; ok?: boolean }[] = []): string[] {
   const d = boardDiff(before, after);
   const out: string[] = [];
   const g0 = before.grid as { fill?: boolean; density?: string };
@@ -405,6 +410,21 @@ export function collateral(q: Question, before: BoardConfig, after: BoardConfig)
     const [a, b] = [was.get(id)!, now.get(id)!];
     if (a.w !== b.w) out.push(`${id} width ${a.w}→${b.w}`);
     else if (a.x !== b.x) out.push(`${id} slid x ${a.x}→${b.x}`);
+  }
+  // Row-mates: the packing may narrow or slide them to make room, but sending one out of the row or widening it,
+  // with a call of the model's own, goes beyond that.
+  const movedId = q.moved ? titled(q.moved.title) : undefined;
+  // A restore puts the board back, so only the layout calls after the last one still stand.
+  const lastRestore = calls.reduce((last, c, i) => (c.ok !== false && RESTORE_TOOLS.has(c.tool) ? i : last), -1);
+  const standing = calls.slice(lastRestore + 1).filter((c) => c.ok !== false && LAYOUT_TOOLS.has(c.tool));
+  const byModel = new Set(standing.map((c) => (c.input as { id?: string } | null)?.id).filter((x): x is string => !!x));
+  for (const id of [...exempt].filter((i) => !touched.has(i) && byModel.has(i) && was.has(i) && now.has(i))) {
+    const [a, b] = [was.get(id)!, now.get(id)!];
+    // The row it shared with the edit: its companions there, less the moved widget, which leaves on purpose.
+    const companions = before.layout.filter((l) => l.y === a.y && l.i !== id && l.i !== movedId && now.has(l.i)).map((l) => now.get(l.i)!.y);
+    const left = companions.length > 0 && !companions.includes(b.y);
+    const what = [left ? "moved out of its row" : "", b.w > a.w ? `widened ${a.w}→${b.w}` : ""].filter(Boolean).join(", ");
+    if (what) out.push(`${id} ${what} (the model's own ${standing.filter((c) => (c.input as { id?: string } | null)?.id === id).map((c) => c.tool).join("+")})`);
   }
   const order = (m: Map<string, { x: number; y: number }>) => [...kept].sort((p, r) => m.get(p)!.y - m.get(r)!.y || m.get(p)!.x - m.get(r)!.x);
   const [o0, o1] = [order(was), order(now)];
