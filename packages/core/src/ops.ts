@@ -134,7 +134,28 @@ function place(layout: LayoutItem[], id: string, w: number, h: number, placement
     }
   } else if (placement.place.startsWith("after:")) {
     const anchor = others.find((item) => item.i === placement.place.slice("after:".length));
-    if (anchor) startY = anchor.y;
+    if (anchor) {
+      // Beside the anchor, when its row has room.
+      for (let x = 0; x + w <= cols; x++) {
+        if (!occupied(x, anchor.y, w, h)) return at(x, anchor.y);
+      }
+      // Otherwise a new row straight after the anchor's row, and everything below moves down.
+      // Scanning on down for the first gap instead found the moved widget's own old place
+      // whenever every row was full (on a packed board they always are), so "move X after Y"
+      // put X back where it was.
+      let y = Math.max(...others.filter((item) => item.y === anchor.y).map((item) => item.y + item.h));
+      for (;;) {
+        const spanning = others.filter((item) => item.y < y && item.y + item.h > y);
+        if (spanning.length === 0) break;
+        y = Math.max(...spanning.map((item) => item.y + item.h));
+      }
+      for (const item of others) {
+        if (item.y < y) continue;
+        item.y += h;
+        floors?.set(item.i, Math.max(floors.get(item.i) ?? 0, y + h));
+      }
+      return at(0, y);
+    }
   } else {
     // "Bottom" means the end of the flow, not a new row every time. Scanning
     // from the last row's top lets two halves pair up, while a full-width
@@ -160,6 +181,8 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
   const cols = draft.grid.cols;
   // Widgets pushed down by a "top" placement may not float back above the row it made.
   const floors = new Map<string, number>();
+  // Where each moved widget started, to catch a move that leaves it where it was.
+  const moved = new Map<string, { index: number; from: LayoutItem }>();
 
   for (const [index, op] of ops.entries()) {
     const fail = (error: string, hint?: string): ApplyResult => ({ ok: false, opIndex: index, error, hint });
@@ -202,6 +225,7 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
         const item = draft.layout.find((entry) => entry.i === op.id);
         if (!item) return fail(`No widget called "${op.id}"`, nearest(op.id, Object.keys(draft.widgets)) ?? undefined);
         const placement = placementSchema.parse(op.placement);
+        if (!moved.has(op.id)) moved.set(op.id, { index, from: { ...item } });
         draft.layout = draft.layout.filter((entry) => entry.i !== op.id);
         // A moved widget takes its own width with it, not the room packing gave it.
         const width = item.fw !== undefined && item.fw < item.w ? item.fw : item.w;
@@ -259,6 +283,19 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
   // board also closes its gaps.
   draft.layout = compact(draft.layout, cols, floors);
   if (draft.grid.fill) draft.layout = pack(draft.layout, cols);
+
+  // A move that ends where it started is a failure, not a success: reporting "moved" for a
+  // board that did not change is how a model tells the user it is done when it is not.
+  for (const [id, { index, from }] of moved) {
+    const to = draft.layout.find((entry) => entry.i === id);
+    if (to && to.x === from.x && to.y === from.y && to.w === from.w && to.h === from.h)
+      return {
+        ok: false,
+        opIndex: index,
+        error: `Moving "${id}" there changes nothing: it is already in that position`,
+        hint: 'Say where it should go instead: place "top", or "after:<id>" of the widget it should follow.',
+      };
+  }
 
   const parsed = boardConfigSchema.safeParse(draft);
   if (!parsed.success) return { ok: false, opIndex: ops.length - 1, error: parsed.error.issues[0]?.message ?? "Invalid config" };
