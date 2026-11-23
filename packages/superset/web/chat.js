@@ -21,6 +21,8 @@
 .lpc-new:disabled{opacity:.4;cursor:not-allowed}
 .lpc-new svg{width:17px;height:17px}
 .lpc-undo{margin-left:8px;border:0;background:none;color:var(--lpc-acc);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}
+.lpc-undo:disabled{opacity:.45;cursor:default}
+.lpc-down{padding:5px 14px;font-size:12px;line-height:1.4;background:#fffaeb;color:#93370d;border-bottom:1px solid #fedf89}
 .lpc-log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0}
 .lpc-empty{color:var(--lpc-mute);font-size:13px}
 .lpc-empty p{margin:0 0 10px}
@@ -98,6 +100,7 @@
       mic: "Speak (click to start and stop, or hold)", micNeedsHttps: "The microphone needs a secure (https) page", micUnsupported: "This browser cannot record audio",
       listening: "Listening… {0}", transcribing: "Transcribing…", tooShort: "Nothing was recorded. Hold the mic or click it, speak, then stop.", heard: "Check the text, then send.", nothingHeard: "No speech was recognised. Try again a little closer to the microphone.",
       denied: "Microphone access is blocked. Allow it for this site in the browser (the icon left of the address), then try again.", noMic: "No microphone was found.", sttFailed: "Transcription failed: {0}", sttOff: "Speech to text is not set up on this server.",
+      restarting: "Lenspack is restarting, reconnecting…", lost: "The connection to Lenspack was lost before the answer finished (it may be restarting).", retry: "Retry",
     },
     fr: {
       title: "Demander à Lenspack", sub: "Tableau de bord Superset", close: "Fermer", placeholder: "Demandez un graphique, une modification ou un chiffre…", send: "Envoyer",
@@ -108,6 +111,7 @@
       mic: "Parler (cliquer pour démarrer et arrêter, ou maintenir)", micNeedsHttps: "Le micro nécessite une page sécurisée (https)", micUnsupported: "Ce navigateur ne peut pas enregistrer le son",
       listening: "À l'écoute… {0}", transcribing: "Transcription…", tooShort: "Rien n'a été enregistré. Maintenez ou cliquez le micro, parlez, puis arrêtez.", heard: "Vérifiez le texte, puis envoyez.", nothingHeard: "Aucune parole reconnue. Réessayez un peu plus près du micro.",
       denied: "L'accès au micro est bloqué. Autorisez-le pour ce site dans le navigateur (l'icône à gauche de l'adresse), puis réessayez.", noMic: "Aucun micro trouvé.", sttFailed: "La transcription a échoué : {0}", sttOff: "La reconnaissance vocale n'est pas configurée sur ce serveur.",
+      restarting: "Lenspack redémarre, reconnexion…", lost: "La connexion à Lenspack a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
     },
     hi: {
       title: "Lenspack से पूछें", sub: "Superset डैशबोर्ड", close: "बंद करें", placeholder: "चार्ट, बदलाव या कोई संख्या पूछें…", send: "भेजें",
@@ -118,6 +122,7 @@
       mic: "बोलें (शुरू और बंद करने के लिए क्लिक करें, या दबाकर रखें)", micNeedsHttps: "माइक के लिए सुरक्षित (https) पेज चाहिए", micUnsupported: "यह ब्राउज़र आवाज़ रिकॉर्ड नहीं कर सकता",
       listening: "सुन रहे हैं… {0}", transcribing: "लिखा जा रहा है…", tooShort: "कुछ रिकॉर्ड नहीं हुआ। माइक दबाकर रखें या क्लिक करें, बोलें, फिर रोकें।", heard: "टेक्स्ट जाँचें, फिर भेजें।", nothingHeard: "कोई आवाज़ पहचानी नहीं गई। माइक के थोड़ा पास से फिर कोशिश करें।",
       denied: "माइक की अनुमति बंद है। ब्राउज़र में इस साइट के लिए अनुमति दें (पते के बाईं ओर का आइकन), फिर कोशिश करें।", noMic: "कोई माइक नहीं मिला।", sttFailed: "लिखना नहीं हो सका: {0}", sttOff: "इस सर्वर पर स्पीच-टू-टेक्स्ट सेट नहीं है।",
+      restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले Lenspack से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
     },
   };
   // The language menu's choices, each named in its own language.
@@ -558,7 +563,11 @@
     // How long Space must be held to talk: this browser's pick, else the deployment's.
     const secs = (ms) => (uiLang() === "fr" ? String(ms / 1000).replace(".", ",") : String(ms / 1000));
     const holdMs = () => (prefsNow.holdMs >= 500 && prefsNow.holdMs <= 3000 ? prefsNow.holdMs : micState.holdMs);
-    wrap.append(head, log, status, foot);
+    // Shown while Lenspack is unreachable (the overlay finds out and calls setOffline): input waits until it is back.
+    const downBar = el("div", "lpc-down");
+    downBar.hidden = true;
+    downBar.setAttribute("role", "status");
+    wrap.append(head, downBar, log, status, foot);
     root.append(wrap);
 
     const scroll = () => (log.scrollTop = log.scrollHeight);
@@ -588,6 +597,7 @@
       const chips = el("div", "lpc-chips");
       for (const q of examplesNow()) {
         const c = el("button", "lpc-chip", q);
+        c.disabled = offline;
         c.onclick = () => send(q);
         chips.append(c);
       }
@@ -612,9 +622,29 @@
     }
 
     let busy = false;
+    // ---- Lenspack restarting: the overlay notices (its health check fails) and calls setOffline(true); the
+    // banner shows, input waits, and everything comes back by itself when Lenspack answers again.
+    let offline = false;
+    const retries = new Set();
+    function setOffline(on) {
+      on = !!on;
+      if (on === offline) return;
+      offline = on;
+      downBar.textContent = t("restarting");
+      downBar.hidden = !on;
+      input.disabled = on;
+      go.disabled = on || busy;
+      for (const b of retries) b.disabled = on;
+      log.querySelectorAll(".lpc-chip").forEach((c) => (c.disabled = on));
+      if (on) mic.disabled = true;
+      else {
+        mic.disabled = !window.isSecureContext || !canRecord;
+        loadInfo();
+      }
+    }
     async function send(text) {
       text = (text || "").trim();
-      if (!text || busy) return;
+      if (!text || busy || offline) return;
       busy = true;
       syncNew();
       go.disabled = true;
@@ -623,7 +653,7 @@
       if (emptyEl) emptyEl.remove();
       history.push({ id: `u${Date.now()}`, role: "user", parts: [{ type: "text", text }] });
       persist();
-      bubble("user", text);
+      const userB = bubble("user", text);
       status.textContent = t("working");
       let before = null;
       try {
@@ -671,8 +701,10 @@
           try {
             msg = (await res.json()).error || msg;
           } catch (e) {}
-          throw new Error(msg);
+          throw Object.assign(new Error(msg), { status: res.status });
         }
+        // The stream ends with a finish event and [DONE]; a stream that stops short was cut (Lenspack restarted).
+        let finished = false;
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
@@ -687,6 +719,7 @@
             for (const line of frame.split("\n")) {
               if (!line.startsWith("data:")) continue;
               const data = line.slice(5).trim();
+              if (data === "[DONE]") finished = true;
               if (!data || data === "[DONE]") continue;
               let ev;
               try {
@@ -755,12 +788,16 @@
                 case "error":
                   note(ev.errorText || t("wrong"), "bad");
                   break;
+                case "finish":
+                  finished = true;
+                  break;
               }
             }
           }
         }
         if (frame) cancelAnimationFrame(frame);
         paint();
+        if (!finished) throw Object.assign(new Error("stream cut"), { lost: true });
         // The reply is the text after the last tool call; when the model wrote nothing
         // after it, fall back to its last narration so the turn is not empty.
         const reply = answer.trim() ? answer : segments[segments.length - 1] || "";
@@ -794,12 +831,33 @@
         }
       } catch (e) {
         status.textContent = "";
-        note(t("unreachable", e.message), "bad");
+        // Lost: the request never reached Lenspack, or its answer was cut off (a restart, a proxy's 502–504).
+        const lost = e.lost || e.name === "TypeError" || [502, 503, 504].includes(e.status);
+        // The question leaves the history; Retry asks it again (and the overlay checks whether Lenspack is back).
+        const last = history[history.length - 1];
+        if (last && last.role === "user") history.pop();
+        persist();
+        const n = el("div", "lpc-note bad", lost ? t("lost") : t("unreachable", e.message));
+        const again = el("button", "lpc-undo", t("retry"));
+        again.type = "button";
+        again.disabled = offline;
+        again.onclick = () => {
+          if (busy || offline) return;
+          retries.delete(again);
+          n.remove();
+          userB.remove();
+          send(text);
+        };
+        retries.add(again);
+        n.append(again);
+        log.append(n);
+        scroll();
+        if (lost && opts.onUnreachable) opts.onUnreachable();
       } finally {
         busy = false;
         syncNew();
-        go.disabled = false;
-        input.focus();
+        go.disabled = offline;
+        if (!offline) input.focus();
       }
     }
 
@@ -857,6 +915,8 @@
         empty();
       }
       micTitle();
+      downBar.textContent = t("restarting");
+      for (const b of retries) b.textContent = t("retry");
       newBtn.title = t("newChatHelp");
       newBtn.setAttribute("aria-label", t("newChat"));
       renderMenu();
@@ -1155,13 +1215,16 @@
       mic.disabled = !window.isSecureContext || !canRecord;
       relabel();
     }
-    if (opts.speech || opts.language) applyInfo({ speech: opts.speech, language: opts.language });
-    else {
-      relabel();
+    function loadInfo() {
       fetch(`${api}/_superset/info`)
         .then((r) => (r.ok ? r.json() : null))
         .then((info) => info && applyInfo(info))
         .catch(() => {});
+    }
+    if (opts.speech || opts.language) applyInfo({ speech: opts.speech, language: opts.language });
+    else {
+      relabel();
+      loadInfo();
     }
 
     go.onclick = () => send(input.value);
@@ -1175,7 +1238,7 @@
       input.style.height = "auto";
       input.style.height = `${Math.min(140, input.scrollHeight)}px`;
     });
-    return { send, focus: () => input.focus() };
+    return { send, focus: () => input.focus(), setOffline };
   }
 
   window.LenspackChat = { mount, markdown };
