@@ -95,7 +95,10 @@ export function Board({
     setGesture(false);
     if (!movable) return;
     const next = layout.map((item) => ({ i: item.i, x: item.x, y: item.y, w: item.w, h: item.h }));
-    if (JSON.stringify(next) === JSON.stringify(config.layout)) return;
+    // Compare only what a drag can change: a packed board also keeps fw (the width
+    // packing widened from), which the grid neither knows nor sends back.
+    const current = config.layout.map((item) => ({ i: item.i, x: item.x, y: item.y, w: item.w, h: item.h }));
+    if (JSON.stringify(next) === JSON.stringify(current)) return;
     setSaving(true);
     // A drag is an edit, so it gets a version of its own and can be rolled
     // back exactly like one made by chat.

@@ -363,3 +363,148 @@ describe("further measures on one widget", () => {
     expect(checkQuery({ kind: "series", measure: "a", measures: ["b"], grain: "day", by: "d" }, cat)?.error).toMatch(/one measure/);
   });
 });
+
+describe("adding one call at a time, on a packed board", () => {
+  // Chat tools send one op per call. Each call compacts and packs, so the board
+  // after three separate adds must be the board one batch of the same ops makes.
+  const text = (title: string) => ({ kind: "text" as const, title, body: "x" });
+  const packed = (): BoardConfig => {
+    const board = empty();
+    board.grid.fill = true;
+    for (const id of ["a", "b", "c", "d", "e"]) board.widgets[id] = text(id);
+    board.layout = [
+      { i: "a", x: 0, y: 0, w: 6, h: 7 },
+      { i: "b", x: 6, y: 0, w: 6, h: 7 },
+      { i: "c", x: 0, y: 7, w: 3, h: 4 },
+      { i: "d", x: 3, y: 7, w: 3, h: 4 },
+      { i: "e", x: 0, y: 11, w: 12, h: 7 },
+    ];
+    return board;
+  };
+  const add = (id: string, place: string, width = "third") => ({ op: "add_widget", id, widget: text(id), placement: { place, width, height: 3 } });
+  const oneByOne = (board: BoardConfig, ops: unknown[]) => {
+    let config = board;
+    for (const op of ops) {
+      const r = apply(config, [op]);
+      if (!r.ok) throw new Error(r.error);
+      config = r.config;
+    }
+    return config;
+  };
+  const boxes = (config: BoardConfig) =>
+    [...config.layout].sort((p, q) => p.i.localeCompare(q.i)).map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
+  const overlaps = (config: BoardConfig) =>
+    config.layout.some((p, n) => config.layout.some((q, m) => n < m && p.x < q.x + q.w && p.x + p.w > q.x && p.y < q.y + q.h && p.y + p.h > q.y));
+
+  it("three 'top, third' KPIs make a row, the same as one batch", () => {
+    const ops = [add("k1", "top"), add("k2", "after:k1"), add("k3", "after:k2")];
+    const sequential = oneByOne(packed(), ops);
+    const batch = apply(packed(), ops);
+    if (!batch.ok) throw new Error(batch.error);
+    expect(boxes(sequential)).toEqual(boxes(batch.config));
+    const row = sequential.layout.filter((l) => l.i.startsWith("k")).sort((p, q) => p.x - q.x);
+    expect(row.map(({ x, y, w }) => [x, y, w])).toEqual([[0, 0, 4], [4, 0, 4], [8, 0, 4]]);
+    // The charts that were on top sit side by side below the new row, untouched.
+    expect(sequential.layout.find((l) => l.i === "a")).toMatchObject({ x: 0, y: 3, w: 6 });
+    expect(sequential.layout.find((l) => l.i === "b")).toMatchObject({ x: 6, y: 3, w: 6 });
+    expect(overlaps(sequential)).toBe(false);
+  });
+
+  it("each 'top' KPI joins the top row too", () => {
+    const ops = [add("k1", "top"), add("k2", "top"), add("k3", "top")];
+    const sequential = oneByOne(packed(), ops);
+    const batch = apply(packed(), ops);
+    if (!batch.ok) throw new Error(batch.error);
+    expect(boxes(sequential)).toEqual(boxes(batch.config));
+    expect(sequential.layout.filter((l) => l.y === 0).map((l) => l.i).sort()).toEqual(["k1", "k2", "k3"]);
+  });
+
+  it("a lone widget is widened to the edge, and gives the room back to the next one", () => {
+    const first = oneByOne(packed(), [add("k1", "top")]);
+    expect(first.layout.find((l) => l.i === "k1")).toMatchObject({ x: 0, y: 0, w: 12, fw: 4 });
+    const second = oneByOne(first, [add("k2", "after:k1")]);
+    expect(second.layout.find((l) => l.i === "k1")).toMatchObject({ x: 0, w: 4 });
+    expect(second.layout.find((l) => l.i === "k1")?.fw).toBeUndefined();
+    expect(second.layout.find((l) => l.i === "k2")).toMatchObject({ x: 4, y: 0, w: 8, fw: 4 });
+  });
+
+  it("mixed widths: a third and a half share a row, then a full-width widget wraps", () => {
+    const ops = [add("k1", "top"), add("k2", "after:k1", "half"), add("k3", "after:k2", "full")];
+    const sequential = oneByOne(packed(), ops);
+    const batch = apply(packed(), ops);
+    if (!batch.ok) throw new Error(batch.error);
+    expect(boxes(sequential)).toEqual(boxes(batch.config));
+    const k1 = sequential.layout.find((l) => l.i === "k1")!;
+    const k2 = sequential.layout.find((l) => l.i === "k2")!;
+    const k3 = sequential.layout.find((l) => l.i === "k3")!;
+    expect([k1.y, k2.y]).toEqual([0, 0]);
+    expect(k2.x).toBe(4);
+    expect(k3.y).toBeGreaterThanOrEqual(3);
+    expect(k3.w).toBe(12);
+    expect(overlaps(sequential)).toBe(false);
+  });
+
+  it("a full row wraps: the fourth third leaves the top row of three alone", () => {
+    // Where it lands below depends on what packing widened there (only widgets of the
+    // same height give room back), so this checks the row and the absence of overlaps.
+    const ops = [add("k1", "top"), add("k2", "after:k1"), add("k3", "after:k2"), add("k4", "after:k3")];
+    const sequential = oneByOne(packed(), ops);
+    const row = sequential.layout.filter((l) => l.y === 0).sort((p, q) => p.x - q.x);
+    expect(row.map(({ i, x, w }) => [i, x, w])).toEqual([["k1", 0, 4], ["k2", 4, 4], ["k3", 8, 4]]);
+    expect(sequential.layout.find((l) => l.i === "k4")!.y).toBeGreaterThan(0);
+    expect(overlaps(sequential)).toBe(false);
+  });
+
+  it("an unpacked board keeps its exact widths", () => {
+    const board = packed();
+    board.grid.fill = false;
+    const sequential = oneByOne(board, [add("k1", "top")]);
+    const k1 = sequential.layout.find((l) => l.i === "k1")!;
+    expect(k1).toMatchObject({ x: 0, y: 0, w: 4 });
+    expect(k1.fw).toBeUndefined();
+  });
+
+  it("a mouse-sized width is the widget's own: a layout without fw is never shrunk", () => {
+    const board = packed();
+    board.layout = [{ i: "a", x: 0, y: 0, w: 12, h: 3 }];
+    board.widgets = { a: text("a") };
+    const r = oneByOne(board, [add("k1", "after:a")]);
+    expect(r.layout.find((l) => l.i === "a")).toMatchObject({ x: 0, y: 0, w: 12 });
+    expect(r.layout.find((l) => l.i === "k1")!.y).toBe(3);
+  });
+});
+
+describe("resize_widget", () => {
+  it("growing a widget pushes what it now covers down instead of overlapping it", () => {
+    const board = empty();
+    const text = (title: string) => ({ kind: "text" as const, title, body: "x" });
+    board.widgets = { a: text("A"), b: text("B"), c: text("C") };
+    board.layout = [
+      { i: "a", x: 0, y: 0, w: 6, h: 7 },
+      { i: "b", x: 6, y: 0, w: 6, h: 7 },
+      { i: "c", x: 0, y: 7, w: 6, h: 7 },
+    ];
+    const r = apply(board, [{ op: "resize_widget", id: "a", width: "full", height: 9 }]);
+    if (!r.ok) throw new Error(r.error);
+    const box = (id: string) => r.config.layout.find((l) => l.i === id)!;
+    expect(box("a")).toMatchObject({ x: 0, y: 0, w: 12, h: 9 });
+    expect(box("b").y).toBeGreaterThanOrEqual(9);
+    expect(box("c").y).toBeGreaterThanOrEqual(9);
+    const ls = r.config.layout;
+    const overlap = ls.some((p, n) => ls.some((q, m) => n < m && p.x < q.x + q.w && p.x + p.w > q.x && p.y < q.y + q.h && p.y + p.h > q.y));
+    expect(overlap).toBe(false);
+  });
+});
+
+describe("fill room goes only to a widget of the same height", () => {
+  it("a chart added after a lone KPI starts its own row", () => {
+    const board = empty();
+    board.grid.fill = true;
+    const kpi = apply(board, [{ op: "add_widget", id: "k", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count" } }, placement: { place: "top", width: "quarter" } }]);
+    if (!kpi.ok) throw new Error(kpi.error);
+    const more = apply(kpi.config, [{ op: "add_widget", id: "c", widget: chart(), placement: { place: "bottom", width: "third" } }]);
+    if (!more.ok) throw new Error(more.error);
+    expect(more.config.layout.find((l) => l.i === "k")).toMatchObject({ y: 0, w: 12 });
+    expect(more.config.layout.find((l) => l.i === "c")).toMatchObject({ y: 3, w: 12 });
+  });
+});
