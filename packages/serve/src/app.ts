@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 
-import { type ToolSet, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
+import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard } from "@lenspack/engine";
@@ -15,6 +15,10 @@ import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, turnCost, usageLedger, withMeter } from "./metering";
 import { catalogueText, systemParts } from "./prompt";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
+
+/** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
+export const CLOSING_PROMPT =
+  "You have used all the steps for this turn, so no more tool calls. In one or two plain sentences, in the language the user wrote in, say what you changed on the board and what is still not done.";
 
 // The board API that @lenspack/react's host callbacks talk to, for any number
 // of packs, each bound to its own source. Nothing here knows which backend a
@@ -387,6 +391,34 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     const before = summarise(config);
 
+    // The summary a turn ends with when the step cap stopped its tool loop before the model
+    // said anything. Streamed like any reply; when it fails or says nothing, a plain line from
+    // the board's versions takes its place, so no edit ends in silence.
+    const closingSummary = async (writer: UIMessageStreamWriter, role: "build" | "escalate", builder: Provider, roundEffort: string | undefined, history: ModelMessage[]) => {
+      const fallback = async () => {
+        const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion).reverse();
+        return versions.length
+          ? `I ran out of steps before finishing. Changed so far: ${versions.map((v) => v.summary).join("; ")}.`
+          : "I ran out of steps before finishing, and the board is unchanged.";
+      };
+      let text = "";
+      try {
+        const r = withMeter({ role, effort: roundEffort }, () => {
+          const call = shapeCall(builder, { system, messages: [...history, { role: "user", content: CLOSING_PROMPT }], tools: tools as ToolSet, effort: roundEffort });
+          return streamText({ model: builder.languageModel, ...call, toolChoice: "none", stopWhen: stepCountIs(1) });
+        });
+        text = (await r.text).trim();
+      } catch {
+        text = "";
+      }
+      if (!text) text = await fallback();
+      const id = `closing-${randomUUID()}`;
+      writer.write({ type: "text-start", id });
+      writer.write({ type: "text-delta", id, delta: text });
+      writer.write({ type: "text-end", id });
+      return text;
+    };
+
     // Build, then review, then heal — all in one response stream. The
     // reviewer's verdict is written as a data part the UI renders.
     const stream = createUIMessageStream({
@@ -423,6 +455,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
               writer.write({ type: "text-start", id });
               writer.write({ type: "text-delta", id, delta: turn.answer });
               writer.write({ type: "text-end", id });
+            }
+            // Out of steps mid-edit (the cap stopped a tool loop): the board may have changed, so the
+            // turn must still say what it did. One more call, tools off, asks for that summary.
+            if (!turn.answer.trim() && (await result.finishReason) === "tool-calls") {
+              turn.answer = (await closingSummary(writer, round === 1 ? "build" : "escalate", builder, roundEffort, [...messages, ...steps.flatMap((s) => s.response.messages)])).slice(0, 2000);
             }
             if (!reviewer) break;
             const current = (await h.store.get(boardId))!;
