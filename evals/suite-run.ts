@@ -20,7 +20,10 @@ import {
   type DeclineLabel,
   type Outcome,
   type QueryLike,
+  BESIDE_CLAIM,
   JUDGE_PROMPT,
+  MOVE_CLAIM,
+  NO_ROOM,
   SAYS_CANT,
   bestQuery,
   boardDiff,
@@ -197,7 +200,7 @@ export type Raw = {
 
 export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve>>, p: Provider, q: Question, truth: Truth | undefined, o: { effort?: string; judge: Provider | null; rep: number }): Promise<Result> {
   const boardId = `eval-${q.id.replace(/\W/g, "_")}-${p.name.replace(/\W/g, "_")}-${o.rep}`;
-  const before: BoardConfig = await freshBoard(rig, boardId);
+  const before: BoardConfig = await freshBoard(rig, boardId, q.start_layout);
   let history: Parameters<typeof chatTurn>[2] = [];
   const records: TurnRecord[] = [];
   for (const text of turnsOf(q)) {
@@ -300,6 +303,13 @@ export function scoreRaw(model: string, rep: number, q: Question, truth: Truth |
     const dataOk = truth && em.widgetIds[0] ? (chartScore(em.widgetIds[0])?.correct ?? false) : undefined;
     const query = bestQuery(queries, q.accept);
     if (em.misses.length === 0 && dataOk !== false) return { ...base, edit: { misses: [], dataOk }, query, outcome: "correct", detail: dataOk ? "board right; widget data matches truth" : "board right" };
+    // A move that can't be made may be declined, but a move claimed and not made is a false claim.
+    if (q.moved) {
+      const claims = MOVE_CLAIM.test(reply);
+      if (!diff.any && claims) return { ...base, edit: { misses: em.misses }, outcome: "confidently_wrong", detail: "says it moved the widget; board unchanged" };
+      if (!diff.any && (NO_ROOM.test(reply) || soundsLikeDecline(reply))) return { ...base, edit: { misses: em.misses }, outcome: "declined_ok", detail: "said it couldn't make the move; board unchanged" };
+      if (diff.any && claims && BESIDE_CLAIM.test(reply)) return { ...base, edit: { misses: em.misses }, outcome: "confidently_wrong", detail: `says it's beside; ${em.misses.join("; ")}` };
+    }
     // An edit Lenspack cannot make is a decline question in the suite, so an unchanged board here is a miss.
     if (!diff.any) return { ...base, edit: { misses: em.misses }, outcome: "wrong", detail: `board unchanged${soundsLikeDecline(reply) ? " (declined)" : ""}: ${em.misses.join("; ")}` };
     const close = em.widgetIds.length > 0 && em.misses.length <= 1;

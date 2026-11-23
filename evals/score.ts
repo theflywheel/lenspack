@@ -310,7 +310,7 @@ export function widgetMisses(w: Widget, e: WidgetExpect): string[] {
   return miss;
 }
 
-const titleRe = (s: string) => (s.startsWith("(?i)") ? new RegExp(s.slice(4), "i") : new RegExp(s));
+export const titleRe = (s: string) => (s.startsWith("(?i)") ? new RegExp(s.slice(4), "i") : new RegExp(s));
 
 /** Board-level checks for an edit question; empty when the board is right. */
 export function editMisses(q: Question, before: BoardConfig, after: BoardConfig): { misses: string[]; widgetIds: string[] } {
@@ -366,8 +366,33 @@ export function editMisses(q: Question, before: BoardConfig, after: BoardConfig)
     const bad = pool.filter((id) => "query" in after.widgets[id]! && queryMisses((after.widgets[id] as { query: QueryLike }).query, q.absent!.query).length === 0);
     if (bad.length) misses.push(`should not have: ${bad.join(",")}`);
   }
+  if (q.moved) {
+    const find = (t: string) => Object.keys(after.widgets).find((id) => titleRe(t).test(after.widgets[id]!.title ?? ""));
+    const [x, y] = [find(q.moved.title), find(q.moved.beside)];
+    const lx = after.layout.find((l) => l.i === x);
+    const ly = after.layout.find((l) => l.i === y);
+    if (!lx || !ly) misses.push(`no widget titled ${!lx ? q.moved.title : q.moved.beside}`);
+    else if (lx.y !== ly.y) misses.push(`${x} not beside ${y} (rows y=${lx.y} and y=${ly.y})`);
+    const over = overlaps(after.layout);
+    if (over.length) misses.push(`overlapping: ${over.join(", ")}`);
+  }
   return { misses, widgetIds };
 }
+
+/** Pairs of layout items that cover the same cell. */
+export function overlaps(layout: BoardConfig["layout"]): string[] {
+  const out: string[] = [];
+  for (const [i, a] of layout.entries())
+    for (const b of layout.slice(i + 1)) if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) out.push(`${a.i}/${b.i}`);
+  return out;
+}
+
+/** A reply saying a widget was moved (English or Hindi). */
+export const MOVE_CLAIM = /\b(?:I(?:'ve| have)? (?:moved|placed|put)|(?:moved|placed|put) (?:it|the)\b|(?:is|sits) now|now (?:sits|is) (?:next to|beside|alongside|on|in|at))|रख दिया|खिसका दिया|शिफ्ट कर दिया|मूव कर दिया/i;
+/** A reply saying it now sits beside the other one. */
+export const BESIDE_CLAIM = /\b(?:next to|beside|alongside|same row)\b|के साथ|बगल में/i;
+/** A reply saying there is no room for the move. */
+export const NO_ROOM = /\b(?:no|not enough) (?:room|space)\b|\b(?:row|it) is (?:already )?full\b|\b(?:doesn't|does not|won't|will not) fit\b|जगह नहीं/i;
 
 // ── declines and disclosure ─────────────────────────────────────────────
 

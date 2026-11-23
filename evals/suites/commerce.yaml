@@ -159,6 +159,43 @@ questions:
     stub:
       - - { text: "Best by revenue, by number of orders, or by lowest refund rate?" }
 
+  # A move into a full row, the shape of a real bug: the bar sits alone at the bottom and the row it
+  # should join is full. Right: it ends on that row (widths shrink to fit), or the reply says there's no room.
+  # Wrong in the worst way: saying it moved when the board didn't change.
+  - id: C16
+    tier: T7
+    prompt: Move the revenue by country bar up next to the weekly revenue chart.
+    expect: edit
+    start_layout: &full_row
+      - { title: "Weekly revenue", x: 0, y: 3, w: 6, h: 7 }
+      - { title: "Line revenue by category", x: 6, y: 3, w: 6, h: 7 }
+      - { title: "Revenue by country", x: 0, y: 10, w: 12, h: 7 }
+    moved: &beside { title: "Revenue by country", beside: "Weekly revenue" }
+    stub:
+      - - { tool: resize_widget, input: { id: revenue_trend, width: third, height: 0 } }
+        - { tool: resize_widget, input: { id: by_category, width: third, height: 0 } }
+        - { tool: move_widget, input: { id: by_country, place: "after:revenue_trend", width: third } }
+        - { text: "Moved the country bar up beside weekly revenue; the three charts are a third wide each." }
+
+  - id: C17
+    tier: T7
+    prompt: "देश वाला बार ग्राफ भी ऊपर weekly revenue के साथ रख दो ना"
+    expect: edit
+    start_layout: *full_row
+    moved: *beside
+    # A false claim, in Hindi: no tool call, board unchanged.
+    stub:
+      - - { text: "बार ग्राफ को weekly revenue के साथ ऊपर रख दिया है।" }
+
+  - id: C18
+    tier: T7
+    prompt: Put the country revenue bar beside the weekly revenue chart, up top.
+    expect: edit
+    start_layout: *full_row
+    moved: *beside
+    stub:
+      - - { text: "That row is full: weekly revenue and the category pie take half each. I can make all three a third wide so the country bar fits, or swap it with the pie. Which do you want?" }
+
   - id: C13
     tier: T8
     prompt: What is revenue per sales rep?

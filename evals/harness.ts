@@ -15,6 +15,9 @@ import type { UIMessage, UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
 import YAML from "yaml";
 
+import { overlaps, titleRe } from "./score";
+import type { Question } from "./suite";
+
 export type Rig = {
   host: Host;
   /** The board every question starts from (a copy is made per question). */
@@ -130,12 +133,27 @@ export async function serve(rig: Rig, providers: Provider[]): Promise<Server2> {
   return { base, providers, close: () => new Promise((r) => server.close(() => r())) };
 }
 
-/** A fresh board for one question: a copy of the seed (or empty). */
-export async function freshBoard(rig: Rig, id: string): Promise<BoardConfig> {
+/** A fresh board for one question: a copy of the seed (or empty), with the question's start layout if it has one. */
+export async function freshBoard(rig: Rig, id: string, start?: Question["start_layout"]): Promise<BoardConfig> {
   const made = await rig.host.store.create({ id, pack: rig.host.pack, title: rig.seed?.title ?? "Eval" });
   if (!rig.seed) return made.config;
-  const b = await rig.host.store.replaceConfig({ id, config: structuredClone(rig.seed), source: "eval", summary: "seed" });
+  const config = start ? withLayout(rig.seed, start) : structuredClone(rig.seed);
+  const b = await rig.host.store.replaceConfig({ id, config, source: "eval", summary: "seed" });
   return b.config;
+}
+
+/** The seed with the named widgets placed as given (stored as is, not repacked). */
+export function withLayout(seed: BoardConfig, start: NonNullable<Question["start_layout"]>): BoardConfig {
+  const config = structuredClone(seed);
+  for (const s of start) {
+    const id = Object.keys(config.widgets).find((i) => titleRe(s.title).test(config.widgets[i]!.title ?? ""));
+    const item = config.layout.find((l) => l.i === id);
+    if (!item) throw new Error(`start_layout: no widget titled ${s.title} on the seed board`);
+    Object.assign(item, { x: s.x, y: s.y, w: s.w, h: s.h });
+  }
+  const over = overlaps(config.layout);
+  if (over.length) throw new Error(`start_layout overlaps: ${over.join(", ")}`);
+  return config;
 }
 
 /** The SSE body of a chat response as UI message chunks. */

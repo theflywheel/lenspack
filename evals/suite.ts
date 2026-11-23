@@ -72,6 +72,10 @@ export const questionSchema = z
     removed: z.object({ title: z.string() }).optional(),
     changed: z.object({ title: z.string(), chart: list.optional() }).optional(),
     absent: z.object({ query: queryExpectSchema, new_only: z.boolean().optional() }).optional(),
+    /** Where widgets start for this question, found by title ("(?i)" for any case); the rest keep the seed's place. */
+    start_layout: z.array(z.object({ title: z.string(), x: z.number().int().min(0), y: z.number().int().min(0), w: z.number().int().min(1), h: z.number().int().min(1) })).optional(),
+    /** A move: the widget titled `title` must end on the same row as the one titled `beside`, with nothing overlapping. */
+    moved: z.object({ title: z.string(), beside: z.string() }).optional(),
     stub: z.array(z.array(stubStepSchema)).optional(),
   })
   .refine((q) => q.prompt || q.turns, { message: "a question needs a prompt or turns" });

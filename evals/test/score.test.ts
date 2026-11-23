@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { SAYS_CANT, grounding, heuristicDecline, numberMatches, numbersIn, parseJudge, queryMisses, scoreAnswer } from "../score";
-import type { Truth } from "../suite";
+import { BESIDE_CLAIM, MOVE_CLAIM, NO_ROOM, SAYS_CANT, editMisses, grounding, heuristicDecline, numberMatches, numbersIn, overlaps, parseJudge, queryMisses, scoreAnswer } from "../score";
+import type { BoardConfig } from "@lenspack/core";
+
+import { type Question, type Truth, questionSchema } from "../suite";
 
 const n = (s: string) => numbersIn(s)[0]!;
 
@@ -113,5 +115,31 @@ describe("grounding, queries, declines", () => {
     expect(parseJudge("Degraded.")).toBe("degraded");
     expect(SAYS_CANT.test("No orders were placed in the last 30 days: the data has no records in that window.")).toBe(true);
     expect(SAYS_CANT.test("Orders rose 12% outside the holiday period.")).toBe(false);
+  });
+});
+
+describe("moves", () => {
+  const chart = (title: string) => ({ title, kind: "chart", chart: "bar", query: { kind: "breakdown", measure: "orders", dimension: "country" } });
+  const board = (layout: BoardConfig["layout"]) =>
+    ({ version: 2, pack: "p", packVersion: 1, title: "B", grid: { cols: 12, rowHeight: 40 }, layout, widgets: { a: chart("Alpha"), b: chart("Beta"), c: chart("Gamma") }, filters: [] }) as unknown as BoardConfig;
+  const q = questionSchema.parse({ id: "m", tier: "T7", prompt: "Move gamma up beside alpha", expect: "edit", moved: { title: "Gamma", beside: "(?i)alpha" } }) as Question;
+  const start = board([{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }, { i: "c", x: 0, y: 7, w: 12, h: 7 }]);
+
+  it("wants the widget on the other one's row, with nothing overlapping", () => {
+    expect(editMisses(q, start, start).misses).toEqual(["c not beside a (rows y=7 and y=0)"]);
+    const thirds = board([{ i: "a", x: 0, y: 0, w: 4, h: 7 }, { i: "c", x: 4, y: 0, w: 4, h: 7 }, { i: "b", x: 8, y: 0, w: 4, h: 7 }]);
+    expect(editMisses(q, start, thirds).misses).toEqual([]);
+    const piled = board([{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "c", x: 3, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 7, w: 6, h: 7 }]);
+    expect(editMisses(q, start, piled).misses).toEqual(["overlapping: a/c"]);
+    expect(overlaps(start.layout)).toEqual([]);
+  });
+
+  it("reads claims and no-room replies in English and Hindi", () => {
+    expect(MOVE_CLAIM.test("I've moved the ward bar next to the LGA bar.")).toBe(true);
+    expect(MOVE_CLAIM.test("बार ग्राफ को ऊपर रख दिया है।")).toBe(true);
+    expect(MOVE_CLAIM.test("I couldn't move it: that row is full.")).toBe(false);
+    expect(BESIDE_CLAIM.test("It now sits beside the LGA bar.")).toBe(true);
+    expect(NO_ROOM.test("That row is full, so there's no room beside it.")).toBe(true);
+    expect(NO_ROOM.test("ऊपर वाली पंक्ति में जगह नहीं है।")).toBe(true);
   });
 });

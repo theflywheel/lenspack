@@ -47,10 +47,17 @@ describe("the commerce suite, played by the stub", () => {
     C13: "declined_ok",
     C14: "confidently_wrong",
     C15: "declined_ok",
+    C16: "correct",
+    C17: "confidently_wrong",
+    C18: "declined_ok",
   };
 
+  // Known product bugs: the test fails until the fix lands, then this list must shrink.
+  // C16: move_widget to "after:<id>" reports applied but leaves the widget on its old row.
+  const knownBugs = new Set(["C16"]);
+
   for (const q of suite.questions) {
-    it(`${q.id}: ${expected[q.id]}`, async () => {
+    (knownBugs.has(q.id) ? it.fails : it)(`${q.id}: ${expected[q.id]}`, async () => {
       const r = await runQuestion(rig, srv, srv.providers[0]!, q, truth.questions[q.id], { judge: null, rep: 1 });
       expect(r.outcome, r.detail).toBe(expected[q.id]);
     });
