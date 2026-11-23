@@ -1,0 +1,1548 @@
+[
+  {
+    "provider": "haiku",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5183,
+    "reply": "मैंने बोर्ड के सबसे नीचे \"Delivery rate by locality (lowest first)\" नाम का बार चार्ट जोड़ दिया है। यह इलाके के हिसाब से प्रोडक्ट लाइनों की डिलीवरी दर दिखाता है, सबसे कम वाला पहले, और यह बोर्ड के Campaign फ़िल्टर से भी चलता है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Delivery rate by locality (lowest first)"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 45878,
+        "cachedInputTokens": 42559,
+        "cacheWriteTokens": 3311,
+        "outputTokens": 931,
+        "reasoningTokens": 377,
+        "usd": 0.001306,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 45878,
+          "cachedInputTokens": 42559,
+          "cacheWriteTokens": 3311,
+          "outputTokens": 931,
+          "reasoningTokens": 377,
+          "usd": 0.001306,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "fanout-trap",
+    "pass": false,
+    "note": "did not recover with a resources-grain measure by product",
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 5601,
+    "reply": "मैंने पाई चार्ट नहीं जोड़ा, क्योंकि \"एडमिनिस्ट्रेशन सफलता दर\" (success_rate) टास्क के स्तर पर मापी जाती है और प्रोडक्ट वेरिएंट हर टास्क की कई प्रोडक्ट लाइनों पर होता है। इस तरह समूह बनाने पर संख्याएँ बढ़ जाएँगी, इसलिए सिस्टम इसे अस्वीकार करता है। बोर्ड पर कोई बदलाव नहीं हुआ है।\n\nविकल्प के तौर पर मैं",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28368,
+        "cachedInputTokens": 27120,
+        "cacheWriteTokens": 1242,
+        "outputTokens": 1065,
+        "reasoningTokens": 555,
+        "usd": 0.00096,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28368,
+          "cachedInputTokens": 27120,
+          "cacheWriteTokens": 1242,
+          "outputTokens": 1065,
+          "reasoningTokens": 555,
+          "usd": 0.00096,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5614,
+    "reply": "मौजूदा साप्ताहिक विज़िट्स वाले लाइन चार्ट को पिछले 10 हफ़्तों पर सीमित कर दिया है। अब हर कैंपेन की अलग लाइन उसी चार्ट में दिखती है, और बोर्ड पर अभी \"Campaign\" फ़िल्टर भी लागू है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "पिछले 10 हफ़्तों की साप्ताहिक विज़िट्स, कैंपेन के अनुसार",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44596,
+        "cachedInputTokens": 42293,
+        "cacheWriteTokens": 2295,
+        "outputTokens": 986,
+        "reasoningTokens": 552,
+        "usd": 0.001203,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44596,
+          "cachedInputTokens": 42293,
+          "cacheWriteTokens": 2295,
+          "outputTokens": 986,
+          "reasoningTokens": 552,
+          "usd": 0.001203,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 4,
+    "toolCalls": 6,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 8157,
+    "reply": "मैंने दोनों जोड़ दिए हैं। बोर्ड के ऊपर एक KPI \"P90 विज़िट अवधि (मिनट), पिछले 30 दिन\" है, और नीचे पूरी चौड़ाई का बार चार्ट \"प्रोजेक्ट के हिसाब से औसत (मीडियन) विज़िट अवधि (मिनट), पिछले 30 दिन\" है। KPI को चौथाई चौड़ाई दी गई है, जिससे \"Administration success\" KPI पहली पंक्ति में आ गया है और \"Visits, la",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "P90 विज़िट अवधि (मिनट), पिछले 30 दिन",
+      "प्रोजेक्ट के हिसाब से औसत (मीडियन) विज़िट अवधि (मिनट), पिछले 30 दिन"
+    ],
+    "usage": {
+      "total": {
+        "calls": 4,
+        "failed": 0,
+        "inputTokens": 66725,
+        "cachedInputTokens": 61125,
+        "cacheWriteTokens": 5590,
+        "outputTokens": 1676,
+        "reasoningTokens": 653,
+        "usd": 0.002149,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 4,
+          "failed": 0,
+          "inputTokens": 66725,
+          "cachedInputTokens": 61125,
+          "cacheWriteTokens": 5590,
+          "outputTokens": 1676,
+          "reasoningTokens": 653,
+          "usd": 0.002149,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7590,
+    "reply": "मैंने \"Refusal rate by campaign\" नाम का बार चार्ट बोर्ड पर जोड़ दिया है (चौथी पंक्ति में, आधी चौड़ाई पर)। इसमें दो कैंपेन हैं: PRJ-BEDNET-2026 की इनकार दर लगभग 8.5% और PRJ-SMC-2026-R1 की लगभग 8.3% है।\n\nबोर्ед पर Campaign का फ़िल्टर पहले से मौजूद है, इसलिए मैंने एक और जोड़ा नहीं। यह फ़िल्टर बोर्ड के ",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "Refusal rate by campaign"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 46055,
+        "cachedInputTokens": 42583,
+        "cacheWriteTokens": 3464,
+        "outputTokens": 1303,
+        "reasoningTokens": 683,
+        "usd": 0.001511,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 46055,
+          "cachedInputTokens": 42583,
+          "cacheWriteTokens": 3464,
+          "outputTokens": 1303,
+          "reasoningTokens": 683,
+          "usd": 0.001511,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5064,
+    "reply": "सभी समय की अवधि में, 100 या उससे ज़्यादा विज़िट वाले इलाकों में सबसे कम एडमिनिस्ट्रेशन सफलता दर **NG_ST_LGA1_W2_L6** की है: लगभग **70.8%** (0.7077), कुल **325** विज़िट।\n\nइससे कम दर वाले इलाके (NG_ST_LGA1_W4_L11, W4_L10, W3_L8, W4_L12, W3_L9) में विज़िट 100 से कम हैं, इसलिए इन्हें शामिल नहीं किया गया",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29696,
+        "cachedInputTokens": 27150,
+        "cacheWriteTokens": 2540,
+        "outputTokens": 930,
+        "reasoningTokens": 424,
+        "usd": 0.001055,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29696,
+          "cachedInputTokens": 27150,
+          "cacheWriteTokens": 2540,
+          "outputTokens": 930,
+          "reasoningTokens": 424,
+          "usd": 0.001055,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4103,
+    "reply": "सबसे आम कारण **STOCK_OUT** (स्टॉक खत्म होना) है, जिसकी वजह से **98 लाइनें** डिलीवर नहीं हुईं।\n\nकुल **406 प्रोडक्ट लाइनें** डिलीवर नहीं हुईं, जो 3,844 लाइनों में से हैं। बाकी कारण इस तरह हैं:\n- **BENEFICIARY_ABSENT** (लाभार्थी अनुपस्थित): 86\n- **SICK** (बीमार): 83\n- **INELIGIBLE** (अपात्र): 72\n- **RE",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29592,
+        "cachedInputTokens": 27116,
+        "cacheWriteTokens": 2470,
+        "outputTokens": 738,
+        "reasoningTokens": 195,
+        "usd": 0.000949,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29592,
+          "cachedInputTokens": 27116,
+          "cacheWriteTokens": 2470,
+          "outputTokens": 738,
+          "reasoningTokens": 195,
+          "usd": 0.000949,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2826,
+    "reply": "मैं इसे नहीं जोड़ सकता। बोर्ड पर केवल बार, लाइन, पाई, एरिया चार्ट, KPI, टेबल और टेक्स्ट विजेट हैं, नक्शा नहीं। साथ ही डेटा में फ़ैसिलिटी या भौगोलिक निर्देशांक (coordinates) नहीं हैं, इसलिए FAC-7 से 2 किलोमीटर की दूरी भी नहीं निकाली जा सकती। बोर्ड में कोई बदलाव नहीं किया गया है।\n\nअगर आप चाहें, तो मैं",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 1,
+        "failed": 0,
+        "inputTokens": 13776,
+        "cachedInputTokens": 13340,
+        "cacheWriteTokens": 432,
+        "outputTokens": 442,
+        "reasoningTokens": 151,
+        "usd": 0.000409,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 1,
+          "failed": 0,
+          "inputTokens": 13776,
+          "cachedInputTokens": 13340,
+          "cacheWriteTokens": 432,
+          "outputTokens": 442,
+          "reasoningTokens": 151,
+          "usd": 0.000409,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6184,
+    "reply": "मैंने बोर्ड के नीचे पूरी चौड़ाई में \"इलाके और स्टेटस के हिसाब से विज़िट्स\" नाम का स्टैक्ड बार चार्ट जोड़ दिया है। यह इलाके (locality) के हिसाब से विज़िट्स की संख्या दिखाता है, और हर बार को स्टेटस के अनुसार बाँटा गया है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "इलाके और स्टेटस के हिसाब से विज़िट्स"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 45045,
+        "cachedInputTokens": 42499,
+        "cacheWriteTokens": 2538,
+        "outputTokens": 736,
+        "reasoningTokens": 250,
+        "usd": 0.001111,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 45045,
+          "cachedInputTokens": 42499,
+          "cacheWriteTokens": 2538,
+          "outputTokens": 736,
+          "reasoningTokens": 250,
+          "usd": 0.001111,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "haiku",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 1839,
+    "reply": "574",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28173,
+        "cachedInputTokens": 27099,
+        "cacheWriteTokens": 1068,
+        "outputTokens": 73,
+        "reasoningTokens": 0,
+        "usd": 0.000441,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "haiku",
+          "model": "claude-haiku-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28173,
+          "cachedInputTokens": 27099,
+          "cacheWriteTokens": 1068,
+          "outputTokens": 73,
+          "reasoningTokens": 0,
+          "usd": 0.000441,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5022,
+    "reply": "मैंने बोर्ड के नीचे एक नया बार चार्ट जोड़ा है। यह इलाके के हिसाब से प्रोडक्ट लाइनों की डिलीवरी दर दिखाता है, और सबसे कम दर वाला इलाका सबसे पहले है। चार्ट पूरी चौड़ाई में है।\n\nमैंने चार्ट के आँकड़े अलग से नहीं जाँचे। बोर्ड पर यह सही जुड़ा दिख रहा है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "इलाके के हिसाब से प्रोडक्ट लाइनों की डिलीवरी दर (सबसे कम पहले)"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28773,
+        "cachedInputTokens": 27124,
+        "cacheWriteTokens": 1643,
+        "outputTokens": 574,
+        "reasoningTokens": 80,
+        "usd": 0.015284,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28773,
+          "cachedInputTokens": 27124,
+          "cacheWriteTokens": 1643,
+          "outputTokens": 574,
+          "reasoningTokens": 80,
+          "usd": 0.015284,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "fanout-trap",
+    "pass": false,
+    "note": "did not recover with a resources-grain measure by product",
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 6651,
+    "reply": "मैंने पाई चार्ट नहीं जोड़ा, क्योंकि प्रोडक्ट वेरिएंट के हिसाब से एडमिनिस्ट्रेशन सफलता दर निकाली नहीं जा सकती। सफलता दर विज़िट (टास्क) के स्तर पर गिनी जाती है, जबकि प्रोडक्ट वेरिएंट हर टास्क की प्रोडक्ट लाइन पर दर्ज होता है। एक टास्क में कई प्रोडक्ट लाइनें हो सकती हैं, इसलिए प्रोडक्ट से बाँटने पर संख",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28227,
+        "cachedInputTokens": 27120,
+        "cacheWriteTokens": 1101,
+        "outputTokens": 736,
+        "reasoningTokens": 158,
+        "usd": 0.015549,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28227,
+          "cachedInputTokens": 27120,
+          "cacheWriteTokens": 1101,
+          "outputTokens": 736,
+          "reasoningTokens": 158,
+          "usd": 0.015549,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5704,
+    "reply": "मैंने बोर्ड का मौजूदा साप्ताहिक लाइन चार्ट बदल दिया है। अब वह पिछले 10 हफ़्तों की साप्ताहिक विज़िट्स दिखाता है, हर कैंपेन की अलग लाइन के साथ। उसका शीर्षक अब \"साप्ताहिक विज़िट्स कैंपेन के अनुसार (पिछले 10 हफ़्ते)\" है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "साप्ताहिक विज़िट्स कैंपेन के अनुसार (पिछले 10 हफ़्ते)",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44131,
+        "cachedInputTokens": 42092,
+        "cacheWriteTokens": 2031,
+        "outputTokens": 671,
+        "reasoningTokens": 202,
+        "usd": 0.020222,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44131,
+          "cachedInputTokens": 42092,
+          "cacheWriteTokens": 2031,
+          "outputTokens": 671,
+          "reasoningTokens": 202,
+          "usd": 0.020222,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 4,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6840,
+    "reply": "मैंने बोर्ड में दो विजेट जोड़े हैं:\n- **KPI:** \"विज़िट अवधि P90 (मिनट), पिछले 30 दिन\", जो सबसे ऊपर है।\n- **बार चार्ट:** \"प्रोजेक्ट के अनुसार विज़िट की मीडियन अवधि (मिनट)\", जो सबसे नीचे पूरी चौड़ाई में है।\n\nKPI जुड़ने से \"Visits, last 30 days\" KPI दूसरी पंक्ति में चला गया है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "विज़िट अवधि P90 (मिनट), पिछले 30 दिन",
+      "प्रोजेक्ट के अनुसार विज़िट की मीडियन अवधि (मिनट)"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 47282,
+        "cachedInputTokens": 43605,
+        "cacheWriteTokens": 3669,
+        "outputTokens": 844,
+        "reasoningTokens": 76,
+        "usd": 0.026351,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 47282,
+          "cachedInputTokens": 43605,
+          "cacheWriteTokens": 3669,
+          "outputTokens": 844,
+          "reasoningTokens": 76,
+          "usd": 0.026351,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 2,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 5570,
+    "reply": "मैंने बोर्ड के नीचे \"कैंपेन के अनुसार इनकार दर\" नाम का बार चार्ट जोड़ दिया है। बोर्ड पर कैंपेन फ़िल्टर पहले से मौजूद था, इसलिए नया फ़िल्टर नहीं जुड़ा। मैं यह पक्का नहीं कर पाया कि वह हर विजेट पर लागू होता है या नहीं, क्योंकि मैंने उसकी सेटिंग जाँची नहीं।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "कैंपेन के अनुसार इनकार दर"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28919,
+        "cachedInputTokens": 27136,
+        "cacheWriteTokens": 1777,
+        "outputTokens": 609,
+        "reasoningTokens": 88,
+        "usd": 0.015972,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28919,
+          "cachedInputTokens": 27136,
+          "cacheWriteTokens": 1777,
+          "outputTokens": 609,
+          "reasoningTokens": 88,
+          "usd": 0.015972,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 4508,
+    "reply": "ऐसे इलाकों में (जिनमें कम से कम 100 विज़िट हैं) सबसे कम सफलता दर वाला इलाका **NG_ST_LGA1_W2_L6** है।\n\n- **दर:** लगभग 70.8%\n- **विज़िट:** 325\n\nइससे कम दर वाले सभी इलाकों में 100 से कम विज़िट हैं, इसलिए वे इस शर्त में नहीं आते। NG_ST_LGA1_W4_L11 की दर सबसे कम (62.5%) है, पर उसमें सिर्फ़ 64 विज़िट हैं।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29513,
+        "cachedInputTokens": 27150,
+        "cacheWriteTokens": 2357,
+        "outputTokens": 388,
+        "reasoningTokens": 0,
+        "usd": 0.015215,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29513,
+          "cachedInputTokens": 27150,
+          "cacheWriteTokens": 2357,
+          "outputTokens": 388,
+          "reasoningTokens": 0,
+          "usd": 0.015215,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2602,
+    "reply": "सबसे आम कारण **STOCK_OUT** (स्टॉक खत्म) है, जिसकी **98** प्रोडक्ट लाइनें डिलीवर नहीं हुईं।\n\nअगले दो कारण:\n- **BENEFICIARY_ABSENT** (लाभार्थी मौजूद नहीं): 86\n- **SICK** (बीमार): 83\n\nकुल 267 लाइनें डिलीवर नहीं हुईं।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28487,
+        "cachedInputTokens": 27116,
+        "cacheWriteTokens": 1365,
+        "outputTokens": 290,
+        "reasoningTokens": 0,
+        "usd": 0.011748,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28487,
+          "cachedInputTokens": 27116,
+          "cacheWriteTokens": 1365,
+          "outputTokens": 290,
+          "reasoningTokens": 0,
+          "usd": 0.011748,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3022,
+    "reply": "मैं यह नहीं जोड़ पाया। बोर्ड पर नक्शा विजेट नहीं है, सिर्फ़ bar, line, pie, area चार्ट, KPI, टेबल और टेक्स्ट हैं। इस डेटा में सुविधा (FAC-7) की जगह या दूरी की जानकारी भी नहीं है, इसलिए 2 किलोमीटर वाला फ़िल्टर भी नहीं लग सकता। घरों के पते सिर्फ़ locality, ward और city के स्तर पर मिलते हैं।\n\nचाहें तो ",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 1,
+        "failed": 0,
+        "inputTokens": 13776,
+        "cachedInputTokens": 13340,
+        "cacheWriteTokens": 432,
+        "outputTokens": 282,
+        "reasoningTokens": 0,
+        "usd": 0.006576,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 1,
+          "failed": 0,
+          "inputTokens": 13776,
+          "cachedInputTokens": 13340,
+          "cacheWriteTokens": 432,
+          "outputTokens": 282,
+          "reasoningTokens": 0,
+          "usd": 0.006576,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5874,
+    "reply": "मैंने बोर्ड के नीचे पूरी चौड़ाई में एक नया बार चार्ट जोड़ा है, \"इलाके और स्टेटस के हिसाब से विज़िट्स\"। इसमें हर इलाके के लिए विज़िट्स की गिनती दिखती है, और हर बार टास्क स्टेटस के हिसाब से स्टैक्ड है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "इलाके और स्टेटस के हिसाब से विज़िट्स"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44818,
+        "cachedInputTokens": 42410,
+        "cacheWriteTokens": 2400,
+        "outputTokens": 590,
+        "reasoningTokens": 112,
+        "usd": 0.020398,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44818,
+          "cachedInputTokens": 42410,
+          "cacheWriteTokens": 2400,
+          "outputTokens": 590,
+          "reasoningTokens": 112,
+          "usd": 0.020398,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "sonnet",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 2290,
+    "reply": "**574**",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28173,
+        "cachedInputTokens": 27099,
+        "cacheWriteTokens": 1068,
+        "outputTokens": 75,
+        "reasoningTokens": 0,
+        "usd": 0.008852,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "sonnet",
+          "model": "claude-sonnet-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28173,
+          "cachedInputTokens": 27099,
+          "cacheWriteTokens": 1068,
+          "outputTokens": 75,
+          "reasoningTokens": 0,
+          "usd": 0.008852,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "delivery-by-locality",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 8095,
+    "reply": "मैंने बोर्ड के सबसे नीचे पूरी चौड़ाई का एक बार चार्ट जोड़ा है, जिसका शीर्षक \"इलाके के हिसाब से डिलीवरी दर (सबसे कम पहले)\" है। इसमें हर इलाके के लिए प्रोडक्ट लाइनों की डिलीवरी दर दिखती है और सबसे कम दर वाला इलाका सबसे पहले आता है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "इलाके के हिसाब से डिलीवरी दर (सबसे कम पहले)"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44159,
+        "cachedInputTokens": 42083,
+        "cacheWriteTokens": 2068,
+        "outputTokens": 608,
+        "reasoningTokens": 118,
+        "usd": 0.030949,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44159,
+          "cachedInputTokens": 42083,
+          "cacheWriteTokens": 2068,
+          "outputTokens": 608,
+          "reasoningTokens": 118,
+          "usd": 0.030949,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "fanout-trap",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 4,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 15708,
+    "reply": "मैं प्रोडक्ट वेरिएंट के हिसाब से एडमिनिस्ट्रेशन सफलता दर नहीं दिखा सका, क्योंकि एक विज़िट में कई प्रोडक्ट लाइनें होती हैं और इससे गिनती कई गुना बढ़ जाती। इसकी जगह मैंने नीचे पूरी चौड़ाई का बार चार्ट \"प्रोडक्ट वेरिएंट के अनुसार डिलीवरी दर\" जोड़ा है, जिसमें दरें **PVAR-VITA** की 90.0% से **PVAR-SPAQ-1",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "प्रोडक्ट वेरिएंट के अनुसार डिलीवरी दर"
+    ],
+    "usage": {
+      "total": {
+        "calls": 5,
+        "failed": 0,
+        "inputTokens": 78037,
+        "cachedInputTokens": 74150,
+        "cacheWriteTokens": 3875,
+        "outputTokens": 1264,
+        "reasoningTokens": 387,
+        "usd": 0.059532,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 5,
+          "failed": 0,
+          "inputTokens": 78037,
+          "cachedInputTokens": 74150,
+          "cacheWriteTokens": 3875,
+          "outputTokens": 1264,
+          "reasoningTokens": 387,
+          "usd": 0.059532,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "epoch-window",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 6321,
+    "reply": "मैंने मौजूदा \"Weekly visits by campaign\" लाइन चार्ट को सिर्फ़ पिछले 10 हफ़्तों तक सीमित कर दिया है और उसका नाम \"Weekly visits by campaign, last 10 weeks\" रख दिया है। इसमें हर कैंपेन की साप्ताहिक विज़िट्स की अलग लाइन दिखती है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign, last 10 weeks",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 43045,
+        "cachedInputTokens": 41576,
+        "cacheWriteTokens": 1461,
+        "outputTokens": 493,
+        "reasoningTokens": 93,
+        "usd": 0.025513,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 43045,
+          "cachedInputTokens": 41576,
+          "cacheWriteTokens": 1461,
+          "outputTokens": 493,
+          "reasoningTokens": 93,
+          "usd": 0.025513,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "duration-percentile",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 3,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7453,
+    "reply": "दोनों विजेट बोर्ड की चौथी पंक्ति में जुड़ गए हैं: पिछले 30 दिनों की **P90 विज़िट अवधि (मिनट)** का KPI (चौथाई चौड़ाई) और उसके बगल में **प्रोजेक्ट के हिसाब से मीडियन विज़िट अवधि** का बार चार्ट (आधी चौड़ाई)। बार चार्ट पर कोई समय-सीमा नहीं लगाई गई है, इसलिए यह पूरे समय का डेटा दिखाता है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "P90 विज़िट अवधि (मिनट), पिछले 30 दिन",
+      "प्रोजेक्ट के हिसाब से मीडियन विज़िट अवधि (मिनट)"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 46511,
+        "cachedInputTokens": 43258,
+        "cacheWriteTokens": 3245,
+        "outputTokens": 751,
+        "reasoningTokens": 35,
+        "usd": 0.039929,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 46511,
+          "cachedInputTokens": 43258,
+          "cacheWriteTokens": 3245,
+          "outputTokens": 751,
+          "reasoningTokens": 35,
+          "usd": 0.039929,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "hierarchy",
+    "pass": true,
+    "note": null,
+    "steps": 5,
+    "toolCalls": 5,
+    "toolErrors": 1,
+    "narrated": false,
+    "latencyMs": 11728,
+    "reply": "मैंने नीचे पूरी चौड़ाई में \"कैंपेन के अनुसार इनकार दर\" नाम का बार चार्ट जोड़ दिया है। बोर्ड पर Campaign फ़िल्टर पहले से था, पर उसका दायरा साफ़ पता नहीं चल रहा था, इसलिए मैंने उसे हटाकर दोबारा जोड़ा है और अब वह बोर्ड के हर विजेट पर लागू होता है।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "कैंपेन के अनुसार इनकार दर"
+    ],
+    "usage": {
+      "total": {
+        "calls": 5,
+        "failed": 0,
+        "inputTokens": 77002,
+        "cachedInputTokens": 73827,
+        "cacheWriteTokens": 3163,
+        "outputTokens": 859,
+        "reasoningTokens": 179,
+        "usd": 0.047808,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 5,
+          "failed": 0,
+          "inputTokens": 77002,
+          "cachedInputTokens": 73827,
+          "cacheWriteTokens": 3163,
+          "outputTokens": 859,
+          "reasoningTokens": 179,
+          "usd": 0.047808,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "question-worst-locality",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5788,
+    "reply": "100 या उससे ज़्यादा विज़िट वाले इलाकों में **NG_ST_LGA1_W2_L6** की एडमिनिस्ट्रेशन सफलता दर सबसे कम है: लगभग **70.8%**, कुल **325 विज़िट** पर।\n\n- इसके ठीक बाद **NG_ST_LGA1_W1_L1** आता है, जहाँ 329 विज़िट पर दर लगभग 71.1% है।\n- कुछ इलाकों की दर इससे भी कम है, पर वहाँ 100 से कम विज़िट हैं, इसलिए वे गिन",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 29585,
+        "cachedInputTokens": 27150,
+        "cacheWriteTokens": 2429,
+        "outputTokens": 561,
+        "reasoningTokens": 71,
+        "usd": 0.028819,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 29585,
+          "cachedInputTokens": 27150,
+          "cacheWriteTokens": 2429,
+          "outputTokens": 561,
+          "reasoningTokens": 71,
+          "usd": 0.028819,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "question-top-reason",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 3920,
+    "reply": "प्रोडक्ट लाइन डिलीवर न होने का सबसे आम कारण **STOCK_OUT** (स्टॉक खत्म होना) है। इस कारण से **98** लाइनें डिलीवर नहीं हुईं। यह गिनती पूरे समय की है और किसी कैंपेन तक सीमित नहीं है।\n\nइसके बाद के कारण लगभग बराबर हैं:\n- **BENEFICIARY_ABSENT** (लाभार्थी मौजूद नहीं): 86\n- **SICK** (बीमार): 83\n- **INELIGIB",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28530,
+        "cachedInputTokens": 27116,
+        "cacheWriteTokens": 1408,
+        "outputTokens": 369,
+        "reasoningTokens": 0,
+        "usd": 0.019867,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28530,
+          "cachedInputTokens": 27116,
+          "cacheWriteTokens": 1408,
+          "outputTokens": 369,
+          "reasoningTokens": 0,
+          "usd": 0.019867,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "unanswerable-radius",
+    "pass": true,
+    "note": null,
+    "steps": 1,
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5374,
+    "reply": "यह नहीं जोड़ा जा सकता, और बोर्ड में कोई बदलाव नहीं किया गया है:\n\n- **नक्शा नहीं बनता:** बोर्ड पर सिर्फ़ bar, line, pie और area चार्ट, KPI, टेबल और टेक्स्ट नोट लग सकते हैं।\n- **फ़ैसिलिटी की जानकारी नहीं है:** \"hcm\" डेटा में फ़ैसिलिटी का कोई फ़ील्ड नहीं है, इसलिए FAC-7 को पहचाना नहीं जा सकता।\n- **दूरी",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 1,
+        "failed": 0,
+        "inputTokens": 13776,
+        "cachedInputTokens": 13340,
+        "cacheWriteTokens": 432,
+        "outputTokens": 582,
+        "reasoningTokens": 142,
+        "usd": 0.016484,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 1,
+          "failed": 0,
+          "inputTokens": 13776,
+          "cachedInputTokens": 13340,
+          "cacheWriteTokens": 432,
+          "outputTokens": 582,
+          "reasoningTokens": 142,
+          "usd": 0.016484,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "two-dimensions",
+    "pass": true,
+    "note": null,
+    "steps": 3,
+    "toolCalls": 2,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 7504,
+    "reply": "मैंने बोर्ड के सबसे नीचे पूरी चौड़ाई का एक नया स्टैक्ड बार चार्ट \"इलाके और स्टेटस के हिसाब से विज़िट्स\" जोड़ दिया है। इसमें हर इलाके की विज़िट्स टास्क स्टेटस के हिसाब से बँटी हुई दिखती हैं।",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered",
+      "इलाके और स्टेटस के हिसाब से विज़िट्स"
+    ],
+    "usage": {
+      "total": {
+        "calls": 3,
+        "failed": 0,
+        "inputTokens": 44026,
+        "cachedInputTokens": 42013,
+        "cacheWriteTokens": 2005,
+        "outputTokens": 556,
+        "reasoningTokens": 102,
+        "usd": 0.02958,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 3,
+          "failed": 0,
+          "inputTokens": 44026,
+          "cachedInputTokens": 42013,
+          "cacheWriteTokens": 2005,
+          "outputTokens": 556,
+          "reasoningTokens": 102,
+          "usd": 0.02958,
+          "unpriced": 0
+        }
+      ]
+    }
+  },
+  {
+    "provider": "opus",
+    "task": "soft-delete-count",
+    "pass": true,
+    "note": null,
+    "steps": 2,
+    "toolCalls": 1,
+    "toolErrors": 0,
+    "narrated": false,
+    "latencyMs": 5211,
+    "reply": "**574**",
+    "titles": [
+      "Shop overview",
+      "Visits, last 30 days",
+      "Administration success",
+      "Product lines delivered",
+      "Households registered",
+      "Weekly visits by campaign",
+      "Success rate by locality (lowest first)",
+      "Why lines were not delivered"
+    ],
+    "usage": {
+      "total": {
+        "calls": 2,
+        "failed": 0,
+        "inputTokens": 28173,
+        "cachedInputTokens": 27099,
+        "cacheWriteTokens": 1068,
+        "outputTokens": 75,
+        "reasoningTokens": 0,
+        "usd": 0.012284,
+        "unpriced": 0
+      },
+      "models": [
+        {
+          "role": "eval",
+          "provider": "opus",
+          "model": "claude-opus-5-5",
+          "calls": 2,
+          "failed": 0,
+          "inputTokens": 28173,
+          "cachedInputTokens": 27099,
+          "cacheWriteTokens": 1068,
+          "outputTokens": 75,
+          "reasoningTokens": 0,
+          "usd": 0.012284,
+          "unpriced": 0
+        }
+      ]
+    }
+  }
+]

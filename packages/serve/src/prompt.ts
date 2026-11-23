@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 11;
+export const PROMPT_VERSION = 12;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -57,6 +57,36 @@ const exampleLine = ({ question, query: q, note }: Pack["examples"][number]) => 
   return `- "${question}" → ${q.kind === "rows" ? "" : `${q.kind} `}${describeQuery(q)}${order}${filters}${note ? ` (${note})` : ""}`;
 };
 
+/** Which language the chat replies in and names things in. */
+export type LanguagePolicy = {
+  /** The user's pick ("fr", "hi", …); absent or "auto": reply in the language of their latest message. */
+  reply?: string | null;
+  /** Titles in the board's own language (default), or in the language of the reply. */
+  titles?: "board" | "speaker";
+  /** The board's language, for titles: "en" by default. */
+  board?: string;
+};
+
+const LANGUAGE_NAMES: Record<string, string> = { en: "English", fr: "French", hi: "Hindi", es: "Spanish", pt: "Portuguese", ar: "Arabic", sw: "Swahili" };
+const languageName = (code: string) => LANGUAGE_NAMES[code.split("-")[0]!.toLowerCase()] ?? code;
+
+/**
+ * The language rules, as the board part's last section: per user and per turn,
+ * so they stay out of the cached stable part. Empty without a policy.
+ */
+export function languageText(p?: LanguagePolicy) {
+  if (!p) return "";
+  const reply =
+    p.reply && p.reply !== "auto"
+      ? `The user chose ${languageName(p.reply)} for this chat: write every reply in ${languageName(p.reply)}${p.reply.startsWith("hi") ? " (Devanagari script)" : ""}, even when their message is in another language.`
+      : "Reply in the language of the user's latest message.";
+  const titles =
+    (p.titles ?? "board") === "board"
+      ? `Write new board and widget titles in ${languageName(p.board ?? "en")}, the board's language, even when replying in another; keep existing titles unless asked to rename them.`
+      : "Write new board and widget titles in the language you reply in.";
+  return `\n\nLANGUAGE:\n- ${reply}\n- ${titles}\n- Keys, filter values and codes stay exactly as the data has them; match the user's words to them whatever language they use.`;
+}
+
 const BY: Record<string, string> = { layout: "by hand", ops: "by hand", revert: "rollback", file: "board file" };
 
 /**
@@ -76,7 +106,7 @@ export function userChangesText(changes: BoardChange[] = []) {
  * Stable first, so a provider's prompt cache keeps the long first part across
  * edits; joined, it is SYSTEM.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = []): [stable: string, board: string] => [
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy): [stable: string, board: string] => [
   `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
@@ -99,8 +129,8 @@ Rules:
 - "Reset", "start over", "back to the original/default", "undo my changes": restore_version with to: baseline. "Undo that" / "go back to how it was before X": list_versions, then restore_version with that version. A restore is one call; never rebuild a past board widget by widget.
 - When the board part lists changes the user made since your last turn, they are deliberate: keep them, never undo them unless asked, and mention them only when they bear on the request.
 - After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
-- An informational answer (what the data holds, several numbers side by side) may use a short bullet list and **bold** for names; keep it brief. Never use markdown headings or tables.`,
-  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}`,
+- An informational answer (what the data holds) may use a short bullet list and **bold** for names; keep it brief. Several numbers side by side for a few groups may be one compact markdown table (at most 6 rows and 4 columns, figures formatted as on the board); anything larger belongs on the board as a table widget. Never use markdown headings.`,
+  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}${languageText(language)}`,
 ];
 
-export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = []) => systemParts(pack, catalogue, board, now, changes).join("");
+export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy) => systemParts(pack, catalogue, board, now, changes, language).join("");
