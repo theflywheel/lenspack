@@ -553,6 +553,30 @@ describe("moving widgets", () => {
     expect(at(result.config, "ward")).toMatchObject({ x: 8, y: 3, w: 4 });
   });
 
+  it("joins the gaps in the anchor's row to make room (the commerce eval's C16)", () => {
+    // Not packed: weekly revenue and the category chart half wide on one row, the country
+    // bar alone and full width below. Three separate calls, as a model makes them.
+    const board = empty();
+    for (const [i, x, y, w, h] of [["revenue_trend", 0, 3, 6, 7], ["by_category", 6, 3, 6, 7], ["by_country", 0, 10, 12, 7]] as const) {
+      board.widgets[i] = widgetSchema.parse(chart({ title: i }));
+      board.layout.push({ i, x, y, w, h });
+    }
+    let config = board;
+    for (const ops of [
+      [{ op: "resize_widget", id: "revenue_trend", width: "third" }],
+      [{ op: "resize_widget", id: "by_category", width: "third" }],
+      [{ op: "resize_widget", id: "by_country", width: "third" }, { op: "move_widget", id: "by_country", placement: { place: "after:revenue_trend", width: "third" } }],
+    ]) {
+      const result = apply(config, ops);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      config = result.config;
+    }
+    const y = at(config, "revenue_trend")!.y;
+    expect(at(config, "by_country")).toMatchObject({ y, w: 4 });
+    expect(config.layout.filter((item) => item.y === y).map((item) => item.x).sort((a, b) => a - b)).toEqual([0, 4, 8]);
+  });
+
   it("rejects a move that leaves the widget where it was", () => {
     const result = apply(full(), [{ op: "move_widget", id: "ward", placement: { place: "after:fresh", width: "full" } }]);
     expect(result.ok).toBe(false);
