@@ -264,7 +264,13 @@ createServer(async (req, res) => {
     if (url.pathname === "/healthz") return send(res, 200, JSON.stringify({ ok: true, identity: !!idKey }));
     const who = whoIs(req);
     if (!who) return send(res, 401, JSON.stringify({ error: "sign in to Superset first" }));
-    const adminOnly = () => (who.a ? null : send(res, 403, JSON.stringify({ error: "only Superset admins can do this" })));
+    // true when it refused (and answered 403): callers `if (adminOnly()) return;`.
+    const adminOnly = (): boolean => {
+      if (who.a) return false;
+      audit({ user: who.u, action: `${req.method} ${url.pathname}`, outcome: "denied", detail: "not a Superset admin" });
+      send(res, 403, JSON.stringify({ error: "only Superset admins can do this" }));
+      return true;
+    };
     const supersetPort = config.superset.publicPort ?? Number(new URL(config.superset.url).port);
     const panel = config.overlay?.panel === "dock" ? "dock" : "float";
     // Where browsers reach Superset: the config's publicUrl, else what Superset's route says it was reached as.

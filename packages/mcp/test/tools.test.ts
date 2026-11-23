@@ -115,6 +115,22 @@ describe("board tools", () => {
     expect(await go("query", { query_kind: "value", measure: "things" })).not.toHaveProperty("readOnly");
   });
 
+  it("tells onEdit of every edit it applied or refused", async () => {
+    const store = memoryStore();
+    await store.create({ id: "au", pack, title: "Audited" });
+    const seen: { outcome: string; ops: string[]; version?: number; error?: string }[] = [];
+    const tools = (readOnly?: string) => Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "au", ctx: { tenant: "t1" }, readOnly, onEdit: (e) => seen.push(e) }).map((x) => [x.name, x]));
+    const go = (t: ReturnType<typeof tools>, name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    await go(tools(), "rename_board", { title: "Renamed" });
+    await go(tools(), "add_widget", { id: "w", kind: "kpi", title: "Nope", query_kind: "value", measure: "no_such_measure" });
+    await go(tools("view only"), "rename_board", { title: "Again" });
+    await go(tools(), "query", { query_kind: "value", measure: "things" });
+    expect(seen.map((e) => e.outcome)).toEqual(["ok", "refused", "refused"]);
+    expect(seen[0]).toMatchObject({ ops: ["set_title"], version: expect.any(Number) });
+    expect(seen[1]!.error).toBeTruthy();
+    expect(seen[2]).toMatchObject({ error: "read-only" });
+  });
+
   it("patches a widget: only the fields given change", async () => {
     const store = memoryStore();
     await store.create({ id: "u", pack, title: "Patch" });
