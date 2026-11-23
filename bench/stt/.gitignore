@@ -1,0 +1,6 @@
+# audio is fetched for a run and deleted after; never committed
+data/slr57/
+data/fleurs/
+data/own_wav/
+data/own.jsonl
+__pycache__/
