@@ -2,7 +2,7 @@ import { type Server, createServer } from "node:http";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { type CallRecord, DEFAULT_SPEECH_MODEL, addUsageSink, audioFormat, createApp, speechKeyFromEnv, speechModels, transcribe, usageLedger } from "../src";
+import { type CallRecord, DEFAULT_SPEECH_MODEL, addUsageSink, audioFormat, createApp, fitsLanguages, scriptOf, speechKeyFromEnv, speechModels, transcribe, usageLedger } from "../src";
 
 // A stand-in for the provider: records each request and answers as OpenRouter does.
 function fakeProvider(answer: (body: any) => { status?: number; json?: unknown; text?: string }) {
@@ -59,6 +59,21 @@ describe("transcribe", () => {
     expect(audioFormat("audio/mp4")).toBe("m4a");
     expect(audioFormat("AUDIO/WAV")).toBe("wav");
     expect(audioFormat(undefined)).toBeNull();
+  });
+});
+
+describe("scriptOf / fitsLanguages", () => {
+  it("names the script most letters are in, and checks it against the expected languages", () => {
+    expect(scriptOf("montre les doses par district")).toBe("latin");
+    expect(scriptOf("ज़िले के हिसाब से खुराक")).toBe("devanagari");
+    expect(scriptOf("کله است لا اوچتوب")).toBe("arabic");
+    expect(scriptOf("покажи дозы")).toBe("cyrillic");
+    expect(scriptOf("显示剂量")).toBe("cjk");
+    expect(scriptOf("42 !")).toBeNull();
+    expect(fitsLanguages("montre les doses", ["en", "fr", "hi"])).toBe(true);
+    expect(fitsLanguages("खुराक दिखाओ", ["en", "fr", "hi"])).toBe(true);
+    expect(fitsLanguages("کله است لا اوچتوب", ["en", "fr", "hi"])).toBe(false);
+    expect(fitsLanguages("ok", ["fr"])).toBe(true); // too short to tell
   });
 });
 
@@ -123,6 +138,35 @@ describe("POST /api/_stt", () => {
     expect(seen.filter((r) => r.role === "speech")).toHaveLength(1);
     expect(seen[0]).toMatchObject({ role: "speech", pack: "hcm", model: DEFAULT_SPEECH_MODEL, usd: 0.0001, ok: true });
     expect(ledger.report().total.usd).toBeCloseTo(0.0001);
+  });
+
+  it("retries a hintless guess outside the expected languages once with the fallback, and logs the hint and length, never the text", async () => {
+    const { f, calls } = fakeProvider((body) => ({ json: { text: body.language === "fr" ? "montre les doses" : "کله است لا اوچتوب", usage: { seconds: 1, cost: 0.0001 } } }));
+    const seen: CallRecord[] = [];
+    remove = addUsageSink({ record: (r) => seen.push(r) });
+    const base = await listen(createApp([], { speech: { apiKey: "k", model: () => DEFAULT_SPEECH_MODEL, fetch: f } }));
+    const res = await fetch(`${base}/_stt?expected=en,fr,hi&fallback=fr`, { method: "POST", headers: { "content-type": "audio/webm" }, body: clip });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ text: "montre les doses", retried: true, hint: "fr" });
+    expect(calls.map((c) => c.body.language)).toEqual([undefined, "fr"]);
+    expect(seen.map((r) => r.speech)).toEqual([{ language: null, chars: 17 }, { language: "fr", chars: 16, retried: true }]);
+    expect(JSON.stringify(seen)).not.toContain("doses");
+  });
+
+  it("gives up with 422 and no text when the retry is no better, and leaves a hinted clip alone", async () => {
+    const { f, calls } = fakeProvider(() => ({ json: { text: "کله است لا اوچتوب" } }));
+    const base = await listen(createApp([], { speech: { apiKey: "k", model: () => DEFAULT_SPEECH_MODEL, fetch: f } }));
+    const res = await fetch(`${base}/_stt?expected=en,fr,hi&fallback=en`, { method: "POST", headers: { "content-type": "audio/webm" }, body: clip });
+    expect(res.status).toBe(422);
+    const j = await res.json();
+    expect(j).toMatchObject({ error: "unsure_language", script: "arabic" });
+    expect(j.text).toBeUndefined();
+    expect(calls).toHaveLength(2);
+    // A hint means the reader chose: no retry, and words in another script are a miss, never put in the input.
+    const hinted = await fetch(`${base}/_stt?language=fr&expected=en,fr,hi&fallback=en`, { method: "POST", headers: { "content-type": "audio/webm" }, body: clip });
+    expect(hinted.status).toBe(422);
+    expect(await hinted.json()).toEqual({ error: "wrong_script", language: "fr", script: "arabic" });
+    expect(calls).toHaveLength(3);
   });
 
   it("answers 503 without a key, and the listing says the mic is off", async () => {

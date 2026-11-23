@@ -15,7 +15,7 @@ import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, usageLedger, withMeter } from "./metering";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
-import { LANGUAGE, type SpeechOptions, SpeechError, speechRecord, transcribe } from "./speech";
+import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
 // The board API that @lenspack/react's host callbacks talk to, for any number
 // of packs, each bound to its own source. Nothing here knows which backend a
@@ -265,15 +265,39 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         if (over) return json(res, 429, { error: over });
         const language = url.searchParams.get("language") || undefined;
         const pack = url.searchParams.get("pack") || undefined;
+        // Without a hint the model guesses the language, and a guess outside the reader's languages
+        // (French heard as Persian) is useless: ?expected=en,fr,hi checks the script and retries once
+        // with ?fallback; still wrong, 422 and no text.
+        const expected = (url.searchParams.get("expected") ?? "").split(",").filter((l) => LANGUAGE.test(l));
+        const fallback = url.searchParams.get("fallback") || undefined;
+        if (fallback && !LANGUAGE.test(fallback)) return json(res, 400, { error: `bad fallback ${fallback}` });
         const sinks = [ledger, ...(opts.usageSinks ?? [])];
+        let hint: string | undefined = language;
         try {
           const audio = await readBytes(req, speech.maxBytes ?? 10_000_000);
-          const t = await transcribe(speech, audio, req.headers["content-type"], language);
-          recordCall(speechRecord(t, { user: who.user, pack }), sinks);
-          return json(res, 200, t);
+          let t = await transcribe(speech, audio, req.headers["content-type"], language);
+          recordCall(speechRecord({ ...t, language: language ?? null, chars: t.text.length }, { user: who.user, pack }), sinks);
+          let retried = false;
+          // A hint is the reader's choice: words in another script (Persian for French) are a miss, not a transcript.
+          if (language && !fitsLanguages(t.text, [language])) {
+            opts.log?.(`stt: hinted ${language}, came back in ${scriptOf(t.text)} script`);
+            return json(res, 422, { error: "wrong_script", language: language.split("-")[0], script: scriptOf(t.text) });
+          }
+          if (!language && expected.length && !fitsLanguages(t.text, expected)) {
+            const first = scriptOf(t.text);
+            opts.log?.(`stt: no hint, came back in ${first} script; ${fallback ? `retrying as ${fallback}` : "no fallback"}`);
+            if (fallback) {
+              hint = fallback;
+              t = await transcribe(speech, audio, req.headers["content-type"], fallback);
+              retried = true;
+              recordCall(speechRecord({ ...t, language: fallback, chars: t.text.length, retried }, { user: who.user, pack }), sinks);
+            }
+            if (!fallback || !fitsLanguages(t.text, expected)) return json(res, 422, { error: "unsure_language", script: scriptOf(t.text), expected });
+          }
+          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}) });
         } catch (e) {
           if (!(e instanceof SpeechError)) throw e;
-          if (e.status === 502) recordCall(speechRecord({ model: speech.model(), usd: null, ms: e.ms, ok: false, error: e.message.slice(0, 300) }, { user: who.user, pack }), sinks);
+          if (e.status === 502) recordCall(speechRecord({ model: speech.model(), usd: null, ms: e.ms, ok: false, error: e.message.slice(0, 300), language: hint ?? null }, { user: who.user, pack }), sinks);
           opts.log?.(`stt: ${e.message}`);
           return json(res, e.status, { error: e.message });
         }

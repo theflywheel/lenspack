@@ -67,6 +67,8 @@ export type CallRecord = Attribution &
     ms: number;
     ok: boolean;
     error?: string;
+    /** A transcription's language hint and the length of the text it returned (never the text), for debugging from the server. */
+    speech?: { language: string | null; chars: number; retried?: boolean };
   };
 
 /** Where call records go: the in-memory ledger, the usage file, anything else. A sink that throws is skipped, never the call. */
