@@ -7,6 +7,9 @@
 // grip in its bottom-left corner or from its left and top edges), or opens as a side panel that narrows Superset's page. Which one
 // is a setting (the gear in the chat's header), defaulting to the deployment's
 // overlay.panel; mode, size and position are remembered per browser.
+// When Lenspack restarts (a deploy, a crash) the button stays, muted, saying it is reconnecting; an open chat
+// shows a banner and waits. A light health check every few seconds notices, and retries back off 1, 2, 4… s
+// up to 30 s, for as long as the tab is visible. Signed out of Superset (401): the button goes, no retrying.
 (function () {
   if (window.top !== window.self || window.__lenspackOverlay) return;
   window.__lenspackOverlay = true;
@@ -31,9 +34,9 @@
   // The overlay's own words, in the chat's language: the same rule as chat.js (a pick in the chat's
   // menu, unless Superset's language changed since; else Superset's language; else the deployment's).
   var STRINGS = {
-    en: { ask: "Ask Lenspack", settings: "Chat settings", openAs: "Open as", float: "Floating window", dock: "Side panel", resize: "Drag to resize" },
-    fr: { ask: "Demander à Lenspack", settings: "Réglages du chat", openAs: "Ouvrir en", float: "Fenêtre flottante", dock: "Panneau latéral", resize: "Faire glisser pour redimensionner" },
-    hi: { ask: "Lenspack से पूछें", settings: "चैट सेटिंग्स", openAs: "ऐसे खोलें", float: "तैरती विंडो", dock: "साइड पैनल", resize: "आकार बदलने के लिए खींचें" },
+    en: { ask: "Ask Lenspack", settings: "Chat settings", openAs: "Open as", float: "Floating window", dock: "Side panel", resize: "Drag to resize", reconnecting: "Reconnecting…", restarting: "Lenspack is restarting, reconnecting…" },
+    fr: { ask: "Demander à Lenspack", settings: "Réglages du chat", openAs: "Ouvrir en", float: "Fenêtre flottante", dock: "Panneau latéral", resize: "Faire glisser pour redimensionner", reconnecting: "Reconnexion…", restarting: "Lenspack redémarre, reconnexion…" },
+    hi: { ask: "Lenspack से पूछें", settings: "चैट सेटिंग्स", openAs: "ऐसे खोलें", float: "तैरती विंडो", dock: "साइड पैनल", resize: "आकार बदलने के लिए खींचें", reconnecting: "फिर से जुड़ रहे हैं…", restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…" },
   };
   var adminLang = "auto";
   function pageLocale() {
@@ -61,6 +64,7 @@
   css.textContent =
     ".lpo-btn{position:fixed;right:20px;bottom:20px;z-index:1001;border:0;border-radius:99px;background:#1a85a0;color:#fff;font:600 14px/1 Inter,system-ui,sans-serif;padding:12px 18px;box-shadow:0 6px 20px rgba(16,24,40,.22);cursor:pointer;display:none;align-items:center;gap:8px}" +
     ".lpo-btn:hover{background:#156d84}" +
+    ".lpo-btn.lpo-wait,.lpo-btn.lpo-wait:hover{background:#98a2b3;cursor:progress;box-shadow:0 4px 14px rgba(16,24,40,.14)}" +
     ".lpo-btn b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:rgba(255,255,255,.2);font-size:12px}" +
     ".lpo-panel{position:fixed;z-index:1002;background:#fff;display:none;box-sizing:border-box}" +
     ".lpo-panel.lpo-dock{top:0;right:0;bottom:0;width:var(--lpo-dw," + WIDTH + "px);max-width:100vw;box-shadow:-8px 0 24px rgba(16,24,40,.14);border-left:1px solid #e4e7ec}" +
@@ -103,6 +107,67 @@
 
   var current = null; // { key, board, title }
   var mounted = null;
+  var chat = null; // the mounted chat's handle (send, focus, setOffline)
+
+  // ---- Reaching Lenspack. A failed call is "retry" (network error, 429, 5xx: Lenspack restarting, or a
+  // proxy in front of it), "signedout" (401) or "stop" (any other 4xx: retrying would not help).
+  var BACKOFF_MAX = 30000, HEALTH_EVERY = 4000;
+  var down = false, signedOut = false, delay = 1000, timer = null, pending = null;
+  function kind(status) {
+    if (status === 401) return "signedout";
+    if (status === 429 || status >= 500) return "retry";
+    return "stop";
+  }
+  function getJSON(url) {
+    return fetch(url, { cache: "no-store" }).then(
+      function (r) {
+        if (!r.ok) { var e = new Error(String(r.status)); e.kind = kind(r.status); throw e; }
+        return r.json();
+      },
+      function () { var e = new Error("network"); e.kind = "retry"; throw e; }
+    );
+  }
+  // Runs fn after the current backoff, doubling it; while the tab is hidden it waits for the tab to come back.
+  function later(fn) {
+    clearTimeout(timer);
+    var d = delay;
+    delay = Math.min(delay * 2, BACKOFF_MAX);
+    timer = setTimeout(function () {
+      timer = null;
+      if (document.hidden) pending = fn;
+      else fn();
+    }, d);
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden || !pending) return;
+    var fn = pending;
+    pending = null;
+    fn();
+  });
+  function setDown(on) {
+    down = on;
+    if (!on) { delay = 1000; clearTimeout(timer); timer = null; pending = null; }
+    btn.classList.toggle("lpo-wait", on);
+    relabel();
+    if (chat && chat.setOffline) chat.setOffline(on);
+  }
+  // Something failed: show "reconnecting" and keep trying to bind this dashboard until Lenspack answers.
+  function failed(e, key) {
+    if (seen !== key) return;
+    if (e.kind === "signedout") { signedOut = true; return hideAll(); }
+    if (e.kind !== "retry") return;
+    if (!down) setDown(true);
+    if (panel.style.display !== "block") btn.style.display = "inline-flex";
+    later(function () { if (seen === key) bind(key); });
+  }
+  // While bound and visible, a cheap check that Lenspack still answers (its /healthz, through Superset).
+  var lastHealth = 0;
+  function health() {
+    if (!current || down || signedOut || document.hidden || Date.now() - lastHealth < HEALTH_EVERY) return;
+    lastHealth = Date.now();
+    var key = current.key;
+    getJSON(origin + "/healthz").catch(function (e) { failed(e, key); });
+  }
 
   function loadChat(cb) {
     if (window.LenspackChat) return cb();
@@ -289,7 +354,8 @@
   }
   // Every translated word: text for menu entries, a tooltip and label for buttons.
   function relabel() {
-    btn.lastChild.textContent = t("ask");
+    btn.lastChild.textContent = down ? t("reconnecting") : t("ask");
+    btn.title = down ? t("restarting") : "";
     panel.querySelectorAll(".lpo-t").forEach(function (n) {
       var words = t(n.dataset.t);
       if (n.tagName === "BUTTON") { n.title = words; n.setAttribute("aria-label", words); }
@@ -363,7 +429,11 @@
     location.reload();
   }
   function open() {
-    if (!current) return;
+    if (!current) {
+      // Not bound yet (Lenspack was down when the page loaded): a click tries again now.
+      if (down && seen) { delay = 1000; bind(seen); }
+      return;
+    }
     sessionStorage.setItem(OPEN, current.key);
     panel.style.display = "block";
     btn.style.display = "none";
@@ -372,12 +442,16 @@
       if (mounted !== current.board) {
         mounted = current.board;
         menu = null;
-        window.LenspackChat.mount(panel, {
+        chat = window.LenspackChat.mount(panel, {
           api: origin, pack: current.pack, board: current.board, title: current.title, examples: current.examples,
           onClose: close,
           onChanged: refreshInPlace,
-        }).focus();
+          // A chat turn lost its connection: check now rather than at the next health check.
+          onUnreachable: function () { lastHealth = 0; health(); },
+        });
+        chat.focus();
       }
+      if (chat.setOffline) chat.setOffline(down);
       decorate();
     });
   }
@@ -389,6 +463,9 @@
   }
   function hideAll() {
     current = null;
+    clearTimeout(timer);
+    timer = pending = null;
+    if (down) setDown(false);
     btn.style.display = "none";
     panel.style.display = "none";
     place();
@@ -401,14 +478,26 @@
     var key = m ? m[1] : null;
     if (key === seen) return;
     seen = key;
-    if (!key || /[?&]standalone=/.test(location.search)) return hideAll();
+    if (!key || /[?&]standalone=/.test(location.search) || signedOut) return hideAll();
+    current = null;
+    clearTimeout(timer);
+    timer = pending = null;
+    bind(key);
+  }
+  function bind(key) {
     Promise.all([
-      fetch(origin + "/_superset/bind?dashboard=" + encodeURIComponent(key)).then(function (r) { return r.json(); }),
-      fetch(origin + "/_superset/info").then(function (r) { return r.json(); }),
+      getJSON(origin + "/_superset/bind?dashboard=" + encodeURIComponent(key)),
+      getJSON(origin + "/_superset/info"),
     ]).then(function (res) {
       var b = res[0], info = res[1];
-      if (b.error || seen !== key) return;
+      if (seen !== key) return;
+      if (b.error) { if (down) setDown(false); btn.style.display = "none"; return; }
+      var again = !!current && current.board === b.board;
       current = { key: key, board: b.board, title: b.title, pack: info.pack, examples: info.examplesByLang || info.examples };
+      lastHealth = Date.now();
+      if (down) setDown(false);
+      // Back after a restart with the chat already showing: nothing more to do.
+      if (again && panel.style.display === "block") return;
       if (info.language && info.language.default) adminLang = info.language.default;
       relabel();
       // The deployment's default applies until this browser has chosen.
@@ -416,9 +505,9 @@
       if (chosen !== "dock" && chosen !== "float") mode = adminDefault;
       if (sessionStorage.getItem(OPEN) === key) open();
       else btn.style.display = "inline-flex";
-    }).catch(function () { /* Lenspack is down: Superset carries on without the button */ });
+    }).catch(function (e) { failed(e, key); });
   }
   btn.onclick = open;
   check();
-  setInterval(check, 800);
+  setInterval(function () { check(); health(); }, 800);
 })();

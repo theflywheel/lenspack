@@ -1,0 +1,171 @@
+// @vitest-environment jsdom
+// When Lenspack restarts: the overlay's button stays (muted, "reconnecting"), retries back off, a signed-out 401
+// stops it, and the chat shows a banner while offline and offers Retry when an answer is cut off.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const web = (f: string) => readFileSync(join(__dirname, "..", "web", f), "utf8");
+
+type Reply = { status: number; body?: unknown } | "network";
+let server: (url: string) => Reply;
+const calls: string[] = [];
+
+function respond(url: string): Promise<unknown> {
+  calls.push(url);
+  const r = server(url);
+  if (r === "network") return Promise.reject(new TypeError("Failed to fetch"));
+  return Promise.resolve({ ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.body ?? {} });
+}
+const up: (url: string) => Reply = (url) =>
+  url.includes("/_superset/bind") ? { status: 200, body: { board: "superset-6", title: "Board" } }
+  : url.includes("/_superset/info") ? { status: 200, body: { pack: "p", examples: [], panel: "float" } }
+  : { status: 200, body: { ok: true } };
+const down: (url: string) => Reply = () => ({ status: 502, body: { error: "Lenspack is not reachable" } });
+
+function startOverlay() {
+  Object.defineProperty(document, "currentScript", { configurable: true, value: { src: "http://x/lenspack/overlay.js" } });
+  new Function(web("overlay.js"))();
+}
+const btn = () => document.querySelector(".lpo-btn") as HTMLButtonElement;
+const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  calls.length = 0;
+  document.body.innerHTML = "";
+  sessionStorage.clear();
+  delete (window as unknown as Record<string, unknown>).__lenspackOverlay;
+  window.history.pushState({}, "", "/superset/dashboard/6/");
+  vi.stubGlobal("fetch", vi.fn((url: string) => respond(String(url))));
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("overlay while Lenspack restarts", () => {
+  it("shows a muted reconnecting button when the first bind fails, and the normal one once Lenspack answers", async () => {
+    server = down;
+    startOverlay();
+    await tick(50);
+    expect(btn().style.display).toBe("inline-flex");
+    expect(btn().classList.contains("lpo-wait")).toBe(true);
+    expect(btn().textContent).toContain("Reconnecting");
+    server = up;
+    await tick(1100);
+    expect(btn().classList.contains("lpo-wait")).toBe(false);
+    expect(btn().textContent).toContain("Ask Lenspack");
+  });
+
+  it("backs off 1, 2, 4… s up to 30 s instead of hammering", async () => {
+    server = () => "network";
+    startOverlay();
+    await tick(120_000);
+    const binds = calls.filter((u) => u.includes("/_superset/bind")).length;
+    // t = 0, 1, 3, 7, 15, 31, 61, 91: eight tries in two minutes.
+    expect(binds).toBeGreaterThanOrEqual(7);
+    expect(binds).toBeLessThanOrEqual(9);
+  });
+
+  it("notices a restart after binding (health check) and recovers without a reload", async () => {
+    server = up;
+    startOverlay();
+    await tick(50);
+    expect(btn().textContent).toContain("Ask Lenspack");
+    server = down;
+    await tick(5000);
+    expect(btn().classList.contains("lpo-wait")).toBe(true);
+    expect(btn().style.display).toBe("inline-flex");
+    server = up;
+    await tick(4000);
+    expect(btn().classList.contains("lpo-wait")).toBe(false);
+  });
+
+  it("stops when signed out (401): no button, no retrying", async () => {
+    server = () => ({ status: 401, body: { error: "sign in to Superset first" } });
+    startOverlay();
+    await tick(50);
+    expect(btn().style.display).toBe("none");
+    const n = calls.length;
+    await tick(60_000);
+    expect(calls.length).toBe(n);
+  });
+
+  it("does not loop on another 4xx (no access to this dashboard)", async () => {
+    server = (url) => (url.includes("/_superset/bind") ? { status: 403, body: { error: "no access" } } : up(url));
+    startOverlay();
+    await tick(60_000);
+    expect(calls.filter((u) => u.includes("/_superset/bind")).length).toBe(1);
+    expect(btn().style.display).not.toBe("inline-flex");
+  });
+});
+
+type Chat = { mount: (root: HTMLElement, opts: Record<string, unknown>) => { send: (t: string) => Promise<void>; setOffline: (on: boolean) => void } };
+
+describe("chat while Lenspack restarts", () => {
+  function mountChat(onUnreachable = () => {}) {
+    delete (window as unknown as Record<string, unknown>).LenspackChat;
+    new Function(web("chat.js"))();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const chat = (window as unknown as { LenspackChat: Chat }).LenspackChat.mount(root, { api: "http://x/lenspack", pack: "p", board: "superset-6", speech: { enabled: false }, onUnreachable });
+    return { root, chat };
+  }
+
+  it("shows a banner and disables input while offline, and re-enables it when back", () => {
+    vi.useRealTimers();
+    const { root, chat } = mountChat();
+    const bar = root.querySelector(".lpc-down") as HTMLElement;
+    const input = root.querySelector(".lpc-in") as HTMLTextAreaElement;
+    expect(bar.hidden).toBe(true);
+    chat.setOffline(true);
+    expect(bar.hidden).toBe(false);
+    expect(bar.textContent).toContain("restarting");
+    expect(input.disabled).toBe(true);
+    expect((root.querySelector(".lpc-go") as HTMLButtonElement).disabled).toBe(true);
+    chat.setOffline(false);
+    expect(bar.hidden).toBe(true);
+    expect(input.disabled).toBe(false);
+  });
+
+  it("says the connection was lost when an answer is cut off, and Retry asks again", async () => {
+    vi.useRealTimers();
+    const enc = new TextEncoder();
+    let cut = true;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string }) => {
+      if (init?.method !== "POST") return { ok: true, status: 200, json: async () => ({ board: { version: 1 } }) };
+      const frames = cut
+        ? ['data: {"type":"text-delta","id":"t","delta":"Half an ans"}\n\n']
+        : ['data: {"type":"text-delta","id":"t","delta":"Done."}\n\n', 'data: {"type":"finish"}\n\n', "data: [DONE]\n\n"];
+      let i = 0;
+      return { ok: true, status: 200, body: { getReader: () => ({ read: async () => (i < frames.length ? { value: enc.encode(frames[i++]), done: false } : { value: undefined, done: true }) }) } };
+    }));
+    const lost = vi.fn();
+    const { root, chat } = mountChat(lost);
+    await chat.send("How many?");
+    const note = root.querySelector(".lpc-note.bad") as HTMLElement;
+    expect(note.textContent).toContain("connection to Lenspack was lost");
+    expect(lost).toHaveBeenCalled();
+    const retry = note.querySelector("button") as HTMLButtonElement;
+    expect(retry.textContent).toBe("Retry");
+    chat.setOffline(true);
+    expect(retry.disabled).toBe(true);
+    chat.setOffline(false);
+    cut = false;
+    retry.click();
+    await vi.waitFor(() => expect(root.querySelector(".lpc-note.bad")).toBeNull());
+    await vi.waitFor(() => expect(root.textContent).toContain("Done."));
+    expect(root.querySelectorAll(".lpc-user")).toHaveLength(1);
+  });
+
+  it("treats a 502 from Superset's proxy as lost, not as an error to read", async () => {
+    vi.useRealTimers();
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string }) =>
+      init?.method === "POST" ? { ok: false, status: 502, json: async () => ({ error: "Lenspack is not reachable: ConnectionError" }) } : { ok: false, status: 502, json: async () => ({}) }));
+    const { root, chat } = mountChat();
+    await chat.send("Hello");
+    expect((root.querySelector(".lpc-note.bad") as HTMLElement).textContent).toContain("connection to Lenspack was lost");
+  });
+});
