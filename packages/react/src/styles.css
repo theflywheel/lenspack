@@ -150,3 +150,32 @@ tr.lp-drillable:hover { background: var(--lp-hover); }
 .lp-heat-gap { margin-left: 10px; display: inline-flex; align-items: center; gap: 4px; }
 .lp-heat-tip { position: absolute; z-index: 5; transform: translate(-50%, calc(-100% - 6px)); pointer-events: none; background: var(--lp-fg); color: var(--lp-bg); padding: 4px 7px; border-radius: 4px; font-size: 11.5px; line-height: 1.35; white-space: nowrap; display: flex; flex-direction: column; }
 .lp-heat-tip b { font-weight: 600; }
+
+/* Map: points on a plain grid (or a host's tiles), coloured by category from the series colours, the
+   rest in a muted grey; sized by area. A thin ring keeps overlapping points apart in either theme. */
+.lp-map { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 11px; }
+.lp-map-body { position: relative; flex: 1; min-height: 120px; overflow: hidden; border-radius: var(--lp-radius); background: var(--lp-hover); }
+.lp-map-body svg { position: absolute; inset: 0; display: block; }
+.lp-map-tiles { position: absolute; inset: 0; }
+.lp-map-tiles img { position: absolute; max-width: none; user-select: none; }
+.lp-map-attr { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: var(--lp-muted); background: color-mix(in srgb, var(--lp-bg) 80%, transparent); padding: 0 4px; border-radius: 2px; }
+.lp-map-grid line { stroke: var(--lp-border); stroke-width: 1; }
+.lp-map-grid text { fill: var(--lp-muted); font-size: 10px; }
+.lp-map-pt { fill-opacity: 0.82; stroke: var(--lp-bg); stroke-width: 1; cursor: default; }
+.lp-map-pt:hover { fill-opacity: 1; stroke: var(--lp-fg); stroke-width: 1.5; }
+.lp-map-pt.lp-map-dense { stroke-width: 0.5; }
+.lp-map-c0 { fill: var(--lp-muted); background: var(--lp-muted); }
+.lp-map-c1 { fill: var(--lp-series-1); background: var(--lp-series-1); } .lp-map-c2 { fill: var(--lp-series-2); background: var(--lp-series-2); }
+.lp-map-c3 { fill: var(--lp-series-3); background: var(--lp-series-3); } .lp-map-c4 { fill: var(--lp-series-4); background: var(--lp-series-4); }
+.lp-map-c5 { fill: var(--lp-series-5); background: var(--lp-series-5); } .lp-map-c6 { fill: var(--lp-series-6); background: var(--lp-series-6); }
+.lp-map-c7 { fill: var(--lp-series-7); background: var(--lp-series-7); } .lp-map-c8 { fill: var(--lp-series-8); background: var(--lp-series-8); }
+.lp-map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-top: 6px; color: var(--lp-muted); }
+.lp-map-lname { color: var(--lp-fg); font-weight: 600; }
+.lp-map-key { display: inline-flex; align-items: center; gap: 5px; }
+.lp-map-key i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.lp-map-key i.lp-map-size { background: none; border: 1.5px solid var(--lp-muted); }
+.lp-map-key i.lp-map-size-s { width: 6px; height: 6px; }
+.lp-map-key i.lp-map-size-l { width: 14px; height: 14px; }
+.lp-map-tip { position: absolute; z-index: 5; transform: translate(-50%, calc(-100% - 10px)); pointer-events: none; background: var(--lp-fg); color: var(--lp-bg); padding: 4px 7px; border-radius: 4px; font-size: 11.5px; line-height: 1.35; white-space: nowrap; display: flex; flex-direction: column; }
+.lp-map-tip b { font-weight: 600; }
+.lp-map-ll { opacity: 0.7; font-variant-numeric: tabular-nums; }

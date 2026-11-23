@@ -53,6 +53,8 @@ export function describeQuery(query: Query) {
       return `${withMore(query)}${query.compare ? " vs previous" : ""}${time}`;
     case "rows":
       return `${query.entity} rows [${query.columns.join(", ")}]${time}`;
+    case "points":
+      return `${query.entity} points${query.color ? ` coloured by ${query.color}` : ""}${query.size ? ` sized by ${query.size}` : ""}${query.label ? ` named by ${query.label}` : ""}${query.limit !== 5000 ? ` top ${query.limit}` : ""}${time}`;
   }
 }
 

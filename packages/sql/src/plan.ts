@@ -79,7 +79,7 @@ function timeExpr(time: NonNullable<Pack["entities"][string]["time"]>): Expr {
   return { t: "epoch", unit: time.unit, arg: col("", time.field) };
 }
 
-export type Shape = "breakdown" | "series" | "value" | "rows";
+export type Shape = "breakdown" | "series" | "value" | "rows" | "points";
 
 export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   const { query, root } = bound;
@@ -279,6 +279,34 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       }
       limit = query.limit;
       shape = "rows";
+      break;
+    }
+    case "points": {
+      // One point per location (and colour and label): rows at one spot add up
+      // under a size measure. Rows with no location are left out. One row past
+      // the limit tells the caller the list was cut; with a size the largest stay,
+      // without one the source's order (sorting by place would keep one corner).
+      project(root, D("__lat"), col("", bound.geo!.lat));
+      project(root, D("__lon"), col("", bound.geo!.lon));
+      const lat = col(root, D("__lat"));
+      const lon = col(root, D("__lon"));
+      where.push({ t: "notnull", arg: lat }, { t: "notnull", arg: lon });
+      select.push({ alias: "lat", expr: lat }, { alias: "lon", expr: lon });
+      groupBy.push(lat, lon);
+      const named = (key: string | undefined, alias: string) => {
+        if (!key) return;
+        const g = dimRef(bound.columns.find((c) => c.def.key === key)!);
+        select.push({ alias, expr: g });
+        groupBy.push(g);
+      };
+      named(query.color, "color");
+      named(query.label, "label");
+      if (bound.measure) {
+        select.push({ alias: "size", expr: valueExpr(null) });
+        orderBy.push({ expr: col("", "size"), dir: "desc" }, { expr: col("", "lat"), dir: "desc" }, { expr: col("", "lon"), dir: "asc" });
+      }
+      limit = query.limit + 1;
+      shape = "points";
       break;
     }
   }

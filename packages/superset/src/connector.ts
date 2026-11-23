@@ -11,7 +11,7 @@ import { BUCKET, type Metric, N, columnOf, queryObjects } from "./query";
 // So a metric means one thing in both, and Superset's row-level security
 // applies to whatever the service account may see.
 
-export const SUPERSET_CAPABILITIES: Capabilities = { joins: false, exactDistinct: true, exactPercentiles: true, percentiles: false, twoStage: false, zonedBuckets: false, timeHeatmap: false };
+export const SUPERSET_CAPABILITIES: Capabilities = { joins: false, exactDistinct: true, exactPercentiles: true, percentiles: false, twoStage: false, zonedBuckets: false, timeHeatmap: false, points: true };
 
 type Native = { datasetId: number; queries: ReturnType<typeof queryObjects>["queries"]; metric: Metric | null };
 
@@ -61,6 +61,13 @@ export function supersetConnector(client: SupersetClient, binding: Binding): Con
         case "rows": {
           const names = bound.columns.map((c) => [c.def.key, columnOf(c.def)] as const);
           raw = current.map((r) => Object.fromEntries(names.map(([k, c]) => [k, r[c]])));
+          break;
+        }
+        case "points": {
+          const named = (key: string | undefined) => (key ? columnOf(bound.columns.find((c) => c.def.key === key)!.def) : null);
+          const color = named(q.color);
+          const label = named(q.label);
+          raw = current.map((r) => ({ lat: r[bound.geo!.lat], lon: r[bound.geo!.lon], ...(color ? { color: r[color] } : {}), ...(label ? { label: r[label] } : {}), ...(metric ? { size: r[value] } : {}) }));
           break;
         }
       }

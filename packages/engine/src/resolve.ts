@@ -54,9 +54,11 @@ export type Capabilities = {
   twoStage?: boolean;
   /** A heatmap's columns can be time buckets (a series heatmap). False where the host draws the chart and cannot keep a time axis in order. Absent means true. */
   timeHeatmap?: boolean;
+  /** Points queries (a map): each row's latitude and longitude. Absent means false: a connector says it can. */
+  points?: boolean;
 };
 
-export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true };
+export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true, points: true };
 
 export class ResolveError extends Error {
   constructor(
@@ -93,7 +95,9 @@ export type BoundPlan = {
   measure: BoundMeasure | null;
   dimension: BoundDimension | null; // breakdown dimension or series `by`
   split: BoundDimension | null; // a breakdown's second dimension
-  columns: BoundDimension[]; // rows
+  columns: BoundDimension[]; // rows; a points query's colour and label
+  /** A points query's coordinate columns on the root entity. */
+  geo: { lat: string; lon: string } | null;
   orderBy: { dimension: BoundDimension; dir: "asc" | "desc" } | null;
   filters: BoundFilter[];
   time: TimeWindow | null;
@@ -214,10 +218,26 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   // The root is the measure's entity: every number is computed at its grain.
   let root: string;
   let measure: BoundMeasure | null = null;
-  if (query.kind === "rows") {
+  if (query.kind === "rows" || query.kind === "points") {
     if (!pack.entities[query.entity])
       throw new ResolveError("UNKNOWN_ENTITY", `"${query.entity}" is not an entity in pack "${pack.pack}"`, query.entity, nearest(query.entity, Object.keys(pack.entities)) ?? undefined);
     root = query.entity;
+    if (query.kind === "points") {
+      if (!pack.entities[root]!.geo) throw new ResolveError("NOT_SUPPORTED", `"${root}" has no location (latitude and longitude), so it cannot be drawn as points`, root);
+      if (!caps.points) throw new ResolveError("NOT_SUPPORTED", "This source cannot list points for a map", root);
+      if (query.size) {
+        const def = findMeasure(query.size);
+        if (def.entity !== root) throw new ResolveError("WRONG_ENTITY", `"${query.size}" is measured on "${def.entity}", not "${root}": a point's size must be a measure of the points' own entity`, query.size);
+        if (def.derived) {
+          const expr = expandedExpr(pack, def.key);
+          measure = { kind: "derived", def, expr, operands: operands(expr).map(findMeasure) };
+          if (measure.operands.some((o) => o.entity !== root || o.per)) throw new ResolveError("NOT_SUPPORTED", `"${def.key}" is computed across entities or per key, so it cannot size points`, def.key);
+        } else {
+          if (def.per) throw new ResolveError("NOT_SUPPORTED", `"${def.key}" aggregates one value per key, so it cannot size points`, def.key);
+          measure = { kind: "simple", def };
+        }
+      }
+    }
   } else {
     const def = findMeasure(query.measure);
     root = def.entity;
@@ -291,6 +311,8 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
       columns.push(bound);
     }
     if (query.orderBy) orderBy = { dimension: bind(query.orderBy.key), dir: query.orderBy.dir };
+  } else if (query.kind === "points") {
+    for (const key of [query.color, query.label]) if (key !== undefined && !columns.some((c) => c.def.key === key)) columns.push(bind(key));
   }
   const compare = (query.kind === "value" || query.kind === "breakdown") && !!query.compare;
   if (compare) {
@@ -313,7 +335,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   }
 
   if (query.time && !rootEntity.time)
-    throw new ResolveError("NO_TIME", `"${root}" has no time column, so a time range cannot apply`, query.kind === "rows" ? query.entity : query.measure);
+    throw new ResolveError("NO_TIME", `"${root}" has no time column, so a time range cannot apply`, query.kind === "rows" || query.kind === "points" ? query.entity : query.measure);
 
   const windows = window(query, now, pack.timeZone);
   const time = windows?.time ?? null;
@@ -326,5 +348,6 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   const needsTenant = entitiesUsed.some((e) => pack.entities[e]!.tenant);
   if (needsTenant && !ctx.tenant) throw new ResolveError("TENANT_REQUIRED", `Pack "${pack.pack}" is multi-tenant; a tenant is required to query "${root}"`);
 
-  return { query, root, rootEntity, tenant: needsTenant ? ctx.tenant! : null, entitiesUsed, measure, dimension, split, columns, orderBy, filters, time, previous };
+  const geo = query.kind === "points" ? rootEntity.geo! : null;
+  return { query, root, rootEntity, tenant: needsTenant ? ctx.tenant! : null, entitiesUsed, measure, dimension, split, columns, geo, orderBy, filters, time, previous };
 }

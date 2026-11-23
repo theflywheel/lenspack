@@ -17,6 +17,7 @@ export function catalogueFrom(pack: Pack): Catalogue {
       grain: e.grain,
       hasTime: !!e.time,
       hasTenant: !!e.tenant,
+      ...(e.geo ? { hasLocation: true } : {}),
     })),
     dimensions: pack.dimensions.map((d) => ({
       key: d.key,
