@@ -38,7 +38,9 @@ export async function serviceAccount(o: BootstrapOptions): Promise<ServiceAccoun
     const saved = JSON.parse(readFileSync(path, "utf8")) as { username: string; password: string };
     if (saved.username === o.username) {
       try {
-        await make({ url: o.url, username: saved.username, password: saved.password }).get("/api/v1/me/");
+        // Signs in and makes one token-authenticated call (Superset 5's /api/v1/me/ reads only the session
+        // cookie, so it answers 401 to a token whatever the password).
+        await make({ url: o.url, username: saved.username, password: saved.password }).get("/api/v1/security/csrf_token/");
         return { ...saved, source: "state" };
       } catch (e) {
         // The account was deleted or its password changed (a new metadata database): make it again if we can.

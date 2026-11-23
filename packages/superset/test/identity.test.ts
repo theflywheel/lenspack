@@ -118,6 +118,8 @@ describe("Lenspack's Superset account", () => {
       ({
         get: async (path: string) => {
           if (users[o.username] !== o.password) throw new Error("401 not authorized");
+          // As Superset 5: /api/v1/me/ reads the session cookie only, so a token always gets 401 there.
+          if (path === "/api/v1/me/") throw new Error("Superset GET /api/v1/me/ → 401: Not authorized");
           calls.push(`GET ${path} as ${o.username}`);
           return {};
         },
