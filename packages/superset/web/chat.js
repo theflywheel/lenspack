@@ -34,6 +34,7 @@
 .lpc-bot{align-self:flex-start;background:var(--lpc-soft);border-bottom-left-radius:3px;white-space:normal}
 .lpc-bot.lpc-pre{background:none;color:var(--lpc-mute);font-size:12.5px;padding:0 2px}
 .lpc-bot p{margin:0 0 6px}
+.lpc-plain{white-space:pre-wrap}
 .lpc-bot>:last-child{margin-bottom:0}
 .lpc-bot ul,.lpc-bot ol{margin:0 0 6px;padding-left:20px}
 .lpc-bot li{margin:1px 0}
@@ -409,10 +410,13 @@
     // Auto with Superset left in English is real auto: no speech hint, replies follow the speaker.
     const fmt = (str, ...a) => String(str).replace(/\{(\d)\}/g, (_, i) => (a[i] === undefined ? "" : a[i]));
     let prefsNow = prefs();
+    // The deployment's off switches (/_superset/info features): a switch that is false hides its part.
+    let feat = (opts.features && typeof opts.features === "object") ? opts.features : {};
     const page = pageLocale();
     let adminLang = (opts.language && opts.language.default) || "auto";
     function effectiveLang() {
-      const p = prefsNow.lang;
+      // With the language menu switched off, a pick saved earlier no longer applies.
+      const p = feat.languageMenu === false ? undefined : prefsNow.lang;
       const fromSuperset = page !== "en" && STRINGS[page] ? page : null;
       if (p && p !== "auto") {
         // langPage: Superset's language when the pick was made. Older prefs have none: the pick stands.
@@ -503,7 +507,7 @@
       }
       const ui = uiLang();
       menu.append(el("small", "", followed ? `${t(eff.source === "superset" ? "followSuperset" : "adminDefault", named)} ${t("pickedHelp", named)}` : cur === "auto" ? t("autoHelp") : t("pickedHelp", (NAMES_IN[ui] || NAMES_IN.en)[cur] || cur)));
-      if (micState.enabled) {
+      if (micState.enabled && feat.spaceHold !== false) {
         menu.append(el("hr"));
         const l = el("label");
         const c = el("input");
@@ -574,9 +578,16 @@
     root.append(wrap);
 
     const scroll = () => (log.scrollTop = log.scrollHeight);
+    // A reply as formatted text, or as plain text when formatting is switched off.
+    const replyNode = (text) => {
+      if (feat.markdown !== false) return markdown(text);
+      const p = el("div", "lpc-plain");
+      p.textContent = text;
+      return p;
+    };
     function bubble(role, text) {
       const b = el("div", `lpc-msg ${role === "user" ? "lpc-user" : "lpc-bot"}`, role === "user" ? text : undefined);
-      if (role !== "user" && text) b.append(markdown(text));
+      if (role !== "user" && text) b.append(replyNode(text));
       log.append(b);
       scroll();
       return b;
@@ -672,7 +683,7 @@
       let frame = 0;
       const paint = () => {
         frame = 0;
-        if (bot) bot.replaceChildren(markdown(answer));
+        if (bot) bot.replaceChildren(replyNode(answer));
         scroll();
       };
       // The store writes to Superset inside the edit tool, so by the time a tool's output
@@ -1151,7 +1162,7 @@
       }
       const a = document.activeElement;
       if (e.isComposing || e.keyCode === 229 || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (!micState.enabled || mic.disabled || prefsNow.space === false || !visible() || rec.state !== "idle") return;
+      if (!micState.enabled || mic.disabled || feat.spaceHold === false || prefsNow.space === false || !visible() || rec.state !== "idle") return;
       if (control(a) || (typing(a) && !wrap.contains(a))) return;
       e.preventDefault();
       const ms = holdMs();
@@ -1208,8 +1219,11 @@
 
     // What the server offers: speech on or off, and the deployment's default language.
     function applyInfo(info) {
+      if (info && info.features && typeof info.features === "object") feat = info.features;
       if (info && info.language && info.language.default) adminLang = info.language.default;
-      micState.enabled = !!(info && info.speech && info.speech.enabled);
+      micState.enabled = !!(info && info.speech && info.speech.enabled) && feat.voice !== false;
+      lang.hidden = feat.languageMenu === false;
+      newBtn.hidden = feat.newChat === false;
       if (info && info.speech && info.speech.maxSeconds) micState.maxSeconds = info.speech.maxSeconds;
       if (info && info.speech && info.speech.holdMs >= 500 && info.speech.holdMs <= 3000) micState.holdMs = info.speech.holdMs;
       mic.hidden = !micState.enabled;
@@ -1222,7 +1236,7 @@
         .then((info) => info && applyInfo(info))
         .catch(() => {});
     }
-    if (opts.speech || opts.language) applyInfo({ speech: opts.speech, language: opts.language });
+    if (opts.speech || opts.language) applyInfo({ speech: opts.speech, language: opts.language, features: opts.features });
     else {
       relabel();
       loadInfo();

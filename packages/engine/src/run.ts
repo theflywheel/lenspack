@@ -410,6 +410,8 @@ export function checkOps(
   for (const [opIndex, op] of ops.entries()) {
     if (op.op !== "add_widget" && op.op !== "update_widget") continue;
     if (op.widget.kind === "text") continue;
+    if (op.widget.kind === "chart" && op.widget.chart === "heatmap" && opts.capabilities?.heatmap === false)
+      return { ok: false, opIndex, error: "Heatmaps are turned off on this deployment, so none was made. Offer a bar chart or a table instead" };
     if (op.widget.kind === "chart" && op.widget.chart === "heatmap" && op.widget.query.kind === "series" && opts.capabilities?.timeHeatmap === false)
       return {
         ok: false,

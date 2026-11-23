@@ -50,6 +50,8 @@ export type AppOptions = {
   providers?: Provider[];
   /** `{ reviewer, escalate }` provider names. */
   roles?: { reviewer?: string; escalate?: string };
+  /** False turns the reviewer off for every turn (a deployment's switch, read per turn). Absent means on. */
+  review?: () => boolean;
   log?: (line: string) => void;
   /**
    * Who a request is. Absent, the API is open: anyone who reaches it may read
@@ -323,7 +325,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const readOnlyChat = !!who.readOnly && req.method === "POST" && action === "chat";
       if (writes && !who.edit && !who.maintain && !readOnlyChat) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
-        return json(res, 403, { error: "you may view these boards but not change them" });
+        return json(res, 403, { error: who.readOnly ?? "you may view these boards but not change them" });
       }
       if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, instructions: h.pack.instructions, boards: await boardsOf(h), catalogue });
       if (boardId === "pack") return json(res, 200, { yaml: h.packYaml });
@@ -470,7 +472,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // escalation model (used for the heal round) can be larger. ?review=off
     // disables review.
     const reviewWanted = url.searchParams.get("review");
-    const reviewer = reviewWanted === "off" ? null : (provider(reviewWanted) ?? provider(opts.roles?.reviewer) ?? builderModel);
+    const reviewer = reviewWanted === "off" || opts.review?.() === false ? null : (provider(reviewWanted) ?? provider(opts.roles?.reviewer) ?? builderModel);
     const escalate = provider(url.searchParams.get("escalate")) ?? provider(opts.roles?.escalate) ?? builderModel;
     // Review informs; healing is opt-in (?rounds=2). A wrong "not satisfied"
     // from the reviewer must not be able to damage a correct board on its own.

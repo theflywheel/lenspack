@@ -391,9 +391,12 @@
   // a fresh one, which fetches everything again. The chat lives outside Superset's React root, so
   // it keeps its state. If no fresh dashboard appears, fall back to a reload once the chat is idle.
   var refreshing = false;
+  // The deployment's off switches, from /_superset/info (overlay, inPlaceRefresh are read here).
+  var features = {};
   var DASH = ".dashboard-content"; // the dashboard grid's root (Superset's production build has no data-test attributes)
   function refreshInPlace() {
     if (refreshing) return;
+    if (features.inPlaceRefresh === false) return reloadWhenIdle();
     var url = location.pathname + location.search + location.hash;
     var old = document.querySelector(DASH);
     if (!/\/superset\/dashboard\//.test(location.pathname) || !old) return reloadWhenIdle();
@@ -492,6 +495,8 @@
       var b = res[0], info = res[1];
       if (seen !== key) return;
       if (b.error) { if (down) setDown(false); btn.style.display = "none"; return; }
+      features = info.features || {};
+      if (features.overlay === false) { if (down) setDown(false); return hideAll(); }
       var again = !!current && current.board === b.board;
       current = { key: key, board: b.board, title: b.title, pack: info.pack, examples: info.examplesByLang || info.examples };
       lastHealth = Date.now();

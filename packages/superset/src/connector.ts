@@ -17,10 +17,13 @@ type Native = { datasetId: number; queries: ReturnType<typeof queryObjects>["que
 
 const labelOf = (m: Metric) => (typeof m === "string" ? m : m.label);
 
-export function supersetConnector(client: SupersetClient, binding: Binding): Connector {
+/** `capabilities` narrows what the connector offers at the moment (a deployment's off switches), read on every check. */
+export function supersetConnector(client: SupersetClient, binding: Binding, opts: { capabilities?: () => Partial<Capabilities> } = {}): Connector {
   return {
     kind: "superset",
-    capabilities: SUPERSET_CAPABILITIES,
+    get capabilities(): Capabilities {
+      return opts.capabilities ? { ...SUPERSET_CAPABILITIES, ...opts.capabilities() } : SUPERSET_CAPABILITIES;
+    },
     compile(bound: BoundPlan, _pack: Pack): Plan {
       const { queries, datasetId, metric } = queryObjects(bound, binding);
       const native: Native = { datasetId, queries, metric };

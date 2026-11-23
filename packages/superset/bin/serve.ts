@@ -20,6 +20,7 @@ import { rotatingAudit } from "../src/audit";
 import { identityKey, serviceAccount } from "../src/bootstrap";
 import { type Identity, editPolicyFrom, identityOf, supersetAccess } from "../src/identity";
 import { readJson, settingsStore } from "../src/settings";
+import { type FeatureValues, features as featureSwitches } from "../src/features";
 
 type Config = {
   superset: {
@@ -57,6 +58,8 @@ type Config = {
   speech?: { model?: string; baseUrl?: string; maxSeconds?: number; holdMs?: number };
   /** Language defaults; the settings page can change them (state/settings.json). */
   language?: { default?: string; titles?: "board" | "speaker"; board?: string };
+  /** Off switches, all on by default (see src/features.ts); LENSPACK_FEATURES and the settings page override them. */
+  features?: FeatureValues;
 };
 
 const file = resolve(process.argv[2] ?? "superset.yaml");
@@ -126,14 +129,18 @@ async function loadPack() {
 }
 const { datasets, pack, packYaml, binding } = await loadPack();
 log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
-const connector = supersetConnector(client, binding);
+// Settings an admin changes on a running server (Superset's AI assistant page), kept beside the board state.
+const settings = settingsStore(stateDir);
+// Off switches: defaults, then the config, then LENSPACK_FEATURES, then the settings page.
+const feats = featureSwitches({ config: config.features, env: process.env.LENSPACK_FEATURES, settings });
+const off = Object.entries(feats.values()).filter(([, on]) => !on).map(([f]) => f);
+log(`features: ${off.length ? `off: ${off.join(", ")}` : "all on"}`);
+// A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
+const connector = supersetConnector(client, binding, { capabilities: () => ({ ...(feats.on("heatmap") ? {} : { heatmap: false }), ...(feats.on("maps") ? {} : { points: false }) }) });
 
 const dashboards: Record<string, number> = Object.fromEntries((config.dashboards ?? []).map((d) => [`superset-${d}`, d]));
 const store = supersetBoards({ inner: memoryStore(), client, pack, binding, dashboards, stateFile: statePath, log });
 await store.seed();
-
-// Settings an admin changes on a running server (Superset's AI assistant page), kept beside the board state.
-const settings = settingsStore(stateDir);
 
 // Who is asking: the identity Superset's /lenspack/ route signs for each request. The key comes from
 // Superset (derived there from its SECRET_KEY); without it nobody is signed in.
@@ -160,7 +167,16 @@ const HOLD_MS = { min: 500, max: 3000 };
 const defaultHoldMs = Math.min(HOLD_MS.max, Math.max(HOLD_MS.min, config.speech?.holdMs ?? 2000));
 const holdMs = () => settings.get<SpeechSettings>("speech")?.holdMs ?? defaultHoldMs;
 const speechKey = speechKeyFromEnv();
-const speech = { ...speechKey, baseUrl: config.speech?.baseUrl, maxSeconds: config.speech?.maxSeconds ?? 60, model: speechModel };
+// With voice switched off the key is withheld, so the mic is hidden and /api/_stt answers 503.
+const speech = {
+  ...speechKey,
+  get apiKey() {
+    return feats.on("voice") ? speechKey.apiKey : undefined;
+  },
+  baseUrl: config.speech?.baseUrl,
+  maxSeconds: config.speech?.maxSeconds ?? 60,
+  model: speechModel,
+};
 const speechView = () => ({
   enabled: !!speechKey.apiKey,
   keyFrom: speechKey.keyFrom,
@@ -188,7 +204,7 @@ const providers = providersFromEnv().map(buildProvider);
 void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
 const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
 type ChatSetting = { model?: string; effort?: string };
-const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { access: supersetAccess(() => idKey, editPolicy), audit: auditLog?.audit, providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat"), speech, language: () => ({ titles: language().titles, board: language().board }) });
+const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { access: supersetAccess(() => idKey, editPolicy, () => feats.on("boardEdits")), review: () => feats.on("reviewer"), audit: auditLog?.audit, providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat"), speech, language: () => ({ titles: language().titles, board: language().board }) });
 /** The chat section of the settings page: what runs when the client asks for no model. */
 function chatSettings() {
   const saved = settings.get<ChatSetting>("chat");
@@ -277,7 +293,23 @@ createServer(async (req, res) => {
     const fwd = (h: string) => String(req.headers[h] ?? "").split(",")[0]!.trim();
     const derivedUrl = fwd("x-forwarded-host") ? `${fwd("x-forwarded-proto") || "http"}://${fwd("x-forwarded-host")}` : null;
     const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? derivedUrl, base, examples: examplesByLanguage(config.overlay?.examples) };
-    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: examplesFor(vars.examples, url.searchParams.get("lang")), examplesByLang: vars.examples, panel, speech: speechKey.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds, holdMs: holdMs() } : { enabled: false }, language: { default: language().default, options: LANGUAGES } }));
+    if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: examplesFor(vars.examples, url.searchParams.get("lang")), examplesByLang: vars.examples, panel, speech: speech.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds, holdMs: holdMs() } : { enabled: false }, language: { default: language().default, options: LANGUAGES }, features: feats.values() }));
+    // Off switches: any of {feature: true|false|null}; null puts a switch back to the deployment's value.
+    if (req.method === "PUT" && url.pathname === "/_superset/settings/features") {
+      if (adminOnly()) return;
+      let body: Record<string, unknown>;
+      try {
+        body = await readJson(req);
+      } catch (e) {
+        return send(res, 400, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+      }
+      const r = feats.update(body);
+      if (!r.ok) return send(res, 400, JSON.stringify({ error: r.error }));
+      const offNow = Object.entries(feats.values()).filter(([, on]) => !on).map(([f]) => f);
+      log(`features: ${offNow.length ? `off: ${offNow.join(", ")}` : "all on"}`);
+      audit({ user: who.u, action: "settings features", detail: JSON.stringify(r.changed) });
+      return send(res, 200, JSON.stringify(feats.view(!!idKey)));
+    }
     if (url.pathname === "/_superset/settings/speech/models") return send(res, 200, JSON.stringify((await speechModels({ baseUrl: speech.baseUrl })).models));
     if (req.method === "PUT" && (url.pathname === "/_superset/settings/speech" || url.pathname === "/_superset/settings/language")) {
       if (adminOnly()) return;
@@ -343,6 +375,7 @@ createServer(async (req, res) => {
         chat: chatSettings(),
         speech: speechView(),
         language: languageView(),
+        features: feats.view(!!idKey),
       }));
     }
     // The audit log, newest first: ?month=YYYY-MM (default the current month), ?limit=N.
