@@ -2,7 +2,8 @@ import * as React from "react";
 
 import type { Widget } from "@lenspack/core";
 
-import { buildChartSpec } from "./charts";
+import { type ChartKind, buildChartSpec } from "./charts";
+import { HeatmapChart, buildHeatmapSpec } from "./heatmap";
 import { formatDelta, formatValue } from "./format";
 import { useBoard } from "./provider";
 import type { DataRow, WidgetData } from "./types";
@@ -48,7 +49,14 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
   const target = widget.query.kind === "breakdown" ? drillTarget(widget.query.dimension) : null;
   const other = data.rows.find((r) => r.other)?.group;
   const onSelect = target?.selects ? (group: string) => group !== "(none)" && group !== other && drill(target.selects!, group) : undefined;
-  const spec = buildChartSpec(widget, data, { currency, measureLabel, labelOf, onSelect });
+  // A heatmap is drawn the same way whatever the adapter.
+  if (widget.chart === "heatmap") {
+    const dimLabel = (key: string | undefined) => (key ? (catalogue.dimensions.find((d) => d.key === key)?.label ?? key) : undefined);
+    const q = widget.query;
+    const heat = buildHeatmapSpec(widget, data, { currency, measureLabel, xName: q.kind === "breakdown" ? dimLabel(q.dimension) : "time", yName: q.kind === "breakdown" || q.kind === "series" ? dimLabel(q.by) : undefined });
+    return heat ? <HeatmapChart spec={heat} /> : <Empty>Nothing to draw yet.</Empty>;
+  }
+  const spec = buildChartSpec(widget as Extract<typeof widget, { chart: ChartKind }>, data, { currency, measureLabel, labelOf, onSelect });
   if (!spec) return <Empty>Nothing to draw yet.</Empty>;
   const Chart = charts.Chart;
   return <Chart spec={spec} />;

@@ -264,6 +264,42 @@ function makeRoom(
   return { item, shrunk };
 }
 
+// Room for `item` at `width` in its own row: when the row would overflow, the other widgets
+// narrow in proportion to their widths, never below their narrowest, and the row is laid out
+// again left to right. Refuses (with the choices) rather than push a row-mate to another row.
+function roomInRow(layout: LayoutItem[], item: LayoutItem, width: number, cols: number, minOf: (id: string) => number): { ok: true } | { error: string; hint: string } {
+  const row = layout.filter((other) => other.y === item.y).sort((a, b) => a.x - b.x);
+  const mates = row.filter((other) => other !== item);
+  const own = (o: LayoutItem) => (o.fw !== undefined && o.fw < o.w ? o.fw : o.w);
+  const used = mates.reduce((sum, o) => sum + own(o), 0);
+  const names = mates.map((o) => `"${o.i}"`).join(", ");
+  const refuse = {
+    error: `The row of "${item.i}" is full (${row.map((o) => `${o.i} ${o.w}/${cols}`).join(", ")}) and cannot make "${item.i}" ${width}/${cols} wide without squeezing ${names} below their narrowest`,
+    hint: `Ask for a smaller width, move one of ${names} to another row (move_widget with place "below:${item.i}"), or remove one`,
+  };
+  // Full width is a row of its own: what shared the row goes under it (and the edit's note says so).
+  if (width >= cols) return { ok: true };
+  // A taller widget from a row above reaches into this one: the columns are not the row's to share.
+  if (layout.some((o) => o.y < item.y && o.y + o.h > item.y)) return used + width <= cols ? { ok: true } : refuse;
+  let widths = mates.map(own);
+  if (used + width > cols) {
+    const mins = mates.map((o) => Math.min(minOf(o.i), own(o)));
+    if (mins.reduce((a, b) => a + b, 0) + width > cols) return refuse;
+    widths = shrinkTo(widths, mins, cols - width);
+  }
+  // Laid out again left to right: packing's extra handed back, gaps closed, nobody overlapping.
+  let x = 0;
+  for (const o of row) {
+    if (o !== item) {
+      o.w = widths[mates.indexOf(o)]!;
+      delete o.fw;
+    }
+    o.x = x;
+    x += o === item ? width : o.w;
+  }
+  return { ok: true };
+}
+
 // Widths scaled down in proportion to fit `total`, none below its minimum.
 function shrinkTo(widths: number[], mins: number[], total: number) {
   const sum = widths.reduce((a, b) => a + b, 0);
@@ -317,7 +353,7 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
         draft.widgets[op.id] = op.widget;
         const placement = placementSchema.parse(op.placement ?? {});
         const w = widthUnits(placement.width, cols);
-        const h = placement.height ?? defaultHeight(op.widget.kind);
+        const h = placement.height ?? defaultHeight(op.widget.kind === "chart" ? op.widget.chart : op.widget.kind);
         const item = place(draft.layout, op.id, w, h, placement, cols, floors);
         draft.layout.push(item);
         touched.add(op.id);
@@ -388,13 +424,23 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
       case "resize_widget": {
         const item = draft.layout.find((entry) => entry.i === op.id);
         if (!item) return fail(`No widget called "${op.id}"`, nearest(op.id, Object.keys(draft.widgets)) ?? undefined);
-        item.w = widthUnits(op.width, cols);
+        const width = widthUnits(op.width, cols);
+        for (const id of rowOf(item)) touched.add(id);
+        // The move tool resizes a widget just before moving it: it is leaving this row, so its
+        // row-mates make no room for it.
+        const leaving = ops.slice(index + 1).some((later) => later.op === "move_widget" && later.id === op.id);
+        if (!leaving) {
+          // Wider than its row has room for: the row-mates narrow to make room, as for a move,
+          // so the widget gets its width and nobody is pushed off the row.
+          const room = roomInRow(draft.layout, item, width, cols, (id) => minWidth(draft.widgets[id]?.kind));
+          if ("error" in room) return fail(room.error, room.hint);
+        }
+        item.w = width;
         delete item.fw;
         if (op.height) item.h = op.height;
-        for (const id of rowOf(item)) touched.add(id);
         sized.add(op.id);
-        // Growing in place can cover a neighbour, and gravity only moves things up, so
-        // push whatever it now covers down below it (and whatever that covers, in turn).
+        // A taller widget can cover the top of the next row, and gravity only moves things up,
+        // so push whatever it now covers down below it (and whatever that covers, in turn).
         pushDown(draft.layout, item);
         break;
       }
@@ -465,7 +511,7 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
 }
 
 function defaultHeight(kind: string) {
-  return kind === "kpi" ? 3 : kind === "text" ? 3 : 7;
+  return kind === "kpi" ? 3 : kind === "text" ? 3 : kind === "heatmap" ? 9 : 7;
 }
 
 // Gravity: everything floats up until it rests on something. The same rule
@@ -632,6 +678,15 @@ function checkWidget(widget: Widget, catalogue: Catalogue): Problem | null {
   // table can show both the split and several measures as columns.
   if (widget.kind === "chart" && widget.query.kind === "breakdown" && widget.query.by && widget.query.measures?.length)
     return { error: "A breakdown split by a second dimension draws one measure; drop by, or drop measures, or make it a table", hint: "measures" };
+
+  // A heatmap shades one measure over two dimensions: columns and rows.
+  if (widget.kind === "chart" && widget.chart === "heatmap") {
+    const q = widget.query;
+    if (q.kind !== "breakdown" && q.kind !== "series") return { error: "A heatmap shades a measure over two dimensions: a breakdown with a split, or a series split by a dimension", hint: "breakdown" };
+    if (!q.by) return { error: `A heatmap needs rows as well as columns: split the ${q.kind === "series" ? "series" : "breakdown"} by a second dimension`, hint: "split" };
+    if (q.measures?.length) return { error: "A heatmap shades one measure; several measures need a table", hint: "table" };
+    if (q.kind === "breakdown" && (q.compare || q.share || q.other)) return { error: "A heatmap shows the measure itself: no previous period, share or other row", hint: "table" };
+  }
 
   // A pie divides a whole into parts, and a rate is not part of anything.
   if (widget.kind === "chart" && widget.chart === "pie") {

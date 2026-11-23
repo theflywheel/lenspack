@@ -5,13 +5,13 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 12;
+export const PROMPT_VERSION = 14;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
 // an invented chart type or a claim that the system already does it.
 export const WIDGET_LIMITS =
-  "Widgets have no settings beyond kind (bar, line, pie or area chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover. Colours, fonts, axes and other labels cannot be set.";
+  "Widgets have no settings beyond kind (bar, line, pie, area or heatmap chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover; a heatmap shades each cell on one colour scale with a legend, and shows its value on hover. Colours, fonts, axes and other labels cannot be set.";
 
 // Above this many keys a catalogue is inlined as keys and labels only, and
 // the model reads meanings from list_metrics when it needs them.
@@ -118,6 +118,7 @@ Rules:
 - If a tool returns applied:false with didYouMean, retry once with that key. If a query is refused for fan-out, use a measure on the other entity instead (the hints say which).
 - A tool result with applied:false or an error means that edit did NOT happen. Fix the arguments and call it again; never move on as if it worked.
 - Placement is intent, not coordinates: "at the top" / "across the top" means place: top (the server makes room, even when the top row is full); "at the bottom" means place: bottom; "after the X chart" means place: after:<id>. Width: full, half, third or quarter as asked; KPIs default to quarter.
+- When an edit's layout note says a row is now full or the widget is where it was asked, the layout is done: do not resize anything unless the user asked for a size.
 - ${WIDGET_LIMITS} When asked for one of these, say plainly that the board cannot do it; never invent a chart type or claim the system does something it does not.
 - Prefer a breakdown for "by X", a series for "over time" / "weekly" / "per month", a value for a single number. "Pie" needs a breakdown.
 - Several numbers for the same groups ("a table of count, total and rate by region") is ONE widget: the first as measure, the rest in measures (comma-separated). Use a table for more than two.

@@ -172,6 +172,23 @@ describe("hallucinated fields", () => {
     expect(result.error).toContain("rates do not");
   });
 
+  it("takes a heatmap of one measure over two dimensions, nine rows tall, and refuses one it cannot shade", () => {
+    const heat = (query: Record<string, unknown>) => chart({ chart: "heatmap", options: { legend: true, colorScheme: "sequential" }, query });
+    const ok = apply(empty(), [{ op: "add_widget", id: "h", widget: heat({ kind: "breakdown", dimension: "region", by: "channel", measure: "count", limit: 12 }) }]);
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.config.layout.find((l) => l.i === "h")?.h).toBe(9);
+    expect(apply(empty(), [{ op: "add_widget", id: "s", widget: heat({ kind: "series", measure: "count", grain: "day", by: "region" }) }]).ok).toBe(true);
+    const refused = (query: Record<string, unknown>) => {
+      const r = apply(empty(), [{ op: "add_widget", id: "h", widget: heat(query) }]);
+      return r.ok ? "" : r.error;
+    };
+    expect(refused({ kind: "breakdown", dimension: "region", measure: "count", limit: 12 })).toContain("rows as well as columns");
+    expect(refused({ kind: "series", measure: "count", grain: "day" })).toContain("split the series");
+    expect(refused({ kind: "breakdown", dimension: "region", by: "region", measure: "count", limit: 12 })).toContain("split by its own dimension");
+    expect(refused({ kind: "breakdown", dimension: "region", by: "channel", measure: "count", measures: ["amount"], limit: 12 })).toContain("one measure");
+    expect(refused({ kind: "value", measure: "count" })).toContain("two dimensions");
+  });
+
   it("lets a table, not a chart, carry several measures beside a split", () => {
     const query = { kind: "breakdown" as const, dimension: "region", by: "channel", measure: "count", measures: ["amount"], limit: 12 };
     const table = apply(empty(), [{ op: "add_widget", id: "a", widget: { kind: "table", title: "T", query, pageSize: 10 } }]);
@@ -582,6 +599,22 @@ describe("moving widgets", () => {
     expect(row.map((item) => [item.i, item.w])).toEqual([["c49", 3], ["c50", 6], ["pie", 3]]);
     // Nothing outside that row changed width.
     for (const id of ["kpi1", "zd", "line", "notes"]) expect(at(result.config, id)!.w).toBe(board.layout.find((item) => item.i === id)!.w);
+  });
+
+  it("keeps the row three across when a narrowed neighbour is widened again (the eval's follow-up)", () => {
+    const board = empty();
+    board.grid.fill = true;
+    for (const [i, x, y, w] of [["c49", 0, 0, 6], ["pie", 6, 0, 6], ["c50", 0, 7, 12]] as const) {
+      board.widgets[i] = widgetSchema.parse(chart({ title: i }));
+      board.layout.push({ i, x, y, w, h: 7 });
+    }
+    const moved = apply(board, [{ op: "resize_widget", id: "c50", width: "half" }, { op: "move_widget", id: "c50", placement: { place: "after:c49", width: "half" } }]);
+    if (!moved.ok) throw new Error(moved.error);
+    const resized = apply(moved.config, [{ op: "resize_widget", id: "c49", width: "half" }]);
+    if (!resized.ok) throw new Error(resized.error);
+    const row = resized.config.layout.filter((item) => item.y === 0).sort((a, b) => a.x - b.x);
+    expect(row.map((item) => [item.i, item.x, item.w])).toEqual([["c49", 0, 6], ["c50", 6, 3], ["pie", 9, 3]]);
+    expect(resized.config.layout).toHaveLength(3);
   });
 
   it("says the row is full, with the choices, when making room would squeeze a widget too far", () => {
