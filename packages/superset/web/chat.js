@@ -567,6 +567,9 @@
     const downBar = el("div", "lpc-down");
     downBar.hidden = true;
     downBar.setAttribute("role", "status");
+    // Declared before the first render: the suggested questions read it (disabled while offline).
+    let offline = false;
+    const retries = new Set();
     wrap.append(head, downBar, log, status, foot);
     root.append(wrap);
 
@@ -624,8 +627,6 @@
     let busy = false;
     // ---- Lenspack restarting: the overlay notices (its health check fails) and calls setOffline(true); the
     // banner shows, input waits, and everything comes back by itself when Lenspack answers again.
-    let offline = false;
-    const retries = new Set();
     function setOffline(on) {
       on = !!on;
       if (on === offline) return;

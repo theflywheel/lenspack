@@ -114,6 +114,20 @@ describe("chat while Lenspack restarts", () => {
     return { root, chat };
   }
 
+  it("mounts with suggested questions (they read the offline state on the first render)", () => {
+    vi.useRealTimers();
+    delete (window as unknown as Record<string, unknown>).LenspackChat;
+    new Function(web("chat.js"))();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const chat = (window as unknown as { LenspackChat: Chat }).LenspackChat.mount(root, { api: "http://x/lenspack", pack: "p", board: "superset-7", examples: { en: ["How many?", "Add a chart"] }, speech: { enabled: false } });
+    const chips = root.querySelectorAll<HTMLButtonElement>(".lpc-chip");
+    expect(chips).toHaveLength(2);
+    expect(chips[0]!.disabled).toBe(false);
+    chat.setOffline(true);
+    expect(chips[0]!.disabled).toBe(true);
+  });
+
   it("shows a banner and disables input while offline, and re-enables it when back", () => {
     vi.useRealTimers();
     const { root, chat } = mountChat();
