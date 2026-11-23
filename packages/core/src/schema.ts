@@ -114,7 +114,7 @@ const placementWidth = z.union([z.enum(["full", "half", "third", "quarter"]), z.
 // overlap: the server packs, and overlap is unrepresentable rather than merely
 // discouraged.
 export const placementSchema = z.object({
-  place: z.union([z.enum(["top", "bottom"]), z.string().regex(/^after:.+$/)]).default("bottom"),
+  place: z.union([z.enum(["top", "bottom"]), z.string().regex(/^(after|below):.+$/)]).default("bottom"),
   width: placementWidth.default("half"),
   height: z.number().int().min(1).max(20).optional(),
 });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type BoardOp, type BoardStore, type FilterClause, type Query, nearest, querySchema, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardOp, type BoardStore, type FilterClause, type Query, layoutChanges, nearest, querySchema, summarise, verifiedOnly } from "@lenspack/core";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/spec";
 import { type Connector, type Ctx, type Executor, checkOps, describeSources, explain, run, runSql, sqlConnector, valuesQuery } from "@lenspack/sql";
 
@@ -73,7 +73,7 @@ const period = z.preprocess((v) => {
   return s === "day" ? "today" : ["week", "month", "quarter", "year"].includes(s) ? `this_${s}` : s;
 }, oneOf(["", ...(Object.keys(PERIODS) as PeriodName[])], ""));
 
-const PLACE = str("bottom").describe('Where to put it: "top", "bottom", or "after:<widgetId>"');
+const PLACE = str("bottom").describe('Where to put it: "top", "bottom", "after:<widgetId>" (beside that widget; a full row makes room by narrowing its widgets) or "below:<widgetId>" (a new row under that widget\'s row)');
 const WIDTH = oneOf(["full", "half", "third", "quarter"], "half").describe("full is the whole row, half is two across, third is three across, quarter is four across");
 const QUERY_SHAPE = {
   query_kind: z.enum(["breakdown", "series", "value", "rows"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records"),
@@ -282,9 +282,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       // Refuse at edit time what the compiler would refuse at render time.
       const checked = checkOps(ops, pack, { ctx, capabilities: connector.capabilities });
       if (!checked.ok) return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      const layoutEdit = ops.some((op) => op.op === "move_widget" || op.op === "resize_widget" || op.op === "remove_widget");
+      const before = layoutEdit ? (await store.get(boardId))?.config : undefined;
       const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
       if (!result.ok) return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
-      return { applied: true, version: result.board.version, board: summarise(result.board.config) };
+      // What the edit did besides what was asked (room made, a widget widened), so the model can say so.
+      const layout = before ? layoutChanges(before, result.board.config, ops) : [];
+      return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: summarise(result.board.config) };
     };
     const next = queue.then(work, work);
     queue = next.catch(() => undefined);

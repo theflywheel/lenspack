@@ -20,6 +20,10 @@ function chart(over: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function kpi(over: Partial<Record<string, unknown>> = {}) {
+  return { kind: "kpi" as const, title: "KPI", query: { kind: "value" as const, measure: "count" }, ...over };
+}
+
 function apply(config: BoardConfig, ops: unknown[]) {
   const parsed = ops.map((op) => opSchema.parse(op)) as BoardOp[];
   return applyOps(config, parsed, catalogue);
@@ -546,17 +550,94 @@ describe("moving widgets", () => {
   };
   const at = (config: BoardConfig, id: string) => config.layout.find((item) => item.i === id);
 
-  it("moves a widget to a new row straight after the anchor's row when that row is full", () => {
+  it("makes room beside the anchor in a full row, shrinking its neighbours in proportion", () => {
     const result = apply(full(), [
       { op: "resize_widget", id: "ward", width: "half" },
       { op: "move_widget", id: "ward", placement: { place: "after:lga", width: "half" } },
     ]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(at(result.config, "ward")).toMatchObject({ x: 0, y: 10 });
+    // lga 4 + perday 8 make room for a half: both down to the narrowest a chart goes (3).
+    expect(at(result.config, "lga")).toMatchObject({ x: 0, y: 3, w: 3 });
+    expect(at(result.config, "ward")).toMatchObject({ x: 3, y: 3, w: 6 });
+    expect(at(result.config, "perday")).toMatchObject({ x: 9, y: 3, w: 3 });
+    // No other row changed width.
+    for (const id of ["k1", "k2", "outcomes", "refused", "fresh"]) expect(at(result.config, id)!.w).toBe(at(full(), id)!.w);
+  });
+
+  it("puts the widget on a new row under the anchor's row with below:", () => {
+    const result = apply(full(), [{ op: "move_widget", id: "ward", placement: { place: "below:lga", width: "full" } }]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(at(result.config, "ward")).toMatchObject({ x: 0, y: 10, w: 12 });
     // Everything that was below the anchor's row moved down by the moved widget's height, in order.
     expect(at(result.config, "outcomes")).toMatchObject({ y: 17 });
     expect(at(result.config, "fresh")).toMatchObject({ y: 24 });
+  });
+
+  it("puts the moved widget beside the anchor in the eval's shape: bar and pie half wide, a full-width bar moved after the bar", () => {
+    const board = empty();
+    board.grid.fill = true;
+    for (const [i, x, y, w, h, kind] of [
+      ["kpi1", 0, 0, 12, 3, "kpi"],
+      ["c49", 0, 3, 6, 7, "chart"], ["pie", 6, 3, 6, 7, "chart"],
+      ["zd", 0, 10, 6, 7, "chart"], ["line", 6, 10, 6, 7, "chart"],
+      ["notes", 0, 17, 12, 3, "text"],
+      ["c50", 0, 20, 12, 7, "chart"],
+    ] as const) {
+      board.widgets[i] = widgetSchema.parse(kind === "kpi" ? kpi({ title: i }) : kind === "text" ? { kind: "text", title: i, body: i } : chart({ title: i }));
+      board.layout.push({ i, x, y, w, h });
+    }
+    // What the move tool sends: resize, then move, in one call.
+    const result = apply(board, [
+      { op: "resize_widget", id: "c50", width: "half" },
+      { op: "move_widget", id: "c50", placement: { place: "after:c49", width: "half" } },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const row = result.config.layout.filter((item) => item.y === 3).sort((a, b) => a.x - b.x);
+    expect(row.map((item) => [item.i, item.w])).toEqual([["c49", 3], ["c50", 6], ["pie", 3]]);
+    // Nothing outside that row changed width.
+    for (const id of ["kpi1", "zd", "line", "notes"]) expect(at(result.config, id)!.w).toBe(board.layout.find((item) => item.i === id)!.w);
+  });
+
+  it("says the row is full, with the choices, when making room would squeeze a widget too far", () => {
+    const board = empty();
+    for (const [i, x] of [["a", 0], ["b", 3], ["c", 6], ["d", 9]] as const) {
+      board.widgets[i] = widgetSchema.parse(chart({ title: i }));
+      board.layout.push({ i, x, y: 0, w: 3, h: 7 });
+    }
+    board.widgets.e = widgetSchema.parse(chart({ title: "e" }));
+    board.layout.push({ i: "e", x: 0, y: 7, w: 12, h: 7 });
+    const result = apply(board, [{ op: "resize_widget", id: "e", width: "half" }, { op: "move_widget", id: "e", placement: { place: "after:b", width: "half" } }]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/row of "b" is full/);
+    expect(result.hint).toMatch(/below:b/);
+  });
+
+  it("does not widen the neighbours a moved widget leaves behind, only a widget left alone", () => {
+    const board = empty();
+    board.grid.fill = true;
+    for (const [i, x, y, w] of [["a", 0, 0, 4], ["b", 4, 0, 4], ["c", 8, 0, 4], ["d", 0, 7, 6], ["e", 6, 7, 6]] as const) {
+      board.widgets[i] = widgetSchema.parse(chart({ title: i }));
+      board.layout.push({ i, x, y, w, h: 7 });
+    }
+    const result = apply(board, [{ op: "move_widget", id: "b", placement: { place: "bottom", width: "third" } }]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // a and c keep their widths; b, alone on a row the move made, fills it.
+    expect(at(result.config, "a")!.w).toBe(4);
+    expect(at(result.config, "c")!.w).toBe(4);
+    expect(at(result.config, "d")!.w).toBe(6);
+    expect(at(result.config, "e")!.w).toBe(6);
+  });
+
+  it("keeps the width a widget was resized to on a packed board", () => {
+    const result = apply(full(), [{ op: "resize_widget", id: "ward", width: "half" }]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(at(result.config, "ward")!.w).toBe(6);
   });
 
   it("puts a widget beside the anchor when the anchor's row has room", () => {
