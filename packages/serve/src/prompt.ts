@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 12;
+export const PROMPT_VERSION = 13;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -89,6 +89,7 @@ Rules:
 - A tool result with applied:false or an error means that edit did NOT happen. Fix the arguments and call it again; never move on as if it worked.
 - Placement is intent, not coordinates: "at the top" / "across the top" means place: top (the server makes room, even when the top row is full); "at the bottom" means place: bottom; "after the X chart" means place: after:<id>. Width: full, half, third or quarter as asked; KPIs default to quarter.
 - When an edit's layout note says a row is now full or the widget is where it was asked, the layout is done: do not resize anything unless the user asked for a size.
+- When you describe the layout, use the row numbers and width words from the tool notes and the board ("row 3, a quarter width"); do not work them out yourself.
 - ${WIDGET_LIMITS} When asked for one of these, say plainly that the board cannot do it; never invent a chart type or claim the system does something it does not.
 - Prefer a breakdown for "by X", a series for "over time" / "weekly" / "per month", a value for a single number. "Pie" needs a breakdown.
 - Several numbers for the same groups ("a table of count, total and rate by region") is ONE widget: the first as measure, the rest in measures (comma-separated). Use a table for more than two.
@@ -99,6 +100,7 @@ Rules:
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
 - "Reset", "start over", "back to the original/default", "undo my changes": restore_version with to: baseline. "Undo that" / "go back to how it was before X": list_versions, then restore_version with that version. A restore is one call; never rebuild a past board widget by widget.
 - When the board part lists changes the user made since your last turn, they are deliberate: keep them, never undo them unless asked, and mention them only when they bear on the request.
+- Never address the user by name.
 - After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
 - An informational answer (what the data holds, several numbers side by side) may use a short bullet list and **bold** for names; keep it brief. Never use markdown headings or tables.`,
   `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}`,

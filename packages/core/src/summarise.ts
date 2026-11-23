@@ -3,6 +3,17 @@ import type { BoardConfig, Query, TimeRange } from "./schema";
 // A compact picture of the board rather than its JSON. The model works from
 // this by default and only asks for detail when it edits — which is what keeps
 // a long editing session affordable.
+const WIDTH_WORDS: Record<number, string> = { 12: "full width", 9: "three quarters width", 8: "two thirds width", 6: "half width", 4: "a third width", 3: "a quarter width" };
+
+/**
+ * A width as words and columns, "a quarter width (3/12)": the model repeats the words rather
+ * than working out that 3 of 12 columns is a quarter, which it got wrong ("a third").
+ */
+export function widthWords(w: number, cols = 12) {
+  const word = cols === 12 ? WIDTH_WORDS[w] : w === cols ? "full width" : undefined;
+  return word ? `${word} (${w}/${cols})` : `${w}/${cols} width`;
+}
+
 export function summarise(config: BoardConfig) {
   const rows = new Map<number, string[]>();
   for (const item of [...config.layout].sort((a, b) => a.y - b.y || a.x - b.x)) {
@@ -11,7 +22,7 @@ export function summarise(config: BoardConfig) {
     const kind = widget.kind === "chart" ? widget.chart : widget.kind;
     const what = widget.kind === "text" ? "" : ` ${describeQuery(widget.query)}`;
     const line = rows.get(item.y) ?? [];
-    line.push(`${item.i} (${kind}, ${item.w}/${config.grid.cols} wide)${what} “${widget.title}”`);
+    line.push(`${item.i} (${kind}, ${widthWords(item.w, config.grid.cols)})${what} “${widget.title}”`);
     rows.set(item.y, line);
   }
   const layout = [...rows.entries()].map(([, line], i) => `  row ${i + 1}: ${line.join(" | ")}`).join("\n");
@@ -82,11 +93,12 @@ export function layoutChanges(before: BoardConfig, after: BoardConfig, ops: { op
   for (const id of moved) {
     if (!now.at.has(id)) continue;
     const mates = now.mates(id);
-    notes.push(mates.length ? `${id} is now in row ${now.number(id)} with ${mates.join(", ")}` : `${id} is on row ${now.number(id)} on its own`);
+    const width = widthWords(now.at.get(id)!.w, cols);
+    notes.push(mates.length ? `${id}: now row ${now.number(id)}, ${width}, beside ${mates.join(", ")}` : `${id}: now row ${now.number(id)} on its own, ${width}`);
   }
   for (const [id, want] of asked) {
     const item = now.at.get(id);
-    if (item && want > 0 && item.w !== want) notes.push(`${id} is ${item.w}/${cols} wide, not ${want}/${cols}${item.w > want ? ": widened to fill its row" : ": narrowed to fit the row"}`);
+    if (item && want > 0 && item.w !== want) notes.push(`${id} is ${widthWords(item.w, cols)}, not ${widthWords(want, cols)}${item.w > want ? ": widened to fill its row" : ": narrowed to fit the row"}`);
   }
   // Widgets the edit did not name: a change of row is said in words, a change of width listed.
   const resized: string[] = [];
@@ -98,10 +110,10 @@ export function layoutChanges(before: BoardConfig, after: BoardConfig, ops: { op
     const used = was.mates(item.i).filter((id) => now.at.has(id));
     const mates = now.mates(item.i);
     const shifted = item.y !== prior.y || item.x !== prior.x;
-    const wide = item.w !== prior.w ? `, now ${item.w}/${cols} wide` : "";
+    const wide = item.w !== prior.w ? `, now ${widthWords(item.w, cols)}` : "";
     if (shifted && used.length && !used.some((id) => mates.includes(id))) notes.push(`${item.i} no longer fits beside ${used.join(", ")} and moved to row ${now.number(item.i)}${wide}`);
     else if (shifted && !used.length && mates.length) notes.push(`${item.i} moved into row ${now.number(item.i)} beside ${mates.join(", ")}${wide}`);
-    else if (item.w !== prior.w) resized.push(`${item.i} ${prior.w}→${item.w}`);
+    else if (item.w !== prior.w) resized.push(`${item.i} now ${widthWords(item.w, cols).replace(/\)$/, `, was ${prior.w}/${cols})`)}`);
   }
   if (resized.length) notes.push(`to make room or fill rows, also resized: ${resized.join(", ")}`);
   // A row the edit laid out that is now exactly full: there is nothing left to make room for.
