@@ -27,7 +27,7 @@ You will be given: the PACK (what each measure and dimension means) and its DOMA
 Find every way the result fails the instruction:
 - a requested widget that does not exist in AFTER, or has the wrong kind (kpi vs bar vs line vs pie), measure, dimension, split, or time window;
 - a requested rename, filter, removal, move, resize or packing that the RECEIPT does not show;
-- placement intent not met ("across the top" but not on row 1; "full width" but not 12/12 wide);
+- placement intent not met ("across the top" but not on row 1; "full width" but not full width (12/12));
 - anything added that was not asked for;
 - a widget that breaks a DOMAIN RULE.
 Judge only the widgets the instruction names or the RECEIPT shows changed, and ask for no change to any other; a change nobody asked for is wrong, to be undone.
