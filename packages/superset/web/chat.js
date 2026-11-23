@@ -16,6 +16,11 @@
 .lpc-ttl span{display:block;color:var(--lpc-mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lpc-x{border:0;background:none;font-size:20px;line-height:1;color:var(--lpc-mute);cursor:pointer;padding:4px 6px;border-radius:6px}
 .lpc-x:hover{background:var(--lpc-soft)}
+.lpc-new{border:0;background:none;color:var(--lpc-mute);cursor:pointer;padding:5px;border-radius:6px;display:grid;place-items:center}
+.lpc-new:hover:not(:disabled){background:var(--lpc-soft);color:var(--lpc-fg)}
+.lpc-new:disabled{opacity:.4;cursor:not-allowed}
+.lpc-new svg{width:17px;height:17px}
+.lpc-undo{margin-left:8px;border:0;background:none;color:var(--lpc-acc);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}
 .lpc-log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0}
 .lpc-empty{color:var(--lpc-mute);font-size:13px}
 .lpc-empty p{margin:0 0 10px}
@@ -89,7 +94,7 @@
       intro: "Changes you ask for are saved to this Superset dashboard. The numbers come from Superset's own metrics.",
       working: "Working…", reviewing: "Reviewing the result…", noAnswer: "(no answer)", wrong: "Something went wrong", unreachable: "Could not reach Lenspack: {0}",
       reviewerOk: "Reviewer: done as asked. {0}", reviewer: "Reviewer: {0}", saved: "Saved to Superset.", savedRefreshing: "Saved to Superset. Refreshing the dashboard…", savedLater: "Saved to Superset. The dashboard refreshes when the reviewer finishes.",
-      language: "Language", auto: "Auto", autoHelp: "Speak or type in any language; replies follow it.", pickedHelp: "Speech is transcribed as {0}, and replies are in {0}.", space: "Hold Space to talk", spaceHelp: "Hold Space for {0} s, even while typing; a quick press types a space. Or hold the mic button.", holdFor: "Hold for", holdDefault: "{0} s (default)", keepHolding: "Keep holding to talk…", followSuperset: "Following Superset's language: {0}. Pick one here to use another.", adminDefault: "This deployment's default: {0}. Pick one here to use another.", unsureLang: "Couldn't tell which language that was: pick one in the language menu and try again.", missedIn: "Didn't catch that in {0}: try again.",
+      language: "Language", auto: "Auto", autoHelp: "Speak or type in any language; replies follow it.", pickedHelp: "Speech is transcribed as {0}, and replies are in {0}.", space: "Hold Space to talk", spaceHelp: "Hold Space for {0} s, even while typing; a quick press types a space. Or hold the mic button.", holdFor: "Hold for", holdDefault: "{0} s (default)", keepHolding: "Keep holding to talk…", newChat: "New chat", newChatHelp: "New chat: clear this conversation (the dashboard stays as it is)", cleared: "Chat cleared.", undo: "Undo", followSuperset: "Following Superset's language: {0}. Pick one here to use another.", adminDefault: "This deployment's default: {0}. Pick one here to use another.", unsureLang: "Couldn't tell which language that was: pick one in the language menu and try again.", missedIn: "Didn't catch that in {0}: try again.",
       mic: "Speak (click to start and stop, or hold)", micNeedsHttps: "The microphone needs a secure (https) page", micUnsupported: "This browser cannot record audio",
       listening: "Listening… {0}", transcribing: "Transcribing…", tooShort: "Nothing was recorded. Hold the mic or click it, speak, then stop.", heard: "Check the text, then send.", nothingHeard: "No speech was recognised. Try again a little closer to the microphone.",
       denied: "Microphone access is blocked. Allow it for this site in the browser (the icon left of the address), then try again.", noMic: "No microphone was found.", sttFailed: "Transcription failed: {0}", sttOff: "Speech to text is not set up on this server.",
@@ -99,7 +104,7 @@
       intro: "Les modifications demandées sont enregistrées dans ce tableau de bord Superset. Les chiffres viennent des métriques de Superset.",
       working: "En cours…", reviewing: "Vérification du résultat…", noAnswer: "(pas de réponse)", wrong: "Un problème est survenu", unreachable: "Impossible de joindre Lenspack : {0}",
       reviewerOk: "Vérification : fait comme demandé. {0}", reviewer: "Vérification : {0}", saved: "Enregistré dans Superset.", savedRefreshing: "Enregistré dans Superset. Actualisation du tableau de bord…", savedLater: "Enregistré dans Superset. Le tableau de bord s'actualise à la fin de la vérification.",
-      language: "Langue", auto: "Auto", autoHelp: "Parlez ou écrivez dans n'importe quelle langue ; les réponses suivent.", pickedHelp: "La voix est transcrite en {0} et les réponses sont en {0}.", space: "Maintenir Espace pour parler", spaceHelp: "Maintenez Espace {0} s, même en écrivant ; un appui bref tape une espace. Ou maintenez le bouton micro.", holdFor: "Durée", holdDefault: "{0} s (par défaut)", keepHolding: "Maintenez pour parler…", followSuperset: "Suit la langue de Superset : {0}. Choisissez-en une ici pour en changer.", adminDefault: "Langue par défaut de ce déploiement : {0}. Choisissez-en une ici pour en changer.", unsureLang: "Impossible de savoir quelle langue c'était : choisissez-en une dans le menu des langues et réessayez.", missedIn: "Pas compris en {0} : réessayez.",
+      language: "Langue", auto: "Auto", autoHelp: "Parlez ou écrivez dans n'importe quelle langue ; les réponses suivent.", pickedHelp: "La voix est transcrite en {0} et les réponses sont en {0}.", space: "Maintenir Espace pour parler", spaceHelp: "Maintenez Espace {0} s, même en écrivant ; un appui bref tape une espace. Ou maintenez le bouton micro.", holdFor: "Durée", holdDefault: "{0} s (par défaut)", keepHolding: "Maintenez pour parler…", newChat: "Nouvelle discussion", newChatHelp: "Nouvelle discussion : effacer cette conversation (le tableau de bord reste tel quel)", cleared: "Discussion effacée.", undo: "Annuler", followSuperset: "Suit la langue de Superset : {0}. Choisissez-en une ici pour en changer.", adminDefault: "Langue par défaut de ce déploiement : {0}. Choisissez-en une ici pour en changer.", unsureLang: "Impossible de savoir quelle langue c'était : choisissez-en une dans le menu des langues et réessayez.", missedIn: "Pas compris en {0} : réessayez.",
       mic: "Parler (cliquer pour démarrer et arrêter, ou maintenir)", micNeedsHttps: "Le micro nécessite une page sécurisée (https)", micUnsupported: "Ce navigateur ne peut pas enregistrer le son",
       listening: "À l'écoute… {0}", transcribing: "Transcription…", tooShort: "Rien n'a été enregistré. Maintenez ou cliquez le micro, parlez, puis arrêtez.", heard: "Vérifiez le texte, puis envoyez.", nothingHeard: "Aucune parole reconnue. Réessayez un peu plus près du micro.",
       denied: "L'accès au micro est bloqué. Autorisez-le pour ce site dans le navigateur (l'icône à gauche de l'adresse), puis réessayez.", noMic: "Aucun micro trouvé.", sttFailed: "La transcription a échoué : {0}", sttOff: "La reconnaissance vocale n'est pas configurée sur ce serveur.",
@@ -109,7 +114,7 @@
       intro: "आप जो बदलाव कहेंगे, वे इसी Superset डैशबोर्ड में सेव होंगे। संख्याएँ Superset के अपने मेट्रिक्स से आती हैं।",
       working: "काम चल रहा है…", reviewing: "नतीजे की जाँच हो रही है…", noAnswer: "(कोई जवाब नहीं)", wrong: "कुछ गड़बड़ हो गई", unreachable: "Lenspack तक नहीं पहुँच सके: {0}",
       reviewerOk: "जाँच: कहे अनुसार हो गया। {0}", reviewer: "जाँच: {0}", saved: "Superset में सेव हो गया।", savedRefreshing: "Superset में सेव हो गया। डैशबोर्ड रीफ़्रेश हो रहा है…", savedLater: "Superset में सेव हो गया। जाँच पूरी होने पर डैशबोर्ड रीफ़्रेश होगा।",
-      language: "भाषा", auto: "ऑटो", autoHelp: "किसी भी भाषा में बोलें या लिखें; जवाब उसी भाषा में आएगा।", pickedHelp: "आवाज़ {0} में लिखी जाएगी और जवाब {0} में आएँगे।", space: "बोलने के लिए Space दबाकर रखें", spaceHelp: "टाइप करते हुए भी Space को {0} सेकंड दबाकर रखें; जल्दी दबाने से स्पेस टाइप होता है। या माइक बटन दबाकर रखें।", holdFor: "कितनी देर", holdDefault: "{0} सेकंड (डिफ़ॉल्ट)", keepHolding: "बोलने के लिए दबाए रखें…", followSuperset: "Superset की भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", adminDefault: "इस डिप्लॉयमेंट की डिफ़ॉल्ट भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", unsureLang: "पता नहीं चला कि यह कौन सी भाषा थी: भाषा मेनू में एक चुनें और फिर से कोशिश करें।", missedIn: "{0} में समझ नहीं आया: फिर से कोशिश करें।",
+      language: "भाषा", auto: "ऑटो", autoHelp: "किसी भी भाषा में बोलें या लिखें; जवाब उसी भाषा में आएगा।", pickedHelp: "आवाज़ {0} में लिखी जाएगी और जवाब {0} में आएँगे।", space: "बोलने के लिए Space दबाकर रखें", spaceHelp: "टाइप करते हुए भी Space को {0} सेकंड दबाकर रखें; जल्दी दबाने से स्पेस टाइप होता है। या माइक बटन दबाकर रखें।", holdFor: "कितनी देर", holdDefault: "{0} सेकंड (डिफ़ॉल्ट)", keepHolding: "बोलने के लिए दबाए रखें…", newChat: "नई बातचीत", newChatHelp: "नई बातचीत: यह बातचीत मिटाएँ (डैशबोर्ड जैसा है वैसा रहेगा)", cleared: "बातचीत मिटा दी गई।", undo: "वापस लाएँ", followSuperset: "Superset की भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", adminDefault: "इस डिप्लॉयमेंट की डिफ़ॉल्ट भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", unsureLang: "पता नहीं चला कि यह कौन सी भाषा थी: भाषा मेनू में एक चुनें और फिर से कोशिश करें।", missedIn: "{0} में समझ नहीं आया: फिर से कोशिश करें।",
       mic: "बोलें (शुरू और बंद करने के लिए क्लिक करें, या दबाकर रखें)", micNeedsHttps: "माइक के लिए सुरक्षित (https) पेज चाहिए", micUnsupported: "यह ब्राउज़र आवाज़ रिकॉर्ड नहीं कर सकता",
       listening: "सुन रहे हैं… {0}", transcribing: "लिखा जा रहा है…", tooShort: "कुछ रिकॉर्ड नहीं हुआ। माइक दबाकर रखें या क्लिक करें, बोलें, फिर रोकें।", heard: "टेक्स्ट जाँचें, फिर भेजें।", nothingHeard: "कोई आवाज़ पहचानी नहीं गई। माइक के थोड़ा पास से फिर कोशिश करें।",
       denied: "माइक की अनुमति बंद है। ब्राउज़र में इस साइट के लिए अनुमति दें (पते के बाईं ओर का आइकन), फिर कोशिश करें।", noMic: "कोई माइक नहीं मिला।", sttFailed: "लिखना नहीं हो सका: {0}", sttOff: "इस सर्वर पर स्पीच-टू-टेक्स्ट सेट नहीं है।",
@@ -152,6 +157,7 @@
   }
 
   const HOLD_CHOICES = [500, 1000, 1500, 2000, 2500, 3000];
+  const NEW_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
   const MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
   const STOP_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
 
@@ -522,6 +528,11 @@
         menu.append(l, hl, el("small", "", t("spaceHelp", secs(holdMs()))));
       }
     }
+    // New chat: forgets this conversation, never the board.
+    const newBtn = el("button", "lpc-new");
+    newBtn.type = "button";
+    newBtn.innerHTML = NEW_SVG;
+    head.append(newBtn);
     if (opts.onClose) {
       const x = el("button", "lpc-x", "×");
       x.title = t("close");
@@ -573,7 +584,10 @@
       e.append(chips);
       log.append(e);
     }
-    for (const m of history) bubble(m.role, m.parts.map((p) => p.text || "").join(""));
+    const replay = () => {
+      for (const m of history) bubble(m.role, m.parts.map((p) => p.text || "").join(""));
+    };
+    replay();
     if (saved.notice) note(saved.notice, "sync");
     empty();
     if (saved.notice) {
@@ -592,6 +606,7 @@
       text = (text || "").trim();
       if (!text || busy) return;
       busy = true;
+      syncNew();
       go.disabled = true;
       input.value = "";
       const emptyEl = log.querySelector(".lpc-empty");
@@ -772,10 +787,53 @@
         note(t("unreachable", e.message), "bad");
       } finally {
         busy = false;
+        syncNew();
         go.disabled = false;
         input.focus();
       }
     }
+
+    // ---- New chat. The model starts over but still hears of edits made after this point (since =
+    // the board's version now). An Undo note brings the conversation back for a few seconds.
+    let clearing = 0;
+    function syncNew() {
+      newBtn.disabled = busy || rec.state !== "idle";
+    }
+    async function newChat() {
+      if (busy || rec.state !== "idle") return;
+      const token = ++clearing;
+      const kept = { messages: history.splice(0), since };
+      log.replaceChildren();
+      setStatus("");
+      empty();
+      persist();
+      const n = el("div", "lpc-note sync", t("cleared"));
+      const undo = el("button", "lpc-undo", t("undo"));
+      undo.type = "button";
+      n.append(undo);
+      log.append(n);
+      const gone = setTimeout(() => n.remove(), 5000);
+      undo.onclick = () => {
+        clearTimeout(gone);
+        clearing++;
+        if (history.length || busy) return n.remove();
+        history.push(...kept.messages);
+        since = kept.since;
+        persist();
+        log.replaceChildren();
+        replay();
+        empty();
+        input.focus();
+      };
+      try {
+        const v = await version();
+        if (token === clearing && !history.length) {
+          since = v;
+          persist();
+        }
+      } catch (e) {}
+    }
+    newBtn.onclick = newChat;
 
     // Words that change with the language pick.
     function relabel() {
@@ -786,6 +844,8 @@
       const intro = log.querySelector(".lpc-empty p");
       if (intro) intro.textContent = t("intro");
       micTitle();
+      newBtn.title = t("newChatHelp");
+      newBtn.setAttribute("aria-label", t("newChat"));
       renderMenu();
     }
 
@@ -796,7 +856,10 @@
       mic.title = !window.isSecureContext ? t("micNeedsHttps") : !canRecord ? t("micUnsupported") : t("mic");
       mic.setAttribute("aria-label", mic.title);
     }
-    const rec = { state: "idle", recorder: null, stream: null, chunks: [], started: 0, timer: 0, raf: 0, held: false, audio: null, cancelled: false, caret: 0 };
+    const rec = { recorder: null, stream: null, chunks: [], started: 0, timer: 0, raf: 0, held: false, audio: null, cancelled: false, caret: 0 };
+    // The mic's state also decides whether New chat is allowed.
+    let recState = "idle";
+    Object.defineProperty(rec, "state", { get: () => recState, set: (v) => ((recState = v), syncNew()) });
     /** Puts the transcript into the input at a caret position, with a space either side where words would touch. */
     function insertAt(text, at) {
       const v = input.value;

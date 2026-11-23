@@ -36,6 +36,9 @@ The chat panel has a mic and a language menu (Auto, English, Français, हि�
   the user wrote or spoke. A picked language is the speech hint, the reply language and the panel's own
   words. Without a pick, the panel follows Superset's language when one was chosen there (Superset's
   bootstrap `common.locale`; its default, English, does not count), else the deployment default.
+- **New chat.** The pencil button in the header clears the conversation for this board (the board itself,
+  settings and language prefs are untouched). The model starts over but still hears of later edits, and an
+  Undo note brings the conversation back for five seconds. It is disabled while a turn or the mic is busy.
 - **Titles.** New board and widget titles are written in the board's language (`language.board`, English by
   default) whatever language the user speaks, or in the reply's language with `language.titles: speaker`.
 - **Key.** `LENSPACK_STT_API_KEY`, else `OPENROUTER_API_KEY`, on this server only. Without one the mic is
