@@ -93,8 +93,55 @@ export class SpeechError extends Error {
   }
 }
 
+/** The writing system most of a text's letters are in; null when it has too few letters to say. */
+export type Script = "latin" | "devanagari" | "arabic" | "cyrillic" | "cjk" | "other";
+export function scriptOf(text: string): Script | null {
+  const counts = new Map<Script, number>();
+  let letters = 0;
+  for (const ch of text) {
+    if (!/\p{L}/u.test(ch)) continue;
+    letters++;
+    const s: Script = /\p{Script=Latin}/u.test(ch)
+      ? "latin"
+      : /\p{Script=Devanagari}/u.test(ch)
+        ? "devanagari"
+        : /\p{Script=Arabic}/u.test(ch)
+          ? "arabic"
+          : /\p{Script=Cyrillic}/u.test(ch)
+            ? "cyrillic"
+            : /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(ch)
+              ? "cjk"
+              : "other";
+    counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+  if (letters < 3) return null;
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+}
+
+/** The scripts a language is written in, for checking a transcript came back in a language the reader expects. */
+const SCRIPTS: Record<string, Script[]> = {
+  hi: ["devanagari", "latin"],
+  mr: ["devanagari", "latin"],
+  ne: ["devanagari", "latin"],
+  ar: ["arabic"],
+  fa: ["arabic"],
+  ur: ["arabic", "latin"],
+  ru: ["cyrillic"],
+  uk: ["cyrillic"],
+  zh: ["cjk"],
+  ja: ["cjk"],
+  ko: ["cjk"],
+};
+export const scriptsOf = (language: string): Script[] => SCRIPTS[language.split("-")[0]!] ?? ["latin"];
+
+/** Whether a transcript's script fits one of the expected languages (a text too short to tell passes). */
+export function fitsLanguages(text: string, languages: string[]): boolean {
+  const s = scriptOf(text);
+  return s === null || languages.some((l) => scriptsOf(l).includes(s));
+}
+
 /** A transcription as a usage record, so speech shows on the usage page and counts against the budget. */
-export function speechRecord(t: Pick<Transcript, "model" | "usd" | "ms"> & { ok?: boolean; error?: string }, who: { user?: string; pack?: string }): CallRecord {
+export function speechRecord(t: Pick<Transcript, "model" | "usd" | "ms"> & { ok?: boolean; error?: string; language?: string | null; chars?: number; retried?: boolean }, who: { user?: string; pack?: string }): CallRecord {
   return {
     at: new Date().toISOString(),
     role: "speech",
@@ -113,6 +160,7 @@ export function speechRecord(t: Pick<Transcript, "model" | "usd" | "ms"> & { ok?
     ms: t.ms,
     ok: t.ok ?? true,
     ...(t.error ? { error: t.error } : {}),
+    speech: { language: t.language ?? null, chars: t.chars ?? 0, ...(t.retried ? { retried: true } : {}) },
   };
 }
 

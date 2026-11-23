@@ -25,8 +25,10 @@ iframe) or inside Superset (`/overlay.js`, loaded by one script tag in Superset'
 
 The chat panel has a mic and a language menu (Auto, English, Français, हिन्दी), remembered per browser.
 
-- **Mic.** Click to start and click again to stop, or hold the button (or Space, when focus is not in a text
-  field) and release to stop. Recording shows a timer and a level meter and stops at `speech.maxSeconds`
+- **Mic.** Click to start and click again to stop, or hold the button and release to stop. Holding Space for
+  2 s (`speech.holdMs`, 500–3000; each user can pick their own in the menu) also talks, even while typing
+  in the panel: a shorter press types a space, and the mic button fills up to show the hold. Space is left
+  alone in Superset's own fields, on buttons and other controls, during IME composition and with a modifier. Recording shows a timer and a level meter and stops at `speech.maxSeconds`
   (60). The clip goes to `POST /api/_stt` on this server, which sends it to an OpenAI-style transcription
   endpoint (OpenRouter by default); the text lands in the input to check before sending. Browsers allow the
   mic only on https pages or localhost.
@@ -34,20 +36,23 @@ The chat panel has a mic and a language menu (Auto, English, Français, हि�
   the user wrote or spoke. A picked language is the speech hint, the reply language and the panel's own
   words. Without a pick, the panel follows Superset's language when one was chosen there (Superset's
   bootstrap `common.locale`; its default, English, does not count), else the deployment default.
+- **New chat.** The pencil button in the header clears the conversation for this board (the board itself,
+  settings and language prefs are untouched). The model starts over but still hears of later edits, and an
+  Undo note brings the conversation back for five seconds. It is disabled while a turn or the mic is busy.
 - **Titles.** New board and widget titles are written in the board's language (`language.board`, English by
   default) whatever language the user speaks, or in the reply's language with `language.titles: speaker`.
 - **Key.** `LENSPACK_STT_API_KEY`, else `OPENROUTER_API_KEY`, on this server only. Without one the mic is
   hidden and `/api/_stt` answers 503. Transcriptions are metered (role `speech`) and count against the budget.
 
-`speech.model` (default `mistralai/voxtral-mini-transcribe-3-0`) and `language.{default,titles,board}` in the
+`speech.model` (default `mistralai/voxtral-mini-transcribe-3-0`), `speech.holdMs` (2000) and `language.{default,titles,board}` in the
 config are defaults. An admin can change them on a running server from Superset's Settings → AI assistant
 page, which calls:
 
 | | |
 |---|---|
-| `GET /_superset/settings` | includes `speech` {enabled, keyFrom, model, defaultModel, source, writable} and `language` {default, titles, board, options, defaults, source, writable} |
+| `GET /_superset/settings` | includes `speech` {enabled, keyFrom, model, defaultModel, source, holdMs, defaultHoldMs, holdMsRange, writable} and `language` {default, titles, board, options, defaults, source, writable} |
 | `GET /_superset/settings/speech/models` | the provider's transcription models with a per-minute price (cached an hour) |
-| `PUT /_superset/settings/speech` | `{model}`; `null` back to the default |
+| `PUT /_superset/settings/speech` | any of `{model, holdMs}`; a field left out is kept, `null` puts it back to the default |
 | `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
 
 Writes need the header `x-lenspack-settings-token: $LENSPACK_SETTINGS_TOKEN`: every path is also reachable
