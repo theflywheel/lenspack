@@ -26,9 +26,10 @@ Apache Superset as a lenspack backend, without forking Superset.
 iframe) or inside Superset (`/overlay.js`, loaded by one script tag in Superset's documented-overridable
 `tail_js_custom_extra.html`). See `superset-demo/` in the lab repo for a stock Superset 5.0 setup.
 
-Inside Superset the chat opens as a floating window (drag it by its header; resize it with the grip in its
-bottom-right corner, which keeps the top-left corner in place, or from its left and top edges) or as a side
-panel; the gear chooses, and size and position are remembered per browser.
+Inside Superset the chat opens as a floating window or as a side panel; the gear chooses. The window opens at
+the top right, below Superset's menu bar, with room under it: drag it by its header, and resize it with the
+grip in its bottom-left corner (down and left, the top-right corner staying put) or from its left and top
+edges. Size and position are remembered per browser.
 
 ## Voice and languages
 
