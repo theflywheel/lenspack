@@ -55,9 +55,10 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
   (`GET /api/_usage`) are kept in memory and reset on restart. Admins read it with
   `GET /_superset/audit?month=YYYY-MM&limit=N`, and on the AI assistant page.
 
-Inside Superset the chat opens as a floating window (drag it by its header; resize it with the grip in its
-bottom-right corner, which keeps the top-left corner in place, or from its left and top edges) or as a side
-panel; the gear chooses, and size and position are remembered per browser.
+Inside Superset the chat opens as a floating window or as a side panel; the gear chooses. The window opens at
+the top right, below Superset's menu bar, with room under it: drag it by its header, and resize it with the
+grip in its bottom-left corner (down and left, the top-right corner staying put) or from its left and top
+edges. Size and position are remembered per browser.
 
 ## Voice and languages
 
