@@ -27,6 +27,7 @@ import {
   SAYS_CANT,
   bestQuery,
   boardDiff,
+  collateral,
   dataAsText,
   discloses,
   editMisses,
@@ -58,7 +59,7 @@ export type Result = {
   detail: string;
   answer?: AnswerScore & { by: "reply" | "chart" };
   query?: { ok: boolean; misses: string[] };
-  edit?: { misses: string[]; dataOk?: boolean };
+  edit?: { misses: string[]; dataOk?: boolean; collateral?: string[] };
   decline?: { label: DeclineLabel; by: string };
   disclosed?: boolean;
   grounded: { total: number; grounded: number; ungrounded: string[] };
@@ -302,6 +303,10 @@ export function scoreRaw(model: string, rep: number, q: Question, truth: Truth |
     const em = editMisses(q, before, after);
     const dataOk = truth && em.widgetIds[0] ? (chartScore(em.widgetIds[0])?.correct ?? false) : undefined;
     const query = bestQuery(queries, q.accept);
+    // The user sees the reply as well as the board: a turn that ends in silence has failed them.
+    if (!reply.trim() && diff.any) return { ...base, edit: { misses: em.misses, dataOk }, query, outcome: "wrong", detail: `no reply after the edit${em.misses.length ? `; ${em.misses.join("; ")}` : ""}` };
+    const extra = collateral(q, before, after);
+    if (em.misses.length === 0 && dataOk !== false && extra.length) return { ...base, edit: { misses: [], dataOk, collateral: extra }, query, outcome: "partial", detail: `board right, but also changed: ${extra.join("; ")}` };
     if (em.misses.length === 0 && dataOk !== false) return { ...base, edit: { misses: [], dataOk }, query, outcome: "correct", detail: dataOk ? "board right; widget data matches truth" : "board right" };
     // A move that can't be made may be declined, but a move claimed and not made is a false claim.
     if (q.moved) {
@@ -370,6 +375,18 @@ export function report(meta: Record<string, unknown>, rs: Result[]): string {
   if (declines.length) {
     lines.push(``, `## Expected fails by reason`, ``, `| why | ${models.join(" | ")} |`, `|---|${models.map(() => "---").join("|")}|`);
     for (const w of [...new Set(declines.map((r) => r.why ?? "?"))]) lines.push(`| ${w} | ${models.map((m) => { const x = declines.filter((r) => r.model === m && (r.why ?? "?") === w); return `${x.filter((r) => r.outcome === "declined_ok").length}/${x.length}`; }).join(" | ")} |`);
+  }
+  const edits = rs.filter((r) => r.expect === "edit");
+  if (edits.length) {
+    lines.push(``, `## Edits: tool calls and latency`, ``, `Per turn: mean tool calls (min–max), median latency.`, ``, `| q | ${models.join(" | ")} |`, `|---|${models.map(() => "---").join("|")}|`);
+    for (const id of [...new Set(edits.map((r) => r.id))]) {
+      lines.push(`| ${id} | ${models.map((m) => {
+        const x = edits.filter((r) => r.model === m && r.id === id);
+        if (!x.length) return "—";
+        const calls = x.map((r) => r.toolCalls);
+        return `${(calls.reduce((s, n) => s + n, 0) / x.length).toFixed(1)} (${Math.min(...calls)}–${Math.max(...calls)}) · ${(q(x.map((r) => r.latencyMs), 0.5) / 1000).toFixed(1)} s`;
+      }).join(" | ")} |`);
+    }
   }
   const bad = rs.filter((r) => r.outcome === "confidently_wrong");
   if (bad.length) {

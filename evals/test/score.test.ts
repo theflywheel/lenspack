@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BESIDE_CLAIM, MOVE_CLAIM, NO_ROOM, SAYS_CANT, editMisses, grounding, heuristicDecline, numberMatches, numbersIn, overlaps, parseJudge, queryMisses, scoreAnswer } from "../score";
+import { BESIDE_CLAIM, MOVE_CLAIM, NO_ROOM, SAYS_CANT, collateral, editMisses, grounding, heuristicDecline, numberMatches, numbersIn, overlaps, parseJudge, queryMisses, scoreAnswer } from "../score";
 import type { BoardConfig } from "@lenspack/core";
 
 import { type Question, type Truth, questionSchema } from "../suite";
@@ -132,6 +132,23 @@ describe("moves", () => {
     const piled = board([{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "c", x: 3, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 7, w: 6, h: 7 }]);
     expect(editMisses(q, start, piled).misses).toEqual(["overlapping: a/c"]);
     expect(overlaps(start.layout)).toEqual([]);
+  });
+
+  it("flags changes nobody asked for, but not the target row's", () => {
+    const full = board([{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }, { i: "c", x: 0, y: 7, w: 12, h: 7 }]);
+    const w = (b: BoardConfig, extra: Record<string, unknown>) => ({ ...b, widgets: { ...b.widgets, ...extra } }) as BoardConfig;
+    const before = w(full, { d: chart("Delta"), e: chart("Epsilon") });
+    before.layout = [...full.layout, { i: "d", x: 0, y: 14, w: 6, h: 7 }, { i: "e", x: 6, y: 14, w: 6, h: 7 }];
+    // Gamma joins Alpha's row, Beta is swapped to the bottom: Beta is a row-mate of the target, so that's fine.
+    const swapped = structuredClone(before);
+    swapped.layout = [{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "c", x: 6, y: 0, w: 6, h: 7 }, { i: "d", x: 0, y: 7, w: 6, h: 7 }, { i: "e", x: 6, y: 7, w: 6, h: 7 }, { i: "b", x: 0, y: 14, w: 12, h: 7 }];
+    expect(collateral(q, before, swapped)).toEqual([]);
+    // The same, but Delta and Epsilon were widened and fill switched off: collateral.
+    const widened = structuredClone(swapped);
+    widened.layout = [{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "c", x: 6, y: 0, w: 6, h: 7 }, { i: "d", x: 0, y: 7, w: 12, h: 7 }, { i: "e", x: 0, y: 14, w: 12, h: 7 }, { i: "b", x: 0, y: 21, w: 12, h: 7 }];
+    (widened.grid as { fill?: boolean }).fill = false;
+    (before.grid as { fill?: boolean }).fill = true;
+    expect(collateral(q, before, widened)).toEqual(["board fill off", "d width 6→12", "e width 6→12"]);
   });
 
   it("reads claims and no-room replies in English and Hindi", () => {

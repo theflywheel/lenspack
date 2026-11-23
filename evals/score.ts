@@ -379,6 +379,40 @@ export function editMisses(q: Question, before: BoardConfig, after: BoardConfig)
   return { misses, widgetIds };
 }
 
+/**
+ * Changes an edit made that nobody asked for: the board's fill or density toggled, or a widget the edit had no
+ * business with resized or shifted. Widgets the edit touched (added, removed, changed, the moved one and its
+ * target) are exempt, and so are their row-mates, which the board's own packing may resize or slide.
+ */
+export function collateral(q: Question, before: BoardConfig, after: BoardConfig): string[] {
+  const d = boardDiff(before, after);
+  const out: string[] = [];
+  const g0 = before.grid as { fill?: boolean; density?: string };
+  const g1 = after.grid as { fill?: boolean; density?: string };
+  if ((g0.fill ?? false) !== (g1.fill ?? false)) out.push(`board fill ${g1.fill ? "on" : "off"}`);
+  if ((g0.density ?? "comfortable") !== (g1.density ?? "comfortable")) out.push(`board density ${g1.density}`);
+  const titled = (t: string) => Object.keys(before.widgets).find((id) => titleRe(t).test(before.widgets[id]!.title ?? ""));
+  const touched = new Set([...d.added, ...d.removed, ...d.changed, ...(q.moved ? [titled(q.moved.title), titled(q.moved.beside)].filter((x): x is string => !!x) : [])]);
+  const rowMates = (layout: BoardConfig["layout"]) => {
+    const ys = new Set(layout.filter((l) => touched.has(l.i)).map((l) => l.y));
+    return layout.filter((l) => ys.has(l.y)).map((l) => l.i);
+  };
+  const exempt = new Set([...touched, ...rowMates(before.layout), ...rowMates(after.layout)]);
+  const was = new Map(before.layout.map((l) => [l.i, l]));
+  const now = new Map(after.layout.map((l) => [l.i, l]));
+  const kept = before.layout.map((l) => l.i).filter((id) => now.has(id) && !exempt.has(id));
+  for (const id of kept) {
+    const [a, b] = [was.get(id)!, now.get(id)!];
+    if (a.w !== b.w) out.push(`${id} width ${a.w}→${b.w}`);
+    else if (a.x !== b.x) out.push(`${id} slid x ${a.x}→${b.x}`);
+  }
+  const order = (m: Map<string, { x: number; y: number }>) => [...kept].sort((p, r) => m.get(p)!.y - m.get(r)!.y || m.get(p)!.x - m.get(r)!.x);
+  const [o0, o1] = [order(was), order(now)];
+  const moved = o0.filter((id, i) => o1[i] !== id);
+  if (moved.length) out.push(`order changed: ${o1.filter((id, i) => o0[i] !== id).join(", ")}`);
+  return out;
+}
+
 /** Pairs of layout items that cover the same cell. */
 export function overlaps(layout: BoardConfig["layout"]): string[] {
   const out: string[] = [];
