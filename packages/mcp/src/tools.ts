@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type BoardOp, type BoardStore, type FilterClause, type Query, nearest, querySchema, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardOp, type BoardStore, type FilterClause, type Query, layoutChanges, nearest, querySchema, summarise, verifiedOnly } from "@lenspack/core";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/spec";
 import { type Connector, type Ctx, type Executor, checkOps, describeSources, explain, run, runSql, sqlConnector, valuesQuery } from "@lenspack/sql";
 
@@ -73,7 +73,7 @@ const period = z.preprocess((v) => {
   return s === "day" ? "today" : ["week", "month", "quarter", "year"].includes(s) ? `this_${s}` : s;
 }, oneOf(["", ...(Object.keys(PERIODS) as PeriodName[])], ""));
 
-const PLACE = str("bottom").describe('Where to put it: "top", "bottom", or "after:<widgetId>"');
+const PLACE = str("bottom").describe('Where to put it: "top", "bottom", "after:<widgetId>" (beside that widget; a full row makes room by narrowing its widgets) or "below:<widgetId>" (a new row under that widget\'s row)');
 const WIDTH = oneOf(["full", "half", "third", "quarter"], "half").describe("full is the whole row, half is two across, third is three across, quarter is four across");
 const QUERY_SHAPE = {
   query_kind: z.enum(["breakdown", "series", "value", "rows"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records"),
@@ -268,14 +268,23 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       // Refuse at edit time what the compiler would refuse at render time.
       const checked = checkOps(ops, pack, { ctx, capabilities: connector.capabilities });
       if (!checked.ok) return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      const layoutEdit = ops.some((op) => op.op === "move_widget" || op.op === "resize_widget" || op.op === "remove_widget");
+      const before = layoutEdit ? (await store.get(boardId))?.config : undefined;
       const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
       if (!result.ok) return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
-      return { applied: true, version: result.board.version, board: summarise(result.board.config) };
+      // What the edit did besides what was asked (room made, a widget widened), so the model can say so.
+      const layout = before ? layoutChanges(before, result.board.config, ops) : [];
+      return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: summarise(result.board.config) };
     };
     const next = queue.then(work, work);
     queue = next.catch(() => undefined);
     return next;
   };
+  // Reads wait for the edits already asked for. The SDK runs a step's tool calls together, so a
+  // get_board beside a move_widget read the board before the move landed and showed the version
+  // before it: the model saw a layout one edit behind the edit's own result and called the
+  // readings inconsistent.
+  const afterEdits = <T>(read: () => Promise<T>): Promise<T> => queue.then(read, read);
 
   // A missing value is grouped as "(none)", which no filter can match, so it is never offered.
   const values = async (dimension: string, q = "", limit = 50, exact?: string[]) => {
@@ -389,7 +398,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       description: "Read what is currently on the board: widgets, their ids, and how they are arranged by row. Call this before editing so you refer to widgets by the ids they actually have.",
       inputSchema: z.object({}),
       async execute() {
-        const board = await store.get(boardId);
+        const board = await afterEdits(() => store.get(boardId));
         if (!board) return { error: "This board no longer exists" };
         return { board: summarise(board.config), version: board.version };
       },
@@ -400,7 +409,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         "The board's saved versions, newest first: number, who or what made it (chat, by hand, board file, rollback) and what changed. Call this before restore_version when the user names a point in the history rather than the original.",
       inputSchema: z.object({ limit: num(20, 1, 100).describe("How many versions, newest first (default 20)") }),
       async execute({ limit }) {
-        const all = await store.versions(boardId);
+        const all = await afterEdits(() => store.versions(boardId));
         if (all.length === 0) return { error: "This board has no history" };
         const base = baselineOf(all);
         return {
@@ -516,7 +525,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       inputSchema: z.object({ id: z.string(), place: PLACE, width: WIDTH }),
       execute: ({ id, place, width }) => {
         const w = width as "full" | "half" | "third" | "quarter";
-        return apply([{ op: "move_widget", id, placement: { place, width: w } }, { op: "resize_widget", id, width: w }]);
+        // Resize first, so the move looks for room at the width asked for.
+        return apply([{ op: "resize_widget", id, width: w }, { op: "move_widget", id, placement: { place, width: w } }]);
       },
     }),
     defineTool({
