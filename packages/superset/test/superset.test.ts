@@ -85,8 +85,8 @@ describe("widgets and charts", () => {
     });
 
   it("keeps a chart lenspack cannot say as Superset's, with the reason", () => {
-    const r = chartToWidget({ slice_name: "Heat", viz_type: "heatmap_v2", params: { datasource: "1__table" } }, pack, binding);
+    const r = chartToWidget({ slice_name: "Sun", viz_type: "sunburst_v2", params: { datasource: "1__table" } }, pack, binding);
     expect(r.widget).toBeNull();
-    expect(!r.widget && r.reason).toMatch(/heatmap_v2/);
+    expect(!r.widget && r.reason).toMatch(/sunburst_v2/);
   });
 });

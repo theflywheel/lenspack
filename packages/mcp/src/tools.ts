@@ -97,7 +97,7 @@ const QUERY_SHAPE = {
   other: bool(false).describe('For breakdown: add one "(other)" row for everything outside the groups shown'),
   limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
-  split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars"),
+  split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars, or as the rows of a heatmap (dimension is then its columns)"),
   filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; size >= 18". Ops: =, !=, >=, <=, in (comma-separated), contains, between <a> and <b>'),
   filter_dimension: str().describe("Optional: narrow by this dimension"),
   filter_value: str().describe("Optional: the value the filter dimension must equal"),
@@ -145,6 +145,20 @@ function typedValue(pack: Pack, dimension: string, v: string, clause: string) {
     return v.toLowerCase() === "true";
   }
   return v;
+}
+
+type ChartKind = "bar" | "line" | "pie" | "area" | "heatmap";
+
+/**
+ * A chart widget from its kind and query. A heatmap's columns read in their own order (days,
+ * codes) rather than ranked by the measure, and it is shaded on the sequential scale.
+ */
+function chartWidget(chart: ChartKind, title: string, query: Query) {
+  if (chart === "heatmap") {
+    const q = query.kind === "breakdown" && !query.sortBy ? { ...query, sortBy: "group" as const, sort: "asc" as const } : query;
+    return { kind: "chart" as const, chart, title, query: q, options: { legend: true, colorScheme: "sequential" as const } };
+  }
+  return { kind: "chart" as const, chart, title, query, options: { legend: true, colorScheme: "default" as const } };
 }
 
 export function assembleQuery(a: QueryArgs, pack: Pack): Query {
@@ -440,12 +454,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
     defineTool({
       name: "add_widget",
-      description: "Put something new on the board. Use chart for a breakdown or series, kpi for a single headline number, table for a list, text for a note.",
+      description:
+        'Put something new on the board. Use chart for a breakdown or series, kpi for a single headline number, table for a list, text for a note. A heatmap chart shades one measure over two dimensions: "ward by day" is a series with grain day and dimension ward (rows), or a breakdown with dimension as the columns and split as the rows. Give a heatmap full width.',
       inputSchema: z.object({
         id: z.string().describe("Short lowercase id, e.g. revenue_by_country"),
         kind: z.enum(["chart", "kpi", "table", "text"]),
         title: z.string().describe("What the reader sees above it"),
-        chart: oneOf(["bar", "line", "pie", "area"], "bar").describe("Only when kind is chart"),
+        chart: oneOf(["bar", "line", "pie", "area", "heatmap"], "bar").describe("Only when kind is chart"),
         body: str().describe("Only when kind is text: the note itself"),
         ...QUERY_SHAPE,
         place: PLACE,
@@ -461,7 +476,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
                 ? { kind: "kpi" as const, title: a.title, query: assembleQuery(a, pack), aggregate: "last" as const }
                 : a.kind === "table"
                   ? { kind: "table" as const, title: a.title, query: assembleQuery(a, pack), pageSize: 10 }
-                  : { kind: "chart" as const, chart: a.chart as "bar" | "line" | "pie" | "area", title: a.title, query: assembleQuery(a, pack), options: { legend: true, colorScheme: "default" as const } };
+                  : chartWidget(a.chart as ChartKind, a.title, assembleQuery(a, pack));
           return apply([{ op: "add_widget", id: a.id, widget, placement: { place: a.place, width: a.width as "full" | "half" | "third" | "quarter", ...(a.height > 0 ? { height: a.height } : {}) } }]);
         } catch (e) {
           return fail(e);
@@ -476,7 +491,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         id: z.string(),
         kind: given(z.enum(["chart", "kpi", "table", "text"])).describe("Only to change it"),
         title: given(z.string()),
-        chart: given(z.enum(["bar", "line", "pie", "area"])),
+        chart: given(z.enum(["bar", "line", "pie", "area", "heatmap"])),
         body: given(z.string()),
         ...PATCH_SHAPE,
       }),
@@ -505,14 +520,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
                 ? { aggregate: "last" as const, ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
                 : to === "table"
                   ? { pageSize: 10, ...(current.kind === "table" ? current : {}), kind: "table" as const, title: name, query }
-                  : {
-                      options: { legend: true, colorScheme: "default" as const },
-                      ...(current.kind === "chart" ? current : {}),
-                      kind: "chart" as const,
-                      chart: chart ?? (current.kind === "chart" ? current.chart : "bar"),
-                      title: name,
-                      query,
-                    };
+                  : (() => {
+                      const kindNow = (chart ?? (current.kind === "chart" ? current.chart : "bar")) as ChartKind;
+                      const fresh = chartWidget(kindNow, name, query);
+                      // Options carry over, except across the heatmap line (its scale is sequential).
+                      return { ...fresh, ...(current.kind === "chart" && (current.chart === "heatmap") === (kindNow === "heatmap") ? { options: current.options } : {}) };
+                    })();
             return [{ op: "update_widget", id, widget }];
           });
         } catch (e) {

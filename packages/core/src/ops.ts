@@ -317,7 +317,7 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
         draft.widgets[op.id] = op.widget;
         const placement = placementSchema.parse(op.placement ?? {});
         const w = widthUnits(placement.width, cols);
-        const h = placement.height ?? defaultHeight(op.widget.kind);
+        const h = placement.height ?? defaultHeight(op.widget.kind === "chart" ? op.widget.chart : op.widget.kind);
         const item = place(draft.layout, op.id, w, h, placement, cols, floors);
         draft.layout.push(item);
         touched.add(op.id);
@@ -465,7 +465,7 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
 }
 
 function defaultHeight(kind: string) {
-  return kind === "kpi" ? 3 : kind === "text" ? 3 : 7;
+  return kind === "kpi" ? 3 : kind === "text" ? 3 : kind === "heatmap" ? 9 : 7;
 }
 
 // Gravity: everything floats up until it rests on something. The same rule
@@ -632,6 +632,15 @@ function checkWidget(widget: Widget, catalogue: Catalogue): Problem | null {
   // table can show both the split and several measures as columns.
   if (widget.kind === "chart" && widget.query.kind === "breakdown" && widget.query.by && widget.query.measures?.length)
     return { error: "A breakdown split by a second dimension draws one measure; drop by, or drop measures, or make it a table", hint: "measures" };
+
+  // A heatmap shades one measure over two dimensions: columns and rows.
+  if (widget.kind === "chart" && widget.chart === "heatmap") {
+    const q = widget.query;
+    if (q.kind !== "breakdown" && q.kind !== "series") return { error: "A heatmap shades a measure over two dimensions: a breakdown with a split, or a series split by a dimension", hint: "breakdown" };
+    if (!q.by) return { error: `A heatmap needs rows as well as columns: split the ${q.kind === "series" ? "series" : "breakdown"} by a second dimension`, hint: "split" };
+    if (q.measures?.length) return { error: "A heatmap shades one measure; several measures need a table", hint: "table" };
+    if (q.kind === "breakdown" && (q.compare || q.share || q.other)) return { error: "A heatmap shows the measure itself: no previous period, share or other row", hint: "table" };
+  }
 
   // A pie divides a whole into parts, and a rate is not part of anything.
   if (widget.kind === "chart" && widget.chart === "pie") {

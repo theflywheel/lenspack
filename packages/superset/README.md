@@ -10,8 +10,13 @@ Apache Superset as a lenspack backend, without forking Superset.
   them through `/api/v1/chart/data`, so a metric means the same in both and Superset's row-level security applies.
   No joins (a chart reads one dataset); share, Other and further measures are composed by the engine as usual.
 - **Dashboards are boards.** `dashboardToBoard` reads a dashboard: charts become widgets, markdown becomes text,
-  `position_json` becomes the grid. A chart lenspack cannot say exactly (a heatmap, custom SQL filters, ad hoc
-  metrics) is kept as Superset's: a text widget the model can move, resize or remove but not rewrite.
+  `position_json` becomes the grid. A chart lenspack cannot say exactly (custom SQL filters, ad hoc metrics, a
+  heatmap shaded per row or column) is kept as Superset's: a text widget the model can move, resize or remove but
+  not rewrite.
+- **Heatmaps.** A heatmap widget is Superset's `heatmap_v2`: a breakdown's dimension on `x_axis`, its split as
+  `groupby`, one saved metric, rows A to Z, one scale across the grid. A heatmap over time is refused before the
+  change (capability `timeHeatmap: false`): Superset 5 sorts a time axis by the raw column while grouping by its
+  buckets, which the database refuses, so use a breakdown over a day or date label column instead.
   `pushBoard` sends only what changed: `POST`/`PUT /api/v1/chart`, then the dashboard's layout and title.
 - **Superset stays the record.** `supersetBoards` wraps any `BoardStore`: reads pick up edits made in Superset,
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's

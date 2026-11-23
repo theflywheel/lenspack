@@ -161,6 +161,21 @@ describe("board tools", () => {
     expect(renamed.version).toBeGreaterThan(4);
   });
 
+  it("adds a heatmap with its columns in their own order on the sequential scale, and turns it back into a bar", async () => {
+    const store = memoryStore();
+    await store.create({ id: "h", pack: { pack: pack.pack, version: pack.version }, title: "H" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "h", ctx: { tenant: "t1", now: new Date("2026-02-15T00:00:00Z") } }).map((x) => [x.name, x])) as Record<string, Tool>;
+    const run = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args));
+    const added = (await run("add_widget", { id: "heat", kind: "chart", chart: "heatmap", title: "Things, colour by origin", query_kind: "breakdown", measure: "things", dimension: "origin", split: "colour", width: "full" })) as { applied: boolean; board: string };
+    expect(added, JSON.stringify(added)).toMatchObject({ applied: true });
+    expect(added.board).toContain("heat (heatmap, 12/12 wide) things by origin and colour in origin order");
+    const w = () => store.get("h").then((b) => b!.config.widgets.heat);
+    expect(await w()).toMatchObject({ chart: "heatmap", options: { colorScheme: "sequential" }, query: { kind: "breakdown", dimension: "origin", by: "colour", sort: "asc", sortBy: "group" } });
+    expect(((await run("add_widget", { id: "flat", kind: "chart", chart: "heatmap", title: "x", query_kind: "breakdown", measure: "things", dimension: "origin" })) as { error?: string }).error).toContain("rows as well as columns");
+    await run("update_widget", { id: "heat", chart: "bar" });
+    expect(await w()).toMatchObject({ chart: "bar", options: { colorScheme: "default" } });
+  });
+
   it("moves a widget beside another in a full row and says what it narrowed", async () => {
     const store = memoryStore();
     await store.create({ id: "m", pack, title: "Move" });

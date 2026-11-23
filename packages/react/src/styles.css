@@ -6,11 +6,12 @@
   --lp-sequential-5: #22c55e; --lp-sequential-6: #4ade80; --lp-sequential-7: #86efac; --lp-sequential-8: #bbf7d0;
   --lp-bg: #fff; --lp-fg: #1c1917; --lp-muted: #6b6b66; --lp-border: #e7e5e4; --lp-hover: #fafaf9; --lp-radius: 4px;
 }
-/* Dark follows the system unless the host page picks one with <html data-theme>. */
+/* Dark follows the system unless the host page picks one with <html data-theme>. The sequential scale
+   flips with it: --lp-sequential-1 is always the colour with the most ink against the page. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
+  :root:not([data-theme="light"]) { --lp-sequential-1: #bbf7d0; --lp-sequential-2: #86efac; --lp-sequential-3: #4ade80; --lp-sequential-4: #22c55e; --lp-sequential-5: #16a34a; --lp-sequential-6: #15803d; --lp-sequential-7: #166534; --lp-sequential-8: #14532d; --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
 }
-:root[data-theme="dark"] { --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
+:root[data-theme="dark"] { --lp-sequential-1: #bbf7d0; --lp-sequential-2: #86efac; --lp-sequential-3: #4ade80; --lp-sequential-4: #22c55e; --lp-sequential-5: #16a34a; --lp-sequential-6: #15803d; --lp-sequential-7: #166534; --lp-sequential-8: #14532d; --lp-bg: #18181b; --lp-fg: #f4f4f5; --lp-muted: #9a9aa4; --lp-border: #3f3f46; --lp-hover: #27272a; }
 .lp-board { color: var(--lp-fg); }
 .lp-widget { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; border: 1px solid var(--lp-border); border-radius: var(--lp-radius); background: var(--lp-bg); padding: 12px 14px; }
 .lp-widget-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
@@ -114,3 +115,38 @@ tr.lp-drillable:hover { background: var(--lp-hover); }
 .react-grid-item:hover > .react-resizable-handle, .react-grid-item.resizing > .react-resizable-handle { opacity: 1; }
 @media (hover: none) { .react-grid-item > .react-resizable-handle { opacity: 1; } }
 .react-resizable-hide > .react-resizable-handle { display: none; }
+
+/* Heatmap: a grid of cells on one sequential scale, low to high. --lp-sequential-1 is the colour with
+   the most ink against the page in either theme, so the scale runs from the faintest (low) to it (high)
+   and a low value sits quietly on the page. Only the ink inside a cell changes with the theme. */
+:root {
+  --lp-heat-1: var(--lp-sequential-8); --lp-heat-2: var(--lp-sequential-7); --lp-heat-3: var(--lp-sequential-6); --lp-heat-4: var(--lp-sequential-5);
+  --lp-heat-5: var(--lp-sequential-4); --lp-heat-6: var(--lp-sequential-3); --lp-heat-7: var(--lp-sequential-2); --lp-heat-8: var(--lp-sequential-1);
+  --lp-heat-ink-low: #1c1917; --lp-heat-ink-high: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --lp-heat-ink-low: #f4f4f5; --lp-heat-ink-high: #18181b; }
+}
+:root[data-theme="dark"] { --lp-heat-ink-low: #f4f4f5; --lp-heat-ink-high: #18181b; }
+.lp-heat { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 11px; }
+.lp-heat-body { flex: 1; min-height: 0; display: flex; gap: 6px; }
+.lp-heat-ylabels { display: grid; max-width: 30%; padding-bottom: 18px; color: var(--lp-muted); }
+.lp-heat-ylabels span { align-self: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+.lp-heat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lp-heat-grid { flex: 1; min-height: 0; display: grid; gap: 1px; }
+.lp-heat-cell { display: grid; place-items: center; overflow: hidden; border-radius: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: default; }
+.lp-heat-cell:hover { outline: 2px solid var(--lp-fg); outline-offset: -1px; }
+.lp-heat-xlabels { display: grid; height: 18px; color: var(--lp-muted); }
+.lp-heat-xlabels span { padding-top: 3px; white-space: nowrap; overflow: visible; text-align: center; }
+.lp-heat-s1 { background: var(--lp-heat-1); color: var(--lp-heat-ink-low); } .lp-heat-s2 { background: var(--lp-heat-2); color: var(--lp-heat-ink-low); }
+.lp-heat-s3 { background: var(--lp-heat-3); color: var(--lp-heat-ink-low); } .lp-heat-s4 { background: var(--lp-heat-4); color: var(--lp-heat-ink-low); }
+.lp-heat-s5 { background: var(--lp-heat-5); color: var(--lp-heat-ink-high); } .lp-heat-s6 { background: var(--lp-heat-6); color: var(--lp-heat-ink-high); }
+.lp-heat-s7 { background: var(--lp-heat-7); color: var(--lp-heat-ink-high); } .lp-heat-s8 { background: var(--lp-heat-8); color: var(--lp-heat-ink-high); }
+.lp-heat-none { background: transparent; box-shadow: inset 0 0 0 1px var(--lp-border); }
+.lp-heat-null { background: repeating-linear-gradient(45deg, transparent 0 3px, var(--lp-border) 3px 4px); }
+.lp-heat-legend { display: flex; align-items: center; justify-content: center; gap: 6px; padding-top: 6px; color: var(--lp-muted); font-variant-numeric: tabular-nums; }
+.lp-heat-ramp { display: inline-flex; }
+.lp-heat-ramp i, .lp-heat-gap i { display: inline-block; width: 14px; height: 10px; }
+.lp-heat-gap { margin-left: 10px; display: inline-flex; align-items: center; gap: 4px; }
+.lp-heat-tip { position: absolute; z-index: 5; transform: translate(-50%, calc(-100% - 6px)); pointer-events: none; background: var(--lp-fg); color: var(--lp-bg); padding: 4px 7px; border-radius: 4px; font-size: 11.5px; line-height: 1.35; white-space: nowrap; display: flex; flex-direction: column; }
+.lp-heat-tip b { font-weight: 600; }

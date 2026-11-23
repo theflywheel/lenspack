@@ -191,6 +191,8 @@ export function queryObjects(bound: BoundPlan, binding: Binding): { queries: Que
 export type ChartSpec = { viz_type: string; params: Record<string, unknown>; datasetId: number };
 
 const ECHARTS: Record<string, string> = { line: "echarts_timeseries_line", area: "echarts_area", bar: "echarts_timeseries_bar" };
+// A heatmap breakdown's column order as Superset's sort_x_axis: [ascending, descending].
+const HEAT_SORT_X: Record<string, [string, string] | undefined> = { group: ["alpha_asc", "alpha_desc"], value: ["value_asc", "value_desc"], measure: ["value_asc", "value_desc"] };
 const D3: Record<string, string> = { percent: ".1%", compact: ".3s", currency: "$,.2f", number: ",d", duration: ",.1f" };
 
 /** The entity a widget's query reads: the measure's, or the rows query's. */
@@ -235,6 +237,36 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
     if (q.kind !== "breakdown") throw new ResolveError("NOT_SUPPORTED", "A pie in Superset shows a breakdown: one dimension, one measure");
     return { viz_type: "pie", datasetId: ds.id, params: { ...common, groupby: [colFor(q.dimension)], metric: metrics[0], row_limit: q.limit, sort_by_metric: true, show_legend: widget.options?.legend !== false, number_format: fmt === ",d" ? "SMART_NUMBER" : fmt, show_labels: true, label_type: "key_percent" } };
   }
+  if (chart === "heatmap") {
+    // Superset's heatmap sorts a time axis by the raw column while grouping by its buckets, which
+    // the database refuses, and unsorted its days come in any order: a series heatmap cannot be drawn.
+    if (q.kind === "series")
+      throw new ResolveError("NOT_SUPPORTED", "Superset's heatmap cannot keep a time axis in order once it is bucketed by day, week or month. Make it a breakdown instead: columns a day or date label dimension, if the pack has one, split by the rows");
+    if (q.kind !== "breakdown" || !q.by) throw new ResolveError("NOT_SUPPORTED", "A heatmap in Superset shades one metric over two columns: a breakdown split by a second dimension");
+    const sortX = HEAT_SORT_X[q.sortBy ?? "value"]?.[q.sort === "asc" ? 0 : 1];
+    if (!sortX) throw new ResolveError("NOT_SUPPORTED", "A heatmap in Superset reads its columns in their own order or by the metric");
+    return {
+      viz_type: "heatmap_v2",
+      datasetId: ds.id,
+      params: {
+        ...common,
+        x_axis: colFor(q.dimension),
+        // Superset's heatmap takes one row column, saved as a string rather than a list.
+        groupby: colFor(q.by),
+        metric: metrics[0],
+        // With a split, a breakdown's limit is on columns; Superset's is on cells.
+        row_limit: q.limit * 50,
+        sort_x_axis: sortX,
+        sort_y_axis: "alpha_asc",
+        normalize_across: "heatmap",
+        legend_type: "continuous",
+        linear_color_scheme: "superset_seq_1",
+        show_legend: widget.options?.legend !== false,
+        show_values: false,
+        y_axis_format: fmt === ",d" ? "SMART_NUMBER" : fmt,
+      },
+    };
+  }
   if (q.kind === "series")
     return { viz_type: ECHARTS[chart]!, datasetId: ds.id, params: { ...common, x_axis: ds.time, time_grain_sqla: GRAIN[q.grain], metrics, groupby: q.by ? [colFor(q.by)] : [], row_limit: 10_000, ...(q.by ? { series_limit: 12 } : {}), show_legend: widget.options?.legend !== false, y_axis_format: fmt === ",d" ? "SMART_NUMBER" : fmt, ...(chart === "area" || (chart === "bar" && q.by) ? { stack: "Stack" } : {}) } };
   if (q.kind === "breakdown")
@@ -250,6 +282,7 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
 /** The query context Superset keeps beside a chart's form_data (reports and the chart-data-by-id API read it). */
 export function queryContextOf(spec: ChartSpec): Record<string, unknown> {
   const p = spec.params as Record<string, any>;
+  if (spec.viz_type === "heatmap_v2") return heatmapContext(spec);
   const metrics = p.metrics ?? (p.metric ? [p.metric] : []);
   const isTime = p.x_axis && p.x_axis === p.adhoc_filters?.find((f: AdhocFilter) => f.operator === "TEMPORAL_RANGE")?.subject;
   const columns =
@@ -268,6 +301,33 @@ export function queryContextOf(spec: ChartSpec): Record<string, unknown> {
         orderby: metrics.length ? [[metrics[0], false]] : [],
         row_limit: p.row_limit ?? 1000,
         time_range: p.time_range,
+      },
+    ],
+    form_data: { ...p, viz_type: spec.viz_type },
+    result_format: "json",
+    result_type: "full",
+  };
+}
+
+/** A heatmap's query, as Superset's heatmap_v2 builds it: both axes as columns, sorted per axis, ranked for the shading. Lenspack writes only a breakdown's, so neither axis is time. */
+function heatmapContext(spec: ChartSpec): Record<string, unknown> {
+  const p = spec.params as Record<string, any>;
+  const columns = [p.x_axis, ...[p.groupby].flat()];
+  const label = typeof p.metric === "string" ? p.metric : p.metric?.label;
+  const order = (sort: string | undefined, col: unknown): [unknown, boolean][] => (sort ? [[sort.includes("value") ? p.metric : col, sort.includes("asc")]] : []);
+  return {
+    datasource: { id: spec.datasetId, type: "table" },
+    force: false,
+    queries: [
+      {
+        filters: (p.adhoc_filters ?? []).filter((f: AdhocFilter) => f.expressionType === "SIMPLE").map((f: AdhocFilter) => ({ col: f.subject, op: f.operator, val: f.comparator })),
+        extras: { where: "", having: "" },
+        columns,
+        metrics: [p.metric],
+        orderby: [...order(p.sort_x_axis, columns[0]), ...order(p.sort_y_axis, columns[1])],
+        row_limit: p.row_limit ?? 10_000,
+        time_range: p.time_range,
+        post_processing: [{ operation: "rank", options: { metric: label, group_by: p.normalize_across === "x" ? p.x_axis : p.normalize_across === "y" ? columns[1] : undefined } }],
       },
     ],
     form_data: { ...p, viz_type: spec.viz_type },
@@ -377,13 +437,35 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       if (!groups.length) return { widget: { title, kind: "table", pageSize: 10, query: { kind: "value", measure: measure!, ...extra, ...common } } as Widget };
       return { widget: { title, kind: "table", pageSize: 10, query: { kind: "breakdown", dimension: groups[0], ...(groups[1] ? { by: groups[1] } : {}), measure: measure!, limit: Math.max(2, Math.min(500, p.row_limit ?? 12)), sort: p.order_desc === false ? "asc" : "desc", ...extra, ...common } } as Widget };
     }
+    case "heatmap_v2": {
+      const m = one(p.metric);
+      if (!m) return { widget: null, reason: "its metric is not a saved metric of the dataset" };
+      const rowsCol = [p.groupby].flat().filter((g: unknown) => g != null && g !== "");
+      if (rowsCol.length !== 1) return { widget: null, reason: "its rows are not one column" };
+      const by = dimKey(rowsCol[0]);
+      if (!by) return { widget: null, reason: `its rows "${rowsCol[0]}" are not a pack dimension` };
+      // Lenspack shades every cell on one scale, by value, with rows A to Z.
+      if ((p.normalize_across ?? "heatmap") !== "heatmap") return { widget: null, reason: `it shades each ${p.normalize_across === "x" ? "column" : "row"} on its own scale` };
+      if (p.normalized) return { widget: null, reason: "it shades cells by rank, not value" };
+      if (p.sort_y_axis && p.sort_y_axis !== "alpha_asc") return { widget: null, reason: "its rows are not in A to Z order" };
+      const options = { legend: p.show_legend !== false, colorScheme: "sequential" as const };
+      // A time axis Superset cannot keep in order (see widgetToChart), so lenspack would not draw what Superset does.
+      if (p.x_axis === ds.time) return { widget: null, reason: "its columns are time, which Superset's heatmap cannot keep in order" };
+      const d = dimKey(p.x_axis);
+      if (!d) return { widget: null, reason: `its columns "${p.x_axis}" are not a pack dimension` };
+      if (d === by) return { widget: null, reason: "its rows and columns are the same column" };
+      const sortX = ({ alpha_asc: ["group", "asc"], alpha_desc: ["group", "desc"] } as Record<string, [string, string]>)[p.sort_x_axis ?? ""];
+      if (!sortX) return { widget: null, reason: p.sort_x_axis ? "its columns are sorted by the metric, cell by cell" : "its columns have no order" };
+      const limit = Math.max(2, Math.min(500, Math.ceil((p.row_limit ?? 10_000) / 50)));
+      return { widget: { title, kind: "chart", chart: "heatmap", options, query: { kind: "breakdown", dimension: d, by, measure: m, limit, sort: sortX[1], sortBy: sortX[0], ...common } } as Widget };
+    }
     default:
       return { widget: null, reason: `lenspack has no ${chart.viz_type} chart` };
   }
 }
 
 // Fields a person may change in Superset that our own query would not survive.
-const MEANINGFUL = ["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode"];
+const MEANINGFUL = ["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode", "sort_x_axis", "sort_y_axis", "normalize_across", "normalized"];
 function sameForm(a: Record<string, unknown>, b: Record<string, unknown>) {
   return MEANINGFUL.every((k) => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
 }
