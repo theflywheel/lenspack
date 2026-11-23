@@ -18,7 +18,7 @@ import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
 export const CLOSING_PROMPT =
-  "You have used all the steps for this turn, so no more tool calls. In one or two plain sentences, in the language the user wrote in, say what you changed on the board and what is still not done.";
+  "You have used all the steps for this turn, so no more tool calls. In one or two plain sentences, in the language the user wrote in, say what is now different on the board compared with the start of the turn (from the two boards below, not from the last tool result) and what is still not done.";
 
 // The board API that @lenspack/react's host callbacks talk to, for any number
 // of packs, each bound to its own source. Nothing here knows which backend a
@@ -394,24 +394,29 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // The summary a turn ends with when the step cap stopped its tool loop before the model
     // said anything. Streamed like any reply; when it fails or says nothing, a plain line from
     // the board's versions takes its place, so no edit ends in silence.
-    const closingSummary = async (writer: UIMessageStreamWriter, role: "build" | "escalate", builder: Provider, roundEffort: string | undefined, history: ModelMessage[]) => {
-      const fallback = async () => {
-        const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion).reverse();
+    const closingSummary = async (writer: UIMessageStreamWriter, role: "build" | "escalate", builder: Provider, roundEffort: string | undefined, history: ModelMessage[], refused: string[]) => {
+      const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion).reverse();
+      const now = summarise((await h.store.get(boardId))!.config);
+      const fallback = () => {
+        const left = refused.length ? ` Not done: ${[...new Set(refused)].join("; ")}.` : "";
         return versions.length
-          ? `I ran out of steps before finishing. Changed so far: ${versions.map((v) => v.summary).join("; ")}.`
-          : "I ran out of steps before finishing, and the board is unchanged.";
+          ? `I ran out of steps before finishing. Changed so far: ${versions.map((v) => v.summary).join("; ")}.${left}`
+          : `I ran out of steps before finishing, and the board is unchanged.${left}`;
       };
+      // The summary is grounded in the board itself, start of turn against now, so it cannot
+      // mistake the last tool error for the outcome.
+      const prompt = `${CLOSING_PROMPT}\n\nBoard at the start of this turn:\n${before}\n\nBoard now${versions.length ? "" : " (unchanged)"}:\n${now}`;
       let text = "";
       try {
         const r = withMeter({ role, effort: roundEffort }, () => {
-          const call = shapeCall(builder, { system, messages: [...history, { role: "user", content: CLOSING_PROMPT }], tools: tools as ToolSet, effort: roundEffort });
+          const call = shapeCall(builder, { system, messages: [...history, { role: "user", content: prompt }], tools: tools as ToolSet, effort: roundEffort });
           return streamText({ model: builder.languageModel, ...call, toolChoice: "none", stopWhen: stepCountIs(1) });
         });
         text = (await r.text).trim();
       } catch {
         text = "";
       }
-      if (!text) text = await fallback();
+      if (!text) text = fallback();
       const id = `closing-${randomUUID()}`;
       writer.write({ type: "text-start", id });
       writer.write({ type: "text-delta", id, delta: text });
@@ -447,19 +452,22 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             const refused = refusalsFrom(steps as never);
             turn.refusals.push(...refused);
             // The provider's own safety check declined the turn: say so, rather than end it in silence.
-            const declined = !turn.answer.trim() && (await result.finishReason) === "content-filter";
-            // Stopped by the refusal guard before the model said a word: say what was refused, so no turn is silent.
-            if (!turn.answer.trim() && (refused.length || declined)) {
-              const id = `refused-${round}`;
-              turn.answer = declined ? `${builder.name} declined to answer this request.` : `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
-              writer.write({ type: "text-start", id });
-              writer.write({ type: "text-delta", id, delta: turn.answer });
-              writer.write({ type: "text-end", id });
-            }
-            // Out of steps mid-edit (the cap stopped a tool loop): the board may have changed, so the
-            // turn must still say what it did. One more call, tools off, asks for that summary.
-            if (!turn.answer.trim() && (await result.finishReason) === "tool-calls") {
-              turn.answer = (await closingSummary(writer, round === 1 ? "build" : "escalate", builder, roundEffort, [...messages, ...steps.flatMap((s) => s.response.messages)])).slice(0, 2000);
+            const finish = await result.finishReason;
+            if (!turn.answer.trim()) {
+              if (finish === "tool-calls") {
+                // A tool loop stopped before the model said a word (the step cap, or the guard on
+                // repeated refusals). The board may have changed on the way, so the reply describes
+                // the board as it now is against the start of the turn, never just the last refusal.
+                turn.answer = (await closingSummary(writer, round === 1 ? "build" : "escalate", builder, roundEffort, [...messages, ...steps.flatMap((s) => s.response.messages)], refused)).slice(0, 2000);
+              } else if (finish === "content-filter" || refused.length) {
+                // The provider's own safety check declined the turn, or the model stopped on refusals
+                // without editing: say so, rather than end it in silence.
+                const id = `refused-${round}`;
+                turn.answer = finish === "content-filter" ? `${builder.name} declined to answer this request.` : `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
+                writer.write({ type: "text-start", id });
+                writer.write({ type: "text-delta", id, delta: turn.answer });
+                writer.write({ type: "text-end", id });
+              }
             }
             if (!reviewer) break;
             const current = (await h.store.get(boardId))!;
