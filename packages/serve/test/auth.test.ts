@@ -33,6 +33,7 @@ describe("serve with sign-in", () => {
     alice_b: { user: "alice", edit: true, tenant: "b" },
     bob_a: { user: "bob", edit: true, tenant: "a" },
     viewer: { user: "viewer" },
+    reader: { user: "reader", readOnly: "You can view this board but not edit it." },
     scoped: { user: "scoped" }, // scope filled in once a province is known
     village: { user: "village", scope: [{ dimension: "village", op: "eq", value: "nowhere" }] },
     elsewhere: { user: "elsewhere", packs: ["another"] },
@@ -75,6 +76,16 @@ describe("serve with sign-in", () => {
     const denied = await call("viewer", "/campaign/overview/ops", { method: "POST", body: JSON.stringify({ ops: [{ op: "set_title", title: "Mine" }] }) });
     expect(denied.status).toBe(403);
     expect(events.at(-1)).toMatchObject({ user: "viewer", pack: "campaign", board: "overview", outcome: "denied" });
+  });
+
+  it("lets a read-only caller talk to the chat, but not change the board by any other route", async () => {
+    // No model is configured here, so the chat answers 503: what matters is that it is not the 403 a viewer gets.
+    const chat = { method: "POST", body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "how many?" }] }] }) };
+    expect((await call("viewer", "/campaign/overview/chat", chat)).status).toBe(403);
+    expect((await call("reader", "/campaign/overview/chat", chat)).status).toBe(503);
+    expect((await call("reader", "/campaign/overview/data")).status).toBe(200);
+    const ops = await call("reader", "/campaign/overview/ops", { method: "POST", body: JSON.stringify({ ops: [{ op: "set_title", title: "Mine" }] }) });
+    expect(ops.status).toBe(403);
   });
 
   it("records a maintainer's change to the pack's board, and a refused one, by user", async () => {

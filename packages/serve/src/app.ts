@@ -319,7 +319,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const run = { pack: h.pack, connector: h.connector, ctx };
       // Everything but reading changes a board: those need the edit right.
       const writes = req.method !== "GET" && req.method !== "HEAD";
-      if (writes && !who.edit && !who.maintain) {
+      // A read-only caller may still talk to the chat: its edit tools refuse with who.readOnly.
+      const readOnlyChat = !!who.readOnly && req.method === "POST" && action === "chat";
+      if (writes && !who.edit && !who.maintain && !readOnlyChat) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
         return json(res, 403, { error: "you may view these boards but not change them" });
       }
@@ -367,7 +369,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         audit({ user: who.user, pack: packName, board: copy.id, action: "copy", outcome: "ok", detail: `from ${boardId}` });
         return json(res, 200, { id: copy.id, version: copy.version });
       }
-      if (writes && !writable(board, who)) {
+      if (writes && !writable(board, who) && !readOnlyChat) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? ""}`.trim(), outcome: "denied", detail: board.owner ? "owner" : "pack board" });
         return json(res, 403, { error: board.owner ? `This board is ${board.owner}'s: save a copy to change it` : "This is the pack's own board: save a copy to change it" });
       }
@@ -438,7 +440,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId, who.user);
+          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId, who.user, writable(board, who) ? undefined : who.readOnly);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -446,7 +448,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
-  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string) {
+  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string) {
     const fallback = opts.chatDefault?.();
     const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
     if (!builderModel) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
@@ -481,7 +483,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const calls: CallRecord[] = [];
     const queries = emptyQueryMeter();
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;

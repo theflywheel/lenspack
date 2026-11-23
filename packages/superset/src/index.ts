@@ -4,3 +4,6 @@ export * from "./query";
 export * from "./connector";
 export * from "./dashboard";
 export * from "./store";
+export * from "./identity";
+export * from "./audit";
+export * from "./bootstrap";

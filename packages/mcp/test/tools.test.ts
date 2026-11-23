@@ -100,6 +100,21 @@ describe("board tools", () => {
     expect(fine.didYouMean).toBeUndefined();
   });
 
+  it("refuses every edit with the given message on a read-only board, and still answers questions", async () => {
+    const store = memoryStore();
+    await store.create({ id: "ro", pack, title: "Read only" });
+    const message = "You can view this dashboard but not edit it.";
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "ro", ctx: { tenant: "t1" }, readOnly: message }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown> = {}) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    const before = (await store.get("ro"))!.version;
+    expect(await go("add_widget", { id: "w", kind: "kpi", title: "Things", query_kind: "value", measure: "things" })).toEqual({ applied: false, error: message, readOnly: true });
+    expect(await go("rename_board", { title: "Mine" })).toMatchObject({ applied: false, error: message });
+    expect(await go("restore_version", { to: "baseline" })).toMatchObject({ applied: false, error: message });
+    expect((await store.get("ro"))!.version).toBe(before);
+    // Reading still works.
+    expect(await go("query", { query_kind: "value", measure: "things" })).not.toHaveProperty("readOnly");
+  });
+
   it("patches a widget: only the fields given change", async () => {
     const store = memoryStore();
     await store.create({ id: "u", pack, title: "Patch" });

@@ -16,7 +16,10 @@ import { DEFAULT_SPEECH_MODEL, addUsageSink, buildProvider, createApp, effortFor
 import YAML from "yaml";
 
 import { type Overlay, fetchDatasets, packFromDatasets, supersetBoards, supersetClient, supersetConnector } from "../src/index";
-import { readJson, settingsStore, settingsToken } from "../src/settings";
+import { rotatingAudit } from "../src/audit";
+import { identityKey, serviceAccount } from "../src/bootstrap";
+import { type Identity, editPolicyFrom, identityOf, supersetAccess } from "../src/identity";
+import { readJson, settingsStore } from "../src/settings";
 
 type Config = {
   superset: {
@@ -26,10 +29,20 @@ type Config = {
     publicUrl?: string;
     /** Superset's port as browsers see it, when publicUrl is not set (same host, another port). */
     publicPort?: number;
-    username: string;
+    /** Lenspack's own Superset account (default "lenspack"), made on first start from a one-time admin sign-in. */
+    username?: string;
+    /** An account you manage instead: its password's variable (default LENSPACK_SUPERSET_PASSWORD), or the password. */
     passwordEnv?: string;
     password?: string;
   };
+  /**
+   * Who may change dashboards through the chat (env LENSPACK_EDIT_POLICY wins): "superset" (default), whoever
+   * Superset lets edit that dashboard (owner with can_write on Dashboard, or admin); "signed-in", anyone signed in.
+   * Everyone who can view a dashboard may ask about it.
+   */
+  editPolicy?: "superset" | "signed-in";
+  /** The audit log in the state directory (audit.jsonl, monthly files). false turns it off. */
+  audit?: false | { retentionDays?: number };
   /** Superset datasets by id, or by table name (schema.table or table). */
   datasets: (number | string)[];
   dashboards?: number[];
@@ -65,9 +78,35 @@ const here = dirname(fileURLToPath(import.meta.url));
 const web = join(here, "..", "web");
 const log = (s: string) => console.error(`lenspack-superset: ${s}`);
 
-const password = config.superset.password ?? process.env[config.superset.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"];
-if (!password) throw new Error("No Superset password: set superset.passwordEnv");
-const client = supersetClient({ url: config.superset.url, username: config.superset.username, password });
+const statePath = resolve(dir, config.state ?? "state/superset-boards.json");
+const stateDir = dirname(statePath);
+mkdirSync(stateDir, { recursive: true });
+
+// Lenspack's Superset account: given (LENSPACK_SUPERSET_PASSWORD), saved from an earlier start, or made
+// now from a one-time admin sign-in. Superset may still be starting, so this is retried too.
+async function retried<T>(what: string, f: () => Promise<T>): Promise<T> {
+  const waits = [2000, 5000, 10_000, 20_000];
+  for (let i = 0; ; i++) {
+    try {
+      return await f();
+    } catch (e) {
+      if (i >= waits.length) throw e;
+      log(`${what} failed (${e instanceof Error ? e.message : String(e)}); trying again in ${waits[i]! / 1000} s`);
+      await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
+}
+const account = await retried("signing in to Superset", () =>
+  serviceAccount({
+    url: config.superset.url,
+    username: config.superset.username ?? "lenspack",
+    stateDir,
+    password: config.superset.password ?? process.env[config.superset.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"] ?? undefined,
+    admin: { username: process.env.SUPERSET_ADMIN_USER, password: process.env.SUPERSET_ADMIN_PASSWORD },
+    log,
+  }),
+);
+const client = supersetClient({ url: config.superset.url, username: account.username, password: account.password });
 
 // Superset can answer partially under load (a busy worker, a restart). Each dataset is retried inside
 // fetchDatasets; the whole build is retried here too before giving up, so a transient answer doesn't
@@ -89,15 +128,29 @@ const { datasets, pack, packYaml, binding } = await loadPack();
 log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
 const connector = supersetConnector(client, binding);
 
-const statePath = resolve(dir, config.state ?? "state/superset-boards.json");
-mkdirSync(dirname(statePath), { recursive: true });
 const dashboards: Record<string, number> = Object.fromEntries((config.dashboards ?? []).map((d) => [`superset-${d}`, d]));
 const store = supersetBoards({ inner: memoryStore(), client, pack, binding, dashboards, stateFile: statePath, log });
 await store.seed();
 
 // Settings an admin changes on a running server (Superset's AI assistant page), kept beside the board state.
-const settings = settingsStore(dirname(statePath));
-const token = settingsToken();
+const settings = settingsStore(stateDir);
+
+// Who is asking: the identity Superset's /lenspack/ route signs for each request. The key comes from
+// Superset (derived there from its SECRET_KEY); without it nobody is signed in.
+let idKey: string | null = null;
+try {
+  idKey = await retried("fetching the identity key", () => identityKey(client));
+} catch (e) {
+  log(`no identity key (${e instanceof Error ? e.message : String(e)}): every request will be refused until Lenspack restarts with lenspack_superset.py loaded in Superset`);
+}
+const editPolicy = editPolicyFrom(process.env.LENSPACK_EDIT_POLICY ?? config.editPolicy);
+const whoIs = (req: IncomingMessage): Identity | null => identityOf(req, () => idKey);
+const auditLog =
+  config.audit === false
+    ? null
+    : rotatingAudit(stateDir, { retentionDays: Number(process.env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
+const audit = (e: { user: string; action: string; outcome?: "ok" | "refused" | "denied"; detail?: string }) => auditLog?.audit({ at: new Date().toISOString(), outcome: "ok", ...e });
+log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
 
 type SpeechSettings = { model?: string; holdMs?: number };
 const defaultSpeechModel = config.speech?.model ?? DEFAULT_SPEECH_MODEL;
@@ -118,7 +171,7 @@ const speechView = () => ({
   holdMs: holdMs(),
   defaultHoldMs,
   holdMsRange: HOLD_MS,
-  writable: token.writable,
+  writable: !!idKey,
 });
 
 // Languages: the chat menu's choices and default (auto: no speech hint, reply in the language used),
@@ -127,7 +180,7 @@ const LANGUAGES = ["auto", "en", "fr", "hi"] as const;
 type LanguageSettings = { default?: string; titles?: "board" | "speaker"; board?: string };
 const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
 const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...settings.get<LanguageSettings>("language") });
-const languageView = () => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: settings.get("language") ? "settings" : "default", writable: token.writable });
+const languageView = () => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: settings.get("language") ? "settings" : "default", writable: !!idKey });
 
 const ledger = usageLedger();
 addUsageSink(ledger);
@@ -135,7 +188,7 @@ const providers = providersFromEnv().map(buildProvider);
 void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
 const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
 type ChatSetting = { model?: string; effort?: string };
-const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat"), speech, language: () => ({ titles: language().titles, board: language().board }) });
+const api = createApp([{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }], { access: supersetAccess(() => idKey, editPolicy), audit: auditLog?.audit, providers, roles, ledger, budget: config.budget, log, chatDefault: () => settings.get<ChatSetting>("chat"), speech, language: () => ({ titles: language().titles, board: language().board }) });
 /** The chat section of the settings page: what runs when the client asks for no model. */
 function chatSettings() {
   const saved = settings.get<ChatSetting>("chat");
@@ -147,7 +200,7 @@ function chatSettings() {
     effort: effort ?? null,
     defaultModel: fallback?.name ?? null,
     source: saved?.model && current?.name === saved.model ? "settings" : "default",
-    writable: token.writable,
+    writable: !!idKey,
     options: providers.map(publicView),
   };
 }
@@ -205,14 +258,23 @@ createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://x");
   try {
     if (url.pathname.startsWith("/api/")) return await api(req, res);
+    // The scripts are public (Superset only includes them for signed-in users); everything else needs Superset's signature.
+    const asset = /^\/(chat\.js|overlay\.js|chat\.css)$/.exec(url.pathname);
+    if (asset) return send(res, 200, readFileSync(join(web, asset[1]!), "utf8"), TYPES[asset[1]!.slice(asset[1]!.lastIndexOf("."))]);
+    if (url.pathname === "/healthz") return send(res, 200, JSON.stringify({ ok: true, identity: !!idKey }));
+    const who = whoIs(req);
+    if (!who) return send(res, 401, JSON.stringify({ error: "sign in to Superset first" }));
+    const adminOnly = () => (who.a ? null : send(res, 403, JSON.stringify({ error: "only Superset admins can do this" })));
     const supersetPort = config.superset.publicPort ?? Number(new URL(config.superset.url).port);
     const panel = config.overlay?.panel === "dock" ? "dock" : "float";
-    const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? null, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
+    // Where browsers reach Superset: the config's publicUrl, else what Superset's route says it was reached as.
+    const fwd = (h: string) => String(req.headers[h] ?? "").split(",")[0]!.trim();
+    const derivedUrl = fwd("x-forwarded-host") ? `${fwd("x-forwarded-proto") || "http"}://${fwd("x-forwarded-host")}` : null;
+    const vars = { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset.publicUrl?.replace(/\/+$/, "") ?? derivedUrl, base, examples: (config.overlay?.examples ?? []).map((e: any) => e.question).filter(Boolean) };
     if (url.pathname === "/_superset/info") return send(res, 200, JSON.stringify({ pack: vars.pack, examples: vars.examples, panel, speech: speechKey.apiKey ? { enabled: true, maxSeconds: speech.maxSeconds, holdMs: holdMs() } : { enabled: false }, language: { default: language().default, options: LANGUAGES } }));
     if (url.pathname === "/_superset/settings/speech/models") return send(res, 200, JSON.stringify((await speechModels({ baseUrl: speech.baseUrl })).models));
     if (req.method === "PUT" && (url.pathname === "/_superset/settings/speech" || url.pathname === "/_superset/settings/language")) {
-      const denied = token.check(req);
-      if (denied) return send(res, 403, JSON.stringify({ error: denied }));
+      if (adminOnly()) return;
       let body: Record<string, unknown>;
       try {
         body = await readJson(req);
@@ -236,6 +298,7 @@ createServer(async (req, res) => {
         }
         settings.set("speech", Object.keys(next).length ? next : undefined);
         log(`speech: model ${speechModel()}, hold ${holdMs()} ms`);
+        audit({ user: who.u, action: "settings speech", detail: JSON.stringify(next) });
         return send(res, 200, JSON.stringify(speechView()));
       }
       // Language: any of default, titles, board; null resets the field.
@@ -249,11 +312,13 @@ createServer(async (req, res) => {
       }
       settings.set("language", Object.keys(next).length ? next : undefined);
       log(`language: ${JSON.stringify(language())}`);
+      audit({ user: who.u, action: "settings language", detail: JSON.stringify(next) });
       return send(res, 200, JSON.stringify(languageView()));
     }
     // What a settings page (Superset's Settings → Manage → AI assistant) shows. No secrets: which
     // variable the LLM key came from, never the key.
     if (url.pathname === "/_superset/settings") {
+      if (adminOnly()) return;
       const llmFrom = process.env.LENSPACK_LLM_KEY_SOURCE || (process.env.LENSPACK_LLM_PROVIDERS ? "LENSPACK_LLM_PROVIDERS" : process.env.LENSPACK_LLM_API_KEY ? "LENSPACK_LLM_API_KEY" : process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null);
       return send(res, 200, JSON.stringify({
         pack: pack.pack,
@@ -263,7 +328,9 @@ createServer(async (req, res) => {
         providers: providers.map(publicView),
         llmFrom,
         budget: config.budget ?? null,
-        superset: { url: config.superset.url, username: config.superset.username },
+        superset: { url: config.superset.url, username: account.username, account: account.source },
+        editPolicy,
+        audit: auditLog ? { file: auditLog.file, retentionDays: auditLog.retentionDays, months: auditLog.months() } : null,
         dashboards: Object.values(dashboards),
         publicPath: base,
         panel,
@@ -272,13 +339,24 @@ createServer(async (req, res) => {
         language: languageView(),
       }));
     }
+    // The audit log, newest first: ?month=YYYY-MM (default the current month), ?limit=N.
+    if (url.pathname === "/_superset/audit") {
+      if (adminOnly()) return;
+      if (!auditLog) return send(res, 200, JSON.stringify({ enabled: false, events: [] }));
+      try {
+        const events = auditLog.read({ month: url.searchParams.get("month") ?? undefined, limit: Number(url.searchParams.get("limit")) || 200 });
+        return send(res, 200, JSON.stringify({ enabled: true, retentionDays: auditLog.retentionDays, months: auditLog.months(), events }));
+      } catch (e) {
+        return send(res, 400, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+      }
+    }
     if (url.pathname === "/_superset/settings/chat" && req.method === "PUT") {
-      const denied = token.check(req);
-      if (denied) return send(res, 403, JSON.stringify({ error: denied }));
+      if (adminOnly()) return;
       const body = await readJson(req);
       if (body.model === null) {
         settings.set("chat", undefined);
         log("settings: chat model reset to the default");
+        audit({ user: who.u, action: "settings chat", detail: "reset" });
         return send(res, 200, JSON.stringify(chatSettings()));
       }
       const p = providers.find((x) => x.name === body.model);
@@ -286,6 +364,7 @@ createServer(async (req, res) => {
       const effort = body.effort == null || body.effort === "" ? undefined : String(body.effort);
       if (effort && !p.efforts?.levels.includes(effort)) return send(res, 400, JSON.stringify({ error: p.efforts ? `effort "${effort}" is not one ${p.name} takes: ${p.efforts.levels.join(", ")}` : `${p.name} has no effort setting` }));
       settings.set("chat", { model: p.name, ...(effort ? { effort } : {}) });
+      audit({ user: who.u, action: "settings chat", detail: `${p.name}${effort ? ` (${effort})` : ""}` });
       log(`settings: chat model ${p.name}${effort ? ` (${effort})` : ""}`);
       return send(res, 200, JSON.stringify(chatSettings()));
     }
@@ -297,8 +376,6 @@ createServer(async (req, res) => {
     const embed = /^\/superset\/(\d+)\/?$/.exec(url.pathname);
     if (embed) return send(res, 200, page("embed.html", { ...vars, dashboard: Number(embed[1]) }), TYPES[".html"]);
     if (url.pathname === "/") return send(res, 200, page("index.html", vars), TYPES[".html"]);
-    const asset = /^\/(chat\.js|overlay\.js|chat\.css)$/.exec(url.pathname);
-    if (asset) return send(res, 200, readFileSync(join(web, asset[1]!), "utf8"), TYPES[asset[1]!.slice(asset[1]!.lastIndexOf("."))]);
     return send(res, 404, JSON.stringify({ error: "not found" }));
   } catch (e) {
     log(`${req.method} ${url.pathname}: ${e instanceof Error ? e.message : String(e)}`);

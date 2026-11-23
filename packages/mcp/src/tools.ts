@@ -42,6 +42,11 @@ export type BoardToolsOptions = {
   runSql?: boolean | "role-scoped";
   proposals?: ProposalStore;
   timeoutMs?: number;
+  /**
+   * The caller may read this board but not change it. Every edit tool then answers with this
+   * message instead of changing the board, so the model can say why (reading tools still work).
+   */
+  readOnly?: string;
 };
 
 // Lenient scalars: a null, a numeric string or a "true" from a weaker model
@@ -262,6 +267,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // passes a function so it reads the board inside the queue.
   let queue: Promise<unknown> = Promise.resolve();
   const apply = (edit: BoardOp[] | (() => Promise<BoardOp[] | ReturnType<typeof fail> | { applied: true; [k: string]: unknown }>)) => {
+    if (opts.readOnly) return Promise.resolve({ applied: false as const, error: opts.readOnly, readOnly: true as const });
     const work = async () => {
       const ops = Array.isArray(edit) ? edit : await edit();
       if (!Array.isArray(ops)) return ops;

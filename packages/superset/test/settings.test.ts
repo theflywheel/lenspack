@@ -1,13 +1,10 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
-import type { IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { settingsStore, settingsToken } from "../src/settings";
-
-const req = (token?: string) => ({ headers: token === undefined ? {} : { "x-lenspack-settings-token": token } }) as unknown as IncomingMessage;
+import { settingsStore } from "../src/settings";
 
 describe("settingsStore", () => {
   it("keeps sections in one file, survives a reload, and removes a section on undefined", () => {
@@ -27,14 +24,3 @@ describe("settingsStore", () => {
   });
 });
 
-describe("settingsToken", () => {
-  it("is read-only without a token, and needs the exact token with one", () => {
-    expect(settingsToken("").writable).toBe(false);
-    expect(settingsToken("").check(req("anything"))).toMatch(/read-only/);
-    const t = settingsToken("s3cret");
-    expect(t.writable).toBe(true);
-    expect(t.check(req("s3cret"))).toBeNull();
-    expect(t.check(req("s3cre"))).toBe("wrong settings token");
-    expect(t.check(req())).toBe("wrong settings token");
-  });
-});
