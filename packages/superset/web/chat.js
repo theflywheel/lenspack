@@ -490,6 +490,8 @@
           prefsNow = { ...prefsNow, lang: code, langPage: page };
           savePrefs(prefsNow);
           relabel();
+          // The overlay around the panel (its button and menu) follows the same pick.
+          window.dispatchEvent(new CustomEvent("lenspack-lang", { detail: { lang: uiLang() } }));
         };
         l.append(r, document.createTextNode(code === "auto" ? t("auto") : name));
         menu.append(l);
@@ -571,12 +573,20 @@
       log.append(el("div", `lpc-note ${cls || ""}`, text));
       scroll();
     }
+    // The suggested questions in the panel's language: `examples` is a list, or lists by language
+    // ({en: [...], fr: [...]}), English standing in for a language the deployment didn't write.
+    function examplesNow() {
+      const ex = opts.examples;
+      if (Array.isArray(ex)) return ex;
+      if (!ex || typeof ex !== "object") return [];
+      return ex[uiLang()] || ex.en || Object.values(ex)[0] || [];
+    }
     function empty() {
       if (history.length) return;
       const e = el("div", "lpc-empty");
       e.append(el("p", "", t("intro")));
       const chips = el("div", "lpc-chips");
-      for (const q of opts.examples || []) {
+      for (const q of examplesNow()) {
         const c = el("button", "lpc-chip", q);
         c.onclick = () => send(q);
         chips.append(c);
@@ -841,8 +851,11 @@
       if (!opts.title) ttlS.textContent = t("sub");
       input.placeholder = t("placeholder");
       go.textContent = t("send");
-      const intro = log.querySelector(".lpc-empty p");
-      if (intro) intro.textContent = t("intro");
+      const shown = log.querySelector(".lpc-empty");
+      if (shown) {
+        shown.remove();
+        empty();
+      }
       micTitle();
       newBtn.title = t("newChatHelp");
       newBtn.setAttribute("aria-label", t("newChat"));
