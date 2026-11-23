@@ -238,23 +238,24 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
     return { viz_type: "pie", datasetId: ds.id, params: { ...common, groupby: [colFor(q.dimension)], metric: metrics[0], row_limit: q.limit, sort_by_metric: true, show_legend: widget.options?.legend !== false, number_format: fmt === ",d" ? "SMART_NUMBER" : fmt, show_labels: true, label_type: "key_percent" } };
   }
   if (chart === "heatmap") {
-    if ((q.kind !== "breakdown" && q.kind !== "series") || !q.by) throw new ResolveError("NOT_SUPPORTED", "A heatmap in Superset shades one metric over two columns: a breakdown or series split by a second dimension");
-    const temporal = q.kind === "series";
-    if (temporal && !ds.time) throw new ResolveError("NO_TIME", `"${entity}" has no time column in Superset`, q.measure);
-    const sortX = temporal ? "alpha_asc" : HEAT_SORT_X[q.sortBy ?? "value"]?.[q.sort === "asc" ? 0 : 1];
+    // Superset's heatmap sorts a time axis by the raw column while grouping by its buckets, which
+    // the database refuses, and unsorted its days come in any order: a series heatmap cannot be drawn.
+    if (q.kind === "series")
+      throw new ResolveError("NOT_SUPPORTED", "Superset's heatmap cannot keep a time axis in order once it is bucketed by day, week or month. Make it a breakdown instead: columns a day or date label dimension, if the pack has one, split by the rows");
+    if (q.kind !== "breakdown" || !q.by) throw new ResolveError("NOT_SUPPORTED", "A heatmap in Superset shades one metric over two columns: a breakdown split by a second dimension");
+    const sortX = HEAT_SORT_X[q.sortBy ?? "value"]?.[q.sort === "asc" ? 0 : 1];
     if (!sortX) throw new ResolveError("NOT_SUPPORTED", "A heatmap in Superset reads its columns in their own order or by the metric");
     return {
       viz_type: "heatmap_v2",
       datasetId: ds.id,
       params: {
         ...common,
-        x_axis: temporal ? ds.time : colFor(q.dimension),
-        ...(temporal ? { time_grain_sqla: GRAIN[q.grain] } : {}),
+        x_axis: colFor(q.dimension),
         // Superset's heatmap takes one row column, saved as a string rather than a list.
         groupby: colFor(q.by),
         metric: metrics[0],
         // With a split, a breakdown's limit is on columns; Superset's is on cells.
-        row_limit: temporal ? 10_000 : q.limit * 50,
+        row_limit: q.limit * 50,
         sort_x_axis: sortX,
         sort_y_axis: "alpha_asc",
         normalize_across: "heatmap",
@@ -308,12 +309,10 @@ export function queryContextOf(spec: ChartSpec): Record<string, unknown> {
   };
 }
 
-/** A heatmap's query, as Superset's heatmap_v2 builds it: both axes as columns, sorted per axis, ranked for the shading. */
+/** A heatmap's query, as Superset's heatmap_v2 builds it: both axes as columns, sorted per axis, ranked for the shading. Lenspack writes only a breakdown's, so neither axis is time. */
 function heatmapContext(spec: ChartSpec): Record<string, unknown> {
   const p = spec.params as Record<string, any>;
-  const temporal = p.x_axis === p.adhoc_filters?.find((f: AdhocFilter) => f.operator === "TEMPORAL_RANGE")?.subject;
-  const x = temporal ? { columnType: "BASE_AXIS", sqlExpression: p.x_axis, label: p.x_axis, expressionType: "SQL", timeGrain: p.time_grain_sqla } : p.x_axis;
-  const columns = [x, ...[p.groupby].flat()];
+  const columns = [p.x_axis, ...[p.groupby].flat()];
   const label = typeof p.metric === "string" ? p.metric : p.metric?.label;
   const order = (sort: string | undefined, col: unknown): [unknown, boolean][] => (sort ? [[sort.includes("value") ? p.metric : col, sort.includes("asc")]] : []);
   return {
@@ -322,10 +321,10 @@ function heatmapContext(spec: ChartSpec): Record<string, unknown> {
     queries: [
       {
         filters: (p.adhoc_filters ?? []).filter((f: AdhocFilter) => f.expressionType === "SIMPLE").map((f: AdhocFilter) => ({ col: f.subject, op: f.operator, val: f.comparator })),
-        extras: { where: "", having: "", ...(p.time_grain_sqla ? { time_grain_sqla: p.time_grain_sqla } : {}) },
+        extras: { where: "", having: "" },
         columns,
         metrics: [p.metric],
-        orderby: [...order(p.sort_x_axis, temporal ? p.x_axis : x), ...order(p.sort_y_axis, columns[1])],
+        orderby: [...order(p.sort_x_axis, columns[0]), ...order(p.sort_y_axis, columns[1])],
         row_limit: p.row_limit ?? 10_000,
         time_range: p.time_range,
         post_processing: [{ operation: "rank", options: { metric: label, group_by: p.normalize_across === "x" ? p.x_axis : p.normalize_across === "y" ? columns[1] : undefined } }],
@@ -450,13 +449,8 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       if (p.normalized) return { widget: null, reason: "it shades cells by rank, not value" };
       if (p.sort_y_axis && p.sort_y_axis !== "alpha_asc") return { widget: null, reason: "its rows are not in A to Z order" };
       const options = { legend: p.show_legend !== false, colorScheme: "sequential" as const };
-      if (p.x_axis === ds.time) {
-        const grain = GRAIN_BACK[p.time_grain_sqla];
-        if (!grain) return { widget: null, reason: "its time grain has no lenspack form" };
-        if (p.sort_x_axis && p.sort_x_axis !== "alpha_asc") return { widget: null, reason: "its days are not in time order" };
-        if ((p.row_limit ?? 10_000) < 10_000) return { widget: null, reason: `its row limit (${p.row_limit}) may cut cells` };
-        return { widget: { title, kind: "chart", chart: "heatmap", options, query: { kind: "series", measure: m, grain, by, ...common } } as Widget };
-      }
+      // A time axis Superset cannot keep in order (see widgetToChart), so lenspack would not draw what Superset does.
+      if (p.x_axis === ds.time) return { widget: null, reason: "its columns are time, which Superset's heatmap cannot keep in order" };
       const d = dimKey(p.x_axis);
       if (!d) return { widget: null, reason: `its columns "${p.x_axis}" are not a pack dimension` };
       if (d === by) return { widget: null, reason: "its rows and columns are the same column" };

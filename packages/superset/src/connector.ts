@@ -11,7 +11,7 @@ import { BUCKET, type Metric, N, columnOf, queryObjects } from "./query";
 // So a metric means one thing in both, and Superset's row-level security
 // applies to whatever the service account may see.
 
-export const SUPERSET_CAPABILITIES: Capabilities = { joins: false, exactDistinct: true, exactPercentiles: true, percentiles: false, twoStage: false, zonedBuckets: false };
+export const SUPERSET_CAPABILITIES: Capabilities = { joins: false, exactDistinct: true, exactPercentiles: true, percentiles: false, twoStage: false, zonedBuckets: false, timeHeatmap: false };
 
 type Native = { datasetId: number; queries: ReturnType<typeof queryObjects>["queries"]; metric: Metric | null };
 

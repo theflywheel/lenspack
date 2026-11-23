@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { checkOps } from "@lenspack/engine";
+
+import { SUPERSET_CAPABILITIES } from "../src/connector";
 import { chartToWidget, packFromDatasets, queryContextOf, widgetToChart, type SupersetDataset } from "../src/index";
 
 // A made-up dataset: visits to sites, by day.
@@ -32,11 +35,11 @@ describe("heatmaps in Superset", () => {
       options: { legend: true, colorScheme: "sequential" },
       query: { kind: "breakdown", dimension: "day_label", by: "site", measure: "people_seen", limit: 40, sort: "asc", sortBy: "group", filters: [{ dimension: "region", op: "eq", value: "North" }] },
     },
-    { title: "Visits per day by site", kind: "chart", chart: "heatmap", options: { legend: false, colorScheme: "sequential" }, query: { kind: "series", measure: "visits", grain: "day", by: "site", time: { last: "30d" } } },
+    { title: "Visits, site by region", kind: "chart", chart: "heatmap", options: { legend: false, colorScheme: "sequential" }, query: { kind: "breakdown", dimension: "region", by: "site", measure: "visits", limit: 12, sort: "desc", sortBy: "value", time: { last: "30d" } } },
   ] as const;
 
   for (const w of cases)
-    it(`writes a ${w.query.kind} heatmap as heatmap_v2 and reads back the identical widget, with or without lenspack's marker`, () => {
+    it(`writes “${w.title}” as heatmap_v2 and reads back the identical widget`, () => {
       const spec = widgetToChart(w as never, pack, binding)!;
       expect(spec.viz_type).toBe("heatmap_v2");
       expect(spec.params).toMatchObject({ groupby: "site", metric: w.query.measure, sort_y_axis: "alpha_asc", normalize_across: "heatmap", show_legend: w.options.legend });
@@ -44,14 +47,26 @@ describe("heatmaps in Superset", () => {
       expect(ours.widget).toEqual(w);
       const { lenspack: _l, ...plain } = spec.params as Record<string, unknown>;
       const theirs = chartToWidget({ slice_name: w.title, viz_type: spec.viz_type, params: plain, datasource_id: spec.datasetId }, pack, binding);
-      expect(theirs.widget).toEqual(w);
+      // Without the marker, a column order by the metric is Superset's cell-by-cell sort, which lenspack does not draw.
+      if (w.query.sortBy === "group") expect(theirs.widget).toEqual(w);
+      else expect(theirs.widget).toBeNull();
     });
 
-  it("puts time on the x axis at the series' grain, and a breakdown's column on it otherwise", () => {
-    const [byDay, series] = cases.map((w) => widgetToChart(w as never, pack, binding)!.params as Record<string, unknown>);
-    expect(byDay).toMatchObject({ x_axis: "day_label", sort_x_axis: "alpha_asc", row_limit: 2000 });
+  it("puts the breakdown's column on the x axis, its split on y, and the limit on cells", () => {
+    const [byDay, byValue] = cases.map((w) => widgetToChart(w as never, pack, binding)!.params as Record<string, unknown>);
+    expect(byDay).toMatchObject({ x_axis: "day_label", groupby: "site", sort_x_axis: "alpha_asc", row_limit: 2000 });
     expect(byDay!.time_grain_sqla).toBeUndefined();
-    expect(series).toMatchObject({ x_axis: "visit_date", time_grain_sqla: "P1D", sort_x_axis: "alpha_asc", row_limit: 10000 });
+    expect(byValue).toMatchObject({ x_axis: "region", sort_x_axis: "value_desc", row_limit: 600 });
+  });
+
+  it("refuses a heatmap over time, which Superset's heatmap cannot keep in order, and says what to do instead", () => {
+    const series = { title: "Visits per day by site", kind: "chart", chart: "heatmap", options: { legend: true, colorScheme: "sequential" }, query: { kind: "series", measure: "visits", grain: "day", by: "site" } };
+    expect(() => widgetToChart(series as never, pack, binding)).toThrow(/time axis in order.*breakdown/);
+    // And before any change is made, so the model hears it at once (and an eval without Superset agrees).
+    const op = { op: "add_widget", id: "h", widget: series } as never;
+    const refused = checkOps([op], pack, { capabilities: SUPERSET_CAPABILITIES });
+    expect(refused).toMatchObject({ ok: false, error: expect.stringMatching(/time axis in order/) });
+    expect(checkOps([op], pack, {})).toEqual({ ok: true });
   });
 
   it("reads a heatmap made in Superset when lenspack can draw it exactly", () => {
@@ -77,8 +92,7 @@ describe("heatmaps in Superset", () => {
     expect(why({ groupby: ["site", "region"] })).toMatch(/not one column/);
     expect(why({ x_axis: "not_a_column" })).toMatch(/not a pack dimension/);
     expect(why({ metric: { expressionType: "SQL", sqlExpression: "COUNT(*)" } })).toMatch(/saved metric/);
-    expect(why({ x_axis: "visit_date", time_grain_sqla: "P1D", row_limit: 100 })).toMatch(/row limit/);
-    expect(why({ x_axis: "visit_date", time_grain_sqla: "P1D" })).toBe("(read)");
+    expect(why({ x_axis: "visit_date", time_grain_sqla: "P1D" })).toMatch(/columns are time/);
   });
 
   it("gives reports the query Superset's heatmap builds: both axes as columns, sorted per axis, ranked", () => {
@@ -89,7 +103,7 @@ describe("heatmaps in Superset", () => {
     expect(q.metrics).toEqual(["people_seen"]);
     expect(q.orderby).toEqual([["day_label", true], ["site", true]]);
     expect(q.post_processing).toEqual([{ operation: "rank", options: { metric: "people_seen", group_by: undefined } }]);
-    const series = queryContextOf(widgetToChart(cases[1] as never, pack, binding)!) as { queries: Record<string, any>[] };
-    expect(series.queries[0]!.columns[0]).toMatchObject({ columnType: "BASE_AXIS", sqlExpression: "visit_date", timeGrain: "P1D" });
+    const byValue = (queryContextOf(widgetToChart(cases[1] as never, pack, binding)!) as { queries: Record<string, any>[] }).queries[0]!;
+    expect(byValue.orderby).toEqual([["visits", false], ["site", true]]);
   });
 });
