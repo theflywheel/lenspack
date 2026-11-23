@@ -516,7 +516,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       inputSchema: z.object({ id: z.string(), place: PLACE, width: WIDTH }),
       execute: ({ id, place, width }) => {
         const w = width as "full" | "half" | "third" | "quarter";
-        return apply([{ op: "move_widget", id, placement: { place, width: w } }, { op: "resize_widget", id, width: w }]);
+        // Resize first, so the move looks for room at the width asked for.
+        return apply([{ op: "resize_widget", id, width: w }, { op: "move_widget", id, placement: { place, width: w } }]);
       },
     }),
     defineTool({
