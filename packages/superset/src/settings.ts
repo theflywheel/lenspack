@@ -5,7 +5,6 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
-import { timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 
 export type SettingsStore = {
@@ -30,25 +29,6 @@ export function settingsStore(stateDir: string, file = "settings.json"): Setting
       const tmp = `${path}.${process.pid}.tmp`;
       writeFileSync(tmp, JSON.stringify(data, null, 2));
       renameSync(tmp, path);
-    },
-  };
-}
-
-/**
- * The guard on settings writes. Every path of this server is also reachable by
- * any signed-in Superset user through /lenspack/*; only the admin-only settings
- * page, which calls this server directly, holds the token. Without
- * LENSPACK_SETTINGS_TOKEN, settings are read-only.
- */
-export function settingsToken(token = process.env.LENSPACK_SETTINGS_TOKEN ?? "") {
-  return {
-    writable: token !== "",
-    /** null when the request may write; else why not. */
-    check(req: IncomingMessage): string | null {
-      if (!token) return "settings are read-only: LENSPACK_SETTINGS_TOKEN is not set";
-      const got = Buffer.from(String(req.headers["x-lenspack-settings-token"] ?? ""));
-      const want = Buffer.from(token);
-      return got.length === want.length && timingSafeEqual(got, want) ? null : "wrong settings token";
     },
   };
 }
