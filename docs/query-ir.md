@@ -7,7 +7,8 @@ type Query =
   | { kind: "breakdown"; dimension: string; measure: string; limit?: number; sort?: "asc"|"desc"; compare?: "previous_period"; share?: boolean; other?: boolean; time?: TimeRange; filters?: Filter[] }
   | { kind: "series";    measure: string; grain?: Grain; by?: string; time?: TimeRange; filters?: Filter[] }
   | { kind: "value";     measure: string; compare?: "previous_period"; time?: TimeRange; filters?: Filter[] }
-  | { kind: "rows";      entity: string; columns: string[]; limit?: number; orderBy?: { key: string; dir: "asc"|"desc" }; time?: TimeRange; filters?: Filter[] };
+  | { kind: "rows";      entity: string; columns: string[]; limit?: number; orderBy?: { key: string; dir: "asc"|"desc" }; time?: TimeRange; filters?: Filter[] }
+  | { kind: "points";    entity: string; color?: string; size?: string; label?: string; limit?: number; time?: TimeRange; filters?: Filter[] };
 
 type Filter    = { dimension: string; op: "eq"|"neq"|"in"|"gte"|"lte"|"between"|"contains"; value: Scalar | Scalar[] };
 type TimeRange =
@@ -23,6 +24,7 @@ type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 | `series` | a measure per time bucket | uses the root entity's `time` column; `by` splits into at most 12 series (top by total, the rest dropped, never bucketed as "other"; on SQL sources the answer's `notes` say how many) |
 | `value` | one number | `compare` needs a `time` range and returns `previous` and `delta` from one statement; the previous span is set out under Time below |
 | `rows` | records | `columns` are dimension keys on that entity; `limit` 1–500 |
+| `points` | where the entity's rows are | the entity must declare `geo`. One row per location: `{lat, lon}` plus `color` and `label` (dimensions on the entity; `color` not a time dimension) and `size` (a measure on the entity, summed per location). Rows without coordinates are left out. `limit` 1–5000 (default 5000); with a `size` the largest points are kept, and a cut list says so in `notes`. Only for connectors with the `points` capability (SQL, Superset); the search and DSS connectors refuse it. Drawn by a `map` chart or listed by a table |
 
 Relative `time` is resolved against `now` at query time, so a saved board keeps meaning "the last 30 days".
 

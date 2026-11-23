@@ -4,6 +4,7 @@ import { drilledDimension, selectLevel } from "@lenspack/core";
 
 import { svgAdapter } from "./adapters/svg";
 import type { ChartAdapter } from "./charts";
+import type { MapTiles } from "./map";
 import type { Board, BoardOp, BoardVersion, Catalogue, LayoutItem, PatchResult, WidgetData } from "./types";
 import type { BoardHost } from "./types";
 
@@ -30,6 +31,8 @@ type State = {
   currency?: string;
   /** The charting library behind chart widgets; swappable at runtime. */
   charts: ChartAdapter;
+  /** A tile server under maps; none draws the points on a plain grid. */
+  mapTiles?: MapTiles;
 };
 
 const Ctx = React.createContext<State | null>(null);
@@ -53,6 +56,7 @@ export function BoardProvider({
   editable: editableProp = true,
   currency,
   charts = svgAdapter,
+  mapTiles,
   initialSelections = {},
   onSelectionsChange,
   onEdit,
@@ -65,6 +69,8 @@ export function BoardProvider({
   currency?: string;
   /** Chart adapter: svg (no dependencies) by default; recharts, echarts or shadcn from `@lenspack/react/adapters/*`. */
   charts?: ChartAdapter;
+  /** XYZ raster tiles under maps, with their attribution. None by default: the points are drawn on a plain grid, and no tile server is called. */
+  mapTiles?: MapTiles;
   /** Selections are session state, not configuration; the host may keep them in the URL. */
   initialSelections?: Record<string, string>;
   onSelectionsChange?(selections: Record<string, string>): void;
@@ -166,8 +172,8 @@ export function BoardProvider({
   }, [onSelectionsChange]);
 
   const value = React.useMemo<State>(
-    () => ({ board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, previewing, preview: setPreviewing, currency, charts }),
-    [board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, previewing, currency, charts],
+    () => ({ board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, previewing, preview: setPreviewing, currency, charts, mapTiles }),
+    [board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, previewing, currency, charts, mapTiles],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

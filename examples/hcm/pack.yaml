@@ -23,6 +23,7 @@ entities:
     source: address
     grain: one row per address (households, individuals and tasks all point at one)
     tenant: tenantid
+    geo: { lat: latitude, lon: longitude }
   members:
     source: household_member
     grain: one row per person-in-household

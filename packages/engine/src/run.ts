@@ -1,4 +1,4 @@
-import { type BoardConfig, type BoardOp, type Query, type Widget, nearest } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type MeasuredQuery, type Query, type Widget, measured, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
@@ -31,7 +31,7 @@ export type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] 
  * results are combined per group. Returns null for anything else.
  */
 export function acrossEntities(query: Query, pack: Pack): Across | null {
-  if (query.kind === "rows") return null;
+  if (!measured(query)) return null;
   const def = pack.measures.find((m) => m.key === query.measure);
   if (!def?.derived) return null;
   const expr = expandedExpr(pack, def.key);
@@ -177,7 +177,7 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
   // Per-level measures are read at the level this query views.
   const view = { ...opts, pack: packAtLevel(opts.pack, viewedLevel(query, opts.pack)) };
   if (query.kind === "breakdown" && (query.share || query.other)) return withWhole(query, view);
-  const data = query.kind !== "rows" && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
+  const data = measured(query) && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
   return query.kind === "breakdown" ? withoutEmptyGroups(data, query.measure, view.pack) : data;
 }
 
@@ -259,7 +259,7 @@ async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: Run
 
 /** The query without its further measures, and one query per further measure. */
 export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { key: string; query: Query }[] } {
-  if (query.kind === "rows" || !query.measures?.length) return { primary: query, extras: [] };
+  if (!measured(query) || !query.measures?.length) return { primary: query, extras: [] };
   const { measures, ...primary } = query;
   // A further measure on an entity with no time (a target beside today's
   // deliveries) shows its whole value rather than refusing the window.
@@ -286,7 +286,7 @@ export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extr
 // Further measures follow the primary's groups: the primary decides which
 // groups are shown and in what order, and each other measure fills in its
 // column, from whichever entity it lives on.
-async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOptions): Promise<WidgetData> {
+async function runMeasures(query: MeasuredQuery, opts: RunOptions): Promise<WidgetData> {
   const { primary, extras } = splitMeasures(query, opts.pack);
   const [main, ...others] = await Promise.all([runOne(primary, opts), ...extras.map((e) => runOne(e.query, opts))]);
   if (main!.error) return main!;

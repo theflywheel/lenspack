@@ -184,7 +184,7 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
     }
     const spec = widgetToChart(now, pack, binding);
     if (!spec) continue;
-    const body = { slice_name: now.title, viz_type: spec.viz_type, params: JSON.stringify(spec.params), query_context: JSON.stringify(queryContextOf(spec)), datasource_id: spec.datasetId, datasource_type: "table" };
+    const body = { slice_name: now.title, viz_type: spec.viz_type, params: JSON.stringify(spec.params), query_context: queryContextOf(spec) === null ? null : JSON.stringify(queryContextOf(spec)), datasource_id: spec.datasetId, datasource_type: "table" };
     if (chartId) {
       await client.put(`/api/v1/chart/${chartId}`, body);
       log(`chart ${chartId} ← ${id}`);

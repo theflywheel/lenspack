@@ -26,6 +26,14 @@ export type Overlay = {
   labels?: Record<string, string>;
   hierarchies?: Record<string, string[]>;
   examples?: unknown[];
+  /**
+   * Each entity's coordinate columns (latitude and longitude, in degrees), by entity key, dataset
+   * id or table name; false for none. Without one, columns named latitude/lat and longitude/lon/lng
+   * are found by name, grouped by Superset or not.
+   */
+  geo?: Record<string, { lat: string; lon: string } | false>;
+  /** The basemap of maps Lenspack writes to Superset: a Mapbox style URL (Superset 5 takes no other). Light by default. */
+  mapStyle?: string;
   /** How the chat opens on Superset's pages by default: a floating window or a side panel. Each user can change it. */
   panel?: "float" | "dock";
 };
@@ -44,6 +52,10 @@ export type Binding = {
   columns: Map<string, Map<string, string>>;
   /** Entity → (column name → dimension key). */
   dimensionOf: Map<string, Map<string, string>>;
+  /** Entity → its coordinate columns, for an entity with a location. */
+  geo: Map<string, { lat: string; lon: string }>;
+  /** The Mapbox style written into maps (overlay.mapStyle). */
+  mapStyle?: string;
 };
 
 export const slug = (s: string) =>
@@ -194,9 +206,27 @@ export async function fetchDatasets(client: SupersetClient, refs: (number | stri
   return out;
 }
 
+const LAT = /^(lat|latitude)$/i;
+const LON = /^(lon|lng|long|longitude)$/i;
+const NUMERIC = /^(float|double|decimal|numeric|real|int|bigint|smallint|number|uint)/i;
+
+/** A dataset's coordinate columns: as configured (false: none), else found by name among its numeric columns. */
+export function geoOf(ds: SupersetDataset, configured: { lat: string; lon: string } | false | undefined): { lat: string; lon: string } | null {
+  const names = new Set(ds.columns.map((c) => c.column_name));
+  if (configured === false) return null;
+  if (configured) {
+    for (const c of [configured.lat, configured.lon]) if (!names.has(c)) throw new Error(`overlay.geo names "${c}", which is not a column of Superset dataset ${ds.table_name}`);
+    return { lat: configured.lat, lon: configured.lon };
+  }
+  const numeric = ds.columns.filter((c) => COLUMN.test(c.column_name) && (!c.type || NUMERIC.test(c.type)));
+  const lat = numeric.filter((c) => LAT.test(c.column_name));
+  const lon = numeric.filter((c) => LON.test(c.column_name));
+  return lat.length === 1 && lon.length === 1 ? { lat: lat[0]!.column_name, lon: lon[0]!.column_name } : null;
+}
+
 /** Datasets → a pack and the binding back to Superset names. */
 export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay = {}): { pack: Pack; packYaml: string; binding: Binding } {
-  const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map() };
+  const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map(), geo: new Map(), ...(overlay.mapStyle ? { mapStyle: overlay.mapStyle } : {}) };
   const entities: Record<string, unknown> = {};
   const dimensions: Record<string, any>[] = [];
   const measures: Record<string, unknown>[] = [];
@@ -207,7 +237,9 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     const time = ds.main_dttm_col && COLUMN.test(ds.main_dttm_col) ? ds.main_dttm_col : null;
     const countMetric = ds.metrics.find((m) => COUNT_STAR.test(m.expression))?.metric_name ?? null;
     if (entities[entity]) throw new Error(`Superset datasets ${binding.datasets.get(entity)?.table} and ${ds.table_name} both map to entity "${entity}"; give each its own name in overlay.entities`);
-    entities[entity] = { source: `ds_${ds.id}`, grain: cut(ds.description ?? `one row of ${ds.table_name}`, 200), ...(time ? { time } : {}) };
+    const geo = geoOf(ds, overlay.geo?.[entity] ?? overlay.geo?.[String(ds.id)] ?? overlay.geo?.[ds.table_name]);
+    if (geo) binding.geo.set(entity, geo);
+    entities[entity] = { source: `ds_${ds.id}`, grain: cut(ds.description ?? `one row of ${ds.table_name}`, 200), ...(time ? { time } : {}), ...(geo ? { geo } : {}) };
     binding.datasets.set(entity, { id: ds.id, table: ds.table_name, time, countMetric });
     binding.entityOf.set(ds.id, entity);
     binding.measureOf.set(entity, new Map());

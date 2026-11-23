@@ -1,4 +1,4 @@
-import type { FilterClause, Query, TimeRange, Widget } from "@lenspack/core";
+import { type FilterClause, MAX_POINTS, type Query, type TimeRange, type Widget } from "@lenspack/core";
 import { type BoundDimension, type BoundPlan, ResolveError } from "@lenspack/engine";
 import { type Pack, maybeFragmentFor } from "@lenspack/spec";
 
@@ -182,6 +182,16 @@ export function queryObjects(bound: BoundPlan, binding: Binding): { queries: Que
     case "rows":
       queries = [{ ...base(bound.time), columns: bound.columns.map(col), metrics: [], orderby: bound.orderBy ? [[col(bound.orderBy.dimension), bound.orderBy.dir === "asc"]] : [], row_limit: q.limit }];
       break;
+    case "points": {
+      // Each point's coordinates (and colour, label); with a size, grouped per point
+      // and largest first. One row past the limit says the list was cut.
+      const { lat, lon } = bound.geo!;
+      const columns = [...new Set([lat, lon, ...bound.columns.map(col)])];
+      const located: QueryFilter[] = [{ col: lat, op: "IS NOT NULL" }, { col: lon, op: "IS NOT NULL" }];
+      const b = base(bound.time);
+      queries = [{ ...b, filters: [...located, ...b.filters], columns, metrics: metric ? [metric] : [], orderby: metric ? [[metric, false]] : [], row_limit: q.limit + 1 }];
+      break;
+    }
   }
   return { queries, datasetId: ds.id, metric };
 }
@@ -195,9 +205,9 @@ const ECHARTS: Record<string, string> = { line: "echarts_timeseries_line", area:
 const HEAT_SORT_X: Record<string, [string, string] | undefined> = { group: ["alpha_asc", "alpha_desc"], value: ["value_asc", "value_desc"], measure: ["value_asc", "value_desc"] };
 const D3: Record<string, string> = { percent: ".1%", compact: ".3s", currency: "$,.2f", number: ",d", duration: ",.1f" };
 
-/** The entity a widget's query reads: the measure's, or the rows query's. */
+/** The entity a widget's query reads: the measure's, or the rows or points query's. */
 export function entityOfQuery(q: Query, pack: Pack): string | null {
-  if (q.kind === "rows") return q.entity;
+  if (q.kind === "rows" || q.kind === "points") return q.entity;
   return pack.measures.find((m) => m.key === q.measure)?.entity ?? null;
 }
 
@@ -219,6 +229,7 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
   const adhoc_filters: AdhocFilter[] = (q.filters ?? []).flatMap((f) => adhocFilters(colFor(f.dimension), f.op, f.value));
   if (ds.time) adhoc_filters.push({ expressionType: "SIMPLE", clause: "WHERE", subject: ds.time, operator: "TEMPORAL_RANGE", comparator: timeRangeOf(q.time) });
   const common = { datasource: `${ds.id}__table`, adhoc_filters, time_range: timeRangeOf(q.time), slice_name: widget.title, lenspack: { widget: { ...widget, title: undefined } } };
+  if (q.kind === "points") return pointsChart(widget, q, ds.id, entity, common, colFor, pack, binding);
   const metrics = q.kind === "rows" ? [] : [metricOf(q.measure, binding), ...(q.measures ?? []).map((m) => metricOf(m, binding))];
   const fmt = q.kind === "rows" ? undefined : D3[pack.measures.find((m) => m.key === q.measure)?.format ?? "number"];
 
@@ -279,8 +290,66 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
   return { viz_type: "big_number_total", datasetId: ds.id, params: { ...common, metric: metrics[0], y_axis_format: fmt } };
 }
 
-/** The query context Superset keeps beside a chart's form_data (reports and the chart-data-by-id API read it). */
-export function queryContextOf(spec: ChartSpec): Record<string, unknown> {
+export const MAPBOX_LIGHT = "mapbox://styles/mapbox/light-v9";
+// A point with no size: the radius Superset's own scatter map defaults to, in metres.
+const FIXED_RADIUS = 1000;
+
+/**
+ * Points as Superset's deck.gl scatter map: spatial from the entity's coordinate columns,
+ * colour by a column, size by a saved metric (Superset then groups per point, as Lenspack does).
+ * Superset reads this through its legacy explore_json path, from the form data alone. A table of
+ * points lists them instead.
+ */
+function pointsChart(
+  widget: Exclude<Widget, { kind: "text" }>,
+  q: Extract<Query, { kind: "points" }>,
+  datasetId: number,
+  entity: string,
+  common: Record<string, unknown>,
+  colFor: (key: string) => string,
+  pack: Pack,
+  binding: Binding,
+): ChartSpec {
+  const geo = binding.geo.get(entity);
+  if (!geo) throw new ResolveError("NOT_SUPPORTED", `"${entity}" has no latitude and longitude columns in Superset`, entity);
+  const size = q.size ? metricOf(q.size, binding) : null;
+  const named = [q.label, q.color].filter((k): k is string => !!k).map(colFor);
+  if (widget.kind === "table") {
+    const cols = [...new Set([geo.lat, geo.lon, ...named])];
+    if (!size) return { viz_type: "table", datasetId, params: { ...common, query_mode: "raw", all_columns: cols, order_by_cols: [], row_limit: q.limit, server_pagination: false } };
+    return { viz_type: "table", datasetId, params: { ...common, query_mode: "aggregate", groupby: cols, metrics: [size], row_limit: q.limit, order_desc: true, timeseries_limit_metric: size, server_pagination: false } };
+  }
+  if (widget.kind !== "chart" || widget.chart !== "map") throw new ResolveError("NOT_SUPPORTED", "Points are drawn as a map, or listed in a table");
+  // Superset turns a size into metres (by area or radius), times the multiplier, then clamps it to the
+  // pixel range. A count by area, a third of a km² per unit, spreads a handful to a few hundred over
+  // that range at a state's zoom; a share by its radius, 8 km for a whole. Measured on a test map.
+  const percent = q.size ? pack.measures.find((m) => m.key === q.size)?.format === "percent" : false;
+  return {
+    viz_type: "deck_scatter",
+    datasetId,
+    params: {
+      ...common,
+      spatial: { type: "latlong", latCol: geo.lat, lonCol: geo.lon },
+      row_limit: q.limit,
+      filter_nulls: true,
+      point_radius_fixed: size ? { type: "metric", value: size } : { type: "fix", value: FIXED_RADIUS },
+      point_unit: size ? (percent ? "radius_km" : "square_km") : "square_m",
+      min_radius: 3,
+      max_radius: 20,
+      multiplier: size ? (percent ? 8 : 0.3) : 1,
+      ...(q.color ? { dimension: colFor(q.color), color_scheme: "supersetColors" } : { color_picker: { r: 26, g: 133, b: 160, a: 1 } }),
+      js_columns: q.label ? [colFor(q.label)] : [],
+      mapbox_style: binding.mapStyle ?? MAPBOX_LIGHT,
+      autozoom: true,
+      legend_position: "tr",
+      legend_format: "SMART_NUMBER",
+    },
+  };
+}
+
+/** The query context Superset keeps beside a chart's form_data (reports and the chart-data-by-id API read it). Null for a deck.gl map, which Superset reads from its form data. */
+export function queryContextOf(spec: ChartSpec): Record<string, unknown> | null {
+  if (spec.viz_type === "deck_scatter") return null;
   const p = spec.params as Record<string, any>;
   if (spec.viz_type === "heatmap_v2") return heatmapContext(spec);
   const metrics = p.metrics ?? (p.metric ? [p.metric] : []);
@@ -459,13 +528,33 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       const limit = Math.max(2, Math.min(500, Math.ceil((p.row_limit ?? 10_000) / 50)));
       return { widget: { title, kind: "chart", chart: "heatmap", options, query: { kind: "breakdown", dimension: d, by, measure: m, limit, sort: sortX[1], sortBy: sortX[0], ...common } } as Widget };
     }
+    case "deck_scatter": {
+      const geo = binding.geo.get(entity);
+      const sp = p.spatial ?? {};
+      if (!geo) return { widget: null, reason: "its dataset has no latitude and longitude Lenspack knows of" };
+      if (sp.type !== "latlong" || sp.reverseCheckbox) return { widget: null, reason: "its points are not read from a latitude and a longitude column" };
+      if (sp.latCol !== geo.lat || sp.lonCol !== geo.lon) return { widget: null, reason: `its points are read from "${sp.latCol}" and "${sp.lonCol}", not the dataset's coordinates` };
+      if (p.time_grain_sqla) return { widget: null, reason: "it animates its points over time" };
+      if (p.js_data_mutator || p.js_tooltip || p.js_onclick_href) return { widget: null, reason: "it runs custom JavaScript" };
+      const radius = p.point_radius_fixed ?? { type: "fix" };
+      const size = radius.type === "metric" ? one(radius.value) : undefined;
+      if (size === null) return { widget: null, reason: "its points are sized by something other than a saved metric of the dataset" };
+      const color = p.dimension ? dimKey(p.dimension) : undefined;
+      if (color === null) return { widget: null, reason: `its points are coloured by "${p.dimension}", which is not a pack dimension` };
+      const extra = (p.js_columns ?? []) as unknown[];
+      const label = extra.length === 1 ? dimKey(extra[0]) : extra.length === 0 ? undefined : null;
+      if (label === null) return { widget: null, reason: "it carries extra columns on its points that are not one pack dimension" };
+      const limit = Math.max(1, Math.min(MAX_POINTS, Number(p.row_limit) || 10_000));
+      const query = { kind: "points", entity, ...(color ? { color } : {}), ...(size ? { size } : {}), ...(label ? { label } : {}), limit, ...common };
+      return { widget: { title, kind: "chart", chart: "map", options: { legend: true, colorScheme: "default" }, query } as Widget };
+    }
     default:
       return { widget: null, reason: `lenspack has no ${chart.viz_type} chart` };
   }
 }
 
 // Fields a person may change in Superset that our own query would not survive.
-const MEANINGFUL = ["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode", "sort_x_axis", "sort_y_axis", "normalize_across", "normalized"];
+const MEANINGFUL = ["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode", "sort_x_axis", "sort_y_axis", "normalize_across", "normalized", "spatial", "point_radius_fixed", "dimension", "js_columns"];
 function sameForm(a: Record<string, unknown>, b: Record<string, unknown>) {
   return MEANINGFUL.every((k) => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
 }

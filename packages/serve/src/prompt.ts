@@ -5,13 +5,13 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 15;
+export const PROMPT_VERSION = 16;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
 // an invented chart type or a claim that the system already does it.
 export const WIDGET_LIMITS =
-  "Widgets have no settings beyond kind (bar, line, pie, area or heatmap chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover; a heatmap shades each cell on one colour scale with a legend, and shows its value on hover. Colours, fonts, axes and other labels cannot be set.";
+  "Widgets have no settings beyond kind (bar, line, pie, area, heatmap or map chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover; a heatmap shades each cell on one colour scale with a legend, and shows its value on hover; a map draws points (only for an entity with a location), coloured by one category and sized by one measure, with a legend, and names each point on hover. Colours, fonts, axes, map styles, regions and other labels cannot be set.";
 
 // Above this many keys a catalogue is inlined as keys and labels only, and
 // the model reads meanings from list_metrics when it needs them.
@@ -23,10 +23,13 @@ const tooLarge = (catalogue: Catalogue) => catalogue.dimensions.filter((d) => d.
 // rather than discovering it with tool calls every turn. list_metrics stays
 // as a search for catalogues too large to inline.
 export function catalogueText(pack: Pack, catalogue: Catalogue) {
+  // The dimensions an entity's own rows carry (its own and conformed ones), which a point can be named or coloured by.
+  const onEntity = (entity: string) => pack.dimensions.filter((d) => d.type !== "time" && (d.entity === entity || d.also?.[entity])).map((d) => d.key);
   const entities = Object.entries(pack.entities).map(([k, e]) => {
     const joins = e.joins.map((j) => `→ ${j.to} (${j.type.replace(/_/g, "-")})`).join(", ");
-    return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${joins ? `; joins ${joins}` : ""}`;
+    return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${e.geo ? `; has a location (latitude, longitude): a points query lists them, a map draws them${onEntity(k).length ? `, named or coloured by ${onEntity(k).join(", ")}` : ""}` : ""}${joins ? `; joins ${joins}` : ""}`;
   });
+  const located = Object.entries(pack.entities).filter(([, e]) => e.geo);
   // A large catalogue: one line per entity, and a label that only restates its key left out.
   const large = tooLarge(catalogue);
   const verifiedDims = catalogue.dimensions.filter((d) => d.verified);
@@ -45,6 +48,11 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
     ...dims,
     large ? `MEASURES by entity (key (label)):` : `MEASURES (key (entity, format): label [synonyms] — hint):`,
     ...measures,
+    ...(located.length
+      ? [
+          `PLACES: a points query returns each record's latitude and longitude. Answer "where" questions from those and the place dimensions only. A direction ("in the north-east", "the westernmost") is relative to the points' own extent: say so, and give the coordinates it rests on. Never name a region, border or distance the data does not hold.`,
+        ]
+      : []),
   ].join("\n");
 }
 

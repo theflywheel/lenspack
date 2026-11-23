@@ -83,11 +83,12 @@ const period = z.preprocess((v) => {
 const PLACE = str("bottom").describe('Where to put it: "top", "bottom", "after:<widgetId>" (beside that widget; a full row makes room by narrowing its widgets) or "below:<widgetId>" (a new row under that widget\'s row)');
 const WIDTH = oneOf(["full", "half", "third", "quarter"], "half").describe("full is the whole row, half is two across, third is three across, quarter is four across");
 const QUERY_SHAPE = {
-  query_kind: z.enum(["breakdown", "series", "value", "rows"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records"),
-  measure: str().describe("Measure key from list_metrics (not for rows)"),
+  query_kind: z.enum(["breakdown", "series", "value", "rows", "points"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records; points = each record's location, for a map (entities with a location only)"),
+  measure: str().describe("Measure key from list_metrics (not for rows). For points: optional, sizes each point (a measure of the entity)"),
   measures: str().describe("Optional, comma-separated: further measures over the same groups, as extra table columns or chart series (not with a split series)"),
-  dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
-  entity: str().describe("For rows: the entity to list"),
+  dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns. For points: optional, colours each point by this category"),
+  entity: str().describe("For rows or points: the entity to list"),
+  label: str().describe("For points: optional dimension that names each point (shown on hover and in answers)"),
   grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
   time_last: str().describe('Rolling window back from now, like "30d", "12w", "6m" ("last 30 days" -> "30d", "last 10 weeks" -> "10w"); empty means all time. For a calendar period ("this month", "last week") use time_period'),
   time_period: period.describe('Calendar period, weeks from Monday: "this_month" is to date, "last_month" the whole previous one. Not with time_last or time_from'),
@@ -97,7 +98,7 @@ const QUERY_SHAPE = {
   compare: bool(false).describe("For value or breakdown: also compute the previous period, the same length just before (so not the previous calendar month)"),
   share: bool(false).describe("For breakdown: each group's share of the whole population, not of the groups shown"),
   other: bool(false).describe('For breakdown: add one "(other)" row for everything outside the groups shown'),
-  limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
+  limit: num(0, 0, 5000).describe("Max groups (500), rows (1000) or points (5000); 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
   split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars, or as the rows of a heatmap (dimension is then its columns)"),
   filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; size >= 18". Ops: =, !=, >=, <=, in (comma-separated), contains, between <a> and <b>'),
@@ -149,7 +150,7 @@ function typedValue(pack: Pack, dimension: string, v: string, clause: string) {
   return v;
 }
 
-type ChartKind = "bar" | "line" | "pie" | "area" | "heatmap";
+type ChartKind = "bar" | "line" | "pie" | "area" | "heatmap" | "map";
 
 /**
  * A chart widget from its kind and query. A heatmap's columns read in their own order (days,
@@ -173,7 +174,7 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
   const period = unit ? { period: unit, ...(offset ? { offset } : {}), ...(a.time_count > 1 ? { count: a.time_count } : {}) } : undefined;
   const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : period ?? (a.time_last ? { last: a.time_last } : undefined);
   const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);
-  const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" ? { measures: more } : {}) };
+  const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" && a.query_kind !== "points" ? { measures: more } : {}) };
   switch (a.query_kind) {
     case "breakdown":
       return querySchema.parse({
@@ -200,6 +201,16 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
         ...(a.limit ? { limit: a.limit } : {}),
         ...base,
       });
+    case "points":
+      return querySchema.parse({
+        kind: "points",
+        entity: a.entity,
+        ...(a.dimension.trim() ? { color: a.dimension.trim() } : {}),
+        ...(a.measure.trim() ? { size: a.measure.trim() } : {}),
+        ...(a.label.trim() ? { label: a.label.trim() } : {}),
+        ...(a.limit ? { limit: a.limit } : {}),
+        ...base,
+      });
   }
 }
 
@@ -223,6 +234,8 @@ function scalarsOf(q: Query) {
       return { query_kind: q.kind, measure: q.measure, compare: !!q.compare };
     case "rows":
       return { query_kind: q.kind, entity: q.entity, dimension: q.columns.join(",") };
+    case "points":
+      return { query_kind: q.kind, entity: q.entity, dimension: q.color ?? "", measure: q.size ?? "", label: q.label ?? "" };
   }
 }
 
@@ -367,7 +380,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           !needle || [x.key, x.label, ...(x.synonyms ?? []), x.hint ?? ""].some((s) => s.toLowerCase().includes(needle));
         return {
           pack: `${pack.pack} v${pack.version}`,
-          entities: catalogue.entities.map((e) => ({ key: e.key, grain: e.grain, hasTime: e.hasTime })),
+          entities: catalogue.entities.map((e) => ({ key: e.key, grain: e.grain, hasTime: e.hasTime, ...(e.hasLocation ? { hasLocation: true } : {}) })),
           dimensions: catalogue.dimensions.filter(matches).map((d) => ({ key: d.key, label: d.label, entity: d.entity, type: d.type, ...(d.hint ? { hint: d.hint } : {}) })),
           measures: catalogue.measures.filter(matches).map((m) => ({ key: m.key, label: m.label, entity: m.entity, format: m.format, ...(m.hint ? { hint: m.hint } : {}) })),
           note: "A measure is computed at its entity's grain. A dimension on another entity works only through a many-to-one join; otherwise the query is refused rather than multiplied.",
@@ -480,12 +493,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     defineTool({
       name: "add_widget",
       description:
-        'Put something new on the board. Use chart for a breakdown or series, kpi for a single headline number, table for a list, text for a note. A heatmap chart shades one measure over two dimensions: "ward by day" is a series with grain day and dimension ward (rows), or a breakdown with dimension as the columns and split as the rows. Give a heatmap full width.',
+        'Put something new on the board. Use chart for a breakdown or series, kpi for a single headline number, table for a list, text for a note. A heatmap chart shades one measure over two dimensions: "ward by day" is a series with grain day and dimension ward (rows), or a breakdown with dimension as the columns and split as the rows. Give a heatmap full width. A map chart draws a points query: the records of an entity with a location (list_metrics marks them), coloured by a dimension and sized by a measure, e.g. "facilities by zero-dose band" is query_kind points, entity facility, dimension the band, label the facility name. Give a map half or full width.',
       inputSchema: z.object({
         id: z.string().describe("Short lowercase id, e.g. revenue_by_country"),
         kind: z.enum(["chart", "kpi", "table", "text"]),
         title: z.string().describe("What the reader sees above it"),
-        chart: oneOf(["bar", "line", "pie", "area", "heatmap"], "bar").describe("Only when kind is chart"),
+        chart: oneOf(["bar", "line", "pie", "area", "heatmap", "map"], "bar").describe("Only when kind is chart"),
         body: str().describe("Only when kind is text: the note itself"),
         ...QUERY_SHAPE,
         place: PLACE,
@@ -516,7 +529,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         id: z.string(),
         kind: given(z.enum(["chart", "kpi", "table", "text"])).describe("Only to change it"),
         title: given(z.string()),
-        chart: given(z.enum(["bar", "line", "pie", "area", "heatmap"])),
+        chart: given(z.enum(["bar", "line", "pie", "area", "heatmap", "map"])),
         body: given(z.string()),
         ...PATCH_SHAPE,
       }),
