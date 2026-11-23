@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { applyOps, compact, migrateKeys, nearest, opSchema, pack, type BoardOp } from "../src/ops";
-import { emptyBoard, type BoardConfig } from "../src/schema";
+import { emptyBoard, widgetSchema, type BoardConfig } from "../src/schema";
 import { catalogue, packRef } from "./fixtures";
 
 // The validator is the trust boundary: if it passes, the board renders
@@ -506,5 +506,81 @@ describe("fill room goes only to a widget of the same height", () => {
     if (!more.ok) throw new Error(more.error);
     expect(more.config.layout.find((l) => l.i === "k")).toMatchObject({ y: 0, w: 12 });
     expect(more.config.layout.find((l) => l.i === "c")).toMatchObject({ y: 3, w: 12 });
+  });
+});
+
+describe("moving widgets", () => {
+  // A packed board whose rows are all full, like a Superset dashboard read back: a lone
+  // full-width chart at the bottom, bar charts in the rows near the top.
+  const full = () => {
+    const board = empty();
+    board.grid.fill = true;
+    const items: [string, number, number, number, number][] = [
+      ["k1", 0, 0, 6, 3], ["k2", 6, 0, 6, 3],
+      ["lga", 0, 3, 4, 7], ["perday", 4, 3, 8, 7],
+      ["outcomes", 0, 10, 6, 7], ["refused", 6, 10, 6, 7],
+      ["fresh", 0, 17, 12, 3], ["ward", 0, 20, 12, 7],
+    ];
+    for (const [i, x, y, w, h] of items) {
+      board.widgets[i] = widgetSchema.parse(chart({ title: i }));
+      board.layout.push({ i, x, y, w, h });
+    }
+    return board;
+  };
+  const at = (config: BoardConfig, id: string) => config.layout.find((item) => item.i === id);
+
+  it("moves a widget to a new row straight after the anchor's row when that row is full", () => {
+    const result = apply(full(), [
+      { op: "resize_widget", id: "ward", width: "half" },
+      { op: "move_widget", id: "ward", placement: { place: "after:lga", width: "half" } },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(at(result.config, "ward")).toMatchObject({ x: 0, y: 10 });
+    // Everything that was below the anchor's row moved down by the moved widget's height, in order.
+    expect(at(result.config, "outcomes")).toMatchObject({ y: 17 });
+    expect(at(result.config, "fresh")).toMatchObject({ y: 24 });
+  });
+
+  it("puts a widget beside the anchor when the anchor's row has room", () => {
+    const board = full();
+    board.layout = board.layout.map((item) => (item.i === "perday" ? { ...item, w: 4 } : item));
+    board.grid.fill = false;
+    // The move tool resizes first, so the move looks for room at the width asked for.
+    const result = apply(board, [{ op: "resize_widget", id: "ward", width: "third" }, { op: "move_widget", id: "ward", placement: { place: "after:lga", width: "third" } }]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(at(result.config, "ward")).toMatchObject({ x: 8, y: 3, w: 4 });
+  });
+
+  it("joins the gaps in the anchor's row to make room (the commerce eval's C16)", () => {
+    // Not packed: weekly revenue and the category chart half wide on one row, the country
+    // bar alone and full width below. Three separate calls, as a model makes them.
+    const board = empty();
+    for (const [i, x, y, w, h] of [["revenue_trend", 0, 3, 6, 7], ["by_category", 6, 3, 6, 7], ["by_country", 0, 10, 12, 7]] as const) {
+      board.widgets[i] = widgetSchema.parse(chart({ title: i }));
+      board.layout.push({ i, x, y, w, h });
+    }
+    let config = board;
+    for (const ops of [
+      [{ op: "resize_widget", id: "revenue_trend", width: "third" }],
+      [{ op: "resize_widget", id: "by_category", width: "third" }],
+      [{ op: "resize_widget", id: "by_country", width: "third" }, { op: "move_widget", id: "by_country", placement: { place: "after:revenue_trend", width: "third" } }],
+    ]) {
+      const result = apply(config, ops);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      config = result.config;
+    }
+    const y = at(config, "revenue_trend")!.y;
+    expect(at(config, "by_country")).toMatchObject({ y, w: 4 });
+    expect(config.layout.filter((item) => item.y === y).map((item) => item.x).sort((a, b) => a - b)).toEqual([0, 4, 8]);
+  });
+
+  it("rejects a move that leaves the widget where it was", () => {
+    const result = apply(full(), [{ op: "move_widget", id: "ward", placement: { place: "after:fresh", width: "full" } }]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/changes nothing/);
   });
 });
