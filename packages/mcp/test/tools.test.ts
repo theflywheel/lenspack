@@ -127,7 +127,7 @@ describe("board tools", () => {
   it("adds, moves and removes widgets through the store", async () => {
     const added = (await call("add_widget", { id: "by_colour", kind: "chart", title: "By colour", query_kind: "breakdown", measure: "things", dimension: "colour", place: "top", width: "half" })) as { applied: boolean; board: string; version: number };
     expect(added.applied).toBe(true);
-    expect(added.board).toContain("by_colour (bar, 6/12 wide) things by colour");
+    expect(added.board).toContain("by_colour (bar, half width (6/12)) things by colour");
     const kpi = (await call("add_widget", { id: "total", kind: "kpi", title: "Total", query_kind: "value", measure: "things", time_last: "30d", compare: true, width: "quarter" })) as { applied: boolean };
     expect(kpi.applied).toBe(true);
     const lastMonth = (await call("add_widget", { id: "last_month", kind: "kpi", title: "Last month", query_kind: "value", measure: "things", time_period: "Last month", width: "quarter" })) as { board: string };
@@ -161,8 +161,8 @@ describe("board tools", () => {
     const layout = (await store.get("m"))!.config.layout;
     const y = layout.find((item) => item.i === "c49")!.y;
     expect(layout.filter((item) => item.y === y).sort((a, b) => a.x - b.x).map((item) => [item.i, item.w])).toEqual([["c49", 3], ["c50", 6], ["pie", 3]]);
-    expect(moved.layout).toContain("c50 is now in row 1 with c49, pie");
-    expect(moved.layout).toContain("also resized: c49 6→3, pie 6→3");
+    expect(moved.layout).toContain("c50: now row 1, half width (6/12), beside c49, pie");
+    expect(moved.layout).toContain("also resized: c49 now a quarter width (3/12, was 6/12), pie now a quarter width (3/12, was 6/12)");
     expect(moved.layout).toContain("row 1 (c49, c50, pie) is now full (3+6+3); no resize needed");
 
     // The eval's follow-up: the model widens c49 back to half. The row narrows the others and
@@ -171,7 +171,7 @@ describe("board tools", () => {
     expect(resized.applied).toBe(true);
     const after = (await store.get("m"))!.config.layout;
     expect(after.filter((item) => item.y === y).sort((a, b) => a.x - b.x).map((item) => [item.i, item.w])).toEqual([["c49", 6], ["c50", 3], ["pie", 3]]);
-    expect(resized.layout).toContain("also resized: c50 6→3");
+    expect(resized.layout).toContain("also resized: c50 now a quarter width (3/12, was 6/12)");
     expect(resized.layout).toContain("is now full (6+3+3); no resize needed");
     expect(resized.layout).not.toMatch(/moved to row/);
   });
