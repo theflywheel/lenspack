@@ -26,9 +26,25 @@ Apache Superset as a lenspack backend, without forking Superset.
 iframe) or inside Superset (`/overlay.js`, loaded by one script tag in Superset's documented-overridable
 `tail_js_custom_extra.html`). See `superset-demo/` in the lab repo for a stock Superset 5.0 setup.
 
+Inside Superset the chat opens as a floating window (drag it by its header; resize it with the grip in its
+bottom-right corner, which keeps the top-left corner in place, or from its left and top edges) or as a side
+panel; the gear chooses, and size and position are remembered per browser.
+
 ## Voice and languages
 
-The chat panel has a mic and a language menu (Auto, English, Français, हिन्दी), remembered per browser.
+The chat panel has a mic and a language menu (Auto, English, Français, हिन्दी), remembered per browser. The
+overlay's own words (its button, gear menu and grip) and the suggested questions follow the same language. A
+suggested question may be written per language, with one query for all of them:
+
+```yaml
+overlay:
+  examples:
+    - question: { en: Zero-dose share by LGA, fr: Part des enfants zéro dose par LGA }
+      query: { kind: breakdown, dimension: lga, measure: zero_dose_pct, limit: 10 }
+```
+
+The model sees the English wording (else the first) as a worked example; a language an example doesn't have
+shows its English. `/_superset/info` returns `examplesByLang`, and `examples` for `?lang=` (English by default).
 
 - **Mic.** Click to start and click again to stop, or hold the button and release to stop. Holding Space for
   2 s (`speech.holdMs`, 500–3000; each user can pick their own in the menu) also talks, even while typing
