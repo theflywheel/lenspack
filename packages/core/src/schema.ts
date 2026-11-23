@@ -8,7 +8,9 @@ import { z } from "zod";
 // passes to the validator (see ops.ts), never by anything imported here.
 
 export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as const;
-export const CHART_KINDS = ["bar", "line", "pie", "area"] as const;
+// heatmap: one measure over two dimensions as a grid of shaded cells. Columns are a
+// breakdown's dimension (or a series' time buckets) and rows its `by`.
+export const CHART_KINDS = ["bar", "line", "pie", "area", "heatmap"] as const;
 // subtree: a node of a dotted path and everything under it ("a.b" matches
 // "a.b" and "a.b.c", not "a.bc").
 // segment: one of the values is a whole segment of a "|"-separated path

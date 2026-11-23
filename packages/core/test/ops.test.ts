@@ -168,6 +168,23 @@ describe("hallucinated fields", () => {
     expect(result.error).toContain("rates do not");
   });
 
+  it("takes a heatmap of one measure over two dimensions, nine rows tall, and refuses one it cannot shade", () => {
+    const heat = (query: Record<string, unknown>) => chart({ chart: "heatmap", options: { legend: true, colorScheme: "sequential" }, query });
+    const ok = apply(empty(), [{ op: "add_widget", id: "h", widget: heat({ kind: "breakdown", dimension: "region", by: "channel", measure: "count", limit: 12 }) }]);
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.config.layout.find((l) => l.i === "h")?.h).toBe(9);
+    expect(apply(empty(), [{ op: "add_widget", id: "s", widget: heat({ kind: "series", measure: "count", grain: "day", by: "region" }) }]).ok).toBe(true);
+    const refused = (query: Record<string, unknown>) => {
+      const r = apply(empty(), [{ op: "add_widget", id: "h", widget: heat(query) }]);
+      return r.ok ? "" : r.error;
+    };
+    expect(refused({ kind: "breakdown", dimension: "region", measure: "count", limit: 12 })).toContain("rows as well as columns");
+    expect(refused({ kind: "series", measure: "count", grain: "day" })).toContain("split the series");
+    expect(refused({ kind: "breakdown", dimension: "region", by: "region", measure: "count", limit: 12 })).toContain("split by its own dimension");
+    expect(refused({ kind: "breakdown", dimension: "region", by: "channel", measure: "count", measures: ["amount"], limit: 12 })).toContain("one measure");
+    expect(refused({ kind: "value", measure: "count" })).toContain("two dimensions");
+  });
+
   it("lets a table, not a chart, carry several measures beside a split", () => {
     const query = { kind: "breakdown" as const, dimension: "region", by: "channel", measure: "count", measures: ["amount"], limit: 12 };
     const table = apply(empty(), [{ op: "add_widget", id: "a", widget: { kind: "table", title: "T", query, pageSize: 10 } }]);
