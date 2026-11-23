@@ -8,7 +8,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
-import type { Audit, AuditEvent } from "@lenspack/serve";
+// The shape of @lenspack/serve's audit events (bin/serve.ts hands this log to createApp, which checks it).
+export type AuditEvent = { at: string; user: string; pack?: string; board?: string; action: string; outcome: "ok" | "refused" | "denied"; detail?: string };
+export type Audit = (event: AuditEvent) => void;
 
 export type AuditLog = {
   audit: Audit;

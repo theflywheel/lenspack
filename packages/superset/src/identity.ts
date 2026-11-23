@@ -10,7 +10,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-import type { Access, Principal } from "@lenspack/serve";
+// The shapes of @lenspack/serve's Principal and Access that this module produces, kept here so the library
+// does not depend on the server package (bin/serve.ts passes them to createApp, which checks them).
+export type IdentityPrincipal = { user: string; edit: boolean; maintain: boolean; readOnly?: string };
+type Principal = IdentityPrincipal;
+type Access = (req: IncomingMessage) => Principal | null;
 
 export const IDENTITY_HEADER = "x-lenspack-identity";
 
