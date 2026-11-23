@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync } from "node:fs";
 
 import type { Board, BoardConfig, BoardStore } from "@lenspack/core";
 import type { Pack } from "@lenspack/spec";
@@ -6,6 +6,7 @@ import type { Pack } from "@lenspack/spec";
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
 import { type DashboardState, dashboardToBoard, pushBoard, readDashboard } from "./dashboard";
+import { diskProblem, writeWhole } from "./settings";
 
 // Superset stays the record. A board bound to a dashboard is read from
 // Superset when Superset has changed (someone edited it there), and every
@@ -31,8 +32,7 @@ export type SupersetBoardsOptions = {
 export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull(id: string, force?: boolean): Promise<void>; seed(): Promise<void>; notes: Map<string, string[]> } {
   const { inner, client, pack, binding } = opts;
   const log = opts.log ?? (() => {});
-  const states: Record<string, DashboardState> = existsSync(opts.stateFile) ? JSON.parse(readFileSync(opts.stateFile, "utf8")) : {};
-  const save = () => writeFileSync(opts.stateFile, JSON.stringify(states, null, 2));
+  const { states, save } = savedStates(opts.stateFile, log);
   const lastCheck = new Map<string, number>();
   const notes = new Map<string, string[]>();
   // One change at a time per board: a pull never lands in the middle of a push.
@@ -130,4 +130,47 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
       return inner.delete(id);
     },
   };
+}
+
+/**
+ * The widget-chart links kept between restarts, and their save. Saved whole or not at all; a disk that refuses
+ * (full, read-only) doesn't fail the request: the links stay in memory, the log says so once, and the next save
+ * that works catches up. A missing or unreadable file means starting from Superset's dashboards.
+ */
+export function savedStates(file: string, log: (line: string) => void): { states: Record<string, DashboardState>; save: () => boolean } {
+  const states = loadStates(file, log);
+  let unsaved: string | null = null;
+  const save = () => {
+    try {
+      writeWhole(file, JSON.stringify(states, null, 2));
+      if (unsaved) log(`saved ${file} again`);
+      unsaved = null;
+      return true;
+    } catch (e) {
+      const why = diskProblem(e);
+      if (unsaved !== why) log(`could not save ${file} (${why}); widget-chart links are kept in memory until it can be saved`);
+      unsaved = why;
+      return false;
+    }
+  };
+  return { states, save };
+}
+
+/** The saved links, or none when the file is missing or unreadable (an unreadable one is set aside, not lost). */
+function loadStates(file: string, log: (line: string) => void): Record<string, DashboardState> {
+  if (!existsSync(file)) return {};
+  try {
+    const v = JSON.parse(readFileSync(file, "utf8")) as unknown;
+    if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, DashboardState>;
+    throw new Error("not a JSON object");
+  } catch (e) {
+    const aside = `${file}.unreadable-${Date.now()}`;
+    try {
+      renameSync(file, aside);
+    } catch {
+      /* read-only: leave it where it is */
+    }
+    log(`could not read ${file} (${e instanceof Error ? e.message : String(e)}); set aside as ${aside}, starting from Superset's dashboards`);
+    return {};
+  }
 }

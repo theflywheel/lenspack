@@ -122,6 +122,17 @@ page, which calls:
 Reads and writes need a Superset admin's signed identity (above). Settings persist in `settings.json` beside
 the board state.
 
+When the state directory can't be written (disk full, read-only mount), the assistant keeps working: dashboards
+still bind and answer, with the links between widgets and charts kept in memory (the log says so once) until a
+save works again. A settings write changes nothing and gets `503` with the reason ("Lenspack can't save
+settings: the disk is full. Nothing was changed."). Files are written whole (a temporary file renamed into
+place), and an unreadable board-state file is set aside as `*.unreadable-<time>` instead of stopping the server.
+
+When a query fails, the model hears the reason, not the deployment's addresses: an unreachable data source
+becomes "The data source is unreachable (connection refused | host not found | no connection | connection
+dropped | sign-in refused | Superset is unavailable)", a slow one "did not answer in time", and any other error
+keeps its wording with URLs, hosts, ports and IP addresses taken out. The raw error goes to the server log.
+
 ## Off switches
 
 Each part of the assistant can be turned off; all are on by default. A switch's value comes from, lowest first:

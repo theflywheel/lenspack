@@ -19,7 +19,7 @@ import { type Overlay, examplesByLanguage, examplesFor, fetchDatasets, packFromD
 import { rotatingAudit } from "../src/audit";
 import { identityKey, serviceAccount } from "../src/bootstrap";
 import { type Identity, editPolicyFrom, identityOf, supersetAccess } from "../src/identity";
-import { readJson, settingsStore } from "../src/settings";
+import { SettingsSaveError, readJson, settingsStore } from "../src/settings";
 import { type FeatureValues, features as featureSwitches } from "../src/features";
 
 type Config = {
@@ -136,7 +136,7 @@ const feats = featureSwitches({ config: config.features, env: process.env.LENSPA
 const off = Object.entries(feats.values()).filter(([, on]) => !on).map(([f]) => f);
 log(`features: ${off.length ? `off: ${off.join(", ")}` : "all on"}`);
 // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
-const connector = supersetConnector(client, binding, { capabilities: () => ({ ...(feats.on("heatmap") ? {} : { heatmap: false }), ...(feats.on("maps") ? {} : { points: false }) }) });
+const connector = supersetConnector(client, binding, { log, capabilities: () => ({ ...(feats.on("heatmap") ? {} : { heatmap: false }), ...(feats.on("maps") ? {} : { points: false }) }) });
 
 const dashboards: Record<string, number> = Object.fromEntries((config.dashboards ?? []).map((d) => [`superset-${d}`, d]));
 const store = supersetBoards({ inner: memoryStore(), client, pack, binding, dashboards, stateFile: statePath, log });
@@ -418,6 +418,7 @@ createServer(async (req, res) => {
     return send(res, 404, JSON.stringify({ error: "not found" }));
   } catch (e) {
     log(`${req.method} ${url.pathname}: ${e instanceof Error ? e.message : String(e)}`);
-    if (!res.headersSent) send(res, 500, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    // A settings write the disk refused: nothing changed, and saying so beats a bare 500.
+    if (!res.headersSent) send(res, e instanceof SettingsSaveError ? 503 : 500, JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
   }
 }).listen(port, host, () => log(`http://${host}:${port}/ (Superset ${config.superset.url}, ${Object.keys(dashboards).length} dashboard(s) bound, chat ${providers.length ? "on" : "off"})`));

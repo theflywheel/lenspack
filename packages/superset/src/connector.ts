@@ -3,6 +3,7 @@ import type { Pack } from "@lenspack/spec";
 
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
+import { sourceError } from "./source-errors";
 import { BUCKET, type Metric, N, columnOf, queryObjects } from "./query";
 
 // Superset computes every number: the engine resolves a query against the
@@ -17,8 +18,11 @@ type Native = { datasetId: number; queries: ReturnType<typeof queryObjects>["que
 
 const labelOf = (m: Metric) => (typeof m === "string" ? m : m.label);
 
-/** `capabilities` narrows what the connector offers at the moment (a deployment's off switches), read on every check. */
-export function supersetConnector(client: SupersetClient, binding: Binding, opts: { capabilities?: () => Partial<Capabilities> } = {}): Connector {
+/**
+ * `capabilities` narrows what the connector offers at the moment (a deployment's off switches), read on every check.
+ * `log` gets a failed query's raw error; the error handed on names no hosts or ports (see source-errors).
+ */
+export function supersetConnector(client: SupersetClient, binding: Binding, opts: { capabilities?: () => Partial<Capabilities>; log?: (line: string) => void } = {}): Connector {
   return {
     kind: "superset",
     get capabilities(): Capabilities {
@@ -33,7 +37,11 @@ export function supersetConnector(client: SupersetClient, binding: Binding, opts
       const { datasetId, queries, metric } = plan.native as Native;
       const bound = plan.bound;
       const q = bound.query;
-      const res = await client.post<{ result: { data: Row[] }[] }>("/api/v1/chart/data", { datasource: { id: datasetId, type: "table" }, force: false, queries, result_format: "json", result_type: "full" });
+      const res = await client
+        .post<{ result: { data: Row[] }[] }>("/api/v1/chart/data", { datasource: { id: datasetId, type: "table" }, force: false, queries, result_format: "json", result_type: "full" })
+        .catch((e: unknown) => {
+          throw sourceError(e, opts.log);
+        });
       const [current = [], previous] = res.result.map((r) => r.data ?? []);
       const value = metric ? labelOf(metric) : "";
       const format = (bound.measure?.def.format ?? "number") as Format;
