@@ -280,6 +280,11 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     queue = next.catch(() => undefined);
     return next;
   };
+  // Reads wait for the edits already asked for. The SDK runs a step's tool calls together, so a
+  // get_board beside a move_widget read the board before the move landed and showed the version
+  // before it: the model saw a layout one edit behind the edit's own result and called the
+  // readings inconsistent.
+  const afterEdits = <T>(read: () => Promise<T>): Promise<T> => queue.then(read, read);
 
   // A missing value is grouped as "(none)", which no filter can match, so it is never offered.
   const values = async (dimension: string, q = "", limit = 50, exact?: string[]) => {
@@ -393,7 +398,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       description: "Read what is currently on the board: widgets, their ids, and how they are arranged by row. Call this before editing so you refer to widgets by the ids they actually have.",
       inputSchema: z.object({}),
       async execute() {
-        const board = await store.get(boardId);
+        const board = await afterEdits(() => store.get(boardId));
         if (!board) return { error: "This board no longer exists" };
         return { board: summarise(board.config), version: board.version };
       },
@@ -404,7 +409,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         "The board's saved versions, newest first: number, who or what made it (chat, by hand, board file, rollback) and what changed. Call this before restore_version when the user names a point in the history rather than the original.",
       inputSchema: z.object({ limit: num(20, 1, 100).describe("How many versions, newest first (default 20)") }),
       async execute({ limit }) {
-        const all = await store.versions(boardId);
+        const all = await afterEdits(() => store.versions(boardId));
         if (all.length === 0) return { error: "This board has no history" };
         const base = baselineOf(all);
         return {

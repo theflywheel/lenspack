@@ -264,6 +264,42 @@ function makeRoom(
   return { item, shrunk };
 }
 
+// Room for `item` at `width` in its own row: when the row would overflow, the other widgets
+// narrow in proportion to their widths, never below their narrowest, and the row is laid out
+// again left to right. Refuses (with the choices) rather than push a row-mate to another row.
+function roomInRow(layout: LayoutItem[], item: LayoutItem, width: number, cols: number, minOf: (id: string) => number): { ok: true } | { error: string; hint: string } {
+  const row = layout.filter((other) => other.y === item.y).sort((a, b) => a.x - b.x);
+  const mates = row.filter((other) => other !== item);
+  const own = (o: LayoutItem) => (o.fw !== undefined && o.fw < o.w ? o.fw : o.w);
+  const used = mates.reduce((sum, o) => sum + own(o), 0);
+  const names = mates.map((o) => `"${o.i}"`).join(", ");
+  const refuse = {
+    error: `The row of "${item.i}" is full (${row.map((o) => `${o.i} ${o.w}/${cols}`).join(", ")}) and cannot make "${item.i}" ${width}/${cols} wide without squeezing ${names} below their narrowest`,
+    hint: `Ask for a smaller width, move one of ${names} to another row (move_widget with place "below:${item.i}"), or remove one`,
+  };
+  // Full width is a row of its own: what shared the row goes under it (and the edit's note says so).
+  if (width >= cols) return { ok: true };
+  // A taller widget from a row above reaches into this one: the columns are not the row's to share.
+  if (layout.some((o) => o.y < item.y && o.y + o.h > item.y)) return used + width <= cols ? { ok: true } : refuse;
+  let widths = mates.map(own);
+  if (used + width > cols) {
+    const mins = mates.map((o) => Math.min(minOf(o.i), own(o)));
+    if (mins.reduce((a, b) => a + b, 0) + width > cols) return refuse;
+    widths = shrinkTo(widths, mins, cols - width);
+  }
+  // Laid out again left to right: packing's extra handed back, gaps closed, nobody overlapping.
+  let x = 0;
+  for (const o of row) {
+    if (o !== item) {
+      o.w = widths[mates.indexOf(o)]!;
+      delete o.fw;
+    }
+    o.x = x;
+    x += o === item ? width : o.w;
+  }
+  return { ok: true };
+}
+
 // Widths scaled down in proportion to fit `total`, none below its minimum.
 function shrinkTo(widths: number[], mins: number[], total: number) {
   const sum = widths.reduce((a, b) => a + b, 0);
@@ -388,13 +424,23 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
       case "resize_widget": {
         const item = draft.layout.find((entry) => entry.i === op.id);
         if (!item) return fail(`No widget called "${op.id}"`, nearest(op.id, Object.keys(draft.widgets)) ?? undefined);
-        item.w = widthUnits(op.width, cols);
+        const width = widthUnits(op.width, cols);
+        for (const id of rowOf(item)) touched.add(id);
+        // The move tool resizes a widget just before moving it: it is leaving this row, so its
+        // row-mates make no room for it.
+        const leaving = ops.slice(index + 1).some((later) => later.op === "move_widget" && later.id === op.id);
+        if (!leaving) {
+          // Wider than its row has room for: the row-mates narrow to make room, as for a move,
+          // so the widget gets its width and nobody is pushed off the row.
+          const room = roomInRow(draft.layout, item, width, cols, (id) => minWidth(draft.widgets[id]?.kind));
+          if ("error" in room) return fail(room.error, room.hint);
+        }
+        item.w = width;
         delete item.fw;
         if (op.height) item.h = op.height;
-        for (const id of rowOf(item)) touched.add(id);
         sized.add(op.id);
-        // Growing in place can cover a neighbour, and gravity only moves things up, so
-        // push whatever it now covers down below it (and whatever that covers, in turn).
+        // A taller widget can cover the top of the next row, and gravity only moves things up,
+        // so push whatever it now covers down below it (and whatever that covers, in turn).
         pushDown(draft.layout, item);
         break;
       }
