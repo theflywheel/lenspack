@@ -139,6 +139,25 @@ function place(layout: LayoutItem[], id: string, w: number, h: number, placement
       for (let x = 0; x + w <= cols; x++) {
         if (!occupied(x, anchor.y, w, h)) return at(x, anchor.y);
       }
+      // Room in total but split into gaps (on a board that is not packed, narrowing a widget
+      // leaves a gap where it was): slide the row's widgets left to join them, and look again.
+      const row = others.filter((item) => item.y === anchor.y).sort((a, b) => a.x - b.x);
+      const before = row.map((item) => item.x);
+      for (const item of row) {
+        for (let x = 0; x < item.x; x++) {
+          const clash = others.some(
+            (o) => o !== item && x < o.x + o.w && x + item.w > o.x && item.y < o.y + o.h && item.y + item.h > o.y,
+          );
+          if (!clash) {
+            item.x = x;
+            break;
+          }
+        }
+      }
+      for (let x = 0; x + w <= cols; x++) {
+        if (!occupied(x, anchor.y, w, h)) return at(x, anchor.y);
+      }
+      row.forEach((item, k) => (item.x = before[k]!));
       // Otherwise a new row straight after the anchor's row, and everything below moves down.
       // Scanning on down for the first gap instead found the moved widget's own old place
       // whenever every row was full (on a packed board they always are), so "move X after Y"
