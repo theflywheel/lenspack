@@ -53,8 +53,8 @@ describe("the commerce suite, played by the stub", () => {
   };
 
   // Known product bugs: the test fails until the fix lands, then this list must shrink.
-  // C16: move_widget to "after:<id>" reports applied but leaves the widget on its old row.
-  const knownBugs = new Set(["C16"]);
+  // (C16, move_widget to "after:<id>" leaving the widget on its old row, was fixed in 062bcb1/158da81.)
+  const knownBugs = new Set<string>([]);
 
   for (const q of suite.questions) {
     (knownBugs.has(q.id) ? it.fails : it)(`${q.id}: ${expected[q.id]}`, async () => {
