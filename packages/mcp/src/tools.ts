@@ -42,6 +42,13 @@ export type BoardToolsOptions = {
   runSql?: boolean | "role-scoped";
   proposals?: ProposalStore;
   timeoutMs?: number;
+  /**
+   * The caller may read this board but not change it. Every edit tool then answers with this
+   * message instead of changing the board, so the model can say why (reading tools still work).
+   */
+  readOnly?: string;
+  /** Told of every edit a tool applied or refused (an audit log). Never throws into the tool. */
+  onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; error?: string }) => void;
 };
 
 // Lenient scalars: a null, a numeric string or a "true" from a weaker model
@@ -275,17 +282,36 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // the last write would win. Edits queue per tool set instead, and a patch
   // passes a function so it reads the board inside the queue.
   let queue: Promise<unknown> = Promise.resolve();
+  const told = (e: Parameters<NonNullable<BoardToolsOptions["onEdit"]>>[0]) => {
+    try {
+      opts.onEdit?.(e);
+    } catch {
+      /* an audit sink must not break an edit */
+    }
+  };
   const apply = (edit: BoardOp[] | (() => Promise<BoardOp[] | ReturnType<typeof fail> | { applied: true; [k: string]: unknown }>)) => {
+    if (opts.readOnly) {
+      told({ outcome: "refused", ops: Array.isArray(edit) ? edit.map((o) => o.op) : [], error: "read-only" });
+      return Promise.resolve({ applied: false as const, error: opts.readOnly, readOnly: true as const });
+    }
     const work = async () => {
       const ops = Array.isArray(edit) ? edit : await edit();
       if (!Array.isArray(ops)) return ops;
+      const names = ops.map((o) => o.op);
       // Refuse at edit time what the compiler would refuse at render time.
       const checked = checkOps(ops, pack, { ctx, capabilities: connector.capabilities });
-      if (!checked.ok) return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      if (!checked.ok) {
+        told({ outcome: "refused", ops: names, error: checked.error });
+        return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      }
       const layoutEdit = ops.some((op) => op.op === "move_widget" || op.op === "resize_widget" || op.op === "remove_widget");
       const before = layoutEdit ? (await store.get(boardId))?.config : undefined;
       const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
-      if (!result.ok) return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
+      if (!result.ok) {
+        told({ outcome: "refused", ops: names, error: result.error });
+        return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
+      }
+      told({ outcome: "ok", ops: names, version: result.board.version });
       // What the edit did besides what was asked (room made, a widget widened), so the model can say so.
       const layout = before ? layoutChanges(before, result.board.config, ops) : [];
       return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: summarise(result.board.config) };

@@ -100,6 +100,37 @@ describe("board tools", () => {
     expect(fine.didYouMean).toBeUndefined();
   });
 
+  it("refuses every edit with the given message on a read-only board, and still answers questions", async () => {
+    const store = memoryStore();
+    await store.create({ id: "ro", pack, title: "Read only" });
+    const message = "You can view this dashboard but not edit it.";
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "ro", ctx: { tenant: "t1" }, readOnly: message }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown> = {}) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    const before = (await store.get("ro"))!.version;
+    expect(await go("add_widget", { id: "w", kind: "kpi", title: "Things", query_kind: "value", measure: "things" })).toEqual({ applied: false, error: message, readOnly: true });
+    expect(await go("rename_board", { title: "Mine" })).toMatchObject({ applied: false, error: message });
+    expect(await go("restore_version", { to: "baseline" })).toMatchObject({ applied: false, error: message });
+    expect((await store.get("ro"))!.version).toBe(before);
+    // Reading still works.
+    expect(await go("query", { query_kind: "value", measure: "things" })).not.toHaveProperty("readOnly");
+  });
+
+  it("tells onEdit of every edit it applied or refused", async () => {
+    const store = memoryStore();
+    await store.create({ id: "au", pack, title: "Audited" });
+    const seen: { outcome: string; ops: string[]; version?: number; error?: string }[] = [];
+    const tools = (readOnly?: string) => Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "au", ctx: { tenant: "t1" }, readOnly, onEdit: (e) => seen.push(e) }).map((x) => [x.name, x]));
+    const go = (t: ReturnType<typeof tools>, name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    await go(tools(), "rename_board", { title: "Renamed" });
+    await go(tools(), "add_widget", { id: "w", kind: "kpi", title: "Nope", query_kind: "value", measure: "no_such_measure" });
+    await go(tools("view only"), "rename_board", { title: "Again" });
+    await go(tools(), "query", { query_kind: "value", measure: "things" });
+    expect(seen.map((e) => e.outcome)).toEqual(["ok", "refused", "refused"]);
+    expect(seen[0]).toMatchObject({ ops: ["set_title"], version: expect.any(Number) });
+    expect(seen[1]!.error).toBeTruthy();
+    expect(seen[2]).toMatchObject({ error: "read-only" });
+  });
+
   it("patches a widget: only the fields given change", async () => {
     const store = memoryStore();
     await store.create({ id: "u", pack, title: "Patch" });
@@ -127,7 +158,7 @@ describe("board tools", () => {
   it("adds, moves and removes widgets through the store", async () => {
     const added = (await call("add_widget", { id: "by_colour", kind: "chart", title: "By colour", query_kind: "breakdown", measure: "things", dimension: "colour", place: "top", width: "half" })) as { applied: boolean; board: string; version: number };
     expect(added.applied).toBe(true);
-    expect(added.board).toContain("by_colour (bar, 6/12 wide) things by colour");
+    expect(added.board).toContain("by_colour (bar, half width (6/12)) things by colour");
     const kpi = (await call("add_widget", { id: "total", kind: "kpi", title: "Total", query_kind: "value", measure: "things", time_last: "30d", compare: true, width: "quarter" })) as { applied: boolean };
     expect(kpi.applied).toBe(true);
     const lastMonth = (await call("add_widget", { id: "last_month", kind: "kpi", title: "Last month", query_kind: "value", measure: "things", time_period: "Last month", width: "quarter" })) as { board: string };
@@ -153,7 +184,7 @@ describe("board tools", () => {
     const run = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args));
     const added = (await run("add_widget", { id: "heat", kind: "chart", chart: "heatmap", title: "Things, colour by origin", query_kind: "breakdown", measure: "things", dimension: "origin", split: "colour", width: "full" })) as { applied: boolean; board: string };
     expect(added, JSON.stringify(added)).toMatchObject({ applied: true });
-    expect(added.board).toContain("heat (heatmap, 12/12 wide) things by origin and colour in origin order");
+    expect(added.board).toContain("heat (heatmap, full width (12/12)) things by origin and colour in origin order");
     const w = () => store.get("h").then((b) => b!.config.widgets.heat);
     expect(await w()).toMatchObject({ chart: "heatmap", options: { colorScheme: "sequential" }, query: { kind: "breakdown", dimension: "origin", by: "colour", sort: "asc", sortBy: "group" } });
     expect(((await run("add_widget", { id: "flat", kind: "chart", chart: "heatmap", title: "x", query_kind: "breakdown", measure: "things", dimension: "origin" })) as { error?: string }).error).toContain("rows as well as columns");
@@ -176,8 +207,8 @@ describe("board tools", () => {
     const layout = (await store.get("m"))!.config.layout;
     const y = layout.find((item) => item.i === "c49")!.y;
     expect(layout.filter((item) => item.y === y).sort((a, b) => a.x - b.x).map((item) => [item.i, item.w])).toEqual([["c49", 3], ["c50", 6], ["pie", 3]]);
-    expect(moved.layout).toContain("c50 is now in row 1 with c49, pie");
-    expect(moved.layout).toContain("also resized: c49 6→3, pie 6→3");
+    expect(moved.layout).toContain("c50: now row 1, half width (6/12), beside c49, pie");
+    expect(moved.layout).toContain("also resized: c49 now a quarter width (3/12, was 6/12), pie now a quarter width (3/12, was 6/12)");
     expect(moved.layout).toContain("row 1 (c49, c50, pie) is now full (3+6+3); no resize needed");
 
     // The eval's follow-up: the model widens c49 back to half. The row narrows the others and
@@ -186,7 +217,7 @@ describe("board tools", () => {
     expect(resized.applied).toBe(true);
     const after = (await store.get("m"))!.config.layout;
     expect(after.filter((item) => item.y === y).sort((a, b) => a.x - b.x).map((item) => [item.i, item.w])).toEqual([["c49", 6], ["c50", 3], ["pie", 3]]);
-    expect(resized.layout).toContain("also resized: c50 6→3");
+    expect(resized.layout).toContain("also resized: c50 now a quarter width (3/12, was 6/12)");
     expect(resized.layout).toContain("is now full (6+3+3); no resize needed");
     expect(resized.layout).not.toMatch(/moved to row/);
   });

@@ -3,8 +3,8 @@
 // On a dashboard it adds an "Ask Lenspack" button; the chat edits that
 // dashboard through the Lenspack server, and the dashboard is re-read in
 // place to show it (no page reload; see refreshInPlace).
-// The chat floats over the dashboard (drag it by its header, resize it from
-// its edges), or opens as a side panel that narrows Superset's page. Which one
+// The chat floats over the dashboard (drag it by its header, resize it by the
+// grip in its bottom-left corner or from its left and top edges), or opens as a side panel that narrows Superset's page. Which one
 // is a setting (the gear in the chat's header), defaulting to the deployment's
 // overlay.panel; mode, size and position are remembered per browser.
 (function () {
@@ -17,15 +17,45 @@
   var OPEN = "lenspack-overlay-open";
   var WIDTH = 400;
   var MODE = "lenspack-overlay-mode"; // the user's choice: "float" or "dock"; unset = the deployment's default
-  var POS = "lenspack-overlay-pos"; // the floating window's {right, bottom}
+  var POS = "lenspack-overlay-pos"; // the floating window's {right, top} ({right, bottom} before the grip moved)
   var SIZE = "lenspack-overlay-size"; // the floating window's {w, h}
   var DOCKW = "lenspack-overlay-dockw"; // the docked panel's width
   var MIN_W = 320, MIN_H = 360, MARGIN = 12;
+  var TOP = 64; // below Superset's navbar
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   var chosen = load(MODE);
   var mode = chosen === "dock" || chosen === "float" ? chosen : "float";
   var adminDefault = "float";
+
+  // The overlay's own words, in the chat's language: the same rule as chat.js (a pick in the chat's
+  // menu, unless Superset's language changed since; else Superset's language; else the deployment's).
+  var STRINGS = {
+    en: { ask: "Ask Lenspack", settings: "Chat settings", openAs: "Open as", float: "Floating window", dock: "Side panel", resize: "Drag to resize" },
+    fr: { ask: "Demander à Lenspack", settings: "Réglages du chat", openAs: "Ouvrir en", float: "Fenêtre flottante", dock: "Panneau latéral", resize: "Faire glisser pour redimensionner" },
+    hi: { ask: "Lenspack से पूछें", settings: "चैट सेटिंग्स", openAs: "ऐसे खोलें", float: "तैरती विंडो", dock: "साइड पैनल", resize: "आकार बदलने के लिए खींचें" },
+  };
+  var adminLang = "auto";
+  function pageLocale() {
+    try {
+      var app = document.getElementById("app");
+      var boot = app && app.dataset && app.dataset.bootstrap ? JSON.parse(app.dataset.bootstrap) : null;
+      var l = boot && boot.common && boot.common.locale;
+      if (l) return String(l).slice(0, 2).toLowerCase();
+    } catch (e) {}
+    return (document.documentElement.lang || navigator.language || "en").slice(0, 2).toLowerCase();
+  }
+  function uiLang() {
+    var p = {};
+    try { p = JSON.parse(load("lenspack-voice") || "{}") || {}; } catch (e) {}
+    var page = pageLocale(), l;
+    if (p.lang && p.lang !== "auto") l = p.langPage !== undefined && p.langPage !== page && STRINGS[page] ? page : p.lang;
+    else if (page !== "en" && STRINGS[page]) l = page;
+    else if (p.lang === "auto") l = page;
+    else l = adminLang;
+    return STRINGS[l] ? l : STRINGS[page] ? page : "en";
+  }
+  function t(k) { return (STRINGS[uiLang()] || STRINGS.en)[k] || STRINGS.en[k]; }
 
   var css = document.createElement("style");
   css.textContent =
@@ -34,15 +64,21 @@
     ".lpo-btn b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:rgba(255,255,255,.2);font-size:12px}" +
     ".lpo-panel{position:fixed;z-index:1002;background:#fff;display:none;box-sizing:border-box}" +
     ".lpo-panel.lpo-dock{top:0;right:0;bottom:0;width:var(--lpo-dw," + WIDTH + "px);max-width:100vw;box-shadow:-8px 0 24px rgba(16,24,40,.14);border-left:1px solid #e4e7ec}" +
-    ".lpo-panel.lpo-float{right:20px;bottom:20px;width:420px;height:min(680px,calc(100vh - 100px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);border:1px solid #e4e7ec;border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(16,24,40,.28)}" +
+    ".lpo-panel.lpo-float{right:20px;top:" + TOP + "px;width:420px;height:min(600px,calc(100vh - " + (TOP + 160) + "px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);border:1px solid #e4e7ec;border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(16,24,40,.28)}" +
     ".lpo-panel.lpo-float .lpc-head{cursor:move;user-select:none;touch-action:none}" +
     ".lpo-panel .lpc-x{font-size:22px;color:#344054}" +
-    // Resize handles: the window is anchored bottom-right, so it grows from its left and top edges.
+    // Resize handles: the window is anchored top-right; it grows from its left and top edges, and by the grip.
     ".lpo-rz{position:absolute;z-index:2;touch-action:none}" +
     ".lpo-rz-l{left:0;top:0;bottom:0;width:7px;cursor:ew-resize}" +
     ".lpo-rz-t{left:0;right:0;top:0;height:6px;cursor:ns-resize}" +
     ".lpo-rz-tl{left:0;top:0;width:14px;height:14px;cursor:nwse-resize;z-index:3}" +
     ".lpo-panel.lpo-dock .lpo-rz-t,.lpo-panel.lpo-dock .lpo-rz-tl{display:none}" +
+    // The grip: the visible way to resize the floating window, width and height together, its top-right corner staying put.
+    ".lpo-grip{position:absolute;left:0;bottom:0;z-index:3;width:16px;height:16px;padding:0;border:0;border-radius:0 0 0 13px;background:none;color:#667085;cursor:nesw-resize;touch-action:none;display:grid;place-items:center}" +
+    ".lpo-grip:hover,.lpo-grip.on{color:#1a85a0;background:rgba(26,133,160,.1)}" +
+    ".lpo-grip svg{width:12px;height:12px;display:block}" +
+    ".lpo-panel.lpo-dock .lpo-grip{display:none}" +
+    ".lpo-panel.lpo-float .lpc-foot{padding:10px 10px 14px 18px}" +
     "body.lpo-dragging,body.lpo-dragging *{user-select:none!important}" +
     ".lpo-gear{border:0;background:none;color:#667085;cursor:pointer;padding:4px 6px;border-radius:6px;font:16px/1 system-ui,sans-serif;margin-left:auto}" +
     ".lpo-gear:hover,.lpo-gear[aria-expanded=true]{background:#f5f7fa;color:#344054}" +
@@ -53,12 +89,13 @@
     ".lpo-menu label{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;cursor:pointer}" +
     ".lpo-menu label:hover{background:#f5f7fa}" +
     "body.lpo-docked{margin-right:var(--lpo-dw," + WIDTH + "px)!important}" +
-    "@media (max-width:800px){body.lpo-docked{margin-right:0!important}.lpo-rz{display:none}.lpo-panel.lpo-float,.lpo-panel.lpo-dock{top:0;left:0;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;max-width:none;max-height:none;border-radius:0}}";
+    "@media (max-width:800px){body.lpo-docked{margin-right:0!important}.lpo-rz,.lpo-grip{display:none}.lpo-panel.lpo-float,.lpo-panel.lpo-dock{top:0!important;left:0;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;max-width:none;max-height:none;border-radius:0}}";
   document.head.appendChild(css);
 
   var btn = document.createElement("button");
   btn.className = "lpo-btn";
-  btn.innerHTML = "<b>L</b>Ask Lenspack";
+  btn.innerHTML = "<b>L</b><span></span>";
+  btn.lastChild.textContent = t("ask");
   var panel = document.createElement("div");
   panel.className = "lpo-panel";
   document.body.appendChild(btn);
@@ -86,7 +123,7 @@
     var docked = mode === "dock" && panel.style.display === "block";
     var was = document.body.classList.contains("lpo-docked");
     document.body.classList.toggle("lpo-docked", docked);
-    panel.style.right = panel.style.bottom = panel.style.width = panel.style.height = "";
+    panel.style.right = panel.style.top = panel.style.bottom = panel.style.width = panel.style.height = "";
     var dw = Number(load(DOCKW)) || WIDTH;
     document.body.style.setProperty("--lpo-dw", Math.max(MIN_W, Math.min(dw, window.innerWidth - 200)) + "px");
     if (mode === "float") {
@@ -94,7 +131,9 @@
         var sz = JSON.parse(load(SIZE) || "null");
         if (sz) sizeTo(sz.w, sz.h);
         var p = JSON.parse(load(POS) || "null");
-        if (p) clampTo(p.right, p.bottom);
+        // A position saved before the window was anchored at the top: {right, bottom}.
+        if (p && p.top === undefined && p.bottom !== undefined) p.top = window.innerHeight - p.bottom - ((sz && sz.h) || panel.getBoundingClientRect().height || 600);
+        if (p) clampTo(p.right, p.top);
       } catch (e) {}
     }
     if (was !== docked) relayout();
@@ -107,14 +146,14 @@
     panel.style.height = h + "px";
     return { w: w, h: h };
   }
-  function clampTo(right, bottom) {
+  function clampTo(right, top) {
     var r = panel.getBoundingClientRect();
     var w = r.width || 420, h = r.height || 600;
     right = Math.max(0, Math.min(right, window.innerWidth - w));
-    bottom = Math.max(0, Math.min(bottom, window.innerHeight - h));
+    top = Math.max(0, Math.min(top, window.innerHeight - h));
     panel.style.right = right + "px";
-    panel.style.bottom = bottom + "px";
-    return { right: right, bottom: bottom };
+    panel.style.top = top + "px";
+    return { right: right, top: top };
   }
   var menu = null;
   function decorate() {
@@ -123,17 +162,19 @@
     // Settings: the gear opens a small menu; "Open as" is remembered in this browser.
     var gear = document.createElement("button");
     gear.className = "lpo-gear";
-    gear.title = "Chat settings";
-    gear.setAttribute("aria-label", "Chat settings");
+    gear.className += " lpo-t";
+    gear.dataset.t = "settings";
     gear.setAttribute("aria-expanded", "false");
     gear.textContent = "\u2699";
     menu = document.createElement("div");
     menu.className = "lpo-menu";
     menu.setAttribute("role", "menu");
     var heading = document.createElement("b");
-    heading.textContent = "Open as";
+    heading.className = "lpo-t";
+    heading.dataset.t = "openAs";
     menu.appendChild(heading);
-    [["float", "Floating window"], ["dock", "Side panel"]].forEach(function (o) {
+    ["float", "dock"].forEach(function (key) {
+      var o = [key, key];
       var label = document.createElement("label");
       var input = document.createElement("input");
       input.type = "radio";
@@ -147,7 +188,10 @@
         showMenu(false);
       });
       label.appendChild(input);
-      label.appendChild(document.createTextNode(o[1]));
+      var words = document.createElement("span");
+      words.className = "lpo-t";
+      words.dataset.t = o[1];
+      label.appendChild(words);
       menu.appendChild(label);
     });
     function showMenu(on) {
@@ -162,19 +206,19 @@
     head.addEventListener("pointerdown", function (e) {
       if (mode !== "float" || e.button !== 0 || e.target.closest("button") || window.innerWidth <= 800) return;
       var r = panel.getBoundingClientRect();
-      var right0 = window.innerWidth - r.right, bottom0 = window.innerHeight - r.bottom, x0 = e.clientX, y0 = e.clientY, at = null;
-      function move(ev) { at = clampTo(right0 - (ev.clientX - x0), bottom0 - (ev.clientY - y0)); }
+      var right0 = window.innerWidth - r.right, top0 = r.top, x0 = e.clientX, y0 = e.clientY, at = null;
+      function move(ev) { at = clampTo(right0 - (ev.clientX - x0), top0 + (ev.clientY - y0)); }
       drag(move, function () { if (at) save(POS, JSON.stringify(at)); });
       e.preventDefault();
     });
-    // Resize from the left edge, the top edge or the top-left corner (docked: the left edge sets the width).
+    // Also resize from the left edge, the top edge or the top-left corner (docked: the left edge sets the width).
     ["l", "t", "tl"].forEach(function (side) {
       var h = document.createElement("div");
       h.className = "lpo-rz lpo-rz-" + side;
       panel.appendChild(h);
       h.addEventListener("pointerdown", function (e) {
         if (e.button !== 0 || window.innerWidth <= 800) return;
-        var r = panel.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, got = null;
+        var r = panel.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, got = null, at = null;
         function move(ev) {
           var dx = x0 - ev.clientX, dy = y0 - ev.clientY;
           if (mode === "dock") {
@@ -183,19 +227,52 @@
             got = w;
             return;
           }
-          // Keep the window inside the viewport while it grows towards the top-left.
+          // Keep the window inside the viewport while it grows towards the top-left; growing
+          // upwards moves its top up by as much (the bottom edge stays).
           var w2 = side === "t" ? r.width : Math.min(r.width + dx, r.right - MARGIN);
           var h2 = side === "l" ? r.height : Math.min(r.height + dy, r.bottom - MARGIN);
           got = sizeTo(w2, h2);
+          at = { right: window.innerWidth - r.right, top: Math.max(0, r.bottom - got.h) };
+          panel.style.top = at.top + "px";
         }
         drag(move, function () {
           if (got === null) return;
           if (mode === "dock") { save(DOCKW, String(Math.round(got))); relayout(); }
-          else save(SIZE, JSON.stringify(got));
+          else { save(SIZE, JSON.stringify(got)); save(POS, JSON.stringify(at)); }
         });
         e.preventDefault();
         e.stopPropagation();
       });
+    });
+    // The grip, bottom-left: drag it down and left to grow the floating window both ways. The window
+    // is anchored top-right ({right, top}), and the default leaves room below it, so it can grow at once.
+    var grip = document.createElement("button");
+    grip.type = "button";
+    grip.className = "lpo-grip";
+    grip.className += " lpo-t";
+    grip.dataset.t = "resize";
+    grip.innerHTML = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M1 3 9 11M1 7 5 11M1 10.5 1.5 11"/></svg>';
+    panel.appendChild(grip);
+    grip.addEventListener("pointerdown", function (e) {
+      if (mode !== "float" || (e.pointerType === "mouse" && e.button !== 0) || window.innerWidth <= 800) return;
+      var r = panel.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, got = null;
+      var at = { right: window.innerWidth - r.right, top: r.top };
+      try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+      grip.classList.add("on");
+      function move(ev) {
+        // Grow towards the bottom-left, stopping at the viewport's margin; the top-right corner stays.
+        got = sizeTo(Math.min(r.width + x0 - ev.clientX, r.right - MARGIN), Math.min(r.height + ev.clientY - y0, window.innerHeight - MARGIN - r.top));
+        panel.style.right = at.right + "px";
+        panel.style.top = at.top + "px";
+      }
+      drag(move, function () {
+        grip.classList.remove("on");
+        if (got === null) return;
+        save(SIZE, JSON.stringify(got));
+        save(POS, JSON.stringify(at));
+      });
+      e.preventDefault();
+      e.stopPropagation();
     });
     // Esc closes the chat, but only while focus is in it: Superset's own dialogs keep their Esc.
     if (!panel.__lpoKeys) {
@@ -207,8 +284,20 @@
         close();
       });
     }
+    relabel();
     place();
   }
+  // Every translated word: text for menu entries, a tooltip and label for buttons.
+  function relabel() {
+    btn.lastChild.textContent = t("ask");
+    panel.querySelectorAll(".lpo-t").forEach(function (n) {
+      var words = t(n.dataset.t);
+      if (n.tagName === "BUTTON") { n.title = words; n.setAttribute("aria-label", words); }
+      else n.textContent = words;
+    });
+  }
+  window.addEventListener("lenspack-lang", relabel);
+  window.addEventListener("storage", function (e) { if (e.key === "lenspack-voice") relabel(); });
   function drag(move, done) {
     document.body.classList.add("lpo-dragging");
     function up() {
@@ -227,7 +316,7 @@
     if (panel.style.display !== "block" || mode !== "float" || window.innerWidth <= 800) return;
     var r = panel.getBoundingClientRect();
     if (panel.style.width) sizeTo(r.width, r.height);
-    clampTo(window.innerWidth - r.right, window.innerHeight - r.bottom);
+    clampTo(window.innerWidth - r.right, r.top);
   });
 
   // Re-reads the dashboard without reloading the page. Superset's dashboard page is a React route
@@ -319,7 +408,9 @@
     ]).then(function (res) {
       var b = res[0], info = res[1];
       if (b.error || seen !== key) return;
-      current = { key: key, board: b.board, title: b.title, pack: info.pack, examples: info.examples };
+      current = { key: key, board: b.board, title: b.title, pack: info.pack, examples: info.examplesByLang || info.examples };
+      if (info.language && info.language.default) adminLang = info.language.default;
+      relabel();
       // The deployment's default applies until this browser has chosen.
       adminDefault = info.panel === "dock" ? "dock" : "float";
       if (chosen !== "dock" && chosen !== "float") mode = adminDefault;

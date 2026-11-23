@@ -22,13 +22,59 @@ Apache Superset as a lenspack backend, without forking Superset.
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's
   version history is the undo Superset lacks.
 
-`bin/serve.ts` runs the board API plus two ways to show the chat: beside the dashboard (`/superset/<id>`, an
-iframe) or inside Superset (`/overlay.js`, loaded by one script tag in Superset's documented-overridable
-`tail_js_custom_extra.html`). See `superset-demo/` in the lab repo for a stock Superset 5.0 setup.
+`bin/serve.ts` runs the board API and the chat inside Superset (`/overlay.js`, loaded by one script tag in
+Superset's documented-overridable `tail_js_custom_extra.html`). The deployment side is one Python file,
+`lenspack_superset.py` in [egovernments/innovations `nl-dashboard/`](https://github.com/egovernments/innovations/tree/nl-dashboard/superset-lenspack/nl-dashboard),
+loaded by `superset_config.py`.
+
+## Who is asking
+
+Browsers never reach this server directly. Superset forwards `/lenspack/...` to it for signed-in users and adds
+`x-lenspack-identity`: base64url JSON `{u, a, d, e, v, t}` (user, Superset admin, the dashboard the request is about,
+whether Superset lets them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
+Superset's `SECRET_KEY` on the Superset side; this server fetches it on start
+(`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid
+signature less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `chat.css` and
+`/healthz` are public.
+
+- **Edits** follow `LENSPACK_EDIT_POLICY` (or `editPolicy` in the config). `superset`, the default: whoever
+  Superset lets edit that dashboard, its owners with `can_write` on Dashboard and admins. Everyone else who can
+  view it may still ask questions; the chat's edit tools then answer "you can view this dashboard but not edit it
+  in Superset", which the model passes on. `signed-in`: anyone signed in may edit (the behaviour before).
+- **Settings** writes and the audit log need a Superset admin.
+- **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
+  `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls `POST /api/v1/lenspack/bootstrap`, which makes the
+  `lenspack` user (Admin role: it edits dashboards it doesn't own, which Superset allows only owners and admins).
+  The generated password stays in `superset-account.json` (mode 600) in the state directory; after that the admin
+  password can be removed. `LENSPACK_SUPERSET_PASSWORD` (with `superset.username`) uses an account you manage
+  instead.
+- **Audit log.** Board changes, refused and denied requests, chat turns and settings changes, each with the
+  Superset user, one JSON line each in `audit.jsonl` in the state directory. On the first write of a month the
+  previous month moves to `audit-YYYY-MM.jsonl`; months older than 90 days are deleted (`audit.retentionDays`,
+  `LENSPACK_AUDIT_RETENTION_DAYS`; `audit: false` turns it off). It is the durable record: the usage figures
+  (`GET /api/_usage`) are kept in memory and reset on restart. Admins read it with
+  `GET /_superset/audit?month=YYYY-MM&limit=N`, and on the AI assistant page.
+
+Inside Superset the chat opens as a floating window or as a side panel; the gear chooses. The window opens at
+the top right, below Superset's menu bar, with room under it: drag it by its header, and resize it with the
+grip in its bottom-left corner (down and left, the top-right corner staying put) or from its left and top
+edges. Size and position are remembered per browser.
 
 ## Voice and languages
 
-The chat panel has a mic and a language menu (Auto, English, Français, हिन्दी), remembered per browser.
+The chat panel has a mic and a language menu (Auto, English, Français, हिन्दी), remembered per browser. The
+overlay's own words (its button, gear menu and grip) and the suggested questions follow the same language. A
+suggested question may be written per language, with one query for all of them:
+
+```yaml
+overlay:
+  examples:
+    - question: { en: Zero-dose share by LGA, fr: Part des enfants zéro dose par LGA }
+      query: { kind: breakdown, dimension: lga, measure: zero_dose_pct, limit: 10 }
+```
+
+The model sees the English wording (else the first) as a worked example; a language an example doesn't have
+shows its English. `/_superset/info` returns `examplesByLang`, and `examples` for `?lang=` (English by default).
 
 - **Mic.** Click to start and click again to stop, or hold the button and release to stop. Holding Space for
   2 s (`speech.holdMs`, 500–3000; each user can pick their own in the menu) also talks, even while typing
@@ -60,9 +106,8 @@ page, which calls:
 | `PUT /_superset/settings/speech` | any of `{model, holdMs}`; a field left out is kept, `null` puts it back to the default |
 | `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
 
-Writes need the header `x-lenspack-settings-token: $LENSPACK_SETTINGS_TOKEN`: every path is also reachable
-by signed-in Superset users through the proxy, and only the admin-only settings page holds the token.
-Without the variable, settings are read-only. They persist in `settings.json` beside the board state.
+Reads and writes need a Superset admin's signed identity (above). Settings persist in `settings.json` beside
+the board state.
 
 Gaps: board filters are not yet written as Superset native filters; a previous-period KPI is drawn by Superset
 without its comparison; tabs and columns in a dashboard are kept, and new widgets are added below them.
