@@ -36,7 +36,12 @@ pnpm eval:suite --suite my-suite.yaml --truth truth.json --models claude-haiku-5
   - Numbers are read from the reply. Counts must be exact, or within 0.5% when the reply rounds them ("31.6k"). Ratios get ±0.1 pp, or half the precision shown, and never more than ±0.5 pp.
   - When the reply is not enough, the data of the new or changed widget is scored instead.
   - `grounded` lists the reply's numbers that appear in no tool result.
-  - Declines are labelled declined, degraded, clarify or answered, by `--judge` or by a heuristic.
+  - On an `ambiguous` question, any alternative's value counts with a disclosure word. The right value without one is `partial`, and a short clarifying question that names the readings is `declined_ok`. So naming the definition and asking both pass; only a silent pick loses.
+  - Declines are labelled declined, degraded, clarify or answered, by `--judge` or by a heuristic. A reply that says outright it can't ("no records in that window") overrules an `answered` label.
+  - A turn whose every data call failed on the server (502, timeout) is an `error`, not a model answer.
   - Outcomes are `correct`, `partial`, `declined_ok`, `confidently_wrong`, `wrong` and `error`.
   - The report breaks results down by model and tier, groups expected fails by reason (engine, pack, data, scope), quotes every confidently wrong reply, and gives cost per turn and per right answer, latency p50/p95, steps and tool errors.
 - **Stub:** `--stub` plays each question's `stub:` script (tool calls, then text, with `{{rows}}` for the last result). `evals/test/suite.test.ts` runs the commerce suite this way and checks that every outcome is the one the script aims for.
+- **Stored runs:** each result keeps what the turn left behind (reply, tool calls and outputs, boards before and after, widget data, the judge label). `--rescore results/<run>.json` scores a stored run again after a scorer, suite or truth fix, with no model and no database.
+- **Cost:** models run interleaved per question, so a stopped run still compares them on the same questions. `--max-usd` is checked before each batch against the dearest batch so far, and progress is saved to `results/_partial.json`.
+- **Superset rig check:** before trusting a pack, the rig checks that every dataset came back under its own name and retries otherwise. (A concurrent-lookup race in Flask-AppBuilder 4.5.5, which Superset 5 pins, once returned one dataset for another.)
