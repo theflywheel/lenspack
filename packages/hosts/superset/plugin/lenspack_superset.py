@@ -7,7 +7,9 @@ Load it at the end of superset_config.py (on the Helm chart: a configOverrides e
 It adds:
   - /lenspack/...: Superset itself forwards these requests to the Lenspack container, for signed-in users
     only, with a signed header saying who is asking, whether they are an admin, and whether Superset would
-    let them view and edit the dashboard the request is about. Chat replies stream through unbuffered.
+    let them view and edit the dashboard the request is about. The dashboard is read from the path the way
+    Lenspack reads it (api/<pack>/superset-<id>/...), the header names that board and pack, and a path with a
+    "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered.
     Lenspack trusts nothing else, so its port never needs to be reachable from outside.
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
   - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log;
@@ -110,14 +112,42 @@ def lenspack_identity_key() -> str:
     return hmac.new(secret.encode() if isinstance(secret, str) else secret, b"lenspack-identity-v1", hashlib.sha256).hexdigest()
 
 
-def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None) -> str:
+def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None, pack=None) -> str:
     claims = {"u": user, "a": bool(admin), "t": int(time.time())}
     if roles is not None:
         claims["r"] = sorted(roles)
     if dashboard is not None:
-        claims.update({"d": dashboard, "e": bool(can_edit), "v": bool(can_view)})
+        # b: the board these rights are for; Lenspack refuses the request when its own route names another board or pack.
+        claims.update({"d": dashboard, "b": f"superset-{dashboard}", "e": bool(can_edit), "v": bool(can_view)})
+        if pack is not None:
+            claims["p"] = pack
     body = base64.urlsafe_b64encode(json.dumps(claims, separators=(",", ":")).encode()).rstrip(b"=").decode()
     return body + "." + hmac.new(lenspack_identity_key().encode(), body.encode(), hashlib.sha256).hexdigest()
+
+
+_DOT_SEGMENTS = {".", ".."}
+# Left after Flask decoded the path once, these were encoded twice: an encoded dot, slash or backslash.
+_ENCODED = re.compile(r"%(?:2e|2f|5c)", re.IGNORECASE)
+_DASHBOARD_BOARD = re.compile(r"superset-(\d+)")
+
+
+def lenspack_route(path: str):
+    """The path to forward to Lenspack, and the dashboard board in it, read the way Lenspack's board API reads a
+    path: api/<pack>/<board>/<action>, the board at the third place. None when the path is not forwarded at all:
+    a "." or ".." segment (Lenspack would resolve it and act on another board than the one checked here), an
+    encoded dot, slash or backslash still there after Flask's decoding, or a backslash.
+    Paths under api/_<name>/ (the usage page, speech to text) are about no dashboard."""
+    if "\\" in path or _ENCODED.search(path):
+        return None
+    parts = path.split("/")
+    if any(p in _DOT_SEGMENTS for p in parts):
+        return None
+    route = {"path": path, "pack": None, "dashboard": None}
+    if len(parts) >= 3 and parts[0] == "api" and parts[1] and not parts[1].startswith("_"):
+        m = _DASHBOARD_BOARD.fullmatch(parts[2])
+        if m:
+            route.update(pack=parts[1], dashboard=int(m.group(1)))
+    return route
 
 
 def lenspack_rls_clauses(filters, render) -> list:
@@ -180,23 +210,20 @@ def lenspack_app_mutator(app):
     # View: Superset's dashboard access check. Edit: what Superset's own dashboard API requires, an owner
     # (admins count as owners) with can_write on Dashboard.
     def dashboard_rights(id_or_slug):
-        from sqlalchemy import or_
-
-        from superset.models.dashboard import Dashboard
+        from superset.models.dashboard import Dashboard, id_or_slug_filter
 
         key = str(id_or_slug).strip()
         if not key:
             return None
-        q = db.session.query(Dashboard)
-        dash = q.filter(or_(Dashboard.id == int(key), Dashboard.slug == key)).one_or_none() if key.isdigit() else q.filter(Dashboard.slug == key).one_or_none()
+        # As Superset's own API reads it: digits are an id, never a slug, so "5" cannot pick a dashboard whose slug is 5.
+        dash = db.session.query(Dashboard).filter(id_or_slug_filter(key)).one_or_none()
         if dash is None:
             return None
         can_view = bool(security_manager.can_access_dashboard(dash))
         can_edit = can_view and security_manager.is_owner(dash) and (security_manager.is_admin() or security_manager.can_access("can_write", "Dashboard"))
         return {"id": dash.id, "view": can_view, "edit": bool(can_edit)}
 
-    BOARD = re.compile(r"(?:^|/)superset-(\d+)(?:/|$)")
-    HOP = {"connection", "keep-alive", "transfer-encoding", "content-encoding", "content-length", "te", "trailer", "upgrade", "proxy-authenticate", "proxy-authorization"}
+    HOP ={"connection", "keep-alive", "transfer-encoding", "content-encoding", "content-length", "te", "trailer", "upgrade", "proxy-authenticate", "proxy-authorization"}
 
     # --- /lenspack/...: Superset forwards to Lenspack -------------------------------------------------
     def lenspack_proxy(path=""):
@@ -210,16 +237,23 @@ def lenspack_app_mutator(app):
             origin = request.headers.get("Origin")
             if (site and site not in ("same-origin", "none")) or (origin and urlparse(origin).netloc != request.host):
                 return jsonify({"error": "cross-site request refused"}), 403
-        # The dashboard this request is about: a board "superset-<id>" in the path, or ?dashboard= when binding.
-        m = BOARD.search(path)
-        wanted = m.group(1) if m else (request.args.get("dashboard") if path.startswith("_superset/bind") else None)
+        # The dashboard this request is about: the board "superset-<id>" where Lenspack reads a board, or ?dashboard=
+        # when binding. A path Lenspack would read differently (a dot segment, an encoded slash) is not forwarded.
+        route = lenspack_route(path)
+        if route is None:
+            return jsonify({"error": "a path with a dot segment or an encoded slash is not accepted"}), 400
+        path = route["path"]
+        if route["dashboard"] is not None:
+            wanted = str(route["dashboard"])
+        else:
+            wanted = request.args.get("dashboard") if path == "_superset/bind" else None
         rights = dashboard_rights(wanted) if wanted else None
         if rights and not rights["view"]:
             return jsonify({"error": "You don't have access to this dashboard in Superset."}), 403
         admin = is_admin(user)
         roles = role_names(user)
         headers = {
-            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles) if rights else lenspack_sign(user.username, admin, roles=roles),
+            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"]) if rights else lenspack_sign(user.username, admin, roles=roles),
             "x-forwarded-proto": request.scheme,
             "x-forwarded-host": request.host,
             "x-forwarded-prefix": LENSPACK_PATH,

@@ -23,7 +23,7 @@ import { supersetClient } from "./client";
 import { supersetConnector } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
 import { supersetPolicy } from "./access";
-import { editPolicyFrom, hostPolicyFrom, supersetAuth } from "./identity";
+import { editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
 import { supersetBoards } from "./store";
 
 /**
@@ -141,11 +141,16 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
   log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
+  if (hostPolicy === "off") log(`host policy off: anyone signed in to Superset can read all ${datasets.length} configured dataset(s) through Lenspack, without Superset's dataset access or row-level security (hostPolicy: superset applies them)`);
 
-  /** Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. */
-  async function bind(idOrSlug: string) {
+  /**
+   * Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. Only the one
+   * Superset checked the user may view (the signed d); null for any other.
+   */
+  async function bind(idOrSlug: string, signed: number | null | undefined) {
     const head = await client.get<{ result: { id: number; dashboard_title: string } }>(`/api/v1/dashboard/${encodeURIComponent(idOrSlug)}`);
     const id = head.result.id;
+    if (signed !== id) return null;
     const board = `superset-${id}`;
     if (dashboards[board] === undefined) {
       dashboards[board] = id;
@@ -223,6 +228,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       return async (req, res, url, signedIn) => {
         cors(req, res);
         if (req.method === "OPTIONS") return send(res, 204, "", "application/json");
+        // Before the path is read at all: URL would resolve "..", so what the route acts on could differ from what Superset checked.
+        const bad = pathRefusal(req.url);
+        if (bad) return json(res, 400, { error: bad }, NO_STORE);
         if (url.pathname.startsWith("/api/") || url.pathname === "/healthz") return;
         // The scripts are public (Superset only includes them for signed-in users); everything else needs Superset's signature.
         const asset = /^\/(chat\.js|overlay\.js|chat\.css)$/.exec(url.pathname);
@@ -231,7 +239,10 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (!who) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
-        if (url.pathname === "/_superset/bind") return json(res, 200, await bind(url.searchParams.get("dashboard") ?? ""), NO_STORE);
+        if (url.pathname === "/_superset/bind") {
+          const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, () => idKey)?.d);
+          return bound ? json(res, 200, bound, NO_STORE) : json(res, 403, { error: "Superset did not check your access to this dashboard." }, NO_STORE);
+        }
         if (url.pathname === "/_superset/dashboards") {
           const list = await client.get<{ result: { id: number; dashboard_title: string; changed_on_delta_humanized: string }[] }>("/api/v1/dashboard/?q=(page_size:100,order_column:changed_on_delta_humanized,order_direction:desc)");
           return json(res, 200, list.result.map((d) => ({ id: d.id, title: d.dashboard_title, changed: d.changed_on_delta_humanized })), NO_STORE);
