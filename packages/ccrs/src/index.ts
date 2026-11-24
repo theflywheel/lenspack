@@ -1,6 +1,7 @@
 import type { BoardOp, Query } from "@lenspack/core";
-import { type Pack, type PackDimension, type PackMeasure, type Where, parsePack } from "@lenspack/spec";
-import YAML from "yaml";
+import { type BuiltPack, type Pack, type PackDimension, type PackMeasure, type Where, emitPack, packBuilder, slug as packSlug, whereSig } from "@lenspack/spec";
+
+import { DATE_COLUMNS, MAX_HIER_LEVEL } from "./api";
 
 // CCRS's analytics describe a dashboard as data already: a KPI is a query
 // (grain, measures with filters, ratios, dimensions, sort, limit) plus a
@@ -79,9 +80,7 @@ export type SkinTile = {
 };
 export type Skin = { tiles: Record<string, SkinTile>; packs: Record<string, { public: boolean; requiredActionUrl?: string }> };
 
-export type CcrsResult = {
-  pack: Pack;
-  packYaml: string;
+export type CcrsResult = BuiltPack & {
   boards: { id: string; title: string; ops: BoardOp[]; layout: { i: string; x: number; y: number; w: number; h: number }[]; tiles: string[] }[];
   skin: Skin;
   notes: { kpi: string; note: string }[];
@@ -94,8 +93,6 @@ const GRAIN = {
 } as const;
 
 const CARD_KINDS = new Set(["number-tile", "number-tile-delta", "number-tile-sparkline", "sparkline-card", "scalar"]);
-const DATE_COLUMNS = new Set(["created_date", "occurred_date", "snapshot_date"]);
-const MAX_HIER_LEVEL = 12;
 
 // A complaint-type level a KPI rolls up to (hierLevel "1".."12"):
 // the same expression pgr-services uses, as a Postgres fragment.
@@ -115,7 +112,7 @@ const tilesQuery = (q: Query): Query => {
   return rest as Query;
 };
 
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(\d)/, "n_$1") || "measure";
+const slug = (s: string) => packSlug(s, { empty: "measure" });
 const unwrap = <T>(records: T[] | { data: T }[]): T[] => (records as { data?: T }[]).map((r) => (r && typeof r === "object" && "data" in r ? (r.data as T) : (r as T)));
 
 // A KPI's own default window, kept so a widget stands on its own; on a board
@@ -144,7 +141,8 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
     return g.entity;
   };
 
-  const dimensions = new Map<string, PackDimension>();
+  const pb = packBuilder();
+  const { dimensions, measures } = pb;
   const dimension = (entity: string, column: string): string => {
     if (/^service_type_l\d+$/.test(column)) {
       dimensions.set(column, dimensions.get(column) ?? hierDimension(Number(column.slice("service_type_l".length))));
@@ -157,12 +155,9 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       // columns, recorded as also.
       const { [entity]: _self, ...rest } = known.also ?? {};
       dimensions.set(column, { ...known, entity: "facts", field: column, also: { ...rest, [known.entity]: { field: known.field ?? column } } });
-    } else if (known.entity !== entity && !known.also?.[entity]) known.also = { ...(known.also ?? {}), [entity]: { field: column } };
+    } else pb.conform(known, entity, { field: column });
     return column;
   };
-
-  const measures = new Map<string, PackMeasure>();
-  const bySig = new Map<string, string>();
 
   const toWhere = (filters: FilterSpec | undefined, kpi: string): Where[] => {
     const out: Where[] = [];
@@ -204,25 +199,11 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       notes.push({ kpi, note: `aggregate ${spec.agg}${spec.p ? ` p${spec.p}` : ""} not translated` });
       return null;
     }
-    const sig = JSON.stringify([entity, agg, spec.column ?? null, [...where].map((w) => [w.field, w.op, w.value ?? null]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))]);
-    const known = bySig.get(sig);
-    if (known) return known;
-    const stem = agg === "count" ? "complaints" : `${agg}_${spec.column}`;
-    const base = slug([entity === "facts" ? "" : entity, stem, words(where)].filter(Boolean).join("_")).slice(0, 60);
-    let key = base;
-    for (let i = 2; measures.has(key) || dimensions.has(key); i++) key = `${base}_${i}`;
-    measures.set(key, {
-      key,
-      entity,
-      agg: agg as PackMeasure["agg"],
-      ...(spec.column ? { field: spec.column } : {}),
-      ...(where.length ? { where } : {}),
-      format: "number",
-      synonyms: [],
-      verified: true,
+    return pb.measure(JSON.stringify([entity, agg, spec.column ?? null, whereSig(where)]), () => {
+      const stem = agg === "count" ? "complaints" : `${agg}_${spec.column}`;
+      const key = pb.key(slug([entity === "facts" ? "" : entity, stem, words(where)].filter(Boolean).join("_")).slice(0, 60));
+      return { key, entity, agg: agg as PackMeasure["agg"], ...(spec.column ? { field: spec.column } : {}), ...(where.length ? { where } : {}), format: "number", synonyms: [], verified: true };
     });
-    bySig.set(sig, key);
-    return key;
   };
 
   const measureFor = (entity: string, kpi: KpiDefinition, m: MeasureSpec, base: Where[]): string | null => {
@@ -230,15 +211,10 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
     const n = m.numerator && simple(entity, m.numerator, [...base, ...toWhere(m.numerator.filter, kpi.id)], kpi.id);
     const d = m.denominator && simple(entity, m.denominator, [...base, ...toWhere(m.denominator.filter, kpi.id)], kpi.id);
     if (!n || !d) return null;
-    const sig = JSON.stringify(["ratio", n, d]);
-    const known = bySig.get(sig);
-    if (known) return known;
-    const stem = slug(`${kpi.id.replace(/^(cl|rs|ep)_/, "").replace(/_count$/, "")}${m.name === "pct" || m.name === "rate" || m.name === "ratio" ? "" : `_${m.name}`}`);
-    let key = stem;
-    for (let i = 2; measures.has(key) || dimensions.has(key); i++) key = `${stem}_${i}`;
-    measures.set(key, { key, entity, derived: `${n} / ${d}`, label: String(kpi.viz.title ?? kpi.id), format: "percent", synonyms: [], verified: true });
-    bySig.set(sig, key);
-    return key;
+    return pb.measure(JSON.stringify(["ratio", n, d]), () => {
+      const key = pb.key(slug(`${kpi.id.replace(/^(cl|rs|ep)_/, "").replace(/_count$/, "")}${m.name === "pct" || m.name === "rate" || m.name === "ratio" ? "" : `_${m.name}`}`));
+      return { key, entity, derived: `${n} / ${d}`, label: String(kpi.viz.title ?? kpi.id), format: "percent", synonyms: [], verified: true };
+    });
   };
 
   const tiles: Skin["tiles"] = {};
@@ -369,7 +345,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
   // Every level a request may roll complaint types up to (pgr-services allows 1..12).
   for (let level = 1; level <= MAX_HIER_LEVEL; level++) dimension("facts", `service_type_l${level}`);
 
-  const rawPack = {
+  const { pack, packYaml } = emitPack({
     pack: opts.packName ?? "ccrs",
     version: 1,
     ...(opts.timeZone ? { timeZone: opts.timeZone } : {}),
@@ -377,8 +353,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
     entities,
     dimensions: [...dimensions.values()],
     measures: [...measures.values()],
-  };
-  const pack = parsePack(rawPack);
+  });
 
   const boards = packs.map((p) => {
     const ops = p.tiles.filter((t) => widgetOps.has(t)).map((t) => widgetOps.get(t)!);
@@ -390,8 +365,6 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       { op: "add_filter", filter: { id: "ward", type: "select", label: "Ward", field: "ward_code", applies: ["*"] } },
       { op: "add_filter", filter: { id: "complaint_type", type: "select", label: "Complaint type", field: "service_code", applies: ["*"] } },
     ] as unknown as BoardOp[];
-    dimension("facts", "ward_code");
-    dimension("facts", "service_code");
     return {
       id: p.id,
       title: String(p.description ?? p.id).split(" — ")[0]!,
@@ -402,11 +375,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
       tiles: p.tiles.filter((t) => widgetOps.has(t)),
     };
   });
-  // Dimensions added for board filters after the pack was parsed.
-  const finalPack = parsePack({ ...rawPack, dimensions: [...dimensions.values()] });
-
   const skin: Skin = { tiles, packs: Object.fromEntries(packs.map((p) => [p.id, { public: p.public === true, ...(p.requiredActionUrl ? { requiredActionUrl: p.requiredActionUrl } : {}) }])) };
-  void pack;
-  return { pack: finalPack, packYaml: YAML.stringify(JSON.parse(JSON.stringify({ ...rawPack, dimensions: [...dimensions.values()] })), { lineWidth: 0 }), boards, skin, notes };
+  return { pack, packYaml, boards, skin, notes };
 }
 export { ccrsApi, type CcrsApiOptions, type Board as CcrsBoard } from "./api";

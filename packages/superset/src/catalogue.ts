@@ -1,5 +1,4 @@
-import { type Pack, parsePack } from "@lenspack/spec";
-import YAML from "yaml";
+import { type BuiltPack, type PackDimension, emitPack, packBuilder, slug as packSlug } from "@lenspack/spec";
 
 import { type SupersetClient, rison } from "./client";
 import { examplesForPack } from "./examples";
@@ -58,14 +57,7 @@ export type Binding = {
   mapStyle?: string;
 };
 
-export const slug = (s: string) =>
-  s
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/^(\d)/, "_$1")
-    .replace(/^_/, "k") || "k";
+export const slug = (s: string) => packSlug(s, { camel: true, digit: "k", empty: "k" });
 
 const COLUMN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // COUNT(*), or ClickHouse's count().
@@ -225,10 +217,11 @@ export function geoOf(ds: SupersetDataset, configured: { lat: string; lon: strin
 }
 
 /** Datasets → a pack and the binding back to Superset names. */
-export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay = {}): { pack: Pack; packYaml: string; binding: Binding } {
+export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay = {}): BuiltPack & { binding: Binding } {
   const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map(), geo: new Map(), ...(overlay.mapStyle ? { mapStyle: overlay.mapStyle } : {}) };
   const entities: Record<string, unknown> = {};
-  const dimensions: Record<string, any>[] = [];
+  const pb = packBuilder();
+  const dimensions = pb.dimensions;
   const measures: Record<string, unknown>[] = [];
   const usedMeasureKeys = new Set<string>();
 
@@ -250,21 +243,18 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
       if (c.groupby === false || c.is_dttm || c.column_name === time) continue;
       const key = slug(c.column_name);
       const source = COLUMN.test(c.column_name) ? { field: c.column_name } : { sql: { superset: c.column_name } };
-      const existing = dimensions.find((d) => d.key === key);
+      const existing = dimensions.get(key);
       // Two columns of one entity that come to the same key (Team and team): the first one is the dimension.
-      if (existing && (existing.entity === entity || existing.also?.[entity])) continue;
-      if (existing) {
-        existing.also = { ...(existing.also ?? {}), [entity]: source };
-      } else {
-        dimensions.push({
+      if (existing && !pb.conform(existing, entity, source)) continue;
+      if (!existing)
+        dimensions.set(key, {
           key,
           entity,
           ...source,
           type: typeOf(c),
           label: cut(overlay.labels?.[key] ?? c.verbose_name ?? undefined, 80),
           hint: cut(overlay.hints?.[key] ?? c.description ?? undefined, 400),
-        });
-      }
+        } as PackDimension);
       binding.columns.set(key, new Map([...(binding.columns.get(key) ?? []), [entity, c.column_name]]));
       binding.dimensionOf.get(entity)!.set(c.column_name, key);
     }
@@ -294,19 +284,18 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     }
   }
 
-  const hierarchies = Object.fromEntries(Object.entries(overlay.hierarchies ?? {}).filter(([, levels]) => levels.every((l) => dimensions.some((d) => d.key === l))));
-  const raw = {
+  const hierarchies = Object.fromEntries(Object.entries(overlay.hierarchies ?? {}).filter(([, levels]) => levels.every((l) => dimensions.has(l))));
+  const { pack, packYaml } = emitPack({
     pack: overlay.pack ?? "superset",
     version: 1,
     description: overlay.description ?? `Superset datasets: ${datasets.map((d) => d.table_name).join(", ")}`,
     ...(overlay.timeZone ? { timeZone: overlay.timeZone } : {}),
     entities,
-    dimensions: dimensions.map((d) => Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined))),
-    measures: measures.map((m) => Object.fromEntries(Object.entries(m).filter(([, v]) => v !== undefined))),
+    dimensions: [...dimensions.values()],
+    measures,
     hierarchies,
     ...(overlay.instructions ? { instructions: overlay.instructions } : {}),
     ...(overlay.examples?.length ? { examples: examplesForPack(overlay.examples as { question?: unknown }[]) } : {}),
-  };
-  const packYaml = YAML.stringify(raw, { lineWidth: 0 });
-  return { pack: parsePack(raw), packYaml, binding };
+  });
+  return { pack, packYaml, binding };
 }

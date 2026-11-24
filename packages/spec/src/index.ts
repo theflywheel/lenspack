@@ -2,3 +2,4 @@ export * from "./pack";
 export * from "./load";
 export * from "./catalogue";
 export * from "./expr";
+export * from "./build";

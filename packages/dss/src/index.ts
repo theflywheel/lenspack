@@ -1,7 +1,6 @@
 import { type BoardOp, type Query, applyOps, emptyBoard, measured, opSchema } from "@lenspack/core";
 import { type Capabilities, ResolveError, check } from "@lenspack/engine";
-import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, catalogueFrom, formatExpr, operands, parseExpr, parsePack } from "@lenspack/spec";
-import YAML from "yaml";
+import { type BuiltPack, type MeasureExpr, type Pack, type PackMeasure, type Where, catalogueFrom, emitPack, formatExpr, operands, packBuilder, slug as packSlug, parseExpr, whereSig } from "@lenspack/spec";
 
 import { type Bucket, type Leaf, bare, walk } from "./walk";
 
@@ -47,23 +46,16 @@ export type ChartOutcome = {
   drills?: boolean;
 };
 
-export type DssResult = { pack: Pack; packYaml: string; boards: { id: string; title: string; ops: BoardOp[] }[]; outcomes: ChartOutcome[]; assumptions: string[]; report: string };
+export type DssResult = BuiltPack & { boards: { id: string; title: string; ops: BoardOp[] }[]; outcomes: ChartOutcome[]; assumptions: string[]; report: string };
 
 const SEARCH: Capabilities = { joins: false, exactDistinct: false, exactPercentiles: false };
 const GENERIC = /^(count|sum|name|aggr?s?|filters?|value|total|agg|result|daily count|targetvalue)$/i;
 
-export const slug = (s: string, max = 48) =>
-  s
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/^(\d)/, "n_$1")
-    .slice(0, max)
-    .replace(/_+$/, "") || "unnamed";
+export const slug = (s: string, max = 48) => packSlug(s, { camel: true, max, empty: "unnamed" });
 
 const entityKey = (index: string) => slug(index.replace(/-index(-v\d+)?$/, "").replace(/-v\d+$/, ""));
-const whereSig = (w: Where[]) => JSON.stringify([...w].map((x) => [x.field, x.op, x.value ?? null]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+// Measures that differ only in which hierarchy level's rows they read.
+const familySig = (m: PackMeasure) => JSON.stringify([m.entity, m.agg, m.field ?? null, m.scale ?? null, whereSig((m.where ?? []).filter((w) => w.op !== "exists" && w.op !== "missing"))]);
 const readable = (chartName: string) =>
   chartName
     .replace(/^DSS_(HEALTH_)?/, "")
@@ -89,10 +81,9 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
   const outcomes: ChartOutcome[] = [];
 
   const entities: Pack["entities"] = {};
-  const dimensions = new Map<string, PackDimension>();
+  const pb = packBuilder();
+  const { dimensions, measures } = pb;
   const fieldToDim = new Map<string, string>(); // `${entity}|${field}` → key
-  const measures = new Map<string, PackMeasure>();
-  const measureBySig = new Map<string, string>();
   const filterDims = new Set<string>();
   // Dimensions a dashboard request can filter by (requestQueryMap keys): the
   // boundary levels. Only these can be levels of a hierarchy; a drill from a
@@ -117,8 +108,8 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     const key = preferredKey ? slug(preferredKey) : slug(f.split(".").pop()!);
     const existing = dimensions.get(key);
     if (!existing) dimensions.set(key, { key, entity, field: f, type: "string", synonyms: [], verified: true });
-    else if (existing.entity !== entity && !existing.also?.[entity]) existing.also = { ...(existing.also ?? {}), [entity]: { field: f } };
-    else if (existing.entity === entity && existing.field !== f) {
+    else if (existing.entity !== entity) pb.conform(existing, entity, { field: f });
+    else if (existing.field !== f) {
       // Same name, different field on the same entity: keep both, apart.
       const alt = `${key}_${slug(f.split(".").pop()!)}`;
       if (!dimensions.has(alt)) dimensions.set(alt, { key: alt, entity, field: f, type: "string", synonyms: [], verified: true });
@@ -129,56 +120,37 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     return key;
   };
 
+  const labelOf = (leaf: Leaf, chartName: string) => [...leaf.path].reverse().find((p) => !GENERIC.test(p.trim())) ?? readable(chartName);
   // "Todays visits" is visits over today's window: the window belongs to the
   // widget, so it is not part of the measure's name.
-  const name = (leaf: Leaf, chartName: string) => {
-    const meaningful = [...leaf.path].reverse().find((p) => !GENERIC.test(p.trim()));
-    return slug(meaningful ?? readable(chartName)).replace(/^(todays?|daily)_(?=.)/, "");
-  };
+  const name = (leaf: Leaf, chartName: string) => slug(labelOf(leaf, chartName)).replace(/^(todays?|daily)_(?=.)/, "");
 
-  const measure = (entity: string, leaf: Leaf, chartName: string): string => {
-    const sig = JSON.stringify([entity, leaf.agg, leaf.field ?? null, whereSig(leaf.where), leaf.scale ?? null]);
-    const known = measureBySig.get(sig);
-    if (known) return known;
-    // DSS keeps one row per hierarchy level for targets and stock, and picks
-    // a level with `exists A` + `must_not exists B`. That is part of what the
-    // number means, so it is part of its name.
-    const level = levelOf(leaf.where);
-    const stem = level ? slug(`${name(leaf, chartName).replace(new RegExp(`_?${level}$`), "")}_at_${level}`) : name(leaf, chartName);
-    let key = stem;
-    if (measures.has(key) || dimensions.has(key)) key = slug(`${key}_${distinguish(leaf.where, measures.get(key)?.where ?? [])}`);
-    for (let i = 2; measures.has(key) || dimensions.has(key); i++) key = `${stem}_${i}`;
-    const def: PackMeasure = {
-      key,
-      entity,
-      agg: leaf.agg,
-      ...(leaf.field ? { field: leaf.field } : {}),
-      ...(leaf.where.length ? { where: leaf.where } : {}),
-      ...(leaf.scale ? { scale: leaf.scale } : {}),
-      label: [...leaf.path].reverse().find((p) => !GENERIC.test(p.trim())) ?? readable(chartName),
-      format: "number",
-      synonyms: [],
-      verified: true,
-    };
-    measures.set(key, def);
-    measureBySig.set(sig, key);
-    return key;
-  };
+  const measure = (entity: string, leaf: Leaf, chartName: string): string =>
+    pb.measure(JSON.stringify([entity, leaf.agg, leaf.field ?? null, whereSig(leaf.where), leaf.scale ?? null]), () => {
+      // DSS keeps one row per hierarchy level for targets and stock, and picks
+      // a level with `exists A` + `must_not exists B`. That is part of what the
+      // number means, so it is part of its name.
+      const level = levelOf(leaf.where);
+      const stem = level ? slug(`${name(leaf, chartName).replace(new RegExp(`_?${level}$`), "")}_at_${level}`) : name(leaf, chartName);
+      const taken = measures.has(stem) || dimensions.has(stem);
+      return {
+        key: pb.key(stem, taken ? slug(`${stem}_${distinguish(leaf.where, measures.get(stem)?.where ?? [])}`) : stem),
+        entity,
+        agg: leaf.agg,
+        ...(leaf.field ? { field: leaf.field } : {}),
+        ...(leaf.where.length ? { where: leaf.where } : {}),
+        ...(leaf.scale ? { scale: leaf.scale } : {}),
+        label: labelOf(leaf, chartName),
+        format: "number",
+        synonyms: [],
+        verified: true,
+      };
+    });
 
   // Arithmetic over measures already defined. Read at the grain of its
   // first operand; the engine combines operands from several entities.
-  const derived = (expr: string, label: string, percent: boolean): string => {
-    const sig = JSON.stringify(["derived", expr]);
-    const known = measureBySig.get(sig);
-    if (known) return known;
-    let key = slug(label);
-    for (let i = 2; measures.has(key) || dimensions.has(key); i++) key = `${slug(label)}_${i}`;
-    const first = operands(parseExpr(expr))[0]!;
-    measures.set(key, { key, entity: measures.get(first)!.entity, derived: expr, label, format: percent ? "percent" : "number", synonyms: [], verified: true });
-    measureBySig.set(sig, key);
-    return key;
-  };
-
+  const derived = (expr: string, label: string, percent: boolean): string =>
+    pb.measure(JSON.stringify(["derived", expr]), () => ({ key: pb.key(slug(label)), entity: measures.get(operands(parseExpr(expr))[0]!)!.entity, derived: expr, label, format: percent ? "percent" : "number", synonyms: [], verified: true }));
 
   type Planned = { id: string; chartId: string; widget: BoardOp; notes: string[] };
   let leafCount = 0;
@@ -218,9 +190,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
         const dim = dimensions.get(key)!;
         for (const d of drawn) {
           const t = innermost(d.leaf);
-          if (!t || d.entity === dim.entity || dim.also?.[d.entity]) continue;
-          dim.also = { ...(dim.also ?? {}), [d.entity]: { field: t.field } };
-          if (!fieldToDim.has(`${d.entity}|${t.field}`)) fieldToDim.set(`${d.entity}|${t.field}`, key);
+          if (t && pb.conform(dim, d.entity, { field: t.field }) && !fieldToDim.has(`${d.entity}|${t.field}`)) fieldToDim.set(`${d.entity}|${t.field}`, key);
         }
       }
       if (drawn.length === 0) {
@@ -261,6 +231,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
       // What the chart's headline number is.
       let measureKey: string;
       const order = chart.aggregationPaths ?? [];
+      const hidden = new Set(chart.excludedColumns ?? []);
       if ((chart.action === "percentage" || chart.action === "division") && order.length >= 2) {
         const [a, b] = [find(order[0] ?? ""), find(order[1] ?? "")];
         if (!a || !b) {
@@ -271,8 +242,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
         measureKey = derived(`${a.key} / ${b.key}`, label, chart.action === "percentage");
       } else {
         const pct = [...columns].reverse().find((c) => measures.get(c.key)?.format === "percent");
-        const hiddenLabels = new Set(chart.excludedColumns ?? []);
-        const visible = columns.filter((c) => !hiddenLabels.has(c.label));
+        const visible = columns.filter((c) => !hidden.has(c.label));
         // A windowed chart leads with a column that has time, when it has one.
         const timed = (c: Column) => {
           const m = measures.get(c.key)!;
@@ -286,7 +256,6 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
       if ((chart.action === "percentage" || chart.action === "division") && order.length < 2) notes.push(`action "${chart.action}" without two aggregation paths; drawn as its columns`);
 
       // Every other visible column rides along as a further measure.
-      const hidden = new Set(chart.excludedColumns ?? []);
       const extraKeys = [...new Set(columns.filter((c) => !hidden.has(c.label)).map((c) => c.key))].filter((k) => k !== measureKey);
       // A metric card is one number; its other paths are that number's operands.
       const drawsMany = chart.chartType === "xtable" || chart.chartType === "table" || chart.chartType === "line";
@@ -403,8 +372,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
   const families = new Map<string, PackMeasure[]>();
   for (const m of measures.values()) {
     if (m.derived || !levelDim(m)) continue;
-    const sig = JSON.stringify([m.entity, m.agg, m.field ?? null, m.scale ?? null, whereSig((m.where ?? []).filter((w) => w.op !== "exists" && w.op !== "missing"))]);
-    families.set(sig, [...(families.get(sig) ?? []), m]);
+    families.set(familySig(m), [...(families.get(familySig(m)) ?? []), m]);
   }
   for (const members of families.values()) {
     // One hierarchy per measure: the one that holds most of the family's levels.
@@ -416,8 +384,8 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     for (const m of members) if (hierarchyOfLevel(levelDim(m)!) === home && !byLevel.has(levelDim(m)!)) byLevel.set(levelDim(m)!, m);
     if (byLevel.size < 2) continue;
     const first = members[0]!;
-    let key = first.key.replace(/_at_[a-z0-9_]+$/, "") || first.key;
-    for (let i = 2; measures.has(key) || dimensions.has(key); i++) key = `${first.key.replace(/_at_[a-z0-9_]+$/, "")}_${i}`;
+    const stem = first.key.replace(/_at_[a-z0-9_]+$/, "");
+    const key = pb.key(stem, stem || first.key);
     measures.set(key, { key, entity: first.entity, levels: Object.fromEntries([...byLevel].map(([l, m]) => [l, m.key])), label: first.label, format: first.format, synonyms: [], verified: true });
     for (const m of byLevel.values()) replaced.set(m.key, key);
   }
@@ -461,21 +429,19 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
   // A measure named like a dimension (a DSS label that is also a field name)
   // takes a suffix, and every widget and ratio that names it follows.
   for (const key of [...measures.keys()].filter((k) => dimensions.has(k))) {
-    let next = `${key}_n`;
-    for (let i = 2; measures.has(next) || dimensions.has(next); i++) next = `${key}_n${i}`;
+    const next = pb.key(`${key}_n`, `${key}_n`, "");
     const def = measures.get(key)!;
     measures.delete(key);
     measures.set(next, { ...def, key: next });
-    for (const [sig, k] of measureBySig) if (k === key) measureBySig.set(sig, next);
     for (const m of measures.values()) if (m.derived) m.derived = formatExpr(renameKeys(parseExpr(m.derived), (k) => (k === key ? next : k)));
     for (const p of planned.values()) {
-      const q = (p.widget as unknown as { widget: { query: { measure?: string; measures?: string[] } } }).widget.query;
+      const q = queryOf(p);
       if (q.measure === key) q.measure = next;
       if (q.measures) q.measures = q.measures.map((k) => (k === key ? next : k));
     }
   }
 
-  const rawPack = {
+  const { pack, packYaml } = emitPack({
     pack: slug(opts.pack ?? "dss"),
     version: 1,
     description: `Compiled from DIGIT DSS chart configs (${Object.keys(charts).length} charts).`,
@@ -483,8 +449,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     dimensions: [...dimensions.values()],
     measures: [...measures.values()],
     ...(Object.keys(hierarchies).length ? { hierarchies } : {}),
-  };
-  const pack = parsePack(rawPack);
+  });
   const catalogue = catalogueFrom(pack);
 
   // Every widget is checked the way an edit is: vocabulary, then resolution
@@ -545,7 +510,6 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
     ? master.dashboards.map((d) => board(d.id ?? d.name ?? "board", readable(d.title ?? d.name ?? d.id ?? "Dashboard"), (d.visualizations ?? []).flatMap((v) => v.vizArray ?? []).flatMap((v) => v.charts ?? []).map((c) => c.id)))
     : chunk([...accepted.keys()].filter((c) => drawnBy(c) === c), 16).map((ids, i) => board(`charts_${i + 1}`, `DSS charts ${i + 1}`, ids));
 
-  const packYaml = YAML.stringify(JSON.parse(JSON.stringify(rawPack)), { lineWidth: 0 });
   return { pack, packYaml, boards: boards.filter((b) => b.ops.length > filterDims.size), outcomes, assumptions: [...new Set(assumptions)], report: report(charts, pack, outcomes, [...new Set(assumptions)], leafCount) };
 }
 
@@ -597,14 +561,9 @@ function report(charts: Record<string, DssChart>, pack: Pack, outcomes: ChartOut
   const lines = Object.values(charts)
     .filter((c) => c && Array.isArray(c.queries))
     .reduce((n, c) => n + c.queries.reduce((m, q) => m + String(q.aggrQuery ?? "").split("\n").length, 0), 0);
-  // Measures that differ only by the hierarchy level they read.
   const families = new Map<string, string[]>();
   const inLevels = new Set(pack.measures.flatMap((m) => Object.values(m.levels ?? {})));
-  for (const m of pack.measures) {
-    if (m.derived || inLevels.has(m.key) || !levelOf(m.where ?? [])) continue;
-    const rest = JSON.stringify([m.entity, m.agg, m.field ?? null, m.scale ?? null, (m.where ?? []).filter((w) => w.op !== "exists" && w.op !== "missing")]);
-    families.set(rest, [...(families.get(rest) ?? []), m.key]);
-  }
+  for (const m of pack.measures) if (!m.derived && !inLevels.has(m.key) && levelOf(m.where ?? [])) families.set(familySig(m), [...(families.get(familySig(m)) ?? []), m.key]);
   const perLevel = [...families.values()].filter((f) => f.length > 1);
   const out = [
     "# DSS → lenspack",
