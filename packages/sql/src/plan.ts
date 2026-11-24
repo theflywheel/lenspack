@@ -1,6 +1,6 @@
 import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/spec";
 
-import { type Ast, type Expr, type Grouped, type Join, type Source } from "./ast";
+import { type Ast, type Expr, type Grouped, type Join, type Source, and } from "./ast";
 import { type BoundDimension, type BoundFilter, type BoundPlan, type TimeWindow, bucketZone } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
@@ -56,8 +56,6 @@ export function whereExpr(w: Where): Expr {
   }
 }
 
-const allOf = (exprs: Expr[]): Expr | null => (exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r })));
-
 // What one aggregate reads: a measure, or a two-stage measure's inner stage.
 type Aggregated = Pick<PackMeasure, "key" | "agg" | "field" | "sql" | "filter" | "where" | "scale" | "derived" | "per">;
 
@@ -68,7 +66,7 @@ function measureRowExpr(m: Aggregated): Expr | null {
   if (m.derived || m.per) return null;
   const value: Expr | null = m.field ? col("", m.field) : m.sql ? raw(m.sql) : null;
   const base: Expr = value ?? { t: "lit", value: 1 };
-  const when = allOf([...(m.filter ? [raw(m.filter)] : []), ...(m.where ?? []).map(whereExpr)]);
+  const when = and([...(m.filter ? [raw(m.filter)] : []), ...(m.where ?? []).map(whereExpr)]);
   if (!when) return m.agg === "count" && !value ? null : base;
   return { t: "case", when, then: base };
 }

@@ -1,8 +1,5 @@
 import type { Ast } from "../ast";
-import { type DialectRules, type Printed, printerFor } from "./base";
-
-const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
-const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
+import { type DialectRules, type Printed, printerFor, quoteIdent as quote, quoteString as lit } from "./base";
 
 // Time is naive UTC (a timestamptz is cast through the session zone, as the
 // window predicates compare it), then read as wall-clock time in the zone.

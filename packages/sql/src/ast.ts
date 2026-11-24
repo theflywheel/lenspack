@@ -1,9 +1,10 @@
 // A small SQL AST. Every identifier in it was bound to a pack object by the
 // resolver; every value is a parameter. The printers own the dialects.
 
+import type { Grain } from "@lenspack/core";
 import type { Fragment } from "@lenspack/spec";
 
-export type Grain = "hour" | "day" | "week" | "month" | "quarter" | "year";
+export type { Grain };
 
 export type Expr =
   | { t: "raw"; sql: Fragment } // a fragment from the pack, inlined verbatim (per dialect)
