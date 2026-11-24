@@ -244,8 +244,31 @@ function scalarsOf(q: Query) {
   }
 }
 
-export function patchQuery(current: Query | undefined, changed: Partial<QueryArgs>, pack: Pack): Query {
+// What a patch can take off a widget's query by name, and the query field each one is. An empty
+// field in a patch means "leave it" (weaker models send empty values for every field they do not
+// mean), so removing a part has to be asked for by name.
+const CLEARABLE = { filters: "filters", time: "time", split: "by", measures: "measures", compute: "compute" } as const;
+export type Clearable = keyof typeof CLEARABLE;
+// The other names a model may give a part: the arguments that set it, or plain words.
+const CLEAR_WORDS: Record<string, Clearable> = {
+  filter: "filters", filter_dimension: "filters", time_window: "time", window: "time", dates: "time", time_last: "time", time_period: "time", time_from: "time",
+  by: "split", further_measures: "measures", steps: "compute",
+};
+
+/** The clear argument → the parts it names: "filters, time" or "the time window". An unknown name is an error, not a no-op. */
+export function parseClear(text: string): Clearable[] {
+  const names = text.split(/\s*[,;]\s*|\s+and\s+/i).map((w) => w.trim().toLowerCase().replace(/^the\s+/, "").replace(/[\s-]+/g, "_")).filter(Boolean);
+  return [...new Set(names.map((n) => {
+    const part = Object.hasOwn(CLEARABLE, n) ? (n as Clearable) : Object.hasOwn(CLEAR_WORDS, n) ? CLEAR_WORDS[n] : undefined;
+    if (!part) throw new Error(`Cannot clear "${n}": name ${Object.keys(CLEARABLE).join(", ")}`);
+    return part;
+  }))];
+}
+
+export function patchQuery(current: Query | undefined, changed: Partial<QueryArgs>, pack: Pack, clear: Clearable[] = []): Query {
   if (!current || (changed.query_kind && changed.query_kind !== current.kind)) return assembleQuery(QUERY.parse(changed), pack);
+  // Cleared last, so a part named in clear is gone whatever the other fields say.
+  if (clear.length) return querySchema.parse({ ...patchQuery(current, changed, pack), ...Object.fromEntries(clear.map((c) => [CLEARABLE[c], undefined])) });
   if (Object.keys(changed).length === 0) return current;
   const next = assembleQuery(QUERY.parse({ ...scalarsOf(current), ...changed }), pack);
   // A new primary measure leaves the further ones, so it is not listed twice.

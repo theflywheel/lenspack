@@ -156,6 +156,47 @@ describe("board tools", () => {
     expect(((await widget()) as { query: { compare?: string } }).query.compare).toBeUndefined();
   });
 
+  it("clears filters, the time window, a split, further measures and compute when named, and says what changed", async () => {
+    const store = memoryStore();
+    await store.create({ id: "c", pack, title: "Clear" });
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "c", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, any>>;
+    const query = async (id = "w") => ((await store.get("c"))!.config.widgets[id] as { query: Record<string, unknown> }).query;
+    await go("add_widget", { id: "w", kind: "table", title: "Things", query_kind: "breakdown", measure: "things", measures: "weight", dimension: "colour", split: "origin", time_last: "6m", filters: "size >= 20", compute: "", limit: 5 });
+    expect(await query()).toMatchObject({ by: "origin", measures: ["weight"], time: { last: "6m" }, filters: [{ dimension: "size" }] });
+
+    // An empty word keeps a part, and the tool says so instead of claiming it was removed.
+    const kept = await go("update_widget", { id: "w", filters: "none" });
+    expect(kept).toMatchObject({ applied: false, unchanged: true });
+    expect(kept.error).toMatch(/clear/);
+    expect((await query()).filters).toHaveLength(1);
+    const renamed = await go("update_widget", { id: "w", title: "All things", time_last: "none" });
+    expect(renamed).toMatchObject({ applied: true, changed: "title" });
+    expect(renamed.note).toMatch(/time_last given empty/);
+
+    for (const [clear, field, said] of [
+      ["filters", "filters", "filters removed"],
+      ["the time window", "time", "time window removed"],
+      ["split", "by", "split removed"],
+      ["measures", "measures", "further measures removed"],
+    ] as const) {
+      const r = await go("update_widget", { id: "w", clear });
+      expect(r, clear).toMatchObject({ applied: true, changed: said });
+      expect((await query())[field], clear).toBeUndefined();
+    }
+    expect(await query()).toEqual({ kind: "breakdown", measure: "things", dimension: "colour", sort: "desc", limit: 5 });
+    // Nothing left to clear: refused, not reported as done.
+    expect(await go("update_widget", { id: "w", clear: "filters, time" })).toMatchObject({ applied: false, unchanged: true });
+
+    // Compute, and a series' split, the same way; several parts at once, beside other changes.
+    await go("add_widget", { id: "s", kind: "chart", chart: "line", title: "Trend", query_kind: "series", measure: "things", grain: "day", split: "colour", compute: "rolling_mean 7", filters: "size >= 20" });
+    const both = await go("update_widget", { id: "s", title: "Trend, all", clear: "compute, split; filters" });
+    expect(both).toMatchObject({ applied: true });
+    expect(both.changed.split(", ").sort()).toEqual(["compute removed", "filters removed", "split removed", "title"]);
+    expect(await query("s")).toEqual({ kind: "series", measure: "things", grain: "day" });
+    expect(await go("update_widget", { id: "s", clear: "colours" })).toMatchObject({ applied: false, error: expect.stringMatching(/Cannot clear "colours"/) });
+  });
+
   it("adds, moves and removes widgets through the store", async () => {
     const added = (await call("add_widget", { id: "by_colour", kind: "chart", title: "By colour", query_kind: "breakdown", measure: "things", dimension: "colour", place: "top", width: "half" })) as { applied: boolean; board: string; version: number };
     expect(added.applied).toBe(true);

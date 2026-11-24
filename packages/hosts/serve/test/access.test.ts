@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { boardTools } from "@lenspack/agent";
+import { boardConfigSchema, emptyBoard } from "@lenspack/core";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { parsePackText } from "@lenspack/pack";
 import { MockLanguageModelV4 } from "ai/test";
@@ -76,6 +77,7 @@ async function signer(kind: "proxy" | "tokens" | "oidc", hosts: Host[]): Promise
 
 const events: AuditEvent[] = [];
 const prompts: string[] = [];
+const reviews: string[] = [];
 let OPTIONS: Parameters<typeof createApp>[1] = {};
 
 describe("pack access by role", () => {
@@ -125,12 +127,16 @@ store: { kind: memory }
     for (const h of opened.hosts) await seedBoards(h);
     hosts = opened.hosts;
     close = opened.close;
-    // A chat model that only answers, so each turn's system prompt can be read.
+    // A chat model that only answers, so each turn's system prompt, and what its reviewer reads, can be read.
     registerLlmAdapter({
       kind: "access-mock",
       defaultBaseUrl: "mock:",
       build: () =>
         new MockLanguageModelV4({
+          doGenerate: async (opts) => {
+            reviews.push(JSON.stringify(opts.prompt));
+            return { content: [{ type: "text", text: '{"findings": []}' }], finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } }, warnings: [] };
+          },
           doStream: async (opts) => {
             prompts.push(JSON.stringify(opts.prompt.filter((m) => m.role === "system")));
             return {
@@ -274,6 +280,10 @@ store: { kind: memory }
       const theirs = await call(partner, `/campaign/${copy.body.id}?include=data`);
       expect(theirs.body.data.who.error).toMatch(/not available/);
       expect(theirs.text).not.toContain(user);
+      // What is stored under their name is what they were shown: the value is not in their copy at all.
+      const stored = (await hosts.find((x) => x.name === "campaign")!.store.get(copy.body.id))!.config;
+      expect(JSON.stringify(stored)).not.toContain(user);
+      expect(stored.widgets.one).toMatchObject({ query: { filters: [{ dimension: "delivered_by", value: ["(hidden)"] }] } });
       // Their own edit on the copy answers with the board, values still kept back.
       expect((await call(partner, `/campaign/${copy.body.id}/ops`, post({ ops: [{ op: "set_title", title: "Mine" }] }))).text).not.toContain(user);
       expect((await call(partner, `/campaign/${copy.body.id}/versions`)).text).not.toContain(user);
@@ -318,6 +328,26 @@ store: { kind: memory }
       expect(staffs).toContain("delivered_by");
       expect(staffs).toContain("Who visited the most");
     });
+
+    it("shows the chat model and its reviewer a board as the caller is shown it, without a hidden key's values", async () => {
+      const h = hosts.find((x) => x.name === "campaign")!;
+      // Boards of their own that hold a village, which the partner may not use: saved before their access narrowed, say.
+      const own = async (user: string) => (await h.store.create({ id: `old-${user}-${kind}`, pack: h.pack, title: "Old board", config: holding(h.pack), owner: user })).id;
+      const turn = async (who: string, board: string, review: boolean) => {
+        const seen = { prompts: prompts.length, reviews: reviews.length };
+        const r = await call(who, `/campaign/${board}/chat${review ? "" : "?review=off"}`, post({ messages: [{ id: "u", role: "user", parts: [{ type: "text", text: "add a chart of visits by province" }] }] }));
+        expect(r.status).toBe(200);
+        return { prompt: prompts.slice(seen.prompts).join(""), review: reviews.slice(seen.reviews).join("") };
+      };
+      const theirs = await turn(partner, await own("pat"), true);
+      expect(theirs.prompt).toContain("One village");
+      expect(theirs.prompt).toContain("(hidden)");
+      expect(theirs.prompt).not.toContain(VILLAGE);
+      expect(theirs.review).toContain("One village");
+      expect(theirs.review).not.toContain(VILLAGE);
+      // Someone who may use the key is shown the value.
+      expect((await turn(staff, await own("sam"), false)).prompt).toContain(VILLAGE);
+    });
   });
 
 
@@ -348,7 +378,47 @@ store: { kind: memory }
     expect(await noVisits.list_values!.execute(noVisits.list_values!.inputSchema.parse({ dimension: "province" }) as never)).toMatchObject({ ok: true });
     expect(() => boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId: board.id, ctx: { hidden }, runSql: "role-scoped" })).toThrow(/run_sql/);
   });
+
+  it("shows the chat's tools a board, and a query's statement, only as the board API would show the caller", async () => {
+    const h = hosts.find((x) => x.name === "campaign")!;
+    await h.store.create({ id: "holding", pack: h.pack, title: "Old board", config: holding(h.pack) });
+    const toolsFor = (hidden?: ReadonlySet<string>) => {
+      const tools = Object.fromEntries(boardTools({ pack: h.pack, connector: h.connector, store: h.store, boardId: "holding", ctx: { ...h.ctx, ...(hidden ? { hidden } : {}) } }).map((t) => [t.name, t]));
+      return (name: string, args: Record<string, unknown> = {}) => tools[name]!.execute(tools[name]!.inputSchema.parse(args) as never) as Promise<any>;
+    };
+    const partner = toolsFor(hiddenKeys(h.pack, { roles: ["partner"], hide: HIDDEN }));
+    const read = await partner("get_board");
+    expect(read.board).toContain("One village");
+    expect(read.board).toContain("(hidden)");
+    expect(read.board).not.toContain(VILLAGE);
+    // An edit's result and a restore's carry the board too.
+    const renamed = await partner("rename_board", { title: "Renamed" });
+    expect(renamed.applied).toBe(true);
+    expect(renamed.board).not.toContain(VILLAGE);
+    const restored = await partner("restore_version", { to: "baseline" });
+    expect(restored.applied).toBe(true);
+    expect(restored.board).not.toContain(VILLAGE);
+    // The compiled statement is not shown to such a caller (the explain route does the same); the numbers are.
+    const q = { query_kind: "value", measure: "visits" };
+    expect(await partner("query", q)).not.toHaveProperty("sql");
+    expect(await partner("explain", q)).not.toHaveProperty("sql");
+    expect((await partner("query", q)).ok).toBe(true);
+    const staff = toolsFor();
+    expect((await staff("get_board")).board).toContain(VILLAGE);
+    expect((await staff("query", q)).sql).toBeTruthy();
+  });
 });
+
+// A made-up village: a value of a key partners may not use.
+const VILLAGE = "Lakeside-V9";
+/** A board that holds VILLAGE in a board filter's default and in a widget's filter. */
+const holding = (pack: Host["pack"]) =>
+  boardConfigSchema.parse({
+    ...emptyBoard(pack, "Old board"),
+    filters: [{ id: "f", type: "select", label: "Village", field: "village", applies: ["*"], default: { values: [VILLAGE] } }],
+    widgets: { one: { kind: "kpi", title: "One village", query: { kind: "value", measure: "visits", filters: [{ dimension: "village", op: "in", value: [VILLAGE] }] } } },
+    layout: [{ i: "one", x: 0, y: 0, w: 6, h: 4 }],
+  });
 
 describe("hidden keys", () => {
   const pack = parsePackText(readFileSync(fileURLToPath(new URL("../../../../examples/campaign/pack.yaml", import.meta.url)), "utf8"));

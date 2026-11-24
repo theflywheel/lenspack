@@ -112,9 +112,9 @@ Resolution refuses any query that names a hidden key (`NOT_PERMITTED`), whatever
 
 - the catalogue in every API response, its hierarchies cut above the first hidden level (a drill never steps into one), and suggestions in refusals;
 - the chat model's prompt (catalogue and the pack's examples) and its `list_metrics` tool; `run_sql` is refused for such a caller, as raw SQL does not pass through the pack;
-- the pack file (`GET /api/<pack>/pack`), which is refused to a caller with any hidden key, and the compiled statement in explain, which reads like it.
+- the pack file (`GET /api/<pack>/pack`), which is refused to a caller with any hidden key, and the compiled statement, which reads like it: explain leaves it out, and so do the chat's `query` and `explain` tools.
 
-A board that has a widget on a hidden key still opens: that widget draws as "not available to you" and the rest as usual. This holds for shared boards and for a copy of one. In every board config and version sent to such a caller, a widget filter on a hidden key keeps its key and shows its value as `(hidden)`. Titles and text widgets are what their authors wrote: they are shown as written.
+A board that has a widget on a hidden key still opens: that widget draws as "not available to you" and the rest as usual. This holds for shared boards and for a copy of one. In every board config and version sent to such a caller, a widget filter on a hidden key keeps its key and shows its value as `(hidden)`, and so does a board filter's default selection. That is the only view of a board such a caller gets: a copy they make stores it (the value is not saved under their name), and the chat model's prompt, its tools' results and the reviewer read the board the same way. Titles and text widgets are what their authors wrote: they are shown as written.
 
 Hidden keys are kept from use, not secret as names: a widget error names its key, and explain answers a hidden key differently from an unknown one.
 
