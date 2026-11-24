@@ -36,6 +36,7 @@
   var STRINGS = {
     en: { ask: "Ask Lenspack", settings: "Chat settings", openAs: "Open as", float: "Floating window", dock: "Side panel", resize: "Drag to resize", reconnecting: "Reconnecting…", restarting: "Lenspack is restarting, reconnecting…" },
     fr: { ask: "Demander à Lenspack", settings: "Réglages du chat", openAs: "Ouvrir en", float: "Fenêtre flottante", dock: "Panneau latéral", resize: "Faire glisser pour redimensionner", reconnecting: "Reconnexion…", restarting: "Lenspack redémarre, reconnexion…" },
+    pt: { ask: "Perguntar ao Lenspack", settings: "Opções do chat", openAs: "Abrir como", float: "Janela flutuante", dock: "Painel lateral", resize: "Arraste para redimensionar", reconnecting: "Reconexão…", restarting: "Lenspack em reinício, reconexão em curso…" },
     hi: { ask: "Lenspack से पूछें", settings: "चैट सेटिंग्स", openAs: "ऐसे खोलें", float: "तैरती विंडो", dock: "साइड पैनल", resize: "आकार बदलने के लिए खींचें", reconnecting: "फिर से जुड़ रहे हैं…", restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…" },
   };
   var adminLang = "auto";

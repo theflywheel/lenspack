@@ -82,11 +82,17 @@ const languageName = (code: string) => LANGUAGE_NAMES[code.split("-")[0]!.toLowe
  * The language rules, as the board part's last section: per user and per turn,
  * so they stay out of the cached stable part. Empty without a policy.
  */
+/** What a reply in a language must also respect: Hindi's script; Portuguese read on two continents. */
+const REPLY_NOTES: Record<string, string> = {
+  hi: " (Devanagari script)",
+  pt: " (neutral Portuguese that reads naturally in Mozambique, Angola and Portugal as well as Brazil: avoid words and verb forms only one side uses)",
+};
+
 export function languageText(p?: LanguagePolicy) {
   if (!p) return "";
   const reply =
     p.reply && p.reply !== "auto"
-      ? `The user chose ${languageName(p.reply)} for this chat: write every reply in ${languageName(p.reply)}${p.reply.startsWith("hi") ? " (Devanagari script)" : ""}, even when their message is in another language.`
+      ? `The user chose ${languageName(p.reply)} for this chat: write every reply in ${languageName(p.reply)}${REPLY_NOTES[p.reply.split("-")[0]!] ?? ""}, even when their message is in another language.`
       : "Reply in the language of the user's latest message.";
   const titles =
     (p.titles ?? "board") === "board"

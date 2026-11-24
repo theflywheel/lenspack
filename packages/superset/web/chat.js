@@ -125,6 +125,19 @@
       denied: "माइक की अनुमति बंद है। ब्राउज़र में इस साइट के लिए अनुमति दें (पते के बाईं ओर का आइकन), फिर कोशिश करें।", noMic: "कोई माइक नहीं मिला।", sttFailed: "लिखना नहीं हो सका: {0}", sttOff: "इस सर्वर पर स्पीच-टू-टेक्स्ट सेट नहीं है।",
       restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले Lenspack से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
     },
+    // Neutral Portuguese, read in Mozambique, Angola and Portugal as well as Brazil: noun forms where the
+    // two split (Em escuta, not Ouvindo / A ouvir), words both use (gravado, conexão, padrão), formal imperatives.
+    pt: {
+      title: "Perguntar ao Lenspack", sub: "Painel do Superset", close: "Fechar", placeholder: "Peça um gráfico, uma alteração ou um número…", send: "Enviar",
+      intro: "As alterações que pedir ficam gravadas neste painel do Superset. Os números vêm das métricas do próprio Superset.",
+      working: "Em curso…", reviewing: "Verificação do resultado…", noAnswer: "(sem resposta)", wrong: "Ocorreu um problema", unreachable: "Sem acesso ao Lenspack: {0}",
+      reviewerOk: "Verificação: feito como pedido. {0}", reviewer: "Verificação: {0}", saved: "Gravado no Superset.", savedRefreshing: "Gravado no Superset. Atualização do painel…", savedLater: "Gravado no Superset. O painel é atualizado quando a verificação terminar.",
+      language: "Idioma", auto: "Auto", autoHelp: "Fale ou escreva em qualquer idioma; as respostas seguem esse idioma.", pickedHelp: "A voz é transcrita em {0} e as respostas são em {0}.", space: "Manter Espaço para falar", spaceHelp: "Mantenha a tecla Espaço pressionada {0} s, mesmo ao escrever; um toque curto escreve um espaço. Ou mantenha pressionado o botão do microfone.", holdFor: "Duração", holdDefault: "{0} s (padrão)", keepHolding: "Mantenha pressionado para falar…", newChat: "Nova conversa", newChatHelp: "Nova conversa: apagar esta conversa (o painel fica como está)", cleared: "Conversa apagada.", undo: "Desfazer", followSuperset: "Segue o idioma do Superset: {0}. Escolha outro aqui para mudar.", adminDefault: "Idioma padrão desta instalação: {0}. Escolha outro aqui para mudar.", unsureLang: "Não foi possível identificar o idioma: escolha um no menu de idiomas e tente de novo.", missedIn: "Não foi possível entender em {0}: tente de novo.",
+      mic: "Falar (clique para iniciar e parar, ou mantenha pressionado)", micNeedsHttps: "O microfone precisa de uma página segura (https)", micUnsupported: "Este navegador não consegue gravar áudio",
+      listening: "Em escuta… {0}", transcribing: "Transcrição em curso…", tooShort: "Nada foi gravado. Mantenha pressionado ou clique no microfone, fale e depois pare.", heard: "Verifique o texto e depois envie.", nothingHeard: "Nenhuma fala reconhecida. Tente de novo um pouco mais perto do microfone.",
+      denied: "O acesso ao microfone está bloqueado. Permita-o para este site no navegador (o ícone à esquerda do endereço) e tente de novo.", noMic: "Nenhum microfone encontrado.", sttFailed: "A transcrição falhou: {0}", sttOff: "A transcrição de voz não está configurada neste servidor.",
+      restarting: "Lenspack em reinício, reconexão em curso…", lost: "A conexão com o Lenspack foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
+    },
   };
   // The language menu's choices, each named in its own language.
   const LANGS = [
@@ -132,9 +145,15 @@
     ["en", "English"],
     ["fr", "Français"],
     ["hi", "हिन्दी"],
+    ["pt", "Português"],
   ];
-  const SHORT = { auto: "Auto", en: "EN", fr: "FR", hi: "हि" };
-  const NAMES_IN = { en: { en: "English", fr: "French", hi: "Hindi" }, fr: { en: "anglais", fr: "français", hi: "hindi" }, hi: { en: "अंग्रेज़ी", fr: "फ़्रेंच", hi: "हिन्दी" } };
+  const SHORT = { auto: "Auto", en: "EN", fr: "FR", hi: "हि", pt: "PT" };
+  const NAMES_IN = {
+    en: { en: "English", fr: "French", hi: "Hindi", pt: "Portuguese" },
+    fr: { en: "anglais", fr: "français", hi: "hindi", pt: "portugais" },
+    hi: { en: "अंग्रेज़ी", fr: "फ़्रेंच", hi: "हिन्दी", pt: "पुर्तगाली" },
+    pt: { en: "inglês", fr: "francês", hi: "híndi", pt: "português" },
+  };
 
   // The page's language: Superset's (its bootstrap data, then <html lang>), else the browser's.
   function pageLocale() {

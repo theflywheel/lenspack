@@ -120,6 +120,10 @@ export function scriptOf(text: string): Script | null {
 
 /** The scripts a language is written in, for checking a transcript came back in a language the reader expects. */
 const SCRIPTS: Record<string, Script[]> = {
+  // Latin is also the default for a language not listed; these are written out because the panel offers them.
+  en: ["latin"],
+  fr: ["latin"],
+  pt: ["latin"],
   hi: ["devanagari", "latin"],
   mr: ["devanagari", "latin"],
   ne: ["devanagari", "latin"],

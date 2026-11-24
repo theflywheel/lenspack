@@ -192,7 +192,7 @@ const speechView = () => ({
 
 // Languages: the chat menu's choices and default (auto: no speech hint, reply in the language used),
 // and whether new titles follow the board's language or the speaker's.
-const LANGUAGES = ["auto", "en", "fr", "hi"] as const;
+const LANGUAGES = ["auto", "en", "fr", "hi", "pt"] as const;
 type LanguageSettings = { default?: string; titles?: "board" | "speaker"; board?: string };
 const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
 const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...settings.get<LanguageSettings>("language") });

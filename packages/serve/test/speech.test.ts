@@ -71,6 +71,9 @@ describe("scriptOf / fitsLanguages", () => {
     expect(scriptOf("显示剂量")).toBe("cjk");
     expect(scriptOf("42 !")).toBeNull();
     expect(fitsLanguages("montre les doses", ["en", "fr", "hi"])).toBe(true);
+    expect(fitsLanguages("mostre as crianças vacinadas por distrito", ["en", "fr", "hi", "pt"])).toBe(true);
+    expect(fitsLanguages("mostre as crianças vacinadas por distrito", ["pt"])).toBe(true);
+    expect(fitsLanguages("کله است لا اوچتوب", ["pt"])).toBe(false);
     expect(fitsLanguages("खुराक दिखाओ", ["en", "fr", "hi"])).toBe(true);
     expect(fitsLanguages("کله است لا اوچتوب", ["en", "fr", "hi"])).toBe(false);
     expect(fitsLanguages("ok", ["fr"])).toBe(true); // too short to tell
@@ -167,6 +170,9 @@ describe("POST /api/_stt", () => {
     expect(hinted.status).toBe(422);
     expect(await hinted.json()).toEqual({ error: "wrong_script", language: "fr", script: "arabic" });
     expect(calls).toHaveLength(3);
+    // Portuguese takes Latin only: the same guard applies to a pt hint.
+    const pt = await fetch(`${base}/_stt?language=pt&expected=en,fr,hi,pt&fallback=en`, { method: "POST", headers: { "content-type": "audio/webm" }, body: clip });
+    expect(await pt.json()).toEqual({ error: "wrong_script", language: "pt", script: "arabic" });
   });
 
   it("answers 503 without a key, and the listing says the mic is off", async () => {
