@@ -1,7 +1,7 @@
 import { type BoardConfig, type BoardOp, MAX_OFFSET, type MeasuredQuery, type Query, measured, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
-import { COMPUTE_ROWS, applyCompute, computeBase, computeRefusal, describeComputed } from "./compute";
+import { COMPUTE_ROWS, applyCompute, computeBase, computeRefusal, describeComputed, readWindow } from "./compute";
 import type { Connector } from "./connector";
 import { type DataRow, MAX_SERIES, type WidgetData, compared, limitGroups, sortGroups, sortSeries } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
@@ -191,11 +191,12 @@ async function runComputed(query: MeasuredQuery, opts: RunOptions): Promise<Widg
   const refused = computeRefusal(query, opts.pack);
   if (refused) return refusal(refused);
   const ctx = { ...opts.ctx, now: nowOf(opts.ctx) };
-  const base = computeBase(query);
-  const data = await run(base, { ...opts, ctx, baseRows: COMPUTE_ROWS });
+  const own = timeWindowOf(query, opts.pack, ctx);
+  const read = readWindow(query, own, opts.pack.timeZone);
+  const data = await run(computeBase(query, read), { ...opts, ctx, baseRows: COMPUTE_ROWS });
   if (data.error) return data;
   try {
-    return applyCompute(query, data, opts.pack, timeWindowOf(base, opts.pack, ctx));
+    return applyCompute(query, data, opts.pack, read ?? own);
   } catch (e) {
     if (e instanceof ResolveError) return refusal(e);
     throw e;
@@ -374,7 +375,8 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
   if (measured(query) && query.compute) {
     const refused = computeRefusal(query, opts.pack);
     if (refused) throw refused;
-    const base = await explain(computeBase(query), { ...opts, baseRows: COMPUTE_ROWS });
+    const read = readWindow(query, timeWindowOf(query, opts.pack, opts.ctx), opts.pack.timeZone);
+    const base = await explain(computeBase(query, read), { ...opts, baseRows: COMPUTE_ROWS });
     return { ...base, text: `-- computed after the source answers: ${describeComputed(query, opts.pack).text}\n-- the source answers the base: every group, at most ${COMPUTE_ROWS} numbers\n${base.text}` };
   }
   if (query.kind === "breakdown" && (query.share || query.other)) {
@@ -446,7 +448,7 @@ export function checkOps(
         opIndex,
         error: "This dashboard's heatmap cannot keep a time axis in order once it is bucketed by day, week or month. Make it a breakdown instead: columns a day or date label dimension, if the pack has one, split by the rows",
       };
-    const unsaved = op.widget.query.kind !== "rows" && op.widget.query.kind !== "points" && op.widget.query.compute ? opts.capabilities?.savedCompute?.(op.widget) : null;
+    const unsaved = op.widget.query.kind !== "rows" && op.widget.query.kind !== "points" && op.widget.query.compute ? opts.capabilities?.savedCompute?.(op.widget, pack) : null;
     if (unsaved) return { ok: false, opIndex, error: unsaved };
     try {
       check(op.widget.query, pack, opts);

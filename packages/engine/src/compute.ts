@@ -77,12 +77,14 @@ type Breakdown = Extract<Query, { kind: "breakdown" }>;
 /**
  * The query the source answers for a computed one: the same measure, window
  * and filters at the base grain. A ratio brings its second measure along.
- * Every group comes back (the steps decide which groups are shown).
+ * Every group comes back (the steps decide which groups are shown). `read` is
+ * the window to read when it is wider than the query's own (readWindow).
  */
-export function computeBase(query: MeasuredQuery): Query {
+export function computeBase(query: MeasuredQuery, read?: TimeWindow | null): Query {
   const steps = query.compute!.steps;
   const ratio = steps.find((s) => s.op === "ratio");
-  const common = { measure: query.measure, ...(ratio ? { measures: [ratio.to] } : {}), ...(query.time ? { time: query.time } : {}), ...(query.filters ? { filters: query.filters } : {}) };
+  const time = read ? { time: { from: read.from.toISOString(), to: read.to.toISOString() } } : query.time ? { time: query.time } : {};
+  const common = { measure: query.measure, ...(ratio ? { measures: [ratio.to] } : {}), ...time, ...(query.filters ? { filters: query.filters } : {}) };
   const grain = computeGrain(query);
   if (!steps.some(overTime) || !grain) {
     if (query.kind === "breakdown") return { kind: "breakdown", dimension: query.dimension, ...(query.by ? { by: query.by } : {}), limit: SPLIT_ROWS, sort: "desc", ...common };
@@ -123,6 +125,39 @@ function nextBucket(ms: number, grain: Grain): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + { month: 1, quarter: 3, year: 12 }[grain], 1);
 }
 
+/** The same instant one bucket earlier, on the local calendar: a month back from 31 March is 28 or 29 February. */
+function bucketBack(ms: number, grain: Grain, timeZone?: string): number {
+  const zone = bucketZone(timeZone);
+  const wall = zone ? localWallClock(ms, zone) : ms;
+  const d = new Date(wall);
+  const [y, m, day] = [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()];
+  const clock = wall - Date.UTC(y, m, day);
+  let back: number;
+  if (grain === "hour") back = wall - 3600e3;
+  else if (grain === "day" || grain === "week") back = Date.UTC(y, m, day - (grain === "week" ? 7 : 1)) + clock;
+  else {
+    const to = m - { month: 1, quarter: 3, year: 12 }[grain];
+    back = Date.UTC(y, to, Math.min(day, new Date(Date.UTC(y, to + 1, 0)).getUTCDate())) + clock;
+  }
+  if (!zone) return back;
+  // From local wall-clock time back to the instant; twice, to settle a daylight-saving change.
+  let at = back;
+  for (let i = 0; i < 2; i++) at -= localWallClock(at, zone) - back;
+  return at;
+}
+
+/**
+ * A wider window for the source to read, or null for the query's own: when a
+ * step changes from the bucket before, the window starts one bucket earlier,
+ * so its first bucket has a bucket to change from, as Superset's time
+ * comparison reads it.
+ */
+export function readWindow(query: MeasuredQuery, own: TimeWindow | null, timeZone?: string): TimeWindow | null {
+  const grain = computeGrain(query);
+  if (!own || !grain || !query.compute?.steps.some((s) => s.op === "change")) return null;
+  return { from: new Date(bucketBack(own.from.getTime(), grain, timeZone)), to: own.to };
+}
+
 const parseLabel = (s: string) => Date.parse(s.length === 10 ? `${s}T00:00:00Z` : `${s.replace(":00", ":00:00")}Z`);
 
 /**
@@ -152,15 +187,19 @@ type Cell = number | null;
 
 const divide = (a: Cell, b: Cell): Cell => (a === null || b === null || b === 0 ? null : a / b);
 
-/** One step over one group's buckets. `start` is the first bucket still shown. */
-function step(s: ComputeStep, values: Cell[], start: number): { values: Cell[]; start: number } {
+/**
+ * One step over one group's buckets. `start` is the first bucket still shown;
+ * `lead` is 1 when the first bucket was read only for a change to start from.
+ */
+function step(s: ComputeStep, values: Cell[], start: number, lead: number): { values: Cell[]; start: number } {
   switch (s.op) {
     case "change":
-      // Against the bucket just before; none for the first shown, none from a gap, none from 0 as a percentage.
+      // Against the bucket just before (for the first one shown, the bucket read before the
+      // window, if any); none from a gap, none from 0 as a percentage.
       return {
         start,
         values: values.map((v, i) => {
-          const prev = i > start ? values[i - 1]! : null;
+          const prev = i > start || (lead > 0 && i === lead) ? values[i - 1]! : null;
           if (v === null || prev === null) return null;
           return s.percent ? divide(v - prev, Math.abs(prev)) : v - prev;
         }),
@@ -215,8 +254,9 @@ const too = (what: string, grain: Grain | undefined) =>
   );
 
 /**
- * The computed answer from the base query's answer. Throws ResolveError when
- * the base was cut at the row limit, or holds too few buckets for a window.
+ * The computed answer from the base query's answer, over the window the base
+ * read (readWindow). Throws ResolveError when the base was cut at the row
+ * limit, or holds too few buckets for a window.
  */
 export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack, window: TimeWindow | null): WidgetData {
   const steps = query.compute!.steps;
@@ -256,12 +296,15 @@ export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack,
 
   if (base.rows.length > COMPUTE_ROWS) throw too(`the measure for every ${query.kind === "breakdown" ? `${query.dimension} and ` : query.kind === "series" && query.by ? `${query.by} and ` : ""}${grain}`, grain);
   const buckets = bucketsOf(base.rows.map((r) => r.group), grain!, window, pack.timeZone);
+  // The bucket read before the window for a change is not shown, counted or ranked.
+  const lead = window && steps.some((s) => s.op === "change") ? 1 : 0;
   const keys = [...new Set(base.rows.map((r) => r.series ?? ""))];
   if (buckets.length * Math.max(1, keys.length) > GRID_CELLS) throw too(`${buckets.length.toLocaleString("en")} ${grain}s for each of ${keys.length} groups`, grain);
   const rolling = steps.find((s): s is Extract<ComputeStep, { op: "rolling" }> => s.op === "rolling");
-  if (rolling && buckets.length < rolling.window)
-    throw new ResolveError("NOT_SUPPORTED", `A ${rolling.window}-${grain} rolling ${rolling.fn === "mean" ? "average" : "sum"} needs at least ${rolling.window} ${grain}s, and this window has ${buckets.length}. Widen the time range or shorten the window`, query.measure);
+  if (rolling && buckets.length - lead < rolling.window)
+    throw new ResolveError("NOT_SUPPORTED", `A ${rolling.window}-${grain} rolling ${rolling.fn === "mean" ? "average" : "sum"} needs at least ${rolling.window} ${grain}s, and this window has ${buckets.length - lead}. Widen the time range or shorten the window`, query.measure);
   const index = new Map(buckets.map((b, i) => [b, i]));
+  const shown = base.rows.filter((r) => (index.get(r.group) ?? lead) >= lead);
   const byKey = new Map<string, DataRow[]>();
   for (const r of base.rows) byKey.set(r.series ?? "", [...(byKey.get(r.series ?? "") ?? []), r]);
 
@@ -276,14 +319,14 @@ export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack,
       values[i] = ratio ? first(r) : cell(r.value, nature);
       counts[i] = r.count;
     }
-    let start = 0;
-    for (const s of steps) ({ values, start } = step(s, values, start));
-    return { key, values, counts, start, total: rows.reduce((n, r) => n + (r.value ?? 0), 0) };
+    let start = lead;
+    for (const s of steps) ({ values, start } = step(s, values, start, lead));
+    return { key, values, counts, start };
   });
 
   const last = steps.at(-1)!;
   if (last.op === "over_time") {
-    const rows: DataRow[] = groups.map((g) => ({ group: g.key, value: summary(last.fn, g.values.slice(g.start)), count: g.counts.reduce((a, b) => a + b, 0) }));
+    const rows: DataRow[] = groups.map((g) => ({ group: g.key, value: summary(last.fn, g.values.slice(g.start)), count: g.counts.slice(lead).reduce((a, b) => a + b, 0) }));
     if (query.kind === "value") return out([{ group: query.measure, value: rows[0]?.value ?? null, count: rows[0]?.count ?? 0 }]);
     return out(limitGroups(sortGroups(rows, query as Breakdown), query as Breakdown));
   }
@@ -292,7 +335,7 @@ export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack,
   const rows: DataRow[] = groups.flatMap((g) =>
     buckets.slice(g.start).map((b, j) => ({ group: b, ...(split ? { series: g.key } : {}), value: g.values[g.start + j]!, count: g.counts[g.start + j]! })),
   );
-  return topSeries(query, out, sortSeries(rows), base.rows);
+  return topSeries(query, out, sortSeries(rows), shown);
 }
 
 // A split series keeps its top series, ranked by the base measure's total (the
@@ -334,7 +377,7 @@ export function describeComputed(query: MeasuredQuery, pack: Pack): { label: str
         break;
       case "change":
         name = `${on} ${s.percent ? "% " : ""}change in ${name}`;
-        rules.push(`the first ${grain} has no ${grain} before it, so it has no change`);
+        rules.push(query.time ? `the first ${grain} changes from the ${grain} before the time range` : `the first ${grain} has no ${grain} before it, so it has no change`);
         if (s.percent) rules.push(`a change from 0 has no percentage and is skipped`);
         gaps = true;
         break;
