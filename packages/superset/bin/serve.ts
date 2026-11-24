@@ -21,6 +21,7 @@ import { identityKey, serviceAccount } from "../src/bootstrap";
 import { type Identity, editPolicyFrom, identityOf, supersetAccess } from "../src/identity";
 import { SettingsSaveError, readJson, settingsStore } from "../src/settings";
 import { type FeatureValues, features as featureSwitches } from "../src/features";
+import { turnsReport } from "../src/turns";
 
 type Config = {
   superset: {
@@ -377,6 +378,14 @@ createServer(async (req, res) => {
         language: languageView(),
         features: feats.view(!!idKey),
       }));
+    }
+    // What chat has cost: the newest turns and the totals for today and the last 7 days, from the audit log.
+    if (url.pathname === "/_superset/turns") {
+      if (adminOnly()) return;
+      if (!auditLog) return send(res, 200, JSON.stringify({ enabled: false }));
+      const now = new Date();
+      const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit")) || 50, 500));
+      return send(res, 200, JSON.stringify({ enabled: true, ...turnsReport(auditLog.since(new Date(now.getTime() - 7 * 86_400_000)), now, limit) }));
     }
     // The audit log, newest first: ?month=YYYY-MM (default the current month), ?limit=N.
     if (url.pathname === "/_superset/audit") {
