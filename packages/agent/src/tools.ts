@@ -76,6 +76,16 @@ function chartWidget(chart: (typeof CHART_KINDS)[number], title: string, query: 
   return { kind: "chart" as const, chart, title, query, options: { legend: true, colorScheme: "default" as const } };
 }
 
+/**
+ * A breakdown's counts in words: groups shown against the limit, and what records covers. Read
+ * alone, the records behind a top 3 look like a fact about the whole data (how many records carry
+ * the dimension at all); said this way, they cannot.
+ */
+function countsNote(query: Extract<Query, { kind: "breakdown" }>, shown: number, records: number) {
+  const cut = shown >= query.limit;
+  return `${shown} group${shown === 1 ? "" : "s"} shown${cut ? `, the top ${query.limit}: other groups may exist` : ", every group with records"}. records (${records}) counts only the records behind the groups shown, not the data's total; for a total, run a value query.`;
+}
+
 // Rows per page of a table. A table of rows reads one row past its first
 // page with the board, so Prev/Next know whether another page exists.
 export const DEFAULT_PAGE_SIZE = 25;
@@ -203,7 +213,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     defineTool({
       name: "query",
       description:
-        "Run one query against the pack and return its rows plus the native query that ran. Use this to answer questions or to check a widget before adding it. Each row's value is the measure; its count is the number of records in that group. records is how many records lie behind the rows shown: it is not the measure's total, and a breakdown with a limit shows only its top groups. For the measure over everything, run a value query.",
+        "Run one query against the pack and return its rows plus the native query that ran. Use this to answer questions or to check a widget before adding it. Each row's value is the measure (or, with compute, the computed number named in computed); its count is the number of records in that group. records is how many records lie behind the rows shown: it is not the measure's total, and a breakdown with a limit shows only its top groups. For the measure over everything, run a value query.",
       inputSchema: QUERY,
       async execute(a) {
         const query = assembleQuery(a, pack);
@@ -215,9 +225,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           ok: true,
           query,
           ...(closest ? { didYouMean: closest } : {}),
+          // What the numbers are when they were computed after the source answered, and how zeros and gaps were treated.
+          ...(data.computed ? { computed: data.computed } : {}),
           rows: data.records ?? data.rows,
           // Records behind the rows shown, not the measure's total: named so a model cannot read it as one.
           records: data.total,
+          ...(query.kind === "breakdown" ? { counts: countsNote(query, data.rows.filter((r) => !r.other).length, data.total) } : {}),
           format: data.format,
           compare: data.compare,
           ...(data.approximate ? { approximate: true } : {}),

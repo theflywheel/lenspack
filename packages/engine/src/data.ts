@@ -39,6 +39,10 @@ export type WidgetData = {
   measures?: { key: string; format: Format }[];
   /** What the answer leaves out on purpose: series past the top few, an operand no filter narrows. */
   notes?: string[];
+  /** A computed answer's name for its numbers ("average daily units dispatched"), drawn as the value's label. */
+  label?: string;
+  /** What was computed after the source answered, and how zeros and gaps were treated, in plain words. */
+  computed?: string;
   error?: string;
   hint?: string;
 };
@@ -130,7 +134,7 @@ export function limitGroups(rows: DataRow[], query: Pick<Breakdown, "by" | "limi
 /** A connector's raw rows for a bound plan → widget data, in its measure's format. */
 export function shapeBound(raw: Row[], bound: BoundPlan): WidgetData {
   const def = bound.measure?.def;
-  return shapeRows(raw, bound.query, def?.format ?? "number", def?.key);
+  return shapeRows(raw, bound.query, def?.format ?? "number", def?.key, !!bound.base);
 }
 
 /** A series' rows by bucket, then series A to Z: one order, whatever order the source answered in. */
@@ -139,7 +143,7 @@ export function sortSeries(rows: DataRow[]): DataRow[] {
 }
 
 /** Raw connector rows → widget data. `columns` names the record keys for a rows query. */
-export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?: string): WidgetData {
+export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?: string, allSeries = false): WidgetData {
   switch (query.kind) {
     case "breakdown": {
       const all = raw.map((r): DataRow => {
@@ -159,7 +163,7 @@ export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?:
           count: toNumber(r.n) ?? 0,
         })),
       );
-      if (query.by) {
+      if (query.by && !allSeries) {
         // Keep the top series by total value; the rest are dropped, never
         // bucketed as "other", so every number stays attributable.
         const totals = new Map<string, number>();

@@ -252,7 +252,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
       orderBy.push({ expr: col("", "bucket"), dir: "asc" });
       if (bound.dimension) orderBy.push({ expr: col("", "series"), dir: "asc" });
-      limit = 5000;
+      // A computed query's base: every series, one row past the cap to tell it was cut.
+      limit = bound.base ? bound.base.rows + 1 : 5000;
       shape = "series";
       break;
     }

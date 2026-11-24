@@ -320,10 +320,12 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         return answer(metricAggs.approximate, (r) => ((r.aggregations?.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), value: metricAggs.read(b), n: b.doc_count })));
       }
       // The top series by the measure over the whole window, each over time:
-      // the same series the SQL path keeps.
+      // the same series the SQL path keeps. A computed query's base reads every
+      // series, as many as its row cap allows; the engine counts the rows.
       const src = dimensionSource(bound.dimension.def, env);
       const order = metricAggs.order ? [{ [metricAggs.order]: "desc" }, { _key: "asc" }] : [{ _count: "desc" }, { _key: "asc" }];
-      body.aggs = { s: { terms: { ...src, size: MAX_SERIES, order }, aggs: { ...metricAggs.aggs, t: histogram } } };
+      const size = bound.base ? Math.min(bound.base.rows + 1, 10_000) : MAX_SERIES;
+      body.aggs = { s: { terms: { ...src, size, order }, aggs: { ...metricAggs.aggs, t: histogram } } };
       return answer(metricAggs.approximate, (r) =>
         ((r.aggregations?.s?.buckets ?? []) as Bucket[]).flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count }))),
       );
