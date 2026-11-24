@@ -6,7 +6,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWr
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
-import { type Principal, boardRights, decide, principalOf } from "@lenspack/policy";
+import { type Principal, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -276,7 +276,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const who = access ? await access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
-      const decisionFor = (h: Host) => decide(who, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx });
+      const decisionFor = (h: Host, as: Principal = who) => decide(as, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx });
       // The pack's own boards first, in board-file order; then people's, latest first.
       const boardsOf = async (h: Host) => {
         const order = (b: Ownership & { id: string }) => (b.owner ? h.boards.length : Math.max(0, h.boards.findIndex((f) => f.id === b.id)));
@@ -350,17 +350,17 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       const h = byName.get(packName);
       const d = h ? decisionFor(h) : null;
+      // Another tenant's pack is refused outright, not hidden, when nothing else keeps it from the caller.
+      if (h && !d && otherTenant(who, h.ctx) && decisionFor(h, { ...who, tenant: h.ctx.tenant })) {
+        audit({ user: who.user, pack: packName, action: "open", outcome: "denied", detail: "tenant" });
+        return json(res, 403, { error: "this pack belongs to another tenant" });
+      }
       // A pack the caller may not open looks the same as one that is not there.
       if (!h || !d) return json(res, 404, { error: "no such pack" });
       // Everything the caller is shown of the pack's vocabulary leaves out what they may not use;
       // every board config they are sent keeps a hidden key's filter, not its value (d.board).
       const catalogue = d.catalogue(h.catalogue);
       const shown = d.board;
-      // The caller's tenant may narrow a pack, never move a pinned one elsewhere.
-      if (d.otherTenant) {
-        audit({ user: who.user, pack: packName, action: "open", outcome: "denied", detail: "tenant" });
-        return json(res, 403, { error: "this pack belongs to another tenant" });
-      }
       // The decided scope narrows every query; hidden keys are refused in resolution, on every path.
       const ctx = d.ctx;
       const run = { pack: h.pack, connector: h.connector, ctx };
@@ -382,7 +382,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const query = querySchema.parse(JSON.parse(url.searchParams.get("q") ?? "{}"));
           const e = await explain(query, run);
           // The compiled statement reads like the pack file, which such a caller is not shown either.
-          if (d.hidden.size) return json(res, 200, { ok: true, source: h.connector.kind, entities: e.entities, approximate: e.approximate });
+          if (!showsStatement(d.ctx)) return json(res, 200, { ok: true, source: h.connector.kind, entities: e.entities, approximate: e.approximate });
           return json(res, 200, { ok: true, source: h.connector.kind, sql: e.text, native: e.text, entities: e.entities, approximate: e.approximate });
         } catch (e) {
           if (e instanceof ResolveError) return json(res, 200, { ok: false, code: e.code, error: e.message, nearest: e.nearest, key: e.key });
@@ -405,8 +405,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       // Anything the caller can see, they can make their own.
       if (req.method === "POST" && action === "copy") {
         const body = (await read(req)) as { title?: string };
-        // Checked like any board, so a long or odd title cannot store one that will not load.
-        const config = boardConfigSchema.parse({ ...board.config, title: body.title ?? `${board.config.title.slice(0, 150)} (copy)` });
+        // The board as the caller is shown it, so a value they may not see is not stored under their name. Checked
+        // like any board, so a long or odd title cannot store one that will not load.
+        const config = boardConfigSchema.parse({ ...shown(board).config, title: body.title ?? `${board.config.title.slice(0, 150)} (copy)` });
         const copy = await h.store.create({ id: randomId("b"), pack: h.pack, title: config.title, config, owner: who.user, tenant: who.tenant });
         audit({ user: who.user, pack: packName, board: copy.id, action: "copy", outcome: "ok", detail: `from ${boardId}` });
         return json(res, 200, { id: copy.id, version: copy.version });
@@ -489,7 +490,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, board.config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly);
+          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -497,6 +498,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
+  // Everything the chat model and the reviewer read of the board is as the caller is shown it (shownConfig, from h.ctx):
+  // the prompt, the summaries before and after, and the tools' results.
   async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string) {
     const fallback = opts.chatDefault?.();
     const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
@@ -537,6 +540,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly,
       onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
+    const view = (c: BoardConfig) => shownConfig(c, h.ctx);
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
@@ -567,7 +571,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // versions takes its place, so no edit ends in silence.
     const closingSummary = async (role: "build" | "escalate", builder: Provider, roundEffort: string | undefined, history: ModelMessage[], refused: string[]) => {
       const versions = (await store.versions(boardId)).filter((v) => v.version > startVersion).reverse();
-      const now = summarise((await store.get(boardId))!.config);
+      const now = summarise(view((await store.get(boardId))!.config));
       // The summary is grounded in the board itself, start of turn against now, so it cannot
       // mistake the last tool error for the outcome.
       const text = await toolsOff(role, builder, roundEffort, history, `${CLOSING_PROMPT}\n\nBoard at the start of this turn:\n${before}\n\nBoard now${versions.length ? "" : " (unchanged)"}:\n${now}`);
@@ -584,7 +588,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
       try {
         // The reviewer keeps its own configuration, effort included.
-        return await withMeter({ role: "review", effort: effortFor(reviewer) }, () => reviewTurn(reviewer, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals }));
+        return await withMeter({ role: "review", effort: effortFor(reviewer) }, () => reviewTurn(reviewer, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(view(current.config)), receipt, refusals }));
       } catch (e) {
         return unavailable(`review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}`);
       } finally {

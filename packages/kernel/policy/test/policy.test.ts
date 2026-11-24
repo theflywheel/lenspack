@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Identity, type PackRule, boardRights, decide, hiddenKeys, holds, principalOf } from "../src";
+import { type Identity, type PackRule, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -86,15 +86,31 @@ describe("decide", () => {
     const host = { tenant: "t1" };
     const d = decide(as([]), pack, { host })!;
     expect(d.ctx).toEqual(host);
-    expect(d.otherTenant).toBe(false);
     expect(d.pack()).toBe(pack);
     expect(d.catalogue(catalogueFrom(pack))).toEqual(catalogueFrom(pack));
   });
 
   it("refuses a caller of another tenant on a pinned pack, and lets a tenant narrow an unpinned one", () => {
-    expect(decide(as([], { tenant: "t2" }), pack, { host: { tenant: "t1" } })!.otherTenant).toBe(true);
-    expect(decide(as([], { tenant: "t1" }), pack, { host: { tenant: "t1" } })!.otherTenant).toBe(false);
+    // No access at all, whatever the rules grant, so no host can forget to check.
+    expect(decide(as(["staff"], { tenant: "t2" }), pack, { rules: RULES, host: { tenant: "t1" } })).toBeNull();
+    expect(otherTenant({ tenant: "t2" }, { tenant: "t1" })).toBe(true);
+    expect(otherTenant({ tenant: "t1" }, { tenant: "t1" })).toBe(false);
+    expect(decide(as([], { tenant: "t1" }), pack, { host: { tenant: "t1" } })!.ctx.tenant).toBe("t1");
+    // A caller without a tenant reads the pack's own; on an unpinned pack, a tenant narrows it.
+    expect(decide(as([]), pack, { host: { tenant: "t1" } })!.ctx.tenant).toBe("t1");
     expect(decide(as([], { tenant: "t2" }), pack)!.ctx.tenant).toBe("t2");
+  });
+
+  it("builds a caller's board view from their engine context: the one view every reader of the board uses", () => {
+    const partner = decide(as(["partner"]), pack, { rules: RULES })!;
+    const staff = decide(as(["staff"]), pack, { rules: RULES })!;
+    const config = { widgets: {}, filters: [{ field: "delivered_by", default: { values: ["Ann"] } }] };
+    expect(shownConfig(config, partner.ctx)).toEqual(partner.board({ config }).config);
+    expect(shownConfig(config, partner.ctx).filters[0]!.default.values).toEqual(["(hidden)"]);
+    expect(shownConfig(config, staff.ctx)).toBe(config);
+    // The compiled statement goes with the pack file: not for a caller with hidden keys.
+    expect(showsStatement(partner.ctx)).toBe(false);
+    expect(showsStatement(staff.ctx)).toBe(true);
   });
 
   it("shows the caller the pack, catalogue and boards without what is hidden", () => {

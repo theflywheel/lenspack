@@ -1,11 +1,11 @@
 import { z } from "zod";
 
-import { type BoardOp, type BoardStore, CHART_KINDS, type Filter, type Query, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
 import { type Connector, type Ctx, checkOps, explain, run, valuesQuery } from "@lenspack/engine";
-import { withoutKeys } from "@lenspack/policy";
+import { shownConfig, showsStatement, withoutKeys } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 
-import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, patchQuery, str } from "./args";
+import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, parseClear, patchQuery, str } from "./args";
 import { type Proposal, type ProposalStore, memoryProposals } from "./proposals";
 
 export type Tool<A extends z.ZodRawShape = z.ZodRawShape> = {
@@ -94,6 +94,23 @@ function tableOf(title: string, query: Query, pageSize: number, limitGiven: bool
   return { kind: "table" as const, title, query: rows, pageSize: Math.max(5, pageSize) };
 }
 
+const KEEPS_EMPTY = "A field left empty keeps that part; to remove filters, the time window, a split, further measures or compute steps, name them in clear.";
+
+// What an update changed, named as the tool's own fields: what the model is told it did.
+const QUERY_PARTS: Record<string, string> = { by: "split", time: "time window", measures: "further measures", orderBy: "order_by", sortBy: "sort_by" };
+function widgetChanges(before: Widget, after: Widget): string[] {
+  // Compared by content, whatever order an object's keys were written in.
+  const canon = (v: unknown) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
+  const differ = (a: Record<string, unknown>, b: Record<string, unknown>) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => canon(a[k]) !== canon(b[k]));
+  const { query: was, ...restBefore } = before as Widget & { query?: Record<string, unknown> };
+  const { query: now, ...restAfter } = after as Widget & { query?: Record<string, unknown> };
+  const out = differ(restBefore, restAfter).map((k) => (k === "pageSize" ? "page_size" : k));
+  // A widget that gains or loses its query (to or from text) changed its query as a whole.
+  if (!was || !now || was.kind !== now.kind) return canon(was) === canon(now) ? out : [...out, "query"];
+  for (const k of differ(was, now)) out.push(`${QUERY_PARTS[k] ?? k}${now[k] === undefined ? " removed" : ""}`);
+  return out;
+}
+
 const targetsOf = (applies: string) => {
   const ids = applies.split(",").map((s) => s.trim()).filter(Boolean);
   return ids.length ? ids : ["*"];
@@ -134,9 +151,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     );
   // Raw SQL does not pass through the pack, so it cannot keep a key from a caller either.
   if (opts.runSql && (opts.ctx?.hidden?.size || opts.ctx?.hiddenEntities?.size)) throw new Error(`run_sql would read "${pack.pack}" past the keys this caller may not use`);
-  // What the model sees the compiled query called: SQL, or a search request.
+  // What the model sees the compiled query called: SQL, or a search request. Shown only as the API would show it to this caller.
   const nativeKey = connector.kind === "postgres" || connector.kind === "duckdb" ? "sql" : "request";
   const ctx = opts.ctx ?? {};
+  const statement = (text: string) => (showsStatement(ctx) ? { [nativeKey]: text } : {});
+  // The board as this caller is shown it: the same view the board API sends them, so the model never reads a value they may not see.
+  const shown = (config: BoardConfig) => summarise(shownConfig(config, ctx));
   // What the model may name: verified keys this caller may use.
   const catalogue = withoutKeys(verifiedOnly(catalogueFrom(pack)), ctx.hidden);
   const proposals = opts.proposals ?? memoryProposals();
@@ -178,7 +198,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       told({ outcome: "ok", ops: names, version: result.board.version });
       // What the edit did besides what was asked (room made, a widget widened), so the model can say so.
       const layout = before ? layoutChanges(before, result.board.config, ops) : [];
-      return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: summarise(result.board.config) };
+      return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: shown(result.board.config) };
     };
     const next = queue.then(work, work);
     queue = next.catch(() => undefined);
@@ -261,7 +281,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           compare: data.compare,
           ...(data.approximate ? { approximate: true } : {}),
           ...(data.notes ? { notes: data.notes } : {}),
-          [nativeKey]: text,
+          ...statement(text),
         };
       },
     }),
@@ -272,7 +292,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       async execute(a) {
         const query = assembleQuery(a, pack);
         const c = await explain(query, { pack, connector, ctx });
-        return { ok: true, query, [nativeKey]: c.text, root: c.root, entities: c.entities, tenant: c.tenant, ...(c.approximate ? { approximate: true } : {}) };
+        return { ok: true, query, ...statement(c.text), root: c.root, entities: c.entities, tenant: c.tenant, ...(c.approximate ? { approximate: true } : {}) };
       },
     }),
     defineTool({
@@ -297,7 +317,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       async execute() {
         const board = await afterEdits(() => store.get(boardId));
         if (!board) return { error: "This board no longer exists" };
-        return { board: summarise(board.config), version: board.version };
+        return { board: shown(board.config), version: board.version };
       },
     }),
     defineTool({
@@ -331,7 +351,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           const before = all[0]?.version;
           const board = await store.revertTo(boardId, target.version);
           if (!board) throw new Error(`Version ${target.version} could not be restored`);
-          return { applied: true as const, restored: target.version, version: board.version, unchanged: board.version === before, board: summarise(board.config) };
+          return { applied: true as const, restored: target.version, version: board.version, unchanged: board.version === before, board: shown(board.config) };
         }),
     }),
     defineTool({
@@ -365,7 +385,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     defineTool({
       name: "update_widget",
       description:
-        "Change a widget in place: its id plus only the fields that change. A different query_kind starts a new query from the fields given.",
+        'Change a widget in place: its id plus only the fields that change; a field left empty keeps that part as it is. To take a part off its query, name it in clear: clear "filters, time" shows every record over all time. A different query_kind starts a new query from the fields given. The result says in changed what actually changed.',
       inputSchema: z.object({
         id: z.string(),
         kind: given(z.enum(WIDGET_KINDS)).describe("Only to change it"),
@@ -374,10 +394,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         body: given(z.string()).describe("Only for text: the note, in markdown"),
         page_size: given(PAGE_SIZE),
         ...PATCH_SHAPE,
+        clear: str().describe("Optional, comma-separated: parts of the query to remove: filters, time (the time window, back to all time), split, measures (the further ones), compute"),
       }),
-      execute: ({ id, kind, title, chart, body, page_size, ...fields }) => {
+      async execute({ id, kind, title, chart, body, page_size, clear: clearing, ...fields }) {
         const changed = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) as Partial<QueryArgs>;
-        return apply(async () => {
+        const clear = parseClear(clearing);
+        let did: string[] = [];
+        const result = await apply(async () => {
           const widgets = (await store.get(boardId))?.config.widgets ?? {};
           const current = widgets[id];
           if (!current) {
@@ -387,26 +410,36 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           // A chart type alone ("make it a pie") means a chart.
           const to = kind ?? (chart ? "chart" : current.kind);
           const name = title ?? current.title;
+          let widget: Widget;
           if (to === "text") {
             const text = body ?? (current.kind === "text" ? current.body : undefined);
             if (text === undefined) return { applied: false, error: "A text widget needs body" };
-            return [{ op: "update_widget", id, widget: { kind: "text", title: name, body: text } }];
+            widget = { kind: "text", title: name, body: text };
+          } else {
+            if (current.kind === "text" && !changed.query_kind) return { applied: false, error: `A ${to} needs a query: give query_kind and its fields` };
+            const query = patchQuery(current.kind === "text" ? undefined : current.query, changed, pack, clear);
+            widget =
+              to === "kpi"
+                ? { ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
+                : to === "table"
+                  ? tableOf(name, query, page_size || (current.kind === "table" ? current.pageSize : DEFAULT_PAGE_SIZE), !page_size || !!changed.limit)
+                  : (() => {
+                      const kindNow = chart ?? (current.kind === "chart" ? current.chart : "bar");
+                      const fresh = chartWidget(kindNow, name, query);
+                      // Options carry over, except across the heatmap line (its scale is sequential).
+                      return { ...fresh, ...(current.kind === "chart" && (current.chart === "heatmap") === (kindNow === "heatmap") ? { options: current.options } : {}) };
+                    })();
           }
-          if (current.kind === "text" && !changed.query_kind) return { applied: false, error: `A ${to} needs a query: give query_kind and its fields` };
-          const query = patchQuery(current.kind === "text" ? undefined : current.query, changed, pack);
-          const widget =
-            to === "kpi"
-              ? { ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
-              : to === "table"
-                ? tableOf(name, query, page_size || (current.kind === "table" ? current.pageSize : DEFAULT_PAGE_SIZE), !page_size || !!changed.limit)
-                : (() => {
-                    const kindNow = chart ?? (current.kind === "chart" ? current.chart : "bar");
-                    const fresh = chartWidget(kindNow, name, query);
-                    // Options carry over, except across the heatmap line (its scale is sequential).
-                    return { ...fresh, ...(current.kind === "chart" && (current.chart === "heatmap") === (kindNow === "heatmap") ? { options: current.options } : {}) };
-                  })();
+          did = widgetChanges(current, widget);
+          // Never "applied" for an update that changed nothing: the model would tell the user it did.
+          if (!did.length) return { applied: false, unchanged: true, error: `That leaves "${id}" as it was. ${KEEPS_EMPTY}` };
           return [{ op: "update_widget", id, widget }];
         });
+        if (!result.applied) return result;
+        // A part given as an empty word ("none") is kept, not removed: said, so the model does not claim otherwise.
+        const parts = { filters: "filters", time_last: "time", split: "split", measures: "measures" } as const;
+        const kept = (Object.keys(parts) as (keyof typeof parts)[]).filter((k) => changed[k] === "" && !clear.includes(parts[k]));
+        return { ...result, changed: did.join(", "), ...(kept.length ? { note: `${kept.join(", ")} given empty, so kept as it was. ${KEEPS_EMPTY}` } : {}) };
       },
     }),
     defineTool({
