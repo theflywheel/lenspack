@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { boardTools } from "@lenspack/mcp";
+import { boardTools } from "@lenspack/agent";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { parsePackText } from "@lenspack/spec";
 import { MockLanguageModelV4 } from "ai/test";
