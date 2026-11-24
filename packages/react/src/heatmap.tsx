@@ -2,8 +2,9 @@ import * as React from "react";
 
 import type { Widget } from "@lenspack/core";
 
-import { type Grain, formatBucket, formatTick, timeOf } from "./charts";
-import { formatValue } from "./format";
+import { timeOf } from "./charts";
+import { type Grain, formatBucket, formatTick, formatValue } from "./format";
+import { byText, useSize } from "./size";
 import type { WidgetData } from "./types";
 
 // A heatmap: one measure over two dimensions, as a grid of cells shaded on one
@@ -40,8 +41,6 @@ export function heatStep(v: number, min: number, max: number): number {
   if (!(max > min)) return Math.ceil(HEAT_STEPS / 2);
   return Math.min(HEAT_STEPS, 1 + Math.floor(((v - min) / (max - min)) * HEAT_STEPS));
 }
-
-const byText = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 export function buildHeatmapSpec(
   widget: Extract<Widget, { kind: "chart" }>,
@@ -88,20 +87,6 @@ export function buildHeatmapSpec(
     yName: opts.yName ?? q.by ?? "",
     legend: widget.options.legend,
   };
-}
-
-/** The element's size, kept current; values are drawn in cells only when they fit. */
-function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, { w: number; h: number }] {
-  const ref = React.useRef<T | null>(null);
-  const [size, setSize] = React.useState({ w: 0, h: 0 });
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(([e]) => e && setSize({ w: e.contentRect.width, h: e.contentRect.height }));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, size];
 }
 
 export function HeatmapChart({ spec }: { spec: HeatmapSpec }) {

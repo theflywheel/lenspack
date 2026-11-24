@@ -129,5 +129,3 @@ export function createShadcnAdapter(c: ShadcnChartComponents, opts: ShadcnOption
 
   return { name: "shadcn", Chart: ShadcnChart };
 }
-
-export default createShadcnAdapter;
