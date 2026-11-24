@@ -1,4 +1,4 @@
-import type { FORMATS, Query } from "@lenspack/core";
+import { type FORMATS, type Grain, type Query, grainWords } from "@lenspack/core";
 
 import type { BoundPlan } from "./resolve";
 
@@ -37,8 +37,10 @@ export type WidgetData = {
   approximate?: boolean;
   /** For a query with further measures: every measure drawn, the primary first. */
   measures?: { key: string; format: Format }[];
-  /** What the answer leaves out on purpose: series past the top few, an operand no filter narrows. */
+  /** What the answer leaves out on purpose: series past the top few, an operand no filter narrows, a cut. */
   notes?: string[];
+  /** The source stopped at its row limit, so rows are missing (the notes say which); compute refuses such a base. */
+  truncated?: true;
   /** A computed answer's name for its numbers ("average daily units dispatched"), drawn as the value's label. */
   label?: string;
   /** What was computed after the source answered, and how zeros and gaps were treated, in plain words. */
@@ -131,10 +133,61 @@ export function limitGroups(rows: DataRow[], query: Pick<Breakdown, "by" | "limi
   return rows.filter((r) => keep.has(r.group));
 }
 
-/** A connector's raw rows for a bound plan → widget data, in its measure's format. */
-export function shapeBound(raw: Row[], bound: BoundPlan): WidgetData {
+/** Rows a source returns for a series, computed or not: its buckets, times its series when split. */
+export const SERIES_ROWS = 20_000;
+
+/**
+ * The most rows a source returns for a bound plan, where more would be a cut
+ * rather than the answer: a series (latest buckets first), a split breakdown
+ * (largest rows first). A source asks for one row more, so shapeBound can tell.
+ * An unsplit breakdown's limit is its top N, not a cut, so it has none.
+ */
+export function rowCap(bound: BoundPlan): number | undefined {
+  if (bound.query.kind === "series") return bound.base?.rows ?? SERIES_ROWS;
+  if (bound.query.kind === "breakdown" && bound.split) return SPLIT_ROWS;
+  return undefined;
+}
+
+/**
+ * A connector's raw rows for a bound plan → widget data, in its measure's
+ * format. Past the plan's rowCap, or when the source says it left rows out
+ * (`cut`), the answer is marked truncated and says what it shows: a series its
+ * latest whole buckets, a split breakdown the groups ranked on the rows returned.
+ */
+export function shapeBound(raw: Row[], bound: BoundPlan, cut = false): WidgetData {
   const def = bound.measure?.def;
-  return shapeRows(raw, bound.query, def?.format ?? "number", def?.key, !!bound.base);
+  const q = bound.query;
+  const cap = rowCap(bound);
+  const over = cap !== undefined && raw.length > cap;
+  const shape = (rows: Row[]) => shapeRows(rows, q, def?.format ?? "number", def?.key, !!bound.base);
+  if (!over && !cut) return shape(raw);
+  const limit = over ? `has more than ${cap.toLocaleString("en")} rows` : "stops at its row limit";
+  let note: string;
+  let kept = raw;
+  if (q.kind === "series") {
+    if (over) kept = latestBuckets(raw, cap, q.grain);
+    const n = new Set(kept.map((r) => bucketLabel(r.bucket, q.grain))).size;
+    note = over
+      ? `only the latest ${n.toLocaleString("en")} ${n === 1 ? q.grain : grainWords(q.grain).plural} are shown${q.by ? `, and series are ranked on those ${grainWords(q.grain).plural}` : ""}; the source ${limit} for this series`
+      : `some series are left out; the source ${limit} for this series`;
+  } else {
+    if (over) kept = raw.slice(0, cap);
+    note = `groups are ranked on part of the data; the source ${limit} for this breakdown`;
+  }
+  const data = shape(kept);
+  return { ...data, truncated: true, notes: [...(data.notes ?? []), note] };
+}
+
+// A series cut at `cap` rows: its latest buckets, whichever order the source
+// answered in, without the earliest one if the cut went through it (some of its
+// series missing), unless that bucket is all there is.
+function latestBuckets(raw: Row[], cap: number, grain: Grain): Row[] {
+  const label = (r: Row) => bucketLabel(r.bucket, grain);
+  const sorted = raw.map((r) => [label(r), r] as const).sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0));
+  const kept = sorted.slice(0, cap);
+  const through = sorted[cap]?.[0];
+  const whole = through !== undefined && kept.at(-1)?.[0] === through ? kept.filter(([l]) => l !== through) : kept;
+  return (whole.length ? whole : kept).map(([, r]) => r);
 }
 
 /** A series' rows by bucket, then series A to Z: one order, whatever order the source answered in. */

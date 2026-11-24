@@ -2,7 +2,7 @@ import { type ComputeStep, type Grain, type MeasureNature as Nature, type Measur
 import { type Pack, natureOf } from "@lenspack/pack";
 
 import { bucketZone, localWallClock } from "./calendar";
-import { type DataRow, type Format, MAX_SERIES, SPLIT_ROWS, type WidgetData, limitGroups, sortGroups, sortSeries } from "./data";
+import { type DataRow, type Format, MAX_SERIES, SERIES_ROWS, SPLIT_ROWS, type WidgetData, limitGroups, sortGroups, sortSeries } from "./data";
 import { ResolveError, type TimeWindow } from "./resolve";
 
 // Arithmetic on aggregated answers. The source answers the query at its base
@@ -11,8 +11,8 @@ import { ResolveError, type TimeWindow } from "./resolve";
 // Plain arithmetic in one place, so every source gets the same answer, and the
 // rules for zeros and gaps are written once (docs/compute.md).
 
-/** Numbers a source may return for one computed query: groups × time buckets. */
-export const COMPUTE_ROWS = 20_000;
+/** Numbers a source may return for one computed query (groups × time buckets): as many as for any series. */
+export const COMPUTE_ROWS = SERIES_ROWS;
 // Time buckets × groups the steps run over, gaps included.
 const GRID_CELLS = 200_000;
 
@@ -238,7 +238,7 @@ export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack,
 
   if (!timed) {
     // A ratio alone: per row, as the source grouped it.
-    if (query.kind === "breakdown" ? base.rows.length >= SPLIT_ROWS : base.rows.length > COMPUTE_ROWS) throw too(`every ${query.kind === "breakdown" ? query.dimension : "group"}`, grain);
+    if (base.truncated || (query.kind === "breakdown" ? base.rows.length >= SPLIT_ROWS : base.rows.length > COMPUTE_ROWS)) throw too(`every ${query.kind === "breakdown" ? query.dimension : "group"}`, grain);
     const rows = base.rows.map((r): DataRow => {
       const { values: _values, compare: _compare, ...rest } = r;
       return { ...rest, value: first(r) };
@@ -248,7 +248,7 @@ export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack,
     return out(rows.slice(0, 1).map((r) => ({ ...r, group: query.measure })));
   }
 
-  if (base.rows.length > COMPUTE_ROWS) throw too(`the measure for every ${query.kind === "breakdown" ? `${query.dimension} and ` : query.kind === "series" && query.by ? `${query.by} and ` : ""}${grain}`, grain);
+  if (base.truncated || base.rows.length > COMPUTE_ROWS) throw too(`the measure for every ${query.kind === "breakdown" ? `${query.dimension} and ` : query.kind === "series" && query.by ? `${query.by} and ` : ""}${grain}`, grain);
   const buckets = bucketsOf(base.rows.map((r) => r.group), grain!, window, pack.timeZone);
   // The bucket read before the window for a change is not shown, counted or ranked.
   const lead = window && steps.some((s) => s.op === "change") ? 1 : 0;

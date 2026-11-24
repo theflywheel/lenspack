@@ -19,8 +19,8 @@ SELECT date_trunc('day', "pageviews"."__t") AS "bucket", "pageviews"."__d_device
 FROM (SELECT *, "ts" AS "__t", (device) AS "__d_device", (session_id) AS "__m_sessions" FROM "pageviews") AS "pageviews"
 WHERE (("pageviews"."__t" >= CAST($1 AS TIMESTAMP)) AND ("pageviews"."__t" < CAST($2 AS TIMESTAMP)))
 GROUP BY date_trunc('day', "pageviews"."__t"), "pageviews"."__d_device"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["2026-08-25T00:00:00.000Z","2026-09-01T00:00:00.000Z","2026-08-25T00:00:00.000Z","2026-09-01T00:00:00.000Z","2026-08-18T00:00:00.000Z","2026-08-25T00:00:00.000Z","2026-08-18T00:00:00.000Z","2026-09-01T00:00:00.000Z"]
 SELECT count(CASE WHEN (("pageviews"."__t" >= CAST($1 AS TIMESTAMP)) AND ("pageviews"."__t" < CAST($2 AS TIMESTAMP))) THEN 1 END) AS "value", count(CASE WHEN (("pageviews"."__t" >= CAST($3 AS TIMESTAMP)) AND ("pageviews"."__t" < CAST($4 AS TIMESTAMP))) THEN 1 END) AS "n", count(CASE WHEN (("pageviews"."__t" >= CAST($5 AS TIMESTAMP)) AND ("pageviews"."__t" < CAST($6 AS TIMESTAMP))) THEN 1 END) AS "previous"
@@ -64,5 +64,5 @@ LIMIT 10;
 SELECT date_trunc('week', "pageviews"."__t") AS "bucket", count(DISTINCT "pageviews"."__m_users") AS "value", count(*) AS "n"
 FROM (SELECT *, "ts" AS "__t", (user_id) AS "__m_users" FROM "pageviews") AS "pageviews"
 GROUP BY date_trunc('week', "pageviews"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;

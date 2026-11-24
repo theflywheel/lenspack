@@ -101,6 +101,8 @@ These rules are the same on every source, and the answer says which ones applied
   holding its end, in the pack's time zone. With no time range, from the first bucket the source answered to the
   last. A bucket with no records is **0 for a count, a sum or a distinct count** (nothing happened). For anything
   else (an average, a percentile, a ratio) it **has no value** and is skipped.
+- **A ratio is taken wherever either measure has rows.** A group or bucket where the divisor has rows and the
+  numerator has none is 0 for a count or a sum (nothing happened), and has no value for anything else.
 - **Zero or missing bases are skipped, never counted as 0 or as infinite.** A ratio whose divisor is 0 or missing has
   no value. A % change from 0 has no value. A change from or to a bucket with no value has no value.
 - **The first bucket changes from the bucket before the time range.** The source is asked for that one bucket
@@ -112,15 +114,16 @@ These rules are the same on every source, and the answer says which ones applied
 - **A summary skips buckets with no value.** A group with none has no value and sorts last.
 - **Ratios and percentages are never added up.** `sum` over time, `rolling` sums and running totals are refused for
   a percentage, an average, a ratio, a % change, a rolling average or a running total. A distinct count is not
-  added up either (one key seen on two days would count twice); use `mean`, or ask for the distinct count over the
-  whole window without steps. The rule is checked when a widget is added or changed, and again when it is run.
+  added up either (one key seen on two days would count twice), nor is a count or sum taken per key (users with 3+
+  sessions); use `mean`, or ask for it over the whole window without steps. The rule is checked when a widget is
+  added or changed, and again when it is run. The same rule decides which measures take a share or an Other row.
 - **Relative change** is `(this - before) / |before|`, as the previous-period comparison already computes it.
 
 ## Size
 
 The source is asked for the base grain: the measure per group and time bucket, for every group (not a top few),
-at most 20,000 numbers. An answer that would be larger is refused with a way forward (a shorter time range, a
-coarser grain, a filter), never computed from part of the data. A split series still shows its top 12 series,
+at most 20,000 numbers. An answer that would be larger, or that the source says it cut, is refused with a way
+forward (a shorter time range, a coarser grain, a filter), never computed from part of the data. A split series still shows its top 12 series,
 ranked by the measure's total.
 
 ## In words

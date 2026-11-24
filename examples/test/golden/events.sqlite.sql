@@ -19,8 +19,8 @@ SELECT strftime('%Y-%m-%d 00:00:00', "pageviews"."__t") AS "bucket", "pageviews"
 FROM (SELECT *, "ts" AS "__t", (device) AS "__d_device", (session_id) AS "__m_sessions" FROM "pageviews") AS "pageviews"
 WHERE (("pageviews"."__t" >= CAST(? AS TEXT)) AND ("pageviews"."__t" < CAST(? AS TEXT)))
 GROUP BY strftime('%Y-%m-%d 00:00:00', "pageviews"."__t"), "pageviews"."__d_device"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["2026-08-25 00:00:00","2026-09-01 00:00:00","2026-08-25 00:00:00","2026-09-01 00:00:00","2026-08-18 00:00:00","2026-08-25 00:00:00","2026-08-18 00:00:00","2026-09-01 00:00:00"]
 SELECT count(CASE WHEN (("pageviews"."__t" >= CAST(? AS TEXT)) AND ("pageviews"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "value", count(CASE WHEN (("pageviews"."__t" >= CAST(? AS TEXT)) AND ("pageviews"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "n", count(CASE WHEN (("pageviews"."__t" >= CAST(? AS TEXT)) AND ("pageviews"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "previous"
@@ -64,5 +64,5 @@ LIMIT 10;
 SELECT strftime('%Y-%m-%d 00:00:00', "pageviews"."__t", '-' || ((CAST(strftime('%w', "pageviews"."__t") AS INTEGER) + 6) % 7) || ' days') AS "bucket", count(DISTINCT "pageviews"."__m_users") AS "value", count(*) AS "n"
 FROM (SELECT *, "ts" AS "__t", (user_id) AS "__m_users" FROM "pageviews") AS "pageviews"
 GROUP BY strftime('%Y-%m-%d 00:00:00', "pageviews"."__t", '-' || ((CAST(strftime('%w', "pageviews"."__t") AS INTEGER) + 6) % 7) || ' days')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;

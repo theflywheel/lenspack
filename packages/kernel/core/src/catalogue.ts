@@ -9,8 +9,9 @@ export type DimensionType = (typeof DIMENSION_TYPES)[number];
 export type Grain = (typeof GRAINS)[number];
 /**
  * How a measure's numbers behave across time buckets. adds: a count or a sum; it
- * adds up, and a bucket with no records is 0. distinct: a distinct count; 0 there
- * too, but it does not add up (one key seen on two days would count twice).
+ * adds up, and a bucket with no records is 0. distinct: a distinct count, or a
+ * count or sum taken per key (users with 3+ sessions); 0 there too, but it does
+ * not add up (one key seen on two days would count twice).
  * level: anything else (an average, a percentile, a ratio, a percentage); it
  * neither adds up nor has a value for an empty bucket.
  */

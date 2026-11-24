@@ -56,12 +56,12 @@ LIMIT 1;
 SELECT toDateTime(toMonday("task"."__t"), 'UTC') AS "bucket", "task"."__d_product_variant" AS "series", sum("task"."__m_nets_distributed") AS "value", count(*) AS "n"
 FROM (SELECT *, fromUnixTimestamp64Milli(CAST("Data.createdTime" AS Int64), 'UTC') AS "__t", "Data.createdTime" AS "__t_raw", "Data.productVariant" AS "__d_product_variant", CASE WHEN ("Data.deliveredTo" = {p1:String}) THEN "Data.quantity" END AS "__m_nets_distributed" FROM "project-task-index-v1") AS "task"
 GROUP BY toDateTime(toMonday("task"."__t"), 'UTC'), "task"."__d_product_variant"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["HOUSEHOLD"]
 SELECT toDateTime(toStartOfDay("task"."__t"), 'UTC') AS "bucket", count("task"."__m_visits") AS "value", count(*) AS "n"
 FROM (SELECT *, fromUnixTimestamp64Milli(CAST("Data.createdTime" AS Int64), 'UTC') AS "__t", "Data.createdTime" AS "__t_raw", CASE WHEN ("Data.deliveredTo" = {p1:String}) THEN "Data.id" END AS "__m_visits" FROM "project-task-index-v1") AS "task"
 GROUP BY toDateTime(toStartOfDay("task"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;

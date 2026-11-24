@@ -9,6 +9,7 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { campaign, contextFor } from "../index";
+import { seedTicks, seedTicksSearch, ticksCases, ticksPack } from "./ticks";
 
 // One pack, one set of generated documents, two backends. Every query below
 // runs on DuckDB (tables named like the indexes, columns named like the field
@@ -80,6 +81,8 @@ function computed(): Query[] {
     perDistrict("visits", { grain: "week", steps: [{ op: "over_time", fn: "median" }] }),
     perDistrict("households_delivered", { steps: [{ op: "ratio", to: "visits" }] }),
     perDistrict("households_delivered", { grain: "day", steps: [{ op: "ratio", to: "visits", percent: true }, { op: "over_time", fn: "mean" }] }),
+    // Households not delivered have days with visits and none of them: those days count as 0.
+    perDistrict("households_not_delivered", { grain: "day", steps: [{ op: "ratio", to: "visits" }, { op: "over_time", fn: "mean" }] }),
     perDistrict("avg_nets_per_visit", { grain: "day", steps: [{ op: "over_time", fn: "max" }] }),
     { kind: "value", measure: "nets_distributed", time: august, compute: { grain: "day", steps: [{ op: "rolling", fn: "sum", window: 7 }, { op: "over_time", fn: "max" }] } },
     { kind: "value", measure: "households_delivered", compute: { steps: [{ op: "ratio", to: "visits" }] } },
@@ -141,6 +144,30 @@ describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", (
       if ("compute" in q && q.compute) expect(a.rows.filter((r) => r.value !== null).length, JSON.stringify(a.rows.slice(0, 3))).toBeGreaterThan(q.kind === "value" ? 0 : 1);
     });
   }
+
+  it("the not-delivered ratio above has days where only the divisor has rows", async () => {
+    const perDay = (measure: string) => ({ kind: "series", measure, grain: "day", by: "district", time: { from: "2026-08-01T00:00:00Z", to: "2026-09-01T00:00:00Z" } }) as Query;
+    const sql = sqlConnector(duck.executor);
+    const [top, bottom] = await Promise.all([run(perDay("households_not_delivered"), { pack, connector: sql, ctx }), run(perDay("visits"), { pack, connector: sql, ctx })]);
+    const days = new Set(top.rows.filter((r) => r.value).map((r) => `${r.group}|${r.series}`));
+    expect(bottom.rows.some((r) => r.value && !days.has(`${r.group}|${r.series}`))).toBe(true);
+  });
+
+  describe("made-up ticks: a ratio with empty days, and a series cut at the row limit", () => {
+    let ticks: Awaited<ReturnType<typeof openDuckdb>>;
+    beforeAll(async () => {
+      ticks = await openDuckdb(":memory:");
+      await Promise.all([seedTicks(ticks.writer, "duckdb"), seedTicksSearch(es.request)]);
+    });
+    afterAll(async () => ticks?.close());
+    for (const c of ticksCases)
+      it(c.label, async () => {
+        const [a, b] = await Promise.all([run(c.query, { pack: ticksPack, connector: sqlConnector(ticks.executor) }), run(c.query, { pack: ticksPack, connector: es })]);
+        c.check(a);
+        c.check(b);
+        expect(b.rows).toEqual(a.rows);
+      });
+  });
 
   it("lists rows with the same ordering column", async () => {
     const q: Query = { kind: "rows", entity: "task", columns: ["district", "locality", "not_delivered_reason"], limit: 20, orderBy: { key: "locality", dir: "desc" } };

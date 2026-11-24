@@ -25,8 +25,8 @@ SELECT strftime('%Y-%m-%d 00:00:00', "tasks"."__t", '-' || ((CAST(strftime('%w',
 FROM (SELECT *, (strftime('%Y-%m-%d %H:%M:%f', createdtime / 1000.0, 'unixepoch')) AS "__t" FROM "project_task" WHERE ("tenantid" = ?) AND (isdeleted = false)) AS "tasks"
 LEFT JOIN (SELECT *, (root) AS "__d_campaign" FROM "v_project" WHERE ("tenantid" = ?)) AS "projects" ON "tasks"."projectid" = "projects"."id"
 GROUP BY strftime('%Y-%m-%d 00:00:00', "tasks"."__t", '-' || ((CAST(strftime('%w', "tasks"."__t") AS INTEGER) + 6) % 7) || ' days'), "projects"."__d_campaign"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["ng.state"]
 SELECT "households"."__d_household_type" AS "group", avg("households"."__m_household_size") AS "value", count(*) AS "n"
@@ -89,5 +89,5 @@ LIMIT 1;
 SELECT strftime('%Y-%m-%d 00:00:00', "households"."__t", '-' || ((CAST(strftime('%w', "households"."__t") AS INTEGER) + 6) % 7) || ' days') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, (strftime('%Y-%m-%d %H:%M:%f', createdtime / 1000.0, 'unixepoch')) AS "__t" FROM "household" WHERE ("tenantid" = ?) AND (isdeleted = false)) AS "households"
 GROUP BY strftime('%Y-%m-%d 00:00:00', "households"."__t", '-' || ((CAST(strftime('%w', "households"."__t") AS INTEGER) + 6) % 7) || ' days')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;

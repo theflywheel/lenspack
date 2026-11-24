@@ -2,7 +2,7 @@ import type { Query } from "@lenspack/core";
 import { parsePack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { COMPUTE_ROWS, type Connector, type Row, SQL_CAPABILITIES, bucketsOf, check, checkOps, describeComputed, explain, readWindow, run, shapeRows } from "../src";
+import { COMPUTE_ROWS, type Connector, type Row, SQL_CAPABILITIES, bucketsOf, check, checkOps, describeComputed, explain, readWindow, run, shapeBound } from "../src";
 
 // Steps run on the source's aggregated answer, so a stub that answers the base
 // query from canned rows (those in its window) pins every rule: gaps, zeros,
@@ -22,6 +22,8 @@ const pack = parsePack({
     { key: "movements", entity: "movement", agg: "count" },
     { key: "avg_out", entity: "movement", agg: "avg", field: "qty_out" },
     { key: "handlers", entity: "movement", agg: "count_distinct", field: "user" },
+    // Handlers with 3 or more movements: one value per key, so a handler busy on two days would count twice.
+    { key: "busy_handlers", entity: "movement", agg: "count", per: { key: "user", agg: "count", having: { op: "gte", value: 3 } } },
     { key: "out_share", entity: "movement", derived: "dispatched / received", format: "percent" },
     { key: "capacity", entity: "site", agg: "sum", field: "capacity" },
   ],
@@ -32,7 +34,7 @@ const time = { from: "2026-09-01T00:00:00Z", to: "2026-09-06T00:00:00Z" };
 const ctx = { now: new Date("2026-09-10T00:00:00Z") };
 const day = (n: number) => `2026-09-0${n}`;
 
-function stub(answers: (q: Query) => Row[]): Connector & { seen: { query: Query; base: boolean }[] } {
+function stub(answers: (q: Query) => Row[], cut = false): Connector & { seen: { query: Query; base: boolean }[] } {
   const seen: { query: Query; base: boolean }[] = [];
   return {
     kind: "stub",
@@ -44,7 +46,7 @@ function stub(answers: (q: Query) => Row[]): Connector & { seen: { query: Query;
       seen.push({ query: q, base: !!plan.bound.base });
       const t = "time" in q && q.time && "from" in q.time ? q.time : null;
       const rows = answers(q).filter((r) => !t || !r.bucket || (r.bucket >= t.from.slice(0, 10) && r.bucket < t.to.slice(0, 10)));
-      return shapeRows(rows, q, plan.bound.measure?.def.format ?? "number", plan.bound.measure?.def.key, !!plan.bound.base);
+      return shapeBound(rows, plan.bound, cut);
     },
   };
 }
@@ -236,6 +238,39 @@ describe("ratios after aggregation", () => {
     expect(c.seen.map((s) => (s.query as { measure?: string }).measure).sort()).toEqual(["dispatched", "movements"]);
   });
 
+  // Received on three days, dispatched on two of them: the third day dispatched nothing, a ratio of 0.
+  const receivedOnly: Row[] = [1, 2, 3].map((n) => ({ bucket: day(n), series: "north", value: 10, n: 1 }));
+  const dispatchedOnTwo: Row[] = [1, 2].map((n) => ({ bucket: day(n), series: "north", value: 10, n: 1 }));
+  const flat = (rows: Row[]) => rows.map(({ series: _s, ...r }) => r);
+
+  it("per group: a group with a divisor and no rows for the numerator is 0, not missing", async () => {
+    const c = stub((q) => ((q as { measure?: string }).measure === "dispatched" ? [{ group: "north", value: 30, n: 3 }] : [{ group: "north", value: 60, n: 3 }, { group: "south", value: 50, n: 2 }]));
+    const data = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", compute: { steps: [{ op: "ratio", to: "received", percent: true }] } }, { pack, connector: c, ctx });
+    expect(data.rows).toEqual([
+      { group: "north", value: 0.5, count: 3 },
+      { group: "south", value: 0, count: 0 },
+    ]);
+  });
+
+  it("per day, then the average per ward: a day with receipts and no dispatches counts as 0", async () => {
+    const c = stub((q) => ((q as { measure?: string }).measure === "dispatched" ? dispatchedOnTwo : receivedOnly));
+    const data = await run(
+      { kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", time, compute: { grain: "day", steps: [{ op: "ratio", to: "received" }, { op: "over_time", fn: "mean" }] } },
+      { pack, connector: c, ctx },
+    );
+    // (1 + 1 + 0) / 3: the days with nothing received (the 4th and 5th) have no ratio and are skipped.
+    expect(values(data.rows)).toEqual([0.666667]);
+  });
+
+  it("per day on a series: a day where only the divisor has rows is 0", async () => {
+    const c = stub((q) => flat((q as { measure?: string }).measure === "received" ? receivedOnly : dispatchedOnTwo));
+    const data = await run({ kind: "series", measure: "dispatched", grain: "day", time, compute: { steps: [{ op: "ratio", to: "received" }] } }, { pack, connector: c, ctx });
+    expect(data.rows.map((r) => [r.group, r.value])).toEqual([[day(1), 1], [day(2), 1], [day(3), 0]]);
+    // An average with no rows has no value, so its ratio is skipped rather than 0.
+    const avg = await run({ kind: "series", measure: "avg_out", grain: "day", time, compute: { steps: [{ op: "ratio", to: "received" }] } }, { pack, connector: c, ctx });
+    expect(values(avg.rows)).toEqual([1, 1, null]);
+  });
+
   it("a divisor on an entity without time is one number per series", async () => {
     const c = stub((q) => ((q as { measure?: string }).measure === "capacity" ? [{ group: "north", value: 100, n: 1 }, { group: "south", value: 50, n: 1 }] : daily));
     const data = await run(
@@ -264,6 +299,9 @@ describe("refusals, with what would work", () => {
     expect(refused(series([{ op: "change", percent: true }, { op: "running_total" }]))).toMatch(/A percentage change is never added up/);
     expect(refused({ kind: "value", measure: "dispatched", compute: { grain: "day", steps: [{ op: "ratio", to: "received" }, { op: "over_time", fn: "sum" }] } })).toMatch(/A ratio is never added up/);
     expect(refused(series([{ op: "running_total" }]))).toBeNull();
+    // A per-key count ("handlers with 3+ movements") counts each key once, like a distinct count.
+    expect(refused(series([{ op: "running_total" }], "busy_handlers"))).toMatch(/distinct count: one key seen on two days would count twice/);
+    expect(refused({ kind: "value", measure: "busy_handlers", compute: { grain: "day", steps: [{ op: "over_time", fn: "sum" }] } })).toMatch(/would count twice/);
     expect(refused(series([{ op: "rolling", fn: "mean", window: 7 }], "handlers"))).toBeNull();
   });
 
@@ -280,6 +318,21 @@ describe("refusals, with what would work", () => {
     const many: Row[] = Array.from({ length: COMPUTE_ROWS + 1 }, (_, i) => ({ bucket: day(1 + (i % 5)), series: `w${Math.floor(i / 5)}`, value: 1, n: 1 }));
     const data = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 5, sort: "desc", time, compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } }, { pack, connector: stub(() => many), ctx });
     expect(data.error).toMatch(/needs the measure for every ward and day: more than 20,000 numbers.*week instead of day/);
+  });
+
+  it("refuses a base the source says it cut, however few rows came back", async () => {
+    const q: Query = { kind: "series", measure: "dispatched", grain: "day", by: "ward", time, compute: { steps: [{ op: "running_total" }] } };
+    const data = await run(q, { pack, connector: stub(() => daily, true), ctx });
+    expect(data.error).toMatch(/more than 20,000 numbers from the source/);
+    // A ratio alone, per group, is refused the same way.
+    const ratio = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 5, sort: "desc", compute: { steps: [{ op: "ratio", to: "received" }] } }, { pack, connector: stub(() => [{ group: "north", value: 1, n: 1 }], true), ctx });
+    expect(ratio.error).toMatch(/more than 20,000 numbers from the source/);
+  });
+
+  it("a cut answer stays marked as cut through further measures", async () => {
+    const data = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", measures: ["received"], limit: 5, sort: "desc" }, { pack, connector: stub(() => [{ group: "north", value: 1, n: 1 }], true), ctx });
+    expect(data.truncated).toBe(true);
+    expect(data.notes).toEqual(["groups are ranked on part of the data; the source stops at its row limit for this breakdown"]);
   });
 
   it("refuses at edit time what the host cannot keep as its own chart", () => {

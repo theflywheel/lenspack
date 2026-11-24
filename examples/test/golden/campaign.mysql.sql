@@ -27,15 +27,15 @@ LIMIT 1;
 SELECT CAST(DATE(`task`.`__t`) AS DATETIME) AS `bucket`, count(`task`.`__m_visits`) AS `value`, count(*) AS `n`
 FROM (SELECT *, TIMESTAMPADD(MICROSECOND, CAST(`Data.createdTime` AS SIGNED) * 1000, TIMESTAMP '1970-01-01 00:00:00') AS `__t`, `Data.createdTime` AS `__t_raw`, CASE WHEN (`Data.deliveredTo` = ?) THEN `Data.id` END AS `__m_visits` FROM `project-task-index-v1`) AS `task`
 GROUP BY CAST(DATE(`task`.`__t`) AS DATETIME)
-ORDER BY `bucket` IS NULL, `bucket` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC
+LIMIT 20001;
 
 -- params: ["HOUSEHOLD"]
 SELECT CAST(DATE_SUB(DATE(`task`.`__t`), INTERVAL WEEKDAY(`task`.`__t`) DAY) AS DATETIME) AS `bucket`, `task`.`__d_product_variant` AS `series`, sum(`task`.`__m_nets_distributed`) AS `value`, count(*) AS `n`
 FROM (SELECT *, TIMESTAMPADD(MICROSECOND, CAST(`Data.createdTime` AS SIGNED) * 1000, TIMESTAMP '1970-01-01 00:00:00') AS `__t`, `Data.createdTime` AS `__t_raw`, `Data.productVariant` AS `__d_product_variant`, CASE WHEN (`Data.deliveredTo` = ?) THEN `Data.quantity` END AS `__m_nets_distributed` FROM `project-task-index-v1`) AS `task`
 GROUP BY CAST(DATE_SUB(DATE(`task`.`__t`), INTERVAL WEEKDAY(`task`.`__t`) DAY) AS DATETIME), `task`.`__d_product_variant`
-ORDER BY `bucket` IS NULL, `bucket` ASC, `series` IS NULL, `series` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC, `series` IS NULL, `series` ASC
+LIMIT 20001;
 
 -- params: ["HOUSEHOLD"]
 SELECT `project`.`__d_district` AS `group`, sum(`project`.`__m_household_target_at_district`) AS `value`, count(*) AS `n`

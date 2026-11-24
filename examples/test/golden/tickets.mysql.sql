@@ -3,8 +3,8 @@ SELECT CAST(DATE_SUB(DATE(`tickets`.`__t`), INTERVAL WEEKDAY(`tickets`.`__t`) DA
 FROM (SELECT *, `created_at` AS `__t`, CASE WHEN (resolved_at IS NOT NULL) THEN (CASE WHEN TIMESTAMPDIFF(MICROSECOND, created_at, resolved_at) / 3.6e9 > sla_hours THEN 1 ELSE 0 END) END AS `__m_sla_breach_rate` FROM `tickets`) AS `tickets`
 WHERE ((`tickets`.`__t` >= CAST(? AS DATETIME(3))) AND (`tickets`.`__t` < CAST(? AS DATETIME(3))))
 GROUP BY CAST(DATE_SUB(DATE(`tickets`.`__t`), INTERVAL WEEKDAY(`tickets`.`__t`) DAY) AS DATETIME)
-ORDER BY `bucket` IS NULL, `bucket` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC
+LIMIT 20001;
 
 -- params: ["2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-07-03 00:00:00.000","2026-08-02 00:00:00.000","2026-07-03 00:00:00.000","2026-09-01 00:00:00.000"]
 SELECT avg(CAST(CASE WHEN ((`tickets`.`__t` >= CAST(? AS DATETIME(3))) AND (`tickets`.`__t` < CAST(? AS DATETIME(3)))) THEN `tickets`.`__m_sla_breach_rate` END AS DOUBLE)) AS `value`, count(CASE WHEN ((`tickets`.`__t` >= CAST(? AS DATETIME(3))) AND (`tickets`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) AS `n`, avg(CAST(CASE WHEN ((`tickets`.`__t` >= CAST(? AS DATETIME(3))) AND (`tickets`.`__t` < CAST(? AS DATETIME(3)))) THEN `tickets`.`__m_sla_breach_rate` END AS DOUBLE)) AS `previous`
@@ -27,8 +27,8 @@ LIMIT 1;
 SELECT CAST(DATE_SUB(DATE(`tickets`.`__t`), INTERVAL WEEKDAY(`tickets`.`__t`) DAY) AS DATETIME) AS `bucket`, `tickets`.`__d_priority` AS `series`, count(*) AS `value`, count(*) AS `n`
 FROM (SELECT *, `created_at` AS `__t`, (priority) AS `__d_priority` FROM `tickets`) AS `tickets`
 GROUP BY CAST(DATE_SUB(DATE(`tickets`.`__t`), INTERVAL WEEKDAY(`tickets`.`__t`) DAY) AS DATETIME), `tickets`.`__d_priority`
-ORDER BY `bucket` IS NULL, `bucket` ASC, `series` IS NULL, `series` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC, `series` IS NULL, `series` ASC
+LIMIT 20001;
 
 -- params: []
 SELECT `status_history`.`__d_transition` AS `group`, count(*) AS `value`, count(*) AS `n`

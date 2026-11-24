@@ -1,6 +1,7 @@
+import { parsePack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type DataRow, limitGroups, shapeRows, sortGroups } from "../src";
+import { type DataRow, SERIES_ROWS, SPLIT_ROWS, limitGroups, resolve, rowCap, shapeBound, shapeRows, sortGroups } from "../src";
 
 // The order and the cut every connector's breakdown goes through.
 
@@ -68,5 +69,75 @@ describe("limitGroups", () => {
     const tied = [row("c", 1, "x"), row("a", 1, "x"), row("b", 1, "x")];
     expect(names(limitGroups(tied, breakdown))).toEqual(["a/x", "b/x"]);
     expect(names(limitGroups(tied, { ...breakdown, sortBy: "measure" }))).toEqual(["c/x", "a/x"]);
+  });
+});
+
+// A source reads one row past its limit (rowCap) so a cut answer can say so. A
+// series keeps its latest buckets whole; a split breakdown is ranked on the rows
+// the source returned. Either way the answer is marked truncated and says why.
+describe("an answer the source cut at its row limit", () => {
+  const pack = parsePack({
+    pack: "cut",
+    version: 1,
+    entities: { visits: { source: "visits", time: "at" } },
+    dimensions: [
+      { key: "region", entity: "visits", field: "region" },
+      { key: "kind", entity: "visits", field: "kind" },
+    ],
+    measures: [{ key: "visits", entity: "visits", agg: "count" }],
+  });
+  const hour = (i: number) => new Date(Date.UTC(2024, 0, 1) + i * 3600e3).toISOString();
+
+  it("keeps a plain series' latest buckets, and says how many", () => {
+    const bound = resolve({ kind: "series", measure: "visits", grain: "hour" }, pack);
+    const cap = rowCap(bound)!;
+    expect(cap).toBe(SERIES_ROWS);
+    // Latest first, as the source orders a series; one row past the cap.
+    const raw = Array.from({ length: cap + 1 }, (_, i) => ({ bucket: hour(cap - i), value: 1, n: 1 }));
+    const data = shapeBound(raw, bound);
+    expect(data.rows.length).toBe(cap);
+    expect(data.rows[0]!.group).toBe(hour(1).slice(0, 13) + ":00");
+    expect(data.rows.at(-1)!.group).toBe(hour(cap).slice(0, 13) + ":00");
+    expect(data.truncated).toBe(true);
+    expect(data.notes).toEqual([`only the latest ${cap.toLocaleString("en")} hours are shown; the source has more than ${cap.toLocaleString("en")} rows for this series`]);
+    // One row fewer is the whole answer.
+    expect(shapeBound(raw.slice(0, cap), bound).truncated).toBeUndefined();
+  });
+
+  it("leaves out the bucket the cut went through, so every bucket shown is whole", () => {
+    const bound = resolve({ kind: "series", measure: "visits", grain: "day", by: "region" }, pack);
+    const cap = rowCap(bound)!;
+    // 2 regions a day, latest day first; the cut falls between the two regions of the earliest day.
+    const days = Math.ceil((cap + 1) / 2);
+    const raw = Array.from({ length: days }, (_, i) => new Date(Date.UTC(2000, 0, 1) + (days - i) * 86400e3).toISOString())
+      .flatMap((bucket) => ["a", "b"].map((series) => ({ bucket, series, value: 1, n: 1 })))
+      .slice(0, cap + 1);
+    const data = shapeBound(raw, bound);
+    expect(data.truncated).toBe(true);
+    expect(data.notes?.[0]).toMatch(/^only the latest [\d,]+ days are shown, and series are ranked on those days; the source has more than/);
+    // Every day shown has both regions.
+    const perDay = new Map<string, number>();
+    for (const r of shapeRows(raw, bound.query, "number", undefined, true).rows) perDay.set(r.group, (perDay.get(r.group) ?? 0) + 1);
+    const partial = [...perDay].filter(([, n]) => n === 1).map(([d]) => d);
+    expect(partial.length).toBe(1);
+    expect(data.rows.some((r) => r.group === partial[0])).toBe(false);
+  });
+
+  it("ranks a split breakdown on the rows returned, and says so", () => {
+    const bound = resolve({ kind: "breakdown", dimension: "region", by: "kind", measure: "visits", limit: 5, sort: "desc" }, pack);
+    expect(rowCap(bound)).toBe(SPLIT_ROWS);
+    const raw = Array.from({ length: SPLIT_ROWS + 1 }, (_, i) => ({ group: `g${Math.floor(i / 2)}`, series: i % 2 ? "x" : "y", value: SPLIT_ROWS - i, n: 1 }));
+    const data = shapeBound(raw, bound);
+    expect(data.truncated).toBe(true);
+    expect(data.notes).toEqual([`groups are ranked on part of the data; the source has more than ${SPLIT_ROWS.toLocaleString("en")} rows for this breakdown`]);
+    // An unsplit breakdown's limit is its top N, not a cut.
+    expect(rowCap(resolve({ kind: "breakdown", dimension: "region", measure: "visits", limit: 5, sort: "desc" }, pack))).toBeUndefined();
+  });
+
+  it("takes the source's word for a cut it knows of without counting rows", () => {
+    const bound = resolve({ kind: "breakdown", dimension: "region", measure: "visits", limit: 5, sort: "desc" }, pack);
+    const data = shapeBound([{ group: "north", value: 3, n: 3 }], bound, true);
+    expect(data.truncated).toBe(true);
+    expect(data.notes).toEqual(["groups are ranked on part of the data; the source stops at its row limit for this breakdown"]);
   });
 });

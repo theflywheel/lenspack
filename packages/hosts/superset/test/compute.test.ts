@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { type Tool, boardTools } from "@lenspack/agent";
 import { memoryStore } from "@lenspack/core";
-import { COMPUTE_ROWS, checkOps, run } from "@lenspack/engine";
+import { COMPUTE_ROWS, SERIES_ROWS, checkOps, run } from "@lenspack/engine";
 
 import { SUPERSET_CAPABILITIES, supersetConnector } from "../src/connector";
 import { chartToWidget, packFromDatasets, queryContextOf, widgetToChart, type SupersetDataset } from "../src/index";
@@ -22,6 +22,7 @@ const DATASETS: SupersetDataset[] = [
       { metric_name: "received", expression: "SUM(qty_in)" },
       { metric_name: "movements", expression: "COUNT(*)" },
       { metric_name: "avg_out", expression: "AVG(qty_out)" },
+      { metric_name: "handlers", expression: "COUNT(DISTINCT handler)" },
     ],
   },
 ];
@@ -94,6 +95,9 @@ describe("compute as Superset's own advanced analytics", () => {
     expect(read({ rolling_type: "std", rolling_periods: 7, min_periods: 7 })).toMatchObject({ widget: null });
     expect(read({ time_compare: ["1 year ago"], comparison_type: "percentage" })).toEqual({ widget: null, reason: "it compares with 1 year ago, not the day before" });
     expect(read({ time_compare: ["1 day ago"], comparison_type: "values" })).toEqual({ widget: null, reason: "it draws earlier periods beside the current one" });
+    // A running total or rolling sum of numbers that do not add up is one the engine refuses, so it stays Superset's.
+    expect(read({ metrics: ["avg_out"], rolling_type: "cumsum" })).toMatchObject({ widget: null, reason: expect.stringMatching(/average.*does not add up over time/) });
+    expect(read({ metrics: ["handlers"], rolling_type: "sum", rolling_periods: 7, min_periods: 7 })).toMatchObject({ widget: null, reason: expect.stringMatching(/distinct count/) });
   });
 
   it("refuses at edit time what no Superset chart recomputes, and says what to do instead", () => {
@@ -123,6 +127,23 @@ describe("compute as Superset's own advanced analytics", () => {
     ]);
     expect(sent[0]!.queries[0]!.row_limit).toBe(COMPUTE_ROWS + 1);
     expect(sent[0]!.queries[0]!.post_processing).toBeUndefined();
+  });
+
+  it("asks for a series latest buckets first, one row past the limit, and says when it was cut", async () => {
+    const sent: { queries: { row_limit: number; orderby: unknown[] }[] }[] = [];
+    // Superset answers with as many rows as it was asked for: more than a series may hold.
+    const day = (i: number) => new Date(Date.UTC(2026, 0, 1) - i * 86400e3).toISOString().slice(0, 10);
+    const post = async (_p: string, body: (typeof sent)[number]) => {
+      sent.push(body);
+      return { result: [{ data: Array.from({ length: body.queries[0]!.row_limit }, (_, i) => ({ __lenspack_bucket: day(Math.floor(i / 2)), ward: i % 2 ? "north" : "south", dispatched: 1, __lenspack_n: 1 })) }] };
+    };
+    const data = await run({ kind: "series", measure: "dispatched", grain: "day", by: "ward" }, { pack, connector: supersetConnector({ post } as never, binding) });
+    expect(sent[0]!.queries[0]!.row_limit).toBe(SERIES_ROWS + 1);
+    // Ordered by the latest record in each bucket, newest first: the same order as by bucket.
+    expect(sent[0]!.queries[0]!.orderby).toEqual([[{ expressionType: "SQL", sqlExpression: "MAX(moved_on)", label: "__lenspack_latest" }, false]]);
+    expect(data.truncated).toBe(true);
+    expect(data.rows.at(-1)!.group).toBe("2026-01-01");
+    expect(data.notes).toContainEqual(expect.stringMatching(/^only the latest [\d,]+ days are shown, and series are ranked on those days/));
   });
 });
 
@@ -191,6 +212,9 @@ describe("a summary per group as Superset's pivot table", () => {
     const read = (more: Record<string, unknown>) => chartToWidget({ slice_name: "x", viz_type: "pivot_table_v2", params: { ...plain, ...more }, datasource_id: 3 }, pack, binding);
     expect(read({ metrics: ["dispatched"] })).toEqual({ widget: null, reason: "it averages only the days that have records, while Lenspack counts a day with no records as 0 for a count or a sum, so the two would differ wherever a group has a day with none" });
     expect(read({ aggregateFunction: "Last" })).toEqual({ widget: null, reason: 'its aggregation "Last" has no Lenspack summary' });
+    // A total over the days of an average or a distinct count is one the engine refuses to add up.
+    expect(read({ aggregateFunction: "Sum" })).toMatchObject({ widget: null, reason: expect.stringMatching(/average.*does not add up over time/) });
+    expect(read({ aggregateFunction: "Sum", metrics: ["handlers"] })).toMatchObject({ widget: null, reason: expect.stringMatching(/distinct count/) });
     expect(read({ rowTotals: false })).toMatchObject({ widget: null, reason: expect.stringMatching(/no total per row/) });
     expect(read({ colTotals: true })).toMatchObject({ widget: null, reason: expect.stringMatching(/total row across the groups/) });
     expect(read({ series_limit: 5 })).toMatchObject({ widget: null, reason: expect.stringMatching(/top groups/) });

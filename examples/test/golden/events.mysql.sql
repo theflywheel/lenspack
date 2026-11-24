@@ -19,8 +19,8 @@ SELECT CAST(DATE(`pageviews`.`__t`) AS DATETIME) AS `bucket`, `pageviews`.`__d_d
 FROM (SELECT *, `ts` AS `__t`, (device) AS `__d_device`, (session_id) AS `__m_sessions` FROM `pageviews`) AS `pageviews`
 WHERE ((`pageviews`.`__t` >= CAST(? AS DATETIME(3))) AND (`pageviews`.`__t` < CAST(? AS DATETIME(3))))
 GROUP BY CAST(DATE(`pageviews`.`__t`) AS DATETIME), `pageviews`.`__d_device`
-ORDER BY `bucket` IS NULL, `bucket` ASC, `series` IS NULL, `series` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC, `series` IS NULL, `series` ASC
+LIMIT 20001;
 
 -- params: ["2026-08-25 00:00:00.000","2026-09-01 00:00:00.000","2026-08-25 00:00:00.000","2026-09-01 00:00:00.000","2026-08-18 00:00:00.000","2026-08-25 00:00:00.000","2026-08-18 00:00:00.000","2026-09-01 00:00:00.000"]
 SELECT count(CASE WHEN ((`pageviews`.`__t` >= CAST(? AS DATETIME(3))) AND (`pageviews`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) AS `value`, count(CASE WHEN ((`pageviews`.`__t` >= CAST(? AS DATETIME(3))) AND (`pageviews`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) AS `n`, count(CASE WHEN ((`pageviews`.`__t` >= CAST(? AS DATETIME(3))) AND (`pageviews`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) AS `previous`
@@ -50,8 +50,8 @@ LIMIT 1;
 SELECT CAST(DATE_SUB(DATE(`pageviews`.`__t`), INTERVAL WEEKDAY(`pageviews`.`__t`) DAY) AS DATETIME) AS `bucket`, count(DISTINCT `pageviews`.`__m_users`) AS `value`, count(*) AS `n`
 FROM (SELECT *, `ts` AS `__t`, (user_id) AS `__m_users` FROM `pageviews`) AS `pageviews`
 GROUP BY CAST(DATE_SUB(DATE(`pageviews`.`__t`), INTERVAL WEEKDAY(`pageviews`.`__t`) DAY) AS DATETIME)
-ORDER BY `bucket` IS NULL, `bucket` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC
+LIMIT 20001;
 
 -- params: []
 SELECT `pageviews`.`__d_hour_of_day` AS `group`, count(*) AS `value`, count(*) AS `n`

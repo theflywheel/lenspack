@@ -3,8 +3,8 @@ SELECT toDateTime(toMonday("orders"."__t"), 'UTC') AS "bucket", sum("orders"."__
 FROM (SELECT *, "placed_at" AS "__t", (total_cents / 100.0) AS "__m_revenue" FROM "orders") AS "orders"
 WHERE (("orders"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("orders"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))))
 GROUP BY toDateTime(toMonday("orders"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- params: ["2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-07-03 00:00:00.000","2026-08-02 00:00:00.000","2026-07-03 00:00:00.000","2026-09-01 00:00:00.000"]
 SELECT count(CASE WHEN (("orders"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("orders"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "value", count(CASE WHEN (("orders"."__t" >= CAST({p3:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("orders"."__t" < CAST({p4:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "n", count(CASE WHEN (("orders"."__t" >= CAST({p5:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("orders"."__t" < CAST({p6:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "previous"
@@ -64,5 +64,5 @@ SELECT toDateTime(toStartOfMonth("orders"."__t"), 'UTC') AS "bucket", "customers
 FROM (SELECT *, "placed_at" AS "__t" FROM "orders") AS "orders"
 LEFT JOIN (SELECT *, "signed_up_at" AS "__t", (segment) AS "__d_segment" FROM "customers") AS "customers" ON "orders"."customer_id" = "customers"."id"
 GROUP BY toDateTime(toStartOfMonth("orders"."__t"), 'UTC'), "customers"."__d_segment"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;

@@ -36,7 +36,7 @@ FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "size" AS "__m_siz
 LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
 GROUP BY "owners"."__d_tier", "things"."__d_colour"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"breakdown","dimension":"origin","measure":"labelled","limit":10,"sort":"desc"}
 -- params: [99,"ke_1","ke\\_1.%","test"]
@@ -167,48 +167,48 @@ LIMIT 1;
 SELECT strftime('%Y-%m-%d %H:00:00', "things"."__t") AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
 GROUP BY strftime('%Y-%m-%d %H:00:00', "things"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"day"}
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT strftime('%Y-%m-%d 00:00:00', "things"."__t") AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
 GROUP BY strftime('%Y-%m-%d 00:00:00', "things"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"week"}
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT strftime('%Y-%m-%d 00:00:00', "things"."__t", '-' || ((CAST(strftime('%w', "things"."__t") AS INTEGER) + 6) % 7) || ' days') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
 GROUP BY strftime('%Y-%m-%d 00:00:00', "things"."__t", '-' || ((CAST(strftime('%w', "things"."__t") AS INTEGER) + 6) % 7) || ' days')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"month"}
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT strftime('%Y-%m-01 00:00:00', "things"."__t") AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
 GROUP BY strftime('%Y-%m-01 00:00:00', "things"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"quarter"}
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT printf('%s-%02d-01 00:00:00', strftime('%Y', "things"."__t"), ((CAST(strftime('%m', "things"."__t") AS INTEGER) - 1) / 3) * 3 + 1) AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
 GROUP BY printf('%s-%02d-01 00:00:00', strftime('%Y', "things"."__t"), ((CAST(strftime('%m', "things"."__t") AS INTEGER) - 1) / 3) * 3 + 1)
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"year"}
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT strftime('%Y-01-01 00:00:00', "things"."__t") AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
 GROUP BY strftime('%Y-01-01 00:00:00', "things"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"weight","grain":"week","by":"tier","time":{"last":"12w"}}
 -- params: ["ke_1","ke\\_1.%","test","2025-11-23 12:34:56","2026-02-15 12:34:56"]
@@ -217,8 +217,8 @@ FROM (SELECT *, "made_at" AS "__t", (weight_g / 1000.0) AS "__m_weight" FROM "ap
 LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
 WHERE (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT)))
 GROUP BY strftime('%Y-%m-%d 00:00:00', "things"."__t", '-' || ((CAST(strftime('%w', "things"."__t") AS INTEGER) + 6) % 7) || ' days'), "owners"."__d_tier"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"parts","grain":"day","time":{"last":"60d"}}
 -- params: ["ke_1",1765974896000,1771158896000]
@@ -226,16 +226,16 @@ SELECT strftime('%Y-%m-%d 00:00:00', "parts"."__t") AS "bucket", count(*) AS "va
 FROM (SELECT *, strftime('%Y-%m-%d %H:%M:%f', "added_ms" / 1000.0, 'unixepoch') AS "__t", "added_ms" AS "__t_raw" FROM "parts" WHERE ("tenant_id" = ?)) AS "parts"
 WHERE (("parts"."__t_raw" >= CAST(? AS INTEGER)) AND ("parts"."__t_raw" < CAST(? AS INTEGER)))
 GROUP BY strftime('%Y-%m-%d 00:00:00', "parts"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"logs","grain":"month"}
 -- params: []
 SELECT strftime('%Y-%m-01 00:00:00', "logs"."__t") AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, strftime('%Y-%m-%d %H:%M:%f', "at_s", 'unixepoch') AS "__t", "at_s" AS "__t_raw" FROM "logs") AS "logs"
 GROUP BY strftime('%Y-%m-01 00:00:00', "logs"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"events","grain":"hour","time":{"last":"2d"}}
 -- params: ["2026-02-13 12:34:56","2026-02-15 12:34:56"]
@@ -243,8 +243,8 @@ SELECT strftime('%Y-%m-%d %H:00:00', "events"."__t") AS "bucket", count(*) AS "v
 FROM (SELECT *, (datetime(t, 'unixepoch')) AS "__t" FROM "events") AS "events"
 WHERE (("events"."__t" >= CAST(? AS TEXT)) AND ("events"."__t" < CAST(? AS TEXT)))
 GROUP BY strftime('%Y-%m-%d %H:00:00', "events"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"value","measure":"things","filters":[{"dimension":"colour","op":"eq","value":"red"},{"dimension":"colour","op":"neq","value":"blue"},{"dimension":"size","op":"gte","value":10},{"dimension":"size","op":"lte","value":90},{"dimension":"colour","op":"in","value":["red","green"]},{"dimension":"size","op":"between","value":[20,40]},{"dimension":"path","op":"segment","value":["B%1","C"]},{"dimension":"path","op":"subtree","value":"a_b"},{"dimension":"colour","op":"contains","value":"E%D"},{"dimension":"tier","op":"eq","value":"GOLD"}]}
 -- params: ["ke_1","ke\\_1.%","test","red","blue",10,90,"red","green",20,40,"B%1","C","a_b","a\\_b.%","%E\\%D%","GOLD"]
@@ -305,7 +305,7 @@ WHERE (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT)
 GROUP BY "things"."__d_colour", "owners"."__d_tier", "things"."__k") AS "__n"
 GROUP BY "__n"."group", "__n"."series"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"series","measure":"things_per_owner","grain":"month","by":"colour","time":{"last":"12w"}}
 -- params: ["ke_1","ke\\_1.%","test","2025-11-23 12:34:56","2026-02-15 12:34:56"]
@@ -315,8 +315,8 @@ FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "owner_id" AS "__k
 WHERE (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) AND ("things"."__k" IS NOT NULL)
 GROUP BY strftime('%Y-%m-01 00:00:00', "things"."__t"), "things"."__d_colour", "things"."__k") AS "__n"
 GROUP BY "__n"."bucket", "__n"."series"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"value","measure":"median_colours_per_owner"}
 -- refused (NOT_SUPPORTED): "median_colours_per_owner" is a median, and this source has no percentile function, so it is not computed here
@@ -364,7 +364,7 @@ WHERE ("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))
 GROUP BY "owners"."__d_tier", "things"."__d_colour"
 HAVING (count(CASE WHEN (("things"."__t" >= CAST(? AS TEXT)) AND ("things"."__t" < CAST(? AS TEXT))) THEN 1 END) > 0)
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"breakdown","dimension":"colour","by":"tier","measure":"things","limit":3,"sort":"desc"}
 -- params: ["ke_1","ke\\_1.%","test"]
@@ -373,7 +373,7 @@ FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour" FROM "app"."things"
 LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
 GROUP BY "things"."__d_colour", "owners"."__d_tier"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
 -- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
