@@ -1,17 +1,16 @@
 import * as React from "react";
 
+import { labelOf } from "./format";
 import { useBoard } from "./provider";
 import type { FilterOption } from "./types";
 
-// What a board filters by is configuration; what you have selected is not.
-// Selections live in the provider (and, if the host wants, in the URL).
 /**
  * Where a drill-down stands: All › Eastern › Chipata. Each step goes back up to
  * it; the finer levels below are cleared.
  */
 export function DrillPath() {
   const { catalogue, selections, drill } = useBoard();
-  const label = (key: string) => catalogue.dimensions.find((d) => d.key === key)?.label ?? key;
+  const label = (key: string) => labelOf(catalogue.dimensions, key) ?? key;
   const paths = Object.entries(catalogue.hierarchies ?? {})
     .map(([name, levels]) => ({ name, levels, chosen: levels.filter((l) => selections[l]) }))
     .filter((h) => h.chosen.length > 0);

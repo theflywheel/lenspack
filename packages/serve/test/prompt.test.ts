@@ -109,6 +109,9 @@ describe("languageText", () => {
   it("replies in a picked language, and titles follow the reply when the setting says speaker", () => {
     const t = languageText({ reply: "hi", titles: "speaker", board: "fr" });
     expect(t).toContain("write every reply in Hindi (Devanagari script)");
+    // Portuguese: one wording for Mozambique, Angola, Portugal and Brazil.
+    expect(languageText({ reply: "pt" })).toMatch(/write every reply in Portuguese \(neutral Portuguese that reads naturally in Mozambique, Angola and Portugal as well as Brazil/);
+    expect(languageText({ reply: "pt-BR" })).toContain("neutral Portuguese");
     expect(t).toContain("titles in the language you reply in");
     expect(t).not.toContain("French");
   });

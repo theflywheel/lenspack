@@ -74,7 +74,7 @@ edges. Size and position are remembered per browser.
 
 ## Voice and languages
 
-The chat panel has a mic and a language menu (Auto, English, Français, हिन्दी), remembered per browser. The
+The chat panel has a mic and a language menu (Auto, English, Français, हिन्दी, Português), remembered per browser. The
 overlay's own words (its button, gear menu and grip) and the suggested questions follow the same language. A
 suggested question may be written per language, with one query for all of them:
 
@@ -98,7 +98,11 @@ shows its English. `/_superset/info` returns `examplesByLang`, and `examples` fo
 - **Language.** Auto sends no language hint (the model detects it) and the chat replies in whatever language
   the user wrote or spoke. A picked language is the speech hint, the reply language and the panel's own
   words. Without a pick, the panel follows Superset's language when one was chosen there (Superset's
-  bootstrap `common.locale`; its default, English, does not count), else the deployment default.
+  bootstrap `common.locale`; its default, English, does not count), else the deployment default. A locale
+  counts by its first two letters, so Superset's `pt` and `pt_BR` both give Portuguese.
+- **Portuguese** is written once for both sides of the Atlantic: the panel's words and the reply instruction
+  aim at Portuguese that reads naturally in Mozambique, Angola and Portugal as well as Brazil (noun forms
+  where the two split their verb forms, words both use). Write example questions the same way.
 - **New chat.** The pencil button in the header clears the conversation for this board (the board itself,
   settings and language prefs are untouched). The model starts over but still hears of later edits, and an
   Undo note brings the conversation back for five seconds. It is disabled while a turn or the mic is busy.

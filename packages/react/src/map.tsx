@@ -3,6 +3,7 @@ import * as React from "react";
 import type { Widget } from "@lenspack/core";
 
 import { formatValue } from "./format";
+import { byText, useSize } from "./size";
 import type { WidgetData } from "./types";
 
 // A map of points: the rows of an entity with a location, plotted in Web
@@ -53,8 +54,6 @@ export function project(lat: number, lon: number): { x: number; y: number } {
 export function unproject(x: number, y: number): { lat: number; lon: number } {
   return { lon: x * 360 - 180, lat: (Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180) / Math.PI };
 }
-
-const byText = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 export function buildMapSpec(
   widget: Extract<Widget, { kind: "chart" }>,
@@ -119,19 +118,6 @@ export function gridStep(spanDegrees: number): number {
   const raw = spanDegrees / 4;
   for (const s of [0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 45, 90]) if (s >= raw) return s;
   return 90;
-}
-
-function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, { w: number; h: number }] {
-  const ref = React.useRef<T | null>(null);
-  const [size, setSize] = React.useState({ w: 0, h: 0 });
-  React.useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(([e]) => e && setSize({ w: e.contentRect.width, h: e.contentRect.height }));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, size];
 }
 
 function Tiles({ tiles, view, w, h }: { tiles: MapTiles; view: { scale: number; x0: number; y0: number }; w: number; h: number }) {

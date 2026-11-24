@@ -5,14 +5,10 @@ import type { Widget } from "@lenspack/core";
 import { type ChartKind, buildChartSpec } from "./charts";
 import { HeatmapChart, buildHeatmapSpec } from "./heatmap";
 import { MapChart, buildMapSpec } from "./map";
-import { formatDelta, formatValue } from "./format";
+import { formatDelta, formatValue, labelOf } from "./format";
 import { Markdown, type MarkdownClasses } from "./markdown";
 import { useBoard } from "./provider";
 import type { DataRow, WidgetData, WidgetPage } from "./types";
-
-// Every option is mapped explicitly rather than spread from the config, which
-// is what makes the schema closed in practice and not just on paper. Colours
-// are CSS variables: a config names a scheme, never a colour.
 
 export type WidgetProps<K extends Widget["kind"]> = { id?: string; widget: Extract<Widget, { kind: K }>; data?: WidgetData; currency?: string };
 export type WidgetRegistry = { [K in Widget["kind"]]?: React.ComponentType<WidgetProps<K>> };
@@ -45,55 +41,44 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
   const { charts, catalogue, drill, drillTarget, mapTiles } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Empty>{data.error}{data.hint ? ` — did you mean “${data.hint}”?` : ""}</Empty>;
-  const q0 = widget.query;
-  const measureKey = q0.kind === "rows" ? undefined : q0.kind === "points" ? q0.size : q0.measure;
-  const measureLabel = catalogue.measures.find((m) => m.key === measureKey)?.label;
-  const labelOf = (key: string) => catalogue.measures.find((m) => m.key === key)?.label;
-  const target = widget.query.kind === "breakdown" ? drillTarget(widget.query.dimension) : null;
+  const q = widget.query;
+  const measureLabel = labelOf(catalogue.measures, q.kind === "rows" ? undefined : q.kind === "points" ? q.size : q.measure);
+  const dimLabel = (key: string | undefined) => (key ? (labelOf(catalogue.dimensions, key) ?? key) : undefined);
+  const target = q.kind === "breakdown" ? drillTarget(q.dimension) : null;
   const other = data.rows.find((r) => r.other)?.group;
   const onSelect = target?.selects ? (group: string) => group !== "(none)" && group !== other && drill(target.selects!, group) : undefined;
-  // A map, like a heatmap, is drawn the same way whatever the adapter.
+  // Maps and heatmaps are drawn here, the same whatever the adapter.
   if (widget.chart === "map") {
-    const q = widget.query;
-    const dimLabel = (key: string | undefined) => (key ? (catalogue.dimensions.find((d) => d.key === key)?.label ?? key) : undefined);
     const map = buildMapSpec(widget, data, { currency, colorName: q.kind === "points" ? dimLabel(q.color) : undefined, sizeName: measureLabel });
     return map ? <MapChart spec={map} tiles={mapTiles} /> : <Empty>No points to draw.</Empty>;
   }
-  // A heatmap is drawn the same way whatever the adapter.
   if (widget.chart === "heatmap") {
-    const dimLabel = (key: string | undefined) => (key ? (catalogue.dimensions.find((d) => d.key === key)?.label ?? key) : undefined);
-    const q = widget.query;
     const heat = buildHeatmapSpec(widget, data, { currency, measureLabel, xName: q.kind === "breakdown" ? dimLabel(q.dimension) : "time", yName: q.kind === "breakdown" || q.kind === "series" ? dimLabel(q.by) : undefined });
     return heat ? <HeatmapChart spec={heat} /> : <Empty>Nothing to draw yet.</Empty>;
   }
-  const spec = buildChartSpec(widget as Extract<typeof widget, { chart: ChartKind }>, data, { currency, measureLabel, labelOf, onSelect });
+  const spec = buildChartSpec(widget as Extract<typeof widget, { chart: ChartKind }>, data, { currency, measureLabel, labelOf: (key) => labelOf(catalogue.measures, key), onSelect });
   if (!spec) return <Empty>Nothing to draw yet.</Empty>;
   const Chart = charts.Chart;
   return <Chart spec={spec} />;
 }
 
+// How a series KPI folds its buckets into one number; an unknown aggregate takes the last.
+const sum = (vs: number[]) => vs.reduce((a, b) => a + b, 0);
+const AGGREGATES: Record<Extract<Widget, { kind: "kpi" }>["aggregate"], (vs: number[]) => number> = {
+  sum,
+  avg: (vs) => sum(vs) / vs.length,
+  max: (vs) => Math.max(...vs),
+  min: (vs) => Math.min(...vs),
+  count: (vs) => vs.length,
+  last: (vs) => vs.at(-1)!,
+};
+
 export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
   const { catalogue } = useBoard();
-  const labelOf = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
   const values = data.rows.map((r) => r.value ?? 0);
-  const value =
-    values.length === 0
-      ? null
-      : widget.query.kind !== "series"
-        ? (data.rows[0]?.value ?? null)
-        : widget.aggregate === "sum"
-          ? values.reduce((a, b) => a + b, 0)
-          : widget.aggregate === "avg"
-            ? values.reduce((a, b) => a + b, 0) / values.length
-            : widget.aggregate === "max"
-              ? Math.max(...values)
-              : widget.aggregate === "min"
-                ? Math.min(...values)
-                : widget.aggregate === "count"
-                  ? values.length
-                  : values.at(-1)!;
+  const value = values.length === 0 ? null : widget.query.kind !== "series" ? (data.rows[0]?.value ?? null) : (AGGREGATES[widget.aggregate] ?? AGGREGATES.last)(values);
   const delta = formatDelta(data.compare?.delta);
   const more = widget.query.kind === "value" ? (data.measures ?? []).slice(1) : [];
   return (
@@ -107,7 +92,7 @@ export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
         <dl className="lp-kpi-more">
           {more.map((m) => (
             <div key={m.key}>
-              <dt>{labelOf(m.key)}</dt>
+              <dt>{labelOf(catalogue.measures, m.key) ?? m.key}</dt>
               <dd className="lp-num">{formatValue(data.rows[0]?.values?.[m.key] ?? null, m.format, { currency })}</dd>
             </div>
           ))}
@@ -159,14 +144,13 @@ function RowsTable({ id, widget, data }: { id?: string; widget: Extract<Widget, 
     }
   };
   const columns = data.columns ?? Object.keys(first[0] ?? {});
-  const label = (key: string) => catalogue.dimensions.find((d) => d.key === key)?.label ?? key;
   const from = page * pageSize + 1;
   return (
     <div className="lp-table-paged">
       <div className="lp-table-wrap">
         <table className="lp-table">
           <thead>
-            <tr>{columns.map((c) => <th key={c} title={c}>{label(c)}</th>)}</tr>
+            <tr>{columns.map((c) => <th key={c} title={c}>{labelOf(catalogue.dimensions, c) ?? c}</th>)}</tr>
           </thead>
           <tbody>
             {records.map((row, i) => (
@@ -200,7 +184,7 @@ export function TableWidget({ id, widget, data, currency }: WidgetProps<"table">
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
   if (data.records) return <RowsTable id={id} widget={widget} data={data} />;
-  const label = (key: string) => catalogue.measures.find((m) => m.key === key)?.label ?? key;
+  const label = (key: string) => labelOf(catalogue.measures, key) ?? key;
   const valueOf = (row: DataRow, key: string) => (key === "\u0000group" ? row.group : data.measures && key !== data.measures[0]?.key ? (row.values?.[key] ?? null) : row.value);
   const sorted = sortOn
     ? [...data.rows].sort((a, b) => {
@@ -243,7 +227,7 @@ export function TableWidget({ id, widget, data, currency }: WidgetProps<"table">
   if (data.measures?.length) {
     // One column per measure, labelled from the catalogue, each in its own format.
     const dim = widget.query.kind === "breakdown" ? (target?.at ?? widget.query.dimension) : widget.query.kind === "series" ? widget.query.grain : "";
-    const dimLabel = (key: string) => catalogue.dimensions.find((d) => d.key === key)?.label ?? key;
+    const dimLabel = (key: string) => labelOf(catalogue.dimensions, key) ?? key;
     // A table split by a second dimension shows it as its own column.
     const by = widget.query.kind === "breakdown" ? widget.query.by : undefined;
     return (

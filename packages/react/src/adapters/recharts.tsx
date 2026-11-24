@@ -1,7 +1,8 @@
 import * as React from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import { type ChartAdapter, type ChartSpec, axisWidth, formatBucket, formatTick, timeOf, timeTicks } from "../charts";
+import { type ChartAdapter, type ChartSpec, axisWidth, timeOf, timeTicks } from "../charts";
+import { formatBucket, formatTick } from "../format";
 
 type TipItem = { name?: unknown; value?: unknown; color?: string; payload?: { fill?: string } };
 
@@ -136,4 +137,3 @@ function RechartsChart({ spec }: { spec: ChartSpec }) {
 }
 
 export const rechartsAdapter: ChartAdapter = { name: "recharts", Chart: RechartsChart };
-export default rechartsAdapter;

@@ -1,4 +1,4 @@
-import { type BoundDimension, type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock } from "@lenspack/engine";
+import { type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock } from "@lenspack/engine";
 import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/spec";
 
 // The query IR, compiled to one search request. Every structural decision —
@@ -413,5 +413,3 @@ function get(doc: Bucket, path: string): unknown {
   }
   return cursor;
 }
-
-export type { BoundDimension };
