@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, join, normalize, resolve, sep } from "node:path";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
@@ -11,6 +9,7 @@ import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import { type Access, type Audit, type AuthAdapter, FULL_GRANT, type Grant, type PackRule, type Principal, type Rights, grantOf, withRights } from "./auth";
+import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson, serveStatic } from "./http";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
@@ -123,7 +122,7 @@ function packFor(pack: Pack, grant: Grant): Pack {
 // under two tenants.
 const sameTenant = (b: Ownership, who: Principal) => (b.tenant ?? "") === (who.tenant ?? "");
 const visible = (b: Ownership, who: Principal) => !b.owner || (sameTenant(b, who) && (!!b.shared || b.owner === who.user));
-const writable = (b: Ownership, who: Principal) => (b.owner ? b.owner === who.user && sameTenant(b, who) && !!(who.edit || who.maintain) : !!who.maintain);
+const writable = (b: Ownership, who: Principal) => (b.owner ? b.owner === who.user && sameTenant(b, who) && !!who.edit : !!who.maintain);
 const randomId = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 
 /**
@@ -169,58 +168,6 @@ export async function seedBoards(host: Host) {
   }
 }
 
-const json = (res: ServerResponse, status: number, body: unknown) => {
-  res.writeHead(status, { "content-type": "application/json" });
-  res.end(JSON.stringify(body));
-};
-/** The raw request body, refusing more than max bytes. */
-const readBytes = (req: IncomingMessage, max: number) =>
-  new Promise<Uint8Array>((resolve, reject) => {
-    const parts: Buffer[] = [];
-    let size = 0;
-    req.on("data", (c: Buffer) => {
-      size += c.length;
-      if (size > max) {
-        reject(new SpeechError(413, "clip too long"));
-        req.destroy();
-      } else parts.push(c);
-    });
-    req.on("end", () => resolve(new Uint8Array(Buffer.concat(parts))));
-    req.on("error", reject);
-  });
-const read = (req: IncomingMessage) =>
-  new Promise<unknown>((resolve, reject) => {
-    let s = "";
-    req.on("data", (c) => (s += c));
-    req.on("end", () => {
-      try {
-        resolve(s ? JSON.parse(s) : {});
-      } catch (e) {
-        reject(e);
-      }
-    });
-  });
-
-const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2" };
-
-const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-
-function serveStatic(root: string, pathname: string, res: ServerResponse, page?: AppOptions["page"]) {
-  // Resolved first: join() would normalise a root like "../dist", and the containment check would then never match.
-  const base = resolve(root);
-  const safe = normalize(decodeURIComponent(pathname)).replace(/^(\.\.[/\\])+/, "");
-  let file = join(base, safe);
-  const inside = file === base || file.startsWith(base + sep);
-  if (!inside || !existsSync(file) || statSync(file).isDirectory()) file = join(base, "index.html");
-  if (!existsSync(file)) return json(res, 404, { error: "not found" });
-  res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-  if (!page || !file.endsWith("index.html")) return res.end(readFileSync(file));
-  // The page reads window.__lenspackUi before anything else runs; "<" is escaped so no value can end the script.
-  let html = readFileSync(file, "utf8").replace("<head>", `<head><script>window.__lenspackUi=${JSON.stringify(page).replace(/</g, "\\u003c")}</script>`);
-  if (page.title) html = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(page.title)}</title>`);
-  res.end(html);
-}
-
 type ChatDefault = { model?: string; effort?: string } | undefined;
 type Pickable = Pick<Provider, "name" | "available" | "efforts">;
 
@@ -230,9 +177,21 @@ type Pickable = Pick<Provider, "name" | "available" | "efforts">;
  * and default models count only when they exist and are not known to be down.
  */
 export function pickChatModel<P extends Pickable>(providers: P[], asked: string | null | undefined, fallback?: ChatDefault): P | null {
-  const byName = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
-  return byName(asked) ?? byName(fallback?.model) ?? providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
+  return usable(providers, asked) ?? usable(providers, fallback?.model) ?? providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
 }
+
+/** The provider of that name, unless it is known to be down. */
+const usable = <P extends Pickable>(providers: P[], name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
+
+/** The board's filter selections in a query string: ?f_<field>=<value>. */
+const selectionsOf = (url: URL) => Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
+
+/** A whole text part, for a reply the server writes itself. */
+const writeText = (writer: UIMessageStreamWriter, id: string, text: string) => {
+  writer.write({ type: "text-start", id });
+  writer.write({ type: "text-delta", id, delta: text });
+  writer.write({ type: "text-end", id });
+};
 
 /** The effort to ask for: the client's, else the configured default when it is for this model and one it takes. */
 export function pickEffort(p: Pickable, asked: string | null | undefined, fallback?: ChatDefault): string | null {
@@ -248,7 +207,6 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
   const providers = opts.providers ?? [];
-  const provider = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
   // Transcriptions waiting for the turn they were spoken for: POST /_stt answers with a clip id, and
   // the chat request that sends the text names it, so the turn's cost includes the clip. The cost is
   // the server's own record, never a figure from the browser; a clip is claimed once, by its speaker.
@@ -297,10 +255,17 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           res.writeHead(302, { location: opts.auth.signInPath(url), "cache-control": "no-store" });
           return res.end();
         }
-        return serveStatic(opts.ui, url.pathname, res, opts.page);
+        const page = opts.page;
+        // The page reads window.__lenspackUi before anything else runs.
+        return serveStatic(opts.ui, url.pathname, res, page && ((html) => {
+          html = html.replace("<head>", `<head><script>window.__lenspackUi=${scriptJson(page)}</script>`);
+          return page.title ? html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(page.title)}</title>`) : html;
+        }));
       }
-      const who = access ? await access(req) : OPEN;
-      if (!who) return json(res, 401, { error: "sign in to use this API" });
+      const signedIn = access ? await access(req) : OPEN;
+      if (!signedIn) return json(res, 401, { error: "sign in to use this API" });
+      // What an access hook may leave implied, spelled out once: maintain implies edit; usage follows maintain unless set.
+      const who = { ...signedIn, edit: !!(signedIn.edit || signedIn.maintain), maintain: !!signedIn.maintain, usage: !!(signedIn.usage ?? signedIn.maintain) };
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
       const grantFor = (h: Host): Grant | null => (who.packs && !who.packs.includes(h.name) ? null : access ? grantOf(h.pack, h.access, who) : FULL_GRANT);
       // The pack's own boards first, in board-file order; then people's, latest first.
@@ -314,12 +279,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           [...byName.values()].filter((h) => grantFor(h)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),
         );
         // Absent on an open server: there is no one to name.
-        const me = access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, usage: !!(who.usage ?? who.maintain), ...(signOutUrl ? { signOut: signOutUrl } : {}) } : undefined;
+        const me = access ? { user: who.user, edit: who.edit, maintain: who.maintain, usage: who.usage, ...(signOutUrl ? { signOut: signOutUrl } : {}) } : undefined;
         return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), speech: speechInfo(), ...(me ? { me } : {}) });
       }
       // What chat has cost since the server started: for those given the usage right (maintainers, unless said otherwise), as it names every user.
       if (packName === "_usage" && req.method === "GET") {
-        if (!(who.usage ?? who.maintain)) return json(res, 403, { error: "usage is not shown to you" });
+        if (!who.usage) return json(res, 403, { error: "usage is not shown to you" });
         // The caps go with it, so whoever watches spend sees how near they are.
         return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
       }
@@ -341,7 +306,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         const sinks = [ledger, ...(opts.usageSinks ?? [])];
         let hint: string | undefined = language;
         try {
-          const audio = await readBytes(req, speech.maxBytes ?? 10_000_000);
+          const audio = await readBody(req, speech.maxBytes ?? 10_000_000).catch((e) => {
+            throw e instanceof BodyTooLarge ? new SpeechError(413, "clip too long") : e;
+          });
           let t = await transcribe(speech, audio, req.headers["content-type"], language);
           const spent: CallRecord[] = [speechRecord({ ...t, language: language ?? null, chars: t.text.length }, { user: who.user, pack })];
           recordCall(spent[0]!, sinks);
@@ -393,7 +360,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const writes = req.method !== "GET" && req.method !== "HEAD";
       // A read-only caller may still talk to the chat: its edit tools refuse with who.readOnly.
       const readOnlyChat = !!who.readOnly && req.method === "POST" && action === "chat";
-      if (writes && !who.edit && !who.maintain && !readOnlyChat) {
+      if (writes && !who.edit && !readOnlyChat) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
         return json(res, 403, { error: who.readOnly ?? "you may view these boards but not change them" });
       }
@@ -469,15 +436,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           ]);
           return json(res, 200, { board: shown(board), catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });
         }
-        case "GET data": {
-          const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
-          return json(res, 200, await resolveBoard(board.config, run, selections));
-        }
+        case "GET data":
+          return json(res, 200, await resolveBoard(board.config, run, selectionsOf(url)));
         case "GET page": {
           // One page of one table of rows, under the same selections as the board.
-          const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
           try {
-            return json(res, 200, await widgetPage(board.config, url.searchParams.get("widget") ?? "", Number(url.searchParams.get("page") ?? 0), run, selections));
+            return json(res, 200, await widgetPage(board.config, url.searchParams.get("widget") ?? "", Number(url.searchParams.get("page") ?? 0), run, selectionsOf(url)));
           } catch (e) {
             if (e instanceof ResolveError) return json(res, 400, { error: e.message, code: e.code });
             throw e;
@@ -555,8 +519,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // escalation model (used for the heal round) can be larger. ?review=off
     // disables review.
     const reviewWanted = url.searchParams.get("review");
-    const reviewer = reviewWanted === "off" || opts.review?.() === false ? null : (provider(reviewWanted) ?? provider(opts.roles?.reviewer) ?? builderModel);
-    const escalate = provider(url.searchParams.get("escalate")) ?? provider(opts.roles?.escalate) ?? builderModel;
+    const reviewer = reviewWanted === "off" || opts.review?.() === false ? null : (usable(providers, reviewWanted) ?? usable(providers, opts.roles?.reviewer) ?? builderModel);
+    const escalate = usable(providers, url.searchParams.get("escalate")) ?? usable(providers, opts.roles?.escalate) ?? builderModel;
     // Review informs; healing is opt-in (?rounds=2). A wrong "not satisfied"
     // from the reviewer must not be able to damage a correct board on its own.
     // At most 3: each round is a build and a review, both model calls.
@@ -607,10 +571,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         text = "";
       }
       if (!text) text = fallback();
-      const id = `closing-${randomUUID()}`;
-      writer.write({ type: "text-start", id });
-      writer.write({ type: "text-delta", id, delta: text });
-      writer.write({ type: "text-end", id });
+      writeText(writer, `closing-${randomUUID()}`, text);
       return text;
     };
 
@@ -641,7 +602,6 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));
             const refused = refusalsFrom(steps as never);
             turn.refusals.push(...refused);
-            // The provider's own safety check declined the turn: say so, rather than end it in silence.
             const finish = await result.finishReason;
             if (!turn.answer.trim()) {
               if (finish === "tool-calls") {
@@ -652,11 +612,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
               } else if (finish === "content-filter" || refused.length) {
                 // The provider's own safety check declined the turn, or the model stopped on refusals
                 // without editing: say so, rather than end it in silence.
-                const id = `refused-${round}`;
                 turn.answer = finish === "content-filter" ? `${builder.name} declined to answer this request.` : `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
-                writer.write({ type: "text-start", id });
-                writer.write({ type: "text-delta", id, delta: turn.answer });
-                writer.write({ type: "text-end", id });
+                writeText(writer, `refused-${round}`, turn.answer);
               }
             }
             if (!reviewer) break;
@@ -669,7 +626,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
             try {
               // The reviewer keeps its own configuration, effort included.
-              review = await withMeter({ role: "review", effort: effortFor(reviewer) }, () => reviewTurn(reviewer, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals: refusalsFrom(steps as never) }));
+              review = await withMeter({ role: "review", effort: effortFor(reviewer) }, () => reviewTurn(reviewer, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals: refused }));
             } catch (e) {
               review = { satisfied: true, unavailable: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
             } finally {

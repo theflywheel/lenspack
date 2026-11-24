@@ -5,7 +5,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import type { AuthAdapter, Identity } from "./auth";
-import { cookie, cookies, escapeHtml, safeReturn, sameSite, sealer } from "./session";
+import { escapeHtml, readBody } from "./http";
+import { cookie, cookies, safeReturn, sameSite, sealer } from "./session";
 
 // The sign-in a deployment gets when it names no other: one built-in user,
 // admin, with a password. lenspack keeps no other users; for people with their
@@ -281,17 +282,6 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
 <input type="hidden" name="return" value="${escapeHtml(ret)}"><button>Sign in</button></form></html>`);
   }
 
-  const readForm = (req: IncomingMessage) =>
-    new Promise<URLSearchParams>((resolve, reject) => {
-      let s = "";
-      req.on("data", (c) => {
-        s += c;
-        if (s.length > 4096) req.destroy(new Error("too large"));
-      });
-      req.on("end", () => resolve(new URLSearchParams(s)));
-      req.on("error", reject);
-    });
-
   return {
     kind: "password",
     signOutUrl: "/auth/logout",
@@ -307,7 +297,7 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
         return true;
       }
       if (url.pathname === "/auth/login" && req.method === "POST") {
-        const body = await readForm(req).catch(() => null);
+        const body = await readBody(req, 4096).then((b) => new URLSearchParams(b.toString("utf8")), () => null);
         const ret = safeReturn(body?.get("return") ?? null);
         if (!body || !sameSite(req, origin)) {
           form(res, 400, ret, "This sign-in came from another site.");

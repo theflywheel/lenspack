@@ -110,10 +110,6 @@ export function registerLlmAdapter(adapter: LlmAdapter) {
   ADAPTERS.set(adapter.kind, adapter);
 }
 
-export function llmAdapters(): LlmAdapter[] {
-  return [...ADAPTERS.values()];
-}
-
 /** The adapter for a kind; an unknown kind is an error naming the known ones. */
 export function llmAdapter(kind = "openai-compatible"): LlmAdapter {
   const adapter = ADAPTERS.get(kind);

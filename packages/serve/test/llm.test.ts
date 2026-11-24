@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type LanguageModelUsage, type ToolSet, generateText, jsonSchema, streamText, tool } from "ai";
+import { type ToolSet, generateText, jsonSchema, streamText, tool } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { type Host, type LlmAdapter, type Provider, REVIEW_PROMPT, buildProvider, configSchema, createApp, effortFor, llmAdapter, openConfig, publicView, registerLlmAdapter, reviewTurn, shapeCall } from "../src";
-import { usageLedger, usageOf } from "../src/metering";
+import { type Tokens, costOf, usageLedger } from "../src/metering";
 
 // No model is called: every request is caught at fetch and answered from a
 // canned response, so what is asserted is the exact body each provider sends.
@@ -228,11 +228,10 @@ describe("the anthropic adapter", () => {
 });
 
 describe("the reviewer through the anthropic adapter", () => {
-  it("caches the fixed review prompt, gives its cap room for thinking, and reads the verdict and usage", async () => {
+  it("caches the fixed review prompt, gives its cap room for thinking, and reads the verdict", async () => {
     const { sent, fetch } = recorder(anthropicText('{"satisfied": true, "missing": [], "wrong": [], "note": "fine"}', { input_tokens: 900, cache_read_input_tokens: 1200, output_tokens: 40 }));
     const review = await reviewTurn(buildProvider({ ...sonnet, fetch }), { catalogue: "PACK", instruction: "add a kpi", before: "", after: "", receipt: "v2 added" });
     expect(review).toMatchObject({ satisfied: true, note: "fine" });
-    expect(review.usage).toMatchObject({ inputTokens: 2100, inputTokenDetails: { cacheReadTokens: 1200 } });
     expect(sent[0]!.body.system).toEqual([{ type: "text", text: REVIEW_PROMPT, cache_control: { type: "ephemeral" } }]);
     expect(sent[0]!.body.max_tokens).toBe(4000 + 4096);
     expect(sent[0]!.body.cache_control).toBeUndefined();
@@ -240,19 +239,15 @@ describe("the reviewer through the anthropic adapter", () => {
 });
 
 describe("pricing a call", () => {
-  const usage = (input: number, read: number, write: number, output: number): LanguageModelUsage =>
-    ({ inputTokens: input, inputTokenDetails: { noCacheTokens: input - read - write, cacheReadTokens: read, cacheWriteTokens: write }, outputTokens: output, outputTokenDetails: { textTokens: output, reasoningTokens: 0 } }) as LanguageModelUsage;
+  const tokens = (input: number, read: number, write: number, output: number): Tokens => ({ inputTokens: input, cachedInputTokens: read, cacheWriteTokens: write, outputTokens: output, reasoningTokens: 0 });
 
   it("charges uncached input, cache reads and cache writes each at their own rate", () => {
     // 1M input: 200K plain, 500K read, 300K written; 100K output, at Sonnet 5.5's rates.
-    const u = usageOf(usage(1_000_000, 500_000, 300_000, 100_000), { input: 2, output: 10, cachedInput: 0.2, cacheWrite: 2.5 });
-    expect(u).toMatchObject({ inputTokens: 1_000_000, cachedInputTokens: 500_000, cacheWriteTokens: 300_000, outputTokens: 100_000, unpriced: 0 });
-    expect(u.usd).toBeCloseTo(0.4 + 0.1 + 0.75 + 1, 9);
+    expect(costOf(tokens(1_000_000, 500_000, 300_000, 100_000), { input: 2, output: 10, cachedInput: 0.2, cacheWrite: 2.5 })).toBeCloseTo(0.4 + 0.1 + 0.75 + 1, 9);
   });
 
-  it("charges a cache write with no price of its own as plain input, and counts an unpriced call", () => {
-    expect(usageOf(usage(1_000_000, 0, 1_000_000, 0), { input: 3, output: 15 }).usd).toBeCloseTo(3, 9);
-    expect(usageOf(usage(10, 0, 0, 1))).toMatchObject({ usd: 0, unpriced: 1 });
+  it("charges a cache write with no price of its own as plain input", () => {
+    expect(costOf(tokens(1_000_000, 0, 1_000_000, 0), { input: 3, output: 15 })).toBeCloseTo(3, 9);
   });
 });
 
