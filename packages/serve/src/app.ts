@@ -6,7 +6,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
-import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard } from "@lenspack/engine";
+import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
@@ -297,6 +297,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         case "GET data": {
           const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
           return json(res, 200, await resolveBoard(board.config, run, selections));
+        }
+        case "GET page": {
+          // One page of one table of rows, under the same selections as the board.
+          const selections = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
+          try {
+            return json(res, 200, await widgetPage(board.config, url.searchParams.get("widget") ?? "", Number(url.searchParams.get("page") ?? 0), run, selections));
+          } catch (e) {
+            if (e instanceof ResolveError) return json(res, 400, { error: e.message, code: e.code });
+            throw e;
+          }
         }
         case "GET options":
           return json(res, 200, await dimensionValues(url.searchParams.get("field") ?? "", run));

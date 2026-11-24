@@ -44,11 +44,13 @@ export type Ast = {
   having: Expr[];
   orderBy: { expr: Expr; dir: "asc" | "desc" }[];
   limit: number;
+  // Rows skipped first (a later page of rows). Absent prints no OFFSET.
+  offset?: number;
 };
 
 // The inner stage of a two-stage measure: the root's rows grouped by the key
 // and the answer's groups, one value per key.
-export type Grouped = Omit<Ast, "from" | "having" | "orderBy" | "limit"> & { alias: string; from: Source };
+export type Grouped = Omit<Ast, "from" | "having" | "orderBy" | "limit" | "offset"> & { alias: string; from: Source };
 
 export const and = (exprs: Expr[]): Expr | null =>
   exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r }));

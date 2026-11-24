@@ -373,10 +373,14 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
     case "rows": {
       const cols = bound.columns.map((c) => ({ key: c.def.key, path: dimensionField(c.def, env, "listed").replace(/\.keyword$/, "") }));
       body.size = query.limit;
+      // A later page; from + size stays within the default 10,000 window.
+      if (query.offset) body.from = query.offset;
       body._source = cols.map((c) => c.path);
       // Ties fall to the remaining columns in the order listed, as in SQL.
-      if (bound.orderBy)
-        body.sort = [bound.orderBy, ...bound.columns.filter((c) => c.def.key !== bound.orderBy!.dimension.def.key).map((dimension) => ({ dimension, dir: "asc" as const }))].map((o) => ({ [dimensionField(o.dimension.def, env, "sorted")]: { order: o.dir } }));
+      // A page with no order is ordered by the columns, so pages do not overlap.
+      const order = bound.orderBy ?? (query.offset !== undefined && bound.columns[0] ? { dimension: bound.columns[0], dir: "asc" as const } : null);
+      if (order)
+        body.sort = [order, ...bound.columns.filter((c) => c.def.key !== order.dimension.def.key).map((dimension) => ({ dimension, dir: "asc" as const }))].map((o) => ({ [dimensionField(o.dimension.def, env, "sorted")]: { order: o.dir } }));
       return {
         index: entity.source,
         body,

@@ -455,6 +455,32 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
   return data;
 }
 
+/** The deepest row a page may start at: a deep page is still a small top-N sort in the source. */
+export const MAX_PAGE_OFFSET = 10000;
+
+export type WidgetPage = WidgetData & { page: number; pageSize: number; offset: number; hasNext: boolean };
+
+/**
+ * One page of a table widget's rows query, with the board's selections
+ * applied as resolveBoard applies them. A page is never larger than the
+ * widget's own limit, so page 0 is the rows the board already shows; one
+ * more row is read to tell whether a next page exists.
+ */
+export async function widgetPage(config: BoardConfig, id: string, page: number, opts: RunOptions, selections: Record<string, string> = {}): Promise<WidgetPage> {
+  const widget = config.widgets[id];
+  if (!widget) throw new ResolveError("NOT_SUPPORTED", `There is no widget "${id}" on this board`, id);
+  if (widget.kind !== "table" || widget.query.kind !== "rows") throw new ResolveError("NOT_SUPPORTED", "Only a table of rows pages through its source", id);
+  const query = drilledQuery(config, id, widget, selections, opts.pack, { ctx: opts.ctx, capabilities: opts.connector.capabilities });
+  if (!query || query.kind !== "rows") throw new ResolveError("NOT_SUPPORTED", "Only a table of rows pages through its source", id);
+  const pageSize = Math.min(widget.pageSize, query.limit);
+  const n = Math.max(0, Math.floor(page) || 0);
+  const offset = n * pageSize;
+  if (offset > MAX_PAGE_OFFSET) throw new ResolveError("NOT_SUPPORTED", `Pages go as deep as row ${MAX_PAGE_OFFSET}; narrow the table with a filter or a shorter time to see further`, id);
+  const data = await run({ ...query, limit: pageSize + 1, offset }, opts);
+  const records = data.records ?? [];
+  return { ...data, records: records.slice(0, pageSize), total: Math.min(records.length, pageSize), page: n, pageSize, offset, hasNext: records.length > pageSize };
+}
+
 /** The query behind a dimension's values: its groups by a count, largest first, optionally those containing q. */
 export function valuesQuery(dimension: string, pack: Pack, limit = 50, q = ""): Query | null {
   const dim = pack.dimensions.find((d) => d.key === dimension);
