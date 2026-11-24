@@ -85,7 +85,7 @@ export function drilledQuery(
     const window = chosen ? dateRangeWindow(chosen, pack.timeZone) : null;
     if (window) q = { ...q, time: window } as Query;
   }
-  const explicit = config.filters.filter((f) => f.type !== "daterange" && selections[f.field] && covers(f));
+  const explicit = config.filters.filter((f) => f.type !== "daterange" && f.type !== "host" && selections[f.field] && covers(f));
   const drill = Object.keys(selections).filter((k) => selections[k] && hierarchyOf(pack, k) && !explicit.some((f) => f.field === k));
   const add = [...explicit.map((f) => f.field), ...drill];
   const accepts = (candidate: Query) => {
@@ -101,6 +101,11 @@ export function drilledQuery(
     const next = { ...q, filters: [...(q.filters ?? []), { dimension: field, op: "eq" as const, value: selections[field]! }] } as Query;
     // Board filters always apply (the author said so); a drill only where it can.
     if (explicit.some((f) => f.field === field) || accepts(next)) q = next;
+  }
+  // A select nobody has picked from opens at its default values.
+  for (const f of config.filters) {
+    if (f.type !== "select" || !f.default?.values || selections[f.field] || !covers(f)) continue;
+    q = { ...q, filters: [...(q.filters ?? []), { dimension: f.field, op: "in" as const, value: f.default.values }] } as Query;
   }
   // Step groupings down past the deepest selected level of their hierarchy.
   const step = (dim: string | undefined) => (dim ? drilledDimension(dim, selections, pack.hierarchies) : dim);

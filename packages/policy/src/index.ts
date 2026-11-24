@@ -131,9 +131,13 @@ export function withoutKeys(catalogue: Catalogue, hidden?: ReadonlySet<string>):
  * A board as one caller may be shown it: a widget's filter on a key they may
  * not use keeps its key but not its value, which is that key's data. The
  * widget itself is refused when drawn; this keeps the value out of the config.
+ * A board filter's default values on such a key are hidden the same way.
  */
 export function withoutHiddenValues<C extends { widgets: Record<string, unknown> }>(config: C, hidden?: ReadonlySet<string>): C {
   if (!hidden?.size) return config;
+  type BoardFilter = { field: string; default?: { values?: string[] } };
+  const boardFilters = (config as { filters?: BoardFilter[] }).filters;
+  const filters = boardFilters?.map((f) => (f.default?.values && hidden.has(f.field) ? { ...f, default: { ...f.default, values: ["(hidden)"] } } : f));
   const widgets = Object.fromEntries(
     Object.entries(config.widgets).map(([id, w]) => {
       const q = (w as { query?: { filters?: { dimension: string; value: unknown }[] } }).query;
@@ -142,7 +146,7 @@ export function withoutHiddenValues<C extends { widgets: Record<string, unknown>
       return [id, { ...(w as object), query: { ...q, filters } }];
     }),
   );
-  return { ...config, widgets };
+  return { ...config, widgets, ...(filters ? { filters } : {}) };
 }
 
 /** The engine's view of a caller: what every query they run is narrowed by. Read by shape; the engine never imports this package. */

@@ -178,6 +178,27 @@ describe("board tools", () => {
     expect(renamed.version).toBeGreaterThan(4);
   });
 
+  it("adds, changes and removes filters named by label, a date range among them, and keeps a host's filter unchanged", async () => {
+    const store = memoryStore();
+    const board = await store.create({ id: "f", pack: { pack: pack.pack, version: pack.version }, title: "F" });
+    // A filter the host keeps as it has it, as a Superset dashboard's numeric range would arrive.
+    await store.replaceConfig({ id: "f", config: { ...board.config, filters: [{ id: "range", type: "host", label: "Weight range", field: "", applies: ["*"], note: "Kept filter: “Weight range”, a range of values of weight." }] }, source: "superset" });
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "f", ctx: { tenant: "t1" } }).map((x) => [x.name, x])) as Record<string, Tool>;
+    const run = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args)) as Promise<{ applied: boolean; board: string; error?: string }>;
+    expect((await run("add_filter", { field: "colour", default: "red, blue" })).board).toContain("Filters: Colour [colour], set to red, blue by default");
+    expect((await run("add_filter", { field: "time", default: "3 months" })).board).toContain("Dates [time], last 3 months by default");
+    const changed = await run("update_filter", { filter: "Colour", label: "Paint", default: "clear" });
+    expect(changed.board).toContain("Paint [colour]; Dates");
+    expect(changed.board).not.toContain("red, blue");
+    expect((await run("update_filter", { filter: "dates", default: "30 days" })).board).toContain("last 30 days by default");
+    expect(changed.board).toContain("Kept filter: “Weight range”");
+    expect(await run("update_filter", { filter: "Weight range", label: "W" })).toMatchObject({ applied: false, error: expect.stringContaining("removed here, but changed only there") });
+    expect(await run("remove_filter", { filter: "the LGA" })).toMatchObject({ applied: false, error: expect.stringContaining("The board's filters: “Weight range”, “Paint”, “Dates”") });
+    expect((await run("remove_filter", { filter: "weight range" })).board).not.toContain("Weight range");
+    expect((await run("remove_filter", { filter: "paint" })).board).not.toContain("Paint");
+    expect((await store.get("f"))!.config.filters.map((f) => f.id)).toEqual(["filter_time"]);
+  });
+
   it("adds a heatmap with its columns in their own order on the sequential scale, and turns it back into a bar", async () => {
     const store = memoryStore();
     await store.create({ id: "h", pack: { pack: pack.pack, version: pack.version }, title: "H" });

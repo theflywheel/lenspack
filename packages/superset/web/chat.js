@@ -199,7 +199,7 @@
   const TOOL = {
     get_board: "read the dashboard", list_metrics: "read the metrics", query: "ran a query", explain: "checked a query", list_values: "listed values",
     list_versions: "read the history", restore_version: "restored a version", add_widget: "add chart", update_widget: "change chart", move_widget: "move chart",
-    resize_widget: "resize chart", remove_widget: "remove chart", add_filter: "add filter", remove_filter: "remove filter", set_layout_mode: "layout", rename_board: "rename dashboard", propose_measure: "proposed a metric",
+    resize_widget: "resize chart", remove_widget: "remove chart", add_filter: "add filter", update_filter: "change filter", remove_filter: "remove filter", set_layout_mode: "layout", rename_board: "rename dashboard", propose_measure: "proposed a metric",
   };
 
   function el(tag, cls, text) {

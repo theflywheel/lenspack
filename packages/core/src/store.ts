@@ -46,6 +46,7 @@ export function describeOps(ops: BoardOp[]) {
         case "resize_widget": return `resized ${op.id}`;
         case "set_title": return `renamed to “${op.title}”`;
         case "add_filter": return `added filter ${op.filter.field}`;
+        case "update_filter": return `changed filter ${op.filter.label}`;
         case "remove_filter": return `removed filter ${op.id}`;
         case "set_layout_mode": return [op.density ? `density ${op.density}` : "", op.fill === undefined ? "" : op.fill ? "packed" : "unpacked"].filter(Boolean).join(", ") || "layout mode";
       }

@@ -238,16 +238,28 @@ export type Widget = z.infer<typeof widgetSchema>;
 
 export const filterSchema = z.object({
   id: z.string(),
-  type: z.enum(["select", "search", "daterange"]),
+  // "host": a filter of the system the board is kept in (a Superset dashboard's own filter bar)
+  // that Lenspack cannot express. It is shown to the model by its note, kept exactly as the host
+  // has it, and can be removed but not changed or added here.
+  type: z.enum(["select", "search", "daterange", "host"]),
   label: z.string().min(1),
   // Filters narrow by a dimension the pack actually has. A daterange filter
   // sets the time window of the widgets it applies to instead; its field is
-  // "time".
+  // "time". A host filter's field is the dimension it is on, if any, else "".
   field: z.string(),
   applies: z.array(z.string()).min(1),
-  // A daterange's window before anyone picks one: the last N calendar months
-  // or days up to today, in the pack's time zone.
-  default: z.object({ months: z.number().int().min(1).max(60).optional(), days: z.number().int().min(1).max(3660).optional() }).optional(),
+  // The selection before anyone picks one. A daterange's window: the last N
+  // calendar months or days up to today, in the pack's time zone. A select's
+  // values: the board opens narrowed to them.
+  default: z
+    .object({
+      months: z.number().int().min(1).max(60).optional(),
+      days: z.number().int().min(1).max(3660).optional(),
+      values: z.array(z.string()).min(1).max(100).optional(),
+    })
+    .optional(),
+  // A host filter in words: what it does, for the model to repeat.
+  note: z.string().max(400).optional(),
 });
 export type Filter = z.infer<typeof filterSchema>;
 

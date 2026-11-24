@@ -41,6 +41,8 @@ export const opSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("set_title"), title: z.string().min(1).max(160) }),
   z.object({ op: z.literal("add_filter"), filter: filterSchema }),
+  // Replaces a filter in place (its label, what it applies to, its default), keeping its id and position.
+  z.object({ op: z.literal("update_filter"), id: z.string(), filter: filterSchema }),
   z.object({ op: z.literal("remove_filter"), id: z.string() }),
   // "Make it compact": density and packing, together or separately.
   z.object({
@@ -320,6 +322,18 @@ function shrinkTo(widths: number[], mins: number[], total: number) {
   return out;
 }
 
+/** Why a filter cannot go on this board, or null. A host filter only ever comes from the host. */
+function filterProblem(filter: z.infer<typeof filterSchema>, draft: BoardConfig, catalogue: Catalogue): { error: string; hint?: string } | null {
+  if (filter.type === "host") return { error: "A filter kept as the host has it can only come from the host" };
+  if (filter.type === "daterange" ? filter.field !== "time" : !findDimension(catalogue, filter.field))
+    return filter.type === "daterange"
+      ? { error: 'A date range filter sets time; its field is "time"' }
+      : { error: `"${filter.field}" is not a dimension in this pack`, hint: nearest(filter.field, catalogue.dimensions.map((d) => d.key)) ?? undefined };
+  if (filter.default?.values && filter.type !== "select") return { error: "Only a select filter has default values" };
+  const missing = filter.applies.filter((target) => target !== "*" && !draft.widgets[target]);
+  return missing.length > 0 ? { error: `Filter targets widgets that do not exist: ${missing.join(", ")}` } : null;
+}
+
 /**
  * Applies a batch of operations to a draft and commits it whole, or rejects the
  * batch naming the operation that failed. Partial application is never allowed:
@@ -453,14 +467,20 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
       case "add_filter": {
         if (draft.filters.some((filter) => filter.id === op.filter.id))
           return fail(`A filter called "${op.filter.id}" already exists`);
-        if (op.filter.type === "daterange" ? op.filter.field !== "time" : !findDimension(catalogue, op.filter.field))
-          return fail(op.filter.type === "daterange" ? 'A date range filter sets time; its field is "time"' :
-            `"${op.filter.field}" is not a dimension in this pack`,
-            nearest(op.filter.field, catalogue.dimensions.map((d) => d.key)) ?? undefined,
-          );
-        const missing = op.filter.applies.filter((target) => target !== "*" && !draft.widgets[target]);
-        if (missing.length > 0) return fail(`Filter targets widgets that do not exist: ${missing.join(", ")}`);
+        const problem = filterProblem(op.filter, draft, catalogue);
+        if (problem) return fail(problem.error, problem.hint);
         draft.filters.push(op.filter);
+        break;
+      }
+
+      case "update_filter": {
+        const at = draft.filters.findIndex((filter) => filter.id === op.id);
+        if (at < 0) return fail(`No filter called "${op.id}"`, nearest(op.id, draft.filters.map((f) => f.id)) ?? undefined);
+        if (draft.filters[at]!.type === "host") return fail(`“${draft.filters[at]!.label}” is kept as the host has it: it can be removed here, but changed only there`);
+        if (op.filter.id !== op.id) return fail("A filter keeps its id when it changes");
+        const problem = filterProblem(op.filter, draft, catalogue);
+        if (problem) return fail(problem.error, problem.hint);
+        draft.filters[at] = op.filter;
         break;
       }
 

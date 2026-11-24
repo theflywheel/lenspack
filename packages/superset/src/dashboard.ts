@@ -3,13 +3,15 @@ import type { Pack } from "@lenspack/spec";
 
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
+import { type PlacedChart, filtersFromNative, nativeFiltersAfter } from "./filters";
 import { chartToWidget, queryContextOf, widgetToChart } from "./query";
 
 // A Superset dashboard is the board. Reading one: its charts become widgets
 // (or locked text widgets, for charts lenspack cannot say exactly), its
-// markdown blocks become text widgets, and position_json becomes the grid.
+// markdown blocks become text widgets, position_json becomes the grid, and
+// its filter bar becomes the board's filters (filters.ts).
 // Writing one: only what changed between two board configs is sent — new
-// charts, changed charts, removed charts, then the layout and title.
+// charts, changed charts, removed charts, then the layout, title and filters.
 
 /** What lenspack remembers about one dashboard between reads: which widget is which chart. */
 export type DashboardState = {
@@ -139,11 +141,30 @@ export function dashboardToBoard(read: Awaited<ReturnType<typeof readDashboard>>
     place({ id: `CHART-${chart.id}`, type: "CHART", children: [], meta: { chartId: chart.id, width: 4, height: 50 } }, x, y);
     x += 4;
   }
-  const config = boardConfigSchema.parse({ version: 2, pack: pack.pack, packVersion: pack.version, title: dash.dashboard_title.slice(0, 160) || `Dashboard ${dash.id}`, grid: { cols: 12, rowHeight: 40, fill: true }, layout, widgets, filters: [] });
+  const widgetOf = new Map(Object.entries(state.charts).map(([w, c]) => [c, w]));
+  const filters = filtersFromNative(metadata(dash.json_metadata), binding, placedCharts(position, charts.map((c) => c.id)), widgetOf);
+  const config = boardConfigSchema.parse({ version: 2, pack: pack.pack, packVersion: pack.version, title: dash.dashboard_title.slice(0, 160) || `Dashboard ${dash.id}`, grid: { cols: 12, rowHeight: 40, fill: true }, layout, widgets, filters });
   return { config, state, notes };
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** json_metadata as an object; one that is missing or not JSON reads as empty. */
+function metadata(json: string | null): Record<string, unknown> {
+  try {
+    const v = json ? JSON.parse(json) : {};
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Every chart on the dashboard with the layout components above it; one not in the layout sits under none. */
+function placedCharts(position: Position, ids: number[]): PlacedChart[] {
+  const parents = new Map<number, string[]>();
+  for (const c of Object.values(position)) if (typeof c === "object" && c.type === "CHART" && typeof c.meta?.chartId === "number") parents.set(c.meta.chartId, c.parents ?? []);
+  return ids.map((id) => ({ id, parents: parents.get(id) ?? [] }));
+}
 
 /** Sends what changed between two board configs to the dashboard. Returns the updated state. */
 export async function pushBoard(client: SupersetClient, before: BoardConfig, after: BoardConfig, pack: Pack, binding: Binding, given: DashboardState, log: (s: string) => void = () => {}): Promise<DashboardState> {
@@ -199,8 +220,12 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
   // Then the dashboard: title, layout, and its chart list (Superset reads that from positions).
   const { dash, position: old } = await readDashboard(client, dashId);
   const position = nested(old) ? patchedPosition(old, after, state) : gridPosition(old, after, state);
+  // Parsed strictly: a json_metadata that is not JSON is refused, never overwritten.
   const meta = dash.json_metadata ? JSON.parse(dash.json_metadata) : {};
-  const body: Record<string, unknown> = { position_json: JSON.stringify(position), json_metadata: JSON.stringify({ ...meta, positions: position }) };
+  const charts = placedCharts(position, [...new Set(Object.values(state.charts))]);
+  const filters = nativeFiltersAfter(meta, before.filters, after.filters, { pack, binding, charts, chartOf: (w) => state.charts[w] });
+  if (filters) log(`filter bar now has ${filters.length} entr${filters.length === 1 ? "y" : "ies"}`);
+  const body: Record<string, unknown> = { position_json: JSON.stringify(position), json_metadata: JSON.stringify({ ...meta, positions: position, ...(filters ? { native_filter_configuration: filters } : {}) }) };
   if (before.title !== after.title || dash.dashboard_title !== after.title) body.dashboard_title = after.title;
   await client.put(`/api/v1/dashboard/${dashId}`, body);
   const fresh = await client.get<{ result: { changed_on: string } }>(`/api/v1/dashboard/${dashId}`);

@@ -32,10 +32,22 @@ export function summarise(config: BoardConfig) {
   return [
     `Board: “${config.title}” (pack ${config.pack} v${config.packVersion}${config.grid.density === "compact" ? ", compact" : ""}${config.grid.fill ? ", packed" : ""})`,
     config.layout.length === 0 ? "  (empty)" : layout,
-    config.filters.length > 0 ? `Filters: ${config.filters.map((f) => `${f.label} [${f.field}]`).join(", ")}` : "",
+    ...filterLines(config),
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** The board's filters: each with its field, what it covers when not everything, and its default selection; a host filter by its note. */
+function filterLines(config: BoardConfig) {
+  const own = config.filters.filter((f) => f.type !== "host");
+  const covers = (f: BoardConfig["filters"][number]) => (f.applies.includes("*") ? "" : `, on ${f.applies.join(", ")}`);
+  const opens = (d: BoardConfig["filters"][number]["default"]) =>
+    d?.values ? `, set to ${d.values.join(", ")} by default` : d?.months ? `, last ${d.months} month${d.months === 1 ? "" : "s"} by default` : d?.days ? `, last ${d.days} day${d.days === 1 ? "" : "s"} by default` : "";
+  return [
+    own.length > 0 ? `Filters: ${own.map((f) => `${f.label} [${f.field}]${covers(f)}${opens(f.default)}`).join("; ")}` : "",
+    ...config.filters.filter((f) => f.type === "host").map((f) => f.note ?? `Filter kept as the host has it: ${f.label}`),
+  ];
 }
 
 function excerpt(text: string, max: number) {

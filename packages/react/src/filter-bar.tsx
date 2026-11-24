@@ -48,7 +48,9 @@ export function DrillPath() {
  */
 export function useFilters() {
   const { board, selections, setSelection, clearSelections, host, catalogue } = useBoard();
-  const filters = board.config.filters;
+  // A filter kept as the host has it is the host's to draw.
+  const all = board.config.filters;
+  const filters = React.useMemo(() => all.filter((f) => f.type !== "host"), [all]);
   const [options, setOptions] = React.useState<Record<string, FilterOption[]>>({});
 
   React.useEffect(() => {
@@ -93,7 +95,7 @@ export function FilterBar() {
         <label key={filter.id} className="lp-filter" title={filter.narrows}>
           <span className="lp-filter-label">{filter.label}</span>
           <select data-testid={`filter-${filter.field}`} value={filter.value} onChange={(e) => select(filter.field, e.target.value)}>
-            <option value="">All</option>
+            <option value="">{filter.default?.values ? `${filter.default.values.join(", ")} (default)` : "All"}</option>
             {filter.options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.value} ({o.count.toLocaleString()})

@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 22;
+export const PROMPT_VERSION = 23;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -144,6 +144,7 @@ Rules:
 - For an average over time, prefer whole calendar periods (time_period last_month, last_week) to time_last: a rolling window starts and ends part-way through a day, and those part days pull the average down.
 - In a breakdown, records counts only the records behind the groups shown: never present it as a fact about the whole data.
 - Narrow with the filters string. Filter values must match the data exactly: when unsure, call list_values first; didYouMean on an empty result names the value the data has.
+- The board's own filter bar is listed under the board, with what each filter is set to by default: answer "what is it filtered to?" from there. add_filter, update_filter and remove_filter change it; name a filter by its label. A filter the board keeps as its host has it (its line says so) can be removed but not changed here: say what it does in that line's words, and never drop it unless asked.
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Do every part of a request that can be done, even when another part cannot; then name the part that could not and why.
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
