@@ -107,7 +107,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       `run_sql would read "${pack.pack}" past its tenant and row scope. Enable it as "role-scoped" only when the database role behind this connection already limits the rows it can read.`,
     );
   // Raw SQL does not pass through the pack, so it cannot keep a key from a caller either.
-  if (opts.runSql && opts.ctx?.hidden?.size) throw new Error(`run_sql would read "${pack.pack}" past the keys this caller may not use`);
+  if (opts.runSql && (opts.ctx?.hidden?.size || opts.ctx?.hiddenEntities?.size)) throw new Error(`run_sql would read "${pack.pack}" past the keys this caller may not use`);
   // What the model sees the compiled query called: SQL, or a search request.
   const nativeKey = connector.kind === "postgres" || connector.kind === "duckdb" ? "sql" : "request";
   const ctx = opts.ctx ?? {};

@@ -22,7 +22,8 @@ import { type Overlay, fetchDatasets, packFromDatasets } from "./catalogue";
 import { supersetClient } from "./client";
 import { supersetConnector } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
-import { editPolicyFrom, supersetAuth } from "./identity";
+import { supersetPolicy } from "./access";
+import { editPolicyFrom, hostPolicyFrom, supersetAuth } from "./identity";
 import { supersetBoards } from "./store";
 
 /**
@@ -50,6 +51,12 @@ export type SupersetConfig = AdminConfig & {
    * Everyone who can view a dashboard may ask about it.
    */
   editPolicy?: "superset" | "signed-in";
+  /**
+   * Whose access narrows what each user sees (env LENSPACK_HOST_POLICY wins): "off" (the default for now), the
+   * service account's, as before; "superset", the user's own Superset dataset access and row-level security.
+   * Needs lenspack_superset.py's /api/v1/lenspack/access for dataset access and templated clauses.
+   */
+  hostPolicy?: "superset" | "off";
   /** The audit log in the state directory (audit.jsonl, monthly files). false turns it off. */
   audit?: false | { retentionDays?: number };
   /** Superset datasets by id, or by table name (schema.table or table). */
@@ -131,8 +138,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     log(`no identity key (${e instanceof Error ? e.message : String(e)}): every request will be refused until Lenspack restarts with lenspack_superset.py loaded in Superset`);
   }
   const editPolicy = editPolicyFrom(env.LENSPACK_EDIT_POLICY ?? config.editPolicy);
+  const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
-  log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
+  log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
 
   /** Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. */
   async function bind(idOrSlug: string) {
@@ -181,7 +189,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
-    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits")), audit: auditLog?.audit, ...admin.app },
+    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined), audit: auditLog?.audit, ...admin.app },
     port,
     host,
     budget: config.budget,
@@ -205,6 +213,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           measures: pack.measures.map((m) => ({ key: m.key, label: m.label, agg: m.agg })),
           superset: { url: supersetUrl, username: account.username, account: account.source },
           editPolicy,
+          // Only when on, so the page reads as before while it is off.
+          ...(hostPolicy === "superset" ? { hostPolicy } : {}),
           dashboards: Object.values(dashboards),
           publicPath: base,
           panel,

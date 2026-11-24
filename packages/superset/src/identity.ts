@@ -13,6 +13,8 @@ import type { IncomingMessage } from "node:http";
 import { type Identity as Caller, NO_RIGHTS } from "@lenspack/policy";
 import { type AuthAdapter, withRights } from "@lenspack/serve";
 
+import type { HostPolicy } from "./access";
+
 export const IDENTITY_HEADER = "x-lenspack-identity";
 
 /** What Superset signs for one request. */
@@ -27,6 +29,8 @@ export type Identity = {
   e?: boolean;
   /** Superset would let this user view that dashboard. */
   v?: boolean;
+  /** The user's Superset role names. */
+  r?: string[];
   /** Signed at, unix seconds. */
   t: number;
 };
@@ -100,15 +104,31 @@ export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Call
   return { user: id.u, roles, readOnly: READ_ONLY_MESSAGE };
 }
 
-/** Superset's signed header as lenspack's sign-in, the only one in Superset mode: an unsigned request is not signed in. */
-export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true): AuthAdapter {
+/**
+ * Superset's signed header as lenspack's sign-in, the only one in Superset mode: an unsigned request is not signed in.
+ * With a host policy (hostPolicy: superset), the user's own Superset roles, dataset access and row-level security
+ * come with them, and policy narrows every query by those rather than by the service account's.
+ */
+export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy): AuthAdapter {
   return {
     kind: "superset",
-    identify: (req) => {
+    identify: async (req) => {
       const id = identityOf(req, key);
-      return id ? callerOf(id, policy, editsOn()) : null;
+      if (!id) return null;
+      const caller = callerOf(id, policy, editsOn());
+      if (!host) return caller;
+      // "admin" stays the signed admin flag's: a Superset role of that name grants nothing here.
+      return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...(await host(id.u, id.r)) };
     },
   };
+}
+
+/** "superset": each user's Superset roles, dataset access and RLS narrow what they see. "off" (the default for now): the service account's. */
+export function hostPolicyFrom(value: string | undefined): "superset" | "off" {
+  const v = (value ?? "").trim().toLowerCase();
+  if (v === "" || v === "off") return "off";
+  if (v === "superset") return "superset";
+  throw new Error(`LENSPACK_HOST_POLICY (hostPolicy) must be "superset" or "off", not "${value}"`);
 }
 
 /** The same as an access hook, for createApp without the runtime. */

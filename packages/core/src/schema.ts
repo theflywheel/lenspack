@@ -31,6 +31,8 @@ export const filterClauseSchema = z.object({
   value: z.union([scalar, z.array(scalar).min(1).max(100)]),
 });
 export type FilterClause = z.infer<typeof filterClauseSchema>;
+/** A row filter the server puts on a caller (ctx.scope). With an entity, it narrows only the queries that read that entity. */
+export type ScopeClause = FilterClause & { entity?: string };
 
 // Relative ranges are resolved against "now" at query time, so a saved board
 // keeps meaning "the last 30 days" rather than freezing the dates it was made.

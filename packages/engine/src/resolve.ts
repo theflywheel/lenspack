@@ -1,4 +1,4 @@
-import { type FilterClause, type Query, type Widget, nearest, queryKeys } from "@lenspack/core";
+import { type Query, type ScopeClause, type Widget, nearest, queryKeys } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
 import { bucketZone, calendarRange } from "./calendar";
@@ -14,15 +14,18 @@ export type Ctx = {
   /**
    * The caller's row scope: filters every query must carry, whatever the
    * board asks. A query that cannot be narrowed by one of them is refused
-   * (OUT_OF_SCOPE) rather than answered unnarrowed.
+   * (OUT_OF_SCOPE) rather than answered unnarrowed. One with an entity
+   * narrows only the queries that read that entity (a table's row-level security).
    */
-  scope?: FilterClause[];
+  scope?: ScopeClause[];
   /**
    * Keys this caller may not use: a query naming one is refused
    * (NOT_PERMITTED), whatever asked for it. The scope above may still filter
    * on one, as the server set it, not the caller.
    */
   hidden?: ReadonlySet<string>;
+  /** Entities this caller may not read: a query that reads one is refused (NOT_PERMITTED). */
+  hiddenEntities?: ReadonlySet<string>;
 };
 
 export type ResolveErrorCode =
@@ -362,9 +365,12 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   }
 
   const filters: BoundFilter[] = (query.filters ?? []).map((f) => ({ dimension: bind(f.dimension), op: f.op, value: f.value })) as BoundFilter[];
+  const entitiesOf = (dims: (BoundDimension | null | undefined)[]) => [...new Set([root, ...dims.filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
+  const reads = entitiesOf([dimension, split, ...columns, orderBy?.dimension, ...filters.map((f) => f.dimension)]);
   // The caller's scope narrows every query. One it cannot reach is refused:
   // a number that ignores the caller's scope would show them other rows.
   for (const f of ctx.scope ?? []) {
+    if (f.entity && !reads.includes(f.entity)) continue;
     let dimension: BoundDimension;
     try {
       dimension = bind(f.dimension);
@@ -382,7 +388,9 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   const time = windows?.time ?? null;
   const previous = compare ? (windows?.previous ?? null) : null;
 
-  const entitiesUsed = [...new Set([root, ...[dimension, split, ...columns, orderBy?.dimension ?? null, ...filters.map((f) => f.dimension)].filter((d): d is BoundDimension => !!d).flatMap((d) => d.path.map((s) => s.to))])];
+  const entitiesUsed = entitiesOf([dimension, split, ...columns, orderBy?.dimension, ...filters.map((f) => f.dimension)]);
+  const off = entitiesUsed.find((e) => ctx.hiddenEntities?.has(e));
+  if (off) throw new ResolveError("NOT_PERMITTED", `"${off}" is not available to you`, off);
 
   // Tenancy is structural: if any entity in play declares a tenant column,
   // a tenant must be supplied. There is no "forgot to filter" state.

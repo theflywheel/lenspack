@@ -62,6 +62,7 @@ host: 0.0.0.0                            # LENSPACK_HOST, 127.0.0.1 (0.0.0.0 in 
 port: 8795                               # LENSPACK_PORT, 8795
 state: /data/superset-boards.json        # LENSPACK_STATE_DIR/superset-boards.json, state/superset-boards.json
 budget: { usdPerDay: 20 }                # LENSPACK_BUDGET_USD_PER_DAY, LENSPACK_BUDGET_USD_PER_USER_PER_DAY
+hostPolicy: superset                     # LENSPACK_HOST_POLICY, off (see "What each user sees")
 ```
 
 Models: `LENSPACK_LLM_PROVIDERS` as for `lenspack serve` ([docs/llm.md](../../docs/llm.md)). With only
@@ -80,6 +81,8 @@ One file, loaded by Superset's own config. It needs no fork, no custom image and
   per answer and the audit log, all through `/_superset/*` on this server;
 - `GET /api/v1/lenspack/identity-key` and `POST /api/v1/lenspack/bootstrap`, which this server calls on start
   to fetch the signing key and to make its own account (below);
+- `GET /api/v1/lenspack/access?user=&datasets=`, which this server calls with `hostPolicy: superset`: for one
+  user, whether they may read each dataset and the row-level security clauses on it (below);
 - a fix for Flask-AppBuilder 4.x, whose list endpoints share filters between concurrent requests.
 
 To load it, put the file on Superset's Python path (for example, mounted into `/app/pythonpath/`) and import
@@ -107,8 +110,8 @@ so raise `SERVER_THREADS_AMOUNT` for more than about ten chats at once.
 ## Who is asking
 
 Browsers never reach this server directly. Superset forwards `/lenspack/...` to it for signed-in users and adds
-`x-lenspack-identity`: base64url JSON `{u, a, d, e, v, t}` (user, Superset admin, the dashboard the request is about,
-whether Superset lets them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
+`x-lenspack-identity`: base64url JSON `{u, a, r, d, e, v, t}` (user, Superset admin, their Superset role names, the
+dashboard the request is about, whether Superset lets them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
 Superset's `SECRET_KEY` on the Superset side; this server fetches it on start
 (`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid
 signature less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `chat.css` and
@@ -132,6 +135,41 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
   `LENSPACK_AUDIT_RETENTION_DAYS`; `audit: false` turns it off). It is the durable record: the usage figures
   (`GET /api/_usage`) are kept in memory and reset on restart. Admins read it with
   `GET /_superset/audit?month=YYYY-MM&limit=N`, and on the AI assistant page.
+
+## What each user sees
+
+Lenspack reads data through its own Superset account, an Admin. By default (`hostPolicy: off`, for now) every
+answer is computed with that account's access, as before: anyone who can open the chat can ask about every
+configured dataset, with no row-level security.
+
+With `hostPolicy: superset` (or `LENSPACK_HOST_POLICY=superset`), each user's own Superset access applies instead:
+
+- **Datasets.** A dataset the user may not read in Superset (no `datasource_access`, `schema_access`,
+  `database_access` or `all_datasource_access` through their roles) is kept from them: its metrics, and the
+  columns only it has, leave the catalogue and the chat's vocabulary, and any query that reads it is refused. A
+  column shared by name with a dataset they may read stays.
+- **Row-level security.** Each RLS clause that applies to the user (Regular rules for their roles, Base rules
+  unless they have one of its roles; one group key's clauses ORed) narrows every query Lenspack runs on that
+  dataset, chat tools and filter menus included, and no other dataset. A clause becomes a filter when it is
+  simple: `col = value`, `col IN (...)`, `AND`, brackets, and `OR` over one column. The column must be one of
+  the pack's dimensions.
+- **Fails closed.** Anything else (`LIKE`, `!=`, functions, subqueries, a column the pack doesn't have, a
+  template that wasn't rendered) keeps the whole dataset from that user, and the log says which clause and why.
+  If Superset can't be asked, every dataset is kept from that user until the next try.
+- **Where it comes from.** The plugin's `/api/v1/lenspack/access` asks Superset's security manager as that user
+  (`can_access_datasource`, `get_rls_filters`), with Jinja such as `{{ current_username() }}` rendered as Superset
+  renders it (with `ENABLE_TEMPLATE_PROCESSING` on). Only admins and Lenspack's own account may call it. Answers
+  are kept for 60 seconds per user, so a change in Superset reaches Lenspack within a minute. Without that endpoint
+  (an older plugin), this server reads the RLS rules from Superset's REST API (`/api/v1/rowlevelsecurity/`) and
+  matches them to the roles in the identity header. That route can't read dataset permissions or render
+  templates: every dataset counts as readable, and a templated clause keeps its dataset from the user.
+
+The roles in the header also become the user's roles in Lenspack's policy, beside `admin` for a Superset admin.
+A Superset role literally named `admin` grants nothing here; Lenspack's admin comes from the signed admin flag.
+What a Superset dashboard shows natively is unchanged: Superset applies its own security there.
+
+The plugin's tests run in Superset's image:
+[`plugin/test_lenspack_superset.py`](plugin/test_lenspack_superset.py) says how.
 
 Inside Superset the chat opens as a floating window or as a side panel; the gear chooses. The window opens at
 the top right, below Superset's menu bar, with room under it: drag it by its header, and resize it with the

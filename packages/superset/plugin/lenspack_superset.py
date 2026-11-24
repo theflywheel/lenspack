@@ -14,6 +14,9 @@ It adds:
   - /api/v1/lenspack/bootstrap and /api/v1/lenspack/identity-key, which Lenspack calls on start: the first
     makes Lenspack's own service account (admins only), the second hands it the signing key, derived from
     SECRET_KEY (admins and that account only);
+  - /api/v1/lenspack/access?user=&datasets=, which Lenspack calls with hostPolicy: superset: whether that user
+    may read each dataset and the row-level security clauses on it, as Superset's security manager decides
+    them for that user, Jinja rendered (admins and Lenspack's account only);
   - a fix for concurrent list requests in Flask-AppBuilder.
 If your config already sets FLASK_APP_MUTATOR, call lenspack_app_mutator(app) from yours and set
 FLASK_APP_MUTATOR back to yours after this import.
@@ -107,12 +110,45 @@ def lenspack_identity_key() -> str:
     return hmac.new(secret.encode() if isinstance(secret, str) else secret, b"lenspack-identity-v1", hashlib.sha256).hexdigest()
 
 
-def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None) -> str:
+def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None) -> str:
     claims = {"u": user, "a": bool(admin), "t": int(time.time())}
+    if roles is not None:
+        claims["r"] = sorted(roles)
     if dashboard is not None:
         claims.update({"d": dashboard, "e": bool(can_edit), "v": bool(can_view)})
     body = base64.urlsafe_b64encode(json.dumps(claims, separators=(",", ":")).encode()).rstrip(b"=").decode()
     return body + "." + hmac.new(lenspack_identity_key().encode(), body.encode(), hashlib.sha256).hexdigest()
+
+
+def lenspack_rls_clauses(filters, render) -> list:
+    """RLS filters as Superset applies them: each rendered; a group key's clauses ORed, the rest and the groups ANDed."""
+    clauses, groups = [], {}
+    for f in filters:
+        clause = render(f.clause)
+        if f.group_key:
+            groups.setdefault(f.group_key, []).append(clause)
+        else:
+            clauses.append(clause)
+    return clauses + [g[0] if len(g) == 1 else " OR ".join(f"({c})" for c in g) for g in groups.values()]
+
+
+def lenspack_dataset_access(user, ids) -> dict:
+    """Per dataset id: may this user read it, and its RLS clauses for them. A missing dataset is not readable."""
+    from superset.connectors.sqla.models import SqlaTable
+    from superset.extensions import db, security_manager
+    from superset.jinja_context import get_template_processor
+    from superset.utils.core import override_user
+
+    out = {}
+    with override_user(user):
+        for ds_id in ids:
+            ds = db.session.query(SqlaTable).filter_by(id=ds_id).one_or_none()
+            if ds is None or not security_manager.can_access_datasource(ds):
+                out[str(ds_id)] = {"access": False, "rls": []}
+                continue
+            processor = get_template_processor(database=ds.database, table=ds)
+            out[str(ds_id)] = {"access": True, "rls": lenspack_rls_clauses(security_manager.get_rls_filters(ds), processor.process_template)}
+    return out
 
 
 def lenspack_app_mutator(app):
@@ -136,6 +172,9 @@ def lenspack_app_mutator(app):
 
     def is_admin(user) -> bool:
         return any(r.name == security_manager.auth_role_admin for r in getattr(user, "roles", []) or [])
+
+    def role_names(user) -> list:
+        return [r.name for r in getattr(user, "roles", []) or []]
 
     # --- Rights on one dashboard, as Superset decides them ------------------------------------------
     # View: Superset's dashboard access check. Edit: what Superset's own dashboard API requires, an owner
@@ -178,8 +217,9 @@ def lenspack_app_mutator(app):
         if rights and not rights["view"]:
             return jsonify({"error": "You don't have access to this dashboard in Superset."}), 403
         admin = is_admin(user)
+        roles = role_names(user)
         headers = {
-            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"]) if rights else lenspack_sign(user.username, admin),
+            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles) if rights else lenspack_sign(user.username, admin, roles=roles),
             "x-forwarded-proto": request.scheme,
             "x-forwarded-host": request.host,
             "x-forwarded-prefix": LENSPACK_PATH,
@@ -269,7 +309,23 @@ def lenspack_app_mutator(app):
             made = "created"
         return jsonify({"result": {"username": username, "account": made}})
 
+    # What one user may read, as Superset decides it for them: the datasets their roles may access, and the
+    # row-level security clauses on each, rendered as that user (Jinja such as current_username() included).
+    # Lenspack reads data as its own account, so it narrows each user's queries by this (hostPolicy: superset).
+    def access_view():
+        caller = api_user()
+        if caller is None:
+            return jsonify({"message": "sign in with a token"}), 401
+        if not (is_admin(caller) or caller.username == LENSPACK_SERVICE_USER):
+            return jsonify({"message": f"only admins and {LENSPACK_SERVICE_USER} may read this"}), 403
+        target = security_manager.find_user(username=request.args.get("user") or "")
+        if target is None:
+            return jsonify({"message": "no such user"}), 404
+        ids = [int(x) for x in (request.args.get("datasets") or "").split(",") if x.strip().isdigit()][:500]
+        return jsonify({"result": {"datasets": lenspack_dataset_access(target, ids)}})
+
     app.add_url_rule("/api/v1/lenspack/identity-key", "lenspack_identity_key", identity_key_view, methods=["GET"])
+    app.add_url_rule("/api/v1/lenspack/access", "lenspack_access", access_view, methods=["GET"])
     app.add_url_rule("/api/v1/lenspack/bootstrap", "lenspack_bootstrap", bootstrap_view, methods=["POST"])
 
     # --- Settings → Manage → AI assistant ---------------------------------------------------------------
@@ -279,7 +335,7 @@ def lenspack_app_mutator(app):
             LENSPACK_INTERNAL_URL + path,
             data=json.dumps(body).encode() if body is not None else None,
             method=method,
-            headers={"content-type": "application/json", "x-lenspack-identity": lenspack_sign(g.user.username, True)},
+            headers={"content-type": "application/json", "x-lenspack-identity": lenspack_sign(g.user.username, True, roles=role_names(g.user))},
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as r:
@@ -694,6 +750,7 @@ SETTINGS_HTML = r'''{# Settings → Manage → AI assistant. What Lenspack runs 
       <tr><th>LLM and speech keys</th><td><code>ANTHROPIC_API_KEY</code>, <code>LENSPACK_LLM_PROVIDERS</code>, <code>OPENROUTER_API_KEY</code> in Lenspack's environment</td></tr>
       <tr><th>Datasets, guidance, budget</th><td>Lenspack's config file (<code>lenspack superset --config &lt;file&gt;</code>)</td></tr>
       <tr><th>Who may use the chat</th><td>Anyone signed in to Superset who can view the dashboard. Superset's <code>/lenspack/</code> route checks the session and signs who is asking for every Lenspack request.</td></tr>
+      <tr><th>Whose data access applies</th><td><code>LENSPACK_HOST_POLICY</code> on the Lenspack container: off (default), the answers use what Lenspack's own account may read; <code>superset</code>, each user's own dataset access and row-level security.</td></tr>
       <tr><th>Who may edit through it</th><td><code>LENSPACK_EDIT_POLICY</code> on the Lenspack container: <code>superset</code> (default) or <code>signed-in</code>. The Dashboard edits switch above turns edits off for everyone.</td></tr>
       <tr><th>Off switches</th><td>On this page, or <code>features:</code> in Lenspack's config file and <code>LENSPACK_FEATURES</code> on the Lenspack container (this page wins)</td></tr>
     </table>
@@ -704,5 +761,5 @@ SETTINGS_HTML = r'''{# Settings → Manage → AI assistant. What Lenspack runs 
 
 __all__ = [
     "LENSPACK_PATH", "LENSPACK_INTERNAL_URL", "LENSPACK_SERVICE_USER", "LENSPACK_TEMPLATES", "STT_BENCH", "FLASK_APP_MUTATOR",
-    "lenspack_app_mutator", "lenspack_sign", "lenspack_identity_key",
+    "lenspack_app_mutator", "lenspack_sign", "lenspack_identity_key", "lenspack_rls_clauses", "lenspack_dataset_access",
 ]
