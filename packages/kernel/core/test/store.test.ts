@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { memoryStore, stagedStore } from "../src/store";
+import { emptyBoard } from "../src/schema";
+import { type BoardStore, describeOps, memoryStore, stagedStore } from "../src/store";
 import { summarise, widthWords } from "../src/summarise";
 import { catalogue, packRef } from "./fixtures";
 
@@ -13,7 +14,7 @@ describe("memory store", () => {
     const patched = await store.patch({
       id: "x",
       catalogue,
-      ops: [{ op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count" }, aggregate: "last" } }],
+      ops: [{ op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count" } } }],
     });
     expect(patched.ok).toBe(true);
     if (!patched.ok) return;
@@ -56,7 +57,7 @@ describe("memory store", () => {
       id: "x",
       catalogue,
       ops: [
-        { op: "add_widget", id: "a", widget: { kind: "kpi", title: "Total", query: { kind: "value", measure: "count" }, aggregate: "last" }, placement: { place: "top", width: "third" } },
+        { op: "add_widget", id: "a", widget: { kind: "kpi", title: "Total", query: { kind: "value", measure: "count" } }, placement: { place: "top", width: "third" } },
         { op: "add_widget", id: "b", widget: { kind: "chart", chart: "bar", title: "By region", query: { kind: "breakdown", dimension: "region", measure: "count", limit: 12, sort: "desc" }, options: { legend: true, colorScheme: "default" } } },
       ],
     });
@@ -96,7 +97,7 @@ describe("widthWords", () => {
 });
 
 describe("staged store", () => {
-  const kpi = { op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count" }, aggregate: "last" } } as const;
+  const kpi = { op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count" } } } as const;
 
   it("holds a board's edits until commit; reads see them, the store underneath does not", async () => {
     const inner = memoryStore();
@@ -130,6 +131,39 @@ describe("staged store", () => {
     const now = (await inner.get("x"))!;
     expect(now.config.title).toBe("By hand");
     expect(Object.keys(now.config.widgets)).toEqual(["a"]);
+    // The turn's edits, applied again on top of the edit by hand, are saved as one version.
+    expect((await inner.versions("x")).map((v) => v.version)).toEqual([3, 2, 1]);
+  });
+
+  it("after a change underneath that a later edit no longer fits, saves nothing and says which edit", async () => {
+    const inner = memoryStore();
+    await inner.create({ id: "x", pack: packRef, title: "T" });
+    await inner.patch({ id: "x", catalogue, ops: [{ ...kpi, id: "w" }] });
+    const staged = stagedStore(inner, "x");
+    // The first edit would still fit; the second changes a widget that is about to be removed by hand.
+    await staged.patch({ id: "x", catalogue, ops: [kpi], source: "chat" });
+    await staged.patch({ id: "x", catalogue, ops: [{ op: "update_widget", id: "w", widget: { ...kpi.widget, title: "W" } }], source: "chat" });
+    await inner.patch({ id: "x", catalogue, ops: [{ op: "remove_widget", id: "w" }] });
+    await expect(staged.commit()).rejects.toThrow('the board was changed meanwhile, and "changed w" no longer fits it (No widget called "w"). Nothing was saved');
+    expect((await inner.versions("x")).map((v) => v.version)).toEqual([3, 2, 1]);
+    expect((await inner.get("x"))!.config.widgets).toEqual({});
+    // The held edits are gone either way: the next turn starts from the store.
+    expect((await staged.get("x"))!.version).toBe(3);
+  });
+
+  it("a store underneath that refuses a later edit is put back where it was", async () => {
+    const inner = memoryStore();
+    await inner.create({ id: "x", pack: packRef, title: "T" });
+    let patches = 0;
+    const refusing: BoardStore = { ...inner, patch: async (input) => (++patches === 2 ? { ok: false, error: "the host did not take it" } : inner.patch(input)) };
+    const staged = stagedStore(refusing, "x");
+    await staged.patch({ id: "x", catalogue, ops: [kpi] });
+    await staged.patch({ id: "x", catalogue, ops: [{ op: "set_title", title: "New" }] });
+    await expect(staged.commit()).rejects.toThrow("the host did not take it");
+    const now = (await inner.get("x"))!;
+    expect(now.config.title).toBe("T");
+    expect(now.config.widgets).toEqual({});
+    expect((await inner.versions("x")).map((v) => `${v.version} ${v.summary}`)).toEqual(["3 restored v1", "2 added a", "1 created"]);
   });
 
   it("asOne saves where the edits ended up as one version, so a corrected edit never reaches the store", async () => {
@@ -141,5 +175,17 @@ describe("staged store", () => {
     await staged.commit({ asOne: true });
     expect((await inner.versions("x")).map((v) => `${v.version} ${v.source} ${v.summary}`)).toEqual(["2 chat added “K”", "1 create created"]);
     expect(Object.keys((await inner.get("x"))!.config.widgets)).toEqual(["b"]);
+  });
+});
+
+describe("describeOps", () => {
+  it("names a filter by its label, as the board shows it", () => {
+    const filter = { id: "f1", type: "select" as const, label: "Region", field: "region", applies: ["*"] };
+    const board = { ...emptyBoard(packRef, "T"), filters: [filter] };
+    expect(describeOps([{ op: "add_filter", filter }, { op: "update_filter", id: "f1", filter: { ...filter, label: "Area" } }, { op: "remove_filter", id: "f1" }], board)).toBe(
+      "added filter Region, changed filter Area, removed filter Region",
+    );
+    // Without the board, a removed filter is named by its id.
+    expect(describeOps([{ op: "remove_filter", id: "f1" }])).toBe("removed filter f1");
   });
 });

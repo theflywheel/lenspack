@@ -14,8 +14,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -35,8 +34,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -56,8 +54,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -77,8 +74,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -94,8 +90,7 @@
         "query": {
           "kind": "value",
           "measure": "max_open_age_ms_open"
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -115,8 +110,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",

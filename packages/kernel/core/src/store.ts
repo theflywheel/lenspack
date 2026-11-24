@@ -35,7 +35,8 @@ export interface BoardStore {
   delete(id: string): Promise<void>;
 }
 
-export function describeOps(ops: BoardOp[]) {
+/** The ops in a few words, for a version's summary. `board`, the board before them, names a removed filter by its label. */
+export function describeOps(ops: BoardOp[], board?: BoardConfig) {
   return ops
     .map((op) => {
       switch (op.op) {
@@ -45,9 +46,12 @@ export function describeOps(ops: BoardOp[]) {
         case "move_widget": return `moved ${op.id}`;
         case "resize_widget": return `resized ${op.id}`;
         case "set_title": return `renamed to “${op.title}”`;
-        case "add_filter": return `added filter ${op.filter.field}`;
-        case "update_filter": return `changed filter ${op.filter.label}`;
-        case "remove_filter": return `removed filter ${op.id}`;
+        case "add_filter": return `added filter ${op.filter.label || op.filter.field}`;
+        case "update_filter": return `changed filter ${op.filter.label || op.filter.field}`;
+        case "remove_filter": {
+          const gone = board?.filters.find((f) => f.id === op.id);
+          return `removed filter ${gone?.label || gone?.field || op.id}`;
+        }
         case "set_layout_mode": return [op.density ? `density ${op.density}` : "", op.fill === undefined ? "" : op.fill ? "packed" : "unpacked"].filter(Boolean).join(", ") || "layout mode";
       }
     })
@@ -91,7 +95,7 @@ export function memoryStore(): BoardStore {
         return { ok: false, error: `Board changed since version ${expectedVersion}; it is now v${current.version}` };
       const result: ApplyResult = applyOps(current.config, ops, catalogue);
       if (!result.ok) return { ok: false, error: result.error, hint: result.hint, opIndex: result.opIndex };
-      return { ok: true, board: record(id, result.config, source, describeOps(ops)) };
+      return { ok: true, board: record(id, result.config, source, describeOps(ops, current.config)) };
     },
     async replaceConfig({ id, config, source = "layout", summary = "layout changed" }) {
       if (!boards.has(id)) throw new Error(`No board called "${id}"`);
@@ -124,9 +128,11 @@ export function memoryStore(): BoardStore {
 /** A store whose edits to one board wait for commit(). */
 export type StagedStore = BoardStore & {
   /**
-   * Saves the held edits to the store underneath, in order, one version each. `asOne` saves
-   * only where they ended up, as a single version, so an edit that was later corrected never
-   * reaches the store; when the board changed underneath meanwhile, the edits go one by one.
+   * Saves the held edits to the store underneath, all of them or none. In order, one version
+   * each; `asOne` saves only where they ended up, as a single version, so an edit that was later
+   * corrected never reaches the store. When the board changed underneath meanwhile, the edits
+   * are applied again on top of that change and saved as one version, or, when one of them no
+   * longer applies, nothing is saved and commit throws, saying which.
    */
   commit(opts?: { asOne?: boolean }): Promise<void>;
   /** Drops the held edits: the board stays as the store underneath has it. */
@@ -179,7 +185,7 @@ export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
       const result = applyOps(board.config, input.ops, input.catalogue);
       if (!result.ok) return { ok: false, error: result.error, hint: result.hint, opIndex: result.opIndex };
       const source = input.source ?? "ops";
-      return { ok: true, board: hold(board, result.config, source, describeOps(input.ops), { ops: input.ops, catalogue: input.catalogue, source }) };
+      return { ok: true, board: hold(board, result.config, source, describeOps(input.ops, board.config), { ops: input.ops, catalogue: input.catalogue, source }) };
     },
     async replaceConfig(input) {
       if (input.id !== boardId) return inner.replaceConfig(input);
@@ -205,17 +211,44 @@ export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
       held = [];
       base = null;
       if (!last || !from) return;
-      if (opts.asOne && (await inner.get(boardId))?.version === from.version) {
-        const summary = describeChanges(from.config, last.config).join(", ") || last.summary;
-        await inner.replaceConfig({ id: boardId, config: last.config, source: last.source, summary });
+      const now = await inner.get(boardId);
+      if (!now) throw new Error(`No board called "${boardId}"`);
+      const saveOne = (before: BoardConfig, config: BoardConfig) =>
+        inner.replaceConfig({ id: boardId, config, source: last.source, summary: describeChanges(before, config).join(", ") || last.summary });
+      if (now.version !== from.version) {
+        // Changed meanwhile (by hand, or in the host). The ops are applied again rather than their
+        // result copied, so that change is kept, all of them before anything is saved: a turn
+        // whose later edit no longer fits is saved not at all rather than in part.
+        let config = now.config;
+        for (const w of writes) {
+          if (!("ops" in w)) config = w.config;
+          else {
+            const r = applyOps(config, w.ops, w.catalogue);
+            if (!r.ok) throw new Error(`the board was changed meanwhile, and "${describeOps(w.ops, config)}" no longer fits it (${r.error}). Nothing was saved`);
+            config = r.config;
+          }
+        }
+        await saveOne(now.config, config);
         return;
       }
-      // Ops are applied again rather than their result copied, so an edit made meanwhile by hand is kept.
-      for (const w of writes) {
-        if ("ops" in w) {
-          const r = await inner.patch({ id: boardId, ...w });
-          if (!r.ok) throw new Error(r.error);
-        } else await inner.replaceConfig({ id: boardId, ...w });
+      if (opts.asOne) {
+        await saveOne(from.config, last.config);
+        return;
+      }
+      let saved = 0;
+      try {
+        for (const w of writes) {
+          if ("ops" in w) {
+            const r = await inner.patch({ id: boardId, ...w });
+            if (!r.ok) throw new Error(r.error);
+          } else await inner.replaceConfig({ id: boardId, ...w });
+          saved++;
+        }
+      } catch (e) {
+        // The store underneath refused a later edit (a host that would not take it): the board goes
+        // back to where it was, so the turn is not left saved in part.
+        if (saved) await inner.revertTo(boardId, from.version);
+        throw e;
       }
     },
     discard() {

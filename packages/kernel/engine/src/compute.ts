@@ -1,5 +1,5 @@
-import { type ComputeStep, type Grain, type MeasuredQuery, type Query, computeGrain, computeProblem, grainWords, overTime } from "@lenspack/core";
-import { type MeasureExpr, type Pack, expandedExpr } from "@lenspack/pack";
+import { type ComputeStep, type Grain, type MeasureNature as Nature, type MeasuredQuery, type Query, computeGrain, computeProblem, grainWords, overTime } from "@lenspack/core";
+import { type Pack, natureOf } from "@lenspack/pack";
 
 import { bucketZone, localWallClock } from "./calendar";
 import { type DataRow, type Format, MAX_SERIES, SPLIT_ROWS, type WidgetData, limitGroups, sortGroups, sortSeries } from "./data";
@@ -16,60 +16,14 @@ export const COMPUTE_ROWS = 20_000;
 // Time buckets × groups the steps run over, gaps included.
 const GRID_CELLS = 200_000;
 
-/**
- * How a measure's numbers behave across time buckets. A count or a sum adds
- * up, and a bucket with no records is 0. A distinct count is 0 there too, but
- * does not add up (one key on two days would count twice). Anything else (an
- * average, a percentile, a ratio) neither adds up nor exists for an empty bucket.
- */
-type Nature = "adds" | "distinct" | "level";
-
-export function natureOf(pack: Pack, key: string): Nature {
-  const m = pack.measures.find((x) => x.key === key);
-  if (!m || m.format === "percent") return "level";
-  if (m.levels) return natureOf(pack, Object.values(m.levels)[0]!);
-  if (m.derived) {
-    // Sums and differences of measures that add up add up; any other arithmetic is a level.
-    const adds = (e: MeasureExpr): boolean =>
-      e.t === "measure" ? natureOf(pack, e.key) === "adds" : e.t === "neg" ? adds(e.arg) : e.t === "op" ? (e.op === "+" || e.op === "-") && adds(e.l) && adds(e.r) : false;
-    const expr = expandedExpr(pack, m.key);
-    return expr.t === "measure" ? natureOf(pack, expr.key) : adds(expr) ? "adds" : "level";
-  }
-  return m.agg === "count" || m.agg === "sum" ? "adds" : m.agg === "count_distinct" ? "distinct" : "level";
-}
-
 const labelOf = (pack: Pack, key: string) => (pack.measures.find((m) => m.key === key)?.label ?? key.replace(/_/g, " ")).toLowerCase();
 
-/** The refusal for a compute that cannot be done on this pack, or null. */
+/** The refusal for a compute that cannot be done on this pack, or null: core's rules, told the measure's nature. */
 export function computeRefusal(query: Query, pack: Pack): ResolveError | null {
   if (!("compute" in query) || !query.compute) return null;
-  const problem = computeProblem(query);
-  if (problem) return new ResolveError("NOT_SUPPORTED", problem.error, query.measure, problem.hint);
-  const grain = computeGrain(query) ?? "day";
-  const { plural } = grainWords(grain);
-  // What the numbers are at each step, and why they stopped adding up.
-  let nature: Nature | "rate" = natureOf(pack, query.measure);
-  let why = "";
-  const name = `"${query.measure}"`;
-  for (const s of query.compute.steps) {
-    const adding = s.op === "running_total" || (s.op === "rolling" && s.fn === "sum") || (s.op === "over_time" && s.fn === "sum");
-    if (adding && nature !== "adds") {
-      const alternative = s.op === "running_total" ? "Use last for the latest value, or mean for the average" : "Use mean (or min, max, median) instead";
-      const reason =
-        why ||
-        (nature === "distinct"
-          ? `${name} is a distinct count: one key seen on two ${plural} would count twice, so it is not added up over time (ask for it over the whole window, without steps, for the distinct count of the period)`
-          : pack.measures.find((m) => m.key === query.measure)?.format === "percent"
-            ? `${name} is a percentage, and a percentage is never added up`
-            : `${name} is an average or another level (not a count or a sum), which does not add up over time`);
-      return new ResolveError("NOT_SUPPORTED", `${reason}. ${alternative}`, query.measure, "mean");
-    }
-    if (s.op === "ratio") [nature, why] = ["rate", "A ratio is never added up"];
-    else if (s.op === "change") [nature, why] = s.percent ? ["rate", "A percentage change is never added up"] : ["adds", ""];
-    else if (s.op === "rolling") [nature, why] = s.fn === "mean" ? ["level", "A rolling average is never added up"] : ["level", "A rolling sum is not added up again: every record would count several times"];
-    else if (s.op === "running_total") [nature, why] = ["level", "A running total is not added up again"];
-  }
-  return null;
+  const format = pack.measures.find((m) => m.key === query.measure)?.format;
+  const problem = computeProblem(query, { format: format ?? "number", nature: natureOf(pack, query.measure) });
+  return problem ? new ResolveError("NOT_SUPPORTED", problem.error, query.measure, problem.hint) : null;
 }
 
 type Breakdown = Extract<Query, { kind: "breakdown" }>;

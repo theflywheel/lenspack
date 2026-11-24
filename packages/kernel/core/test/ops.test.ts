@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { applyOps, compact, migrateKeys, nearest, opSchema, pack, type BoardOp } from "../src/ops";
-import { emptyBoard, widgetSchema, type BoardConfig } from "../src/schema";
+import { checkQuery, nearest } from "../src/check";
+import { compact, pack } from "../src/layout";
+import { applyOps, opSchema, type BoardOp } from "../src/ops";
+import { boardConfigSchema, emptyBoard, migrateKeys, queryKeys, widgetSchema, type BoardConfig, type Query } from "../src/schema";
 import { catalogue, packRef } from "./fixtures";
 
 // The validator is the trust boundary: if it passes, the board renders
@@ -320,6 +322,69 @@ describe("migrations", () => {
     expect(w.kind === "chart" && w.query.filters?.[0]?.dimension).toBe("medium");
     expect(migrated.filters[0]?.field).toBe("area");
   });
+
+  it("renames a ratio's second measure, and never an entity", () => {
+    const ratio: Query = { kind: "value", measure: "count", compute: { steps: [{ op: "ratio", to: "amount" }] } };
+    const rows: Query = { kind: "rows", entity: "items", columns: ["region"], limit: 50, orderBy: { key: "region", dir: "desc" } };
+    const board = boardConfigSchema.parse({ ...empty(), widgets: { r: kpi({ query: ratio }), t: { kind: "table", title: "T", query: rows } } });
+    const migrated = migrateKeys(board, { amount: "total", items: "things", region: "area" });
+    expect(migrated.widgets.r).toMatchObject({ query: { compute: { steps: [{ op: "ratio", to: "total" }] } } });
+    expect(migrated.widgets.t).toMatchObject({ query: { entity: "items", columns: ["area"], orderBy: { key: "area" } } });
+    // The board passed in is left as it was.
+    expect(board.widgets.r).toMatchObject({ query: { compute: { steps: [{ to: "amount" }] } } });
+    expect(queryKeys(ratio)).toEqual({ dimensions: [], measures: ["amount", "count"], entities: [] });
+    expect(queryKeys(rows)).toEqual({ dimensions: ["region"], measures: [], entities: ["items"] });
+  });
+});
+
+describe("a KPI saved with an aggregate", () => {
+  const series = { kind: "series", measure: "count", grain: "week", time: { last: "12w" }, filters: [{ dimension: "region", op: "eq", value: "north" }] };
+  const saved = (aggregate: string, query: object = series) => widgetSchema.parse({ kind: "kpi", title: "K", aggregate, query });
+
+  it("loads as a value query whose last step is that summary over the series' buckets", () => {
+    const value = (fn: string, steps: object[] = []) => ({ kind: "kpi", title: "K", query: { kind: "value", measure: "count", time: { last: "12w" }, filters: series.filters, compute: { grain: "week", steps: [...steps, { op: "over_time", fn }] } } });
+    expect(saved("sum")).toEqual(value("sum"));
+    expect(saved("avg")).toEqual(value("mean"));
+    expect(saved("max")).toEqual(value("max"));
+    expect(saved("min")).toEqual(value("min"));
+    const rolling = { op: "rolling", fn: "mean", window: 4 };
+    expect(saved("avg", { ...series, compute: { steps: [rolling] } })).toEqual(value("mean", [rolling]));
+  });
+
+  it("drops the field where the KPI already shows the latest bucket, or no step says the same", () => {
+    const kept = { kind: "kpi", title: "K", query: { ...series, kind: "series" } };
+    expect(saved("last")).toEqual(kept);
+    expect(saved("count")).toEqual(kept);
+    expect(saved("sum", { ...series, by: "channel" })).toEqual({ ...kept, query: { ...series, by: "channel" } });
+    expect(saved("sum", { kind: "value", measure: "count" })).toEqual({ kind: "kpi", title: "K", query: { kind: "value", measure: "count" } });
+  });
+
+  it("keeps an old board loading, and its summaries obey the compute rules", () => {
+    const board = boardConfigSchema.parse({ ...empty(), layout: [{ i: "k", x: 0, y: 0, w: 4, h: 3 }], widgets: { k: { kind: "kpi", title: "K", aggregate: "avg", query: series } } });
+    expect(apply(board, [{ op: "set_title", title: "Still loads" }]).ok).toBe(true);
+    // A percentage summed up was a wrong number on the board; now it is a refusal that says why.
+    const summed = saved("sum", { ...series, measure: "share_rate" });
+    expect(summed.kind !== "text" && checkQuery(summed.query, catalogue)).toMatchObject({ error: expect.stringMatching(/percentage, and a percentage is never added up/), hint: "mean" });
+  });
+});
+
+describe("the never-add-up rule on a board", () => {
+  const sum = (measure: string, steps: object[] = []) => ({ kind: "value", measure, compute: { grain: "day", steps: [...steps, { op: "over_time", fn: "sum" }] } }) as Query;
+  const withNature = (nature: "adds" | "distinct" | "level") => ({ ...catalogue, measures: catalogue.measures.map((m) => (m.key === "count" ? { ...m, nature } : m)) });
+
+  it("refuses a sum over time of what does not add up, as the engine would", () => {
+    expect(checkQuery(sum("count"), withNature("adds"))).toBeNull();
+    expect(checkQuery(sum("count"), withNature("distinct"))).toMatchObject({ error: expect.stringMatching(/distinct count: one key seen on two days would count twice/), hint: "mean" });
+    expect(checkQuery(sum("count"), withNature("level"))).toMatchObject({ error: expect.stringMatching(/average or another level/) });
+  });
+
+  it("refuses a sum of a ratio, a % change or a rolling window even when the catalogue does not say how the measure adds up", () => {
+    expect(checkQuery(sum("count"), catalogue)).toBeNull();
+    expect(checkQuery(sum("count", [{ op: "ratio", to: "amount" }]), catalogue)).toMatchObject({ error: expect.stringMatching(/A ratio is never added up/) });
+    expect(checkQuery(sum("count", [{ op: "change", percent: true }]), catalogue)).toMatchObject({ error: expect.stringMatching(/A percentage change is never added up/) });
+    expect(checkQuery(sum("count", [{ op: "rolling", fn: "mean", window: 7 }]), catalogue)).toMatchObject({ error: expect.stringMatching(/A rolling average is never added up/) });
+    expect(checkQuery(sum("count", [{ op: "change" }]), catalogue)).toBeNull();
+  });
 });
 
 describe("packing", () => {
@@ -372,7 +437,7 @@ describe("packing", () => {
 
 describe("further measures on one widget", () => {
   it("checks every measure key and refuses what a widget cannot draw", async () => {
-    const { checkQuery } = await import("../src/ops");
+    const { checkQuery } = await import("../src/check");
     const cat = {
       pack: "p", version: 1,
       entities: [{ key: "e", hasTime: true, hasTenant: false }],

@@ -195,7 +195,7 @@ export type LayoutItem = z.infer<typeof layoutItemSchema>;
 
 const baseWidget = { title: z.string().min(1).max(120) };
 
-export const widgetSchema = z.discriminatedUnion("kind", [
+export const widgetSchema = z.preprocess(migrateKpi, z.discriminatedUnion("kind", [
   z.object({
     ...baseWidget,
     kind: z.literal("chart"),
@@ -209,13 +209,13 @@ export const widgetSchema = z.discriminatedUnion("kind", [
       })
       .default({}),
   }),
+  // One number: a value query's answer, or a series' latest bucket drawn with its trend.
+  // A summary of the buckets (the mean per day, the total) is a value query whose
+  // compute ends with over_time.
   z.object({
     ...baseWidget,
     kind: z.literal("kpi"),
     query: querySchema,
-    // Only meaningful when the query is a series: how the points collapse to
-    // one number. A value query is already one number.
-    aggregate: z.enum(["sum", "avg", "max", "min", "count", "last"]).default("last"),
     format: z.enum(FORMATS).optional(),
   }),
   z.object({
@@ -233,8 +233,31 @@ export const widgetSchema = z.discriminatedUnion("kind", [
     // interpreted as code, HTML or CSS.
     body: z.string().max(2000),
   }),
-]);
+]));
 export type Widget = z.infer<typeof widgetSchema>;
+
+// A KPI saved before its summary over time was a compute step carries `aggregate`:
+// how the renderer folded a series' buckets into one number. Read as follows:
+// - "last", or none: dropped. A KPI of a series shows its latest bucket anyway.
+// - "sum", "avg", "max" or "min" on a series: the KPI becomes a value query over the
+//   same window and filters, whose steps end with that summary over the series'
+//   buckets (avg becomes mean). The compute rules then apply: an empty bucket is 0
+//   for a count or a sum and is skipped otherwise, and a percentage or an average is
+//   never added up (such a sum is refused on the widget rather than shown).
+// - Anything else is dropped, and the KPI shows the series' latest bucket: "count"
+//   (how many buckets came back) has no step, a series split by a dimension added
+//   up every split's buckets together, and a compute already four steps long has no
+//   room for one more. On a value query the field never did anything.
+const OVER_TIME = { sum: "sum", avg: "mean", max: "max", min: "min" } as const;
+function migrateKpi(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || (raw as { kind?: unknown }).kind !== "kpi" || !("aggregate" in raw)) return raw;
+  const { aggregate, ...widget } = raw as { aggregate: unknown; query?: { kind?: unknown; by?: unknown; grain?: unknown; measures?: unknown; compute?: { steps?: unknown[] } } };
+  const fn = OVER_TIME[aggregate as keyof typeof OVER_TIME];
+  const q = widget.query;
+  if (!fn || q?.kind !== "series" || q.by || (q.compute?.steps?.length ?? 0) >= 4) return widget;
+  const { grain = "day", measures: _measures, compute, ...rest } = q;
+  return { ...widget, query: { ...rest, kind: "value", compute: { grain, steps: [...(compute?.steps ?? []), { op: "over_time", fn }] } } };
+}
 
 export const filterSchema = z.object({
   id: z.string(),
@@ -307,36 +330,69 @@ export const measured = (query: Query): query is MeasuredQuery => query.kind ===
 export const ratioTo = (query: Query): string[] =>
   measured(query) ? (query.compute?.steps ?? []).flatMap((s) => (s.op === "ratio" ? [s.to] : [])) : [];
 
-/** Every key a query refers to, for validation and for cache keys. */
-export function queryKeys(query: Query): { dimensions: string[]; measures: string[]; entities: string[] } {
-  const dimensions = new Set<string>();
-  const measures = new Set<string>();
-  const entities = new Set<string>();
-  for (const f of query.filters ?? []) dimensions.add(f.dimension);
-  if (measured(query)) for (const m of [...(query.measures ?? []), ...ratioTo(query)]) measures.add(m);
-  switch (query.kind) {
+/** What a key in a query names. */
+export type KeyKind = "dimension" | "measure" | "entity";
+
+/**
+ * Walks every key a query names, a ratio's second measure included: `visit` sees each
+ * key with what it names and returns the key to put in its place. Returns the new
+ * query; the one passed in is left alone.
+ */
+export function mapQueryKeys(query: Query, visit: (key: string, kind: KeyKind) => string): Query {
+  const dim = (key: string) => visit(key, "dimension");
+  const measure = (key: string) => visit(key, "measure");
+  const q = structuredClone(query);
+  for (const clause of q.filters ?? []) clause.dimension = dim(clause.dimension);
+  if (measured(q)) {
+    if (q.measures) q.measures = q.measures.map(measure);
+    for (const s of q.compute?.steps ?? []) if (s.op === "ratio") s.to = measure(s.to);
+  }
+  switch (q.kind) {
     case "breakdown":
-      dimensions.add(query.dimension);
-      if (query.by) dimensions.add(query.by);
-      measures.add(query.measure);
+      q.dimension = dim(q.dimension);
+      if (q.by) q.by = dim(q.by);
+      q.measure = measure(q.measure);
       break;
     case "series":
-      measures.add(query.measure);
-      if (query.by) dimensions.add(query.by);
+      q.measure = measure(q.measure);
+      if (q.by) q.by = dim(q.by);
       break;
     case "value":
-      measures.add(query.measure);
+      q.measure = measure(q.measure);
       break;
     case "rows":
-      entities.add(query.entity);
-      for (const c of query.columns) dimensions.add(c);
-      if (query.orderBy) dimensions.add(query.orderBy.key);
+      q.entity = visit(q.entity, "entity");
+      q.columns = q.columns.map(dim);
+      if (q.orderBy) q.orderBy.key = dim(q.orderBy.key);
       break;
     case "points":
-      entities.add(query.entity);
-      for (const d of [query.color, query.label]) if (d) dimensions.add(d);
-      if (query.size) measures.add(query.size);
+      q.entity = visit(q.entity, "entity");
+      if (q.color) q.color = dim(q.color);
+      if (q.label) q.label = dim(q.label);
+      if (q.size) q.size = measure(q.size);
       break;
   }
-  return { dimensions: [...dimensions], measures: [...measures], entities: [...entities] };
+  return q;
 }
+
+/** Every key a query refers to, for validation and for cache keys. */
+export function queryKeys(query: Query): { dimensions: string[]; measures: string[]; entities: string[] } {
+  const keys = { dimension: new Set<string>(), measure: new Set<string>(), entity: new Set<string>() };
+  mapQueryKeys(query, (key, kind) => (keys[kind].add(key), key));
+  return { dimensions: [...keys.dimension], measures: [...keys.measure], entities: [...keys.entity] };
+}
+
+/**
+ * Renames dimension and measure keys across a board when a pack renames one. A
+ * function, not an op: it runs as a migration by whoever owns the pack, never by the model.
+ */
+export function migrateKeys(config: BoardConfig, renames: Record<string, string>): BoardConfig {
+  const rename = (key: string) => renames[key] ?? key;
+  const widgets = Object.fromEntries(
+    Object.entries(config.widgets).map(([id, w]) => [id, w.kind === "text" ? w : { ...w, query: mapQueryKeys(w.query, (key, kind) => (kind === "entity" ? key : rename(key))) }]),
+  );
+  return boardConfigSchema.parse({ ...config, widgets, filters: config.filters.map((f) => ({ ...f, field: rename(f.field) })) });
+}
+
+/** What is wrong with an edit or a query, and the nearest thing that would work. */
+export type Problem = { error: string; hint?: string };
