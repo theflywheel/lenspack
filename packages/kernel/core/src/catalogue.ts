@@ -7,6 +7,14 @@ import type { DIMENSION_TYPES, FORMATS, GRAINS } from "./schema";
 export type MeasureFormat = (typeof FORMATS)[number];
 export type DimensionType = (typeof DIMENSION_TYPES)[number];
 export type Grain = (typeof GRAINS)[number];
+/**
+ * How a measure's numbers behave across time buckets. adds: a count or a sum; it
+ * adds up, and a bucket with no records is 0. distinct: a distinct count; 0 there
+ * too, but it does not add up (one key seen on two days would count twice).
+ * level: anything else (an average, a percentile, a ratio, a percentage); it
+ * neither adds up nor has a value for an empty bucket.
+ */
+export type MeasureNature = "adds" | "distinct" | "level";
 
 export type CatalogueDimension = {
   key: string;
@@ -24,6 +32,8 @@ export type CatalogueMeasure = {
   label: string;
   entity: string;
   format: MeasureFormat;
+  /** Set by the pack; without it, a board check cannot tell whether the measure adds up over time. */
+  nature?: MeasureNature;
   hint?: string;
   synonyms?: string[];
   verified: boolean;

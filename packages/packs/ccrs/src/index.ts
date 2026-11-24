@@ -304,7 +304,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
     const title = String(viz.title ?? kpi.id);
     const widget =
       kind === "kpi"
-        ? { kind: "kpi", title, query, aggregate: "last" }
+        ? { kind: "kpi", title, query }
         : kind === "table"
           ? { kind: "table", title, query, pageSize: 50 }
           : { kind: "chart", chart: viz.kind === "line" ? "line" : viz.kind === "pie" ? "pie" : "bar", title, query, options: { legend: true, colorScheme: "default" } };

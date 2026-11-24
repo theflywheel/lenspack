@@ -214,7 +214,8 @@ Board config `version: 2`:
 - widgets, filters, grid, layout, placement-as-intent, packing, text-as-text,
   named colour schemes: unchanged from iffy;
 - kpi `aggregate` (`sum|avg|max|min|count|last`) applies only when the KPI's
-  query is a `series`.
+  query is a `series`. (Since replaced by a value query's `over_time` step; old
+  boards are read as described in docs/compute.md.)
 
 `validateConfig(config, catalogue)` takes the catalogue as an argument.
 `ops.ts` ports verbatim: `add_widget`, `update_widget`, `remove_widget`,

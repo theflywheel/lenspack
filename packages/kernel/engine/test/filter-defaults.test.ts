@@ -7,7 +7,7 @@ import { drilledQuery } from "../src";
 // A select filter's default values narrow the widgets it covers until someone picks a value.
 
 describe("a select filter's default", () => {
-  const widget: Widget = { kind: "kpi", title: "Things", aggregate: "last", query: { kind: "value", measure: "things" } } as Widget;
+  const widget: Widget = { kind: "kpi", title: "Things", query: { kind: "value", measure: "things" } } as Widget;
   const config: BoardConfig = {
     ...emptyBoard(pack, "B"),
     widgets: { k: widget },

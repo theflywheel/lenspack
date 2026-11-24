@@ -67,7 +67,7 @@ describe("superset time ranges", () => {
 describe("widgets and charts", () => {
   const { pack, binding } = packFromDatasets(DATASETS, { pack: "t", entities: { "1": "task", "2": "household" } });
   const cases = [
-    { title: "Doses", kind: "kpi", aggregate: "last", query: { kind: "value", measure: "doses_delivered" } },
+    { title: "Doses", kind: "kpi", query: { kind: "value", measure: "doses_delivered" } },
     { title: "By LGA", kind: "chart", chart: "bar", options: { legend: true, colorScheme: "default" }, query: { kind: "breakdown", dimension: "lga", measure: "task_count", limit: 10, sort: "desc", filters: [{ dimension: "state", op: "in", value: ["Sokoto"] }] } },
     { title: "Weekly", kind: "chart", chart: "line", options: { legend: true, colorScheme: "default" }, query: { kind: "series", measure: "task_count", grain: "week", by: "state", time: { last: "12w" } } },
     { title: "Share", kind: "chart", chart: "pie", options: { legend: true, colorScheme: "default" }, query: { kind: "breakdown", dimension: "state", measure: "people", limit: 6, sort: "desc" } },

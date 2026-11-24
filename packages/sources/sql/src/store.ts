@@ -99,7 +99,7 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
         return { ok: false, error: `Board changed since version ${expectedVersion}; it is now v${current.version}` };
       const result = applyOps(current.config, ops, catalogue);
       if (!result.ok) return { ok: false, error: result.error, hint: result.hint, opIndex: result.opIndex };
-      return { ok: true, board: await record(current, id, current.pack, result.config, source, describeOps(ops)) };
+      return { ok: true, board: await record(current, id, current.pack, result.config, source, describeOps(ops, current.config)) };
     },
     async replaceConfig({ id, config, source = "layout", summary = "layout changed" }) {
       const current = await store.get(id);

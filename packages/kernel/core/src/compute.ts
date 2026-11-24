@@ -1,11 +1,9 @@
-import type { Catalogue, Grain } from "./catalogue";
-import { type Compute, type ComputeStep, type MeasuredQuery, type Query, measured } from "./schema";
+import type { CatalogueMeasure, Grain } from "./catalogue";
+import { type Compute, type ComputeStep, type MeasuredQuery, type Problem, type Query, measured } from "./schema";
 
-// The rules a compute obeys whatever the data: which steps go where, and what
-// the grain is. What depends on the measures themselves (whether a number adds
-// up over time) is checked by the engine, which has the pack.
-
-type Problem = { error: string; hint?: string };
+// The rules a compute obeys: which steps go where, what the grain is, and what
+// may be added up. A board check and the engine both ask computeProblem, each
+// passing what it knows of the measure (the catalogue's entry, or the pack's).
 
 /** Steps that read the time buckets: everything but a ratio. */
 export const overTime = (step: ComputeStep) => step.op !== "ratio";
@@ -21,9 +19,10 @@ export const grainWords = (grain: Grain) => ({ adjective: ADJECTIVE[grain], on: 
 
 /**
  * What is wrong with a query's compute, in words that say what would work, or
- * null. Structural only, plus what the catalogue tells (keys, percentages).
+ * null. `measure` is the query's measure as the catalogue or the pack describes
+ * it; without its nature, only what the steps themselves make of it is checked.
  */
-export function computeProblem(query: Query, catalogue?: Catalogue): Problem | null {
+export function computeProblem(query: Query, measure?: Pick<CatalogueMeasure, "format" | "nature"> | null): Problem | null {
   if (!measured(query) || !query.compute) return null;
   const { steps } = query.compute;
   const timed = steps.some(overTime);
@@ -53,10 +52,37 @@ export function computeProblem(query: Query, catalogue?: Catalogue): Problem | n
   } else if (query.compute.grain) {
     return { error: "A ratio alone is computed per group, not per time bucket, so it takes no grain; drop the grain, or add a step over time" };
   }
-  // A percentage is never added up: not over time, not into a running total.
-  if (catalogue?.measures.find((m) => m.key === query.measure)?.format === "percent" && !ratio) {
-    const adds = steps.find((s) => s.op === "running_total" || (s.op === "rolling" && s.fn === "sum") || (s.op === "over_time" && s.fn === "sum"));
-    if (adds) return { error: `"${query.measure}" is a percentage, and percentages are never added up; use mean instead`, hint: "mean" };
+  return addingProblem(query, measure);
+}
+
+/**
+ * The never-add-up rule (docs/compute.md): a sum over time, a rolling sum or a
+ * running total only of numbers that add up. A count or a sum does, and so does
+ * a plain change of one; a percentage, an average, a distinct count, a ratio, a
+ * % change, a rolling window or a running total does not.
+ */
+function addingProblem(query: MeasuredQuery, measure?: Pick<CatalogueMeasure, "format" | "nature"> | null): Problem | null {
+  const name = `"${query.measure}"`;
+  // What the numbers are before each step, and why they stopped adding up. Unknown: no refusal on the measure's own account.
+  let nature = measure?.format === "percent" ? "percent" : measure?.nature;
+  let why = "";
+  for (const s of query.compute!.steps) {
+    const adding = s.op === "running_total" || (s.op === "rolling" && s.fn === "sum") || (s.op === "over_time" && s.fn === "sum");
+    if (adding && nature !== undefined && nature !== "adds") {
+      const alternative = s.op === "running_total" ? "Use last for the latest value, or mean for the average" : "Use mean (or min, max, median) instead";
+      const reason =
+        why ||
+        (nature === "distinct"
+          ? `${name} is a distinct count: one key seen on two ${grainWords(computeGrain(query) ?? "day").plural} would count twice, so it is not added up over time (ask for it over the whole window, without steps, for the distinct count of the period)`
+          : nature === "percent"
+            ? `${name} is a percentage, and a percentage is never added up`
+            : `${name} is an average or another level (not a count or a sum), which does not add up over time`);
+      return { error: `${reason}. ${alternative}`, hint: "mean" };
+    }
+    if (s.op === "ratio") [nature, why] = ["level", "A ratio is never added up"];
+    else if (s.op === "change") [nature, why] = s.percent ? ["level", "A percentage change is never added up"] : ["adds", ""];
+    else if (s.op === "rolling") [nature, why] = ["level", s.fn === "mean" ? "A rolling average is never added up" : "A rolling sum is not added up again: every record would count several times"];
+    else if (s.op === "running_total") [nature, why] = ["level", "A running total is not added up again"];
   }
   return null;
 }

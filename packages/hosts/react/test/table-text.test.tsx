@@ -97,7 +97,7 @@ describe("a computed answer", () => {
   it("is labelled with what was computed, in a table and on a KPI", async () => {
     const c = config([
       { op: "add_widget", id: "t", widget: { kind: "table", title: "Per region", query: { kind: "breakdown", dimension: "region", measure: "count", limit: 12, sort: "desc", compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } }, pageSize: 10 } },
-      { op: "add_widget", id: "k", widget: { kind: "kpi", title: "Daily", aggregate: "last", query: { kind: "value", measure: "count", compute: { grain: "day", steps: [{ op: "change", percent: true }, { op: "over_time", fn: "mean" }] } } } },
+      { op: "add_widget", id: "k", widget: { kind: "kpi", title: "Daily", query: { kind: "value", measure: "count", compute: { grain: "day", steps: [{ op: "change", percent: true }, { op: "over_time", fn: "mean" }] } } } },
     ]);
     const computed = "average daily count: a day with no records counts as 0";
     const t: WidgetData = { rows: [{ group: "north", value: 2.5, count: 10 }], total: 10, format: "number", label: "average daily count", computed };

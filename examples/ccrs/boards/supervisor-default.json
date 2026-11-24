@@ -14,8 +14,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -31,8 +30,7 @@
         "query": {
           "kind": "value",
           "measure": "complaints_open_sla_breached"
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -52,8 +50,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -73,8 +70,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",
@@ -94,8 +90,7 @@
           "time": {
             "last": "7d"
           }
-        },
-        "aggregate": "last"
+        }
       },
       "placement": {
         "place": "bottom",

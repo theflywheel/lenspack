@@ -41,6 +41,24 @@ Where each step may go:
 The query's kind is the shape of the answer. A computed `breakdown` draws as bars or a table, a computed `series`
 as a line, a computed `value` as a single number.
 
+A KPI is one number. Over a `series` it shows the latest bucket, with the trend where the host draws one. A summary
+of the buckets (the average per day, the total over the weeks) is a `value` whose steps end with `over_time`, so it
+follows the rules below like any other computed number.
+
+Boards saved before this carry an `aggregate` field on a KPI: how the renderer used to fold a series into one number.
+It is read when the board loads, and never saved again:
+
+| saved `aggregate` | read as |
+|---|---|
+| none, or `last` | dropped: the KPI shows the series' latest bucket, as it did |
+| `sum`, `avg`, `max`, `min`, on a series | a `value` over the same window and filters, with `compute: { grain: <the series' grain>, steps: [<its steps>, { op: "over_time", fn }] }` (`avg` becomes `mean`) |
+| anything else | dropped, and the KPI shows the series' latest bucket |
+
+"Anything else" is `count` (how many buckets came back, which no step gives), a series split by a dimension (the old
+fold added every split's buckets together), a series that already has four steps, and any value on a `value` query,
+where the field never did anything. A summary read this way obeys the rules below: a percentage or an average is not
+added up, so such a `sum` is refused on the widget, with a way forward, instead of showing a wrong number.
+
 ## Examples
 
 **Burn rate per ward.** The source answers units dispatched per ward and day; the engine averages each ward's days.
@@ -95,7 +113,7 @@ These rules are the same on every source, and the answer says which ones applied
 - **Ratios and percentages are never added up.** `sum` over time, `rolling` sums and running totals are refused for
   a percentage, an average, a ratio, a % change, a rolling average or a running total. A distinct count is not
   added up either (one key seen on two days would count twice); use `mean`, or ask for the distinct count over the
-  whole window without steps.
+  whole window without steps. The rule is checked when a widget is added or changed, and again when it is run.
 - **Relative change** is `(this - before) / |before|`, as the previous-period comparison already computes it.
 
 ## Size

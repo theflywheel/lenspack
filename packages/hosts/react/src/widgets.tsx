@@ -63,23 +63,12 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
   return <Chart spec={spec} />;
 }
 
-// How a series KPI folds its buckets into one number; an unknown aggregate takes the last.
-const sum = (vs: number[]) => vs.reduce((a, b) => a + b, 0);
-const AGGREGATES: Record<Extract<Widget, { kind: "kpi" }>["aggregate"], (vs: number[]) => number> = {
-  sum,
-  avg: (vs) => sum(vs) / vs.length,
-  max: (vs) => Math.max(...vs),
-  min: (vs) => Math.min(...vs),
-  count: (vs) => vs.length,
-  last: (vs) => vs.at(-1)!,
-};
-
 export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
   const { catalogue } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
-  const values = data.rows.map((r) => r.value ?? 0);
-  const value = values.length === 0 ? null : widget.query.kind !== "series" ? (data.rows[0]?.value ?? null) : (AGGREGATES[widget.aggregate] ?? AGGREGATES.last)(values);
+  // A series KPI shows its latest bucket; a summary over the buckets is the engine's (a value query's compute).
+  const value = (widget.query.kind === "series" ? data.rows.at(-1) : data.rows[0])?.value ?? null;
   const delta = formatDelta(data.compare?.delta);
   const more = widget.query.kind === "value" ? (data.measures ?? []).slice(1) : [];
   return (

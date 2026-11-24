@@ -127,7 +127,7 @@ describe("maps in Superset", () => {
     expect(add(cases[0]).ok).toBe(true);
     expect(add({ ...cases[0], query: { kind: "points", entity: "visit", limit: 10 } })).toMatchObject({ ok: false, error: expect.stringMatching(/"visit" has no location.*these do: site/) });
     expect(add({ ...cases[0], query: { kind: "breakdown", dimension: "band", measure: "sites" } })).toMatchObject({ ok: false, error: expect.stringMatching(/A map draws a points query/) });
-    expect(add({ title: "t", kind: "kpi", aggregate: "last", query: cases[0].query })).toMatchObject({ ok: false, error: expect.stringMatching(/drawn as a map chart, or listed in a table/) });
+    expect(add({ title: "t", kind: "kpi", query: cases[0].query })).toMatchObject({ ok: false, error: expect.stringMatching(/drawn as a map chart, or listed in a table/) });
     expect(add({ ...cases[0], query: { ...cases[0].query, size: "visits" } })).toMatchObject({ ok: false, error: expect.stringMatching(/must be a measure of the points' own entity/) });
   });
 });
