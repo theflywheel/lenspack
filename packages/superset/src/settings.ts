@@ -1,0 +1,94 @@
+// Settings an admin changes on a running server, from Superset's Settings →
+// AI assistant page: one JSON file in the state directory, one section per
+// concern (speech, language, chat), each section written whole. Writes go to a
+// temporary file and are renamed into place, so a crash never leaves half a file. A write the disk refuses
+// (full, read-only) changes nothing, in memory or on disk, and throws SettingsSaveError, which the server
+// answers with 503.
+
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import type { IncomingMessage } from "node:http";
+import { join } from "node:path";
+
+export type SettingsStore = {
+  /** A section as last saved, or undefined (the deployment's default applies). */
+  get<T>(section: string): T | undefined;
+  /** Replaces a section; undefined removes it (back to the default). Saved at once. */
+  set(section: string, value: unknown): void;
+  /** Where the file is, for logs. */
+  path: string;
+};
+
+/** Why the disk refused a write, in words for an admin. */
+export function diskProblem(e: unknown): string {
+  const code = (e as { code?: string })?.code;
+  if (code === "ENOSPC") return "the disk is full";
+  if (code === "EDQUOT") return "the disk quota is used up";
+  if (code === "EROFS") return "the disk is read-only";
+  if (code === "EACCES" || code === "EPERM") return "it has no permission to write there";
+  return e instanceof Error ? e.message : String(e);
+}
+
+export class SettingsSaveError extends Error {
+  constructor(readonly cause: unknown) {
+    super(`Lenspack can't save settings: ${diskProblem(cause)}. Nothing was changed.`);
+  }
+}
+
+/** Writes a file whole or not at all: a temporary file renamed into place, removed again if the write fails. */
+export function writeWhole(path: string, text: string) {
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, text);
+    renameSync(tmp, path);
+  } catch (e) {
+    rmSync(tmp, { force: true });
+    throw e;
+  }
+}
+
+export function settingsStore(stateDir: string, file = "settings.json"): SettingsStore {
+  mkdirSync(stateDir, { recursive: true });
+  const path = join(stateDir, file);
+  const data: Record<string, unknown> = existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : {};
+  return {
+    path,
+    get: <T>(section: string) => data[section] as T | undefined,
+    set(section, value) {
+      const next = { ...data };
+      if (value === undefined) delete next[section];
+      else next[section] = value;
+      try {
+        writeWhole(path, JSON.stringify(next, null, 2));
+      } catch (e) {
+        throw new SettingsSaveError(e);
+      }
+      // Only once it is on disk does the new value count.
+      if (value === undefined) delete data[section];
+      else data[section] = value;
+    },
+  };
+}
+
+/** A small JSON request body (a settings form), refusing anything over max bytes. */
+export function readJson(req: IncomingMessage, max = 10_000): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (c) => {
+      body += c;
+      if (body.length > max) {
+        reject(new Error("body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try {
+        const v = JSON.parse(body || "{}") as unknown;
+        if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("body must be a JSON object");
+        resolve(v as Record<string, unknown>);
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
+    });
+    req.on("error", reject);
+  });
+}

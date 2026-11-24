@@ -353,7 +353,7 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
         draft.widgets[op.id] = op.widget;
         const placement = placementSchema.parse(op.placement ?? {});
         const w = widthUnits(placement.width, cols);
-        const h = placement.height ?? defaultHeight(op.widget.kind);
+        const h = placement.height ?? defaultHeight(op.widget.kind === "chart" ? op.widget.chart : op.widget.kind);
         const item = place(draft.layout, op.id, w, h, placement, cols, floors);
         draft.layout.push(item);
         touched.add(op.id);
@@ -511,7 +511,7 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
 }
 
 function defaultHeight(kind: string) {
-  return kind === "kpi" ? 3 : kind === "text" ? 3 : 7;
+  return kind === "kpi" ? 3 : kind === "text" ? 3 : kind === "heatmap" ? 9 : 7;
 }
 
 // Gravity: everything floats up until it rests on something. The same rule
@@ -617,7 +617,7 @@ export function checkQuery(query: Query, catalogue: Catalogue): Problem | null {
   for (const clause of query.filters ?? []) {
     if (!findDimension(catalogue, clause.dimension)) return noDim(clause.dimension);
   }
-  if (query.kind !== "rows" && query.measures) {
+  if ((query.kind === "breakdown" || query.kind === "series" || query.kind === "value") && query.measures) {
     for (const key of query.measures) if (!findMeasure(catalogue, key)) return noMeasure(key);
     if (query.measures.includes(query.measure)) return { error: `"${query.measure}" is already the widget's measure; list only the others in measures` };
     if (query.kind === "series" && query.by) return { error: "A series split by a dimension draws one measure; drop by, or drop measures", hint: "measures" };
@@ -665,6 +665,22 @@ export function checkQuery(query: Query, catalogue: Catalogue): Problem | null {
       if (query.orderBy && !findDimension(catalogue, query.orderBy.key)) return noDim(query.orderBy.key);
       return null;
     }
+    case "points": {
+      const ent = findEntity(catalogue, query.entity);
+      if (!ent) return { error: `"${query.entity}" is not an entity in this pack`, hint: nearest(query.entity, catalogue.entities.map((e) => e.key)) ?? undefined };
+      if (!ent.hasLocation) {
+        const located = catalogue.entities.filter((e) => e.hasLocation).map((e) => e.key);
+        return { error: `"${query.entity}" has no location (latitude and longitude), so it cannot be drawn as points` + (located.length ? `; these do: ${located.join(", ")}` : "; no entity in this pack has one"), hint: located[0] };
+      }
+      for (const key of [query.color, query.label]) if (key !== undefined && !findDimension(catalogue, key)) return noDim(key);
+      if (query.color !== undefined && findDimension(catalogue, query.color)!.type === "time") return { error: `"${query.color}" is a time dimension; colour points by a category`, hint: "color" };
+      if (query.size !== undefined) {
+        const m = findMeasure(catalogue, query.size);
+        if (!m) return noMeasure(query.size);
+        if (m.entity !== query.entity) return { error: `"${query.size}" is measured on "${m.entity}", not "${query.entity}": a point's size must be a measure of the points' own entity` };
+      }
+      return null;
+    }
   }
 }
 
@@ -678,6 +694,21 @@ function checkWidget(widget: Widget, catalogue: Catalogue): Problem | null {
   // table can show both the split and several measures as columns.
   if (widget.kind === "chart" && widget.query.kind === "breakdown" && widget.query.by && widget.query.measures?.length)
     return { error: "A breakdown split by a second dimension draws one measure; drop by, or drop measures, or make it a table", hint: "measures" };
+
+  // Points go on a map (or in a table); a map draws nothing else.
+  if (widget.query.kind === "points" && widget.kind !== "table" && !(widget.kind === "chart" && widget.chart === "map"))
+    return { error: "A points query is drawn as a map chart, or listed in a table", hint: "map" };
+  if (widget.kind === "chart" && widget.chart === "map" && widget.query.kind !== "points")
+    return { error: "A map draws a points query: the rows of an entity with a location", hint: "points" };
+
+  // A heatmap shades one measure over two dimensions: columns and rows.
+  if (widget.kind === "chart" && widget.chart === "heatmap") {
+    const q = widget.query;
+    if (q.kind !== "breakdown" && q.kind !== "series") return { error: "A heatmap shades a measure over two dimensions: a breakdown with a split, or a series split by a dimension", hint: "breakdown" };
+    if (!q.by) return { error: `A heatmap needs rows as well as columns: split the ${q.kind === "series" ? "series" : "breakdown"} by a second dimension`, hint: "split" };
+    if (q.measures?.length) return { error: "A heatmap shades one measure; several measures need a table", hint: "table" };
+    if (q.kind === "breakdown" && (q.compare || q.share || q.other)) return { error: "A heatmap shows the measure itself: no previous period, share or other row", hint: "table" };
+  }
 
   // A pie divides a whole into parts, and a rate is not part of anything.
   if (widget.kind === "chart" && widget.chart === "pie") {
@@ -702,7 +733,7 @@ export function migrateKeys(config: BoardConfig, renames: Record<string, string>
     if (widget.kind === "text") continue;
     const q = widget.query;
     for (const clause of q.filters ?? []) clause.dimension = rename(clause.dimension);
-    if (q.kind !== "rows" && q.measures) q.measures = q.measures.map(rename);
+    if ((q.kind === "breakdown" || q.kind === "series" || q.kind === "value") && q.measures) q.measures = q.measures.map(rename);
     if (q.kind === "breakdown") {
       q.dimension = rename(q.dimension);
       if (q.by) q.by = rename(q.by);
@@ -712,6 +743,10 @@ export function migrateKeys(config: BoardConfig, renames: Record<string, string>
       if (q.by) q.by = rename(q.by);
     } else if (q.kind === "value") {
       q.measure = rename(q.measure);
+    } else if (q.kind === "points") {
+      if (q.color) q.color = rename(q.color);
+      if (q.size) q.size = rename(q.size);
+      if (q.label) q.label = rename(q.label);
     } else {
       q.columns = q.columns.map(rename);
       if (q.orderBy) q.orderBy.key = rename(q.orderBy.key);

@@ -25,6 +25,12 @@ export type Principal = {
   maintain?: boolean;
   /** The packs this caller may open; absent means all. */
   packs?: string[];
+  /**
+   * Set when the caller may read a board and ask about it, but not change it: the chat still answers,
+   * and every edit tool replies with this message (e.g. "you can view this dashboard but not edit it").
+   * Absent, a caller without the edit right gets 403 from the chat, as before.
+   */
+  readOnly?: string;
 };
 
 /** Decides who a request is. null: not signed in (401). */

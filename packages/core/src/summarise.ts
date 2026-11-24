@@ -20,7 +20,9 @@ export function summarise(config: BoardConfig) {
     const widget = config.widgets[item.i];
     if (!widget) continue;
     const kind = widget.kind === "chart" ? widget.chart : widget.kind;
-    const what = widget.kind === "text" ? "" : ` ${describeQuery(widget.query)}`;
+    // A text tile's own words, briefly: it may stand in for a chart lenspack cannot draw, and
+    // the model should be able to say what it is.
+    const what = widget.kind === "text" ? (widget.body.trim() ? ` says “${excerpt(widget.body, 200)}”` : "") : ` ${describeQuery(widget.query)}`;
     const line = rows.get(item.y) ?? [];
     line.push(`${item.i} (${kind}, ${widthWords(item.w, config.grid.cols)})${what} “${widget.title}”`);
     rows.set(item.y, line);
@@ -35,6 +37,11 @@ export function summarise(config: BoardConfig) {
     .join("\n");
 }
 
+function excerpt(text: string, max: number) {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`;
+}
+
 export function describeQuery(query: Query) {
   const time = query.time ? ` ${describeTime(query.time)}` : "";
   switch (query.kind) {
@@ -46,6 +53,8 @@ export function describeQuery(query: Query) {
       return `${withMore(query)}${query.compare ? " vs previous" : ""}${time}`;
     case "rows":
       return `${query.entity} rows [${query.columns.join(", ")}]${time}`;
+    case "points":
+      return `${query.entity} points${query.color ? ` coloured by ${query.color}` : ""}${query.size ? ` sized by ${query.size}` : ""}${query.label ? ` named by ${query.label}` : ""}${query.limit !== 5000 ? ` top ${query.limit}` : ""}${time}`;
   }
 }
 

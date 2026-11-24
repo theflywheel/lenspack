@@ -35,6 +35,20 @@ describe("memory store", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("quotes the start of a text tile, so a placeholder for a chart says what it stands for", async () => {
+    const store = memoryStore();
+    await store.create({ id: "t", pack: packRef, title: "T" });
+    const long = `Kept as Superset has it: a heatmap of visits by site and day. ${"More words here. ".repeat(20)}`;
+    const r = await store.patch({ id: "t", catalogue, ops: [{ op: "add_widget", id: "n", widget: { kind: "text", title: "Visits, site by day", body: long } }] });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const text = summarise(r.board.config);
+    expect(text).toContain("n (text, half width (6/12)) says “Kept as Superset has it: a heatmap of visits by site and day.");
+    const quoted = /says “(.*?)”/.exec(text)![1]!;
+    expect(quoted.length).toBeLessThanOrEqual(200);
+    expect(quoted.endsWith("…")).toBe(true);
+  });
+
   it("summarises by row", async () => {
     const store = memoryStore();
     await store.create({ id: "x", pack: packRef, title: "T" });

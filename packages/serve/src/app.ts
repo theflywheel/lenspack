@@ -12,9 +12,10 @@ import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Access, Audit, Principal } from "./auth";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
-import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, turnCost, usageLedger, withMeter } from "./metering";
-import { catalogueText, systemParts } from "./prompt";
+import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
+import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
+import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
 export const CLOSING_PROMPT =
@@ -49,6 +50,8 @@ export type AppOptions = {
   providers?: Provider[];
   /** `{ reviewer, escalate }` provider names. */
   roles?: { reviewer?: string; escalate?: string };
+  /** False turns the reviewer off for every turn (a deployment's switch, read per turn). Absent means on. */
+  review?: () => boolean;
   log?: (line: string) => void;
   /**
    * Who a request is. Absent, the API is open: anyone who reaches it may read
@@ -71,6 +74,20 @@ export type AppOptions = {
   usageSinks?: UsageSink[];
   /** Daily caps on priced chat spend; over one, chat answers 429 before any model call. */
   budget?: Budget;
+  /**
+   * The chat model (a provider name) and effort to use when the client asks for none, read on
+   * every turn so a settings page can change them on a running server. Unset, unknown or
+   * unavailable: the first available provider and its default effort, as before.
+   */
+  chatDefault?: () => { model?: string; effort?: string } | undefined;
+  /** Speech to text for the chat's mic (POST /api/_stt). Absent, or without a key, the mic is off. */
+  speech?: SpeechOptions;
+  /**
+   * The deployment's language rules (settings, read per turn). With it, each
+   * turn's prompt says which language to reply and title in; the request's
+   * `language` ("auto", "fr", …) is the user's pick.
+   */
+  language?: () => Omit<LanguagePolicy, "reply">;
 };
 
 const OPEN: Principal = { user: "anonymous", edit: true, maintain: true };
@@ -131,6 +148,21 @@ const json = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
 };
+/** The raw request body, refusing more than max bytes. */
+const readBytes = (req: IncomingMessage, max: number) =>
+  new Promise<Uint8Array>((resolve, reject) => {
+    const parts: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > max) {
+        reject(new SpeechError(413, "clip too long"));
+        req.destroy();
+      } else parts.push(c);
+    });
+    req.on("end", () => resolve(new Uint8Array(Buffer.concat(parts))));
+    req.on("error", reject);
+  });
 const read = (req: IncomingMessage) =>
   new Promise<unknown>((resolve, reject) => {
     let s = "";
@@ -164,13 +196,55 @@ function serveStatic(root: string, pathname: string, res: ServerResponse, page?:
   res.end(html);
 }
 
+type ChatDefault = { model?: string; effort?: string } | undefined;
+type Pickable = Pick<Provider, "name" | "available" | "efforts">;
+
+/**
+ * The model a chat turn runs on: the one the client asked for, else the configured default
+ * (a settings page), else the first available provider, else the first not yet probed. Asked-for
+ * and default models count only when they exist and are not known to be down.
+ */
+export function pickChatModel<P extends Pickable>(providers: P[], asked: string | null | undefined, fallback?: ChatDefault): P | null {
+  const byName = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
+  return byName(asked) ?? byName(fallback?.model) ?? providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
+}
+
+/** The effort to ask for: the client's, else the configured default when it is for this model and one it takes. */
+export function pickEffort(p: Pickable, asked: string | null | undefined, fallback?: ChatDefault): string | null {
+  if (asked) return asked;
+  return fallback?.model === p.name && fallback.effort && p.efforts?.levels.includes(fallback.effort) ? fallback.effort : null;
+}
+
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const ledger = opts.ledger ?? usageLedger();
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
   const providers = opts.providers ?? [];
-  const defaultProvider = () => providers.find((p) => p.available) ?? providers.find((p) => p.available === null) ?? null;
   const provider = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
+  // Transcriptions waiting for the turn they were spoken for: POST /_stt answers with a clip id, and
+  // the chat request that sends the text names it, so the turn's cost includes the clip. The cost is
+  // the server's own record, never a figure from the browser; a clip is claimed once, by its speaker.
+  const clips = new Map<string, { user: string; records: CallRecord[]; at: number }>();
+  const CLIP_TTL_MS = 60 * 60 * 1000;
+  const keepClip = (user: string, records: CallRecord[]) => {
+    const now = Date.now();
+    for (const [id, c] of clips) if (now - c.at > CLIP_TTL_MS || clips.size > 1000) clips.delete(id);
+    const id = randomUUID();
+    clips.set(id, { user, records, at: now });
+    return id;
+  };
+  const claimClips = (user: string, ids: unknown): CallRecord[] => {
+    if (!Array.isArray(ids)) return [];
+    const out: CallRecord[] = [];
+    for (const id of ids.slice(0, 10)) {
+      const c = typeof id === "string" ? clips.get(id) : undefined;
+      if (!c || c.user !== user || Date.now() - c.at > CLIP_TTL_MS) continue;
+      clips.delete(id as string);
+      out.push(...c.records);
+    }
+    return out;
+  };
+
 
   const audit = (e: Omit<Parameters<Audit>[0], "at">) => {
     try {
@@ -179,6 +253,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       opts.log?.(`audit failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
+
+  // What the client needs to show the mic; null when speech is off.
+  const speechInfo = () => (opts.speech?.apiKey ? { maxSeconds: opts.speech.maxSeconds ?? 60 } : null);
 
   return async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
@@ -200,13 +277,62 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         );
         // Absent on an open server: there is no one to name.
         const me = opts.access ? { user: who.user, edit: !!(who.edit || who.maintain), maintain: !!who.maintain, ...(opts.signOutUrl ? { signOut: opts.signOutUrl } : {}) } : undefined;
-        return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), ...(me ? { me } : {}) });
+        return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), speech: speechInfo(), ...(me ? { me } : {}) });
       }
       // What chat has cost since the server started: maintainers only, as it names every user.
       if (packName === "_usage" && req.method === "GET") {
         if (!who.maintain) return json(res, 403, { error: "usage is for maintainers" });
         // The caps go with it, so whoever watches spend sees how near they are.
         return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
+      }
+      // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
+      if (packName === "_stt") {
+        if (req.method !== "POST") return json(res, 405, { error: "POST a clip" });
+        const speech = opts.speech;
+        if (!speech?.apiKey) return json(res, 503, { error: "speech to text is not configured on this server" });
+        const over = overBudget(ledger, opts.budget, who.user);
+        if (over) return json(res, 429, { error: over });
+        const language = url.searchParams.get("language") || undefined;
+        const pack = url.searchParams.get("pack") || undefined;
+        // Without a hint the model guesses the language, and a guess outside the reader's languages
+        // (French heard as Persian) is useless: ?expected=en,fr,hi checks the script and retries once
+        // with ?fallback; still wrong, 422 and no text.
+        const expected = (url.searchParams.get("expected") ?? "").split(",").filter((l) => LANGUAGE.test(l));
+        const fallback = url.searchParams.get("fallback") || undefined;
+        if (fallback && !LANGUAGE.test(fallback)) return json(res, 400, { error: `bad fallback ${fallback}` });
+        const sinks = [ledger, ...(opts.usageSinks ?? [])];
+        let hint: string | undefined = language;
+        try {
+          const audio = await readBytes(req, speech.maxBytes ?? 10_000_000);
+          let t = await transcribe(speech, audio, req.headers["content-type"], language);
+          const spent: CallRecord[] = [speechRecord({ ...t, language: language ?? null, chars: t.text.length }, { user: who.user, pack })];
+          recordCall(spent[0]!, sinks);
+          let retried = false;
+          // A hint is the reader's choice: words in another script (Persian for French) are a miss, not a transcript.
+          if (language && !fitsLanguages(t.text, [language])) {
+            opts.log?.(`stt: hinted ${language}, came back in ${scriptOf(t.text)} script`);
+            return json(res, 422, { error: "wrong_script", language: language.split("-")[0], script: scriptOf(t.text) });
+          }
+          if (!language && expected.length && !fitsLanguages(t.text, expected)) {
+            const first = scriptOf(t.text);
+            opts.log?.(`stt: no hint, came back in ${first} script; ${fallback ? `retrying as ${fallback}` : "no fallback"}`);
+            if (fallback) {
+              hint = fallback;
+              t = await transcribe(speech, audio, req.headers["content-type"], fallback);
+              retried = true;
+              spent.push(speechRecord({ ...t, language: fallback, chars: t.text.length, retried }, { user: who.user, pack }));
+              recordCall(spent[spent.length - 1]!, sinks);
+            }
+            if (!fallback || !fitsLanguages(t.text, expected)) return json(res, 422, { error: "unsure_language", script: scriptOf(t.text), expected });
+          }
+          // The clip id: the chat request that sends this text names it, and the turn's cost includes the clip.
+          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}), clip: keepClip(who.user, spent) });
+        } catch (e) {
+          if (!(e instanceof SpeechError)) throw e;
+          if (e.status === 502) recordCall(speechRecord({ model: speech.model(), usd: null, ms: e.ms, ok: false, error: e.message.slice(0, 300), language: hint ?? null }, { user: who.user, pack }), sinks);
+          opts.log?.(`stt: ${e.message}`);
+          return json(res, e.status, { error: e.message });
+        }
       }
       const h = byName.get(packName);
       // A pack the caller may not open looks the same as one that is not there.
@@ -221,9 +347,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const run = { pack: h.pack, connector: h.connector, ctx };
       // Everything but reading changes a board: those need the edit right.
       const writes = req.method !== "GET" && req.method !== "HEAD";
-      if (writes && !who.edit && !who.maintain) {
+      // A read-only caller may still talk to the chat: its edit tools refuse with who.readOnly.
+      const readOnlyChat = !!who.readOnly && req.method === "POST" && action === "chat";
+      if (writes && !who.edit && !who.maintain && !readOnlyChat) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
-        return json(res, 403, { error: "you may view these boards but not change them" });
+        return json(res, 403, { error: who.readOnly ?? "you may view these boards but not change them" });
       }
       if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, instructions: h.pack.instructions, boards: await boardsOf(h), catalogue });
       if (boardId === "pack") return json(res, 200, { yaml: h.packYaml });
@@ -269,7 +397,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         audit({ user: who.user, pack: packName, board: copy.id, action: "copy", outcome: "ok", detail: `from ${boardId}` });
         return json(res, 200, { id: copy.id, version: copy.version });
       }
-      if (writes && !writable(board, who)) {
+      if (writes && !writable(board, who) && !readOnlyChat) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? ""}`.trim(), outcome: "denied", detail: board.owner ? "owner" : "pack board" });
         return json(res, 403, { error: board.owner ? `This board is ${board.owner}'s: save a copy to change it` : "This is the pack's own board: save a copy to change it" });
       }
@@ -350,7 +478,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId, who.user);
+          return chat(req, res, url, { ...h, ctx }, board.config, board.version, boardId, who.user, writable(board, who) ? undefined : who.readOnly);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -358,14 +486,15 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
-  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string) {
-    const builderModel = provider(url.searchParams.get("model")) ?? defaultProvider();
+  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string) {
+    const fallback = opts.chatDefault?.();
+    const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
     if (!builderModel) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
     if (builderModel.available === false) return json(res, 503, { error: `${builderModel.name} is unavailable: ${builderModel.error}` });
     // ?effort= is for the chosen model; one without an effort setting ignores it.
     let effort: string | undefined;
     try {
-      effort = effortFor(builderModel, url.searchParams.get("effort"));
+      effort = effortFor(builderModel, pickEffort(builderModel, url.searchParams.get("effort"), fallback));
     } catch (e) {
       return json(res, 400, { error: (e as Error).message });
     }
@@ -379,7 +508,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // escalation model (used for the heal round) can be larger. ?review=off
     // disables review.
     const reviewWanted = url.searchParams.get("review");
-    const reviewer = reviewWanted === "off" ? null : (provider(reviewWanted) ?? provider(opts.roles?.reviewer) ?? builderModel);
+    const reviewer = reviewWanted === "off" || opts.review?.() === false ? null : (provider(reviewWanted) ?? provider(opts.roles?.reviewer) ?? builderModel);
     const escalate = provider(url.searchParams.get("escalate")) ?? provider(opts.roles?.escalate) ?? builderModel;
     // Review informs; healing is opt-in (?rounds=2). A wrong "not satisfied"
     // from the reviewer must not be able to damage a correct board on its own.
@@ -387,15 +516,19 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const maxRounds = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("rounds") ?? 1)) || 1));
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown };
-    // What this turn costs: every model call made in its scope, and the queries its tools run.
-    const calls: CallRecord[] = [];
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown };
+    // What this turn costs: every model call made in its scope, the queries its tools run, and the
+    // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
+    const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals }));
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly,
+      onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
-    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes);
+    const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
+    const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
+    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes, language);
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
@@ -504,9 +637,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         } finally {
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);
+          const summary = turnSummary(cost);
           ledger.turn({ user, pack: h.name }, cost);
-          audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, cost }) });
-          writer.write({ type: "data-usage", data: cost });
+          audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, ...summary, cost }) });
+          writer.write({ type: "data-usage", data: { ...cost, summary } });
         }
         writer.write({ type: "finish" });
       }),

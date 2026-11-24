@@ -389,6 +389,9 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
           ((r.hits?.hits ?? []) as Bucket[]).map((h) => Object.fromEntries(cols.map((c) => [c.key, get(h._source ?? {}, c.path) ?? null]))),
       };
     }
+    case "points":
+      // Not in ELASTICSEARCH_CAPABILITIES: resolution refuses a map before it gets here.
+      throw new Error("points queries are not supported by the search connector");
   }
 }
 

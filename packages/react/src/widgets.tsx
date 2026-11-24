@@ -2,7 +2,9 @@ import * as React from "react";
 
 import type { Widget } from "@lenspack/core";
 
-import { buildChartSpec } from "./charts";
+import { type ChartKind, buildChartSpec } from "./charts";
+import { HeatmapChart, buildHeatmapSpec } from "./heatmap";
+import { MapChart, buildMapSpec } from "./map";
 import { formatDelta, formatValue } from "./format";
 import { Markdown, type MarkdownClasses } from "./markdown";
 import { useBoard } from "./provider";
@@ -40,16 +42,31 @@ function Problem({ message, hint }: { message: string; hint?: string }) {
 // The chart widget is library-agnostic: it builds a ChartSpec and hands it to
 // whichever adapter the provider holds (svg when none is given).
 export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
-  const { charts, catalogue, drill, drillTarget } = useBoard();
+  const { charts, catalogue, drill, drillTarget, mapTiles } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Empty>{data.error}{data.hint ? ` — did you mean “${data.hint}”?` : ""}</Empty>;
-  const measureKey = widget.query.kind === "rows" ? undefined : widget.query.measure;
+  const q0 = widget.query;
+  const measureKey = q0.kind === "rows" ? undefined : q0.kind === "points" ? q0.size : q0.measure;
   const measureLabel = catalogue.measures.find((m) => m.key === measureKey)?.label;
   const labelOf = (key: string) => catalogue.measures.find((m) => m.key === key)?.label;
   const target = widget.query.kind === "breakdown" ? drillTarget(widget.query.dimension) : null;
   const other = data.rows.find((r) => r.other)?.group;
   const onSelect = target?.selects ? (group: string) => group !== "(none)" && group !== other && drill(target.selects!, group) : undefined;
-  const spec = buildChartSpec(widget, data, { currency, measureLabel, labelOf, onSelect });
+  // A map, like a heatmap, is drawn the same way whatever the adapter.
+  if (widget.chart === "map") {
+    const q = widget.query;
+    const dimLabel = (key: string | undefined) => (key ? (catalogue.dimensions.find((d) => d.key === key)?.label ?? key) : undefined);
+    const map = buildMapSpec(widget, data, { currency, colorName: q.kind === "points" ? dimLabel(q.color) : undefined, sizeName: measureLabel });
+    return map ? <MapChart spec={map} tiles={mapTiles} /> : <Empty>No points to draw.</Empty>;
+  }
+  // A heatmap is drawn the same way whatever the adapter.
+  if (widget.chart === "heatmap") {
+    const dimLabel = (key: string | undefined) => (key ? (catalogue.dimensions.find((d) => d.key === key)?.label ?? key) : undefined);
+    const q = widget.query;
+    const heat = buildHeatmapSpec(widget, data, { currency, measureLabel, xName: q.kind === "breakdown" ? dimLabel(q.dimension) : "time", yName: q.kind === "breakdown" || q.kind === "series" ? dimLabel(q.by) : undefined });
+    return heat ? <HeatmapChart spec={heat} /> : <Empty>Nothing to draw yet.</Empty>;
+  }
+  const spec = buildChartSpec(widget as Extract<typeof widget, { chart: ChartKind }>, data, { currency, measureLabel, labelOf, onSelect });
   if (!spec) return <Empty>Nothing to draw yet.</Empty>;
   const Chart = charts.Chart;
   return <Chart spec={spec} />;
@@ -269,7 +286,7 @@ export function TableWidget({ id, widget, data, currency }: WidgetProps<"table">
           <thead>
             <tr>
               <th />
-              <th className="lp-num">{widget.query.kind === "rows" ? "" : label(widget.query.measure)}</th>
+              <th className="lp-num">{widget.query.kind === "rows" || widget.query.kind === "points" ? "" : label(widget.query.measure)}</th>
               {moreHeads}
               <th />
             </tr>

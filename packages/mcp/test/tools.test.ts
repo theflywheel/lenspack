@@ -100,6 +100,37 @@ describe("board tools", () => {
     expect(fine.didYouMean).toBeUndefined();
   });
 
+  it("refuses every edit with the given message on a read-only board, and still answers questions", async () => {
+    const store = memoryStore();
+    await store.create({ id: "ro", pack, title: "Read only" });
+    const message = "You can view this dashboard but not edit it.";
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "ro", ctx: { tenant: "t1" }, readOnly: message }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown> = {}) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    const before = (await store.get("ro"))!.version;
+    expect(await go("add_widget", { id: "w", kind: "kpi", title: "Things", query_kind: "value", measure: "things" })).toEqual({ applied: false, error: message, readOnly: true });
+    expect(await go("rename_board", { title: "Mine" })).toMatchObject({ applied: false, error: message });
+    expect(await go("restore_version", { to: "baseline" })).toMatchObject({ applied: false, error: message });
+    expect((await store.get("ro"))!.version).toBe(before);
+    // Reading still works.
+    expect(await go("query", { query_kind: "value", measure: "things" })).not.toHaveProperty("readOnly");
+  });
+
+  it("tells onEdit of every edit it applied or refused", async () => {
+    const store = memoryStore();
+    await store.create({ id: "au", pack, title: "Audited" });
+    const seen: { outcome: string; ops: string[]; version?: number; error?: string }[] = [];
+    const tools = (readOnly?: string) => Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "au", ctx: { tenant: "t1" }, readOnly, onEdit: (e) => seen.push(e) }).map((x) => [x.name, x]));
+    const go = (t: ReturnType<typeof tools>, name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    await go(tools(), "rename_board", { title: "Renamed" });
+    await go(tools(), "add_widget", { id: "w", kind: "kpi", title: "Nope", query_kind: "value", measure: "no_such_measure" });
+    await go(tools("view only"), "rename_board", { title: "Again" });
+    await go(tools(), "query", { query_kind: "value", measure: "things" });
+    expect(seen.map((e) => e.outcome)).toEqual(["ok", "refused", "refused"]);
+    expect(seen[0]).toMatchObject({ ops: ["set_title"], version: expect.any(Number) });
+    expect(seen[1]!.error).toBeTruthy();
+    expect(seen[2]).toMatchObject({ error: "read-only" });
+  });
+
   it("patches a widget: only the fields given change", async () => {
     const store = memoryStore();
     await store.create({ id: "u", pack, title: "Patch" });
@@ -144,6 +175,21 @@ describe("board tools", () => {
     const renamed = (await call("rename_board", { title: "Renamed" })) as { applied: boolean; board: string; version: number };
     expect(renamed.board).toContain("Renamed");
     expect(renamed.version).toBeGreaterThan(4);
+  });
+
+  it("adds a heatmap with its columns in their own order on the sequential scale, and turns it back into a bar", async () => {
+    const store = memoryStore();
+    await store.create({ id: "h", pack: { pack: pack.pack, version: pack.version }, title: "H" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "h", ctx: { tenant: "t1", now: new Date("2026-02-15T00:00:00Z") } }).map((x) => [x.name, x])) as Record<string, Tool>;
+    const run = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args));
+    const added = (await run("add_widget", { id: "heat", kind: "chart", chart: "heatmap", title: "Things, colour by origin", query_kind: "breakdown", measure: "things", dimension: "origin", split: "colour", width: "full" })) as { applied: boolean; board: string };
+    expect(added, JSON.stringify(added)).toMatchObject({ applied: true });
+    expect(added.board).toContain("heat (heatmap, full width (12/12)) things by origin and colour in origin order");
+    const w = () => store.get("h").then((b) => b!.config.widgets.heat);
+    expect(await w()).toMatchObject({ chart: "heatmap", options: { colorScheme: "sequential" }, query: { kind: "breakdown", dimension: "origin", by: "colour", sort: "asc", sortBy: "group" } });
+    expect(((await run("add_widget", { id: "flat", kind: "chart", chart: "heatmap", title: "x", query_kind: "breakdown", measure: "things", dimension: "origin" })) as { error?: string }).error).toContain("rows as well as columns");
+    await run("update_widget", { id: "heat", chart: "bar" });
+    expect(await w()).toMatchObject({ chart: "bar", options: { colorScheme: "default" } });
   });
 
   it("moves a widget beside another in a full row and says what it narrowed", async () => {

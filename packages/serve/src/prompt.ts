@@ -5,13 +5,13 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 13;
+export const PROMPT_VERSION = 17;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
 // an invented chart type or a claim that the system already does it.
 export const WIDGET_LIMITS =
-  "Widgets have no settings beyond kind (bar, line, pie or area chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover. Colours, fonts, axes and other labels cannot be set.";
+  "Widgets have no settings beyond kind (bar, line, pie, area, heatmap or map chart, kpi, table, text), title, place, width and height. Pie slices are always labelled with their counts; bar, line and area values show on hover; a heatmap shades each cell on one colour scale with a legend, and shows its value on hover; a map draws points (only for an entity with a location), coloured by one category and sized by one measure, with a legend, and names each point on hover. Colours, fonts, axes, map styles, regions and other labels cannot be set.";
 
 // Above this many keys a catalogue is inlined as keys and labels only, and
 // the model reads meanings from list_metrics when it needs them.
@@ -23,10 +23,13 @@ const tooLarge = (catalogue: Catalogue) => catalogue.dimensions.filter((d) => d.
 // rather than discovering it with tool calls every turn. list_metrics stays
 // as a search for catalogues too large to inline.
 export function catalogueText(pack: Pack, catalogue: Catalogue) {
+  // The dimensions an entity's own rows carry (its own and conformed ones), which a point can be named or coloured by.
+  const onEntity = (entity: string) => pack.dimensions.filter((d) => d.type !== "time" && (d.entity === entity || d.also?.[entity])).map((d) => d.key);
   const entities = Object.entries(pack.entities).map(([k, e]) => {
     const joins = e.joins.map((j) => `→ ${j.to} (${j.type.replace(/_/g, "-")})`).join(", ");
-    return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${joins ? `; joins ${joins}` : ""}`;
+    return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${e.geo ? `; has a location (latitude, longitude): a points query lists them, a map draws them${onEntity(k).length ? `, named or coloured by ${onEntity(k).join(", ")}` : ""}` : ""}${joins ? `; joins ${joins}` : ""}`;
   });
+  const located = Object.entries(pack.entities).filter(([, e]) => e.geo);
   // A large catalogue: one line per entity, and a label that only restates its key left out.
   const large = tooLarge(catalogue);
   const verifiedDims = catalogue.dimensions.filter((d) => d.verified);
@@ -45,6 +48,11 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
     ...dims,
     large ? `MEASURES by entity (key (label)):` : `MEASURES (key (entity, format): label [synonyms] — hint):`,
     ...measures,
+    ...(located.length
+      ? [
+          `PLACES: a points query returns each record's latitude and longitude. Answer "where" questions from those and the place dimensions only. A direction ("in the north-east", "the westernmost") is relative to the points' own extent: say so, and give the coordinates it rests on. Never name a region, border or distance the data does not hold.`,
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -56,6 +64,36 @@ const exampleLine = ({ question, query: q, note }: Pack["examples"][number]) => 
   // describeQuery already names a rows query as rows.
   return `- "${question}" → ${q.kind === "rows" ? "" : `${q.kind} `}${describeQuery(q)}${order}${filters}${note ? ` (${note})` : ""}`;
 };
+
+/** Which language the chat replies in and names things in. */
+export type LanguagePolicy = {
+  /** The user's pick ("fr", "hi", …); absent or "auto": reply in the language of their latest message. */
+  reply?: string | null;
+  /** Titles in the board's own language (default), or in the language of the reply. */
+  titles?: "board" | "speaker";
+  /** The board's language, for titles: "en" by default. */
+  board?: string;
+};
+
+const LANGUAGE_NAMES: Record<string, string> = { en: "English", fr: "French", hi: "Hindi", es: "Spanish", pt: "Portuguese", ar: "Arabic", sw: "Swahili" };
+const languageName = (code: string) => LANGUAGE_NAMES[code.split("-")[0]!.toLowerCase()] ?? code;
+
+/**
+ * The language rules, as the board part's last section: per user and per turn,
+ * so they stay out of the cached stable part. Empty without a policy.
+ */
+export function languageText(p?: LanguagePolicy) {
+  if (!p) return "";
+  const reply =
+    p.reply && p.reply !== "auto"
+      ? `The user chose ${languageName(p.reply)} for this chat: write every reply in ${languageName(p.reply)}${p.reply.startsWith("hi") ? " (Devanagari script)" : ""}, even when their message is in another language.`
+      : "Reply in the language of the user's latest message.";
+  const titles =
+    (p.titles ?? "board") === "board"
+      ? `Write new board and widget titles in ${languageName(p.board ?? "en")}, the board's language, even when replying in another; keep existing titles unless asked to rename them.`
+      : "Write new board and widget titles in the language you reply in.";
+  return `\n\nLANGUAGE:\n- ${reply}\n- ${titles}\n- Keys, filter values and codes stay exactly as the data has them; match the user's words to them whatever language they use.`;
+}
 
 const BY: Record<string, string> = { layout: "by hand", ops: "by hand", revert: "rollback", file: "board file" };
 
@@ -76,7 +114,7 @@ export function userChangesText(changes: BoardChange[] = []) {
  * Stable first, so a provider's prompt cache keeps the long first part across
  * edits; joined, it is SYSTEM.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = []): [stable: string, board: string] => [
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy): [stable: string, board: string] => [
   `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
@@ -104,8 +142,8 @@ Rules:
 - When the board part lists changes the user made since your last turn, they are deliberate: keep them, never undo them unless asked, and mention them only when they bear on the request.
 - Never address the user by name.
 - After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
-- An informational answer (what the data holds, several numbers side by side) may use a short bullet list and **bold** for names; keep it brief. Never use markdown headings or tables.`,
-  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}`,
+- An informational answer (what the data holds) may use a short bullet list and **bold** for names; keep it brief. Several numbers side by side for a few groups may be one compact markdown table (at most 6 rows and 4 columns, figures formatted as on the board); anything larger belongs on the board as a table widget. Never use markdown headings.`,
+  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}${languageText(language)}`,
 ];
 
-export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = []) => systemParts(pack, catalogue, board, now, changes).join("");
+export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy) => systemParts(pack, catalogue, board, now, changes, language).join("");

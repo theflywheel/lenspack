@@ -7,4 +7,6 @@ export { ChartWidget, KpiWidget, TableWidget, TextWidget, defaultWidgets, type W
 export { formatValue, formatDelta } from "./format";
 export { buildChartSpec, pivot, widen, resolveCssVar, SERIES_VARS, SEQUENTIAL_VARS, type ChartAdapter, type ChartSpec, type ChartKind } from "./charts";
 export { svgAdapter } from "./adapters/svg";
+export { HeatmapChart, buildHeatmapSpec, heatStep, HEAT_STEPS, type HeatmapSpec } from "./heatmap";
+export { MapChart, buildMapSpec, densityOf, fit, gridStep, project, radiusOf, unproject, MAP_COLOURS, type MapSpec, type MapTiles } from "./map";
 export type * from "./types";

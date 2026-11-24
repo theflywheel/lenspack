@@ -8,7 +8,11 @@ import { z } from "zod";
 // passes to the validator (see ops.ts), never by anything imported here.
 
 export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as const;
-export const CHART_KINDS = ["bar", "line", "pie", "area"] as const;
+// heatmap: one measure over two dimensions as a grid of shaded cells. Columns are a
+// breakdown's dimension (or a series' time buckets) and rows its `by`.
+// map: the rows of an entity with a location, as points (a points query).
+export const CHART_KINDS = ["bar", "line", "pie", "area", "heatmap", "map"] as const;
+export const MAX_POINTS = 5000;
 // subtree: a node of a dotted path and everything under it ("a.b" matches
 // "a.b" and "a.b.c", not "a.bc").
 // segment: one of the values is a whole segment of a "|"-separated path
@@ -104,6 +108,20 @@ export const querySchema = z.discriminatedUnion("kind", [
     // table. Set per request, not stored on a board. Capped so a deep page
     // stays a small top-N sort in the source.
     offset: z.number().int().min(0).max(10000).optional(),
+    ...common,
+  }),
+  // The rows of an entity that has a location, one point each: its latitude and
+  // longitude, a dimension that colours it by category, a measure that sizes it
+  // (aggregated per point, so rows at one spot add up) and a dimension that names
+  // it. With a size, the largest points are kept when there are more than limit;
+  // without one, the source's own order, never one that would keep a corner of the map.
+  z.object({
+    kind: z.literal("points"),
+    entity: z.string(),
+    color: z.string().optional(),
+    size: z.string().optional(),
+    label: z.string().optional(),
+    limit: z.number().int().min(1).max(MAX_POINTS).default(MAX_POINTS),
     ...common,
   }),
 ]);
@@ -232,13 +250,17 @@ export function emptyBoard(pack: { pack: string; version: number }, title: strin
   });
 }
 
+/** A query that computes a measure (rather than listing rows or points). */
+export type MeasuredQuery = Extract<Query, { kind: "breakdown" | "series" | "value" }>;
+export const measured = (query: Query): query is MeasuredQuery => query.kind === "breakdown" || query.kind === "series" || query.kind === "value";
+
 /** Every key a query refers to, for validation and for cache keys. */
 export function queryKeys(query: Query): { dimensions: string[]; measures: string[]; entities: string[] } {
   const dimensions = new Set<string>();
   const measures = new Set<string>();
   const entities = new Set<string>();
   for (const f of query.filters ?? []) dimensions.add(f.dimension);
-  if (query.kind !== "rows") for (const m of query.measures ?? []) measures.add(m);
+  if (measured(query)) for (const m of query.measures ?? []) measures.add(m);
   switch (query.kind) {
     case "breakdown":
       dimensions.add(query.dimension);
@@ -256,6 +278,11 @@ export function queryKeys(query: Query): { dimensions: string[]; measures: strin
       entities.add(query.entity);
       for (const c of query.columns) dimensions.add(c);
       if (query.orderBy) dimensions.add(query.orderBy.key);
+      break;
+    case "points":
+      entities.add(query.entity);
+      for (const d of [query.color, query.label]) if (d) dimensions.add(d);
+      if (query.size) measures.add(query.size);
       break;
   }
   return { dimensions: [...dimensions], measures: [...measures], entities: [...entities] };

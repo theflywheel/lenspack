@@ -98,6 +98,9 @@ export const entitySchema = z.object({
   filter: fragmentSchema.optional(),
   where: z.array(whereSchema).max(20).optional(),
   joins: z.array(joinSchema).default([]),
+  // Where each row is: its latitude and longitude columns, in degrees (WGS 84).
+  // An entity with a location can be drawn as points on a map.
+  geo: z.object({ lat: fieldPath, lon: fieldPath }).optional(),
 });
 
 const named = {

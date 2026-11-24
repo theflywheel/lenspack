@@ -431,3 +431,48 @@ describe("streamText through the anthropic adapter", () => {
     expect(sent[0]!.body.stream).toBe(true);
   });
 });
+
+describe("chat model and effort picking", async () => {
+  const { pickChatModel, pickEffort } = await import("../src/app");
+  const efforts = { levels: ["low", "medium", "high"], default: "medium" };
+  const P = (name: string, available: boolean | null, withEfforts = false) => ({ name, available, ...(withEfforts ? { efforts } : {}) });
+  // The selection before the settings page existed, kept here as the reference.
+  const before = (ps: ReturnType<typeof P>[], asked: string | null) =>
+    (asked ? ps.find((p) => p.name === asked && p.available !== false) : undefined) ?? ps.find((p) => p.available) ?? ps.find((p) => p.available === null) ?? null;
+  const cases: [ReturnType<typeof P>[], string | null][] = [
+    [[], null],
+    [[P("a", true), P("b", true)], null],
+    [[P("a", false), P("b", null), P("c", true)], null],
+    [[P("a", null), P("b", null)], null],
+    [[P("a", false)], null],
+    [[P("a", true), P("b", true)], "b"],
+    [[P("a", true), P("b", false)], "b"],
+    [[P("a", true)], "nope"],
+  ];
+
+  it("picks exactly as before when no default is configured", () => {
+    for (const [ps, asked] of cases) {
+      expect(pickChatModel(ps, asked)).toBe(before(ps, asked));
+      expect(pickChatModel(ps, asked, undefined)).toBe(before(ps, asked));
+      expect(pickChatModel(ps, asked, {})).toBe(before(ps, asked));
+    }
+  });
+
+  it("uses the configured default unless the client asked, and skips one that is down or unknown", () => {
+    const ps = [P("a", true), P("b", true), P("c", false)];
+    expect(pickChatModel(ps, null, { model: "b" })?.name).toBe("b");
+    expect(pickChatModel(ps, "a", { model: "b" })?.name).toBe("a");
+    expect(pickChatModel(ps, null, { model: "c" })?.name).toBe("a");
+    expect(pickChatModel(ps, null, { model: "zzz" })?.name).toBe("a");
+  });
+
+  it("uses the default effort only for its own model and only when that model takes it", () => {
+    const m = P("m", true, true);
+    expect(pickEffort(m, null)).toBeNull();
+    expect(pickEffort(m, "high", { model: "m", effort: "low" })).toBe("high");
+    expect(pickEffort(m, null, { model: "m", effort: "low" })).toBe("low");
+    expect(pickEffort(m, null, { model: "other", effort: "low" })).toBeNull();
+    expect(pickEffort(m, null, { model: "m", effort: "turbo" })).toBeNull();
+    expect(pickEffort(P("x", true), null, { model: "x", effort: "low" })).toBeNull();
+  });
+});

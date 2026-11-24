@@ -1,4 +1,4 @@
-import { type BoardOp, type Query, applyOps, emptyBoard, opSchema } from "@lenspack/core";
+import { type BoardOp, type Query, applyOps, emptyBoard, measured, opSchema } from "@lenspack/core";
 import { type Capabilities, ResolveError, check } from "@lenspack/engine";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, catalogueFrom, formatExpr, operands, parseExpr, parsePack } from "@lenspack/spec";
 import YAML from "yaml";
@@ -496,7 +496,7 @@ export function compileDss(charts: Record<string, DssChart>, master?: DssMaster,
       // A further column that cannot be grouped like the headline number is
       // dropped with a note; the widget keeps the rest.
       const q = w.query;
-      if (q.kind !== "rows" && q.measures?.length) {
+      if (measured(q) && q.measures?.length) {
         const ok = q.measures.filter((k) => {
           try {
             check({ ...q, measures: [k] } as Query, pack, { capabilities: caps });

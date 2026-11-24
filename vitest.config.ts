@@ -17,6 +17,7 @@ export default defineConfig({
       { find: "@lenspack/spec", replacement: pkg("spec") },
       { find: "@lenspack/engine", replacement: pkg("engine") },
       { find: "@lenspack/elasticsearch", replacement: pkg("elasticsearch") },
+      { find: "@lenspack/superset", replacement: pkg("superset") },
       { find: "@lenspack/dss", replacement: pkg("dss") },
       { find: "@lenspack/ccrs", replacement: pkg("ccrs") },
       { find: "@lenspack/serve", replacement: pkg("serve") },
@@ -28,7 +29,7 @@ export default defineConfig({
     ],
   },
   test: {
-    include: ["packages/*/test/**/*.test.{ts,tsx}", "examples/test/**/*.test.ts", "examples/demo/test/**/*.test.ts", "scripts/**/*.test.ts"],
+    include: ["packages/*/test/**/*.test.{ts,tsx}", "examples/test/**/*.test.ts", "examples/demo/test/**/*.test.ts", "scripts/**/*.test.ts", "evals/test/**/*.test.ts"],
     environmentMatchGlobs: [["packages/react/**", "jsdom"]],
     testTimeout: 60_000,
     hookTimeout: 120_000,
