@@ -1,0 +1,21 @@
+{
+  "name": "@lenspack/agent",
+  "version": "0.1.0",
+  "description": "Provider-agnostic tools for editing a lenspack board with a language model, over any Connector.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": { "build": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
+  "dependencies": {
+    "@lenspack/core": "workspace:*",
+    "@lenspack/engine": "workspace:*",
+    "@lenspack/spec": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": { "@lenspack/sql": "workspace:*" },
+  "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/agent" }
+}

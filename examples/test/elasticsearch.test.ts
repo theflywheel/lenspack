@@ -75,7 +75,7 @@ function close(a: number | null, b: number | null, approximate: boolean) {
 // Ties may come back in either order within equal values, so compare the
 // rows as a set keyed on group and series, then check each side is ordered.
 function agree(sql: WidgetData, es: WidgetData, q: Query) {
-  const approximate = q.kind !== "rows" && APPROXIMATE.has(q.measure);
+  const approximate = q.kind !== "rows" && q.kind !== "points" && APPROXIMATE.has(q.measure);
   expect(es.error, es.error).toBeUndefined();
   expect(sql.error, sql.error).toBeUndefined();
   const key = (r: { group: string; series?: string }) => `${r.group}|${r.series ?? ""}`;
@@ -93,7 +93,7 @@ function agree(sql: WidgetData, es: WidgetData, q: Query) {
   if (sql.compare) {
     expect(close(sql.compare.previous, es.compare!.previous, approximate)).toBe(true);
   }
-  const anyApprox = approximate || (q.kind !== "rows" && (q.measures ?? []).some((m) => APPROXIMATE.has(m)));
+  const anyApprox = approximate || (q.kind !== "rows" && q.kind !== "points" && (q.measures ?? []).some((m) => APPROXIMATE.has(m)));
   expect(!!es.approximate).toBe(anyApprox);
   expect(es.measures).toEqual(sql.measures);
 }

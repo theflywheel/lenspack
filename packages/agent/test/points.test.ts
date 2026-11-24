@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parsePack } from "@lenspack/spec";
 
-import { assembleQuery } from "../src/tools";
+import { assembleQuery } from "../src/args";
 
 const pack = parsePack({
   pack: "sites",

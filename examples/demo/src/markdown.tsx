@@ -1,5 +1,3 @@
-import * as React from "react";
-
 import { Markdown as Render, type MarkdownClasses, parseBlocks, renderInline } from "@lenspack/react";
 
 // The chat's replies use the renderer the text widgets use (no HTML from the
