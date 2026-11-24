@@ -127,6 +127,14 @@ describe("lenspack serve from a config file", () => {
     await expect(open({ url: "oracle://h/db" })).rejects.toThrow(/No driver for "oracle:"/);
   });
 
+  it("skips an optional file source that is not there, with its packs; one that must be there stops the server", async () => {
+    const config = (optional?: boolean) => configSchema.parse({ sources: { gone: { url: "duckdb:./nowhere.duckdb", optional } }, packs: [{ pack: `${campaign}pack.yaml`, source: "gone" }] });
+    const opened = await openConfig(config(true), dir);
+    expect(opened.hosts).toEqual([]);
+    await opened.close();
+    await expect(openConfig(config(), dir)).rejects.toThrow();
+  });
+
   it("lists what each source holds", async () => {
     const opened = await openConfig(configSchema.parse({ sources: { lite: { url: "sqlite:./campaign.db" } }, packs: [{ pack: `${campaign}pack.yaml`, source: "lite" }] }), dir);
     const schema = await opened.sources.get("lite")!.introspect!();
@@ -159,8 +167,8 @@ describe("the UI as an app", () => {
     const dir = mkdtempSync(join(tmpdir(), "lenspack-ui-"));
     writeFileSync(join(dir, "index.html"), "<!doctype html><html><head><title>lenspack</title></head><body></body></html>");
     writeFileSync(join(dir, "app.js"), "console.log(1)");
-    const page = { mode: "app" as const, title: "Boards </script><b>", home: "campaign/overview", intro: "Read me </script>" };
-    expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: { title: "T" } }).ui).toEqual({ mode: "demo", title: "T" });
+    const page = { title: "Boards </script><b>", home: "campaign/overview", intro: "Read me </script>" };
+    expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: { title: "T" } }).ui).toEqual({ title: "T" });
     expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: "./dist" }).ui).toBe("./dist");
     expect(configSchema.parse({ sources: {}, packs: [{ pack: "p", source: "s" }], ui: { mode: "app", intro: "Our boards." } }).ui).toEqual({ mode: "app", intro: "Our boards." });
     const { server, base } = await listen(createApp([], { ui: dir, page }));

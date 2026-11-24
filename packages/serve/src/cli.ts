@@ -56,7 +56,7 @@ async function main() {
       const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
       const uiDir = typeof config.ui === "string" ? config.ui : config.ui?.dir;
       const ui = flag("ui") ?? (uiDir ? resolve(dir, uiDir) : undefined);
-      const page = typeof config.ui === "object" ? { mode: config.ui.mode, ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}), ...(config.ui.intro ? { intro: config.ui.intro } : {}) } : undefined;
+      const page = typeof config.ui === "object" ? { ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}), ...(config.ui.intro ? { intro: config.ui.intro } : {}) } : undefined;
       const port = Number(flag("port") ?? config.port ?? process.env.PORT ?? 8787);
       // Sign-in: auth.kind (or LENSPACK_AUTH); with neither, the built-in admin and a password.
       const auth = effectiveAuth(config.auth ? resolveSecrets(config.auth) : undefined);
