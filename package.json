@@ -15,7 +15,8 @@
     "seed": "tsx scripts/seed.ts",
     "check": "pnpm typecheck && pnpm lint:domain && pnpm test",
     "demo": "node scripts/demo.mjs",
-    "eval": "tsx evals/run.ts"
+    "eval": "tsx evals/run.ts",
+    "eval:suite": "tsx evals/suite-run.ts"
   },
   "devDependencies": {
     "@ai-sdk/openai-compatible": "^3.0.53",
@@ -27,6 +28,8 @@
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "yaml": "^2.6.1",
+    "zod": "^3.25.76"
   }
 }
