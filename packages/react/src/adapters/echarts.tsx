@@ -79,6 +79,3 @@ export function createEchartsAdapter(opts: EchartsOptions = {}): ChartAdapter {
   }
   return { name: "echarts", Chart: EchartsChart };
 }
-
-export const echartsAdapter = createEchartsAdapter();
-export default echartsAdapter;

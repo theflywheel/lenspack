@@ -1,8 +1,8 @@
 import type * as React from "react";
 
-import type { GRAINS, Widget } from "@lenspack/core";
+import type { Widget } from "@lenspack/core";
 
-import { formatValue } from "./format";
+import { type Grain, formatValue } from "./format";
 import type { WidgetData } from "./types";
 
 // The seam between a board and a charting library. A chart adapter receives a
@@ -55,26 +55,11 @@ export function axisWidth(spec: ChartSpec, charPx = 7.2, padding = 14) {
 }
 
 export const SERIES_VARS = Array.from({ length: 8 }, (_, i) => `var(--lp-series-${i + 1})`);
-export type Grain = (typeof GRAINS)[number];
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /** A time bucket's label ("2025-06-16", "2025-06-16T14:00") to epoch ms, read as UTC like the engine writes it. */
 export function timeOf(group: string): number {
   const iso = /T\d\d:\d\d$/.test(group) ? `${group}:00Z` : /^\d{4}-\d{2}-\d{2}$/.test(group) ? `${group}T00:00:00Z` : group;
   return Date.parse(iso);
-}
-
-/** A short tick label for a bucket; the year is shown only when the axis spans more than one. */
-export function formatTick(ms: number, grain: Grain, multiYear: boolean): string {
-  const d = new Date(ms);
-  const day = d.getUTCDate(), mon = MONTHS[d.getUTCMonth()], yr = d.getUTCFullYear();
-  if (grain === "year") return String(yr);
-  if (grain === "quarter") return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${yr}`;
-  if (grain === "month") return multiYear ? `${mon} ${yr}` : mon!;
-  const date = multiYear ? `${day} ${mon} ${String(yr).slice(2)}` : `${day} ${mon}`;
-  return grain === "hour" ? `${date} ${String(d.getUTCHours()).padStart(2, "0")}:00` : date;
 }
 
 const DAY_MS = 86_400_000;
@@ -116,18 +101,6 @@ export function timeTicks(min: number, max: number, grain: Grain, maxTicks = 8):
     m += step;
   }
   return out;
-}
-
-/** The full label for one bucket, as a tooltip heading. */
-export function formatBucket(ms: number, grain: Grain): string {
-  const d = new Date(ms);
-  const day = d.getUTCDate(), mon = MONTHS[d.getUTCMonth()], yr = d.getUTCFullYear();
-  if (grain === "year") return String(yr);
-  if (grain === "quarter") return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${yr}`;
-  if (grain === "month") return `${mon} ${yr}`;
-  if (grain === "week") return `Week of ${day} ${mon} ${yr}`;
-  const date = `${DAYS[d.getUTCDay()]} ${day} ${mon} ${yr}`;
-  return grain === "hour" ? `${date}, ${String(d.getUTCHours()).padStart(2, "0")}:00` : date;
 }
 
 export const SEQUENTIAL_VARS = Array.from({ length: 8 }, (_, i) => `var(--lp-sequential-${i + 1})`);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBucket, formatTick, timeOf, timeTicks } from "../src/charts";
+import { timeOf, timeTicks } from "../src/charts";
+import { formatBucket, formatTick } from "../src/format";
 
 const d = (s: string) => Date.parse(`${s}T00:00:00Z`);
 const iso = (ts: number[]) => ts.map((t) => new Date(t).toISOString().slice(0, 10));
