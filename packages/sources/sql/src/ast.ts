@@ -1,0 +1,57 @@
+// A small SQL AST. Every identifier in it was bound to a pack object by the
+// resolver; every value is a parameter. The printers own the dialects.
+
+import type { Grain } from "@lenspack/core";
+import type { Fragment } from "@lenspack/pack";
+
+export type { Grain };
+
+export type Expr =
+  | { t: "raw"; sql: Fragment } // a fragment from the pack, inlined verbatim (per dialect)
+  | { t: "col"; alias: string; col: string }
+  | { t: "param"; value: unknown; cast?: "timestamp" | "double" | "int" | "bigint" }
+  | { t: "lit"; value: number }
+  | { t: "str"; value: string } // a constant string the planner writes, never a request value
+  | { t: "star" }
+  | { t: "json"; alias: string; col: string; path: string[] }
+  | { t: "agg"; fn: "count" | "count_distinct" | "sum" | "avg" | "min" | "max" | "median" | "p90"; arg: Expr }
+  | { t: "bin"; op: "=" | "<>" | ">=" | "<=" | ">" | "<" | "+" | "-" | "*" | "/" | "AND" | "OR" | "ILIKE" | "LIKE" | "IS DISTINCT FROM" | "||"; l: Expr; r: Expr }
+  | { t: "notnull"; arg: Expr }
+  | { t: "segment"; arg: Expr; values: Expr[] } // one of values is a whole "|"-separated segment of arg
+  | { t: "isnull"; arg: Expr }
+  | { t: "epoch"; unit: "epoch_ms" | "epoch_s"; arg: Expr } // a number of (milli)seconds since 1970, as a naive UTC timestamp
+  | { t: "in"; l: Expr; values: Expr[] }
+  | { t: "case"; when: Expr; then: Expr } // CASE WHEN when THEN then END (else NULL)
+  | { t: "trunc"; grain: Grain; arg: Expr; zone?: string }
+  | { t: "cast"; arg: Expr; to: "double" | "text" }
+  | { t: "nullif0"; arg: Expr }
+  | { t: "paren"; arg: Expr };
+
+export type Source = {
+  alias: string;
+  table: string; // schema-qualified, from the pack
+  projections: { alias: string; expr: Expr }[];
+  where: Expr[]; // pushed down into the entity subquery (tenant)
+};
+
+export type Join = { source: Source; on: { left: Expr; right: Expr } };
+
+export type Ast = {
+  select: { alias: string; expr: Expr }[];
+  from: Source | Grouped;
+  joins: Join[];
+  where: Expr[];
+  groupBy: Expr[];
+  having: Expr[];
+  orderBy: { expr: Expr; dir: "asc" | "desc" }[];
+  limit: number;
+  // Rows skipped first (a later page of rows). Absent prints no OFFSET.
+  offset?: number;
+};
+
+// The inner stage of a two-stage measure: the root's rows grouped by the key
+// and the answer's groups, one value per key.
+export type Grouped = Omit<Ast, "from" | "having" | "orderBy" | "limit" | "offset"> & { alias: string; from: Source };
+
+export const and = (exprs: Expr[]): Expr | null =>
+  exprs.length === 0 ? null : exprs.reduce((l, r) => ({ t: "bin", op: "AND", l, r }));

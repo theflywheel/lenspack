@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOTS = ["packages/core/src", "packages/spec/src", "packages/policy/src", "packages/engine/src", "packages/sql/src", "packages/elasticsearch/src", "packages/agent/src", "packages/mcp/src", "packages/serve/src", "packages/react/src"];
+const ROOTS = ["packages/kernel/core/src", "packages/kernel/pack/src", "packages/kernel/policy/src", "packages/kernel/engine/src", "packages/sources/sql/src", "packages/sources/elasticsearch/src", "packages/kernel/agent/src", "packages/hosts/mcp/src", "packages/hosts/serve/src", "packages/hosts/react/src"];
 const WORDS = [
   "orders", "order_items", "revenue", "customers?", "products?", "refund(ed)?", "aov", "cart",
   "pageviews?", "session_id", "referrer", "bounced?", "visitors?",
@@ -18,7 +18,7 @@ const pattern = new RegExp(`\\b(${WORDS.join("|")})\\b`, "i");
 const PLATFORM = [/\bsignal: AbortSignal\./];
 // lenspack's own vocabulary that shares a word with an example: the chat role
 // that takes over a turn is named "escalate" in config (LENSPACK_LLM_ROLES).
-const OWN = { "packages/serve/src": /\bescalate\b/i };
+const OWN = { "packages/hosts/serve/src": /\bescalate\b/i };
 
 const files = [];
 const walk = (dir) => {

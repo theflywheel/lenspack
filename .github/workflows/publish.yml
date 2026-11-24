@@ -1,5 +1,5 @@
 name: publish
-# Publishes every public package under packages/* to GitHub Packages as
+# Publishes every public package under packages/<group>/<name> to GitHub Packages as
 # @theflywheel/lenspack-<name>, at the version in the tag (v0.1.0 -> 0.1.0).
 # The source keeps its @lenspack/* names; scripts/publish-packages.mjs renames
 # at publish time. Auth is the workflow's own GITHUB_TOKEN, nothing else.
@@ -13,7 +13,7 @@ on:
         type: boolean
         default: true
       version:
-        description: Version to stamp (defaults to the version in packages/core/package.json)
+        description: Version to stamp (defaults to the version in packages/kernel/core/package.json)
         type: string
         required: false
 
@@ -70,7 +70,7 @@ jobs:
         run: |
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}";
           elif [ -n "$INPUT_VERSION" ]; then v="${INPUT_VERSION#v}";
-          else v="$(node -p 'require("./packages/core/package.json").version')"; fi
+          else v="$(node -p 'require("./packages/kernel/core/package.json").version')"; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "Publishing version $v"
 

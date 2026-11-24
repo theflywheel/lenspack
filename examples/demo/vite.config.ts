@@ -35,10 +35,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), bootstrapApp()],
   resolve: {
     alias: [
-      { find: "@lenspack/react/styles.css", replacement: pkg("react", "styles.css") },
-      { find: /^@lenspack\/react\/adapters\/(.*)$/, replacement: pkg("react", "adapters/$1.tsx") },
-      { find: "@lenspack/core", replacement: pkg("core") },
-      { find: "@lenspack/react", replacement: pkg("react", "index.tsx") },
+      { find: "@lenspack/react/styles.css", replacement: pkg("hosts/react", "styles.css") },
+      { find: /^@lenspack\/react\/adapters\/(.*)$/, replacement: pkg("hosts/react", "adapters/$1.tsx") },
+      { find: "@lenspack/core", replacement: pkg("kernel/core") },
+      { find: "@lenspack/react", replacement: pkg("hosts/react", "index.tsx") },
     ],
   },
   // React in a chunk of its own: it changes far less often than the app, so a

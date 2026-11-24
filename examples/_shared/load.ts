@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parsePackText } from "@lenspack/spec";
+import { parsePackText } from "@lenspack/pack";
 
 /** An example's pack.yaml (text and parsed) and boards/*.json, read from the directory of the module at `url`. */
 export function loadExample(url: string) {

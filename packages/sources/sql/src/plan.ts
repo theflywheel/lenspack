@@ -1,0 +1,366 @@
+import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/pack";
+
+import { type Ast, type Expr, type Grouped, type Join, type Source, and } from "./ast";
+import { type BoundDimension, type BoundFilter, type BoundPlan, SPLIT_ROWS, type TimeWindow, bucketZone } from "@lenspack/engine";
+
+// Planning turns a bound plan into an AST. Each entity becomes a subquery that
+// projects the pack's dimension and measure fragments under reserved aliases,
+// so an unqualified column in a fragment can only ever mean a column of that
+// entity's own table — joins cannot make it ambiguous.
+
+const D = (key: string) => `__d_${key}`;
+const M = (key: string) => `__m_${key}`;
+const T = "__t";
+const TRAW = "__t_raw";
+// A two-stage measure's inner query, its key, its value per key, and its period mark.
+const N = "__n";
+const K = "__k";
+const V = "__v";
+const W = "__w";
+const HAVING = { eq: "=", neq: "<>", gt: ">", gte: ">=", lt: "<", lte: "<=" } as const;
+
+const col = (alias: string, name: string): Expr => ({ t: "col", alias, col: name });
+const raw = (sql: Fragment): Expr => ({ t: "raw", sql });
+const param = (value: unknown, cast?: "timestamp" | "double" | "int" | "bigint"): Expr => ({ t: "param", value, cast });
+
+function dimensionExpr(d: PackDimension): Expr {
+  if (d.field) return col("", d.field);
+  if (d.json) return { t: "json", alias: "", col: d.json[0]!, path: d.json.slice(1) };
+  return raw(d.sql!);
+}
+
+// A structured predicate. `neq` keeps rows where the field is absent, the way
+// a search engine's must_not does, so a pack means the same on every backend.
+export function whereExpr(w: Where): Expr {
+  const f = col("", w.field);
+  const v = w.value as string | number | boolean | (string | number | boolean)[];
+  switch (w.op) {
+    case "eq":
+      return { t: "bin", op: "=", l: f, r: param(v) };
+    case "neq":
+      return { t: "bin", op: "IS DISTINCT FROM", l: f, r: param(v) };
+    case "in":
+      return { t: "in", l: f, values: (v as unknown[]).map((x) => param(x)) };
+    case "gt":
+      return { t: "bin", op: ">", l: f, r: param(v) };
+    case "gte":
+      return { t: "bin", op: ">=", l: f, r: param(v) };
+    case "lt":
+      return { t: "bin", op: "<", l: f, r: param(v) };
+    case "lte":
+      return { t: "bin", op: "<=", l: f, r: param(v) };
+    case "exists":
+      return { t: "notnull", arg: f };
+    case "missing":
+      return { t: "isnull", arg: f };
+  }
+}
+
+// What one aggregate reads: a measure, or a two-stage measure's inner stage.
+type Aggregated = Pick<PackMeasure, "key" | "agg" | "field" | "sql" | "filter" | "where" | "scale" | "derived" | "per">;
+
+// A measure's row-level value. A `filter` folds into a CASE so the aggregate
+// simply ignores rows outside it; `count` gets a literal 1 to count.
+// A counted `field` counts its non-null values.
+function measureRowExpr(m: Aggregated): Expr | null {
+  if (m.derived || m.per) return null;
+  const value: Expr | null = m.field ? col("", m.field) : m.sql ? raw(m.sql) : null;
+  const base: Expr = value ?? { t: "lit", value: 1 };
+  const when = and([...(m.filter ? [raw(m.filter)] : []), ...(m.where ?? []).map(whereExpr)]);
+  if (!when) return m.agg === "count" && !value ? null : base;
+  return { t: "case", when, then: base };
+}
+
+function timeExpr(time: NonNullable<Pack["entities"][string]["time"]>): Expr {
+  if (typeof time === "string") return col("", time);
+  if ("sql" in time) return raw(time.sql);
+  return { t: "epoch", unit: time.unit, arg: col("", time.field) };
+}
+
+export type Shape = "breakdown" | "series" | "value" | "rows" | "points";
+
+export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
+  const { query, root } = bound;
+  const sources = new Map<string, Source>();
+  const source = (entity: string): Source => {
+    let s = sources.get(entity);
+    if (!s) {
+      const def = pack.entities[entity]!;
+      s = { alias: entity, table: def.source, projections: [], where: [] };
+      const tenant = tenantOf(def);
+      // A subtree tenant owns itself and "<id>.*".
+      if (tenant && bound.tenant !== null) s.where.push(filterExpr(col("", tenant.field), tenant.match === "subtree" ? "subtree" : "eq", bound.tenant));
+      // The entity's own predicate (soft deletes, "current" rows) applies to
+      // every query that touches it, in every role.
+      if (def.filter) s.where.push(raw(def.filter));
+      for (const w of def.where ?? []) s.where.push(whereExpr(w));
+      // Time is projected once so the rest of the plan can treat it as a column.
+      if (def.time) s.projections.push({ alias: T, expr: timeExpr(def.time) });
+      sources.set(entity, s);
+    }
+    return s;
+  };
+  const project = (entity: string, alias: string, expr: Expr) => {
+    const s = source(entity);
+    if (!s.projections.some((p) => p.alias === alias)) s.projections.push({ alias, expr });
+  };
+
+  // Root first so it is the FROM.
+  const rootSource = source(root);
+  const joins: Join[] = [];
+  const joined = new Set<string>([root]);
+  const ensureJoined = (d: BoundDimension) => {
+    for (const step of d.path) {
+      if (joined.has(step.to)) continue;
+      joined.add(step.to);
+      const s = source(step.to);
+      const leftIsFrom = step.on.left.entity === step.from;
+      const fromSide = leftIsFrom ? step.on.left : step.on.right;
+      const toSide = leftIsFrom ? step.on.right : step.on.left;
+      joins.push({ source: s, on: { left: col(step.from, fromSide.column), right: col(step.to, toSide.column) } });
+    }
+  };
+  const dimRef = (d: BoundDimension): Expr => {
+    ensureJoined(d);
+    project(d.def.entity, D(d.def.key), dimensionExpr(d.def));
+    return col(d.def.entity, D(d.def.key));
+  };
+
+  const where: Expr[] = [];
+  const timeCol = bound.rootEntity.time ? col(root, T) : null;
+  // A window on epoch-number time compares the stored column with epoch
+  // numbers: the planner sees the real column (its statistics, its index),
+  // where converting every row first would hide both.
+  const epoch = typeof bound.rootEntity.time === "object" && bound.rootEntity.time && "unit" in bound.rootEntity.time ? bound.rootEntity.time : null;
+  if (epoch) project(root, TRAW, col("", epoch.field));
+  const bound_ = (d: Date): Expr => (epoch ? param(epoch.unit === "epoch_ms" ? d.getTime() : Math.floor(d.getTime() / 1000), "bigint") : param(d, "timestamp"));
+  const windowCol = epoch ? col(root, TRAW) : timeCol;
+  const inWindow = (w: TimeWindow, c: Expr = windowCol!): Expr => ({
+    t: "bin",
+    op: "AND",
+    l: { t: "bin", op: ">=", l: c, r: bound_(w.from) },
+    r: { t: "bin", op: "<", l: c, r: bound_(w.to) },
+  });
+
+  for (const f of bound.filters) where.push(filterExpr(dimRef(f.dimension), f.op, f.value));
+
+  // For a comparison, both windows share one scan and the aggregate picks its
+  // rows with a CASE; otherwise the window is an ordinary predicate.
+  const windowed = !!bound.previous;
+  if (bound.time && !windowed) where.push(inWindow(bound.time));
+  if (windowed) {
+    where.push({ t: "bin", op: ">=", l: windowCol!, r: bound_(bound.previous!.from) });
+    where.push({ t: "bin", op: "<", l: windowCol!, r: bound_(bound.time!.to) });
+  }
+  // A two-stage measure groups each key's rows per period instead: the root
+  // marks this period's rows, so a key with rows in both counts in each.
+  const per = bound.measure?.kind === "simple" ? bound.measure.def.per : undefined;
+  if (per && windowed) project(root, W, { t: "case", when: inWindow(bound.time!, epoch ? col("", epoch.field) : timeExpr(bound.rootEntity.time!)), then: { t: "lit", value: 1 } });
+
+  // Aggregates over the root's projected measure columns, or over the inner
+  // query's value per key for a two-stage measure. `having` folds into a CASE
+  // like a filter, so a group whose keys all fail it still shows (0 under count).
+  const passes = (h: NonNullable<NonNullable<Aggregated["per"]>["having"]>): Expr =>
+    h.op === "between"
+      ? { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: col(N, V), r: param(h.value[0]) }, r: { t: "bin", op: "<=", l: col(N, V), r: param(h.value[1]) } }
+      : { t: "bin", op: HAVING[h.op], l: col(N, V), r: param(h.value) };
+  const perValue = (p: NonNullable<Aggregated["per"]>): Expr => (p.having ? { t: "case", when: passes(p.having), then: col(N, V) } : col(N, V));
+  const aggOf = (m: Aggregated, cond: Expr | null): Expr => {
+    const rowExpr = measureRowExpr(m);
+    if (rowExpr) project(root, M(m.key), rowExpr);
+    const ref: Expr | null = m.per ? perValue(m.per) : rowExpr ? col(root, M(m.key)) : null;
+    let agg: Expr;
+    if (m.agg === "count") {
+      const arg: Expr = cond ? { t: "case", when: cond, then: ref ?? { t: "lit", value: 1 } } : (ref ?? { t: "star" });
+      agg = { t: "agg", fn: "count", arg };
+    } else {
+      const arg: Expr = cond ? { t: "case", when: cond, then: ref! } : ref!;
+      agg = { t: "agg", fn: m.agg!, arg };
+    }
+    return m.scale ? { t: "bin", op: "*", l: { t: "cast", arg: agg, to: "double" }, r: { t: "lit", value: m.scale } } : agg;
+  };
+  const valueExpr = (cond: Expr | null): Expr => {
+    const m = bound.measure!;
+    if (m.kind === "simple") return aggOf(m.def, cond);
+    // Arithmetic over aggregates, in double precision; every divisor is
+    // guarded so a zero gives NULL, as the engine's evaluator does.
+    const byKey = new Map(m.operands.map((o) => [o.key, o]));
+    const build = (e: MeasureExpr): Expr => {
+      switch (e.t) {
+        case "measure":
+          return { t: "cast", arg: aggOf(byKey.get(e.key)!, cond), to: "double" };
+        case "number":
+          return { t: "lit", value: e.value };
+        case "neg":
+          return { t: "bin", op: "*", l: { t: "lit", value: -1 }, r: build(e.arg) };
+        case "op":
+          return e.op === "/" ? { t: "bin", op: "/", l: build(e.l), r: { t: "nullif0", arg: build(e.r) } } : { t: "bin", op: e.op, l: build(e.l), r: build(e.r) };
+      }
+    };
+    return build(m.expr);
+  };
+  // Which period a row is in; a two-stage measure reads its inner query's mark.
+  const inCurrent = (): Expr => (per ? { t: "notnull", arg: col(N, W) } : inWindow(bound.time!));
+  const inPrevious = (): Expr => (per ? { t: "isnull", arg: col(N, W) } : inWindow(bound.previous!));
+  const rowsIn = (cond: Expr | null): Expr => ({ t: "agg", fn: "count", arg: cond ? { t: "case", when: cond, then: { t: "lit", value: 1 } } : { t: "star" } });
+
+  const select: Ast["select"] = [];
+  const groupBy: Expr[] = [];
+  const having: Expr[] = [];
+  const orderBy: Ast["orderBy"] = [];
+  let limit: number;
+  let offset: number | undefined;
+  let shape: Shape;
+
+  switch (query.kind) {
+    case "breakdown": {
+      const g = dimRef(bound.dimension!);
+      select.push({ alias: "group", expr: g });
+      groupBy.push(g);
+      if (bound.split) {
+        const s = dimRef(bound.split);
+        select.push({ alias: "series", expr: s });
+        groupBy.push(s);
+      }
+      // With a comparison the groups are the current period's: one seen only
+      // in the previous period is not a row.
+      const current = windowed ? inCurrent() : null;
+      select.push({ alias: "value", expr: valueExpr(current) }, { alias: "n", expr: rowsIn(current) });
+      if (windowed) {
+        select.push({ alias: "previous", expr: valueExpr(inPrevious()) });
+        having.push({ t: "bin", op: ">", l: rowsIn(current), r: { t: "lit", value: 0 } });
+      }
+      // Ties broken by name so the same data always prints the same rows.
+      if (query.sortBy === "group") orderBy.push({ expr: col("", "group"), dir: query.sort });
+      else if (query.sortBy === "measure") orderBy.push({ expr: col("", "value"), dir: query.sort });
+      else if (query.sortBy !== "none") orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
+      if (bound.split && query.sortBy !== "none" && query.sortBy !== "measure") orderBy.push({ expr: col("", "series"), dir: "asc" });
+      // Split, the limit is on groups: every row comes back and the engine keeps the top groups.
+      limit = bound.split ? SPLIT_ROWS : query.limit;
+      shape = "breakdown";
+      break;
+    }
+    case "series": {
+      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol!, zone: bucketZone(pack.timeZone) };
+      select.push({ alias: "bucket", expr: bucket });
+      groupBy.push(bucket);
+      if (bound.dimension) {
+        const g = dimRef(bound.dimension);
+        select.push({ alias: "series", expr: g });
+        groupBy.push(g);
+      }
+      select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
+      orderBy.push({ expr: col("", "bucket"), dir: "asc" });
+      if (bound.dimension) orderBy.push({ expr: col("", "series"), dir: "asc" });
+      // A computed query's base: every series, one row past the cap to tell it was cut.
+      limit = bound.base ? bound.base.rows + 1 : 5000;
+      shape = "series";
+      break;
+    }
+    case "value": {
+      const current = windowed ? inCurrent() : null;
+      select.push({ alias: "value", expr: valueExpr(current) });
+      select.push({ alias: "n", expr: rowsIn(current) });
+      if (windowed) select.push({ alias: "previous", expr: valueExpr(inPrevious()) });
+      limit = 1;
+      shape = "value";
+      break;
+    }
+    case "rows": {
+      for (const c of bound.columns) select.push({ alias: c.def.key, expr: dimRef(c) });
+      // Ties under orderBy fall to the remaining columns in the order listed,
+      // so a limited page of rows is the same page on every run.
+      if (bound.orderBy) {
+        orderBy.push({ expr: dimRef(bound.orderBy.dimension), dir: bound.orderBy.dir });
+        for (const c of bound.columns) if (c.def.key !== bound.orderBy.dimension.def.key) orderBy.push({ expr: dimRef(c), dir: "asc" });
+      } else if (query.offset !== undefined) {
+        // A page needs an order, or the next page is any rows at all: the
+        // columns in the order listed.
+        for (const c of bound.columns) orderBy.push({ expr: dimRef(c), dir: "asc" });
+      }
+      limit = query.limit;
+      if (query.offset) offset = query.offset;
+      shape = "rows";
+      break;
+    }
+    case "points": {
+      // One point per location (and colour and label): rows at one spot add up
+      // under a size measure. Rows with no location are left out. One row past
+      // the limit tells the caller the list was cut; with a size the largest stay,
+      // without one the source's order (sorting by place would keep one corner).
+      project(root, D("__lat"), col("", bound.geo!.lat));
+      project(root, D("__lon"), col("", bound.geo!.lon));
+      const lat = col(root, D("__lat"));
+      const lon = col(root, D("__lon"));
+      where.push({ t: "notnull", arg: lat }, { t: "notnull", arg: lon });
+      select.push({ alias: "lat", expr: lat }, { alias: "lon", expr: lon });
+      groupBy.push(lat, lon);
+      const named = (key: string | undefined, alias: string) => {
+        if (!key) return;
+        const g = dimRef(bound.columns.find((c) => c.def.key === key)!);
+        select.push({ alias, expr: g });
+        groupBy.push(g);
+      };
+      named(query.color, "color");
+      named(query.label, "label");
+      if (bound.measure) {
+        select.push({ alias: "size", expr: valueExpr(null) });
+        orderBy.push({ expr: col("", "size"), dir: "desc" }, { expr: col("", "lat"), dir: "desc" }, { expr: col("", "lon"), dir: "asc" });
+      }
+      limit = query.limit + 1;
+      shape = "points";
+      break;
+    }
+  }
+
+  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, having, orderBy, limit, ...(offset ? { offset } : {}) }, shape };
+
+  // Two stages: one value per key and group, then the measure's agg over those;
+  // n counts keys, and rows with no key are not counted.
+  project(root, K, typeof per.key === "string" ? col("", per.key) : raw(per.key.sql));
+  where.push({ t: "notnull", arg: col(root, K) });
+  const value = aggOf({ ...per, key: bound.measure!.def.key }, null);
+  const groups = select.filter((s) => groupBy.includes(s.expr));
+  const mark = windowed ? [{ alias: W, expr: col(root, W) }] : [];
+  const inner: Grouped = {
+    alias: N,
+    select: [...groups, ...mark, { alias: V, expr: value }],
+    from: rootSource,
+    joins,
+    where,
+    groupBy: [...groupBy, col(root, K), ...mark.map((m) => m.expr)],
+  };
+  const outer = select.map((s) => (groups.includes(s) ? { alias: s.alias, expr: col(N, s.alias) } : s));
+  return { ast: { select: outer, from: inner, joins: [], where: [], groupBy: groups.map((s) => col(N, s.alias)), having, orderBy, limit }, shape };
+}
+
+// LIKE's own wildcards (and its escape character), matched literally.
+const likeEscape = (v: unknown) => String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
+
+function filterExpr(ref: Expr, op: BoundFilter["op"], value: unknown): Expr {
+  const v = value as string | number | boolean | (string | number | boolean)[];
+  const one = (x: unknown) => param(x);
+  switch (op) {
+    case "eq":
+      return { t: "bin", op: "=", l: ref, r: one(v) };
+    case "neq":
+      return { t: "bin", op: "<>", l: ref, r: one(v) };
+    case "gte":
+      return { t: "bin", op: ">=", l: ref, r: one(v) };
+    case "lte":
+      return { t: "bin", op: "<=", l: ref, r: one(v) };
+    case "in":
+      return { t: "in", l: ref, values: (Array.isArray(v) ? v : [v]).map(one) };
+    case "between": {
+      const [a, b] = Array.isArray(v) ? v : [v, v];
+      return { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: ref, r: one(a) }, r: { t: "bin", op: "<=", l: ref, r: one(b) } };
+    }
+    case "segment":
+      // Whole segments of a "|"-separated path: "BOMET" matches "KE|BOMET|SOTIK", not "BOM".
+      return { t: "segment", arg: ref, values: (Array.isArray(v) ? v : [v]).map(one) };
+    case "subtree":
+      return { t: "paren", arg: { t: "bin", op: "OR", l: { t: "bin", op: "=", l: ref, r: one(v) }, r: { t: "bin", op: "LIKE", l: ref, r: one(`${likeEscape(v)}.%`) } } };
+    case "contains":
+      return { t: "bin", op: "ILIKE", l: { t: "cast", arg: ref, to: "text" }, r: one(`%${likeEscape(v)}%`) };
+  }
+}

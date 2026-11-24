@@ -2,7 +2,7 @@
 # directory, so one image serves any deployment:
 #   docker build -t lenspack .
 #   docker run -v "$PWD/config:/config:ro" -p 8787:8787 lenspack
-# The same image runs the chat inside Apache Superset (see packages/superset):
+# The same image runs the chat inside Apache Superset (see packages/hosts/superset):
 #   docker run -v "$PWD/config:/config:ro" -v lenspack-data:/data -p 8795:8795 \
 #     -e LENSPACK_SUPERSET_URL=http://superset:8088 lenspack superset --config /config/superset.yaml
 # Sign-in is the built-in admin and a password unless lenspack.yaml says
@@ -19,11 +19,15 @@ RUN pnpm install --frozen-lockfile \
  && pnpm build \
  && pnpm --filter @lenspack/example-demo build \
  && pnpm store prune
+# The paths from before the packages were grouped into folders still work, for
+# deployments that name them: node packages/serve/dist/cli.js, and the Superset
+# plugin at packages/superset/plugin/lenspack_superset.py.
+RUN ln -s hosts/serve packages/serve && ln -s hosts/superset packages/superset
 # LENSPACK_HOST is Superset mode's listen address; serve's comes from its config.
 ENV NODE_ENV=production LENSPACK_STATE_DIR=/data LENSPACK_UI=examples/demo/dist LENSPACK_HOST=0.0.0.0
 RUN mkdir -p /data && chown node:node /data
 VOLUME /data
 EXPOSE 8787 8795
 USER node
-ENTRYPOINT ["node", "packages/serve/dist/cli.js"]
+ENTRYPOINT ["node", "packages/hosts/serve/dist/cli.js"]
 CMD ["serve", "--config", "/config/lenspack.yaml"]

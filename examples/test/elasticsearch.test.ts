@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { type BoardOp, type Query, applyOps, emptyBoard } from "@lenspack/core";
 import { compileDss } from "@lenspack/dss";
-import { catalogueFrom } from "@lenspack/spec";
+import { catalogueFrom } from "@lenspack/pack";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
 import { type WidgetData, explain, resolveBoard, run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
@@ -171,7 +171,7 @@ describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", (
   });
 
   it("draws DSS charts compiled to a pack against the index they were written for", async () => {
-    const fx = new URL("../../packages/dss/test/fixtures/", import.meta.url);
+    const fx = new URL("../../packages/packs/dss/test/fixtures/", import.meta.url);
     const r = compileDss(JSON.parse(readFileSync(new URL("ChartApiConfig.sample.json", fx), "utf8")), JSON.parse(readFileSync(new URL("MasterDashboardConfig.sample.json", fx), "utf8")));
     const built = applyOps(emptyBoard(r.pack, "dss"), r.boards[0]!.ops as BoardOp[], catalogueFrom(r.pack));
     if (!built.ok) throw new Error(built.error);

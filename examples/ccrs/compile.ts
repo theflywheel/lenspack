@@ -2,7 +2,7 @@
 // Compile a CCRS KPI catalog into this example's pack, boards and skin map.
 //   tsx examples/ccrs/compile.ts <dir with KpiDefinition.json, DashboardPack.json>
 // Defaults to the catalog seeded in the CCRS repo (MIT), vendored under
-// packages/ccrs/test/fixtures. A deployment passes the live MDMS export.
+// packages/packs/ccrs/test/fixtures. A deployment passes the live MDMS export.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { compileCcrs } from "@lenspack/ccrs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = process.argv[2] ?? join(here, "../../packages/ccrs/test/fixtures");
+const src = process.argv[2] ?? join(here, "../../packages/packs/ccrs/test/fixtures");
 const read = (f: string) => JSON.parse(readFileSync(join(src, f), "utf8"));
 const config = (() => {
   try {
