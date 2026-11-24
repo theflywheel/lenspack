@@ -1,77 +1,47 @@
 #!/usr/bin/env node
-import { createServer } from "node:http";
-import { dirname, join } from "node:path";
-
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { boardTools, fileProposals } from "@lenspack/agent";
-import { loadPack } from "@lenspack/pack";
-import { sqlConnector, sqlStore } from "@lenspack/sql";
-
-import { sqlRawSql } from "./index";
+import { serveHttp } from "./http";
+import { openMcp } from "./open";
+import { USAGE, UsageError, parseCli } from "./options";
 import { createMcpServer } from "./server";
 
-// lenspack-mcp --pack ./pack.yaml --db postgres://… | ./data.duckdb [--board id] [--tenant t] [--run-sql | --run-sql-role-scoped] [--http 8787]
-
-function arg(name: string, fallback?: string) {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? (process.argv[i + 1] ?? fallback) : fallback;
-}
-const flag = (name: string) => process.argv.includes(`--${name}`);
+// lenspack-mcp --pack ./pack.yaml --db postgres://… | ./data.duckdb [--store …] [--board id] [--tenant t]
+//   [--run-sql | --run-sql-role-scoped] [--http 8787 [--host 127.0.0.1] [--token …] [--allow-origin …]]
 
 async function main() {
-  const packPath = arg("pack");
-  const dbUrl = arg("db");
-  if (!packPath || !dbUrl || flag("help")) {
-    console.error("usage: lenspack-mcp --pack <pack.yaml> --db <postgres://…|file.duckdb> [--board <id>] [--tenant <t>] [--run-sql | --run-sql-role-scoped] [--http <port>]");
-    process.exit(flag("help") ? 0 : 2);
+  let opts;
+  try {
+    opts = parseCli(process.argv.slice(2));
+  } catch (e) {
+    if (!(e instanceof UsageError)) throw e;
+    console.error(`lenspack-mcp: ${e.message}\n\n${USAGE}`);
+    process.exit(2);
+  }
+  if (opts === "help") {
+    console.error(USAGE);
+    process.exit(0);
   }
 
-  const pack = await loadPack(packPath);
-  const db = dbUrl.startsWith("postgres") ? await (await import("@lenspack/sql/pg")).openPostgres(dbUrl) : await (await import("@lenspack/sql/duckdb")).openDuckdb(dbUrl);
-  const store = sqlStore(db);
-  await store.migrate();
+  const served = await openMcp(opts);
+  const what = `pack ${served.pack}, board ${served.board} (kept in ${served.store})`;
+  const { imported } = served;
+  if (imported?.boards)
+    console.error(`lenspack-mcp: copied ${imported.boards} board(s) and ${imported.versions} version(s) from the data database into ${served.store}; the data database was not changed`);
+  if (imported?.skipped.length) console.error(`lenspack-mcp: left ${imported.skipped.join(", ")} in the data database: unreadable, or its id is taken in the store`);
 
-  const boardId = arg("board", "default")!;
-  if (!(await store.get(boardId))) await store.create({ id: boardId, pack, title: `${pack.pack} board` });
-
-  const tools = boardTools({
-    pack,
-    connector: sqlConnector(db.executor),
-    rawSql: sqlRawSql(db.executor, pack),
-    store,
-    boardId,
-    ctx: { tenant: arg("tenant") },
-    runSql: flag("run-sql-role-scoped") ? "role-scoped" : flag("run-sql"),
-    proposals: fileProposals(join(dirname(packPath), `${pack.pack}.proposals.json`)),
-  });
-
-  const port = arg("http");
-  if (port) {
-    // Stateless streamable HTTP: one server per request keeps this simple and
-    // safe behind a load balancer.
-    const http = createServer(async (req, res) => {
-      if (req.url !== "/mcp") {
-        res.writeHead(404).end();
-        return;
-      }
-      const server = createMcpServer(tools);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      res.on("close", () => void transport.close());
-      await server.connect(transport);
-      await transport.handleRequest(req, res);
-    });
-    http.listen(Number(port), () => console.error(`lenspack-mcp: pack ${pack.pack}, board ${boardId}, http://localhost:${port}/mcp`));
+  if (opts.http) {
+    const { url } = await serveHttp(served.tools, opts.http);
+    console.error(`lenspack-mcp: ${what}, ${url}${opts.http.token ? " (bearer token required)" : " (this machine only)"}`);
     return;
   }
 
-  const server = createMcpServer(tools);
+  const server = createMcpServer(served.tools);
   await server.connect(new StdioServerTransport());
-  console.error(`lenspack-mcp: pack ${pack.pack}, board ${boardId}, stdio`);
+  console.error(`lenspack-mcp: ${what}, stdio`);
 }
 
 main().catch((e) => {
-  console.error(e);
+  console.error(`lenspack-mcp: ${(e as Error).message ?? e}`);
   process.exit(1);
 });

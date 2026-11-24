@@ -12,12 +12,13 @@
   "scripts": { "build": "tsup src/index.ts src/cli.ts --format esm --no-splitting --dts --clean --tsconfig tsconfig.build.json" },
   "dependencies": {
     "@lenspack/agent": "workspace:*",
+    "@lenspack/core": "workspace:*",
     "@lenspack/pack": "workspace:*",
     "@lenspack/sql": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^3.25.76"
   },
-  "peerDependencies": { "@duckdb/node-api": "*", "pg": ">=8.11.0" },
-  "peerDependenciesMeta": { "@duckdb/node-api": { "optional": true }, "pg": { "optional": true } },
+  "peerDependencies": { "@duckdb/node-api": "*", "better-sqlite3": ">=11", "mysql2": ">=3.9", "pg": ">=8.11.0" },
+  "peerDependenciesMeta": { "@duckdb/node-api": { "optional": true }, "better-sqlite3": { "optional": true }, "mysql2": { "optional": true }, "pg": { "optional": true } },
   "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/hosts/mcp" }
 }

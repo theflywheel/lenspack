@@ -122,7 +122,7 @@ Pack descriptions, instructions and hints are shown to everyone who may open the
 
 ## How the layers combine
 
-One pure function, `decide()` in `@lenspack/policy`, settles what a caller may use of a pack. Every host goes through it: `lenspack serve` with any sign-in, Superset mode, and the CCRS API.
+One pure function, `decide()` in `@lenspack/policy`, settles what a caller may use of a pack. Every host with callers goes through it: `lenspack serve` with any sign-in, Superset mode, and the CCRS API. `lenspack-mcp` has one caller, the person who started it, and does not.
 
 1. **The host says who the caller is and what it already allows.** The sign-in (or Superset, or CCRS) gives an identity: user, roles, tenant, and whatever the host limits itself: a row scope, keys it keeps from them, capabilities it grants.
 2. **Lenspack's rules only narrow it.** The rights by user and role add edit, maintain and usage rights. A pack's access rule adds its `scope` to the host's and the caller's, and its `hide`/`only` keys to the host's hidden keys. Nothing in lenspack.yaml can widen what the host allows.

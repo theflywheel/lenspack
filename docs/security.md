@@ -26,7 +26,7 @@ Every identifier from the pack; every value a bound parameter; tenant predicate 
 Every SQL source is opened through a driver, and the driver, not the SQL, enforces four things on every statement: read-only, exactly one statement, a statement timeout and a row cap (a result over it is an error, not a shorter answer). How each database does it is in [drivers.md](drivers.md#the-guards-are-the-drivers); in short:
 
 - Postgres: `BEGIN TRANSACTION READ ONLY` and `SET LOCAL statement_timeout` around every statement, always over the extended protocol, which takes one statement.
-- DuckDB: one statement, prepared and run only if it is a `SELECT`; interrupted on timeout. A source file is opened `READ_ONLY` with external access off, so nothing can read past it.
+- DuckDB: one statement, prepared and run only if it is a `SELECT`; interrupted on timeout. A source file is opened `READ_ONLY` with external access off and its settings locked, so nothing can read past it or turn that access back on (an in-memory source also has external access off).
 - SQLite: the file is opened read-only, every statement must be one SQLite marks read-only, and the connection runs in a worker thread that is ended on timeout.
 - MySQL and MariaDB: a read-only session and a read-only transaction per statement, the server's statement timer, prepared statements.
 - ClickHouse: `readonly=2`, `max_execution_time` and `max_result_rows` on every request.
@@ -60,6 +60,10 @@ The answer is a principal: `{ user, roles?, tenant?, scope?, edit?, maintain?, u
 - **Boards have owners:** a board someone makes is theirs. Until they share it, nobody else sees it (404, as if it did not exist); once shared, others in the same tenant may read it and save a copy, not change it. The pack's own boards, from its board files, have no owner: everyone reads them, and only a caller with `maintain` changes them. A changed board file lands as a new version at the next start, so an edit made in the app stays in the history. `editors` and `maintainers` name who gets which, for every kind (`"*"` for everyone signed in); `admin` under `password` has both, and so does the one local user under `none`.
 - **Pack access:** a pack's `access:` rules decide, by role, whether a caller sees the pack at all, which of its keys they may use and which rows. A query naming a hidden key is refused in resolution (`NOT_PERMITTED`) on every path, and the catalogue, the chat's prompt and tools leave hidden keys out. See [access.md](access.md).
 - **Audit:** every change, refused change and denied request goes to the `audit` hook with the user, pack, board and outcome (`audit: ./audit.jsonl` appends JSON lines).
+
+## The MCP host
+
+`lenspack-mcp` is one identity, the person who started it: it has no sign-in and does not go through `decide()`, so `lenspack.yaml` access rules do not apply to it. Over stdio only the client that started it can reach it. Over HTTP it listens on `127.0.0.1` and refuses a request whose `Host` is not a loopback name or whose `Origin` is not its own, so a web page cannot drive it; any other address needs a bearer token (`--token` or `LENSPACK_MCP_TOKEN`). It opens `--db` as a read-only source and keeps boards in a separate store. See [the package README](../packages/hosts/mcp/README.md).
 
 ## Pack fragments are code
 

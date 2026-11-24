@@ -76,7 +76,7 @@ The caller (the engine, `run_sql`, a tool) never sets them and cannot remove the
 | | read-only | one statement | timeout | row cap |
 |---|---|---|---|---|
 | Postgres | `BEGIN TRANSACTION READ ONLY` per query | the extended protocol, always, so `…; COMMIT; …` is an error even without parameters | `SET LOCAL statement_timeout` | refused over `maxRows` |
-| DuckDB | a source file is opened `READ_ONLY` with external access off; every statement must prepare as a `SELECT` | the text must hold exactly one statement | `interrupt()` on a timer | refused over `maxRows` |
+| DuckDB | a source file is opened `READ_ONLY` with external access off and its settings locked; every statement must prepare as a `SELECT` | the text must hold exactly one statement | `interrupt()` on a timer | refused over `maxRows` |
 | SQLite | the file is opened read-only; every statement must be one SQLite marks read-only | a second statement is a prepare error | the connection lives in a worker thread, which is ended on a timer (a fresh one serves the next query) | rows stream and stop past `maxRows` |
 | MySQL / MariaDB | `SET SESSION TRANSACTION READ ONLY`, then `START TRANSACTION READ ONLY` per query (DDL is refused too) | prepared statements hold one statement | `max_execution_time` (MySQL) or `max_statement_time` (MariaDB), and a client timer | refused over `maxRows` |
 | ClickHouse | `readonly=2` on every request | the HTTP interface takes one | `max_execution_time`, and a client timer | `max_result_rows` with `result_overflow_mode=throw` |
