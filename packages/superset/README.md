@@ -33,10 +33,41 @@ Apache Superset as a lenspack backend, without forking Superset.
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's
   version history is the undo Superset lacks.
 
-`bin/serve.ts` runs the board API and the chat inside Superset (`/overlay.js`, loaded by one script tag in
-Superset's documented-overridable `tail_js_custom_extra.html`). The deployment side is one Python file,
-`lenspack_superset.py` in [egovernments/innovations `nl-dashboard/`](https://github.com/egovernments/innovations/tree/nl-dashboard/superset-lenspack/nl-dashboard),
+## Running it
+
+`lenspack superset --config superset.yaml` runs the board API and the chat inside Superset (`/overlay.js`, loaded
+by one script tag in Superset's documented-overridable `tail_js_custom_extra.html`). It is the same server as
+`lenspack serve` (`@lenspack/serve`'s runtime: models, metering, budget, audit, `/healthz`, a clean exit on
+SIGTERM), with Superset as its host: the pack comes from Superset's datasets, boards are kept in its
+dashboards, and Superset's signed header is the sign-in. The root image runs it:
+
+```sh
+docker run -v "$PWD/config:/config:ro" -v lenspack-data:/data -p 8795:8795 \
+  -e LENSPACK_SUPERSET_URL=http://superset:8088 -e ANTHROPIC_API_KEY \
+  lenspack superset --config /config/superset.yaml
+```
+
+From the source tree, `npx tsx --tsconfig tsconfig.base.json packages/superset/bin/serve.ts superset.yaml` does
+the same. The deployment side is one Python file, `lenspack_superset.py` in
+[egovernments/innovations `nl-dashboard/`](https://github.com/egovernments/innovations/tree/nl-dashboard/superset-lenspack/nl-dashboard),
 loaded by `superset_config.py`.
+
+```yaml
+# superset.yaml: a string "env:NAME" anywhere reads that variable
+datasets: [visits, public.households]   # by id, or by table name
+overlay: { instructions: "…", examples: [] }
+# Each of these may be left out for its environment variable, then the default:
+superset: { url: http://superset:8088 }  # LENSPACK_SUPERSET_URL (required one way or the other)
+publicPath: /lenspack                    # LENSPACK_PUBLIC_PATH, "" (where a proxy mounts this server)
+host: 0.0.0.0                            # LENSPACK_HOST, 127.0.0.1 (0.0.0.0 in the image)
+port: 8795                               # LENSPACK_PORT, 8795
+state: /data/superset-boards.json        # LENSPACK_STATE_DIR/superset-boards.json, state/superset-boards.json
+budget: { usdPerDay: 20 }                # LENSPACK_BUDGET_USD_PER_DAY, LENSPACK_BUDGET_USD_PER_USER_PER_DAY
+```
+
+Models: `LENSPACK_LLM_PROVIDERS` as for `lenspack serve` ([docs/llm.md](../../docs/llm.md)). With only
+`ANTHROPIC_API_KEY` set, the chat offers Claude Sonnet 5.5 (the default), Opus 5.5 and Haiku 5.5, and the
+settings page says the key came from `ANTHROPIC_API_KEY`.
 
 ## Who is asking
 

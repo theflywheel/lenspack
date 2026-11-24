@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { settingsStore } from "../src/settings";
+import { settingsStore } from "@lenspack/serve";
 
 describe("settingsStore", () => {
   it("keeps sections in one file, survives a reload, and removes a section on undefined", () => {

@@ -10,3 +10,8 @@ export * from "./prompt";
 export * from "./review";
 export * from "./metering";
 export * from "./speech";
+export * from "./audit";
+export * from "./settings";
+export * from "./features";
+export * from "./admin";
+export * from "./runtime";

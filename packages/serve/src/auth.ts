@@ -1,5 +1,4 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { appendFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 
 import { type FilterClause, filterClauseSchema } from "@lenspack/core";
@@ -52,7 +51,7 @@ export type Access = (req: IncomingMessage) => Principal | null | Promise<Princi
  * adapter itself grants (a token's rights, the admin's). The rights by role
  * are added above it (principalOf).
  */
-export type Identity = { user: string; roles: string[]; tenant?: string; scope?: FilterClause[]; packs?: string[]; edit?: boolean; maintain?: boolean; usage?: boolean };
+export type Identity = { user: string; roles: string[]; tenant?: string; scope?: FilterClause[]; packs?: string[]; edit?: boolean; maintain?: boolean; usage?: boolean; readOnly?: string };
 
 /** One way of signing in. auth.kind in lenspack.yaml (or LENSPACK_AUTH) picks it. */
 export interface AuthAdapter {
@@ -66,17 +65,6 @@ export interface AuthAdapter {
   /** The UI's sign-out link. */
   signOutUrl?: string;
 }
-
-export type AuditEvent = {
-  at: string;
-  user: string;
-  pack?: string;
-  board?: string;
-  action: string;
-  outcome: "ok" | "refused" | "denied";
-  detail?: string;
-};
-export type Audit = (event: AuditEvent) => void;
 
 const scopeSchema = z.array(filterClauseSchema).optional();
 
@@ -109,6 +97,7 @@ export function principalOf(id: Identity, rules: Rights = NO_RIGHTS): Principal 
     ...(id.tenant ? { tenant: id.tenant } : {}),
     ...(id.scope ? { scope: id.scope } : {}),
     ...(id.packs ? { packs: id.packs } : {}),
+    ...(id.readOnly ? { readOnly: id.readOnly } : {}),
   };
 }
 
@@ -351,8 +340,3 @@ export const withRights = (adapter: AuthAdapter, rights: Rights): Access => asyn
   const id = await adapter.identify(req);
   return id ? principalOf(id, rights) : null;
 };
-
-/** Appends one JSON line per event. */
-export function fileAudit(path: string): Audit {
-  return (event) => appendFileSync(path, `${JSON.stringify(event)}\n`);
-}

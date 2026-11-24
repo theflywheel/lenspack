@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { SupersetError } from "../src/client";
-import { features } from "../src/features";
-import { SettingsSaveError, diskProblem, settingsStore } from "../src/settings";
+import { features } from "@lenspack/serve";
+import { SettingsSaveError, diskProblem, settingsStore } from "@lenspack/serve";
 import { scrubAddresses, sourceError } from "../src/source-errors";
 import { savedStates } from "../src/store";
 

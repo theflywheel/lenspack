@@ -98,16 +98,16 @@ export const configSchema = z.object({
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 
-/** `env:NAME` → the variable's value; a missing variable is an error, not an empty string. */
-export function resolveSecrets<T>(value: T, env = process.env): T {
+/** `env:NAME` → the variable's value; a missing variable is an error, and so is an empty one unless allowEmpty. */
+export function resolveSecrets<T>(value: T, env = process.env, o: { file?: string; allowEmpty?: boolean } = {}): T {
   if (typeof value === "string" && value.startsWith("env:")) {
     const name = value.slice(4);
     const v = env[name];
-    if (v === undefined || v === "") throw new Error(`lenspack.yaml refers to env:${name}, which is not set`);
+    if (v === undefined || (v === "" && !o.allowEmpty)) throw new Error(`${o.file ?? "lenspack.yaml"} refers to env:${name}, which is not set`);
     return v as T;
   }
-  if (Array.isArray(value)) return value.map((v) => resolveSecrets(v, env)) as T;
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveSecrets(v, env)])) as T;
+  if (Array.isArray(value)) return value.map((v) => resolveSecrets(v, env, o)) as T;
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolveSecrets(v, env, o)])) as T;
   return value;
 }
 

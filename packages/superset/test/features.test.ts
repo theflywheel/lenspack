@@ -6,10 +6,10 @@ import { checkOps, meteredConnector } from "@lenspack/engine";
 import { describe, expect, it } from "vitest";
 
 import { supersetConnector } from "../src/connector";
-import { FEATURES, features, featuresFromConfig, featuresFromEnv } from "../src/features";
-import { EDITS_OFF_MESSAGE, type Identity, canEdit, principalOf } from "../src/identity";
+import { FEATURES, features, featuresFromConfig, featuresFromEnv } from "@lenspack/serve";
+import { EDITS_OFF_MESSAGE, type Identity, canEdit, callerOf } from "../src/identity";
 import { type SupersetDataset, packFromDatasets } from "../src/index";
-import { settingsStore } from "../src/settings";
+import { settingsStore } from "@lenspack/serve";
 
 const dir = () => join(mkdtempSync(join(tmpdir(), "lp-features-")), "state");
 
@@ -75,7 +75,7 @@ describe("what the server refuses when a switch is off", () => {
     const admin = as({ u: "admin", a: true, e: true });
     expect(canEdit(admin, "superset")).toBe(true);
     expect(canEdit(admin, "signed-in", false)).toBe(false);
-    expect(principalOf(admin, "signed-in", false)).toEqual({ user: "admin", edit: false, maintain: false, readOnly: EDITS_OFF_MESSAGE });
+    expect(callerOf(admin, "signed-in", false)).toEqual({ user: "admin", roles: ["admin"], readOnly: EDITS_OFF_MESSAGE });
   });
 
   const DATASETS: SupersetDataset[] = [

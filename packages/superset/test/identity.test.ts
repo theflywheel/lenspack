@@ -5,10 +5,10 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { rotatingAudit } from "../src/audit";
+import { rotatingAudit } from "@lenspack/serve";
 import { serviceAccount } from "../src/bootstrap";
 import type { SupersetClient } from "../src/client";
-import { IDENTITY_HEADER, type Identity, READ_ONLY_MESSAGE, editPolicyFrom, principalOf, signIdentity, supersetAccess, verifyIdentity } from "../src/identity";
+import { IDENTITY_HEADER, type Identity, READ_ONLY_MESSAGE, editPolicyFrom, callerOf, signIdentity, supersetAccess, verifyIdentity } from "../src/identity";
 
 const KEY = "k".repeat(64);
 const now = () => Math.floor(Date.now() / 1000);
@@ -36,9 +36,9 @@ describe("the identity Superset signs", () => {
     expect(verifyIdentity(signIdentity(id, KEY), "")).toBeNull();
   });
 
-  it("is not signed in without a key or a header", () => {
-    expect(supersetAccess(() => null, "superset")(req(signIdentity(id, KEY)))).toBeNull();
-    expect(supersetAccess(() => KEY, "superset")(req())).toBeNull();
+  it("is not signed in without a key or a header", async () => {
+    expect(await supersetAccess(() => null, "superset")(req(signIdentity(id, KEY)))).toBeNull();
+    expect(await supersetAccess(() => KEY, "superset")(req())).toBeNull();
   });
 });
 
@@ -46,17 +46,17 @@ describe("who may edit", () => {
   const as = (over: Partial<Identity>): Identity => ({ u: "someone", a: false, d: 7, e: false, v: true, t: now(), ...over });
 
   it("superset (default): an owner with can_write and an admin edit; a non-owner Alpha and a Gamma viewer only ask", () => {
-    const owner = principalOf(as({ u: "owner", e: true }), "superset");
-    const admin = principalOf(as({ u: "admin", a: true, e: true }), "superset");
-    const otherAlpha = principalOf(as({ u: "alpha", e: false }), "superset");
-    const gamma = principalOf(as({ u: "gamma", e: false }), "superset");
-    expect(owner).toEqual({ user: "owner", edit: true, maintain: true });
-    expect(admin).toMatchObject({ edit: true, maintain: true });
-    for (const p of [otherAlpha, gamma]) expect(p).toEqual({ user: p.user, edit: false, maintain: false, readOnly: READ_ONLY_MESSAGE });
+    const owner = callerOf(as({ u: "owner", e: true }), "superset");
+    const admin = callerOf(as({ u: "admin", a: true, e: true }), "superset");
+    const otherAlpha = callerOf(as({ u: "alpha", e: false }), "superset");
+    const gamma = callerOf(as({ u: "gamma", e: false }), "superset");
+    expect(owner).toEqual({ user: "owner", roles: [], edit: true, maintain: true });
+    expect(admin).toMatchObject({ roles: ["admin"], edit: true, maintain: true });
+    for (const p of [otherAlpha, gamma]) expect(p).toEqual({ user: p.user, roles: [], readOnly: READ_ONLY_MESSAGE });
   });
 
   it("signed-in: anyone signed in edits, as before", () => {
-    expect(principalOf(as({ u: "gamma", e: false }), "signed-in")).toEqual({ user: "gamma", edit: true, maintain: true });
+    expect(callerOf(as({ u: "gamma", e: false }), "signed-in")).toEqual({ user: "gamma", roles: [], edit: true, maintain: true });
   });
 
   it("reads the policy from the environment, refusing a typo", () => {

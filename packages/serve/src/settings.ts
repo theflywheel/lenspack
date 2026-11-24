@@ -1,12 +1,11 @@
-// Settings an admin changes on a running server, from Superset's Settings →
-// AI assistant page: one JSON file in the state directory, one section per
+// Settings an admin changes on a running server, from a host's settings page
+// (Superset's Settings → AI assistant): one JSON file in the state directory, one section per
 // concern (speech, language, chat), each section written whole. Writes go to a
 // temporary file and are renamed into place, so a crash never leaves half a file. A write the disk refuses
 // (full, read-only) changes nothing, in memory or on disk, and throws SettingsSaveError, which the server
 // answers with 503.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 
 export type SettingsStore = {
@@ -67,28 +66,4 @@ export function settingsStore(stateDir: string, file = "settings.json"): Setting
       else data[section] = value;
     },
   };
-}
-
-/** A small JSON request body (a settings form), refusing anything over max bytes. */
-export function readJson(req: IncomingMessage, max = 10_000): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (c) => {
-      body += c;
-      if (body.length > max) {
-        reject(new Error("body too large"));
-        req.destroy();
-      }
-    });
-    req.on("end", () => {
-      try {
-        const v = JSON.parse(body || "{}") as unknown;
-        if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("body must be a JSON object");
-        resolve(v as Record<string, unknown>);
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)));
-      }
-    });
-    req.on("error", reject);
-  });
 }
