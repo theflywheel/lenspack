@@ -31,12 +31,28 @@
 .lp-kpi-sub { margin-top: 4px; font-size: 12px; color: var(--lp-muted); }
 .lp-delta.lp-up { color: var(--lp-series-1); } .lp-delta.lp-down { color: var(--lp-series-4); }
 .lp-table-wrap { height: 100%; overflow: auto; }
+.lp-table-paged { display: flex; flex-direction: column; height: 100%; }
+.lp-table-paged .lp-table-wrap { flex: 1; min-height: 0; }
+.lp-pager { display: flex; align-items: center; gap: 8px; padding-top: 6px; font-size: 12px; color: var(--lp-muted); }
+.lp-pager button { font: inherit; padding: 2px 10px; border: 1px solid var(--lp-border); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.lp-pager button:disabled { opacity: 0.4; cursor: default; }
+.lp-pager-problem { color: var(--lp-series-4); }
+.lp-table th.lp-sortable { cursor: pointer; user-select: none; }
 .lp-table { width: 100%; font-size: 13px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .lp-table td, .lp-table th { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--lp-border); text-align: left; }
 .lp-table tr:last-child td { border-bottom: 0; }
 .lp-num { text-align: right !important; font-variant-numeric: tabular-nums; }
 .lp-muted { color: var(--lp-muted); font-size: 12px; }
 .lp-text { font-size: 14px; line-height: 1.5; color: var(--lp-muted); white-space: pre-wrap; }
+.lp-md { white-space: normal; overflow: auto; height: 100%; }
+.lp-md > * + * { margin-top: 6px; }
+.lp-md p, .lp-md ul, .lp-md ol, .lp-md blockquote, .lp-md pre { margin: 0; }
+.lp-md ul, .lp-md ol { padding-left: 20px; }
+.lp-md strong, .lp-md .lp-md-h { color: var(--lp-fg, inherit); font-weight: 600; }
+.lp-md a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.lp-md-code { font-family: ui-monospace, monospace; font-size: 0.9em; padding: 0 3px; border-radius: 3px; background: var(--lp-border); }
+.lp-md-pre { font-family: ui-monospace, monospace; font-size: 12px; padding: 6px 8px; border-radius: 4px; background: var(--lp-border); overflow-x: auto; white-space: pre; }
+.lp-md-quote { border-left: 2px solid var(--lp-border); padding-left: 8px; }
 .lp-filter-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: var(--lp-radius); }
 .lp-filter { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .lp-filter-label { color: var(--lp-muted); }

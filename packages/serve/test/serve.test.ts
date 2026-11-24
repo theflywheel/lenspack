@@ -77,6 +77,33 @@ describe("lenspack serve from a config file", () => {
     expect(data.coverage.rows[0].value).toBeGreaterThan(0);
   });
 
+  it("pages a table of rows through the source, one page per request, under the board's order", async () => {
+    const post = async (url: string, body: unknown) => (await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<any>;
+    const { id } = await post(`${sqlApi}/campaign/boards`, { title: "paged", temporary: true });
+    const columns = ["district", "village", "delivered_by"];
+    const rows = { kind: "rows", entity: "task", columns, limit: 6, orderBy: { key: "village", dir: "asc" } };
+    const added = await post(`${sqlApi}/campaign/${id}/ops`, {
+      ops: [
+        { op: "add_widget", id: "turns", widget: { kind: "table", title: "Visits", query: rows, pageSize: 5 } },
+        { op: "add_widget", id: "count", widget: { kind: "kpi", title: "n", query: { kind: "value", measure: "visits" }, aggregate: "last" } },
+      ],
+    });
+    expect(added.ok ?? added.applied ?? true).not.toBe(false);
+    const board = await get(`${sqlApi}/campaign/${id}/data`);
+    const p0 = await get(`${sqlApi}/campaign/${id}/page?widget=turns&page=0`);
+    const p1 = await get(`${sqlApi}/campaign/${id}/page?widget=turns&page=1`);
+    expect([p0.page, p0.pageSize, p0.offset, p0.hasNext, p0.records.length]).toEqual([0, 5, 0, true, 5]);
+    expect([p1.page, p1.offset, p1.records.length]).toEqual([1, 5, 5]);
+    // Page 0 is the rows the board shows; page 1 carries on where it stops.
+    expect(p0.records).toEqual(board.turns.records.slice(0, 5));
+    expect(p1.records[0]).toEqual(board.turns.records[5]);
+    expect(p0.columns).toEqual(columns);
+    const deep = await fetch(`${sqlApi}/campaign/${id}/page?widget=turns&page=2001`);
+    expect(deep.status).toBe(400);
+    expect((await deep.json()).error).toMatch(/as deep as row 10000/);
+    expect((await fetch(`${sqlApi}/campaign/${id}/page?widget=count&page=1`)).status).toBe(400);
+  });
+
   it("explains a query in the source's own language, and refuses with a reason", async () => {
     const ok = await get(`${sqlApi}/campaign/explain?q=${encodeURIComponent(JSON.stringify({ kind: "breakdown", dimension: "district", measure: "visits" }))}`);
     expect(ok.native).toMatch(/SELECT/);

@@ -99,6 +99,26 @@ describe("the openai-compatible adapter", () => {
   });
 });
 
+describe("streamText through the openai-compatible adapter", () => {
+  it("asks for usage in the stream, so a streamed chat round is metered", async () => {
+    const chunk = (o: Record<string, unknown>) => `data: ${JSON.stringify({ id: "c1", object: "chat.completion.chunk", created: 0, model: "m", ...o })}\n\n`;
+    const { sent, fetch } = recorder(() =>
+      new Response(
+        chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: null }] }) +
+          chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }) +
+          chunk({ choices: [], usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 } }) +
+          "data: [DONE]\n\n",
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    );
+    const p = buildProvider({ name: "o", baseUrl: "http://llm.test/v1", apiKey: "k", model: "m", fetch });
+    const result = streamText({ model: p.languageModel, prompt: "hi" });
+    expect(await result.text).toBe("ok");
+    expect(sent[0]!.body.stream_options).toEqual({ include_usage: true });
+    expect((await result.totalUsage).inputTokens).toBe(100);
+  });
+});
+
 describe("the anthropic adapter", () => {
   afterEach(() => vi.unstubAllEnvs());
 

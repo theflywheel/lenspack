@@ -139,6 +139,7 @@ export function print(ast: Ast, rules: DialectRules): Printed {
   };
   if (ast.orderBy.length) parts.push(`ORDER BY ${ast.orderBy.map((o) => order(expr(o.expr), o.dir, selected(o.expr))).join(", ")}`);
   parts.push(`LIMIT ${Math.max(1, Math.floor(ast.limit))}`);
+  if (ast.offset) parts.push(`OFFSET ${Math.max(0, Math.floor(ast.offset))}`);
   return { sql: parts.join("\n"), params };
 }
 

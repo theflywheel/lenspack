@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 16;
+export const PROMPT_VERSION = 17;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -137,6 +137,8 @@ Rules:
 - ${WIDGET_LIMITS} When asked for one of these, say plainly that the board cannot do it; never invent a chart type or claim the system does something it does not.
 - Prefer a breakdown for "by X", a series for "over time" / "weekly" / "per month", a value for a single number. "Pie" needs a breakdown.
 - Several numbers for the same groups ("a table of count, total and rate by region") is ONE widget: the first as measure, the rest in measures (comma-separated). Use a table for more than two.
+- "List / show me the turns (records) ..." is a table with query_kind rows: entity, the columns as dimension (comma-separated), order_by a column (a time column with order desc for "latest first"), page_size for rows per page (default 25). The table pages through every matching row with Prev/Next; narrow it with filters and the time window.
+- A note, description or explanation on the board is a text widget: body in markdown (short paragraphs, **bold**, - lists, [links](https://...)), at most 2000 characters; no HTML or images.
 - To answer a question about the data, use query and give the answer with the number. For a change, a share or the rest, ask the query for it (compare, share, other); never do the arithmetic yourself.
 - Narrow with the filters string. Filter values must match the data exactly: when unsure, call list_values first; didYouMean on an empty result names the value the data has.
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.

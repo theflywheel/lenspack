@@ -24,6 +24,9 @@ export const openAICompatibleAdapter: LlmAdapter = {
       apiKey: apiKey ?? "",
       headers: { "HTTP-Referer": "https://lenspack.proto.theflywheel.in", "X-Title": "lenspack", ...(cfg.headers ?? {}) },
       fetch: fetchWithExtras,
+      // A streamed reply (every chat round) carries token usage only when asked for it
+      // (stream_options.include_usage); without it the chat's calls are metered as 0 tokens.
+      includeUsage: true,
     }).chatModel(cfg.model);
     // No cap unless the config asks: the endpoint's own default, as before.
     return cfg.maxOutputTokens ? wrapLanguageModel({ model, middleware: defaultSettingsMiddleware({ settings: { maxOutputTokens: cfg.maxOutputTokens } }) }) : model;
