@@ -79,6 +79,8 @@ export async function transcribe(opts: SpeechOptions, audio: Uint8Array, content
     const detail = (await res.text().catch(() => "")).slice(0, 300);
     throw new SpeechError(502, `transcription failed (${res.status}): ${detail}`, ms);
   }
+  // usage.cost is what OpenRouter says it charged for this clip (https://openrouter.ai/docs/api-reference/audio,
+  // checked 2026-11-24), not a list-price estimate; a provider that reports no cost leaves the clip unpriced.
   const j = (await res.json()) as { text?: string; language?: string; usage?: { seconds?: number; cost?: number } };
   return { text: (j.text ?? "").trim(), model, language: j.language ?? (language ? language.split("-")[0]! : null), seconds: j.usage?.seconds ?? null, usd: j.usage?.cost ?? null, ms };
 }
