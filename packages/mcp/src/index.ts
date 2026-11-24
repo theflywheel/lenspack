@@ -2,6 +2,9 @@ import { type BoardToolsOptions as AgentOptions, type RawSql, type Tool, boardTo
 import type { Pack } from "@lenspack/spec";
 import { type Executor, describeSources, runSql, sqlConnector } from "@lenspack/sql";
 
+// Built with --no-splitting: cli.ts imports this file, and with code splitting tsup moves it into a
+// shared chunk, where esbuild keeps this `export *` of an external package but the entry loses it.
+// scripts/dist-smoke.mjs checks the built entry.
 export * from "@lenspack/agent";
 export * from "./server";
 

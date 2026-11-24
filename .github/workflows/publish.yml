@@ -60,6 +60,8 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm build
+      - name: Dist smoke
+        run: pnpm smoke:dist
 
       - name: Version
         id: version

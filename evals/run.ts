@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { type ToolSet, generateText, stepCountIs } from "ai";
 
 import { type BoardOp, memoryStore, opSchema, summarise } from "@lenspack/core";
-import { boardTools, toVercelAI } from "@lenspack/mcp";
+import { boardTools, toVercelAI } from "@lenspack/agent";
 import { catalogueFrom } from "@lenspack/spec";
 import { run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
@@ -121,7 +121,7 @@ async function main() {
       await store.create({ id: "b", pack: ex.pack, title: "Shop overview" });
       const seeded = await store.patch({ id: "b", ops: canonicalOps, catalogue });
       if (!seeded.ok) throw new Error(seeded.error);
-      const tools = toVercelAI(boardTools({ pack: ex.pack, executor: db.executor, store, boardId: "b", ctx })) as unknown as ToolSet;
+      const tools = toVercelAI(boardTools({ pack: ex.pack, connector: sqlConnector(db.executor), store, boardId: "b", ctx })) as unknown as ToolSet;
       const started = Date.now();
       let r: Result;
       // The task's model calls, attributed by role as the chat's are.
