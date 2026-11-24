@@ -48,9 +48,8 @@ docker run -v "$PWD/config:/config:ro" -v lenspack-data:/data -p 8795:8795 \
 ```
 
 From the source tree, `npx tsx --tsconfig tsconfig.base.json packages/superset/bin/serve.ts superset.yaml` does
-the same. The deployment side is one Python file, `lenspack_superset.py` in
-[egovernments/innovations `nl-dashboard/`](https://github.com/egovernments/innovations/tree/nl-dashboard/superset-lenspack/nl-dashboard),
-loaded by `superset_config.py`.
+the same. Superset's side is one Python file, [`plugin/lenspack_superset.py`](plugin/lenspack_superset.py)
+(below).
 
 ```yaml
 # superset.yaml: a string "env:NAME" anywhere reads that variable
@@ -68,6 +67,42 @@ budget: { usdPerDay: 20 }                # LENSPACK_BUDGET_USD_PER_DAY, LENSPACK
 Models: `LENSPACK_LLM_PROVIDERS` as for `lenspack serve` ([docs/llm.md](../../docs/llm.md)). With only
 `ANTHROPIC_API_KEY` set, the chat offers Claude Sonnet 5.5 (the default), Opus 5.5 and Haiku 5.5, and the
 settings page says the key came from `ANTHROPIC_API_KEY`.
+
+## Superset's side: `plugin/lenspack_superset.py`
+
+One file, loaded by Superset's own config. It needs no fork, no custom image and no second web server. It adds:
+
+- `/lenspack/...` on Superset's own host, forwarded to this server for signed-in users with the signed identity
+  header (below). Chat replies stream through unbuffered, and a change sent from another site is refused.
+  Browsers never reach Lenspack's port.
+- the **Ask Lenspack** button on every page, through `tail_js_custom_extra.html`;
+- **Settings → Manage → AI assistant** for admins: chat and speech models, languages, off switches, spend, cost
+  per answer and the audit log, all through `/_superset/*` on this server;
+- `GET /api/v1/lenspack/identity-key` and `POST /api/v1/lenspack/bootstrap`, which this server calls on start
+  to fetch the signing key and to make its own account (below);
+- a fix for Flask-AppBuilder 4.x, whose list endpoints share filters between concurrent requests.
+
+To load it, put the file on Superset's Python path (for example, mounted into `/app/pythonpath/`) and import
+it at the end of `superset_config.py`:
+
+```python
+# superset_config.py
+from lenspack_superset import *  # noqa: F401,F403
+```
+
+On the Helm chart, a `configOverrides` entry holding that line does the same. The import sets
+`FLASK_APP_MUTATOR`. If your config already sets one, call `lenspack_app_mutator(app)` from yours and set
+`FLASK_APP_MUTATOR` back to yours after the import.
+
+| Superset's environment | default | |
+|---|---|---|
+| `LENSPACK_INTERNAL_URL` | `http://lenspack:8795` | where Superset's server reaches this one |
+| `LENSPACK_SERVICE_USER` | `lenspack` | this server's Superset account (`superset.username` here) |
+| `LENSPACK_TEMPLATES` | none | a folder whose `tail_js_custom_extra.html` or `lenspack/settings.html` replaces the built-in one |
+
+On this server, set `publicPath: /lenspack` (or `LENSPACK_PUBLIC_PATH=/lenspack`) so its pages and scripts
+use the path Superset forwards. A chat turn holds one of Superset's gunicorn threads while it streams (30 to 60 s),
+so raise `SERVER_THREADS_AMOUNT` for more than about ten chats at once.
 
 ## Who is asking
 
