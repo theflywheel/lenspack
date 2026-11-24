@@ -7,7 +7,8 @@ import { type Executor, type ExecutorOptions, type Row, type Writer, capRows, co
 // used: the executor prepares exactly one statement, refuses it unless it is
 // a SELECT, and the timeout interrupts the connection rather than trusting
 // the statement to finish. A file opened as a source (openDuckdb with
-// readOnly) is also opened READ_ONLY with no access to other files.
+// readOnly) is also opened READ_ONLY with no access to other files, and its
+// configuration is locked so a statement cannot change that.
 
 // duckdb's StatementType.SELECT; a WITH … SELECT is a SELECT too.
 const SELECT = 1;
@@ -79,11 +80,16 @@ export async function introspectDuckdb(executor: Executor): Promise<SourceSchema
 /**
  * A DuckDB database: a file, or ":memory:". `readOnly` is how a source is
  * opened: the file cannot be written and no other file can be read, so even
- * run_sql cannot reach past the database it was pointed at.
+ * run_sql cannot reach past the database it was pointed at. `noFileAccess`
+ * alone keeps the database writable (an in-memory source) but still reads no
+ * other file. Either way the configuration is locked, so no statement can
+ * turn file access back on.
  */
-export async function openDuckdb(path = ":memory:", opts: ExecutorOptions & { readOnly?: boolean } = {}) {
+export async function openDuckdb(path = ":memory:", opts: ExecutorOptions & { readOnly?: boolean; noFileAccess?: boolean } = {}) {
   const { DuckDBInstance } = await import("@duckdb/node-api");
-  const instance: DuckDBInstance = await DuckDBInstance.create(path, opts.readOnly ? { access_mode: "READ_ONLY", enable_external_access: "false" } : undefined);
+  const sandbox = { enable_external_access: "false", lock_configuration: "true" };
+  const config = opts.readOnly ? { access_mode: "READ_ONLY", ...sandbox } : opts.noFileAccess ? sandbox : undefined;
+  const instance: DuckDBInstance = await DuckDBInstance.create(path, config);
   const connection = await instance.connect();
   const executor = duckdbExecutor(connection, opts);
   return {

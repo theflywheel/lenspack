@@ -105,7 +105,8 @@ registerDriver({
   connect: async (url, opts = {}) => {
     const path = filePath(url, opts.base);
     // A source is read-only; an in-memory database cannot be opened that way (and is empty).
-    return (await import("./executors/duckdb")).openDuckdb(path, { ...opts, readOnly: path !== ":memory:" });
+    // Neither reads any other file, so run_sql cannot reach past the source.
+    return (await import("./executors/duckdb")).openDuckdb(path, { ...opts, readOnly: path !== ":memory:", noFileAccess: true });
   },
 });
 
