@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { Query } from "@lenspack/core";
 import { applyOps, emptyBoard } from "@lenspack/core";
-import { catalogueFrom } from "@lenspack/spec";
+import { catalogueFrom } from "@lenspack/pack";
 import { type Connector, type Executor, ResolveError, type WidgetData, type Writer, check, compile, openSource, resolveBoard, run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

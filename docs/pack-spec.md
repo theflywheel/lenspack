@@ -1,6 +1,6 @@
 # Pack spec
 
-A pack is one YAML or JSON document describing a dataset so that a model can query it by name. `@lenspack/spec` validates it; `catalogueFrom(pack)` turns it into the model's vocabulary.
+A pack is one YAML or JSON document describing a dataset so that a model can query it by name. `@lenspack/pack` validates it; `catalogueFrom(pack)` turns it into the model's vocabulary.
 
 ```yaml
 pack: <slug>                # lowercase, [a-z][a-z0-9_]*

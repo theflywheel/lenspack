@@ -10,7 +10,7 @@ import { dirname, resolve } from "node:path";
 import { type BoardConfig, memoryStore } from "@lenspack/core";
 import { type Connector, type WidgetData, run } from "@lenspack/engine";
 import { type Host, type Provider, createApp, resolveSecrets, usageLedger } from "@lenspack/serve";
-import type { Pack } from "@lenspack/spec";
+import type { Pack } from "@lenspack/pack";
 import type { UIMessage, UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
 import YAML from "yaml";
@@ -36,7 +36,7 @@ type SupersetConfig = {
 };
 
 /**
- * A deployment's Superset config, read the way packages/superset/bin/serve.ts
+ * A deployment's Superset config, read the way packages/hosts/superset/bin/serve.ts
  * reads it (same pack, catalogue and connector), with a memory store. The seed
  * board is read from a dashboard once and cached, so later runs start from the
  * same board even if the dashboard changes.

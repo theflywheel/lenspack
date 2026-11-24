@@ -11,7 +11,7 @@ import { type ToolSet, generateText, stepCountIs } from "ai";
 
 import { type BoardOp, memoryStore, opSchema, summarise } from "@lenspack/core";
 import { boardTools, toVercelAI } from "@lenspack/agent";
-import { catalogueFrom } from "@lenspack/spec";
+import { catalogueFrom } from "@lenspack/pack";
 import { run, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 

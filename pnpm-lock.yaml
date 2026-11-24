@@ -13,7 +13,7 @@ importers:
         version: 3.0.53(zod@3.25.76)
       '@lenspack/superset':
         specifier: workspace:*
-        version: link:packages/superset
+        version: link:packages/hosts/superset
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.4
@@ -65,22 +65,22 @@ importers:
         version: 4.0.112(react@19.3.0)(zod@3.25.76)
       '@lenspack/agent':
         specifier: workspace:*
-        version: link:../../packages/agent
+        version: link:../../packages/kernel/agent
       '@lenspack/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/kernel/core
       '@lenspack/elasticsearch':
         specifier: workspace:*
-        version: link:../../packages/elasticsearch
+        version: link:../../packages/sources/elasticsearch
       '@lenspack/react':
         specifier: workspace:*
-        version: link:../../packages/react
+        version: link:../../packages/hosts/react
       '@lenspack/serve':
         specifier: workspace:*
-        version: link:../../packages/serve
+        version: link:../../packages/hosts/serve
       '@lenspack/sql':
         specifier: workspace:*
-        version: link:../../packages/sql
+        version: link:../../packages/sources/sql
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@6.4.3(@types/node@22.20.4)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -140,102 +140,20 @@ importers:
 
   examples/tickets: {}
 
-  packages/agent:
-    dependencies:
-      '@lenspack/core':
-        specifier: workspace:*
-        version: link:../core
-      '@lenspack/engine':
-        specifier: workspace:*
-        version: link:../engine
-      '@lenspack/policy':
-        specifier: workspace:*
-        version: link:../policy
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
-    devDependencies:
-      '@lenspack/sql':
-        specifier: workspace:*
-        version: link:../sql
-
-  packages/ccrs:
-    dependencies:
-      '@lenspack/core':
-        specifier: workspace:*
-        version: link:../core
-      '@lenspack/engine':
-        specifier: workspace:*
-        version: link:../engine
-      '@lenspack/policy':
-        specifier: workspace:*
-        version: link:../policy
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
-      yaml:
-        specifier: ^2.6.1
-        version: 2.9.1
-
-  packages/core:
-    dependencies:
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
-
-  packages/dss:
-    dependencies:
-      '@lenspack/core':
-        specifier: workspace:*
-        version: link:../core
-      '@lenspack/engine':
-        specifier: workspace:*
-        version: link:../engine
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
-      yaml:
-        specifier: ^2.6.1
-        version: 2.9.1
-
-  packages/elasticsearch:
-    dependencies:
-      '@lenspack/core':
-        specifier: workspace:*
-        version: link:../core
-      '@lenspack/engine':
-        specifier: workspace:*
-        version: link:../engine
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
-
-  packages/engine:
-    dependencies:
-      '@lenspack/core':
-        specifier: workspace:*
-        version: link:../core
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
-
-  packages/mcp:
+  packages/hosts/mcp:
     dependencies:
       '@duckdb/node-api':
         specifier: '*'
-        version: 2.0.0-r.1
+        version: 2.0.1-r.1
       '@lenspack/agent':
         specifier: workspace:*
-        version: link:../agent
-      '@lenspack/spec':
+        version: link:../../kernel/agent
+      '@lenspack/pack':
         specifier: workspace:*
-        version: link:../spec
+        version: link:../../kernel/pack
       '@lenspack/sql':
         specifier: workspace:*
-        version: link:../sql
+        version: link:../../sources/sql
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@3.25.76)
@@ -246,23 +164,11 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
-  packages/policy:
+  packages/hosts/react:
     dependencies:
       '@lenspack/core':
         specifier: workspace:*
-        version: link:../core
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
-
-  packages/react:
-    dependencies:
-      '@lenspack/core':
-        specifier: workspace:*
-        version: link:../core
+        version: link:../../kernel/core
       react-grid-layout:
         specifier: ^1.5.4
         version: 1.5.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -292,7 +198,7 @@ importers:
         specifier: ^3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@18.3.1)(react@19.3.0)(redux@5.0.1)
 
-  packages/serve:
+  packages/hosts/serve:
     dependencies:
       '@ai-sdk/anthropic':
         specifier: 4.0.67
@@ -302,28 +208,28 @@ importers:
         version: 3.0.53(zod@3.25.76)
       '@lenspack/agent':
         specifier: workspace:*
-        version: link:../agent
+        version: link:../../kernel/agent
       '@lenspack/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../kernel/core
       '@lenspack/dss':
         specifier: workspace:*
-        version: link:../dss
+        version: link:../../packs/dss
       '@lenspack/elasticsearch':
         specifier: workspace:*
-        version: link:../elasticsearch
+        version: link:../../sources/elasticsearch
       '@lenspack/engine':
         specifier: workspace:*
-        version: link:../engine
+        version: link:../../kernel/engine
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../../kernel/pack
       '@lenspack/policy':
         specifier: workspace:*
-        version: link:../policy
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
+        version: link:../../kernel/policy
       '@lenspack/sql':
         specifier: workspace:*
-        version: link:../sql
+        version: link:../../sources/sql
       ai:
         specifier: ^7.0.109
         version: 7.0.109(zod@3.25.76)
@@ -347,7 +253,65 @@ importers:
         specifier: ^8.13.1
         version: 8.23.0
 
-  packages/spec:
+  packages/hosts/superset:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../../kernel/core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../../kernel/engine
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../../kernel/pack
+      '@lenspack/policy':
+        specifier: workspace:*
+        version: link:../../kernel/policy
+      '@lenspack/serve':
+        specifier: workspace:*
+        version: link:../serve
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.1
+
+  packages/kernel/agent:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../pack
+      '@lenspack/policy':
+        specifier: workspace:*
+        version: link:../policy
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@lenspack/sql':
+        specifier: workspace:*
+        version: link:../../sources/sql
+
+  packages/kernel/core:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
+  packages/kernel/engine:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../pack
+
+  packages/kernel/pack:
     dependencies:
       '@lenspack/core':
         specifier: workspace:*
@@ -359,17 +323,74 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
-  packages/sql:
+  packages/kernel/policy:
     dependencies:
       '@lenspack/core':
         specifier: workspace:*
         version: link:../core
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../pack
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
+  packages/packs/ccrs:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../../kernel/core
       '@lenspack/engine':
         specifier: workspace:*
-        version: link:../engine
-      '@lenspack/spec':
+        version: link:../../kernel/engine
+      '@lenspack/pack':
         specifier: workspace:*
-        version: link:../spec
+        version: link:../../kernel/pack
+      '@lenspack/policy':
+        specifier: workspace:*
+        version: link:../../kernel/policy
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.1
+
+  packages/packs/dss:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../../kernel/core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../../kernel/engine
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../../kernel/pack
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.1
+
+  packages/sources/elasticsearch:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../../kernel/core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../../kernel/engine
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../../kernel/pack
+
+  packages/sources/sql:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../../kernel/core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../../kernel/engine
+      '@lenspack/pack':
+        specifier: workspace:*
+        version: link:../../kernel/pack
     devDependencies:
       '@duckdb/node-api':
         specifier: ^1.4.0-r.1
@@ -389,27 +410,6 @@ importers:
       pg:
         specifier: ^8.13.1
         version: 8.23.0
-
-  packages/superset:
-    dependencies:
-      '@lenspack/core':
-        specifier: workspace:*
-        version: link:../core
-      '@lenspack/engine':
-        specifier: workspace:*
-        version: link:../engine
-      '@lenspack/policy':
-        specifier: workspace:*
-        version: link:../policy
-      '@lenspack/serve':
-        specifier: workspace:*
-        version: link:../serve
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../spec
-      yaml:
-        specifier: ^2.6.1
-        version: 2.9.1
 
 packages:
 
@@ -584,16 +584,16 @@ packages:
   '@duckdb/node-api@1.4.0-r.2':
     resolution: {integrity: sha512-kt5598+3L1TiSUCyNZ5Zh12hHIQeAzUj51CXKXycQaobEf3KooXZJhjiM1RkELKoGW+GeRotgPw2QUoIyeaWVg==}
 
-  '@duckdb/node-api@2.0.0-r.1':
-    resolution: {integrity: sha512-SA4oG7X9UNpSJsr99b7rbJxSs7n5KqMEGV1kC04TxdsYHjGH6w4kGEOiC/yXzvgWr6Jd1WRQD9RUPTX6qGdEwg==}
+  '@duckdb/node-api@2.0.1-r.1':
+    resolution: {integrity: sha512-YAuAEZOgd511AZkXl0i3c7WFlTdIE6hEa5avih+fwJ+FYgkhgyis9IU7b++IEadT2+9tGRh8QZK9qALOtLwdXw==}
 
   '@duckdb/node-bindings-darwin-arm64@1.4.0-r.2':
     resolution: {integrity: sha512-WaTZhpodKIKROqPC5b3l00rSa1xdnZUmPqngGEJlRSR/YeOGnh1J1ONx5o3q9vkbbzSbsk7POtFwTbmJCvrIDw==}
     cpu: [arm64]
     os: [darwin]
 
-  '@duckdb/node-bindings-darwin-arm64@2.0.0-r.1':
-    resolution: {integrity: sha512-vay0TmtEaUM7Dm7z1nXlxy2KOcwlY3Xq+wAHRbkuOYmJu//qjcZBT7ijT4qE6m5qGyuLSOiq3w36ShCYApL4yg==}
+  '@duckdb/node-bindings-darwin-arm64@2.0.1-r.1':
+    resolution: {integrity: sha512-QifZjrl3fev63wEIDpSNVdvClA0TdZ/4KAlBwmfdymdG57xPZihGak5PbHmT4IC4V7bgV6nzembJkz6qf/2gXQ==}
     cpu: [arm64]
     os: [darwin]
 
@@ -602,13 +602,13 @@ packages:
     cpu: [x64]
     os: [darwin]
 
-  '@duckdb/node-bindings-darwin-x64@2.0.0-r.1':
-    resolution: {integrity: sha512-mkPKjf7YR6xk8r5nVyHYjbybrQxMW+mfXJwl2otSKi8bireJV+xaOodyxqzP2cqPB95rpIg1owfYjFfUyLi7NQ==}
+  '@duckdb/node-bindings-darwin-x64@2.0.1-r.1':
+    resolution: {integrity: sha512-aEHIDa/isgQLUzkxAbgOhsu4oE8IunLzBS+/90Jnxab892FQ1HJa+AcXTaoWrDZLPfhOA+HKniN68QK6ioZ1wA==}
     cpu: [x64]
     os: [darwin]
 
-  '@duckdb/node-bindings-linux-arm64-musl@2.0.0-r.1':
-    resolution: {integrity: sha512-AAmQa/uI4LDfyY7zldUwU0Qnpv+yjQPxr0k2uJQylo0tyXWzQ1O0bBWfnDmN0ulym124gFRwr+fzlHyvxCt1FA==}
+  '@duckdb/node-bindings-linux-arm64-musl@2.0.1-r.1':
+    resolution: {integrity: sha512-b4Lo5+ioDQDq+SghRTusUzAZh8FP1yM60Boe61Re0ffibhFGsh7tuIWiTuoARTDAH7uof3Yy4NYD1GCw/dpjPw==}
     cpu: [arm64]
     os: [linux]
 
@@ -617,13 +617,13 @@ packages:
     cpu: [arm64]
     os: [linux]
 
-  '@duckdb/node-bindings-linux-arm64@2.0.0-r.1':
-    resolution: {integrity: sha512-V+oOWVY8qq7t5Uh+j8Hf+iwb4pLx2GsxAso1oGBP7ubf38QN1FGoPclJ8ByZob+ZcLdSDgwlS7QUbMB9pnCi2A==}
+  '@duckdb/node-bindings-linux-arm64@2.0.1-r.1':
+    resolution: {integrity: sha512-nJv2mDZo3BsGhEo/q+F4gh5Icc6ch3tYo8DvgNJNLPEiwiK8qvMds23uZG7i78uUV3n5VUxch1I0VqYsa/8ezQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@duckdb/node-bindings-linux-x64-musl@2.0.0-r.1':
-    resolution: {integrity: sha512-8GCE/ye+w5GJsCgAk2owUyQA55rtoiBRe2T8A42CaqGbNNZm9hOj3C96d6flT82p7YhQVA8AzA40k9Pn30kJDg==}
+  '@duckdb/node-bindings-linux-x64-musl@2.0.1-r.1':
+    resolution: {integrity: sha512-PiEMFB3c3cH7Y1SwkTF749M/bOlzhBP/xlc/QwaHgKJPstNEfSWe8S3Q0XQrlbcYxokJJG83g3Q8EQVjnmbtkg==}
     cpu: [x64]
     os: [linux]
 
@@ -632,13 +632,13 @@ packages:
     cpu: [x64]
     os: [linux]
 
-  '@duckdb/node-bindings-linux-x64@2.0.0-r.1':
-    resolution: {integrity: sha512-0VdXZQlCnD6oWwJABkp3ihZGBic/6Ora4PQekHv9jwa4Fe2OVcgm0hGtn6yyNGhURVDzZllMITEF98zdo6ussQ==}
+  '@duckdb/node-bindings-linux-x64@2.0.1-r.1':
+    resolution: {integrity: sha512-BTVwKGQ1Np/CkOhNq5VNDJRJHKC6+XgVJ23wqjxviHDGdkeFmnfdCs6OzUADQ42BTKhnBzh+5bKQX1lB0gbo9A==}
     cpu: [x64]
     os: [linux]
 
-  '@duckdb/node-bindings-win32-arm64@2.0.0-r.1':
-    resolution: {integrity: sha512-k47ASHylCPfUe7H+MvaNqsSwXGv8fjxixMF0vqJghp/wUUdAERMi1WNkPIjOj31cJ+O0x+Srdlfe4N0Diofm7Q==}
+  '@duckdb/node-bindings-win32-arm64@2.0.1-r.1':
+    resolution: {integrity: sha512-v22ziq/h3+mYkqY29EU5ej56wEh3I/wyEBFbDne0L0NmX+JF2y+1NTeZfJP23uT/CmrMqj0ehb4rBjMH+DSo/Q==}
     cpu: [arm64]
     os: [win32]
 
@@ -647,16 +647,16 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@duckdb/node-bindings-win32-x64@2.0.0-r.1':
-    resolution: {integrity: sha512-8moS6xWPmM4UahiUhkfNSPFQG+7kpN2zu8w39C+K9Xgn8Z4Ctu5jOSTdXlybYrLofLH8jwgoNFiUOLMXLD4giw==}
+  '@duckdb/node-bindings-win32-x64@2.0.1-r.1':
+    resolution: {integrity: sha512-tIyo4NP52GhxRz5ReL9wy6JqcMNfsRr2mVOO40lsx9GB8jE1SRyXZEVFoIskQST8jTiSZV+ezLOPIof62Va/SA==}
     cpu: [x64]
     os: [win32]
 
   '@duckdb/node-bindings@1.4.0-r.2':
     resolution: {integrity: sha512-FZEWyV16aQix8rD2BZtcnY3EFw4i+1xP8WRbo1UampJve7krrLV4t9jMSmh4r+Nc5BRJ006A4/jwD6OpNhbR2g==}
 
-  '@duckdb/node-bindings@2.0.0-r.1':
-    resolution: {integrity: sha512-R8mrpS9FFUNUL5Xi4NgirZWuP9/1KVEqy6b91a7s7TptIKnu4ZZLch3yBrN+GeWz3hoo5RUctfbaORLRFgqgwQ==}
+  '@duckdb/node-bindings@2.0.1-r.1':
+    resolution: {integrity: sha512-Na56IXKC/Rz7wE41VtTyPyX5Q+MtjYWPKcqOdK3kB2TcirUHVRHJUivmspiBP2ImWCnkX5Ko/rp+j5hw+ohdng==}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -4247,47 +4247,47 @@ snapshots:
     dependencies:
       '@duckdb/node-bindings': 1.4.0-r.2
 
-  '@duckdb/node-api@2.0.0-r.1':
+  '@duckdb/node-api@2.0.1-r.1':
     dependencies:
-      '@duckdb/node-bindings': 2.0.0-r.1
+      '@duckdb/node-bindings': 2.0.1-r.1
 
   '@duckdb/node-bindings-darwin-arm64@1.4.0-r.2':
     optional: true
 
-  '@duckdb/node-bindings-darwin-arm64@2.0.0-r.1':
+  '@duckdb/node-bindings-darwin-arm64@2.0.1-r.1':
     optional: true
 
   '@duckdb/node-bindings-darwin-x64@1.4.0-r.2':
     optional: true
 
-  '@duckdb/node-bindings-darwin-x64@2.0.0-r.1':
+  '@duckdb/node-bindings-darwin-x64@2.0.1-r.1':
     optional: true
 
-  '@duckdb/node-bindings-linux-arm64-musl@2.0.0-r.1':
+  '@duckdb/node-bindings-linux-arm64-musl@2.0.1-r.1':
     optional: true
 
   '@duckdb/node-bindings-linux-arm64@1.4.0-r.2':
     optional: true
 
-  '@duckdb/node-bindings-linux-arm64@2.0.0-r.1':
+  '@duckdb/node-bindings-linux-arm64@2.0.1-r.1':
     optional: true
 
-  '@duckdb/node-bindings-linux-x64-musl@2.0.0-r.1':
+  '@duckdb/node-bindings-linux-x64-musl@2.0.1-r.1':
     optional: true
 
   '@duckdb/node-bindings-linux-x64@1.4.0-r.2':
     optional: true
 
-  '@duckdb/node-bindings-linux-x64@2.0.0-r.1':
+  '@duckdb/node-bindings-linux-x64@2.0.1-r.1':
     optional: true
 
-  '@duckdb/node-bindings-win32-arm64@2.0.0-r.1':
+  '@duckdb/node-bindings-win32-arm64@2.0.1-r.1':
     optional: true
 
   '@duckdb/node-bindings-win32-x64@1.4.0-r.2':
     optional: true
 
-  '@duckdb/node-bindings-win32-x64@2.0.0-r.1':
+  '@duckdb/node-bindings-win32-x64@2.0.1-r.1':
     optional: true
 
   '@duckdb/node-bindings@1.4.0-r.2':
@@ -4298,18 +4298,18 @@ snapshots:
       '@duckdb/node-bindings-linux-x64': 1.4.0-r.2
       '@duckdb/node-bindings-win32-x64': 1.4.0-r.2
 
-  '@duckdb/node-bindings@2.0.0-r.1':
+  '@duckdb/node-bindings@2.0.1-r.1':
     dependencies:
       detect-libc: 2.1.2
     optionalDependencies:
-      '@duckdb/node-bindings-darwin-arm64': 2.0.0-r.1
-      '@duckdb/node-bindings-darwin-x64': 2.0.0-r.1
-      '@duckdb/node-bindings-linux-arm64': 2.0.0-r.1
-      '@duckdb/node-bindings-linux-arm64-musl': 2.0.0-r.1
-      '@duckdb/node-bindings-linux-x64': 2.0.0-r.1
-      '@duckdb/node-bindings-linux-x64-musl': 2.0.0-r.1
-      '@duckdb/node-bindings-win32-arm64': 2.0.0-r.1
-      '@duckdb/node-bindings-win32-x64': 2.0.0-r.1
+      '@duckdb/node-bindings-darwin-arm64': 2.0.1-r.1
+      '@duckdb/node-bindings-darwin-x64': 2.0.1-r.1
+      '@duckdb/node-bindings-linux-arm64': 2.0.1-r.1
+      '@duckdb/node-bindings-linux-arm64-musl': 2.0.1-r.1
+      '@duckdb/node-bindings-linux-x64': 2.0.1-r.1
+      '@duckdb/node-bindings-linux-x64-musl': 2.0.1-r.1
+      '@duckdb/node-bindings-win32-arm64': 2.0.1-r.1
+      '@duckdb/node-bindings-win32-x64': 2.0.1-r.1
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

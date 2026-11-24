@@ -151,8 +151,8 @@ registerDriver({
 
 Start from the closest dialect and override what differs. Then prove it:
 
-1. Add golden SQL for it in `packages/sql/test/golden.test.ts` (a file per dialect, every node the planner emits).
-2. Add it to `ENGINES` in `packages/sql/test/drivers.test.ts`: every golden query must return DuckDB's numbers or the documented refusal, and a write, a second statement, a slow statement and an oversized result must each be stopped.
+1. Add golden SQL for it in `packages/sources/sql/test/golden.test.ts` (a file per dialect, every node the planner emits).
+2. Add it to `ENGINES` in `packages/sources/sql/test/drivers.test.ts`: every golden query must return DuckDB's numbers or the documented refusal, and a write, a second statement, a slow statement and an oversized result must each be stopped.
 3. Add it to `ENGINES` in `examples/test/conformance.test.ts` with a dialect for `examples/_shared/seed-util.ts`: every example board and every dimension × measure × shape must agree with DuckDB.
 4. Add a service for it to `.github/workflows/ci.yml`.
 

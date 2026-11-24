@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Imports every built package entry (each "exports" path of each
-// packages/*/package.json) and checks that it exports at runtime every value
+// packages/<group>/<name>/package.json) and checks that it exports at runtime every value
 // its .d.ts promises. Tests run against source, so a bundler that drops a
 // re-export (tsup's code splitting once lost @lenspack/mcp's
 // `export * from "@lenspack/agent"`) passes them and breaks only the published
@@ -23,7 +23,8 @@ const KEY = {
 };
 
 const entries = [];
-for (const dir of readdirSync(join(root, "packages")).sort()) {
+const groups = readdirSync(join(root, "packages")).sort();
+for (const dir of groups.flatMap((g) => readdirSync(join(root, "packages", g)).sort().map((d) => join(g, d)))) {
   const pkgFile = join(root, "packages", dir, "package.json");
   if (!existsSync(pkgFile)) continue;
   const pkg = JSON.parse(readFileSync(pkgFile, "utf8"));

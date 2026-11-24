@@ -1,6 +1,6 @@
 import type { BoardConfig, BoardOp } from "@lenspack/core";
 import { applyOps, emptyBoard, opSchema } from "@lenspack/core";
-import { catalogueFrom } from "@lenspack/spec";
+import { catalogueFrom } from "@lenspack/pack";
 
 import * as commerce from "./commerce/index";
 import * as consultation from "./consultation/index";

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Publishes the public packages under packages/* to GitHub Packages.
+// Publishes the public packages under packages/<group>/<name> to GitHub Packages.
 //
 // The source keeps the @lenspack/* names, so code, tests and docs never change.
 // GitHub Packages only takes npm packages scoped to the repository owner, so at
@@ -8,13 +8,13 @@
 //
 //   name                      @lenspack/core       -> @theflywheel/lenspack-core
 //   version                   from --version (the release tag)
-//   workspace dependencies    "@lenspack/spec": "workspace:*"
-//                          -> "@lenspack/spec": "npm:@theflywheel/lenspack-spec@<version>"
+//   workspace dependencies    "@lenspack/pack": "workspace:*"
+//                          -> "@lenspack/pack": "npm:@theflywheel/lenspack-pack@<version>"
 //
 // The dependency keeps its @lenspack/* key as an npm alias, so the built code,
-// which imports "@lenspack/spec", resolves inside every package's own
+// which imports "@lenspack/pack", resolves inside every package's own
 // node_modules without any change to dist, while the package it installs is the
-// published @theflywheel/lenspack-spec.
+// published @theflywheel/lenspack-pack.
 //
 // Usage:
 //   node scripts/publish-packages.mjs --version 0.1.0 --dry-run   # npm publish --dry-run per package
@@ -60,7 +60,7 @@ const publishedName = (sourceName) => `${PUBLISH_SCOPE}/${PREFIX}${sourceName.sl
 function readPackages() {
   const dir = join(root, "packages");
   return readdirSync(dir)
-    .map((d) => join(dir, d))
+    .flatMap((g) => readdirSync(join(dir, g)).map((d) => join(dir, g, d)))
     .filter((d) => existsSync(join(d, "package.json")))
     .map((d) => ({ dir: d, manifest: JSON.parse(readFileSync(join(d, "package.json"), "utf8")) }))
     .filter((p) => !p.manifest.private);

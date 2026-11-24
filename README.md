@@ -54,20 +54,20 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 | package | what it is | depends on |
 |---|---|---|
 | `@lenspack/core` | board config schema, the query IR, the eight ops, packing, validation, `nearest()`, in-memory store | zod |
-| `@lenspack/spec` | pack loader: YAML/JSON → validated catalogue | core |
-| `@lenspack/policy` | who may see and change what: `principalOf()`, `decide()` (row scope, hidden keys, the pack and catalogue as one caller sees them), `boardRights()`. Pure; the engine enforces what it decides | core, spec |
-| `@lenspack/engine` | the backend-neutral half: resolve (keys, join paths, fan-out refusal, tenancy, time, capability refusals), the `Connector` interface, `run` / `explain` / `checkOps`, cross-entity ratios | core, spec |
+| `@lenspack/pack` | pack loader: YAML/JSON → validated catalogue | core |
+| `@lenspack/policy` | who may see and change what: `principalOf()`, `decide()` (row scope, hidden keys, the pack and catalogue as one caller sees them), `boardRights()`. Pure; the engine enforces what it decides | core, pack |
+| `@lenspack/engine` | the backend-neutral half: resolve (keys, join paths, fan-out refusal, tenancy, time, capability refusals), the `Connector` interface, `run` / `explain` / `checkOps`, cross-entity ratios | core, pack |
 | `@lenspack/sql` | `sqlConnector()` and the driver registry: compiler (plan → print) and read-only drivers for **Postgres, DuckDB, SQLite, MySQL/MariaDB and ClickHouse**, chosen by connection URL; cache, SQL board store | engine |
 | `@lenspack/elasticsearch` | `elasticsearchConnector()`: the IR as aggregations over plain HTTP — **Elasticsearch 6.x–8.x and OpenSearch**; text→keyword from the mapping; approximate aggregations flagged ≈ | engine |
 | `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; a chart adapter seam with a zero-dependency SVG adapter (the default) and **recharts**; any other library is one component | core, react-grid-layout (recharts is an optional peer) |
-| `@lenspack/agent` | `boardTools()` — provider-agnostic tool definitions over any `Connector`, edits queued and checked before they land — plus `toVercelAI()` | core, spec, engine, policy |
+| `@lenspack/agent` | `boardTools()` — provider-agnostic tool definitions over any `Connector`, edits queued and checked before they land — plus `toVercelAI()` | core, pack, engine, policy |
 | `@lenspack/mcp` | `createMcpServer()` and the `lenspack-mcp` CLI (stdio or streamable HTTP); re-exports `@lenspack/agent` | agent, sql |
 | `@lenspack/serve` | the `lenspack` CLI: `serve` (board API + chat with review, from a `lenspack.yaml`), `check`, `sources`, `dss` | all of the above |
-| `@lenspack/dss` | compiles DIGIT DSS `ChartApiConfig.json` into a pack and boards, with a report of what did not translate | core, spec, engine |
+| `@lenspack/dss` | compiles DIGIT DSS `ChartApiConfig.json` into a pack and boards, with a report of what did not translate | core, pack, engine |
 
 ## Installing from GitHub Packages
 
-Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `spec`, `policy`, `engine`, `sql`, `elasticsearch`, `react`, `agent`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
+Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `pack`, `policy`, `engine`, `sql`, `elasticsearch`, `react`, `agent`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
 
 ```ini
 @theflywheel:registry=https://npm.pkg.github.com
@@ -83,6 +83,8 @@ Installing needs a GitHub token with the `read:packages` scope, even for public 
 ```
 
 Every import shown here, subpaths included (`@lenspack/react/adapters/recharts`, `@lenspack/react/styles.css`, `@lenspack/sql/pg`), then works unchanged. The packages depend on each other through the same aliases, so you only list the ones you import.
+
+**Upgrading from 0.1.0:** the pack loader `@lenspack/spec` is now `@lenspack/pack` (published as `@theflywheel/lenspack-pack`). Its exports are unchanged; change the import path and the dependency name. The packages now sit in folders by job (`packages/kernel`, `sources`, `packs`, `hosts`; see [docs/overview.md](docs/overview.md#how-the-code-is-laid-out)), which changes no package name.
 
 ## Sources
 
@@ -186,14 +188,14 @@ lenspack was extracted from a public-consultation moderation tool where the dash
 
 1. **Every engine, same answer.** Every example board, and every dimension × measure × shape of every pack, runs on Postgres, MySQL, MariaDB, SQLite and ClickHouse and must return DuckDB's numbers. A percentile on a database with no percentile function (MySQL, SQLite) must come back as the documented refusal and nothing else may. Golden files pin the SQL each dialect prints.
 2. **One ops suite, four packs.** The core's tests run parametrised over every catalogue.
-3. **Zero-domain grep.** CI fails if `packages/*` contains a word from any example domain.
+3. **Zero-domain grep.** CI fails if a package under `packages/` contains a word from any example domain.
 4. **Pack conformance.** Every dimension × measure × query shape compiles, or fails with a documented `ResolveError`; every declared fan-out is refused; tenant injection is present.
 5. **The fifth pack.** [docs/writing-a-pack.md](docs/writing-a-pack.md) walks through a new dataset; the target is under an hour with no change under `packages/`.
 
 ## Using it in your own app
 
 ```ts
-import { loadPack, catalogueFrom } from "@lenspack/spec";
+import { loadPack, catalogueFrom } from "@lenspack/pack";
 import { resolveBoard, sqlStore } from "@lenspack/sql";
 import { openPostgres } from "@lenspack/sql/pg";
 import { boardTools, toVercelAI } from "@lenspack/mcp";
@@ -231,7 +233,7 @@ import { rechartsAdapter } from "@lenspack/react/adapters/recharts";   // rechar
 <BoardProvider charts={rechartsAdapter} …>
 ```
 
-Any other library (ECharts, Chart.js, Vega, your design system's chart component) is an adapter you write, and it is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. Add yours to the conformance test in `packages/react/test/adapters.test.tsx`, which runs every adapter through every chart kind.
+Any other library (ECharts, Chart.js, Vega, your design system's chart component) is an adapter you write, and it is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. Add yours to the conformance test in `packages/hosts/react/test/adapters.test.tsx`, which runs every adapter through every chart kind.
 
 A map (a `points` query: one dot per location, coloured by a dimension, its area by a measure) is lenspack's own `MapChart`, also the same under every adapter: points in Web Mercator fitted to their extent, a legend, tooltips, the series colours, on a plain latitude and longitude grid. A basemap is off by default. `<BoardProvider mapTiles={{ url: "https://tiles.example.org/{z}/{x}/{y}.png", attribution: "© …" }}>` puts XYZ raster tiles under the points; use a tile service whose terms allow it (not tile.openstreetmap.org for anything beyond light personal use).
 

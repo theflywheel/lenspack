@@ -114,3 +114,14 @@ The security model in full: [security.md](security.md).
 ## The demo app
 
 `pnpm demo` serves the example packs in the board app (`examples/demo`). You can build boards with the chat, drag widgets and restore versions. Its look carries one idea: colour is provenance. A key that the pack declares is always mono and blue, whether in prose, in the metrics reference or in a board title. Something the compiler refuses is always ochre.
+
+## How the code is laid out
+
+The npm packages (`@lenspack/<name>`) sit in four folders under `packages/`, by the job they do:
+
+| folder | what is in it |
+|---|---|
+| `packages/kernel/` | What every deployment uses: `core` (boards, operations, the query format), `pack` (reading and checking a pack), `policy` (who may see and change what), `engine` (checks a query against the pack and policy, then hands it to a source) and `agent` (the tools a model uses to read numbers and change boards). It never reaches a database or a model provider itself: sources and hosts plug into it. |
+| `packages/sources/` | Where data comes from: `sql` (Postgres, DuckDB, SQLite, MySQL/MariaDB, ClickHouse) and `elasticsearch`. |
+| `packages/packs/` | Ready-made domain packs, built from another system's own configuration: `dss` and `ccrs`. |
+| `packages/hosts/` | The apps and integrations that run Lenspack: `serve` (the `lenspack` command and its server), `superset` (Lenspack inside Apache Superset), `react` (the board components for your own app) and `mcp` (Lenspack as tools for any MCP client). |

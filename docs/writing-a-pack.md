@@ -69,7 +69,7 @@ Every query over that entity now needs `ctx.tenant`, and the predicate is pushed
 ## 6. Check it
 
 ```ts
-import { loadPack, catalogueFrom } from "@lenspack/spec";
+import { loadPack, catalogueFrom } from "@lenspack/pack";
 import { compile } from "@lenspack/sql";
 
 const pack = await loadPack("./billing.yaml");           // throws PackError with every problem listed

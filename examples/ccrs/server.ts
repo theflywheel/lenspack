@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type CcrsBoard, type Skin, ccrsApi } from "@lenspack/ccrs";
-import { parsePackText } from "@lenspack/spec";
+import { parsePackText } from "@lenspack/pack";
 import { sqlConnector } from "@lenspack/sql";
 import { openPostgres } from "@lenspack/sql/pg";
 

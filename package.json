@@ -7,10 +7,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/*' run build",
+    "build": "pnpm -r --filter './packages/*/*' run build",
     "test": "vitest run",
     "test:pg": "LENSPACK_PG_URL=${LENSPACK_PG_URL:-postgres://localhost:5432/lenspack_test} vitest run",
-    "typecheck": "pnpm -r --filter './packages/*' exec tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.json",
+    "typecheck": "pnpm -r --filter './packages/*/*' exec tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.json",
     "lint:domain": "node scripts/zero-domain-grep.mjs",
     "smoke:dist": "node scripts/dist-smoke.mjs",
     "seed": "tsx scripts/seed.ts",
