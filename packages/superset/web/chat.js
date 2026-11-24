@@ -102,7 +102,7 @@
       title: "Ask Lenspack", sub: "Superset dashboard", close: "Close", placeholder: "Ask for a chart, a change, or a number…", send: "Send",
       intro: "Changes you ask for are saved to this Superset dashboard. The numbers come from Superset's own metrics.",
       working: "Working…", reviewing: "Reviewing the result…", noAnswer: "(no answer)", wrong: "Something went wrong", unreachable: "Could not reach Lenspack: {0}",
-      reviewerOk: "Reviewer: done as asked. {0}", reviewer: "Reviewer: {0}", saved: "Saved to Superset.", savedRefreshing: "Saved to Superset. Refreshing the dashboard…", savedLater: "Saved to Superset. The dashboard refreshes when the reviewer finishes.",
+      saved: "Saved to Superset.", savedRefreshing: "Saved to Superset. Refreshing the dashboard…", savedLater: "Saved to Superset. The dashboard refreshes when the reviewer finishes.",
       language: "Language", auto: "Auto", autoHelp: "Speak or type in any language; replies follow it.", pickedHelp: "Speech is transcribed as {0}, and replies are in {0}.", space: "Hold Space to talk", spaceHelp: "Hold Space for {0} s, even while typing; a quick press types a space. Or hold the mic button.", holdFor: "Hold for", holdDefault: "{0} s (default)", keepHolding: "Keep holding to talk…", newChat: "New chat", newChatHelp: "New chat: clear this conversation (the dashboard stays as it is)", cleared: "Chat cleared.", undo: "Undo", followSuperset: "Following Superset's language: {0}. Pick one here to use another.", adminDefault: "This deployment's default: {0}. Pick one here to use another.", unsureLang: "Couldn't tell which language that was: pick one in the language menu and try again.", missedIn: "Didn't catch that in {0}: try again.",
       mic: "Speak (click to start and stop, or hold)", micNeedsHttps: "The microphone needs a secure (https) page", micUnsupported: "This browser cannot record audio",
       listening: "Listening… {0}", transcribing: "Transcribing…", tooShort: "Nothing was recorded. Hold the mic or click it, speak, then stop.", heard: "Check the text, then send.", nothingHeard: "No speech was recognised. Try again a little closer to the microphone.",
@@ -114,7 +114,7 @@
       title: "Demander à Lenspack", sub: "Tableau de bord Superset", close: "Fermer", placeholder: "Demandez un graphique, une modification ou un chiffre…", send: "Envoyer",
       intro: "Les modifications demandées sont enregistrées dans ce tableau de bord Superset. Les chiffres viennent des métriques de Superset.",
       working: "En cours…", reviewing: "Vérification du résultat…", noAnswer: "(pas de réponse)", wrong: "Un problème est survenu", unreachable: "Impossible de joindre Lenspack : {0}",
-      reviewerOk: "Vérification : fait comme demandé. {0}", reviewer: "Vérification : {0}", saved: "Enregistré dans Superset.", savedRefreshing: "Enregistré dans Superset. Actualisation du tableau de bord…", savedLater: "Enregistré dans Superset. Le tableau de bord s'actualise à la fin de la vérification.",
+      saved: "Enregistré dans Superset.", savedRefreshing: "Enregistré dans Superset. Actualisation du tableau de bord…", savedLater: "Enregistré dans Superset. Le tableau de bord s'actualise à la fin de la vérification.",
       language: "Langue", auto: "Auto", autoHelp: "Parlez ou écrivez dans n'importe quelle langue ; les réponses suivent.", pickedHelp: "La voix est transcrite en {0} et les réponses sont en {0}.", space: "Maintenir Espace pour parler", spaceHelp: "Maintenez Espace {0} s, même en écrivant ; un appui bref tape une espace. Ou maintenez le bouton micro.", holdFor: "Durée", holdDefault: "{0} s (par défaut)", keepHolding: "Maintenez pour parler…", newChat: "Nouvelle discussion", newChatHelp: "Nouvelle discussion : effacer cette conversation (le tableau de bord reste tel quel)", cleared: "Discussion effacée.", undo: "Annuler", followSuperset: "Suit la langue de Superset : {0}. Choisissez-en une ici pour en changer.", adminDefault: "Langue par défaut de ce déploiement : {0}. Choisissez-en une ici pour en changer.", unsureLang: "Impossible de savoir quelle langue c'était : choisissez-en une dans le menu des langues et réessayez.", missedIn: "Pas compris en {0} : réessayez.",
       mic: "Parler (cliquer pour démarrer et arrêter, ou maintenir)", micNeedsHttps: "Le micro nécessite une page sécurisée (https)", micUnsupported: "Ce navigateur ne peut pas enregistrer le son",
       listening: "À l'écoute… {0}", transcribing: "Transcription…", tooShort: "Rien n'a été enregistré. Maintenez ou cliquez le micro, parlez, puis arrêtez.", heard: "Vérifiez le texte, puis envoyez.", nothingHeard: "Aucune parole reconnue. Réessayez un peu plus près du micro.",
@@ -126,7 +126,7 @@
       title: "Lenspack से पूछें", sub: "Superset डैशबोर्ड", close: "बंद करें", placeholder: "चार्ट, बदलाव या कोई संख्या पूछें…", send: "भेजें",
       intro: "आप जो बदलाव कहेंगे, वे इसी Superset डैशबोर्ड में सेव होंगे। संख्याएँ Superset के अपने मेट्रिक्स से आती हैं।",
       working: "काम चल रहा है…", reviewing: "नतीजे की जाँच हो रही है…", noAnswer: "(कोई जवाब नहीं)", wrong: "कुछ गड़बड़ हो गई", unreachable: "Lenspack तक नहीं पहुँच सके: {0}",
-      reviewerOk: "जाँच: कहे अनुसार हो गया। {0}", reviewer: "जाँच: {0}", saved: "Superset में सेव हो गया।", savedRefreshing: "Superset में सेव हो गया। डैशबोर्ड रीफ़्रेश हो रहा है…", savedLater: "Superset में सेव हो गया। जाँच पूरी होने पर डैशबोर्ड रीफ़्रेश होगा।",
+      saved: "Superset में सेव हो गया।", savedRefreshing: "Superset में सेव हो गया। डैशबोर्ड रीफ़्रेश हो रहा है…", savedLater: "Superset में सेव हो गया। जाँच पूरी होने पर डैशबोर्ड रीफ़्रेश होगा।",
       language: "भाषा", auto: "ऑटो", autoHelp: "किसी भी भाषा में बोलें या लिखें; जवाब उसी भाषा में आएगा।", pickedHelp: "आवाज़ {0} में लिखी जाएगी और जवाब {0} में आएँगे।", space: "बोलने के लिए Space दबाकर रखें", spaceHelp: "टाइप करते हुए भी Space को {0} सेकंड दबाकर रखें; जल्दी दबाने से स्पेस टाइप होता है। या माइक बटन दबाकर रखें।", holdFor: "कितनी देर", holdDefault: "{0} सेकंड (डिफ़ॉल्ट)", keepHolding: "बोलने के लिए दबाए रखें…", newChat: "नई बातचीत", newChatHelp: "नई बातचीत: यह बातचीत मिटाएँ (डैशबोर्ड जैसा है वैसा रहेगा)", cleared: "बातचीत मिटा दी गई।", undo: "वापस लाएँ", followSuperset: "Superset की भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", adminDefault: "इस डिप्लॉयमेंट की डिफ़ॉल्ट भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", unsureLang: "पता नहीं चला कि यह कौन सी भाषा थी: भाषा मेनू में एक चुनें और फिर से कोशिश करें।", missedIn: "{0} में समझ नहीं आया: फिर से कोशिश करें।",
       mic: "बोलें (शुरू और बंद करने के लिए क्लिक करें, या दबाकर रखें)", micNeedsHttps: "माइक के लिए सुरक्षित (https) पेज चाहिए", micUnsupported: "यह ब्राउज़र आवाज़ रिकॉर्ड नहीं कर सकता",
       listening: "सुन रहे हैं… {0}", transcribing: "लिखा जा रहा है…", tooShort: "कुछ रिकॉर्ड नहीं हुआ। माइक दबाकर रखें या क्लिक करें, बोलें, फिर रोकें।", heard: "टेक्स्ट जाँचें, फिर भेजें।", nothingHeard: "कोई आवाज़ पहचानी नहीं गई। माइक के थोड़ा पास से फिर कोशिश करें।",
@@ -140,7 +140,7 @@
       title: "Perguntar ao Lenspack", sub: "Painel do Superset", close: "Fechar", placeholder: "Peça um gráfico, uma alteração ou um número…", send: "Enviar",
       intro: "As alterações que pedir ficam gravadas neste painel do Superset. Os números vêm das métricas do próprio Superset.",
       working: "Em curso…", reviewing: "Verificação do resultado…", noAnswer: "(sem resposta)", wrong: "Ocorreu um problema", unreachable: "Sem acesso ao Lenspack: {0}",
-      reviewerOk: "Verificação: feito como pedido. {0}", reviewer: "Verificação: {0}", saved: "Gravado no Superset.", savedRefreshing: "Gravado no Superset. Atualização do painel…", savedLater: "Gravado no Superset. O painel é atualizado quando a verificação terminar.",
+      saved: "Gravado no Superset.", savedRefreshing: "Gravado no Superset. Atualização do painel…", savedLater: "Gravado no Superset. O painel é atualizado quando a verificação terminar.",
       language: "Idioma", auto: "Auto", autoHelp: "Fale ou escreva em qualquer idioma; as respostas seguem esse idioma.", pickedHelp: "A voz é transcrita em {0} e as respostas são em {0}.", space: "Manter Espaço para falar", spaceHelp: "Mantenha a tecla Espaço pressionada {0} s, mesmo ao escrever; um toque curto escreve um espaço. Ou mantenha pressionado o botão do microfone.", holdFor: "Duração", holdDefault: "{0} s (padrão)", keepHolding: "Mantenha pressionado para falar…", newChat: "Nova conversa", newChatHelp: "Nova conversa: apagar esta conversa (o painel fica como está)", cleared: "Conversa apagada.", undo: "Desfazer", followSuperset: "Segue o idioma do Superset: {0}. Escolha outro aqui para mudar.", adminDefault: "Idioma padrão desta instalação: {0}. Escolha outro aqui para mudar.", unsureLang: "Não foi possível identificar o idioma: escolha um no menu de idiomas e tente de novo.", missedIn: "Não foi possível entender em {0}: tente de novo.",
       mic: "Falar (clique para iniciar e parar, ou mantenha pressionado)", micNeedsHttps: "O microfone precisa de uma página segura (https)", micUnsupported: "Este navegador não consegue gravar áudio",
       listening: "Em escuta… {0}", transcribing: "Transcrição em curso…", tooShort: "Nada foi gravado. Mantenha pressionado ou clique no microfone, fale e depois pare.", heard: "Verifique o texto e depois envie.", nothingHeard: "Nenhuma fala reconhecida. Tente de novo um pouco mais perto do microfone.",
@@ -749,8 +749,9 @@
         if (bot) bot.replaceChildren(replyNode(answer));
         scroll();
       };
-      // The store writes to Superset inside the edit tool, so by the time a tool's output
-      // arrives the board version has moved: say "saved" then, not after the reviewer.
+      // With the reviewer off, the store writes to Superset inside the edit tool, so by the time a
+      // tool's output arrives the board version has moved: say "saved" then. With it on, a turn's
+      // edits are saved once the reviewer has checked them, at the end of the turn.
       let savedAt = null;
       let saving = null;
       const checkSaved = async () => {
@@ -806,11 +807,9 @@
               }
               switch (ev.type) {
                 case "text-delta":
-                  if (bot && ev.id && textId && ev.id !== textId && answer.trim()) {
-                    segments.push(answer);
-                    bot = null;
-                    answer = "";
-                  }
+                  // A new text part straight after another (no tool call between) continues the
+                  // same reply: the server's own closing lines, a note after the model's answer.
+                  if (bot && ev.id && textId && ev.id !== textId && answer.trim()) answer += "\n\n";
                   textId = ev.id || textId;
                   if (!bot) bot = bubble("assistant", "");
                   answer += ev.delta;
@@ -856,12 +855,6 @@
                 case "data-status":
                   status.textContent = t("reviewing");
                   break;
-                case "data-review": {
-                  const r = ev.data || {};
-                  if (r.unavailable) break;
-                  note(r.satisfied ? t("reviewerOk", r.note || "") : t("reviewer", [...(r.missing || []), ...(r.wrong || [])].join("; ") || r.note), r.satisfied ? "" : "bad");
-                  break;
-                }
                 case "error":
                   note(ev.errorText || t("wrong"), "bad");
                   break;

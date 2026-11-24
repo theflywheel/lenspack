@@ -1,4 +1,5 @@
 import type { Catalogue } from "./catalogue";
+import { describeChanges } from "./changes";
 import { type ApplyResult, type BoardOp, applyOps } from "./ops";
 import { type BoardConfig, emptyBoard } from "./schema";
 
@@ -115,6 +116,110 @@ export function memoryStore(): BoardStore {
     async delete(id) {
       boards.delete(id);
       history.delete(id);
+    },
+  };
+}
+
+/** A store whose edits to one board wait for commit(). */
+export type StagedStore = BoardStore & {
+  /**
+   * Saves the held edits to the store underneath, in order, one version each. `asOne` saves
+   * only where they ended up, as a single version, so an edit that was later corrected never
+   * reaches the store; when the board changed underneath meanwhile, the edits go one by one.
+   */
+  commit(opts?: { asOne?: boolean }): Promise<void>;
+  /** Drops the held edits: the board stays as the store underneath has it. */
+  discard(): void;
+};
+
+/**
+ * Holds edits to one board back from the store underneath until commit().
+ * Reads of that board see the held edits, numbered as the versions they will
+ * become; nothing reaches the store underneath (or a dashboard it writes to)
+ * before commit(), and discard() leaves it untouched. Other boards pass
+ * straight through. A chat turn edits through one so that a change found
+ * wrong before the turn ends is never saved.
+ */
+export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
+  type Write = { ops: BoardOp[]; catalogue: Catalogue; source: string } | { config: BoardConfig; source: string; summary: string };
+  let held: { version: BoardVersion; write: Write }[] = [];
+  // The board as it was when the first edit was held.
+  let base: Board | null = null;
+
+  const current = async (): Promise<Board | null> => {
+    const last = held.at(-1)?.version;
+    if (!last || !base) return inner.get(boardId);
+    return { ...base, config: structuredClone(last.config), version: last.version, updatedAt: last.createdAt };
+  };
+  const hold = (board: Board, config: BoardConfig, source: string, summary: string, write: Write): Board => {
+    if (!held.length) base = board;
+    const version: BoardVersion = { version: board.version + 1, source, summary, createdAt: new Date(), config: structuredClone(config) };
+    held.push({ version, write });
+    return { ...board, config: structuredClone(config), version: version.version, updatedAt: version.createdAt };
+  };
+  const versions = async (id: string) => {
+    const saved = await inner.versions(id);
+    return id === boardId ? [...held.map((h) => ({ ...h.version, config: structuredClone(h.version.config) })).reverse(), ...saved] : saved;
+  };
+
+  return {
+    get: (id) => (id === boardId ? current() : inner.get(id)),
+    list: () => inner.list(),
+    create: (input) => inner.create(input),
+    share: (id, shared) => inner.share(id, shared),
+    delete: (id) => inner.delete(id),
+    versions,
+    async patch(input) {
+      if (input.id !== boardId) return inner.patch(input);
+      const board = await current();
+      if (!board) return { ok: false, error: `No board called "${input.id}"` };
+      if (input.expectedVersion !== undefined && board.version !== input.expectedVersion)
+        return { ok: false, error: `Board changed since version ${input.expectedVersion}; it is now v${board.version}` };
+      const result = applyOps(board.config, input.ops, input.catalogue);
+      if (!result.ok) return { ok: false, error: result.error, hint: result.hint, opIndex: result.opIndex };
+      const source = input.source ?? "ops";
+      return { ok: true, board: hold(board, result.config, source, describeOps(input.ops), { ops: input.ops, catalogue: input.catalogue, source }) };
+    },
+    async replaceConfig(input) {
+      if (input.id !== boardId) return inner.replaceConfig(input);
+      const board = await current();
+      if (!board) throw new Error(`No board called "${input.id}"`);
+      const { config, source = "layout", summary = "layout changed" } = input;
+      return hold(board, config, source, summary, { config, source, summary });
+    },
+    async revertTo(id, version) {
+      if (id !== boardId) return inner.revertTo(id, version);
+      const board = await current();
+      const target = (await versions(id)).find((v) => v.version === version);
+      if (!board || !target) return null;
+      // Restoring what is already there records nothing.
+      if (JSON.stringify(board.config) === JSON.stringify(target.config)) return board;
+      const summary = `restored v${version}`;
+      return hold(board, target.config, "revert", summary, { config: target.config, source: "revert", summary });
+    },
+    async commit(opts = {}) {
+      const writes = held.map((h) => h.write);
+      const last = held.at(-1)?.version;
+      const from = base;
+      held = [];
+      base = null;
+      if (!last || !from) return;
+      if (opts.asOne && (await inner.get(boardId))?.version === from.version) {
+        const summary = describeChanges(from.config, last.config).join(", ") || last.summary;
+        await inner.replaceConfig({ id: boardId, config: last.config, source: last.source, summary });
+        return;
+      }
+      // Ops are applied again rather than their result copied, so an edit made meanwhile by hand is kept.
+      for (const w of writes) {
+        if ("ops" in w) {
+          const r = await inner.patch({ id: boardId, ...w });
+          if (!r.ok) throw new Error(r.error);
+        } else await inner.replaceConfig({ id: boardId, ...w });
+      }
+    },
+    discard() {
+      held = [];
+      base = null;
     },
   };
 }

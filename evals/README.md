@@ -13,11 +13,11 @@ The tasks cover the failure modes that matter for this design: naming a key that
 
 ## Review and heal
 
-`--review [name]` runs an adversarial text review after each task: the reviewer (another provider, or the builder itself) sees the instruction, the board before and after, and the receipt of versions gained, and lists what is missing or wrong. The table reports how often the reviewer agrees with the deterministic check — a reviewer that says "satisfied" when the check fails is not worth its latency.
+`--review [name]` runs an adversarial text review after each task: the reviewer (another provider, or the builder itself) sees the instruction, the board before and after, and the receipt of versions gained, and lists its findings, each marked material (the board would mislead whoever reads it) or minor. The table reports how often the reviewer agrees with the deterministic check — a reviewer that says "satisfied" when the check fails is not worth its latency.
 
-In the demo, review runs on every turn but healing is opt-in (`?rounds=2`); the review block offers "Apply fixes" instead. `--heal` gives the builder one more round when the reviewer is not satisfied, with the review as the instruction, and reports pass rates before and after (🩹 = passed only after healing).
+In the chat, a turn's edits are held until the reviewer has checked them. A material finding gets one fix round and a second check; a change still wrong after it is not saved, and the reply says so. Minor findings are saved and mentioned in the reply. `--heal` gives the builder one more round when the reviewer has any finding, with the findings as the instruction, and reports pass rates before and after (🩹 = passed only after healing).
 
-`--escalate <name>` runs the heal round on a larger model instead of the builder: small model first, big model only when the reviewer is not satisfied.
+`--escalate <name>` runs the heal round on a larger model instead of the builder: small model first, big model only when the reviewer has findings.
 
 ## Suites: accuracy against frozen truth
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { memoryStore } from "../src/store";
+import { memoryStore, stagedStore } from "../src/store";
 import { summarise, widthWords } from "../src/summarise";
 import { catalogue, packRef } from "./fixtures";
 
@@ -92,5 +92,54 @@ describe("widthWords", () => {
     expect(widthWords(5)).toBe("5/12 width");
     expect(widthWords(24, 24)).toBe("full width (24/24)");
     expect(widthWords(6, 24)).toBe("6/24 width");
+  });
+});
+
+describe("staged store", () => {
+  const kpi = { op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: "count" }, aggregate: "last" } } as const;
+
+  it("holds a board's edits until commit; reads see them, the store underneath does not", async () => {
+    const inner = memoryStore();
+    await inner.create({ id: "x", pack: packRef, title: "T" });
+    const staged = stagedStore(inner, "x");
+    const r = await staged.patch({ id: "x", catalogue, ops: [kpi], source: "chat" });
+    expect(r.ok && r.board.version).toBe(2);
+    await staged.revertTo("x", 1);
+    await staged.patch({ id: "x", catalogue, ops: [{ op: "set_title", title: "New" }], source: "chat" });
+    expect((await staged.get("x"))!.config.title).toBe("New");
+    expect((await staged.versions("x")).map((v) => `${v.version} ${v.summary}`)).toEqual(["4 renamed to “New”", "3 restored v1", "2 added a", "1 created"]);
+    expect((await inner.get("x"))!.version).toBe(1);
+    await staged.commit();
+    expect((await inner.versions("x")).map((v) => `${v.version} ${v.source} ${v.summary}`)).toEqual(["4 chat renamed to “New”", "3 revert restored v1", "2 chat added a", "1 create created"]);
+    // After a commit it reads through again.
+    expect((await staged.get("x"))!.version).toBe(4);
+  });
+
+  it("discard leaves the store underneath untouched; a commit keeps an edit made there meanwhile", async () => {
+    const inner = memoryStore();
+    await inner.create({ id: "x", pack: packRef, title: "T" });
+    const staged = stagedStore(inner, "x");
+    await staged.patch({ id: "x", catalogue, ops: [kpi] });
+    staged.discard();
+    expect((await staged.get("x"))!.version).toBe(1);
+    expect(await inner.versions("x")).toHaveLength(1);
+
+    await staged.patch({ id: "x", catalogue, ops: [kpi] });
+    await inner.patch({ id: "x", catalogue, ops: [{ op: "set_title", title: "By hand" }] });
+    await staged.commit();
+    const now = (await inner.get("x"))!;
+    expect(now.config.title).toBe("By hand");
+    expect(Object.keys(now.config.widgets)).toEqual(["a"]);
+  });
+
+  it("asOne saves where the edits ended up as one version, so a corrected edit never reaches the store", async () => {
+    const inner = memoryStore();
+    await inner.create({ id: "x", pack: packRef, title: "T" });
+    const staged = stagedStore(inner, "x");
+    await staged.patch({ id: "x", catalogue, ops: [kpi], source: "chat" });
+    await staged.patch({ id: "x", catalogue, ops: [{ op: "remove_widget", id: "a" }, { ...kpi, id: "b" }], source: "chat" });
+    await staged.commit({ asOne: true });
+    expect((await inner.versions("x")).map((v) => `${v.version} ${v.source} ${v.summary}`)).toEqual(["2 chat added “K”", "1 create created"]);
+    expect(Object.keys((await inner.get("x"))!.config.widgets)).toEqual(["b"]);
   });
 });
