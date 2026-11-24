@@ -1,4 +1,4 @@
-import { type Catalogue, type FilterClause, type Ownership, filterClauseSchema, queryKeys } from "@lenspack/core";
+import { type Catalogue, type Ownership, type ScopeClause, filterClauseSchema, queryKeys } from "@lenspack/core";
 import { type Pack, operands, parseExpr } from "@lenspack/spec";
 import { z } from "zod";
 
@@ -17,10 +17,12 @@ export type Identity = {
   roles?: string[];
   /** Narrows every query to this tenant. Must agree with a tenant the pack is pinned to. */
   tenant?: string;
-  /** Row scope: filters every query carries, whatever the board asks. */
-  scope?: FilterClause[];
+  /** Row scope: filters every query carries, whatever the board asks; one with an entity, every query reading it. */
+  scope?: ScopeClause[];
   /** Keys the host already keeps from this caller; a pack's rules add to them. */
   hidden?: string[];
+  /** Entities (tables, datasets) the host does not let this caller read: their keys are hidden and a query reading one is refused. */
+  hiddenEntities?: string[];
   /** The packs this caller may open; absent means all. */
   packs?: string[];
   /** Capabilities the host grants (CCRS action URLs); absent: a trusted caller, who holds every one. */
@@ -54,9 +56,9 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
   const maintain = !!id.maintain || among(rights.maintainers);
   // Open question, not applied: the usage page for admins only would be `const usage = roles.includes("admin");`
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
-  const { user, tenant, scope, hidden, packs, grants, readOnly } = id;
+  const { user, tenant, scope, hidden, hiddenEntities, packs, grants, readOnly } = id;
   // Only what is set, so a principal compares equal to the one it was built from.
-  return { user, roles, edit: maintain || !!id.edit || among(rights.editors), maintain: maintain || undefined, usage, tenant: tenant || undefined, scope, hidden, packs, grants, readOnly: readOnly || undefined };
+  return { user, roles, edit: maintain || !!id.edit || among(rights.editors), maintain: maintain || undefined, usage, tenant: tenant || undefined, scope, hidden, hiddenEntities, packs, grants, readOnly: readOnly || undefined };
 }
 
 /** Whether a caller holds a host grant; with none named, whether they are trusted with every one. */
@@ -144,12 +146,12 @@ export function withoutHiddenValues<C extends { widgets: Record<string, unknown>
 }
 
 /** The engine's view of a caller: what every query they run is narrowed by. Read by shape; the engine never imports this package. */
-export type Scoped = { tenant?: string; scope?: FilterClause[]; hidden?: ReadonlySet<string> };
+export type Scoped = { tenant?: string; scope?: ScopeClause[]; hidden?: ReadonlySet<string>; hiddenEntities?: ReadonlySet<string> };
 
 /** What one caller may use of one pack. */
 export type Decision<C extends Scoped = Scoped> = {
   /** Every row filter: the pack's own, the caller's, then their rule's. */
-  scope: FilterClause[];
+  scope: ScopeClause[];
   hidden: ReadonlySet<string>;
   /** The engine context to run with: the pack's, with the caller's tenant, scope and hidden keys. */
   ctx: C;
@@ -180,11 +182,14 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
   }
   let fromRule = rule && ruleHidden.get(rule);
   if (rule && !fromRule) ruleHidden.set(rule, (fromRule = hiddenKeys(pack, rule)));
-  // The host's hidden keys and the rule's together: either may only add.
-  const hidden = who.hidden?.length ? new Set([...hiddenKeys(pack, { hide: who.hidden }), ...(fromRule ?? [])]) : (fromRule ?? NONE);
+  // The host's hidden keys and the rule's together: either may only add. An entity kept from the
+  // caller takes its measures along, and the dimensions it alone has.
+  const off = new Set(who.hiddenEntities ?? []);
+  const fromHost = [...(who.hidden ?? []), ...pack.measures.filter((m) => off.has(m.entity)).map((m) => m.key), ...pack.dimensions.filter((d) => [d.entity, ...Object.keys(d.also ?? {})].every((e) => off.has(e))).map((d) => d.key)];
+  const hidden = fromHost.length ? new Set([...hiddenKeys(pack, { hide: fromHost }), ...(fromRule ?? [])]) : (fromRule ?? NONE);
   const host = o.host ?? ({} as C);
   const scope = [...(host.scope ?? []), ...(who.scope ?? []), ...(rule?.scope ?? [])];
-  const ctx = { ...host, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(hidden.size ? { hidden } : {}) } as C;
+  const ctx = { ...host, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(hidden.size ? { hidden } : {}), ...(off.size ? { hiddenEntities: off } : {}) } as C;
   const uses = (q: Pack["examples"][number]["query"]) => {
     const k = queryKeys(q);
     return [...k.dimensions, ...k.measures].some((x) => hidden.has(x));

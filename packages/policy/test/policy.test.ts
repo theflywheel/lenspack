@@ -74,6 +74,14 @@ describe("decide", () => {
     expect(decide(as([], { hidden: ["households_delivered"] }), pack)!.hidden.has("delivery_rate")).toBe(true);
   });
 
+  it("keeps an entity the host hides: its measures, what is computed from them, and the dimensions only it has", () => {
+    const d = decide(as([], { hiddenEntities: ["project"], scope: [{ entity: "task", ...village }] }), pack)!;
+    for (const k of ["target_type", "household_target", "household_coverage", "coverage_points"]) expect(d.hidden.has(k)).toBe(true);
+    // A conformed dimension the caller can still read elsewhere stays.
+    for (const k of ["province", "district", "visits", "delivered_by"]) expect(d.hidden.has(k)).toBe(false);
+    expect(d.ctx).toMatchObject({ hiddenEntities: new Set(["project"]), scope: [{ entity: "task", ...village }] });
+  });
+
   it("leaves the context as it was for a caller with no limits", () => {
     const host = { tenant: "t1" };
     const d = decide(as([]), pack, { host })!;

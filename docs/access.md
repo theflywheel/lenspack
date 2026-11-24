@@ -14,7 +14,7 @@ Who may sign in, what they may do in the app, and what of each pack's data they 
 | `tokens` | bearer tokens the deployment issues | `roles:` per token |
 | `none` | open, for a local demo; listens on 127.0.0.1 unless `host:` says otherwise (opened by `LENSPACK_AUTH`, only `--host` moves it, so in a container pass `--host 0.0.0.0` too) | none: the one local user sees everything |
 
-Superset mode (`lenspack superset`) takes none of these kinds: Superset signs who is asking on every request, and that signed identity, with Superset's own dashboard rights, is the only sign-in there. It is an adapter of its own kind, `superset`, which gives a Superset admin the role `admin`. See [packages/superset/README.md](../packages/superset/README.md).
+Superset mode (`lenspack superset`) takes none of these kinds: Superset signs who is asking on every request, and that signed identity, with Superset's own dashboard rights, is the only sign-in there. It is an adapter of its own kind, `superset`, which gives a Superset admin the role `admin`. With `hostPolicy: superset` it also brings each user's Superset roles, dataset access and row-level security (see [How the layers combine](#how-the-layers-combine)). See [packages/superset/README.md](../packages/superset/README.md).
 
 ### `password`
 
@@ -128,7 +128,11 @@ One pure function, `decide()` in `@lenspack/policy`, settles what a caller may u
 2. **Lenspack's rules only narrow it.** The rights by user and role add edit, maintain and usage rights. A pack's access rule adds its `scope` to the host's and the caller's, and its `hide`/`only` keys to the host's hidden keys. Nothing in lenspack.yaml can widen what the host allows.
 3. **The engine enforces the result.** Every query carries the scope (`ctx.scope`) and is refused if it names a hidden key (`ctx.hidden`). The engine reads both by shape and does not know who decided them.
 
-The scope is the pack's own (its `ctx.scope`), then the caller's, then their rule's, all applied together. A query that cannot be narrowed by one of them is refused (`OUT_OF_SCOPE`) rather than answered unnarrowed.
+The scope is the pack's own (its `ctx.scope`), then the caller's, then their rule's, all applied together. A query that cannot be narrowed by one of them is refused (`OUT_OF_SCOPE`) rather than answered unnarrowed. A host's scope may be tied to one entity (a table's row-level security): it then narrows only the queries that read that entity. A host may also keep whole entities from a caller: their measures and the dimensions only they have are hidden, and a query that reads one is refused (`NOT_PERMITTED`).
+
+### Superset
+
+With `hostPolicy: superset` (off by default for now), each user's Superset access is their identity: a dataset their roles may not read is a kept entity, and each simple RLS clause on a dataset they may read is scope on that entity. A clause that doesn't translate (anything beyond `=`, `IN`, `AND` and one-column `OR`) keeps the dataset from them, with the reason logged. Details in [packages/superset/README.md](../packages/superset/README.md#what-each-user-sees).
 
 ### CCRS
 
