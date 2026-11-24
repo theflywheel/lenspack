@@ -13,8 +13,7 @@ import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Markdown } from "./markdown";
 
-// The chat panel, in a chunk of its own: the AI SDK loads when a board with
-// chat is opened, not with the landing page or the board.
+// The chat panel beside the board.
 
 type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string; data?: unknown };
 type ReviewData = { round: number; reviewer: string; satisfied: boolean; unavailable?: boolean; missing: string[]; wrong: string[]; note: string };

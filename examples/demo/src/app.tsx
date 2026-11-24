@@ -1,13 +1,11 @@
 import * as React from "react";
 
-import { ArrowUp, BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, Share2, Trash2, Undo2, X } from "lucide-react";
+import { BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, Share2, Trash2, Undo2, X } from "lucide-react";
 
-import type { Board as BoardT, BoardOp, Catalogue } from "@lenspack/core";
-import { opSchema } from "@lenspack/core";
-import { Board, BoardProvider, DrillPath, useBoard, useBoardOps, type BoardHost, type BoardVersion, type FilterOption, type RemovedWidget, type WidgetData } from "@lenspack/react";
+import type { Board as BoardT, Catalogue } from "@lenspack/core";
+import { Board, BoardProvider, DrillPath, useBoard, type BoardHost, type BoardVersion, type FilterOption, type RemovedWidget, type WidgetData } from "@lenspack/react";
 
 import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Separator } from "./components/ui/separator";
@@ -16,8 +14,9 @@ import { Separator } from "./components/ui/separator";
 // by @lenspack/react; everything around it — chat, ops, filters, history —
 // is host UI, and the provider's hooks give it all it needs.
 
-import { ADAPTER_NAMES, type AdapterName, isAdapter, useChartAdapter } from "./adapters";
-import { appMode, page } from "./page";
+import { rechartsAdapter as charts } from "@lenspack/react/adapters/recharts";
+
+import { page } from "./page";
 import { type ModelInfo, effortOf } from "./chat";
 import { MetricsReference } from "./metrics";
 import { ProfileMenu } from "./profile";
@@ -55,36 +54,6 @@ function reloadToSignIn() {
   }
   location.reload();
   return true;
-}
-
-// The same eight ops a model emits, typed as JSON: anything can drive a board.
-function OpsBox() {
-  const { apply } = useBoardOps();
-  const [text, setText] = React.useState('{"op":"set_title","title":"Renamed from the ops box"}');
-  const [err, setErr] = React.useState<string | null>(null);
-  return (
-    <div className="space-y-1">
-      <form
-        className="flex items-center gap-2"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          try {
-            const parsed = opSchema.parse(JSON.parse(text)) as BoardOp;
-            const r = await apply([parsed]);
-            setErr(r.ok ? null : `${r.error}${r.hint ? ` — did you mean ${r.hint}?` : ""}`);
-          } catch (ex) {
-            setErr(ex instanceof Error ? ex.message : String(ex));
-          }
-        }}
-      >
-        <Input value={text} onChange={(e) => setText(e.target.value)} className="h-8 font-mono text-xs" aria-label="Board op as JSON" />
-        <Button type="submit" variant="secondary" size="sm" className="h-8">
-          <ArrowUp /> Apply op
-        </Button>
-      </form>
-      {err && <p className="text-xs text-destructive">{err}</p>}
-    </div>
-  );
 }
 
 // Filter bar on shadcn Select. What a board filters by is configuration;
@@ -328,13 +297,11 @@ export function App() {
   const [home] = React.useState(() => (params.get("example") || params.get("board") || !page.home ? null : page.home.split("/")));
   const [example, setExample] = React.useState<string>(params.get("example") ?? home?.[0] ?? "");
   const [boardId, setBoardId] = React.useState<string>(params.get("board") ?? home?.[1] ?? "");
-  const [adapterName, setAdapterName] = React.useState<AdapterName>(isAdapter(params.get("charts")) ? (params.get("charts") as AdapterName) : "recharts");
-  const charts = useChartAdapter(adapterName);
   const [state, setState] = React.useState<{ board: BoardT; catalogue: Catalogue; writable: boolean } | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
   const [me, setMe] = React.useState<Me | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
-  // Edits made by hand (a drag, an ×, a rollback, the ops box): the chat says
+  // Edits made by hand (a drag, an ×, a rollback): the chat says
   // what it will be told once they settle. Chat's own edits do not count.
   const [edits, setEdits] = React.useState(0);
   const noteEdit = React.useCallback(() => setEdits((n) => n + 1), []);
@@ -391,20 +358,18 @@ export function App() {
     },
     [base],
   );
-  // The board loads when the board changes, and only then: the chart library
-  // and the model are view choices, not a reason to fetch it again.
+  // The board loads when the board changes, and only then: the model is a
+  // view choice, not a reason to fetch it again.
   React.useEffect(() => {
     if (!example || !boardId) return;
     reloadBoard(true);
   }, [example, boardId, reloadBoard]);
   React.useEffect(() => {
     if (!example || !boardId) return;
-    // An app keeps its own path and leaves the chart library out of the URL.
-    const path = appMode ? location.pathname : "/app";
-    history.replaceState(null, "", `${path}?example=${example}&board=${boardId}${appMode ? "" : `&charts=${adapterName}`}${model ? `&model=${encodeURIComponent(model)}` : ""}${effortWanted ? `&effort=${encodeURIComponent(effortWanted)}` : ""}${view !== "board" ? `&view=${view}` : ""}`);
-  }, [example, boardId, adapterName, model, effortWanted, view]);
+    history.replaceState(null, "", `${location.pathname}?example=${example}&board=${boardId}${model ? `&model=${encodeURIComponent(model)}` : ""}${effortWanted ? `&effort=${encodeURIComponent(effortWanted)}` : ""}${view !== "board" ? `&view=${view}` : ""}`);
+  }, [example, boardId, model, effortWanted, view]);
   React.useEffect(() => {
-    if (appMode && state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
+    if (state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
   }, [state]);
 
   const writable = state?.writable ?? false;
@@ -478,9 +443,8 @@ export function App() {
   };
 
   const current = catalog.find((c) => c.example === example);
-  // The deployment's own line under the title. Without one, the demo shows the pack's
-  // description (written for the model) and an app shows nothing.
-  const intro = page.intro ?? (appMode ? undefined : current?.description);
+  // The deployment's own line under the title, if it has one.
+  const intro = page.intro;
   const suggestions = React.useMemo(() => {
     if (!state) return [];
     const m = state.catalogue.measures;
@@ -503,7 +467,7 @@ export function App() {
   };
 
   if (problem) return <div className="mx-auto max-w-6xl p-6 text-sm text-destructive">{problem}</div>;
-  if (!state || !charts) return <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (!state) return <div className="mx-auto max-w-6xl p-6 text-sm text-muted-foreground">Loading…</div>;
 
   // Board only, for screenshots and embeds.
   if (params.get("chrome") === "0")
@@ -524,9 +488,8 @@ export function App() {
             <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
               {page.title ?? "lenspack"}
             </a>
-            {!appMode && <span className="font-mono text-xs text-muted-foreground">/ demo</span>}
           </div>
-          {/* Each control says what it picks. One pack needs no pack menu; the chart library is a demo's to switch. */}
+          {/* Each control says what it picks. One pack needs no pack menu. */}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             {catalog.length > 1 && (
               <Select
@@ -565,15 +528,6 @@ export function App() {
                 )}
               </SelectContent>
             </Select>
-            {!appMode && (
-              <Select value={adapterName} onValueChange={(v) => setAdapterName(v as AdapterName)}>
-                <SelectTrigger size="sm" className="text-xs" aria-label="Charting library" data-testid="charts-select">
-                  <span className="shrink-0 text-muted-foreground">Charts</span>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>{ADAPTER_NAMES.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
-              </Select>
-            )}
             <Button variant={view === "metrics" ? "secondary" : "ghost"} size="sm" className="text-xs" onClick={() => setView(view === "metrics" ? "board" : "metrics")} aria-pressed={view === "metrics"} data-testid="metrics-view">
               <BookOpen /> Metrics
             </Button>
@@ -640,20 +594,9 @@ export function App() {
               <div className="space-y-3">
                 <PreviewBanner onReverted={() => (noteEdit(), reloadBoard())} />
                 <FilterBar />
-                {writable && !appMode && (
-                <details className="group">
-                  <summary className="w-fit cursor-pointer list-none font-mono text-xs text-muted-foreground hover:text-foreground">
-                    <span className="group-open:hidden">Edit with an operation instead</span>
-                    <span className="hidden group-open:inline">Operation</span>
-                  </summary>
-                  <div className="mt-2">
-                    <OpsBox />
-                  </div>
-                </details>
-                )}
               </div>
               <Separator className="my-4" />
-              <Board showQueries={!appMode} onWidgetRemoved={(r) => setRemoved({ ...r, key: Date.now() })} />
+              <Board onWidgetRemoved={(r) => setRemoved({ ...r, key: Date.now() })} />
             </BoardProvider>
           }
           side={(hide) =>
@@ -695,11 +638,6 @@ export function App() {
         )}
       </main>
       {removed && <UndoToast key={removed.key} title={removed.title} onUndo={host.revertTo ? undoRemove : undefined} onClose={dismissRemoved} />}
-      {!appMode && (
-        <footer className="mx-auto max-w-[2400px] px-4 pb-10 text-xs text-muted-foreground lg:px-5">
-          <a className="underline underline-offset-4" href="/">lenspack</a> — a dashboard is data, not code. Build boards with the chat, edit with the ops box, drag widgets, restore versions, switch the charting library.
-        </footer>
-      )}
     </div>
   );
 }

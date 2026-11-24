@@ -90,9 +90,6 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      echarts:
-        specifier: ^6.1.0
-        version: 6.1.0
       lucide-react:
         specifier: ^1.47.0
         version: 1.47.0(react@19.3.0)
