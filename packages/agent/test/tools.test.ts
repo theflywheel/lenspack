@@ -1,4 +1,5 @@
 import { type Query, memoryStore } from "@lenspack/core";
+import { describeSources, runSql, sqlConnector } from "@lenspack/sql";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -16,7 +17,7 @@ beforeAll(async () => {
   const store = memoryStore();
   await store.create({ id: "b", pack, title: "Test board" });
   tools = Object.fromEntries(
-    boardTools({ pack, executor: db.executor, store, boardId: "b", ctx: { tenant: "t1", now: new Date("2026-02-15T00:00:00Z") }, proposals }).map((t) => [t.name, t]),
+    boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "b", ctx: { tenant: "t1", now: new Date("2026-02-15T00:00:00Z") }, proposals }).map((t) => [t.name, t]),
   );
 });
 afterAll(async () => db.close());
@@ -104,7 +105,7 @@ describe("board tools", () => {
     const store = memoryStore();
     await store.create({ id: "ro", pack, title: "Read only" });
     const message = "You can view this dashboard but not edit it.";
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "ro", ctx: { tenant: "t1" }, readOnly: message }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "ro", ctx: { tenant: "t1" }, readOnly: message }).map((x) => [x.name, x]));
     const go = (name: string, args: Record<string, unknown> = {}) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
     const before = (await store.get("ro"))!.version;
     expect(await go("add_widget", { id: "w", kind: "kpi", title: "Things", query_kind: "value", measure: "things" })).toEqual({ applied: false, error: message, readOnly: true });
@@ -119,7 +120,7 @@ describe("board tools", () => {
     const store = memoryStore();
     await store.create({ id: "au", pack, title: "Audited" });
     const seen: { outcome: string; ops: string[]; version?: number; error?: string }[] = [];
-    const tools = (readOnly?: string) => Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "au", ctx: { tenant: "t1" }, readOnly, onEdit: (e) => seen.push(e) }).map((x) => [x.name, x]));
+    const tools = (readOnly?: string) => Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "au", ctx: { tenant: "t1" }, readOnly, onEdit: (e) => seen.push(e) }).map((x) => [x.name, x]));
     const go = (t: ReturnType<typeof tools>, name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
     await go(tools(), "rename_board", { title: "Renamed" });
     await go(tools(), "add_widget", { id: "w", kind: "kpi", title: "Nope", query_kind: "value", measure: "no_such_measure" });
@@ -134,7 +135,7 @@ describe("board tools", () => {
   it("patches a widget: only the fields given change", async () => {
     const store = memoryStore();
     await store.create({ id: "u", pack, title: "Patch" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "u", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "u", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
     const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; error?: string; didYouMean?: string }>;
     const widget = async () => (await store.get("u"))!.config.widgets.w!;
     await go("add_widget", { id: "w", kind: "chart", chart: "pie", title: "Share", query_kind: "breakdown", measure: "things", dimension: "colour", limit: 5, sort: "asc", time_last: "6m", filters: "size >= 20", compare: true, share: true });
@@ -180,7 +181,7 @@ describe("board tools", () => {
   it("adds a heatmap with its columns in their own order on the sequential scale, and turns it back into a bar", async () => {
     const store = memoryStore();
     await store.create({ id: "h", pack: { pack: pack.pack, version: pack.version }, title: "H" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "h", ctx: { tenant: "t1", now: new Date("2026-02-15T00:00:00Z") } }).map((x) => [x.name, x])) as Record<string, Tool>;
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "h", ctx: { tenant: "t1", now: new Date("2026-02-15T00:00:00Z") } }).map((x) => [x.name, x])) as Record<string, Tool>;
     const run = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args));
     const added = (await run("add_widget", { id: "heat", kind: "chart", chart: "heatmap", title: "Things, colour by origin", query_kind: "breakdown", measure: "things", dimension: "origin", split: "colour", width: "full" })) as { applied: boolean; board: string };
     expect(added, JSON.stringify(added)).toMatchObject({ applied: true });
@@ -195,7 +196,7 @@ describe("board tools", () => {
   it("moves a widget beside another in a full row and says what it narrowed", async () => {
     const store = memoryStore();
     await store.create({ id: "m", pack, title: "Move" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "m", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "m", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
     const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; layout?: string; error?: string; didYouMean?: string; board: string }>;
     const bar = (id: string, width: string, place = "bottom") => go("add_widget", { id, kind: "chart", title: id, query_kind: "breakdown", measure: "things", dimension: "colour", width, place });
     // The eval's shape: a bar and a pie half wide on one row, a full-width bar alone further down.
@@ -225,7 +226,7 @@ describe("board tools", () => {
   it("says when an edit pushes another widget to a different row", async () => {
     const store = memoryStore();
     await store.create({ id: "r", pack, title: "Rows" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "r", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "r", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
     const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; layout?: string; error?: string; didYouMean?: string }>;
     for (const id of ["a", "b"]) await go("add_widget", { id, kind: "chart", title: id, query_kind: "breakdown", measure: "things", dimension: "colour", width: "half" });
     const full = await go("resize_widget", { id: "a", width: "full", height: 0 });
@@ -236,7 +237,7 @@ describe("board tools", () => {
   it("refuses a resize the row cannot make room for, with the choices", async () => {
     const store = memoryStore();
     await store.create({ id: "q", pack, title: "Quarters" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "q", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "q", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
     const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; error?: string; didYouMean?: string }>;
     for (const id of ["a", "b", "c", "d"]) await go("add_widget", { id, kind: "chart", title: id, query_kind: "breakdown", measure: "things", dimension: "colour", width: "quarter" });
     const wide = await go("resize_widget", { id: "a", width: "half", height: 0 });
@@ -248,7 +249,7 @@ describe("board tools", () => {
   it("a get_board called beside an edit reads the board after the edit", async () => {
     const store = memoryStore();
     await store.create({ id: "g", pack, title: "Read after write" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "g", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "g", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
     const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied?: boolean; version: number; board: string }>;
     // As the SDK runs one step's calls: the edit and the read start together.
     const [edit, read] = await Promise.all([go("rename_board", { title: "Renamed" }), go("get_board", {})]);
@@ -259,7 +260,7 @@ describe("board tools", () => {
   it("serialises parallel edits so none is lost", async () => {
     const store = memoryStore();
     await store.create({ id: "p", pack, title: "Parallel" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "p", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "p", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
     const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never);
     await Promise.all([
       go("rename_board", { title: "Renamed" }),
@@ -282,12 +283,13 @@ describe("board tools", () => {
 
   it("does not expose run_sql unless asked", async () => {
     expect(tools.run_sql).toBeUndefined();
+    const rawSql = { describe: describeSources(pack), run: (sql: string, o: { timeoutMs?: number }) => runSql(sql, db.executor, o) };
     const store = memoryStore();
     await store.create({ id: "c", pack, title: "x" });
     // Raw SQL skips the pack's tenancy (6 rows, where tenant t1 has 5): on a
     // tenant-scoped pack it needs the database role to be the fence.
-    expect(() => boardTools({ pack, executor: db.executor, store, boardId: "c", ctx: { tenant: "t1" }, runSql: true })).toThrow(/past its tenant and row scope/);
-    const withSql = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "c", ctx: { tenant: "t1" }, runSql: "role-scoped" }).map((t) => [t.name, t]));
+    expect(() => boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "c", ctx: { tenant: "t1" }, runSql: true })).toThrow(/past its tenant and row scope/);
+    const withSql = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "c", ctx: { tenant: "t1" }, runSql: "role-scoped", rawSql }).map((t) => [t.name, t]));
     const r = (await withSql.run_sql!.execute({ sql: "select count(*) as n from things" } as never)) as { ok: boolean; rows: { n: unknown }[] };
     expect(r.ok).toBe(true);
     expect(Number(r.rows[0]!.n)).toBe(6);
@@ -305,7 +307,7 @@ describe("board tools", () => {
   it("restores the baseline or a numbered version, as a new version", async () => {
     const store = memoryStore();
     await store.create({ id: "r", pack, title: "Restore board" });
-    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "r", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "r", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
     const run = (name: string, args: Record<string, unknown> = {}) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
     expect((await run("add_widget", { id: "one", kind: "kpi", title: "One", query_kind: "value", measure: "things" })).applied).toBe(true);
     expect((await run("add_widget", { id: "two", kind: "kpi", title: "Two", query_kind: "value", measure: "weight" })).applied).toBe(true);

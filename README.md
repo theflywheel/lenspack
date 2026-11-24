@@ -59,13 +59,14 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 | `@lenspack/sql` | `sqlConnector()` and the driver registry: compiler (plan → print) and read-only drivers for **Postgres, DuckDB, SQLite, MySQL/MariaDB and ClickHouse**, chosen by connection URL; cache, SQL board store | engine |
 | `@lenspack/elasticsearch` | `elasticsearchConnector()`: the IR as aggregations over plain HTTP — **Elasticsearch 6.x–8.x and OpenSearch**; text→keyword from the mapping; approximate aggregations flagged ≈ | engine |
 | `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; chart adapters for **recharts, ECharts, shadcn** and a zero-dependency SVG fallback | core, react-grid-layout (chart libraries are optional peers) |
-| `@lenspack/mcp` | `boardTools()` — provider-agnostic tool definitions — plus `toVercelAI()`, `toMcp()` and the `lenspack-mcp` CLI | core, spec, engine |
+| `@lenspack/agent` | `boardTools()` — provider-agnostic tool definitions over any `Connector`, edits queued and checked before they land — plus `toVercelAI()` | core, spec, engine |
+| `@lenspack/mcp` | `createMcpServer()` and the `lenspack-mcp` CLI (stdio or streamable HTTP); re-exports `@lenspack/agent` | agent, sql |
 | `@lenspack/serve` | the `lenspack` CLI: `serve` (board API + chat with review, from a `lenspack.yaml`), `check`, `sources`, `dss` | all of the above |
 | `@lenspack/dss` | compiles DIGIT DSS `ChartApiConfig.json` into a pack and boards, with a report of what did not translate | core, spec, engine |
 
 ## Installing from GitHub Packages
 
-Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `spec`, `engine`, `sql`, `elasticsearch`, `react`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
+Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `spec`, `engine`, `sql`, `elasticsearch`, `react`, `agent`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
 
 ```ini
 @theflywheel:registry=https://npm.pkg.github.com
@@ -203,7 +204,7 @@ const store = sqlStore(db); await store.migrate();
 // Data for a board (one scan per distinct query):
 const data = await resolveBoard(board.config, { pack, executor: db.executor, ctx: { tenant } }, selections);
 
-// Tools for your own agent loop (Vercel AI SDK shown; toMcp() for MCP):
+// Tools for your own agent loop (Vercel AI SDK shown; createMcpServer() for MCP):
 const tools = toVercelAI(boardTools({ pack, executor: db.executor, store, boardId, ctx: { tenant } }));
 ```
 

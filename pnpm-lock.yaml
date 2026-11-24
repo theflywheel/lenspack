@@ -155,6 +155,25 @@ importers:
 
   examples/tickets: {}
 
+  packages/agent:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@lenspack/spec':
+        specifier: workspace:*
+        version: link:../spec
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@lenspack/sql':
+        specifier: workspace:*
+        version: link:../sql
+
   packages/ccrs:
     dependencies:
       '@lenspack/core':
@@ -217,9 +236,9 @@ importers:
       '@duckdb/node-api':
         specifier: '*'
         version: 2.0.0-r.1
-      '@lenspack/core':
+      '@lenspack/agent':
         specifier: workspace:*
-        version: link:../core
+        version: link:../agent
       '@lenspack/spec':
         specifier: workspace:*
         version: link:../spec

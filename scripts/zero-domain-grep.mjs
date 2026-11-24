@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOTS = ["packages/core/src", "packages/spec/src", "packages/engine/src", "packages/sql/src", "packages/elasticsearch/src", "packages/mcp/src", "packages/serve/src", "packages/react/src"];
+const ROOTS = ["packages/core/src", "packages/spec/src", "packages/engine/src", "packages/sql/src", "packages/elasticsearch/src", "packages/agent/src", "packages/mcp/src", "packages/serve/src", "packages/react/src"];
 const WORDS = [
   "orders", "order_items", "revenue", "customers?", "products?", "refund(ed)?", "aov", "cart",
   "pageviews?", "session_id", "referrer", "bounced?", "visitors?",

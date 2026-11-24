@@ -5,12 +5,12 @@ import { dirname, join } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
+import { boardTools, fileProposals } from "@lenspack/agent";
 import { loadPack } from "@lenspack/spec";
-import { sqlStore } from "@lenspack/sql";
+import { sqlConnector, sqlStore } from "@lenspack/sql";
 
-import { createMcpServer } from "./adapters/mcp";
-import { fileProposals } from "./proposals";
-import { boardTools } from "./tools";
+import { sqlRawSql } from "./index";
+import { createMcpServer } from "./server";
 
 // lenspack-mcp --pack ./pack.yaml --db postgres://… | ./data.duckdb [--board id] [--tenant t] [--run-sql | --run-sql-role-scoped] [--http 8787]
 
@@ -38,7 +38,8 @@ async function main() {
 
   const tools = boardTools({
     pack,
-    executor: db.executor,
+    connector: sqlConnector(db.executor),
+    rawSql: sqlRawSql(db.executor, pack),
     store,
     boardId,
     ctx: { tenant: arg("tenant") },
