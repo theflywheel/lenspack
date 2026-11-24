@@ -1,4 +1,4 @@
-import type * as React from "react";
+import * as React from "react";
 
 import type { Widget } from "@lenspack/core";
 
@@ -37,6 +37,18 @@ export type ChartSpec = {
 export interface ChartAdapter {
   name: string;
   Chart: React.ComponentType<{ spec: ChartSpec }>;
+}
+
+/**
+ * An adapter whose library loads when `load` is first called, so an app's
+ * first chunk need not carry it: `lazyAdapter("recharts", () =>
+ * import("@lenspack/react/adapters/recharts").then((m) => m.rechartsAdapter))`.
+ * Charts stay empty until it lands; KPIs, tables, maps and heatmaps do not wait.
+ */
+export function lazyAdapter(name: string, load: () => Promise<ChartAdapter>): ChartAdapter {
+  const Loaded = React.lazy(() => load().then((a) => ({ default: a.Chart })));
+  const Chart = ({ spec }: { spec: ChartSpec }) => React.createElement(React.Suspense, { fallback: null }, React.createElement(Loaded, { spec }));
+  return { name, Chart };
 }
 
 /**
