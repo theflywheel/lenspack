@@ -5,7 +5,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWr
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, queryKeys, querySchema, summarise, withoutHiddenValues, withoutKeys } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/mcp";
+import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Audit } from "./audit";

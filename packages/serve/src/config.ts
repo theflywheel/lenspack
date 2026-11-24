@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { type BoardStore, memoryStore } from "@lenspack/core";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
 import { type Connector, check } from "@lenspack/engine";
-import { fileProposals } from "@lenspack/mcp";
+import { fileProposals } from "@lenspack/agent";
 import { parsePackText } from "@lenspack/spec";
 import { type Executor, type Writer, driverFor, filePath, openSource, sqlStore } from "@lenspack/sql";
 import YAML from "yaml";

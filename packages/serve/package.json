@@ -13,11 +13,11 @@
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.67",
     "@ai-sdk/openai-compatible": "^3.0.53",
+    "@lenspack/agent": "workspace:*",
     "@lenspack/core": "workspace:*",
     "@lenspack/dss": "workspace:*",
     "@lenspack/elasticsearch": "workspace:*",
     "@lenspack/engine": "workspace:*",
-    "@lenspack/mcp": "workspace:*",
     "@lenspack/spec": "workspace:*",
     "@lenspack/sql": "workspace:*",
     "ai": "^7.0.109",
