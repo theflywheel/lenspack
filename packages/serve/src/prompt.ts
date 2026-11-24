@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 17;
+export const PROMPT_VERSION = 18;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -85,7 +85,7 @@ const languageName = (code: string) => LANGUAGE_NAMES[code.split("-")[0]!.toLowe
 /** What a reply in a language must also respect: Hindi's script; Portuguese read on two continents. */
 const REPLY_NOTES: Record<string, string> = {
   hi: " (Devanagari script)",
-  pt: " (neutral Portuguese that reads naturally in Mozambique, Angola and Portugal as well as Brazil: avoid words and verb forms only one side uses)",
+  pt: " (neutral Portuguese that reads naturally in Mozambique, Angola and Portugal as well as Brazil: prefer words and verb forms all four share, and keep the data's own terms such as ward, LGA and health facility untranslated, never \"distrito\" for a ward)",
 };
 
 export function languageText(p?: LanguagePolicy) {
