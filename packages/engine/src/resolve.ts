@@ -1,4 +1,4 @@
-import { type FilterClause, type Query, nearest, queryKeys } from "@lenspack/core";
+import { type FilterClause, type Query, type Widget, nearest, queryKeys } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
 import { bucketZone, calendarRange } from "./calendar";
@@ -65,6 +65,12 @@ export type Capabilities = {
   points?: boolean;
   /** Heatmap charts may be made. False where a deployment turned them off. Absent means true. */
   heatmap?: boolean;
+  /**
+   * Where a widget is kept as the host's own chart, which must recompute its
+   * steps itself (Superset): why one with this compute cannot be kept, or null.
+   * Absent: any compute is kept, as Lenspack draws the widget.
+   */
+  savedCompute?: (widget: Widget) => string | null;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true, points: true };
@@ -123,6 +129,12 @@ export type BoundPlan = {
   filters: BoundFilter[];
   time: TimeWindow | null;
   previous: TimeWindow | null;
+  /**
+   * Set for the base of a computed query: a split series keeps every series,
+   * not its top few, and the connector returns at most rows + 1 rows (one
+   * more tells the engine the answer was cut).
+   */
+  base?: { rows: number };
 };
 
 type Edge = { to: string; type: "many_to_one" | "one_to_one" | "one_to_many"; step: JoinStep };
@@ -215,6 +227,9 @@ function window(query: Query, now: Date, timeZone?: string): { time: TimeWindow;
   }
   return { time, previous: { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } };
 }
+
+/** The window a query reads, on the clock resolve would read it with. */
+export const timeWindowOf = (query: Query, pack: Pack, ctx: Ctx = {}): TimeWindow | null => window(query, nowOf(ctx), pack.timeZone)?.time ?? null;
 
 // The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
 export const nowOf = (ctx: Ctx = {}) => ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);

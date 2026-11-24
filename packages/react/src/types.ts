@@ -18,6 +18,10 @@ export type WidgetData = {
   measures?: { key: string; format: Format }[];
   /** What the answer leaves out on purpose, shown beside the widget's title. */
   notes?: string[];
+  /** A computed answer's name for its numbers ("average daily units dispatched"): the value's label. */
+  label?: string;
+  /** What was computed after the source answered, in plain words: the value's tooltip. */
+  computed?: string;
   error?: string;
   hint?: string;
 };

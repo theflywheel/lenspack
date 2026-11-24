@@ -1,3 +1,4 @@
+import { describeCompute } from "./compute";
 import { type BoardConfig, type Query, type TimeRange, WIDTHS } from "./schema";
 
 // A compact picture of the board rather than its JSON. The model works from
@@ -46,11 +47,11 @@ export function describeQuery(query: Query) {
   const time = query.time ? ` ${describeTime(query.time)}` : "";
   switch (query.kind) {
     case "breakdown":
-      return `${withMore(query)} by ${query.dimension}${query.by ? ` and ${query.by}` : ""}${query.sortBy === "group" ? ` in ${query.dimension} order` : ""}${query.sort === "asc" ? " (lowest first)" : ""}${query.limit !== 12 ? ` top ${query.limit}` : ""}${query.compare ? " vs previous" : ""}${query.share ? " with share" : ""}${query.other ? " + other" : ""}${time}`;
+      return `${withMore(query)}${describeCompute(query)} by ${query.dimension}${query.by ? ` and ${query.by}` : ""}${query.sortBy === "group" ? ` in ${query.dimension} order` : ""}${query.sort === "asc" ? " (lowest first)" : ""}${query.limit !== 12 ? ` top ${query.limit}` : ""}${query.compare ? " vs previous" : ""}${query.share ? " with share" : ""}${query.other ? " + other" : ""}${time}`;
     case "series":
-      return `${withMore(query)} per ${query.grain}${query.by ? ` by ${query.by}` : ""}${time}`;
+      return `${withMore(query)} per ${query.grain}${query.by ? ` by ${query.by}` : ""}${describeCompute(query)}${time}`;
     case "value":
-      return `${withMore(query)}${query.compare ? " vs previous" : ""}${time}`;
+      return `${withMore(query)}${describeCompute(query)}${query.compare ? " vs previous" : ""}${time}`;
     case "rows":
       return `${query.entity} rows [${query.columns.join(", ")}]${time}`;
     case "points":

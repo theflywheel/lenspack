@@ -1,5 +1,6 @@
 export * from "./resolve";
 export * from "./data";
+export * from "./compute";
 export * from "./connector";
 export * from "./run";
 export * from "./levels";

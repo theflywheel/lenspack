@@ -1,12 +1,20 @@
 import { type BoardConfig, type BoardOp, MAX_OFFSET, type MeasuredQuery, type Query, measured, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
+import { COMPUTE_ROWS, applyCompute, computeBase, computeRefusal, describeComputed } from "./compute";
 import type { Connector } from "./connector";
 import { type DataRow, MAX_SERIES, type WidgetData, compared, limitGroups, sortGroups, sortSeries } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
-import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, nowOf, resolve } from "./resolve";
+import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, nowOf, resolve, timeWindowOf } from "./resolve";
 
-export type RunOptions = { pack: Pack; connector: Connector; ctx?: Ctx; timeoutMs?: number };
+export type RunOptions = {
+  pack: Pack;
+  connector: Connector;
+  ctx?: Ctx;
+  timeoutMs?: number;
+  /** Set by the engine for a computed query's base: every series, at most this many rows. */
+  baseRows?: number;
+};
 
 // Groups fetched per operand of a cross-entity measure. The operands are
 // combined after aggregation, so each must return every group, not its own top N.
@@ -170,9 +178,28 @@ const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: 
 export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
   // Per-level measures are read at the level this query views.
   const view = { ...opts, pack: packAtLevel(opts.pack, viewedLevel(query, opts.pack)) };
+  if (measured(query) && query.compute) return runComputed(query, view);
   if (query.kind === "breakdown" && (query.share || query.other)) return withWhole(query, view);
   const data = measured(query) && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
   return query.kind === "breakdown" ? withoutEmptyGroups(data, query.measure, view.pack) : data;
+}
+
+// Computed after the source answers: the source answers the base query (the
+// measure per group and time bucket, every group, within COMPUTE_ROWS), and
+// the steps run here, the same for every source.
+async function runComputed(query: MeasuredQuery, opts: RunOptions): Promise<WidgetData> {
+  const refused = computeRefusal(query, opts.pack);
+  if (refused) return refusal(refused);
+  const ctx = { ...opts.ctx, now: nowOf(opts.ctx) };
+  const base = computeBase(query);
+  const data = await run(base, { ...opts, ctx, baseRows: COMPUTE_ROWS });
+  if (data.error) return data;
+  try {
+    return applyCompute(query, data, opts.pack, timeWindowOf(base, opts.pack, ctx));
+  } catch (e) {
+    if (e instanceof ResolveError) return refusal(e);
+    throw e;
+  }
 }
 
 // A derived measure that is one other key: a per-level measure at this level.
@@ -268,7 +295,8 @@ function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { k
     extras: measures.map((key) => {
       // Only the primary is compared: the others fill in its groups as they are now.
       const q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT, compare: undefined } : { ...primary, measure: key }) as Query;
-      return { key, query: timeless(key) ? untimed(q, key) : q };
+      // Beside a split series (a computed query's base), one number per series.
+      return { key, query: timeless(key) ? untimed(q, key, query.kind === "series" && !!query.by) : q };
     }),
   };
 }
@@ -291,7 +319,8 @@ async function runMeasures(query: MeasuredQuery, opts: RunOptions): Promise<Widg
         // A timeless measure beside a series is one number for every bucket; beside a value
         // it is that value's other column. Either way its one row is named after its own key.
         const flat = e.query.kind === "value" && query.kind !== "breakdown";
-        const hit = flat ? (others[i]!.rows[0]?.value ?? null) : lookups[i]!.get(keyOf(r));
+        const perSeries = e.query.kind === "breakdown" && query.kind === "series";
+        const hit = flat ? (others[i]!.rows[0]?.value ?? null) : perSeries ? others[i]!.rows.find((o) => o.group === r.series)?.value : lookups[i]!.get(keyOf(r));
         return [e.key, hit !== undefined ? hit : defs[i] && additive(defs[i]!) ? 0 : null];
       }),
     ),
@@ -319,6 +348,7 @@ async function runOne(query: Query, opts: RunOptions): Promise<WidgetData> {
       return failed ?? combine(query, across, data);
     }
     const bound = resolve(query, opts.pack, opts.ctx, opts.connector.capabilities);
+    if (opts.baseRows) bound.base = { rows: opts.baseRows };
     const plan = await opts.connector.compile(bound, opts.pack);
     return await opts.connector.execute(plan, { timeoutMs: opts.timeoutMs });
   } catch (e) {
@@ -341,6 +371,12 @@ const merged = (text: string, parts: Explained[]): Explained => ({
 /** What would run, without running it. Throws ResolveError for a refusal. */
 export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
   const opts = { ...given, pack: packAtLevel(given.pack, viewedLevel(query, given.pack)) };
+  if (measured(query) && query.compute) {
+    const refused = computeRefusal(query, opts.pack);
+    if (refused) throw refused;
+    const base = await explain(computeBase(query), { ...opts, baseRows: COMPUTE_ROWS });
+    return { ...base, text: `-- computed after the source answers: ${describeComputed(query, opts.pack).text}\n-- the source answers the base: every group, at most ${COMPUTE_ROWS} numbers\n${base.text}` };
+  }
   if (query.kind === "breakdown" && (query.share || query.other)) {
     const refused = wholeRefusal(query, opts.pack, opts.ctx?.hidden);
     if (refused) throw refused;
@@ -364,6 +400,7 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
   }
 
   const bound = resolve(query, opts.pack, opts.ctx, opts.connector.capabilities);
+  if (opts.baseRows) bound.base = { rows: opts.baseRows };
   const plan = await opts.connector.compile(bound, opts.pack);
   return { text: plan.text, root: bound.root, entities: bound.entitiesUsed, tenant: bound.tenant, approximate: !!plan.approximate };
 }
@@ -371,6 +408,11 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
 /** Resolution only: every refusal a query would get, with no backend call. */
 export function check(query: Query, given: Pack, opts: { ctx?: Ctx; capabilities?: Capabilities } = {}) {
   const pack = packAtLevel(given, viewedLevel(query, given));
+  if (measured(query) && query.compute) {
+    const computing = computeRefusal(query, pack);
+    if (computing) throw computing;
+    return check(computeBase(query), pack, opts);
+  }
   const refused = wholeRefusal(query, pack, opts.ctx?.hidden);
   if (refused) throw refused;
   const { primary, extras } = splitMeasures(query, pack);
@@ -404,6 +446,8 @@ export function checkOps(
         opIndex,
         error: "This dashboard's heatmap cannot keep a time axis in order once it is bucketed by day, week or month. Make it a breakdown instead: columns a day or date label dimension, if the pack has one, split by the rows",
       };
+    const unsaved = op.widget.query.kind !== "rows" && op.widget.query.kind !== "points" && op.widget.query.compute ? opts.capabilities?.savedCompute?.(op.widget) : null;
+    if (unsaved) return { ok: false, opIndex, error: unsaved };
     try {
       check(op.widget.query, pack, opts);
     } catch (e) {

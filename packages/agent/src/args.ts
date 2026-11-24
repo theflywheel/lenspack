@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { CHART_KINDS, type FilterClause, GRAINS, type Query, querySchema } from "@lenspack/core";
+import { CHART_KINDS, type Compute, type ComputeStep, type FilterClause, GRAINS, type Query, overTime, querySchema } from "@lenspack/core";
 import type { Pack } from "@lenspack/spec";
 
 // Every input is a flat scalar and the query is assembled here. Weaker models
@@ -50,7 +50,10 @@ export const QUERY_SHAPE = {
   dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns. For points: optional, colours each point by this category"),
   entity: str().describe("For rows or points: the entity to list"),
   label: str().describe("For points: optional dimension that names each point (shown on hover and in answers)"),
-  grain: oneOf(GRAINS, "day").describe("For series"),
+  grain: oneOf(GRAINS, "").describe("For series: the time bucket (default day). With compute on a breakdown or value: the bucket the steps run over (day for a daily average)"),
+  compute: str().describe(
+    'Optional steps computed after the source answers, in order, separated by commas: change or pct_change (each time bucket against the one before), rolling_mean 7 or rolling_sum 7 (a window of buckets), running_total, ratio <measure> (this measure over another; first), and to end a breakdown or value, one number per group from its buckets: mean, sum, min, max, median or last. E.g. "pct_change, mean" with grain day = the average day-on-day % change',
+  ),
   time_last: str().describe('Rolling window back from now, like "30d", "12w", "6m" ("last 30 days" -> "30d", "last 10 weeks" -> "10w"); empty means all time. For a calendar period ("this month", "last week") use time_period'),
   time_period: period.describe('Calendar period, weeks from Monday: "this_month" is to date, "last_month" the whole previous one. Not with time_last or time_from'),
   time_count: num(1, 1, 500).describe('With time_period: how many periods, ending with it ("the last 3 whole months" -> last_month, 3)'),
@@ -112,6 +115,56 @@ function typedValue(pack: Pack, dimension: string, v: string, clause: string) {
   return v;
 }
 
+const SUMMARIES: Record<string, Extract<ComputeStep, { op: "over_time" }>["fn"]> = {
+  mean: "mean", avg: "mean", average: "mean", sum: "sum", total: "sum", min: "min", minimum: "min", lowest: "min", max: "max", maximum: "max", highest: "max", median: "median", last: "last", latest: "last",
+};
+const FN = (w: string) => (/^(sum|total)$/.test(w) ? "sum" : "mean") as "mean" | "sum";
+const STEP_HELP = "write change, pct_change, rolling_mean 7, rolling_sum 7, running_total, ratio <measure>, or a summary to end with: mean, sum, min, max, median or last";
+
+// Steps arrive as one string in a small grammar, like filters, and become IR here.
+function parseStep(raw: string): ComputeStep {
+  const s = raw.trim().toLowerCase().replace(/%/g, " pct ").replace(/[\s-]+/g, "_").replace(/^_+|_+$/g, "");
+  let m: RegExpExecArray | null;
+  if (/^(change|diff|difference|delta|absolute_change)$/.test(s)) return { op: "change" };
+  if (/^((pct|percent|percentage)_?(change|diff)|(change|diff)_?(pct|percent|percentage)|growth|growth_rate)$/.test(s)) return { op: "change", percent: true };
+  if ((m = /^rolling_(?:(mean|avg|average|sum|total)_)?(\d+)(?:_[a-z]+?)?(?:_(mean|avg|average|sum|total))?$/.exec(s))) return { op: "rolling", fn: FN(m[1] ?? m[3] ?? "mean"), window: Number(m[2]) };
+  if ((m = /^(\d+)_?[a-z]*_rolling_(mean|avg|average|sum|total)$/.exec(s))) return { op: "rolling", fn: FN(m[2]!), window: Number(m[1]) };
+  if (/^(running_total|running_sum|cumulative|cumulative_sum|cumulative_total|cumsum|cum_sum)$/.test(s)) return { op: "running_total" };
+  const summary = SUMMARIES[s.replace(/_(over_time|per_group)$/, "")];
+  if (summary) return { op: "over_time", fn: summary };
+  if ((m = /^(?:ratio|ratio_to|per|divided_by|divide_by|over)_([a-z][a-z0-9_]*?)(?:_(pct|percent))?$/.exec(s))) return { op: "ratio", to: m[1]!, ...(m[2] ? { percent: true } : {}) };
+  throw new Error(`Cannot read the step "${raw.trim()}": ${STEP_HELP}`);
+}
+
+/** The compute string → IR; an empty string is no compute. A breakdown or value keeps the grain its steps over time run on. */
+export function parseCompute(text: string, kind: string, grain: string): Compute | undefined {
+  const parts = text.split(/\s*(?:,|;|->|→|>|\|| then )\s*/i).map((p) => p.trim()).filter(Boolean);
+  if (!parts.length) return undefined;
+  const steps = parts.map(parseStep);
+  return { ...(kind !== "series" && grain && steps.some(overTime) ? { grain: grain as Compute["grain"] } : {}), steps };
+}
+
+/** IR → the compute string, for a patch that rebuilds a stored query. */
+export function formatCompute(c: Compute | undefined): string {
+  if (!c) return "";
+  return c.steps
+    .map((s) => {
+      switch (s.op) {
+        case "change":
+          return s.percent ? "pct_change" : "change";
+        case "rolling":
+          return `rolling_${s.fn} ${s.window}`;
+        case "running_total":
+          return "running_total";
+        case "ratio":
+          return `ratio ${s.to}${s.percent ? " pct" : ""}`;
+        case "over_time":
+          return s.fn;
+      }
+    })
+    .join(", ");
+}
+
 export function assembleQuery(a: QueryArgs, pack: Pack): Query {
   if (Boolean(a.time_from) !== Boolean(a.time_to)) throw new Error("time_from and time_to go together: give both, or use time_last");
   if (a.time_period && (a.time_last || a.time_from)) throw new Error("time_period goes alone: not with time_last or time_from/time_to");
@@ -123,6 +176,8 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
   const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : period ?? (a.time_last ? { last: a.time_last } : undefined);
   const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);
   const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" && a.query_kind !== "points" ? { measures: more } : {}) };
+  const compute = a.query_kind === "rows" || a.query_kind === "points" ? undefined : parseCompute(a.compute, a.query_kind, a.grain);
+  const computed = compute ? { compute } : {};
   switch (a.query_kind) {
     case "breakdown":
       return querySchema.parse({
@@ -135,12 +190,13 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
         ...(a.compare ? { compare: "previous_period" } : {}),
         ...(a.share ? { share: true } : {}),
         ...(a.other ? { other: true } : {}),
+        ...computed,
         ...base,
       });
     case "series":
-      return querySchema.parse({ kind: "series", measure: a.measure, grain: a.grain, ...(a.split || a.dimension ? { by: a.split || a.dimension } : {}), ...base });
+      return querySchema.parse({ kind: "series", measure: a.measure, grain: a.grain || "day", ...(a.split || a.dimension ? { by: a.split || a.dimension } : {}), ...computed, ...base });
     case "value":
-      return querySchema.parse({ kind: "value", measure: a.measure, ...(a.compare ? { compare: "previous_period" } : {}), ...base });
+      return querySchema.parse({ kind: "value", measure: a.measure, ...(a.compare ? { compare: "previous_period" } : {}), ...computed, ...base });
     case "rows":
       return querySchema.parse({
         kind: "rows",
@@ -176,11 +232,11 @@ export const PATCH_SHAPE = Object.fromEntries(Object.entries(QUERY_SHAPE).map(([
 function scalarsOf(q: Query) {
   switch (q.kind) {
     case "breakdown":
-      return { query_kind: q.kind, measure: q.measure, dimension: q.dimension, sort: q.sort, compare: !!q.compare, share: !!q.share, other: !!q.other };
+      return { query_kind: q.kind, measure: q.measure, dimension: q.dimension, sort: q.sort, compare: !!q.compare, share: !!q.share, other: !!q.other, compute: formatCompute(q.compute), grain: q.compute?.grain ?? "" };
     case "series":
-      return { query_kind: q.kind, measure: q.measure, grain: q.grain, dimension: q.by };
+      return { query_kind: q.kind, measure: q.measure, grain: q.grain, dimension: q.by, compute: formatCompute(q.compute) };
     case "value":
-      return { query_kind: q.kind, measure: q.measure, compare: !!q.compare };
+      return { query_kind: q.kind, measure: q.measure, compare: !!q.compare, compute: formatCompute(q.compute), grain: q.compute?.grain ?? "" };
     case "rows":
       return { query_kind: q.kind, entity: q.entity, dimension: q.columns.join(","), order_by: q.orderBy?.key ?? "", order: q.orderBy?.dir ?? "desc" };
     case "points":
@@ -197,12 +253,13 @@ export function patchQuery(current: Query | undefined, changed: Partial<QueryArg
   // filter_dimension adds its clause to the widget's filters; a filters string replaces them.
   const kept = changed.filter_dimension && !changed.filters ? (current.filters ?? []).filter((f) => f.dimension !== changed.filter_dimension) : [];
   // The rebuilt query has the default limit unless one was given, and compare,
-  // share and other only when still asked for, so a patch can turn them off.
+  // share, other and compute only when still asked for, so a patch can turn them off.
   return querySchema.parse({
     ...current,
     compare: undefined,
     share: undefined,
     other: undefined,
+    compute: undefined,
     ...(more ? { measures: more.length ? more : undefined } : {}),
     ...next,
     ...(kept.length ? { filters: [...kept, ...next.filters!] } : {}),

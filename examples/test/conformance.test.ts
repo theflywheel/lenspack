@@ -116,6 +116,12 @@ function sweep(pack: (typeof examples)[ExampleName]["pack"], measure: string): [
     ["value", { kind: "value", measure }],
     ["series", { kind: "series", measure, grain: "week" }],
     ["value:compare", { kind: "value", measure, compare: "previous_period", time: { last: "30d" } }],
+    // Computed after the source answers: the same steps over every driver's base rows.
+    ["series:%change", { kind: "series", measure, grain: "week", compute: { steps: [{ op: "change", percent: true }] } }],
+    ...dims.slice(0, 1).map((d): [string, Query] => [
+      `breakdown:${d.key}:weekly-mean`,
+      { kind: "breakdown", dimension: d.key, measure, limit: 5, sort: "desc", time: { last: "90d" }, compute: { grain: "week", steps: [{ op: "over_time", fn: "mean" }] } },
+    ]),
   ];
 }
 

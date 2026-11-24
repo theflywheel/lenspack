@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { computeProblem } from "./compute";
 import { type Catalogue, dimension as findDimension, entity as findEntity, isRate, measure as findMeasure } from "./catalogue";
 import {
   type BoardConfig,
@@ -10,6 +11,7 @@ import {
   type Widget,
   boardConfigSchema,
   filterSchema,
+  ratioTo,
   placementSchema,
   widgetSchema,
 } from "./schema";
@@ -616,6 +618,9 @@ export function checkQuery(query: Query, catalogue: Catalogue): Problem | null {
   for (const clause of query.filters ?? []) {
     if (!findDimension(catalogue, clause.dimension)) return noDim(clause.dimension);
   }
+  for (const key of ratioTo(query)) if (!findMeasure(catalogue, key)) return noMeasure(key);
+  const computing = computeProblem(query, catalogue);
+  if (computing) return computing;
   if ((query.kind === "breakdown" || query.kind === "series" || query.kind === "value") && query.measures) {
     for (const key of query.measures) if (!findMeasure(catalogue, key)) return noMeasure(key);
     if (query.measures.includes(query.measure)) return { error: `"${query.measure}" is already the widget's measure; list only the others in measures` };
@@ -715,6 +720,7 @@ function checkWidget(widget: Widget, catalogue: Catalogue): Problem | null {
       return { error: `A pie of "${widget.query.measure}" would imply the groups sum to a whole, and rates do not`, hint: "bar" };
     if (widget.query.kind !== "breakdown")
       return { error: "A pie needs a breakdown to divide", hint: "breakdown" };
+    if (widget.query.compute) return { error: "A pie divides a whole into parts, and a computed number (an average, a change, a ratio) is not part of one", hint: "bar" };
     if (widget.query.measures?.length) return { error: "A pie divides one measure; several measures need a bar or a table", hint: "bar" };
   }
 
@@ -733,6 +739,7 @@ export function migrateKeys(config: BoardConfig, renames: Record<string, string>
     const q = widget.query;
     for (const clause of q.filters ?? []) clause.dimension = rename(clause.dimension);
     if ((q.kind === "breakdown" || q.kind === "series" || q.kind === "value") && q.measures) q.measures = q.measures.map(rename);
+    if (q.kind === "breakdown" || q.kind === "series" || q.kind === "value") for (const s of q.compute?.steps ?? []) if (s.op === "ratio") s.to = rename(s.to);
     if (q.kind === "breakdown") {
       q.dimension = rename(q.dimension);
       if (q.by) q.by = rename(q.by);

@@ -57,6 +57,33 @@ const common = {
 // columns or extra series. `measure` stays the one that is sorted and ranked.
 const alsoMeasures = { measures: z.array(z.string()).min(1).max(11).optional() };
 
+// Arithmetic on the numbers the source returned, in steps, one after another.
+// The source still computes every measure; these only combine its aggregated
+// answers: a change between consecutive time buckets, a rolling window, a
+// running total, one measure over another, and a summary of the buckets per
+// group. See docs/compute.md for what each does with zeros and gaps.
+export const COMPUTE_SUMMARIES = ["mean", "sum", "min", "max", "median", "last"] as const;
+export const computeStepSchema = z.discriminatedUnion("op", [
+  // The measure over another measure, per group (and per time bucket), before any other step.
+  z.object({ op: z.literal("ratio"), to: z.string(), percent: z.boolean().optional() }),
+  // Each time bucket against the one before it: the difference, or the relative change.
+  z.object({ op: z.literal("change"), percent: z.boolean().optional() }),
+  // Each time bucket with the window-1 before it, averaged or added.
+  z.object({ op: z.literal("rolling"), fn: z.enum(["mean", "sum"]), window: z.number().int().min(2).max(366) }),
+  z.object({ op: z.literal("running_total") }),
+  // The time buckets of each group as one number. Always the last step.
+  z.object({ op: z.literal("over_time"), fn: z.enum(COMPUTE_SUMMARIES) }),
+]);
+export type ComputeStep = z.infer<typeof computeStepSchema>;
+export const computeSchema = z.object({
+  // The time buckets the steps run over. A series has its own grain; a
+  // breakdown or a value with a step over time names one here.
+  grain: z.enum(GRAINS).optional(),
+  steps: z.array(computeStepSchema).min(1).max(4),
+});
+export type Compute = z.infer<typeof computeSchema>;
+const computed = { compute: computeSchema.optional() };
+
 // What a widget is looking at. A closed union: every variant is something the
 // compiler already knows how to build, and every string in it is a key.
 export const querySchema = z.discriminatedUnion("kind", [
@@ -83,6 +110,7 @@ export const querySchema = z.discriminatedUnion("kind", [
     share: z.boolean().optional(),
     other: z.boolean().optional(),
     ...alsoMeasures,
+    ...computed,
     ...common,
   }),
   z.object({
@@ -91,6 +119,7 @@ export const querySchema = z.discriminatedUnion("kind", [
     grain: z.enum(GRAINS).default("day"),
     by: z.string().optional(),
     ...alsoMeasures,
+    ...computed,
     ...common,
   }),
   // The whole population rather than a breakdown of it. Its own variant
@@ -100,6 +129,7 @@ export const querySchema = z.discriminatedUnion("kind", [
     measure: z.string(),
     compare: z.enum(["previous_period"]).optional(),
     ...alsoMeasures,
+    ...computed,
     ...common,
   }),
   z.object({
@@ -259,13 +289,17 @@ export function emptyBoard(pack: { pack: string; version: number }, title: strin
 export type MeasuredQuery = Extract<Query, { kind: "breakdown" | "series" | "value" }>;
 export const measured = (query: Query): query is MeasuredQuery => query.kind === "breakdown" || query.kind === "series" || query.kind === "value";
 
+/** The measure a ratio step divides by, if the query has one. */
+export const ratioTo = (query: Query): string[] =>
+  measured(query) ? (query.compute?.steps ?? []).flatMap((s) => (s.op === "ratio" ? [s.to] : [])) : [];
+
 /** Every key a query refers to, for validation and for cache keys. */
 export function queryKeys(query: Query): { dimensions: string[]; measures: string[]; entities: string[] } {
   const dimensions = new Set<string>();
   const measures = new Set<string>();
   const entities = new Set<string>();
   for (const f of query.filters ?? []) dimensions.add(f.dimension);
-  if (measured(query)) for (const m of query.measures ?? []) measures.add(m);
+  if (measured(query)) for (const m of [...(query.measures ?? []), ...ratioTo(query)]) measures.add(m);
   switch (query.kind) {
     case "breakdown":
       dimensions.add(query.dimension);

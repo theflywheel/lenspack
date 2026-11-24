@@ -62,7 +62,29 @@ const queries: Query[] = [
   { kind: "breakdown", dimension: "district", measure: "visits", limit: 5, sort: "desc", compare: "previous_period", time: { from: "2026-08-01T00:00:00Z", to: "2026-08-15T00:00:00Z" } },
   { kind: "breakdown", dimension: "province", measure: "nets_distributed", limit: 3, sort: "asc", compare: "previous_period", share: true, other: true, time: { last: "30d" } },
   { kind: "breakdown", dimension: "district", measure: "distributors_active", limit: 5, sort: "desc", share: true },
+  // Computed after the source answers: each backend returns the base rows, the engine does the rest.
+  ...computed(),
 ];
+
+function computed(): Query[] {
+  const august = { from: "2026-08-01T00:00:00Z", to: "2026-09-01T00:00:00Z" };
+  const perDistrict = (measure: string, compute: Extract<Query, { kind: "breakdown" }>["compute"], limit = 12): Query => ({ kind: "breakdown", dimension: "district", measure, limit, sort: "desc", time: august, compute });
+  return [
+    { kind: "series", measure: "nets_distributed", grain: "day", time: august, compute: { steps: [{ op: "change", percent: true }] } },
+    { kind: "series", measure: "visits", grain: "day", by: "province", time: august, compute: { steps: [{ op: "rolling", fn: "mean", window: 7 }] } },
+    { kind: "series", measure: "nets_distributed", grain: "week", compute: { steps: [{ op: "running_total" }] } },
+    { kind: "series", measure: "avg_nets_per_visit", grain: "day", time: august, compute: { steps: [{ op: "change" }] } },
+    { kind: "series", measure: "households_delivered", grain: "week", by: "province", compute: { steps: [{ op: "ratio", to: "visits", percent: true }] } },
+    perDistrict("nets_distributed", { grain: "day", steps: [{ op: "over_time", fn: "mean" }] }),
+    perDistrict("nets_distributed", { grain: "day", steps: [{ op: "change", percent: true }, { op: "over_time", fn: "mean" }] }, 40),
+    perDistrict("visits", { grain: "week", steps: [{ op: "over_time", fn: "median" }] }),
+    perDistrict("households_delivered", { steps: [{ op: "ratio", to: "visits" }] }),
+    perDistrict("households_delivered", { grain: "day", steps: [{ op: "ratio", to: "visits", percent: true }, { op: "over_time", fn: "mean" }] }),
+    perDistrict("avg_nets_per_visit", { grain: "day", steps: [{ op: "over_time", fn: "max" }] }),
+    { kind: "value", measure: "nets_distributed", time: august, compute: { grain: "day", steps: [{ op: "rolling", fn: "sum", window: 7 }, { op: "over_time", fn: "max" }] } },
+    { kind: "value", measure: "households_delivered", compute: { steps: [{ op: "ratio", to: "visits" }] } },
+  ];
+}
 
 const APPROXIMATE = new Set(["distributors_active"]);
 
@@ -115,6 +137,8 @@ describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", (
     it(JSON.stringify(q), async () => {
       const [a, b] = await Promise.all([run(q, { pack, connector: sqlConnector(duck.executor), ctx }), run(q, { pack, connector: es, ctx })]);
       agree(a, b, q);
+      // A computed answer agrees on something: numbers, not two empty lists.
+      if ("compute" in q && q.compute) expect(a.rows.filter((r) => r.value !== null).length, JSON.stringify(a.rows.slice(0, 3))).toBeGreaterThan(q.kind === "value" ? 0 : 1);
     });
   }
 

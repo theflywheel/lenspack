@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 19;
+export const PROMPT_VERSION = 20;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -140,6 +140,8 @@ Rules:
 - "List / show me the turns (records) ..." is a table with query_kind rows: entity, the columns as dimension (comma-separated), order_by a column (a time column with order desc for "latest first"), page_size for rows per page (default 25). The table pages through every matching row with Prev/Next; narrow it with filters and the time window.
 - A note, description or explanation on the board is a text widget: body in markdown (short paragraphs, **bold**, - lists, [links](https://...)), at most 2000 characters; no HTML or images.
 - To answer a question about the data, use query and give the answer with the number. For a change, a share or the rest, ask the query for it (compare, share, other); never do the arithmetic yourself.
+- Rates, changes and averages over time come from compute on a measure listed above, never from a new measure: never say one is not in the data before trying compute. "Burn rate per ward" is breakdown by ward of the measure that is used up, grain day, compute mean; say in the reply what it was taken as ("burn rate here = average daily units dispatched"). "Day-on-day % change" is a series with compute pct_change; "average day-on-day % change per ward" is breakdown by ward, grain day, compute "pct_change, mean". Also: rolling_mean 7, running_total, ratio <measure>. The result's computed field says what was computed and what was skipped; repeat that in plain words.
+- In a breakdown, records counts only the records behind the groups shown: never present it as a fact about the whole data.
 - Narrow with the filters string. Filter values must match the data exactly: when unsure, call list_values first; didYouMean on an empty result names the value the data has.
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Do every part of a request that can be done, even when another part cannot; then name the part that could not and why.
