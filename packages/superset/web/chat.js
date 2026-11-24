@@ -146,6 +146,7 @@
       listening: "Em escuta… {0}", transcribing: "Transcrição em curso…", tooShort: "Nada foi gravado. Mantenha pressionado ou clique no microfone, fale e depois pare.", heard: "Verifique o texto e depois envie.", nothingHeard: "Nenhuma fala reconhecida. Tente de novo um pouco mais perto do microfone.",
       denied: "O acesso ao microfone está bloqueado. Permita-o para este site no navegador (o ícone à esquerda do endereço) e tente de novo.", noMic: "Nenhum microfone encontrado.", sttFailed: "A transcrição falhou: {0}", sttOff: "A transcrição de voz não está configurada neste servidor.",
       restarting: "Lenspack em reinício, reconexão em curso…", lost: "A conexão com o Lenspack foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
+      cost: "≈ US$ {0}", costTitle: "Custo estimado desta resposta, segundo os preços de tabela", costTokens: "{0}: {1} tokens de entrada, {2} de saída", costSpeech: "inclui transcrição de voz: US$ {0}", costUnpriced: "algumas chamadas não têm preço e não foram contadas", sessionCost: "Esta sessão: ≈ US$ {0} em {1} respostas (estimativa segundo os preços de tabela)",
     },
   };
   // The language menu's choices, each named in its own language.
