@@ -1,5 +1,4 @@
-import type { BoundPlan, Connector, Plan, Row, SourceSchema } from "@lenspack/engine";
-import { shapeRows } from "@lenspack/engine";
+import { type BoundPlan, type Connector, type Plan, type Row, type SourceSchema, shapeBound } from "@lenspack/engine";
 import type { Pack } from "@lenspack/spec";
 
 import { type Compiled, printPlan } from "./compile";
@@ -29,6 +28,25 @@ export const timeoutOf = (o: { timeoutMs?: number } | undefined, opts: ExecutorO
 export function capRows<T>(rows: T[], maxRows = DEFAULT_MAX_ROWS): T[] {
   if (rows.length > maxRows) throw new Error(`The statement returned more than ${maxRows} rows, the row cap for this source`);
   return rows;
+}
+
+/**
+ * Runs `body` on a pooled connection inside a read-only transaction that the
+ * `open` statements start (with the session's statement timer) and that is
+ * always rolled back; the connection goes back to the pool either way.
+ */
+export async function readOnly<C extends { query(sql: string): Promise<unknown>; release(): void }, T>(conn: C, open: string[], body: (conn: C) => Promise<T>): Promise<T> {
+  try {
+    for (const sql of open) await conn.query(sql);
+    const out = await body(conn);
+    await conn.query("ROLLBACK");
+    return out;
+  } catch (e) {
+    await conn.query("ROLLBACK").catch(() => undefined);
+    throw e;
+  } finally {
+    conn.release();
+  }
 }
 
 /** Writes, for seeding examples and for the SQL board store. Never handed to the model. */
@@ -78,9 +96,7 @@ export function sqlConnector(executor: Executor, opts: { introspect?: () => Prom
     },
     async execute(plan, opts) {
       const compiled = plan.native as Compiled;
-      const raw = await executor.query(compiled.sql, compiled.params, opts);
-      const def = compiled.bound.measure?.def;
-      return shapeRows(raw, compiled.bound.query, def?.format ?? "number", def?.key);
+      return shapeBound(await executor.query(compiled.sql, compiled.params, opts), compiled.bound);
     },
   };
 }

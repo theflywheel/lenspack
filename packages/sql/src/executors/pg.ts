@@ -1,8 +1,8 @@
-import pg, { type Pool, type PoolClient } from "pg";
+import pg, { type Pool } from "pg";
 
 import type { SourceSchema } from "@lenspack/engine";
 
-import { type Executor, type ExecutorOptions, type Row, type Writer, capRows, collectSchema, timeoutOf } from "../executor";
+import { type Executor, type ExecutorOptions, type Row, type Writer, capRows, collectSchema, readOnly, timeoutOf } from "../executor";
 
 // Naive timestamps and dates come back as text rather than as local-time Date
 // objects: node-postgres would otherwise shift a "2026-01-01 00:00" bucket by
@@ -32,20 +32,9 @@ export function pgExecutor(pool: Pool, opts: ExecutorOptions = {}): Executor {
   return {
     dialect: "postgres",
     async query(sql, params, o) {
-      const timeout = timeoutOf(o, opts);
-      const client: PoolClient = await pool.connect();
-      try {
-        await client.query("BEGIN TRANSACTION READ ONLY");
-        await client.query(`SET LOCAL statement_timeout = ${timeout}`);
-        const result = await client.query({ text: sql, values: params, types: naiveTimeAsText, queryMode: "extended" } as pg.QueryConfig);
-        await client.query("ROLLBACK");
-        return capRows(result.rows as Row[], opts.maxRows);
-      } catch (e) {
-        await client.query("ROLLBACK").catch(() => undefined);
-        throw e;
-      } finally {
-        client.release();
-      }
+      const open = ["BEGIN TRANSACTION READ ONLY", `SET LOCAL statement_timeout = ${timeoutOf(o, opts)}`];
+      const rows = await readOnly(await pool.connect(), open, async (client) => (await client.query({ text: sql, values: params, types: naiveTimeAsText, queryMode: "extended" } as pg.QueryConfig)).rows);
+      return capRows(rows as Row[], opts.maxRows);
     },
   };
 }

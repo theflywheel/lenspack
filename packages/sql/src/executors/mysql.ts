@@ -1,8 +1,8 @@
 import type { SourceSchema } from "@lenspack/engine";
 import type { Connection as CoreConnection } from "mysql2";
-import mysql, { type Pool, type PoolConnection } from "mysql2/promise";
+import mysql, { type Pool } from "mysql2/promise";
 
-import { type Executor, type ExecutorOptions, type Row, type Writer, capRows, collectSchema, timeoutOf } from "../executor";
+import { type Executor, type ExecutorOptions, type Row, type Writer, capRows, collectSchema, readOnly, timeoutOf } from "../executor";
 
 // MySQL 8 and MariaDB through one driver. Every statement runs in a
 // read-only transaction under the server's own statement timer (MySQL's
@@ -26,20 +26,10 @@ export function mysqlExecutor(pool: Pool, opts: ExecutorOptions & { mariadb?: bo
     dialect: "mysql",
     async query(sql, params, o) {
       const timeout = timeoutOf(o, opts);
-      const conn: PoolConnection = await pool.getConnection();
-      try {
-        await conn.query(opts.mariadb ? `SET SESSION max_statement_time = ${timeout / 1000}` : `SET SESSION max_execution_time = ${timeout}`);
-        await conn.query("START TRANSACTION READ ONLY");
-        // The client's timer backs up the server's, which MySQL applies to SELECT only.
-        const [rows] = await conn.execute({ sql, timeout: timeout + 1000 }, params as never[]);
-        await conn.query("ROLLBACK");
-        return capRows(rows as Row[], opts.maxRows);
-      } catch (e) {
-        await conn.query("ROLLBACK").catch(() => undefined);
-        throw e;
-      } finally {
-        conn.release();
-      }
+      const open = [opts.mariadb ? `SET SESSION max_statement_time = ${timeout / 1000}` : `SET SESSION max_execution_time = ${timeout}`, "START TRANSACTION READ ONLY"];
+      // The client's timer backs up the server's, which MySQL applies to SELECT only.
+      const rows = await readOnly(await pool.getConnection(), open, async (conn) => (await conn.execute({ sql, timeout: timeout + 1000 }, params as never[]))[0]);
+      return capRows(rows as Row[], opts.maxRows);
     },
   };
 }

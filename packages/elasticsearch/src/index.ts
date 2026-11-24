@@ -1,4 +1,4 @@
-import { type BoundPlan, type Capabilities, type Connector, type Plan, type SourceSchema, shapeRows } from "@lenspack/engine";
+import { type BoundPlan, type Capabilities, type Connector, type Plan, type SourceSchema, shapeBound } from "@lenspack/engine";
 import type { Pack } from "@lenspack/spec";
 
 import { type Env, type SearchRequest, toRequest } from "./request";
@@ -109,8 +109,7 @@ export function elasticsearchConnector(opts: ElasticsearchOptions): Connector & 
       const req = plan.native as SearchRequest;
       const timeoutMs = o?.timeoutMs ?? opts.defaultTimeoutMs ?? 15_000;
       const response = await request("POST", `/${indexPath(req.index)}/_search`, { ...req.body, timeout: `${Math.max(1, Math.floor(timeoutMs / 1000))}s` }, timeoutMs);
-      const def = plan.bound.measure?.def;
-      const data = shapeRows(req.decode(response), plan.bound.query, def?.format ?? "number", def?.key);
+      const data = shapeBound(req.decode(response), plan.bound);
       return req.approximate ? { ...data, approximate: true } : data;
     },
     async introspect(): Promise<SourceSchema> {
