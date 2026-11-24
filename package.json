@@ -12,6 +12,7 @@
     "test:pg": "LENSPACK_PG_URL=${LENSPACK_PG_URL:-postgres://localhost:5432/lenspack_test} vitest run",
     "typecheck": "pnpm -r --filter './packages/*' exec tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.json",
     "lint:domain": "node scripts/zero-domain-grep.mjs",
+    "smoke:dist": "node scripts/dist-smoke.mjs",
     "seed": "tsx scripts/seed.ts",
     "check": "pnpm typecheck && pnpm lint:domain && pnpm test",
     "demo": "node scripts/demo.mjs",

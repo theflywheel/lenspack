@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
-import { fileProposals } from "@lenspack/mcp";
+import { fileProposals } from "@lenspack/agent";
 import { type Host, buildProvider, createApp, probe, providersFromEnv, seedBoards } from "@lenspack/serve";
 import { sqlConnector, sqlStore } from "@lenspack/sql";
 
