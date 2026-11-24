@@ -3,7 +3,7 @@
 // These pin what the routes answer, so the server can be rearranged without the overlay noticing.
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { type Server, createServer } from "node:http";
+import { type Server, createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -168,11 +168,13 @@ describe("Superset mode's server", () => {
   });
 
   it("names the signed user on the board API", async () => {
-    const r = await call("/api/", { as: { u: "owner", a: false, d: 7, e: true } });
+    const r = await call("/api/", { as: VIEWER });
     expect(r.status).toBe(200);
-    expect(r.body.me).toMatchObject({ user: "owner", edit: true, maintain: true, usage: true });
+    expect(r.body.me).toMatchObject({ user: "viewer", edit: false, maintain: false, usage: false });
     expect(r.body.examples.map((e: { example: string }) => e.example)).toEqual(["visits_pack"]);
-    expect((await call("/api/", { as: VIEWER })).body.me).toMatchObject({ user: "viewer", edit: false, maintain: false, usage: false });
+    // A Superset admin edits everywhere and reads the usage page; a dashboard's rights are not carried onto the listing.
+    expect((await call("/api/", { as: ADMIN })).body.me).toMatchObject({ user: "boss", edit: true, maintain: true, usage: true });
+    expect((await call("/api/", { as: { u: "owner", a: false, d: 7, b: "superset-7", e: true, v: true } })).status).toBe(403);
   });
 
   it("keeps the settings to Superset admins, and audits a refusal", async () => {
@@ -260,9 +262,30 @@ describe("Superset mode's server", () => {
 
   it("lists Superset's dashboards and binds one on first use", async () => {
     expect(await call("/_superset/dashboards", { as: VIEWER })).toMatchObject({ status: 200, body: [{ id: 7, title: "Ops", changed: "a day ago" }] });
-    expect(await call("/_superset/bind?dashboard=ops", { as: VIEWER })).toMatchObject({ status: 200, body: { board: "superset-7", dashboard: 7, title: "Ops", notes: [] } });
+    // Only the dashboard Superset checked the user may view: the slug resolves to 7, and 7 is what was signed.
+    expect(await call("/_superset/bind?dashboard=ops", { as: { ...VIEWER, d: 8, e: false, v: true } })).toMatchObject({ status: 403 });
+    expect(await call("/_superset/bind?dashboard=ops", { as: VIEWER })).toMatchObject({ status: 403 });
+    expect((await call("/_superset/settings", { as: ADMIN })).body.dashboards).toEqual([]);
+    expect(await call("/_superset/bind?dashboard=ops", { as: { ...VIEWER, d: 7, e: false, v: true } })).toMatchObject({ status: 200, body: { board: "superset-7", dashboard: 7, title: "Ops", notes: [] } });
     expect((await call("/_superset/settings", { as: ADMIN })).body.dashboards).toEqual([7]);
-    expect((await call("/api/visits_pack/superset-7", { as: VIEWER })).status).toBe(200);
+    expect((await call("/api/visits_pack/superset-7", { as: { ...VIEWER, d: 7, b: "superset-7", p: "visits_pack", e: false, v: true } })).status).toBe(200);
+    // Superset signs every request about a dashboard board; one it did not sign for is refused.
+    expect((await call("/api/visits_pack/superset-7", { as: VIEWER })).status).toBe(403);
+  });
+
+  it("refuses a dot segment or an encoded slash in the path before reading it", async () => {
+    // fetch() would resolve "..", so these go out byte for byte.
+    const raw = (path: string) =>
+      new Promise<number>((resolve, reject) => {
+        const { hostname, port } = new URL(base);
+        const r = request({ hostname, port, path, headers: { [IDENTITY_HEADER]: signed({ ...VIEWER, d: 7, e: false, v: true }) } }, (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        });
+        r.on("error", reject);
+        r.end();
+      });
+    for (const path of ["/x/../_superset/bind?dashboard=ops", "/x/%2e%2e/_superset/bind?dashboard=ops", "/_superset%2fbind?dashboard=ops", "/api/visits_pack/superset-1/../superset-7"]) expect(await raw(path)).toBe(400);
   });
 
   it("serves the pages with the panel's settings written in", async () => {

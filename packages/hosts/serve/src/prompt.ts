@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/pack";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 23;
+export const PROMPT_VERSION = 24;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -23,8 +23,10 @@ const tooLarge = (catalogue: Catalogue) => catalogue.dimensions.filter((d) => d.
 // rather than discovering it with tool calls every turn. list_metrics stays
 // as a search for catalogues too large to inline.
 export function catalogueText(pack: Pack, catalogue: Catalogue) {
-  // The dimensions an entity's own rows carry (its own and conformed ones), which a point can be named or coloured by.
-  const onEntity = (entity: string) => pack.dimensions.filter((d) => d.type !== "time" && (d.entity === entity || d.also?.[entity])).map((d) => d.key);
+  // The dimensions an entity's own rows carry (its own and conformed ones), which a point can be named or coloured by:
+  // only those in the catalogue, which leaves out the keys this caller may not use.
+  const usable = new Set(catalogue.dimensions.map((d) => d.key));
+  const onEntity = (entity: string) => pack.dimensions.filter((d) => usable.has(d.key) && d.type !== "time" && (d.entity === entity || d.also?.[entity])).map((d) => d.key);
   const entities = Object.entries(pack.entities).map(([k, e]) => {
     const joins = e.joins.map((j) => `→ ${j.to} (${j.type.replace(/_/g, "-")})`).join(", ");
     return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${e.geo ? `; has a location (latitude, longitude): a points query lists them, a map draws them${onEntity(k).length ? `, named or coloured by ${onEntity(k).join(", ")}` : ""}` : ""}${joins ? `; joins ${joins}` : ""}`;

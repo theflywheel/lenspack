@@ -152,6 +152,25 @@ export function withoutHiddenValues<C extends { widgets: Record<string, unknown>
 /** The engine's view of a caller: what every query they run is narrowed by. Read by shape; the engine never imports this package. */
 export type Scoped = { tenant?: string; scope?: ScopeClause[]; hidden?: ReadonlySet<string>; hiddenEntities?: ReadonlySet<string> };
 
+/**
+ * A board config as the caller whose engine context this is may be shown it.
+ * It is the one view of a board a caller gets, whoever reads it for them: the
+ * board API, a copy they make, the chat model's prompt and tools, and the
+ * reviewer. Every one of them goes through here, so they cannot differ.
+ */
+export const shownConfig = <C extends { widgets: Record<string, unknown> }>(config: C, ctx: Pick<Scoped, "hidden">): C => withoutHiddenValues(config, ctx.hidden);
+
+/** The caller's tenant is not the one the pack is pinned to. A tenant may narrow an unpinned pack, never open another tenant's. */
+export const otherTenant = (who: Pick<Identity, "tenant">, host?: Pick<Scoped, "tenant">) => !!(who.tenant && host?.tenant && who.tenant !== host.tenant);
+
+/**
+ * Whether a caller is shown the compiled statement of a query (its SQL or
+ * search request). The statement reads like the pack file, and a search
+ * request writes the row scope's values into it, so a caller with hidden keys
+ * is not shown it: not by the API, not by the chat's tools.
+ */
+export const showsStatement = (ctx: Pick<Scoped, "hidden">) => !ctx.hidden?.size;
+
 /** What one caller may use of one pack. */
 export type Decision<C extends Scoped = Scoped> = {
   /** Every row filter: the pack's own, the caller's, then their rule's. */
@@ -159,10 +178,8 @@ export type Decision<C extends Scoped = Scoped> = {
   hidden: ReadonlySet<string>;
   /** The engine context to run with: the pack's, with the caller's tenant, scope and hidden keys. */
   ctx: C;
-  /** The caller's tenant is not the one the pack is pinned to: refused outright (403), not hidden. */
-  otherTenant: boolean;
   catalogue(c: Catalogue): Catalogue;
-  /** A board or version as the caller is sent it. */
+  /** A board or version as the caller is sent it: its config through shownConfig. */
   board<B extends { config: { widgets: Record<string, unknown> } } | null>(b: B): B;
   /** The pack as the chat model is shown it: no example that uses a hidden key. */
   pack(): Pack;
@@ -172,13 +189,15 @@ const ruleHidden = new WeakMap<PackRule, ReadonlySet<string>>();
 const NONE: ReadonlySet<string> = new Set();
 
 /**
- * What a caller may use of a pack, or null: they may not open it, and it looks
- * as if it were not there (404). `rules` are the pack's access rules (absent:
+ * What a caller may use of a pack, or null: they may not open it. That is a
+ * pack their identity or the pack's rules keep from them, or one pinned to
+ * another tenant (otherTenant). `rules` are the pack's access rules (absent:
  * open to everyone signed in); `host` is the pack's own context (a pinned
  * tenant, a scope every caller gets).
  */
 export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?: string; rules?: PackRule[]; host?: C } = {}): Decision<C> | null {
   if (who.packs && !who.packs.includes(o.name ?? pack.pack)) return null;
+  if (otherTenant(who, o.host)) return null;
   let rule: PackRule | undefined;
   if (o.rules) {
     rule = o.rules.find((r) => r.roles.some((role) => role === "*" || who.roles.includes(role)));
@@ -202,9 +221,8 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
     scope,
     hidden,
     ctx,
-    otherTenant: !!(who.tenant && host.tenant && who.tenant !== host.tenant),
     catalogue: (c) => withoutKeys(c, hidden),
-    board: (b) => (b && hidden.size ? { ...b, config: withoutHiddenValues(b.config, hidden) } : b),
+    board: (b) => (b && hidden.size ? { ...b, config: shownConfig(b.config, ctx) } : b),
     pack: () => (hidden.size ? { ...pack, examples: pack.examples.filter((e) => !uses(e.query)) } : pack),
   };
 }

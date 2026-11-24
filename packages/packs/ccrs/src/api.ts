@@ -67,7 +67,12 @@ export function ccrsApi(opts: CcrsApiOptions) {
   const now = () => (opts.now ? opts.now() : new Date());
   const exec = (q: Query, ctx: Ctx = { tenant: opts.tenant, now: now() }) => run(q, { pack: opts.pack, connector: opts.connector, ctx });
   // The caller's row scope narrows every query they run, as policy decides it: no step below can drop it.
-  const ctxOf = (who: Principal) => decide(who, opts.pack, { host: { tenant: opts.tenant, now: now() } as Ctx })!.ctx;
+  // A caller policy refuses (one of another tenant) gets 403, never this deployment's numbers.
+  const ctxOf = (who: Principal) => {
+    const d = decide(who, opts.pack, { host: { tenant: opts.tenant, now: now() } as Ctx });
+    if (!d) throw Object.assign(new Error("forbidden: this caller may not read this tenant's analytics"), { status: 403 });
+    return d.ctx;
+  };
   const measureOf = (key: string) => opts.pack.measures.find((m) => m.key === key);
   const isRatio = (key: string) => {
     const m = measureOf(key);

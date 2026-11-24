@@ -50,13 +50,13 @@ describe("who may edit", () => {
     const admin = callerOf(as({ u: "admin", a: true, e: true }), "superset");
     const otherAlpha = callerOf(as({ u: "alpha", e: false }), "superset");
     const gamma = callerOf(as({ u: "gamma", e: false }), "superset");
-    expect(owner).toEqual({ user: "owner", roles: [], edit: true, maintain: true });
-    expect(admin).toMatchObject({ roles: ["admin"], edit: true, maintain: true });
-    for (const p of [otherAlpha, gamma]) expect(p).toEqual({ user: p.user, roles: [], readOnly: READ_ONLY_MESSAGE });
+    expect(owner).toEqual({ user: "owner", roles: [], usage: false, edit: true, maintain: true });
+    expect(admin).toMatchObject({ roles: ["admin"], usage: true, edit: true, maintain: true });
+    for (const p of [otherAlpha, gamma]) expect(p).toEqual({ user: p.user, roles: [], usage: false, readOnly: READ_ONLY_MESSAGE });
   });
 
   it("signed-in: anyone signed in edits, as before", () => {
-    expect(callerOf(as({ u: "gamma", e: false }), "signed-in")).toEqual({ user: "gamma", roles: [], edit: true, maintain: true });
+    expect(callerOf(as({ u: "gamma", e: false }), "signed-in")).toEqual({ user: "gamma", roles: [], usage: false, edit: true, maintain: true });
   });
 
   it("reads the policy from the environment, refusing a typo", () => {

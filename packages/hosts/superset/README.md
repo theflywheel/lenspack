@@ -125,19 +125,29 @@ so raise `SERVER_THREADS_AMOUNT` for more than about ten chats at once.
 ## Who is asking
 
 Browsers never reach this server directly. Superset forwards `/lenspack/...` to it for signed-in users and adds
-`x-lenspack-identity`: base64url JSON `{u, a, r, d, e, v, t}` (user, Superset admin, their Superset role names, the
-dashboard the request is about, whether Superset lets them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
+`x-lenspack-identity`: base64url JSON `{u, a, r, d, b, p, e, v, t}` (user, Superset admin, their Superset role
+names, the dashboard the request is about, its board `superset-<d>` and the pack in the path, whether Superset lets
+them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
 Superset's `SECRET_KEY` on the Superset side; this server fetches it on start
 (`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid
 signature less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `chat.css` and
 `/healthz` are public.
 
+- **One dashboard per request.** The plugin reads the dashboard from the place where this server reads a board
+  (`api/<pack>/superset-<id>/...`) and checks the user's rights on that dashboard. This server reads the board
+  from its own route and refuses the request (403) when it is not the board Superset signed for. The same happens
+  when the pack differs, or when the path names a `superset-<id>` board that Superset signed nothing for. Both
+  sides refuse a path with a `.` or `..` segment or an encoded slash (`%2e`, `%2f`, `%5c`; 400). Binding a
+  dashboard (`/_superset/bind`) works only for the dashboard Superset checked. A plugin from before `b` and `p`
+  signs only `d`, and this server then checks `superset-<d>` against its route.
 - **Edits** follow `LENSPACK_EDIT_POLICY` (or `editPolicy` in the config). `superset`, the default: whoever
-  Superset lets edit that dashboard, its owners with `can_write` on Dashboard and admins. Everyone else who can
-  view it may still ask questions; the chat's edit tools then answer "you can view this dashboard but not edit it
-  in Superset", which the model passes on. `signed-in`: anyone signed in may edit (the behaviour before). The
-  `boardEdits` off switch (below) comes first: off, nobody edits through the chat, admins included.
-- **Settings** writes and the audit log need a Superset admin.
+  Superset lets edit that dashboard, its owners with `can_write` on Dashboard and admins. That right counts on
+  that dashboard's board only. Everyone else who can view it may still ask questions; the chat's edit tools then
+  answer "you can view this dashboard but not edit it in Superset", which the model passes on. `signed-in`:
+  anyone signed in may edit (the behaviour before). The `boardEdits` off switch (below) comes first: off, nobody
+  edits through the chat, admins included.
+- **Settings** writes, the audit log and the usage page (`GET /api/_usage`, which names every user's spend) need
+  a Superset admin. Owning a dashboard does not give them.
 - **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
   `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls `POST /api/v1/lenspack/bootstrap`, which makes the
   `lenspack` user (Admin role: it edits dashboards it doesn't own, which Superset allows only owners and admins).
@@ -154,8 +164,12 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
 ## What each user sees
 
 Lenspack reads data through its own Superset account, an Admin. By default (`hostPolicy: off`, for now) every
-answer is computed with that account's access, as before: anyone who can open the chat can ask about every
-configured dataset, with no row-level security.
+answer is computed with that account's access, as before. **This means anyone signed in to Superset can read every
+dataset listed in `datasets:`, with no row-level security, even datasets Superset itself keeps from them.** They
+can do it through the chat, the filter menus and the board API, on any dashboard they can open. Superset's own
+dataset permissions and RLS rules do not apply to what Lenspack answers. Use `hostPolicy: off` only when everyone
+who can sign in to Superset may see all of those datasets in full. Otherwise set `hostPolicy: superset`, or list
+only datasets that everyone may read.
 
 With `hostPolicy: superset` (or `LENSPACK_HOST_POLICY=superset`), each user's own Superset access applies instead:
 

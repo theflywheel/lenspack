@@ -37,6 +37,7 @@ describe("serve with sign-in", () => {
     scoped: { user: "scoped" }, // scope filled in once a province is known
     village: { user: "village", scope: [{ dimension: "village", op: "eq", value: "nowhere" }] },
     elsewhere: { user: "elsewhere", packs: ["another"] },
+    elsewhere_b: { user: "eve", tenant: "b", packs: ["campaign"] },
   };
   const access = (req: IncomingMessage) => people[String(req.headers["x-user"] ?? "")] ?? null;
   const call = async (who: string | null, path: string, init: RequestInit = {}) => {
@@ -49,7 +50,7 @@ describe("serve with sign-in", () => {
     await seed(db.writer, "duckdb", { households: 3000 });
     await db.close();
     const file = join(dir, "lenspack.yaml");
-    writeFileSync(file, `sources:\n  data: { kind: duckdb, path: ${join(dir, "campaign.duckdb")} }\npacks:\n  - pack: ${campaign}pack.yaml\n    source: data\n    boards: ${campaign}boards\n    now: "2026-09-01T00:00:00Z"\nstore: { kind: memory }\n`);
+    writeFileSync(file, `sources:\n  data: { kind: duckdb, path: ${join(dir, "campaign.duckdb")} }\npacks:\n  - pack: ${campaign}pack.yaml\n    source: data\n    boards: ${campaign}boards\n    now: "2026-09-01T00:00:00Z"\n  - pack: ${campaign}pack.yaml\n    name: pinned\n    source: data\n    tenant: a\n    now: "2026-09-01T00:00:00Z"\nstore: { kind: memory }\n`);
     const { config, dir: base } = readConfig(file);
     const opened = await openConfig(config, base);
     for (const h of opened.hosts) await seedBoards(h);
@@ -164,6 +165,20 @@ describe("serve with sign-in", () => {
   it("hides packs a caller may not open", async () => {
     expect((await call("elsewhere", "")).body.examples).toEqual([]);
     expect((await call("elsewhere", "/campaign/overview/data")).status).toBe(404);
+  });
+
+  it("refuses a pack pinned to another tenant, and does not list it", async () => {
+    const names = async (who: string) => ((await call(who, "")).body.examples as { example: string }[]).map((e) => e.example);
+    expect(await names("alice_a")).toEqual(["campaign", "pinned"]);
+    // A caller without a tenant reads the pack's own.
+    expect(await names("editor")).toEqual(["campaign", "pinned"]);
+    expect(await names("alice_b")).toEqual(["campaign"]);
+    expect((await call("alice_a", "/pinned")).status).toBe(200);
+    // Refused outright, as before, and recorded.
+    expect((await call("alice_b", "/pinned")).status).toBe(403);
+    expect(events.at(-1)).toMatchObject({ user: "alice", pack: "pinned", action: "open", outcome: "denied", detail: "tenant" });
+    // Kept from the caller for another reason as well: not there at all.
+    expect((await call("elsewhere_b", "/pinned")).status).toBe(404);
   });
 });
 
