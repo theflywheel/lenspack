@@ -355,7 +355,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           a.kind === "text"
             ? { kind: "text" as const, title: a.title, body: a.body }
             : a.kind === "kpi"
-              ? { kind: "kpi" as const, title: a.title, query: assembleQuery(a, pack), aggregate: "last" as const }
+              ? { kind: "kpi" as const, title: a.title, query: assembleQuery(a, pack) }
               : a.kind === "table"
                 ? tableOf(a.title, assembleQuery(a, pack), a.page_size || DEFAULT_PAGE_SIZE, a.limit > 0)
                 : chartWidget(a.chart, a.title, assembleQuery(a, pack));
@@ -396,7 +396,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           const query = patchQuery(current.kind === "text" ? undefined : current.query, changed, pack);
           const widget =
             to === "kpi"
-              ? { aggregate: "last" as const, ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
+              ? { ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
               : to === "table"
                 ? tableOf(name, query, page_size || (current.kind === "table" ? current.pageSize : DEFAULT_PAGE_SIZE), !page_size || !!changed.limit)
                 : (() => {

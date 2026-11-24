@@ -4,7 +4,7 @@ import { changesSince, describeChanges, listInWords } from "../src/changes";
 import { memoryStore } from "../src/store";
 import { catalogue, packRef } from "./fixtures";
 
-const kpi = (title: string) => ({ kind: "kpi" as const, title, query: { kind: "value" as const, measure: "count" }, aggregate: "last" as const });
+const kpi = (title: string) => ({ kind: "kpi" as const, title, query: { kind: "value" as const, measure: "count" } });
 
 async function boardWithThree() {
   const store = memoryStore();

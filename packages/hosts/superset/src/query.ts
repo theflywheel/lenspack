@@ -1,6 +1,6 @@
 import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query, type TimeRange, type Widget, grainWords } from "@lenspack/core";
-import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, natureOf } from "@lenspack/engine";
-import { type Pack, maybeFragmentFor } from "@lenspack/pack";
+import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS } from "@lenspack/engine";
+import { type Pack, maybeFragmentFor, natureOf } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
 
@@ -628,7 +628,7 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
     case "big_number_total": {
       const m = measureKey(p.metric);
       if (!m) return { widget: null, reason: "its metric is not a saved metric of the dataset" };
-      return { widget: { title, kind: "kpi", aggregate: "last", query: { kind: "value", measure: m, ...common } } as Widget };
+      return { widget: { title, kind: "kpi", query: { kind: "value", measure: m, ...common } } as Widget };
     }
     case "big_number": {
       const m = measureKey(p.metric);
@@ -636,7 +636,7 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       if (!m || !grain) return { widget: null, reason: "its metric or time grain has no lenspack form" };
       const back = computeBack(p, grain);
       if ("reason" in back) return { widget: null, reason: back.reason };
-      return { widget: { title, kind: "kpi", aggregate: "last", query: { kind: "series", measure: m, grain, ...back, ...common } } as Widget };
+      return { widget: { title, kind: "kpi", query: { kind: "series", measure: m, grain, ...back, ...common } } as Widget };
     }
     case "pie": {
       const m = measureKey(p.metric);
