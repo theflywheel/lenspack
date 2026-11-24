@@ -135,3 +135,16 @@ describe("a split breakdown run through Superset", () => {
     expect(await shown({ sortBy: "group", sort: "asc" })).toEqual(["east/a", "east/b", "east/c", "north/a"]);
   });
 });
+
+it("orders a split series by bucket, then series, as every source does", async () => {
+  const day = (d: string) => Date.parse(`2026-01-0${d}T00:00:00Z`);
+  const data = [
+    { __lenspack_bucket: day("2"), site: "b", visits: 1, __lenspack_n: 1 },
+    { __lenspack_bucket: day("1"), site: "b", visits: 1, __lenspack_n: 1 },
+    { __lenspack_bucket: day("2"), site: "a", visits: 1, __lenspack_n: 1 },
+    { __lenspack_bucket: day("1"), site: "a", visits: 1, __lenspack_n: 1 },
+  ];
+  const connector = supersetConnector({ post: async () => ({ result: [{ data }] }) } as never, binding);
+  const { rows } = await run({ kind: "series", measure: "visits", grain: "day", by: "site" }, { pack, connector });
+  expect(rows.map((r) => `${r.group}/${r.series}`)).toEqual(["2026-01-01/a", "2026-01-01/b", "2026-01-02/a", "2026-01-02/b"]);
+});

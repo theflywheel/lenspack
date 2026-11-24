@@ -325,9 +325,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const order = metricAggs.order ? [{ [metricAggs.order]: "desc" }, { _key: "asc" }] : [{ _count: "desc" }, { _key: "asc" }];
       body.aggs = { s: { terms: { ...src, size: MAX_SERIES, order }, aggs: { ...metricAggs.aggs, t: histogram } } };
       return answer(metricAggs.approximate, (r) =>
-        ((r.aggregations?.s?.buckets ?? []) as Bucket[])
-          .flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count })))
-          .sort((a, b) => a.bucket - b.bucket || String(a.series).localeCompare(String(b.series))),
+        ((r.aggregations?.s?.buckets ?? []) as Bucket[]).flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count }))),
       );
     }
     case "value": {

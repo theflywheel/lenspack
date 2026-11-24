@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type DataRow, limitGroups, sortGroups } from "../src";
+import { type DataRow, limitGroups, shapeRows, sortGroups } from "../src";
 
 // The order and the cut every connector's breakdown goes through.
 
@@ -26,6 +26,22 @@ describe("sortGroups", () => {
 
   it("reads raw rows too: numbers as text, groups as numbers", () => {
     expect(sortGroups([{ group: 10, value: "3" }, { group: 9, value: 7 }], { sort: "desc" }).map((r) => r.group)).toEqual([9, 10]);
+  });
+});
+
+describe("a series' rows", () => {
+  const query = { kind: "series", measure: "n", grain: "day", by: "kind" } as const;
+  const raw = [
+    { bucket: "2026-01-02", series: "b", value: 1, n: 1 },
+    { bucket: "2026-01-01", series: "b", value: 1, n: 1 },
+    { bucket: "2026-01-02", series: "a", value: 1, n: 1 },
+    { bucket: "2026-01-01", series: "a", value: 1, n: 1 },
+  ];
+
+  it("come in one order, by bucket then series, whatever order the source answered in", () => {
+    const order = ["2026-01-01/a", "2026-01-01/b", "2026-01-02/a", "2026-01-02/b"];
+    expect(names(shapeRows(raw, query, "number").rows)).toEqual(order);
+    expect(names(shapeRows([...raw].reverse(), query, "number").rows)).toEqual(order);
   });
 });
 

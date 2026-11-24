@@ -140,6 +140,11 @@ export function shapeBound(raw: Row[], bound: BoundPlan): WidgetData {
   return shapeRows(raw, bound.query, def?.format ?? "number", def?.key);
 }
 
+/** A series' rows by bucket, then series A to Z: one order, whatever order the source answered in. */
+export function sortSeries(rows: DataRow[]): DataRow[] {
+  return rows.sort((a, b) => (a.group < b.group ? -1 : a.group > b.group ? 1 : (a.series ?? "").localeCompare(b.series ?? "")));
+}
+
 /** Raw connector rows → widget data. `columns` names the record keys for a rows query. */
 export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?: string): WidgetData {
   switch (query.kind) {
@@ -153,12 +158,14 @@ export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?:
     }
     case "series": {
       let notes: string[] | undefined;
-      let rows: DataRow[] = raw.map((r) => ({
-        group: bucketLabel(r.bucket, query.grain),
-        ...("series" in r ? { series: groupLabel(r.series) } : {}),
-        value: toNumber(r.value),
-        count: toNumber(r.n) ?? 0,
-      }));
+      let rows: DataRow[] = sortSeries(
+        raw.map((r) => ({
+          group: bucketLabel(r.bucket, query.grain),
+          ...("series" in r ? { series: groupLabel(r.series) } : {}),
+          value: toNumber(r.value),
+          count: toNumber(r.n) ?? 0,
+        })),
+      );
       if (query.by) {
         // Keep the top series by total value; the rest are dropped, never
         // bucketed as "other", so every number stays attributable.

@@ -58,7 +58,7 @@ export function supersetConnector(client: SupersetClient, binding: Binding, opts
         }
         case "series": {
           const by = bound.dimension ? columnOf(bound.dimension.def) : null;
-          raw = current.map((r) => ({ bucket: r[BUCKET], ...(by ? { series: r[by] } : {}), value: r[value], n: r[N] })).sort((a, b) => Number(a.bucket) - Number(b.bucket));
+          raw = current.map((r) => ({ bucket: r[BUCKET], ...(by ? { series: r[by] } : {}), value: r[value], n: r[N] }));
           break;
         }
         case "rows": {
