@@ -18,6 +18,8 @@ export type AuditLog = {
   months(): string[];
   /** The newest events of a month (default: the current one), newest first. */
   read(opts?: { month?: string; limit?: number }): AuditEvent[];
+  /** Every event at or after `from`, across the monthly files, newest first. */
+  since(from: Date): AuditEvent[];
   /** The file the current month is written to. */
   file: string;
   retentionDays: number;
@@ -103,6 +105,16 @@ export function rotatingAudit(dir: string, opts: { retentionDays?: number; now?:
         .sort()
         .reverse();
       return [...(existsSync(file) ? ["current"] : []), ...archived];
+    },
+    since: (from) => {
+      const iso = from.toISOString();
+      const first = month(from);
+      // audit.jsonl holds the current month; archives are named by theirs.
+      const paths = [file, ...readdirSync(dir).filter((n) => (ARCHIVE.exec(n)?.[1] ?? "") >= first).map((n) => join(dir, n))];
+      return paths
+        .flatMap(parse)
+        .filter((e) => typeof e.at === "string" && e.at >= iso)
+        .sort((a, b) => b.at.localeCompare(a.at));
     },
     read: ({ month: m, limit = 200 } = {}) => {
       if (m && m !== "current" && !/^\d{4}-\d{2}$/.test(m)) throw new Error(`month must be YYYY-MM, not "${m}"`);

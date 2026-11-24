@@ -54,6 +54,12 @@
 .lpc-step.ok::before{content:"✓ ";color:var(--lpc-ok)}
 .lpc-step.bad::before{content:"✗ "}
 .lpc-step.run::before{content:"… "}
+.lpc-cost{align-self:flex-start;font-size:11.5px;color:var(--lpc-mute);margin:-4px 0 0 2px;max-width:100%}
+.lpc-cost summary{cursor:pointer;list-style:none;display:inline-block;border-radius:4px;padding:0 3px;font-variant-numeric:tabular-nums}
+.lpc-cost summary::-webkit-details-marker{display:none}
+.lpc-cost summary:hover,.lpc-cost summary:focus-visible{color:var(--lpc-fg);outline:1px solid var(--lpc-line)}
+.lpc-cost>div{padding:2px 3px 0;line-height:1.4}
+.lpc-nocost .lpc-cost{display:none}
 .lpc-note{align-self:stretch;font-size:12px;color:var(--lpc-mute);border-left:3px solid var(--lpc-line);padding:2px 8px}
 .lpc-note.sync{border-color:var(--lpc-acc);color:var(--lpc-acc)}
 .lpc-note.bad{border-color:var(--lpc-bad);color:var(--lpc-bad)}
@@ -101,6 +107,7 @@
       mic: "Speak (click to start and stop, or hold)", micNeedsHttps: "The microphone needs a secure (https) page", micUnsupported: "This browser cannot record audio",
       listening: "Listening… {0}", transcribing: "Transcribing…", tooShort: "Nothing was recorded. Hold the mic or click it, speak, then stop.", heard: "Check the text, then send.", nothingHeard: "No speech was recognised. Try again a little closer to the microphone.",
       denied: "Microphone access is blocked. Allow it for this site in the browser (the icon left of the address), then try again.", noMic: "No microphone was found.", sttFailed: "Transcription failed: {0}", sttOff: "Speech to text is not set up on this server.",
+      cost: "≈ ${0}", costTitle: "Estimated cost of this answer, from list prices", costTokens: "{0}: {1} tokens in, {2} out", costSpeech: "includes speech to text, ${0}", costUnpriced: "some calls have no price and are not counted", sessionCost: "This session: ≈ ${0} for {1} answers (estimate from list prices)",
       restarting: "Lenspack is restarting, reconnecting…", lost: "The connection to Lenspack was lost before the answer finished (it may be restarting).", retry: "Retry",
     },
     fr: {
@@ -112,6 +119,7 @@
       mic: "Parler (cliquer pour démarrer et arrêter, ou maintenir)", micNeedsHttps: "Le micro nécessite une page sécurisée (https)", micUnsupported: "Ce navigateur ne peut pas enregistrer le son",
       listening: "À l'écoute… {0}", transcribing: "Transcription…", tooShort: "Rien n'a été enregistré. Maintenez ou cliquez le micro, parlez, puis arrêtez.", heard: "Vérifiez le texte, puis envoyez.", nothingHeard: "Aucune parole reconnue. Réessayez un peu plus près du micro.",
       denied: "L'accès au micro est bloqué. Autorisez-le pour ce site dans le navigateur (l'icône à gauche de l'adresse), puis réessayez.", noMic: "Aucun micro trouvé.", sttFailed: "La transcription a échoué : {0}", sttOff: "La reconnaissance vocale n'est pas configurée sur ce serveur.",
+      cost: "≈ {0} $", costTitle: "Coût estimé de cette réponse, d'après les prix publics", costTokens: "{0} : {1} jetons en entrée, {2} en sortie", costSpeech: "dont reconnaissance vocale : {0} $", costUnpriced: "certains appels n'ont pas de prix et ne sont pas comptés", sessionCost: "Cette session : ≈ {0} $ pour {1} réponses (estimation d'après les prix publics)",
       restarting: "Lenspack redémarre, reconnexion…", lost: "La connexion à Lenspack a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
     },
     hi: {
@@ -123,6 +131,7 @@
       mic: "बोलें (शुरू और बंद करने के लिए क्लिक करें, या दबाकर रखें)", micNeedsHttps: "माइक के लिए सुरक्षित (https) पेज चाहिए", micUnsupported: "यह ब्राउज़र आवाज़ रिकॉर्ड नहीं कर सकता",
       listening: "सुन रहे हैं… {0}", transcribing: "लिखा जा रहा है…", tooShort: "कुछ रिकॉर्ड नहीं हुआ। माइक दबाकर रखें या क्लिक करें, बोलें, फिर रोकें।", heard: "टेक्स्ट जाँचें, फिर भेजें।", nothingHeard: "कोई आवाज़ पहचानी नहीं गई। माइक के थोड़ा पास से फिर कोशिश करें।",
       denied: "माइक की अनुमति बंद है। ब्राउज़र में इस साइट के लिए अनुमति दें (पते के बाईं ओर का आइकन), फिर कोशिश करें।", noMic: "कोई माइक नहीं मिला।", sttFailed: "लिखना नहीं हो सका: {0}", sttOff: "इस सर्वर पर स्पीच-टू-टेक्स्ट सेट नहीं है।",
+      cost: "≈ ${0}", costTitle: "इस जवाब की अनुमानित लागत, सूची कीमतों के आधार पर", costTokens: "{0}: {1} टोकन इनपुट, {2} आउटपुट", costSpeech: "इसमें स्पीच-टू-टेक्स्ट ${0} शामिल है", costUnpriced: "कुछ कॉल की कीमत नहीं है, वे गिनी नहीं गईं", sessionCost: "इस सत्र में: ≈ ${0}, {1} जवाब (सूची कीमतों से अनुमान)",
       restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले Lenspack से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
     },
   };
@@ -398,9 +407,13 @@
     } catch (e) {}
     const history = saved.messages || [];
     let since = saved.since;
+    // What this tab's chat has spent on this board, across New chat: the menu's running total.
+    const spent = saved.spent && typeof saved.spent.usd === "number" ? saved.spent : { usd: 0, turns: 0 };
+    // Clip ids from speech to text since the last question: the next question names them, so its cost includes them.
+    const clips = [];
     const persist = () => {
       try {
-        sessionStorage.setItem(key, JSON.stringify({ messages: history.slice(-30), since }));
+        sessionStorage.setItem(key, JSON.stringify({ messages: history.slice(-30), since, spent }));
       } catch (e) {}
     };
 
@@ -433,6 +446,12 @@
       return l !== "auto" && STRINGS[l] ? l : STRINGS[page] ? page : "en";
     };
     const t = (k, ...a) => fmt((STRINGS[uiLang()] || STRINGS.en)[k] ?? STRINGS.en[k] ?? k, ...a);
+    // A dollar amount with the precision a chat turn needs: $0.0042, $0.031, $1.20 (a comma in French).
+    const usdText = (usd) => {
+      const v = Number(usd) || 0;
+      const out = v.toFixed(v >= 1 ? 2 : v >= 0.01 ? 3 : 4);
+      return uiLang() === "fr" ? out.replace(".", ",") : out;
+    };
 
     // A panel mounted again (another dashboard) drops the last one's page-wide listeners and mic.
     if (root.__lpcCleanup) root.__lpcCleanup();
@@ -538,6 +557,12 @@
         hl.append(document.createTextNode(t("holdFor")), sel);
         menu.append(l, hl, el("small", "", t("spaceHelp", secs(holdMs()))));
       }
+      if (feat.turnCost !== false && spent.turns > 0) {
+        menu.append(el("hr"));
+        const total = el("small", "lpc-total", t("sessionCost", usdText(spent.usd), spent.turns));
+        total.setAttribute("role", "status");
+        menu.append(total);
+      }
     }
     // New chat: forgets this conversation, never the board.
     const newBtn = el("button", "lpc-new");
@@ -596,6 +621,21 @@
       log.append(el("div", `lpc-note ${cls || ""}`, text));
       scroll();
     }
+    // A turn's cost under its reply: "≈ $0.0042", opening (keyboard or click) to the models, tokens and any speech to text.
+    // Always drawn; the turnCost switch hides it with a class, so switching it back on shows it again.
+    function costLine(c) {
+      const d = el("details", "lpc-cost");
+      const sum = el("summary", "", t("cost", usdText(c.costUsd)));
+      sum.title = t("costTitle");
+      sum.setAttribute("aria-label", `${t("costTitle")}: ${t("cost", usdText(c.costUsd))}`);
+      const n = (x) => Number(x || 0).toLocaleString(uiLang() === "auto" ? undefined : uiLang());
+      const tokens = c.tokens || {};
+      const lines = [t("costTokens", (c.models || []).join(", ") || "—", n(tokens.in), n(tokens.out))];
+      if (c.sttUsd > 0) lines.push(t("costSpeech", usdText(c.sttUsd)));
+      if (c.unpriced > 0) lines.push(t("costUnpriced"));
+      d.append(sum, el("div", "", lines.join(" · ")));
+      return d;
+    }
     // The suggested questions in the panel's language: `examples` is a list, or lists by language
     // ({en: [...], fr: [...]}), English standing in for a language the deployment didn't write.
     function examplesNow() {
@@ -619,7 +659,10 @@
       log.append(e);
     }
     const replay = () => {
-      for (const m of history) bubble(m.role, m.parts.map((p) => p.text || "").join(""));
+      for (const m of history) {
+        bubble(m.role, m.parts.map((p) => p.text || "").join(""));
+        if (m.metadata && m.metadata.cost) log.append(costLine(m.metadata.cost));
+      }
     };
     replay();
     if (saved.notice) note(saved.notice, "sync");
@@ -707,7 +750,8 @@
         }
       };
       try {
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}) }) });
+        const spoken = clips.slice();
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}) }) });
         if (!res.ok || !res.body) {
           let msg = `${res.status}`;
           try {
@@ -717,6 +761,7 @@
         }
         // The stream ends with a finish event and [DONE]; a stream that stops short was cut (Lenspack restarted).
         let finished = false;
+        let usage = null;
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
@@ -800,6 +845,9 @@
                 case "error":
                   note(ev.errorText || t("wrong"), "bad");
                   break;
+                case "data-usage":
+                  if (ev.data && ev.data.summary) usage = ev.data.summary;
+                  break;
                 case "finish":
                   finished = true;
                   break;
@@ -813,7 +861,16 @@
         // The reply is the text after the last tool call; when the model wrote nothing
         // after it, fall back to its last narration so the turn is not empty.
         const reply = answer.trim() ? answer : segments[segments.length - 1] || "";
-        history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }] });
+        history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }], ...(usage ? { metadata: { cost: usage } } : {}) });
+        // The clips were counted in this turn (the server claims each once).
+        clips.splice(0, spoken.length);
+        if (usage) {
+          log.append(costLine(usage));
+          spent.usd = Math.round((spent.usd + (usage.costUsd || 0)) * 1e6) / 1e6;
+          spent.turns += 1;
+          renderMenu();
+          scroll();
+        }
         status.textContent = "";
         if (saving) await saving;
         let after = null;
@@ -1084,6 +1141,7 @@
         }
         if (!r.ok) throw new Error(r.status === 503 ? t("sttOff") : j.error || String(r.status));
         const text = (j.text || "").trim();
+        if (text && typeof j.clip === "string") clips.push(j.clip);
         if (!text) setStatus(t("nothingHeard"));
         else {
           insertAt(text, rec.caret);
@@ -1224,6 +1282,7 @@
       micState.enabled = !!(info && info.speech && info.speech.enabled) && feat.voice !== false;
       lang.hidden = feat.languageMenu === false;
       newBtn.hidden = feat.newChat === false;
+      wrap.classList.toggle("lpc-nocost", feat.turnCost === false);
       if (info && info.speech && info.speech.maxSeconds) micState.maxSeconds = info.speech.maxSeconds;
       if (info && info.speech && info.speech.holdMs >= 500 && info.speech.holdMs <= 3000) micState.holdMs = info.speech.holdMs;
       mic.hidden = !micState.enabled;

@@ -12,7 +12,7 @@ import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Access, Audit, Principal } from "./auth";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
-import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, usageLedger, withMeter } from "./metering";
+import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
@@ -221,6 +221,29 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
   const providers = opts.providers ?? [];
   const provider = (name: string | null | undefined) => (name ? providers.find((p) => p.name === name && p.available !== false) : undefined);
+  // Transcriptions waiting for the turn they were spoken for: POST /_stt answers with a clip id, and
+  // the chat request that sends the text names it, so the turn's cost includes the clip. The cost is
+  // the server's own record, never a figure from the browser; a clip is claimed once, by its speaker.
+  const clips = new Map<string, { user: string; records: CallRecord[]; at: number }>();
+  const CLIP_TTL_MS = 60 * 60 * 1000;
+  const keepClip = (user: string, records: CallRecord[]) => {
+    const now = Date.now();
+    for (const [id, c] of clips) if (now - c.at > CLIP_TTL_MS || clips.size > 1000) clips.delete(id);
+    const id = randomUUID();
+    clips.set(id, { user, records, at: now });
+    return id;
+  };
+  const claimClips = (user: string, ids: unknown): CallRecord[] => {
+    if (!Array.isArray(ids)) return [];
+    const out: CallRecord[] = [];
+    for (const id of ids.slice(0, 10)) {
+      const c = typeof id === "string" ? clips.get(id) : undefined;
+      if (!c || c.user !== user || Date.now() - c.at > CLIP_TTL_MS) continue;
+      clips.delete(id as string);
+      out.push(...c.records);
+    }
+    return out;
+  };
 
 
   const audit = (e: Omit<Parameters<Audit>[0], "at">) => {
@@ -282,7 +305,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         try {
           const audio = await readBytes(req, speech.maxBytes ?? 10_000_000);
           let t = await transcribe(speech, audio, req.headers["content-type"], language);
-          recordCall(speechRecord({ ...t, language: language ?? null, chars: t.text.length }, { user: who.user, pack }), sinks);
+          const spent: CallRecord[] = [speechRecord({ ...t, language: language ?? null, chars: t.text.length }, { user: who.user, pack })];
+          recordCall(spent[0]!, sinks);
           let retried = false;
           // A hint is the reader's choice: words in another script (Persian for French) are a miss, not a transcript.
           if (language && !fitsLanguages(t.text, [language])) {
@@ -296,11 +320,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
               hint = fallback;
               t = await transcribe(speech, audio, req.headers["content-type"], fallback);
               retried = true;
-              recordCall(speechRecord({ ...t, language: fallback, chars: t.text.length, retried }, { user: who.user, pack }), sinks);
+              spent.push(speechRecord({ ...t, language: fallback, chars: t.text.length, retried }, { user: who.user, pack }));
+              recordCall(spent[spent.length - 1]!, sinks);
             }
             if (!fallback || !fitsLanguages(t.text, expected)) return json(res, 422, { error: "unsure_language", script: scriptOf(t.text), expected });
           }
-          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}) });
+          // The clip id: the chat request that sends this text names it, and the turn's cost includes the clip.
+          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}), clip: keepClip(who.user, spent) });
         } catch (e) {
           if (!(e instanceof SpeechError)) throw e;
           if (e.status === 502) recordCall(speechRecord({ model: speech.model(), usd: null, ms: e.ms, ok: false, error: e.message.slice(0, 300), language: hint ?? null }, { user: who.user, pack }), sinks);
@@ -480,9 +506,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const maxRounds = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("rounds") ?? 1)) || 1));
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown };
-    // What this turn costs: every model call made in its scope, and the queries its tools run.
-    const calls: CallRecord[] = [];
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown };
+    // What this turn costs: every model call made in its scope, the queries its tools run, and the
+    // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
+    const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly,
@@ -600,9 +627,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         } finally {
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);
+          const summary = turnSummary(cost);
           ledger.turn({ user, pack: h.name }, cost);
-          audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, cost }) });
-          writer.write({ type: "data-usage", data: cost });
+          audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, ...summary, cost }) });
+          writer.write({ type: "data-usage", data: { ...cost, summary } });
         }
         writer.write({ type: "finish" });
       }),

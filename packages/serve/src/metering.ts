@@ -280,6 +280,33 @@ export function turnCost(calls: CallRecord[], queries: QueryMeter = emptyQueryMe
   return { total: rounded(models.reduce((t, m) => addUsage(t, m), emptyUsage())), models: models.map(rounded), queries: { ...queries, ms: Math.round(queries.ms) } };
 }
 
+/**
+ * A turn's cost in the few fields people read: what the chat panel shows under a reply and the audit
+ * line keeps (the settings page totals them). usd is an estimate from list prices for the chat models
+ * (see each adapter's price table) plus what the speech provider reported for a spoken question.
+ */
+export type TurnSummary = {
+  costUsd: number;
+  tokens: { in: number; out: number; cacheRead: number; cacheWrite: number };
+  /** The models the turn called, by name, chat first. */
+  models: string[];
+  /** The part of costUsd spent turning the spoken question into text; 0 when it was typed. */
+  sttUsd: number;
+  /** Calls with no price: their cost is not in costUsd. */
+  unpriced: number;
+};
+
+export function turnSummary(cost: TurnCost): TurnSummary {
+  const stt = cost.models.filter((m) => m.role === "speech");
+  return {
+    costUsd: cost.total.usd,
+    tokens: { in: cost.total.inputTokens, out: cost.total.outputTokens, cacheRead: cost.total.cachedInputTokens, cacheWrite: cost.total.cacheWriteTokens },
+    models: [...new Set([...cost.models.filter((m) => m.role !== "speech"), ...stt].map((m) => m.model))],
+    sttUsd: round(stt.reduce((s, m) => s + m.usd, 0)),
+    unpriced: cost.total.unpriced,
+  };
+}
+
 // --- the ledger -----------------------------------------------------------
 
 type Key = { day: string; user: string; pack: string };

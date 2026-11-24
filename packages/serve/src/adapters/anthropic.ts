@@ -29,8 +29,11 @@ type Model = {
   fallbacks?: boolean;
 };
 
-// Anthropic's published first-party rates (as of 2026-10). A config's own
-// `pricing` wins, and a model not listed here is metered but unpriced.
+// Anthropic's published first-party list rates, US$ per million tokens: [input, output, cache read].
+// Source: https://platform.claude.com/docs/en/about-claude/pricing (checked 2026-11-24 against the
+// rates as of 2026-10-06). Costs computed from them are ESTIMATES: they leave out discounts, batch
+// and fast-mode rates and partner (Bedrock, Vertex) prices. A config's own `pricing` wins, and a
+// model not listed here is metered but unpriced.
 // Haiku 5.5 has a second, higher rate above 100K prompt tokens; a chat turn is
 // far below that, so its lower rate is the one listed.
 const MODELS: Record<string, Model> = {
