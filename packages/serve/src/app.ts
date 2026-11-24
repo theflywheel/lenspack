@@ -74,7 +74,7 @@ export type AppOptions = {
   /** Rights by user and role (editors, maintainers, usage), for whoever the adapter names. */
   rights?: Rights;
   /** How the UI presents itself (lenspack.yaml `ui:`), written into the page it is served in. */
-  page?: { mode: "demo" | "app"; title?: string; home?: string; intro?: string };
+  page?: { title?: string; home?: string; intro?: string };
   /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. */
   historyTurns?: number;
   /** Where each chat turn's cost and each pack's queries are counted (GET /api/_usage), and the budget is checked. One is made if absent. */
@@ -389,15 +389,6 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         const board = await h.store.create({ id: randomId(body.temporary ? "tmp" : "b"), pack: h.pack, title: body.title ?? config.title, config, owner: who.user, tenant: who.tenant });
         audit({ user: who.user, pack: packName, board: board.id, action: "create", outcome: "ok" });
         return json(res, 200, { id: board.id, version: board.version });
-      }
-      // The canonical board: built from the pack's own ops file, never the
-      // shared, editable copy.
-      if (action === "canonical" && req.method === "GET") {
-        const file = h.boards.find((b) => b.id === boardId);
-        if (!file) return json(res, 404, { error: "no such board file" });
-        const config = buildBoard(h.pack, file);
-        const data = await resolveBoard(config, run);
-        return json(res, 200, { board: shown({ id: boardId, pack: h.pack.pack, config, version: 0, updatedAt: new Date() }), catalogue, data });
       }
       const board = await h.store.get(boardId);
       // A board the caller may not see looks the same as one that is not there.
