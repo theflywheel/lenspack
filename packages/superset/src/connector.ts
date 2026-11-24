@@ -1,10 +1,10 @@
-import { type BoundPlan, type Capabilities, type Connector, type Format, type Plan, type Row, shapeRows } from "@lenspack/engine";
+import { type BoundPlan, type Capabilities, type Connector, type Plan, type Row, shapeBound } from "@lenspack/engine";
 import type { Pack } from "@lenspack/spec";
 
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
 import { sourceError } from "./source-errors";
-import { BUCKET, type Metric, N, columnOf, queryObjects } from "./query";
+import { BUCKET, type Metric, N, columnOf, metricLabel, queryObjects } from "./query";
 
 // Superset computes every number: the engine resolves a query against the
 // pack (keys, windows, refusals), this turns the bound plan into Superset query
@@ -15,8 +15,6 @@ import { BUCKET, type Metric, N, columnOf, queryObjects } from "./query";
 export const SUPERSET_CAPABILITIES: Capabilities = { joins: false, exactDistinct: true, exactPercentiles: true, percentiles: false, twoStage: false, zonedBuckets: false, timeHeatmap: false, points: true };
 
 type Native = { datasetId: number; queries: ReturnType<typeof queryObjects>["queries"]; metric: Metric | null };
-
-const labelOf = (m: Metric) => (typeof m === "string" ? m : m.label);
 
 /**
  * `capabilities` narrows what the connector offers at the moment (a deployment's off switches), read on every check.
@@ -43,8 +41,7 @@ export function supersetConnector(client: SupersetClient, binding: Binding, opts
           throw sourceError(e, opts.log);
         });
       const [current = [], previous] = res.result.map((r) => r.data ?? []);
-      const value = metric ? labelOf(metric) : "";
-      const format = (bound.measure?.def.format ?? "number") as Format;
+      const value = metric ? metricLabel(metric) : "";
       let raw: Row[];
       switch (q.kind) {
         case "value":
@@ -82,7 +79,7 @@ export function supersetConnector(client: SupersetClient, binding: Binding, opts
           break;
         }
       }
-      return shapeRows(raw, q, format, bound.measure?.def.key);
+      return shapeBound(raw, bound);
     },
   };
 }

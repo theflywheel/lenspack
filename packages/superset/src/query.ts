@@ -53,7 +53,7 @@ export function metricOf(key: string, binding: Binding): Metric {
   const ds = binding.datasets.get(b.entity);
   return b.metric ?? ds?.countMetric ?? { expressionType: "SQL", sqlExpression: "COUNT(*)", label: key };
 }
-const metricLabel = (m: Metric) => (typeof m === "string" ? m : m.label);
+export const metricLabel = (m: Metric) => (typeof m === "string" ? m : m.label);
 
 // ---- filters ----------------------------------------------------------------
 
@@ -456,25 +456,21 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
   }
   const common = { ...(time ? { time } : {}), ...(filters.length ? { filters } : {}) };
   const metricKeys = (list: unknown[]) => list.map(measureKey);
-  const one = (m: unknown) => {
-    const k = measureKey(m);
-    return k;
-  };
 
   switch (chart.viz_type) {
     case "big_number_total": {
-      const m = one(p.metric);
+      const m = measureKey(p.metric);
       if (!m) return { widget: null, reason: "its metric is not a saved metric of the dataset" };
       return { widget: { title, kind: "kpi", aggregate: "last", query: { kind: "value", measure: m, ...common } } as Widget };
     }
     case "big_number": {
-      const m = one(p.metric);
+      const m = measureKey(p.metric);
       const grain = GRAIN_BACK[p.time_grain_sqla];
       if (!m || !grain) return { widget: null, reason: "its metric or time grain has no lenspack form" };
       return { widget: { title, kind: "kpi", aggregate: "last", query: { kind: "series", measure: m, grain, ...common } } as Widget };
     }
     case "pie": {
-      const m = one(p.metric);
+      const m = measureKey(p.metric);
       const d = dimKey(p.groupby?.[0]);
       if (!m || !d || (p.groupby?.length ?? 0) !== 1) return { widget: null, reason: "its metric or slices are not pack keys" };
       return { widget: { title, kind: "chart", chart: "pie", options: { legend: p.show_legend !== false, colorScheme: "default" }, query: { kind: "breakdown", dimension: d, measure: m, limit: Math.max(2, Math.min(500, p.row_limit ?? 12)), sort: "desc", ...common } } as Widget };
@@ -513,7 +509,7 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       return { widget: { title, kind: "table", pageSize: 10, query: { kind: "breakdown", dimension: groups[0], ...(groups[1] ? { by: groups[1] } : {}), measure: measure!, limit: Math.max(2, Math.min(500, p.row_limit ?? 12)), sort: p.order_desc === false ? "asc" : "desc", ...extra, ...common } } as Widget };
     }
     case "heatmap_v2": {
-      const m = one(p.metric);
+      const m = measureKey(p.metric);
       if (!m) return { widget: null, reason: "its metric is not a saved metric of the dataset" };
       const rowsCol = [p.groupby].flat().filter((g: unknown) => g != null && g !== "");
       if (rowsCol.length !== 1) return { widget: null, reason: "its rows are not one column" };
@@ -543,7 +539,7 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       if (p.time_grain_sqla) return { widget: null, reason: "it animates its points over time" };
       if (p.js_data_mutator || p.js_tooltip || p.js_onclick_href) return { widget: null, reason: "it runs custom JavaScript" };
       const radius = p.point_radius_fixed ?? { type: "fix" };
-      const size = radius.type === "metric" ? one(radius.value) : undefined;
+      const size = radius.type === "metric" ? measureKey(radius.value) : undefined;
       if (size === null) return { widget: null, reason: "its points are sized by something other than a saved metric of the dataset" };
       const color = p.dimension ? dimKey(p.dimension) : undefined;
       if (color === null) return { widget: null, reason: `its points are coloured by "${p.dimension}", which is not a pack dimension` };
