@@ -1,4 +1,4 @@
-import { type FilterClause, MAX_POINTS, type Query, type TimeRange, type Widget } from "@lenspack/core";
+import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query, type TimeRange, type Widget } from "@lenspack/core";
 import { type BoundDimension, type BoundPlan, ResolveError, SPLIT_ROWS } from "@lenspack/engine";
 import { type Pack, maybeFragmentFor } from "@lenspack/spec";
 
@@ -30,7 +30,7 @@ export type QueryObject = {
 };
 
 export const GRAIN: Record<string, string> = { hour: "PT1H", day: "P1D", week: "P1W", month: "P1M", quarter: "P3M", year: "P1Y" };
-const GRAIN_BACK = Object.fromEntries(Object.entries(GRAIN).map(([k, v]) => [v, k]));
+const GRAIN_BACK = Object.fromEntries(Object.entries(GRAIN).map(([k, v]) => [v, k])) as Record<string, Grain>;
 export const N = "__lenspack_n";
 export const BUCKET = "__lenspack_bucket";
 
@@ -178,7 +178,7 @@ export function queryObjects(bound: BoundPlan, binding: Binding): { queries: Que
     case "series": {
       if (!ds.time) throw new ResolveError("NO_TIME", `"${bound.root}" has no time column in Superset`, q.measure);
       const axis: Column = { expressionType: "SQL", sqlExpression: ds.time, label: BUCKET, columnType: "BASE_AXIS", timeGrain: GRAIN[q.grain] };
-      queries = [{ ...base(bound.time), columns: [axis, ...(bound.dimension ? [col(bound.dimension)] : [])], metrics: [metric!, n], orderby: [], row_limit: 50_000, extras: { ...base(bound.time).extras, time_grain_sqla: GRAIN[q.grain] } }];
+      queries = [{ ...base(bound.time), columns: [axis, ...(bound.dimension ? [col(bound.dimension)] : [])], metrics: [metric!, n], orderby: [], row_limit: bound.base ? bound.base.rows + 1 : 50_000, extras: { ...base(bound.time).extras, time_grain_sqla: GRAIN[q.grain] } }];
       break;
     }
     case "rows": {
@@ -224,6 +224,56 @@ export function columnFor(key: string, entity: string, binding: Binding): string
   return c;
 }
 
+// ---- compute as Superset's own advanced analytics ------------------------------------
+
+// The offset one bucket back, as Superset's time comparison reads it.
+export const OFFSET: Record<Grain, string> = { hour: "1 hour ago", day: "1 day ago", week: "1 week ago", month: "1 month ago", quarter: "3 months ago", year: "1 year ago" };
+
+/**
+ * A widget's compute as the form_data controls Superset's charts already have, so the saved
+ * chart is an ordinary Superset chart that recomputes itself: a rolling window (rolling_type
+ * mean or sum, every window full: min_periods = rolling_periods), a running total (cumsum), or a
+ * change against the bucket before (time_compare one grain back, comparison_type difference or
+ * percentage). Superset's line, bar and area charts turn these into its chart-data post-processing
+ * (rolling, cum, compare); its big number with a trend line does the first two. Anything else has
+ * no Superset chart that computes it (a summary of the buckets per group, a ratio of two metrics,
+ * several steps), so it is refused with what to do instead; Lenspack still computes it in the chat.
+ */
+export function computeForm(widget: Widget): { form: Record<string, unknown> } | { refusal: string } | null {
+  if (widget.kind === "text") return null;
+  const q = widget.query;
+  if (q.kind === "rows" || q.kind === "points" || !q.compute) return null;
+  const keep = " Superset recomputes a saved chart itself, so this one is not kept on the dashboard; give the answer in the chat, or save the series it is computed from.";
+  const steps = q.compute.steps;
+  if (q.kind !== "series") {
+    const summary = steps.find((s) => s.op === "over_time");
+    return { refusal: `Superset has no chart that ${summary ? "summarises the time buckets of each group (an average per day per group)" : "divides one metric by another after it is aggregated"}.${keep}` };
+  }
+  if (steps.length > 1) return { refusal: `A Superset chart applies one step over time, and this asks for ${steps.length}.${keep}` };
+  const s: ComputeStep = steps[0]!;
+  const echarts = widget.kind === "chart" && ["line", "bar", "area"].includes(widget.chart);
+  const trend = widget.kind === "kpi";
+  if (!echarts && !trend) return { refusal: `In Superset, a computed series is drawn as a line, bar or area chart.${keep}` };
+  switch (s.op) {
+    case "rolling":
+      return { form: { rolling_type: s.fn, rolling_periods: s.window, min_periods: s.window } };
+    case "running_total":
+      return { form: { rolling_type: "cumsum" } };
+    case "change":
+      if (!echarts) return { refusal: `Superset's big number has no change between time buckets; make it a line or bar chart.${keep}` };
+      if (!q.time) return { refusal: "Superset compares each bucket with the one before only within a time range; give the widget one (the last 30 days, this month)" };
+      return { form: { time_compare: [OFFSET[q.grain]], comparison_type: s.percent ? "percentage" : "difference" } };
+    default:
+      return { refusal: `Superset has no chart that divides one metric by another after it is aggregated.${keep}` };
+  }
+}
+
+/** Why Superset cannot keep this widget's compute as a chart, or null: the connector's savedCompute capability. */
+export function computeRefusalForSuperset(widget: Widget): string | null {
+  const c = computeForm(widget);
+  return c && "refusal" in c ? c.refusal : null;
+}
+
 /** A widget as a Superset chart. Null for a text widget, which is a markdown block on the dashboard instead. */
 export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): ChartSpec | null {
   if (widget.kind === "text") return null;
@@ -237,10 +287,14 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
   const common = { datasource: `${ds.id}__table`, adhoc_filters, time_range: timeRangeOf(q.time), slice_name: widget.title, lenspack: { widget: { ...widget, title: undefined } } };
   if (q.kind === "points") return pointsChart(widget, q, ds.id, entity, common, colFor, pack, binding);
   const metrics = q.kind === "rows" ? [] : [metricOf(q.measure, binding), ...(q.measures ?? []).map((m) => metricOf(m, binding))];
-  const fmt = q.kind === "rows" ? undefined : D3[pack.measures.find((m) => m.key === q.measure)?.format ?? "number"];
+  const computed = computeForm(widget);
+  if (computed && "refusal" in computed) throw new ResolveError("NOT_SUPPORTED", computed.refusal);
+  const analytics = computed?.form ?? {};
+  // A percentage change is a fraction whatever the metric's own format.
+  const fmt = q.kind === "rows" ? undefined : analytics.comparison_type === "percentage" ? D3.percent : D3[pack.measures.find((m) => m.key === q.measure)?.format ?? "number"];
 
   if (widget.kind === "kpi") {
-    if (q.kind === "series") return { viz_type: "big_number", datasetId: ds.id, params: { ...common, metric: metrics[0], x_axis: ds.time, time_grain_sqla: GRAIN[q.grain], show_trend_line: true, y_axis_format: fmt } };
+    if (q.kind === "series") return { viz_type: "big_number", datasetId: ds.id, params: { ...common, metric: metrics[0], x_axis: ds.time, time_grain_sqla: GRAIN[q.grain], show_trend_line: true, y_axis_format: fmt, ...analytics } };
     if (q.kind === "value") return { viz_type: "big_number_total", datasetId: ds.id, params: { ...common, metric: metrics[0], y_axis_format: fmt, ...(q.compare ? { subheader: "vs previous period: see Lenspack" } : {}) } };
   }
   if (widget.kind === "table" || q.kind === "rows" || (widget.kind === "kpi" && q.kind === "breakdown")) {
@@ -285,7 +339,7 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
     };
   }
   if (q.kind === "series")
-    return { viz_type: ECHARTS[chart]!, datasetId: ds.id, params: { ...common, x_axis: ds.time, time_grain_sqla: GRAIN[q.grain], metrics, groupby: q.by ? [colFor(q.by)] : [], row_limit: 10_000, ...(q.by ? { series_limit: 12 } : {}), show_legend: widget.options?.legend !== false, y_axis_format: fmt === ",d" ? "SMART_NUMBER" : fmt, ...(chart === "area" || (chart === "bar" && q.by) ? { stack: "Stack" } : {}) } };
+    return { viz_type: ECHARTS[chart]!, datasetId: ds.id, params: { ...common, x_axis: ds.time, time_grain_sqla: GRAIN[q.grain], metrics, groupby: q.by ? [colFor(q.by)] : [], row_limit: 10_000, ...(q.by ? { series_limit: 12 } : {}), show_legend: widget.options?.legend !== false, y_axis_format: fmt === ",d" ? "SMART_NUMBER" : fmt, ...(chart === "area" || (chart === "bar" && q.by) ? { stack: "Stack" } : {}), ...analytics } };
   if (q.kind === "breakdown")
     return {
       viz_type: ECHARTS[chart]!,
@@ -376,12 +430,34 @@ export function queryContextOf(spec: ChartSpec): Record<string, unknown> | null 
         orderby: metrics.length ? [[metrics[0], false]] : [],
         row_limit: p.row_limit ?? 1000,
         time_range: p.time_range,
+        ...analyticsOf(p, metrics),
       },
     ],
     form_data: { ...p, viz_type: spec.viz_type },
     result_format: "json",
     result_type: "full",
   };
+}
+
+/**
+ * A computed series' post-processing, as Superset's own timeseries charts build it from the
+ * same controls (pivot by time, the step, flatten), and its time offset for a change. Superset
+ * runs these in its chart-data API: pandas rolling, cum and compare over the pivoted buckets.
+ */
+function analyticsOf(p: Record<string, any>, metrics: Metric[]): Record<string, unknown> {
+  if (!p.rolling_type && !p.time_compare?.length) return {};
+  const labels = metrics.map(metricLabel);
+  const offset: string | undefined = p.time_compare?.[0];
+  const compared = offset ? labels.map((m) => `${m}__${offset}`) : [];
+  const columns = Object.fromEntries([...labels, ...compared].map((m) => [m, m]));
+  const pivot = { operation: "pivot", options: { index: [p.x_axis], columns: p.groupby ?? [], aggregates: Object.fromEntries([...labels, ...compared].map((m) => [m, { operator: "mean" }])), drop_missing_columns: true } };
+  const step =
+    p.rolling_type === "cumsum"
+      ? { operation: "cum", options: { operator: "sum", columns } }
+      : p.rolling_type
+        ? { operation: "rolling", options: { rolling_type: p.rolling_type, window: p.rolling_periods, min_periods: p.min_periods, columns } }
+        : { operation: "compare", options: { source_columns: labels, compare_columns: compared, compare_type: p.comparison_type, drop_original_columns: true } };
+  return { ...(offset ? { time_offsets: [offset] } : {}), post_processing: [pivot, step, { operation: "flatten" }] };
 }
 
 /** A heatmap's query, as Superset's heatmap_v2 builds it: both axes as columns, sorted per axis, ranked for the shading. Lenspack writes only a breakdown's, so neither axis is time. */
@@ -467,7 +543,9 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       const m = measureKey(p.metric);
       const grain = GRAIN_BACK[p.time_grain_sqla];
       if (!m || !grain) return { widget: null, reason: "its metric or time grain has no lenspack form" };
-      return { widget: { title, kind: "kpi", aggregate: "last", query: { kind: "series", measure: m, grain, ...common } } as Widget };
+      const back = computeBack(p, grain);
+      if ("reason" in back) return { widget: null, reason: back.reason };
+      return { widget: { title, kind: "kpi", aggregate: "last", query: { kind: "series", measure: m, grain, ...back, ...common } } as Widget };
     }
     case "pie": {
       const m = measureKey(p.metric);
@@ -487,8 +565,12 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       const options = { legend: p.show_legend !== false, colorScheme: "default" as const };
       if (p.x_axis === ds.time || !p.x_axis) {
         const grain = GRAIN_BACK[p.time_grain_sqla] ?? "day";
-        return { widget: { title, kind: "chart", chart: kind, options, query: { kind: "series", measure: measure!, grain, ...(by ? { by } : {}), ...(rest.length ? { measures: rest } : {}), ...common } } as Widget };
+        const back = computeBack(p, grain);
+        if ("reason" in back) return { widget: null, reason: back.reason };
+        if (back.compute && rest.length) return { widget: null, reason: "it applies its advanced analytics to several metrics" };
+        return { widget: { title, kind: "chart", chart: kind, options, query: { kind: "series", measure: measure!, grain, ...(by ? { by } : {}), ...(rest.length ? { measures: rest } : {}), ...back, ...common } } as Widget };
       }
+      if (p.rolling_type || p.time_compare?.length) return { widget: null, reason: "it applies a rolling window or time comparison across groups rather than over time" };
       const d = dimKey(p.x_axis);
       if (!d) return { widget: null, reason: `its x-axis "${p.x_axis}" is not a pack dimension` };
       return { widget: { title, kind: "chart", chart: kind, options, query: { kind: "breakdown", dimension: d, measure: measure!, limit: Math.max(2, Math.min(500, by ? Math.ceil((p.row_limit ?? 600) / 50) : (p.row_limit ?? 12))), sort: p.x_axis_sort_asc ? "asc" : "desc", ...(by ? { by } : {}), ...(rest.length ? { measures: rest } : {}), ...common } } as Widget };
@@ -555,8 +637,31 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
   }
 }
 
+/**
+ * Superset's advanced analytics on a time chart as a compute, when they say exactly one step
+ * Lenspack computes: a rolling mean or sum over full windows, a running total, or a change
+ * against one bucket back. Anything else stays Superset's.
+ */
+function computeBack(p: Record<string, any>, grain: Grain): { compute?: { steps: ComputeStep[] } } | { reason: string } {
+  const offsets: string[] = (p.time_compare ?? []).filter(Boolean);
+  const comparing = offsets.length > 0 && p.comparison_type && p.comparison_type !== "values";
+  if (offsets.length && !comparing) return { reason: "it draws earlier periods beside the current one" };
+  if (p.rolling_type && comparing) return { reason: "it combines a rolling window with a time comparison" };
+  if (comparing) {
+    if (offsets.length > 1 || offsets[0] !== OFFSET[grain]) return { reason: `it compares with ${offsets.join(", ")}, not the ${grain} before` };
+    if (p.comparison_type !== "difference" && p.comparison_type !== "percentage") return { reason: `its time comparison is a ${p.comparison_type}` };
+    return { compute: { steps: [{ op: "change", ...(p.comparison_type === "percentage" ? { percent: true } : {}) }] } };
+  }
+  if (!p.rolling_type) return {};
+  if (p.rolling_type === "cumsum") return { compute: { steps: [{ op: "running_total" }] } };
+  const window = Number(p.rolling_periods);
+  if ((p.rolling_type !== "mean" && p.rolling_type !== "sum") || !Number.isInteger(window) || window < 2 || window > 366) return { reason: `its rolling ${p.rolling_type} has no Lenspack form` };
+  if (Number(p.min_periods) !== window) return { reason: "its rolling window shows partial windows, which Lenspack leaves out" };
+  return { compute: { steps: [{ op: "rolling", fn: p.rolling_type, window }] } };
+}
+
 // Fields a person may change in Superset that our own query would not survive.
-const MEANINGFUL = ["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode", "sort_x_axis", "sort_y_axis", "normalize_across", "normalized", "spatial", "point_radius_fixed", "dimension", "js_columns"];
+const MEANINGFUL = ["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode", "sort_x_axis", "sort_y_axis", "normalize_across", "normalized", "spatial", "point_radius_fixed", "dimension", "js_columns", "rolling_type", "rolling_periods", "min_periods", "time_compare", "comparison_type"];
 function sameForm(a: Record<string, unknown>, b: Record<string, unknown>) {
   return MEANINGFUL.every((k) => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
 }

@@ -42,7 +42,8 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
   if (!data) return <Empty>Loading…</Empty>;
   if (data.error) return <Empty>{data.error}{data.hint ? ` — did you mean “${data.hint}”?` : ""}</Empty>;
   const q = widget.query;
-  const measureLabel = labelOf(catalogue.measures, q.kind === "rows" ? undefined : q.kind === "points" ? q.size : q.measure);
+  // A computed answer names its own numbers ("average daily …"); otherwise the measure's label.
+  const measureLabel = data.label ?? labelOf(catalogue.measures, q.kind === "rows" ? undefined : q.kind === "points" ? q.size : q.measure);
   const dimLabel = (key: string | undefined) => (key ? (labelOf(catalogue.dimensions, key) ?? key) : undefined);
   const target = q.kind === "breakdown" ? drillTarget(q.dimension) : null;
   const other = data.rows.find((r) => r.other)?.group;
@@ -86,7 +87,8 @@ export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
       <div className="lp-kpi-value" data-testid="kpi-value">{formatValue(value, widget.format ?? data.format, { currency })}</div>
       <div className="lp-kpi-sub">
         {delta && <span className={`lp-delta ${(data.compare?.delta ?? 0) >= 0 ? "lp-up" : "lp-down"}`}>{delta} vs previous</span>}
-        {!delta && !more.length && data.total > 0 && <span>{data.total.toLocaleString()} rows</span>}
+        {!delta && !more.length && data.label && <span title={data.computed}>{data.label}</span>}
+        {!delta && !more.length && !data.label && data.total > 0 && <span>{data.total.toLocaleString()} rows</span>}
       </div>
       {more.length > 0 && (
         <dl className="lp-kpi-more">
@@ -266,11 +268,13 @@ export function TableWidget({ id, widget, data, currency }: WidgetProps<"table">
   return (
     <div className="lp-table-wrap">
       <table className="lp-table">
-        {(compared || shared) && (
+        {(compared || shared || data.label) && (
           <thead>
             <tr>
               <th />
-              <th className="lp-num">{widget.query.kind === "rows" || widget.query.kind === "points" ? "" : label(widget.query.measure)}</th>
+              <th className="lp-num" title={data.computed}>
+                {data.label ?? (widget.query.kind === "rows" || widget.query.kind === "points" ? "" : label(widget.query.measure))}
+              </th>
               {moreHeads}
               <th />
             </tr>

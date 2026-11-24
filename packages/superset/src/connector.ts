@@ -4,7 +4,7 @@ import type { Pack } from "@lenspack/spec";
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
 import { sourceError } from "./source-errors";
-import { BUCKET, type Metric, N, columnOf, metricLabel, queryObjects } from "./query";
+import { BUCKET, type Metric, N, columnOf, computeRefusalForSuperset, metricLabel, queryObjects } from "./query";
 
 // Superset computes every number: the engine resolves a query against the
 // pack (keys, windows, refusals), this turns the bound plan into Superset query
@@ -12,7 +12,21 @@ import { BUCKET, type Metric, N, columnOf, metricLabel, queryObjects } from "./q
 // So a metric means one thing in both, and Superset's row-level security
 // applies to whatever the service account may see.
 
-export const SUPERSET_CAPABILITIES: Capabilities = { joins: false, exactDistinct: true, exactPercentiles: true, percentiles: false, twoStage: false, zonedBuckets: false, timeHeatmap: false, points: true };
+// A widget with compute is kept as a Superset chart only where Superset's own advanced analytics
+// recompute it (computeForm). Reading through this connector, the steps are not sent as Superset
+// post-processing: the engine asks for the base rows and computes them, as for every source, so
+// a chat answer follows the same rules for zeros and gaps whatever the source (docs/compute.md).
+export const SUPERSET_CAPABILITIES: Capabilities = {
+  joins: false,
+  exactDistinct: true,
+  exactPercentiles: true,
+  percentiles: false,
+  twoStage: false,
+  zonedBuckets: false,
+  timeHeatmap: false,
+  points: true,
+  savedCompute: computeRefusalForSuperset,
+};
 
 type Native = { datasetId: number; queries: ReturnType<typeof queryObjects>["queries"]; metric: Metric | null };
 

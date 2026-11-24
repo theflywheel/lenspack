@@ -63,7 +63,7 @@ describe("the system prompt's parts", () => {
   it("keeps replies after edits to plain sentences, and allows short lists and bold for an informational answer", async () => {
     const pack = await loadPack(tickets);
     const [stable] = systemParts(pack, catalogueFrom(pack));
-    expect(PROMPT_VERSION).toBe(19);
+    expect(PROMPT_VERSION).toBe(20);
     expect(stable).toContain("After edits, reply in one or two plain sentences with the outcome only.");
     expect(stable).toContain("may use a short bullet list and **bold**");
     expect(stable).toContain("Never use markdown headings.");
@@ -73,6 +73,10 @@ describe("the system prompt's parts", () => {
     expect(stable).toContain("the layout is done: do not resize anything unless the user asked for a size.");
     expect(stable).toContain("use the row numbers and width words from the tool notes");
     expect(stable).toContain("Never address the user by name.");
+    // A rate or change is computed from the measures there are, and the reply says what it was taken as.
+    expect(stable).toContain('never say one is not in the data before trying compute. "Burn rate per ward" is breakdown by ward');
+    expect(stable).toContain('"average day-on-day % change per ward" is breakdown by ward, grain day, compute "pct_change, mean"');
+    expect(stable).toContain("records counts only the records behind the groups shown");
   });
 });
 

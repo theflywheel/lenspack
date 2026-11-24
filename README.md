@@ -271,6 +271,7 @@ More in [docs/security.md](docs/security.md).
 
 - [Overview](docs/overview.md): the idea, the refusal, the three steps, the example packs and the claims CI holds
 - [Pack spec](docs/pack-spec.md) and [writing a pack](docs/writing-a-pack.md)
+- [Compute](docs/compute.md): rates, changes and averages over the pack's measures, worked out after the source answers
 - [Query IR](docs/query-ir.md), [SQL drivers](docs/drivers.md), [chat models](docs/llm.md)
 - [Security model](docs/security.md)
 

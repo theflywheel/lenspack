@@ -93,6 +93,24 @@ describe("an aggregate table", () => {
   });
 });
 
+describe("a computed answer", () => {
+  it("is labelled with what was computed, in a table and on a KPI", async () => {
+    const c = config([
+      { op: "add_widget", id: "t", widget: { kind: "table", title: "Per region", query: { kind: "breakdown", dimension: "region", measure: "count", limit: 12, sort: "desc", compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } }, pageSize: 10 } },
+      { op: "add_widget", id: "k", widget: { kind: "kpi", title: "Daily", aggregate: "last", query: { kind: "value", measure: "count", compute: { grain: "day", steps: [{ op: "change", percent: true }, { op: "over_time", fn: "mean" }] } } } },
+    ]);
+    const computed = "average daily count: a day with no records counts as 0";
+    const t: WidgetData = { rows: [{ group: "north", value: 2.5, count: 10 }], total: 10, format: "number", label: "average daily count", computed };
+    const k: WidgetData = { rows: [{ group: "count", value: 0.125, count: 10 }], total: 10, format: "percent", label: "average day-on-day % change in count" };
+    mount(c, { loadBoardData: async () => ({ t, k }) });
+    await waitFor(() => expect(screen.getByText("average daily count")).toBeTruthy());
+    expect(screen.getByText("average daily count").getAttribute("title")).toBe(computed);
+    expect(screen.getByText("2.5")).toBeTruthy();
+    expect(screen.getByText("average day-on-day % change in count")).toBeTruthy();
+    expect(screen.getByTestId("kpi-value").textContent).toBe("12.5%");
+  });
+});
+
 describe("a text widget", () => {
   it("renders markdown as elements, never markup from the text, and links safely", async () => {
     const body = 'A **bold** note\n\n- one\n- two\n\n<script>alert(1)</script> [docs](https://example.org) [x](javascript:alert(1))';
