@@ -76,46 +76,6 @@ export function verifiedOnly(catalogue: Catalogue): Catalogue {
 }
 
 /**
- * The catalogue as one caller may see it: without the keys they may not use.
- * A hierarchy stops above its first hidden level, so a drill never steps
- * into one.
- */
-export function withoutKeys(catalogue: Catalogue, hidden?: ReadonlySet<string>): Catalogue {
-  if (!hidden?.size) return catalogue;
-  const { hierarchies, ...rest } = catalogue;
-  const cut = Object.entries(hierarchies ?? {})
-    .map(([name, levels]) => {
-      const first = levels.findIndex((l) => hidden.has(l));
-      return [name, first < 0 ? levels : levels.slice(0, first)] as const;
-    })
-    .filter(([, levels]) => levels.length > 1);
-  return {
-    ...rest,
-    ...(cut.length ? { hierarchies: Object.fromEntries(cut) } : {}),
-    dimensions: catalogue.dimensions.filter((d) => !hidden.has(d.key)),
-    measures: catalogue.measures.filter((m) => !hidden.has(m.key)),
-  };
-}
-
-/**
- * A board as one caller may be shown it: a widget's filter on a key they may
- * not use keeps its key but not its value, which is that key's data. The
- * widget itself is refused when drawn; this keeps the value out of the config.
- */
-export function withoutHiddenValues<C extends { widgets: Record<string, unknown> }>(config: C, hidden?: ReadonlySet<string>): C {
-  if (!hidden?.size) return config;
-  const widgets = Object.fromEntries(
-    Object.entries(config.widgets).map(([id, w]) => {
-      const q = (w as { query?: { filters?: { dimension: string; value: unknown }[] } }).query;
-      if (!q?.filters?.some((f) => hidden.has(f.dimension))) return [id, w];
-      const filters = q.filters.map((f) => (hidden.has(f.dimension) ? { ...f, value: Array.isArray(f.value) ? ["(hidden)"] : "(hidden)" } : f));
-      return [id, { ...(w as object), query: { ...q, filters } }];
-    }),
-  );
-  return { ...config, widgets };
-}
-
-/**
  * Where a grouping stands under the current selections: a grouping at or above
  * the deepest selected level of its hierarchy steps one level below it (or
  * stays at the finest level). Used by the engine to build the drilled query

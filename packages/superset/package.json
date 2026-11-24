@@ -13,6 +13,6 @@
   "files": ["dist", "web", "plugin"],
   "sideEffects": false,
   "scripts": { "build": "tsup src/index.ts src/server.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
-  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/engine": "workspace:*", "@lenspack/serve": "workspace:*", "@lenspack/spec": "workspace:*", "yaml": "^2.6.1" },
+  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/engine": "workspace:*", "@lenspack/policy": "workspace:*", "@lenspack/serve": "workspace:*", "@lenspack/spec": "workspace:*", "yaml": "^2.6.1" },
   "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/superset" }
 }

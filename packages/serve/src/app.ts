@@ -3,13 +3,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, queryKeys, querySchema, summarise, withoutHiddenValues, withoutKeys } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
+import { type Principal, boardRights, decide, principalOf } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
 import type { Audit } from "./audit";
-import { type Access, type AuthAdapter, FULL_GRANT, type Grant, NO_RIGHTS, type PackRule, type Principal, type Rights, grantOf, withRights } from "./auth";
+import { type Access, type AuthAdapter, NO_RIGHTS, type PackRule, type Rights, withRights } from "./auth";
 import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson, serveStatic } from "./http";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
@@ -100,30 +101,7 @@ export type AppOptions = {
   language?: () => Omit<LanguagePolicy, "reply">;
 };
 
-const OPEN: Principal = { user: "anonymous", edit: true, maintain: true, usage: true };
-
-// The pack as the chat model is shown it: no example that uses a key the caller may not.
-const shownPacks = new WeakMap<Grant, Pack>();
-function packFor(pack: Pack, grant: Grant): Pack {
-  if (!grant.hidden.size) return pack;
-  let shown = shownPacks.get(grant);
-  if (!shown) {
-    const uses = (q: Pack["examples"][number]["query"]) => {
-      const k = queryKeys(q);
-      return [...k.dimensions, ...k.measures].some((x) => grant.hidden.has(x));
-    };
-    shownPacks.set(grant, (shown = { ...pack, examples: pack.examples.filter((e) => !uses(e.query)) }));
-  }
-  return shown;
-}
-
-// The pack's own boards (no owner) are everyone's to read and a maintainer's
-// to change. A board someone made is theirs to change, and everyone's to read
-// once they share it: everyone in their tenant, as one user name may sign in
-// under two tenants.
-const sameTenant = (b: Ownership, who: Principal) => (b.tenant ?? "") === (who.tenant ?? "");
-const visible = (b: Ownership, who: Principal) => !b.owner || (sameTenant(b, who) && (!!b.shared || b.owner === who.user));
-const writable = (b: Ownership, who: Principal) => (b.owner ? b.owner === who.user && sameTenant(b, who) && !!who.edit : !!who.maintain);
+const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
 const randomId = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 
 /**
@@ -200,10 +178,15 @@ export function pickEffort(p: Pickable, asked: string | null | undefined, fallba
   return fallback?.model === p.name && fallback.effort && p.efforts?.levels.includes(fallback.effort) ? fallback.effort : null;
 }
 
-/** Who a request is under these options: the sign-in adapter with the rights above it, or the access hook. */
-export function accessOf(opts: Pick<AppOptions, "auth" | "access" | "rights">): Access | undefined {
+/** Who a request is under these options, rights settled: the sign-in adapter with the rights above it, or the access hook. */
+export function accessOf(opts: Pick<AppOptions, "auth" | "access" | "rights">): ((req: IncomingMessage) => Promise<Principal | null>) | undefined {
   if (opts.auth && opts.access) throw new Error("createApp takes auth or access, not both");
-  return opts.auth ? withRights(opts.auth, opts.rights ?? NO_RIGHTS) : opts.access;
+  if (opts.auth) return withRights(opts.auth, opts.rights ?? NO_RIGHTS);
+  const hook = opts.access;
+  return hook && (async (req) => {
+    const id = await hook(req);
+    return id && principalOf(id);
+  });
 }
 
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
@@ -268,24 +251,22 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           return page.title ? html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(page.title)}</title>`) : html;
         }));
       }
-      const signedIn = access ? await access(req) : OPEN;
-      if (!signedIn) return json(res, 401, { error: "sign in to use this API" });
-      // What an access hook may leave implied, spelled out once: maintain implies edit; usage follows maintain unless set.
-      const who = { ...signedIn, edit: !!(signedIn.edit || signedIn.maintain), maintain: !!signedIn.maintain, usage: !!(signedIn.usage ?? signedIn.maintain) };
+      const who = access ? await access(req) : OPEN;
+      if (!who) return json(res, 401, { error: "sign in to use this API" });
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
-      const grantFor = (h: Host): Grant | null => (who.packs && !who.packs.includes(h.name) ? null : access ? grantOf(h.pack, h.access, who) : FULL_GRANT);
+      const decisionFor = (h: Host) => decide(who, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx });
       // The pack's own boards first, in board-file order; then people's, latest first.
       const boardsOf = async (h: Host) => {
         const order = (b: Ownership & { id: string }) => (b.owner ? h.boards.length : Math.max(0, h.boards.findIndex((f) => f.id === b.id)));
-        const listed = (await h.store.list()).filter((b) => visible(b, who));
-        return listed.map((b, i) => ({ b, i })).sort((x, y) => order(x.b) - order(y.b) || x.i - y.i).map(({ b }) => ({ ...b, writable: writable(b, who) }));
+        const listed = (await h.store.list()).filter((b) => boardRights(who, b).view);
+        return listed.map((b, i) => ({ b, i })).sort((x, y) => order(x.b) - order(y.b) || x.i - y.i).map(({ b }) => ({ ...b, writable: boardRights(who, b).edit }));
       };
       if (!packName) {
         const list = await Promise.all(
-          [...byName.values()].filter((h) => grantFor(h)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),
+          [...byName.values()].filter((h) => decisionFor(h)).map(async (h) => ({ example: h.name, source: h.connector.kind, description: h.pack.description, boards: await boardsOf(h) })),
         );
         // Absent on an open server: there is no one to name.
-        const me = access ? { user: who.user, edit: who.edit, maintain: who.maintain, usage: who.usage, ...(signOutUrl ? { signOut: signOutUrl } : {}) } : undefined;
+        const me = access ? { user: who.user, edit: who.edit, maintain: !!who.maintain, usage: who.usage, ...(signOutUrl ? { signOut: signOutUrl } : {}) } : undefined;
         return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), speech: speechInfo(), ...(me ? { me } : {}) });
       }
       // What chat has cost since the server started: for those given the usage right (maintainers, unless said otherwise), as it names every user.
@@ -346,21 +327,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
       }
       const h = byName.get(packName);
-      const grant = h ? grantFor(h) : null;
+      const d = h ? decisionFor(h) : null;
       // A pack the caller may not open looks the same as one that is not there.
-      if (!h || !grant) return json(res, 404, { error: "no such pack" });
-      // Everything the caller is shown of the pack's vocabulary leaves out what they may not use.
-      const catalogue = withoutKeys(h.catalogue, grant.hidden);
-      // Every board config they are sent keeps a hidden key's filter, not its value.
-      const shown = <B extends { config: BoardConfig } | null>(b: B): B => (b && grant.hidden.size ? { ...b, config: withoutHiddenValues(b.config, grant.hidden) } : b);
+      if (!h || !d) return json(res, 404, { error: "no such pack" });
+      // Everything the caller is shown of the pack's vocabulary leaves out what they may not use;
+      // every board config they are sent keeps a hidden key's filter, not its value (d.board).
+      const catalogue = d.catalogue(h.catalogue);
+      const shown = d.board;
       // The caller's tenant may narrow a pack, never move a pinned one elsewhere.
-      if (who.tenant && h.ctx.tenant && who.tenant !== h.ctx.tenant) {
+      if (d.otherTenant) {
         audit({ user: who.user, pack: packName, action: "open", outcome: "denied", detail: "tenant" });
         return json(res, 403, { error: "this pack belongs to another tenant" });
       }
-      // The caller's scope and their grant's narrow every query; hidden keys are refused in resolution, on every path.
-      const scope = [...(h.ctx.scope ?? []), ...(who.scope ?? []), ...grant.scope];
-      const ctx = { ...h.ctx, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(grant.hidden.size ? { hidden: grant.hidden } : {}) };
+      // The decided scope narrows every query; hidden keys are refused in resolution, on every path.
+      const ctx = d.ctx;
       const run = { pack: h.pack, connector: h.connector, ctx };
       // Everything but reading changes a board: those need the edit right.
       const writes = req.method !== "GET" && req.method !== "HEAD";
@@ -372,7 +352,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, instructions: h.pack.instructions, boards: await boardsOf(h), catalogue });
       // The pack file defines every key: not for a caller some are hidden from.
-      if (boardId === "pack") return grant.hidden.size ? json(res, 403, { error: "the pack file is not shown to you" }) : json(res, 200, { yaml: h.packYaml });
+      if (boardId === "pack") return d.hidden.size ? json(res, 403, { error: "the pack file is not shown to you" }) : json(res, 200, { yaml: h.packYaml });
       // Compile one query without running it: the real native query, or the
       // real refusal.
       if (boardId === "explain" && req.method === "GET") {
@@ -380,7 +360,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const query = querySchema.parse(JSON.parse(url.searchParams.get("q") ?? "{}"));
           const e = await explain(query, run);
           // The compiled statement reads like the pack file, which such a caller is not shown either.
-          if (grant.hidden.size) return json(res, 200, { ok: true, source: h.connector.kind, entities: e.entities, approximate: e.approximate });
+          if (d.hidden.size) return json(res, 200, { ok: true, source: h.connector.kind, entities: e.entities, approximate: e.approximate });
           return json(res, 200, { ok: true, source: h.connector.kind, sql: e.text, native: e.text, entities: e.entities, approximate: e.approximate });
         } catch (e) {
           if (e instanceof ResolveError) return json(res, 200, { ok: false, code: e.code, error: e.message, nearest: e.nearest, key: e.key });
@@ -398,7 +378,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       const board = await h.store.get(boardId);
       // A board the caller may not see looks the same as one that is not there.
-      if (!board || !visible(board, who)) return json(res, 404, { error: "no such board" });
+      const rights = board ? boardRights(who, board) : { view: false, edit: false };
+      if (!board || !rights.view) return json(res, 404, { error: "no such board" });
       // Anything the caller can see, they can make their own.
       if (req.method === "POST" && action === "copy") {
         const body = (await read(req)) as { title?: string };
@@ -408,7 +389,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         audit({ user: who.user, pack: packName, board: copy.id, action: "copy", outcome: "ok", detail: `from ${boardId}` });
         return json(res, 200, { id: copy.id, version: copy.version });
       }
-      if (writes && !writable(board, who) && !readOnlyChat) {
+      if (writes && !rights.edit && !readOnlyChat) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? ""}`.trim(), outcome: "denied", detail: board.owner ? "owner" : "pack board" });
         return json(res, 403, { error: board.owner ? `This board is ${board.owner}'s: save a copy to change it` : "This is the pack's own board: save a copy to change it" });
       }
@@ -423,7 +404,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // ?include=data,options: everything the first paint needs, in one
           // response, instead of a board request followed by two more.
           const include = new Set((url.searchParams.get("include") ?? "").split(",").filter(Boolean));
-          const mine = writable(board, who);
+          const mine = rights.edit;
           if (include.size === 0) return json(res, 200, { board: shown(board), catalogue, writable: mine });
           const [data, options] = await Promise.all([
             include.has("data") ? resolveBoard(board.config, run) : undefined,
@@ -486,7 +467,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, pack: packFor(h.pack, grant), catalogue, ctx }, board.config, board.version, boardId, who.user, writable(board, who) ? undefined : who.readOnly);
+          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, board.config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {

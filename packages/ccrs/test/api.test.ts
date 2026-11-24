@@ -6,7 +6,7 @@ import type { Query } from "@lenspack/core";
 import { type Connector, SQL_CAPABILITIES } from "@lenspack/engine";
 import { describe, expect, it } from "vitest";
 
-import { ccrsApi, compileCcrs } from "../src";
+import { type RowScope, ccrsApi, compileCcrs, scopeFilters } from "../src";
 
 // The adapter's request rules, as pgr-services' KpiQueryComposer applies them,
 // checked on the queries it sends: a recording connector answers every one
@@ -97,5 +97,54 @@ describe("the CCRS analytics API on lenspack", () => {
   it("refuses a malformed date range per reference", async () => {
     const r = await ask("cl_chart_complaints_by_type", { dateFrom: "2026-09-10", dateTo: "2026-09-01" });
     expect(r.result).toMatchObject({ error: "invalid_param" });
+  });
+});
+
+describe("who sees what: CCRS's grants and row scope, through policy", () => {
+  // A recording connector that keeps the filters each query was bound with, scope included.
+  function scoped(caps: string[] | null, scope: RowScope | null) {
+    const bound: { key: string; op: string; value: unknown }[][] = [];
+    const connector: Connector = {
+      kind: "postgres",
+      capabilities: SQL_CAPABILITIES,
+      compile: (b) => ({ text: "", native: null, bound: b }),
+      execute: async (plan) => {
+        if (!(plan.bound.query.kind === "value" && plan.bound.query.measure === "facts_built_at")) bound.push(plan.bound.filters.map((f) => ({ key: f.dimension.def.key, op: f.op, value: f.value })));
+        return { rows: [{ group: "x", value: 1, count: 1 }], total: 1, format: "number" };
+      },
+    };
+    const api = ccrsApi({ pack: compiled.pack, connector, skin: compiled.skin, boards: [], tenant: "ke", now: () => NOW, capabilities: async () => caps, scope: async () => scope });
+    return { api, bound };
+  }
+  const QUERY = "/pgr-services/v2/analytics/_query";
+
+  it("narrows every query, inline ones too, by the caller's scope; a param cannot drop it", async () => {
+    const { api, bound } = scoped(null, { departments: ["D1"], jurisdictions: ["ke.nairobi"] });
+    await api("/_query", { queries: { k: { kpiId: "cl_chart_complaints_by_type", params: { ward: "W1" } } } });
+    expect(bound.length).toBeGreaterThan(0);
+    for (const filters of bound) {
+      expect(filters).toContainEqual({ key: "department_code", op: "in", value: ["D1"] });
+      expect(filters).toContainEqual({ key: "boundary_path", op: "segment", value: ["ke.nairobi"] });
+    }
+    bound.length = 0;
+    await api("/_query", { queries: { k: { dimensions: ["ward_code"], measures: [{ name: "n", agg: "count" }] } } });
+    expect(bound[0]).toContainEqual({ key: "department_code", op: "in", value: ["D1"] });
+  });
+
+  it("admits no rows for an empty scope list", () => {
+    expect(scopeFilters({ departments: [] })).toEqual([{ dimension: "department_code", op: "in", value: ["\u0000none"] }]);
+    expect(scopeFilters({ accountId: "u1" })).toEqual([{ dimension: "account_id", op: "eq", value: "u1" }]);
+    expect(scopeFilters(null)).toEqual([]);
+  });
+
+  it("shows a caller only the tiles and inline queries their grants allow", async () => {
+    const none = scoped([], null).api;
+    expect(((await none("/_query", { queries: { k: { dimensions: ["ward_code"], measures: [{ name: "n", agg: "count" }] } } })).body as any).results.k).toMatchObject({ error: "kpi_forbidden" });
+    expect(((await none("/catalog/_search", {})).body as any).total).toBe(0);
+    const querier = scoped([QUERY], null).api;
+    expect(((await querier("/_query", { queries: { k: { dimensions: ["ward_code"], measures: [{ name: "n", agg: "count" }] } } })).body as any).results.k.error).toBeUndefined();
+    expect(((await querier("/catalog/_search", {})).body as any).total).toBeGreaterThan(0);
+    const trusted = scoped(null, null).api;
+    expect(((await trusted("/catalog/_search", {})).body as any).total).toBe(Object.keys(compiled.skin.tiles).length);
   });
 });

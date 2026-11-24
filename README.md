@@ -55,18 +55,19 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 |---|---|---|
 | `@lenspack/core` | board config schema, the query IR, the eight ops, packing, validation, `nearest()`, in-memory store | zod |
 | `@lenspack/spec` | pack loader: YAML/JSON → validated catalogue | core |
+| `@lenspack/policy` | who may see and change what: `principalOf()`, `decide()` (row scope, hidden keys, the pack and catalogue as one caller sees them), `boardRights()`. Pure; the engine enforces what it decides | core, spec |
 | `@lenspack/engine` | the backend-neutral half: resolve (keys, join paths, fan-out refusal, tenancy, time, capability refusals), the `Connector` interface, `run` / `explain` / `checkOps`, cross-entity ratios | core, spec |
 | `@lenspack/sql` | `sqlConnector()` and the driver registry: compiler (plan → print) and read-only drivers for **Postgres, DuckDB, SQLite, MySQL/MariaDB and ClickHouse**, chosen by connection URL; cache, SQL board store | engine |
 | `@lenspack/elasticsearch` | `elasticsearchConnector()`: the IR as aggregations over plain HTTP — **Elasticsearch 6.x–8.x and OpenSearch**; text→keyword from the mapping; approximate aggregations flagged ≈ | engine |
 | `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; a chart adapter seam with a zero-dependency SVG adapter (the default) and **recharts**; any other library is one component | core, react-grid-layout (recharts is an optional peer) |
-| `@lenspack/agent` | `boardTools()` — provider-agnostic tool definitions over any `Connector`, edits queued and checked before they land — plus `toVercelAI()` | core, spec, engine |
+| `@lenspack/agent` | `boardTools()` — provider-agnostic tool definitions over any `Connector`, edits queued and checked before they land — plus `toVercelAI()` | core, spec, engine, policy |
 | `@lenspack/mcp` | `createMcpServer()` and the `lenspack-mcp` CLI (stdio or streamable HTTP); re-exports `@lenspack/agent` | agent, sql |
 | `@lenspack/serve` | the `lenspack` CLI: `serve` (board API + chat with review, from a `lenspack.yaml`), `check`, `sources`, `dss` | all of the above |
 | `@lenspack/dss` | compiles DIGIT DSS `ChartApiConfig.json` into a pack and boards, with a report of what did not translate | core, spec, engine |
 
 ## Installing from GitHub Packages
 
-Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `spec`, `engine`, `sql`, `elasticsearch`, `react`, `agent`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
+Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `spec`, `policy`, `engine`, `sql`, `elasticsearch`, `react`, `agent`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
 
 ```ini
 @theflywheel:registry=https://npm.pkg.github.com

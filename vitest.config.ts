@@ -15,6 +15,7 @@ export default defineConfig({
       { find: "@lenspack/sql/clickhouse", replacement: pkg("sql", "executors/clickhouse.ts") },
       { find: "@lenspack/core", replacement: pkg("core") },
       { find: "@lenspack/spec", replacement: pkg("spec") },
+      { find: "@lenspack/policy", replacement: pkg("policy") },
       { find: "@lenspack/engine", replacement: pkg("engine") },
       { find: "@lenspack/elasticsearch", replacement: pkg("elasticsearch") },
       { find: "@lenspack/superset", replacement: pkg("superset") },

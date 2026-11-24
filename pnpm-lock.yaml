@@ -148,6 +148,9 @@ importers:
       '@lenspack/engine':
         specifier: workspace:*
         version: link:../engine
+      '@lenspack/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@lenspack/spec':
         specifier: workspace:*
         version: link:../spec
@@ -167,6 +170,9 @@ importers:
       '@lenspack/engine':
         specifier: workspace:*
         version: link:../engine
+      '@lenspack/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@lenspack/spec':
         specifier: workspace:*
         version: link:../spec
@@ -240,6 +246,18 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
+  packages/policy:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@lenspack/spec':
+        specifier: workspace:*
+        version: link:../spec
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
   packages/react:
     dependencies:
       '@lenspack/core':
@@ -297,6 +315,9 @@ importers:
       '@lenspack/engine':
         specifier: workspace:*
         version: link:../engine
+      '@lenspack/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@lenspack/spec':
         specifier: workspace:*
         version: link:../spec
@@ -377,6 +398,9 @@ importers:
       '@lenspack/engine':
         specifier: workspace:*
         version: link:../engine
+      '@lenspack/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@lenspack/serve':
         specifier: workspace:*
         version: link:../serve
