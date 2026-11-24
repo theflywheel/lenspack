@@ -12,7 +12,6 @@ type State = {
   board: Board;
   catalogue: Catalogue;
   data: Record<string, WidgetData>;
-  loading: boolean;
   selections: Record<string, string>;
   setSelection(field: string, value: string): void;
   /** Select a value on a hierarchy level (clearing finer levels): a drill-down. */
@@ -85,7 +84,6 @@ export function BoardProvider({
   const board = React.useMemo(() => (previewing ? { ...current, config: previewing.config, version: previewing.version } : current), [current, previewing]);
   const editable = editableProp && !previewing;
   const [data, setData] = React.useState<Record<string, WidgetData>>({});
-  const [loading, setLoading] = React.useState(true);
   const [selections, setSelections] = React.useState(initialSelections);
 
   React.useEffect(() => setBoard(initial), [initial]);
@@ -95,14 +93,9 @@ export function BoardProvider({
   const seq = React.useRef(0);
   const load = React.useCallback(async () => {
     const my = ++seq.current;
-    setLoading(true);
-    try {
-      const next = await host.loadBoardData(board.config, selections);
-      if (my === seq.current) setData(next);
-    } finally {
-      if (my === seq.current) setLoading(false);
-    }
-  }, [host, board.config, selections]);
+    const next = await host.loadBoardData(board.config, selections);
+    if (my === seq.current) setData(next);
+  },[host, board.config, selections]);
 
   React.useEffect(() => {
     void load();
@@ -172,8 +165,8 @@ export function BoardProvider({
   }, [onSelectionsChange]);
 
   const value = React.useMemo<State>(
-    () => ({ board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, previewing, preview: setPreviewing, currency, charts, mapTiles }),
-    [board, catalogue, data, loading, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, previewing, currency, charts, mapTiles],
+    () => ({ board, catalogue, data, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, previewing, preview: setPreviewing, currency, charts, mapTiles }),
+    [board, catalogue, data, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, previewing, currency, charts, mapTiles],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

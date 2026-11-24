@@ -125,4 +125,3 @@ function SvgChart({ spec }: { spec: ChartSpec }) {
 }
 
 export const svgAdapter: ChartAdapter = { name: "svg", Chart: SvgChart };
-export default svgAdapter;

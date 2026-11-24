@@ -19,8 +19,6 @@ In the demo, review runs on every turn but healing is opt-in (`?rounds=2`); the 
 
 `--escalate <name>` runs the heal round on a larger model instead of the builder: small model first, big model only when the reviewer is not satisfied.
 
-`--visual <name>` is the optional extra: Playwright screenshots the resulting board through the demo server (`--demo`, default `http://127.0.0.1:8787`) and a vision model judges it against a fixed rubric.
-
 ## Suites: accuracy against frozen truth
 
 `pnpm eval:suite` scores answers rather than tool use. A suite (`evals/suites/*.yaml`, or a deployment's own file kept outside this repo) lists questions in a user's words. Each one says what a right query looks like and where the true answer comes from. Truth is SQL run straight against the database, never through Lenspack, and is frozen in a truth file: the runner refuses a truth file from another suite and prints its data fingerprint with the results.

@@ -57,9 +57,6 @@ importers:
 
   examples/demo:
     dependencies:
-      '@ai-sdk/openai-compatible':
-        specifier: ^3.0.53
-        version: 3.0.53(zod@3.25.76)
       '@ai-sdk/react':
         specifier: ^4.0.112
         version: 4.0.112(react@19.3.0)(zod@3.25.76)
@@ -78,9 +75,6 @@ importers:
       '@lenspack/serve':
         specifier: workspace:*
         version: link:../../packages/serve
-      '@lenspack/spec':
-        specifier: workspace:*
-        version: link:../../packages/spec
       '@lenspack/sql':
         specifier: workspace:*
         version: link:../../packages/sql
@@ -111,12 +105,6 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.3.0(react@19.3.0)
-      react-grid-layout:
-        specifier: ^1.5.4
-        version: 1.5.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      react-resizable:
-        specifier: ^3.0.5
-        version: 3.2.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       recharts:
         specifier: ^3.10.1
         version: 3.10.1(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@18.3.1)(react@19.3.0)(redux@5.0.1)
@@ -133,9 +121,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.2
         version: 19.3.0(@types/react@19.3.0)
-      '@types/react-grid-layout':
-        specifier: ^1.3.5
-        version: 1.3.6
       '@vitejs/plugin-react':
         specifier: ^4.3.4
         version: 4.7.0(vite@6.4.3(@types/node@22.20.4)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15)(yaml@2.9.1))

@@ -1,4 +1,4 @@
-import type { BoardConfig, Query, TimeRange } from "./schema";
+import { type BoardConfig, type Query, type TimeRange, WIDTHS } from "./schema";
 
 // A compact picture of the board rather than its JSON. The model works from
 // this by default and only asks for detail when it edits — which is what keeps
@@ -92,11 +92,10 @@ export function layoutChanges(before: BoardConfig, after: BoardConfig, ops: { op
   const named = new Set(ops.map((op) => op.id).filter((id): id is string => !!id));
   const moved = [...new Set(ops.filter((op) => op.op === "move_widget" && op.id).map((op) => op.id!))];
   const laidOut = [...new Set(ops.filter((op) => (op.op === "move_widget" || op.op === "resize_widget") && op.id).map((op) => op.id!))];
-  const units: Record<string, number> = { full: 12, half: 6, third: 4, quarter: 3 };
   const asked = new Map<string, number>();
   for (const op of ops) {
     const width = op.op === "resize_widget" ? op.width : op.op === "move_widget" ? op.placement?.width : undefined;
-    if (op.id && width !== undefined) asked.set(op.id, typeof width === "number" ? width : (units[String(width)] ?? 0));
+    if (op.id && width !== undefined) asked.set(op.id, typeof width === "number" ? width : (WIDTHS[String(width)] ?? 0));
   }
   const notes: string[] = [];
   for (const id of moved) {

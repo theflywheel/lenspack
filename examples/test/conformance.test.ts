@@ -154,7 +154,6 @@ for (const name of NAMES) {
   });
 
   describe(`${name}: every dimension × measure × shape compiles or refuses with a reason`, () => {
-    const dims = pack.dimensions.filter((d) => d.type !== "time");
     for (const m of pack.measures) {
       it(`measure ${m.key}`, async () => {
         const executor = duck[name]!.executor;

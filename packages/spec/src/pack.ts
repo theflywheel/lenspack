@@ -1,7 +1,9 @@
-import { queryKeys, querySchema } from "@lenspack/core";
+import { DIMENSION_TYPES, FORMATS, GRAINS, queryKeys, querySchema } from "@lenspack/core";
 import { z } from "zod";
 
-import { ExprError, expandExpr, operands, parseExpr } from "./expr";
+import { expandExpr, operands, parseExpr } from "./expr";
+
+export { FORMATS, GRAINS } from "@lenspack/core";
 
 // The pack is the only place a domain is described. Humans write it; it is
 // reviewed in git; the model only ever names keys from it. The `sql` fragments
@@ -20,8 +22,6 @@ const column = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a column name");
 export const fieldPath = z.string().regex(/^[A-Za-z_@][A-Za-z0-9_@]*(\.[A-Za-z_@][A-Za-z0-9_@]*)*$/, 'a column or field path, e.g. "region" or "attrs.region.keyword"');
 
 export const AGGS = ["count", "count_distinct", "sum", "avg", "min", "max", "median", "p90"] as const;
-export const FORMATS = ["number", "percent", "currency", "compact", "duration"] as const;
-export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as const;
 
 // A fragment is one string, or one per dialect when the engines genuinely
 // differ (a date difference, a regex). `default` covers the rest. A driver
@@ -45,21 +45,11 @@ export const fragmentSchema = z.union([
 ]);
 export type Fragment = z.infer<typeof fragmentSchema>;
 
-// The dialects a bare string (or `default`) serves. Every SQL driver adds its
-// own when it is registered; a search engine never does.
-const SQL_DIALECTS = new Set(["postgres", "duckdb", "mysql", "sqlite", "clickhouse"]);
-export const registerSqlDialect = (dialect: string) => void SQL_DIALECTS.add(dialect);
-export const isSqlDialect = (dialect: string) => SQL_DIALECTS.has(dialect);
-
-export function fragmentFor(fragment: Fragment, dialect: string): string {
-  const chosen = maybeFragmentFor(fragment, dialect);
-  if (!chosen) throw new Error(`No fragment for dialect "${dialect}"`);
-  return chosen;
-}
-
-/** A bare string is SQL: it serves every SQL dialect but never a non-SQL one. */
-export function maybeFragmentFor(fragment: Fragment, dialect: string): string | undefined {
-  const sql = isSqlDialect(dialect);
+/**
+ * The fragment for a dialect. A bare string (or `default`) is SQL: it serves
+ * a reader that prints SQL (`sql`), never a search engine or other host.
+ */
+export function maybeFragmentFor(fragment: Fragment, dialect: string, sql = false): string | undefined {
   if (typeof fragment === "string") return sql ? fragment : undefined;
   return (fragment as Record<string, string | undefined>)[dialect] ?? (sql ? fragment.default : undefined);
 }
@@ -129,7 +119,7 @@ export const dimensionSchema = z
     // lets one "region" group measures that live on different entities, and
     // what a cross-entity ratio joins its two sides on.
     also: z.record(slug, z.object(dimensionSource).refine(oneSource, { message: "exactly one of field, sql or json" })).optional(),
-    type: z.enum(["string", "number", "boolean", "time", "enum"]).default("string"),
+    type: z.enum(DIMENSION_TYPES).default("string"),
     grains: z.array(z.enum(GRAINS)).optional(),
     ...named,
   })
@@ -245,7 +235,6 @@ export type Pack = z.infer<typeof packSchema>;
 export type PackEntity = z.infer<typeof entitySchema>;
 export type PackDimension = z.infer<typeof dimensionSchema>;
 export type PackMeasure = z.infer<typeof measureSchema>;
-export type PackJoin = z.infer<typeof joinSchema>;
 
 /** An entity's tenant column and how a tenant id matches it. */
 export function tenantOf(entity: PackEntity): { field: string; match: "exact" | "subtree" } | null {
@@ -262,13 +251,6 @@ export function parseJoinOn(on: string): ParsedJoin {
   const [le, lc] = l.split(".") as [string, string];
   const [re, rc] = r.split(".") as [string, string];
   return { left: { entity: le, column: lc }, right: { entity: re, column: rc } };
-}
-
-/** A two-operand ratio's parts; other expressions go through parseExpr. */
-export function parseDerived(expr: string): { numerator: string; denominator: string } {
-  const e = parseExpr(expr);
-  if (e.t === "op" && e.op === "/" && e.l.t === "measure" && e.r.t === "measure") return { numerator: e.l.key, denominator: e.r.key };
-  throw new ExprError(`"${expr}" is not a ratio of two measures`);
 }
 
 export type PackProblem = { path: string; message: string };

@@ -1,5 +1,5 @@
 import type { FilterClause, Query } from "@lenspack/core";
-import { type Connector, type Ctx, type WidgetData, addDays, localDate, run, startOfLocalDay } from "@lenspack/engine";
+import { type Connector, type WidgetData, addDays, localDate, run, startOfLocalDay } from "@lenspack/engine";
 import type { Pack } from "@lenspack/spec";
 
 import type { Skin, SkinTile } from "./index";
@@ -41,11 +41,11 @@ type Result = { grain: string; columns: string[]; rows: Record<string, unknown>[
 
 const ACTION = "/pgr-services/v2/analytics";
 const MAX_BATCH = 50;
-const MAX_HIER_LEVEL = 12;
+export const MAX_HIER_LEVEL = 12;
 const MAX_SERIES_DAYS = 366;
 // Rows fetched for a grouped daily series before CCRS's own order and cap apply.
 const SERIES_FETCH = 500;
-const DATE_COLUMNS = new Set(["created_date", "occurred_date", "snapshot_date"]);
+export const DATE_COLUMNS = new Set(["created_date", "occurred_date", "snapshot_date"]);
 
 // CCRS rounds ratios to four places in SQL; the same rounding here keeps
 // every printed digit the same.
@@ -54,7 +54,7 @@ const round4 = (v: number | null) => (v === null ? null : Math.round(v * 10_000)
 export function ccrsApi(opts: CcrsApiOptions) {
   const tz = opts.pack.timeZone ?? "UTC";
   const now = () => (opts.now ? opts.now() : new Date());
-  const ctx = (): Ctx => ({ tenant: opts.tenant, now: now() });
+  const exec = (q: Query) => run(q, { pack: opts.pack, connector: opts.connector, ctx: { tenant: opts.tenant, now: now() } });
   const measureOf = (key: string) => opts.pack.measures.find((m) => m.key === key);
   const isRatio = (key: string) => {
     const m = measureOf(key);
@@ -104,37 +104,25 @@ export function ccrsApi(opts: CcrsApiOptions) {
         return null;
     }
   };
-  /** The window a request reads: its date range, else its window param, else the KPI's own. */
-  const windowFor = (tile: SkinTile, params: Record<string, string>): { from: Date; to: Date } | null => {
-    if (tile.live) return null;
-    if (params.dateFrom && params.dateTo) return { from: startOfLocalDay(params.dateFrom, tz), to: startOfLocalDay(addDays(params.dateTo, 1), tz) };
-    const name = params.window ?? tile.window;
-    if (!name || name === "all") return null;
-    const at = now();
-    const rolling = /^last_(\d+)d$/.exec(name);
-    if (rolling) return { from: new Date(at.getTime() - Number(rolling[1]) * 86_400_000), to: at };
-    const start = startOf(name, localDate(at, tz));
-    return start ? { from: startOfLocalDay(start, tz), to: at } : null;
-  };
   type Win = { from: Date; to: Date };
   /** A dateFrom/dateTo pair: local calendar dates, dateTo inclusive. */
   const rangeOf = (params: Record<string, string>): { from: string; to: string; days: number; win: Win } | null => {
     if (!params.dateFrom || !params.dateTo) return null;
     const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
     if (!ok(params.dateFrom) || !ok(params.dateTo) || params.dateFrom > params.dateTo)
-      throw Object.assign(new Error("invalid_param: dateFrom/dateTo is not a valid yyyy-MM-dd range"), { status: 400, perRef: true });
+      throw Object.assign(new Error("invalid_param: dateFrom/dateTo is not a valid yyyy-MM-dd range"), { status: 400 });
     const days = Math.round((Date.parse(`${params.dateTo}T00:00:00Z`) - Date.parse(`${params.dateFrom}T00:00:00Z`)) / 86_400_000) + 1;
     return { from: params.dateFrom, to: params.dateTo, days, win: { from: startOfLocalDay(params.dateFrom, tz), to: startOfLocalDay(addDays(params.dateTo, 1), tz) } };
   };
-  /** A named window (last_Nd, dtd, wtd, …) ending now; null for all. */
-  const windowNamed = (name: string): Win | null => {
+  /** A named window (last_Nd, dtd, wtd, …) ending now; null for all. An unknown name is refused, or null when not `strict`. */
+  const windowNamed = (name: string, strict = true): Win | null => {
     if (name === "all" || name === "live") return null;
     const at = now();
     const rolling = /^last_(\d+)d$/.exec(name);
     if (rolling) return { from: new Date(at.getTime() - Number(rolling[1]) * 86_400_000), to: at };
     const start = startOf(name, localDate(at, tz));
-    if (!start) throw Object.assign(new Error(`invalid_param: unknown window '${name}'`), { status: 400, perRef: true });
-    return { from: startOfLocalDay(start, tz), to: at };
+    if (!start && strict) throw Object.assign(new Error(`invalid_param: unknown window '${name}'`), { status: 400 });
+    return start ? { from: startOfLocalDay(start, tz), to: at } : null;
   };
   /** A pinned window's first day and today, in the tenant's calendar. */
   const pinOf = (name: string) => {
@@ -144,12 +132,8 @@ export function ccrsApi(opts: CcrsApiOptions) {
     return { startDate, today };
   };
   /** The prior period: the span before a date range, or the previous calendar week. */
-  const priorFor = (tile: SkinTile, params: Record<string, string>): { from: Date; to: Date } | null => {
-    if (params.dateFrom && params.dateTo) {
-      const from = startOfLocalDay(params.dateFrom, tz);
-      const to = startOfLocalDay(addDays(params.dateTo, 1), tz);
-      return { from: new Date(from.getTime() - (to.getTime() - from.getTime())), to: from };
-    }
+  const priorFor = (range: Win | undefined): Win => {
+    if (range) return { from: new Date(range.from.getTime() - (range.to.getTime() - range.from.getTime())), to: range.from };
     const thisMonday = startOf("wtd", localDate(now(), tz))!;
     return { from: startOfLocalDay(addDays(thisMonday, -7), tz), to: startOfLocalDay(thisMonday, tz) };
   };
@@ -161,7 +145,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
     const filters: FilterClause[] = [...((q as { filters?: FilterClause[] }).filters ?? [])];
     // The caller's rows, as CCRS scopes them. An empty list admits nothing.
     if (scope?.departments) filters.push({ dimension: "department_code", op: "in", value: scope.departments.length ? scope.departments : ["\u0000none"] });
-    if (scope?.jurisdictions) filters.push({ dimension: "boundary_path", op: "segment", value: scope.jurisdictions.length ? scope.jurisdictions : ["\u0000none"] } as unknown as FilterClause);
+    if (scope?.jurisdictions) filters.push({ dimension: "boundary_path", op: "segment", value: scope.jurisdictions.length ? scope.jurisdictions : ["\u0000none"] });
     if (scope?.accountId) filters.push({ dimension: "account_id", op: "eq", value: scope.accountId });
     // The KPI's own filters narrow the rows, as CCRS's WHERE does.
     for (const f of tile.rowFilters ?? []) if (!filters.some((x) => x.dimension === f.dimension && x.op === f.op)) filters.push(f as FilterClause);
@@ -175,7 +159,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
     if (params.ward && params.ward !== "all") narrow("ward_code", "eq", params.ward, "ward");
     if (params.serviceCode && params.serviceCode !== "all") narrow("service_code", "eq", params.serviceCode, "serviceCode");
     if (params.complaintPath && !/^[A-Za-z0-9._/\-]{1,256}$/.test(params.complaintPath))
-      throw Object.assign(new Error("invalid_param: complaintPath must match ^[A-Za-z0-9._/\\-]{1,256}$"), { status: 400, perRef: true });
+      throw Object.assign(new Error("invalid_param: complaintPath must match ^[A-Za-z0-9._/\\-]{1,256}$"), { status: 400 });
     if (params.complaintPath) {
       if (tile.grain === "daily") ignored.push("complaintPath");
       else narrow("complaint_node_path", "subtree", params.complaintPath, "complaintPath");
@@ -187,7 +171,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
     // names) is dropped, as pgr-services does.
     const level = params.hierLevel ?? tile.hierLevel;
     if (level && level !== "leaf" && !(/^\d+$/.test(level) && Number(level) >= 1 && Number(level) <= MAX_HIER_LEVEL))
-      throw Object.assign(new Error(`invalid_param: hierLevel must be 'leaf' or an integer in 1..${MAX_HIER_LEVEL}`), { status: 400, perRef: true });
+      throw Object.assign(new Error(`invalid_param: hierLevel must be 'leaf' or an integer in 1..${MAX_HIER_LEVEL}`), { status: 400 });
     let dims = tile.dimensions;
     if (level && tile.grain !== "daily" && dims.includes("service_code")) {
       const dim = level === "leaf" ? "service_code" : `service_type_l${level}`;
@@ -203,7 +187,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
     return { q, ignored, dims };
   };
 
-  const withWindow = (q: Query, w: { from: Date; to: Date } | null): Query => {
+  const withWindow = (q: Query, w: Win | null): Query => {
     const { time: _t, compare: _c, ...rest } = q as Query & { time?: unknown; compare?: unknown };
     return (w ? { ...rest, time: { from: w.from.toISOString(), to: w.to.toISOString() } } : rest) as Query;
   };
@@ -214,11 +198,12 @@ export function ccrsApi(opts: CcrsApiOptions) {
     return v;
   };
 
+  // Measures in the KPI's own order, as pgr-services selects them.
+  const ordered = (tile: SkinTile, names: string[]) => (tile.measureOrder?.length ? [...names].sort((a, b) => tile.measureOrder.indexOf(a) - tile.measureOrder.indexOf(b)) : names);
+
   /** lenspack's widget data → CCRS's { columns, rows } in the KPI's own column names. */
   const toResult = (tile: SkinTile, q: Query, data: WidgetData, grain: string, started: number, ignored: string[]): Result => {
     const cols = tile.columns;
-    // Measures in the KPI's own order, as pgr-services selects them.
-    const order = (names: string[]) => (tile.measureOrder?.length ? [...names].sort((a, b) => tile.measureOrder.indexOf(a) - tile.measureOrder.indexOf(b)) : names);
     let columns: string[];
     let rows: Record<string, unknown>[];
     if (data.records) {
@@ -228,7 +213,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
       rows = data.records.map((r) => Object.fromEntries(columns.map((c, i) => [c, c in fixed ? fixed[c] : cell(c, r[src[i] ?? c])])));
     } else if (q.kind === "value") {
       const extras = Object.entries(cols.extras);
-      columns = order([cols.value, ...extras.map(([, name]) => name)]);
+      columns = ordered(tile, [cols.value, ...extras.map(([, name]) => name)]);
       const r = data.rows[0];
       rows = r ? [{ [cols.value]: cell(cols.value, r.value, q.measure), ...Object.fromEntries(extras.map(([key, name]) => [name, cell(name, r.values?.[key] ?? null, key)])) }] : [];
     } else {
@@ -237,7 +222,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
       // A rolled-up KPI loses its split (service_group) along with the leaf type.
       const split = (q as { by?: string }).by ? cols.series : undefined;
       const dims = [cols.group, split].filter((d): d is string => !!d);
-      columns = [...dims, ...order([cols.value, ...extras.map(([, name]) => name)])];
+      columns = [...dims, ...ordered(tile, [cols.value, ...extras.map(([, name]) => name)])];
       rows = data.rows.map((r) => ({
         ...(cols.group ? { [cols.group]: cell(cols.group, r.group === "(none)" ? null : r.group) } : {}),
         ...(split ? { [split]: cell(split, r.series === "(none)" ? null : r.series) } : {}),
@@ -261,13 +246,13 @@ export function ccrsApi(opts: CcrsApiOptions) {
       return { error: "unsupported_query", message: "unsupported_query: only distinct values of one dimension with a count are answered inline" };
     const tile = { dimensions: [dim], grain: "facts", live: true, query: { kind: "breakdown", dimension: dim, measure: "complaints", limit: Math.min(1000, ref.limit ?? 1000), sort: "desc", sortBy: "none" } } as unknown as SkinTile;
     const { q } = build(tile, {}, false, scope);
-    const data = await run(q, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
+    const data = await exec(q);
     if (data.error) return { error: "query_failed", message: data.error };
     const rows = data.rows.map((r) => ({ [dim]: r.group === "(none)" ? null : r.group, [measure.name]: r.value }));
     return { grain: ref.grain ?? "facts", columns: [dim, measure.name], rows, rowCount: rows.length, tookMs: Date.now() - started };
   };
 
-  const runRef = async (name: string, ref: Ref, isPublic: boolean, caps: string[] | null, scope: RowScope | null): Promise<Result | { error: string; message: string }> => {
+  const runRef = async (ref: Ref, isPublic: boolean, caps: string[] | null, scope: RowScope | null): Promise<Result | { error: string; message: string }> => {
     if (!ref.kpiId) {
       if (isPublic || (caps !== null && !caps.includes(`${ACTION}/_query`))) return { error: "kpi_forbidden", message: "kpi_forbidden: inline queries need the query capability" };
       return runInline(ref, scope);
@@ -280,7 +265,6 @@ export function ccrsApi(opts: CcrsApiOptions) {
     const range = rangeOf(params);
     const prior = params.compare === "prior";
     const series = params.series === "daily" && !prior;
-    const exec = (query: Query) => run(query, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
 
     // The window this reference reads, in pgr-services' order of rules.
     let w: Win | null;
@@ -296,9 +280,10 @@ export function ccrsApi(opts: CcrsApiOptions) {
         const span = Math.max(1, Math.round((Date.parse(`${pin.today}T00:00:00Z`) - Date.parse(`${pin.startDate}T00:00:00Z`)) / 86_400_000) + 1);
         w = prior ? { from: startOfLocalDay(addDays(pin.startDate, -span), tz), to: startOfLocalDay(pin.startDate, tz) } : { from: startOfLocalDay(pin.startDate, tz), to: now() };
       }
-    } else if (prior) w = priorFor(tile, params);
+    } else if (prior) w = priorFor(range?.win);
     else if (range && (!tile.live || series)) w = range.win;
-    else w = tile.live ? null : params.window ? windowNamed(params.window) : windowFor(tile, params);
+    // No range applies here: the window param, else the KPI's own (an unknown one reads everything).
+    else w = tile.live ? null : params.window ? windowNamed(params.window) : windowNamed(params.window ?? tile.window ?? "", false);
 
     if (!series) {
       const query = withWindow(q, w);
@@ -359,8 +344,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
       : data.rows;
     const cols = tile.columns;
     const extras = Object.entries(cols.extras);
-    const order = (names: string[]) => (tile.measureOrder?.length ? [...names].sort((x, y) => tile.measureOrder.indexOf(x) - tile.measureOrder.indexOf(y)) : names);
-    const columns = [...(group ? [cols.group!] : []), day, ...order([cols.value, ...extras.map(([, n]) => n)])];
+    const columns = [...(group ? [cols.group!] : []), day, ...ordered(tile, [cols.value, ...extras.map(([, n]) => n)])];
     const out = rows.map((r) => {
       const row: Record<string, unknown> = {
         ...(group ? { [cols.group!]: r.series === "(none)" ? null : r.series } : {}),
@@ -374,7 +358,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
   };
 
   const asOf = async () => {
-    const d = await run({ kind: "value", measure: "facts_built_at" }, { pack: opts.pack, connector: opts.connector, ctx: ctx() }).catch(() => null);
+    const d = await exec({ kind: "value", measure: "facts_built_at" }).catch(() => null);
     return d?.rows[0]?.value ?? now().getTime();
   };
   const envelope = async (scope: RowScope | null = null) => ({
@@ -396,7 +380,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
     let partial = false;
     await Promise.all(
       names.map(async (n) => {
-        const r = await runRef(n, queries[n]!, isPublic, caps, scope).catch((e) => {
+        const r = await runRef(queries[n]!, isPublic, caps, scope).catch((e) => {
           const message = e instanceof Error ? e.message : String(e);
           return { error: message.includes(":") ? message.split(":")[0]! : "query_failed", message };
         });
@@ -415,15 +399,14 @@ export function ccrsApi(opts: CcrsApiOptions) {
 
   const options = async () => {
     const distinct = async (dimension: string) => {
-      const d = await run({ kind: "breakdown", dimension, measure: "complaints", limit: 300, sort: "desc" }, { pack: opts.pack, connector: opts.connector, ctx: ctx() });
+      const d = await exec({ kind: "breakdown", dimension, measure: "complaints", limit: 300, sort: "desc" });
       return { columns: [dimension], rows: d.rows.filter((r) => r.group && r.group !== "(none)").map((r) => ({ [dimension]: r.group })), rowCount: d.rows.length };
     };
     const [wards, complaintTypes] = await Promise.all([distinct("ward_code"), distinct("service_code")]);
     return { ...(await envelope()), results: { wards, complaintTypes }, partial: false };
   };
 
-  /** Dispatch one API call. `path` is below the analytics base (e.g. "/public/packs"). */
-  /** Dispatch one API call. `request` is passed through to the access and scope callbacks (e.g. the caller's headers). */
+  /** Dispatch one API call. `path` is below the analytics base (e.g. "/public/packs"); `request` is passed through to the access and scope callbacks (e.g. the caller's headers). */
   return async function handle(path: string, body: Record<string, unknown>, request?: unknown): Promise<{ status: number; body: unknown }> {
     try {
       const isPublic = path.startsWith("/public/");

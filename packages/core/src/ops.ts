@@ -6,6 +6,7 @@ import {
   type LayoutItem,
   type Placement,
   type Query,
+  WIDTHS,
   type Widget,
   boardConfigSchema,
   filterSchema,
@@ -51,8 +52,6 @@ export type BoardOp = z.infer<typeof opSchema>;
 export type ApplyResult =
   | { ok: true; config: BoardConfig }
   | { ok: false; opIndex: number; error: string; hint?: string };
-
-const WIDTHS: Record<string, number> = { full: 12, half: 6, third: 4, quarter: 3 };
 
 function widthUnits(width: Placement["width"], cols: number) {
   const units = typeof width === "number" ? width : (WIDTHS[width] ?? 6);
