@@ -40,7 +40,13 @@ export function DrillPath() {
   );
 }
 
-export function FilterBar() {
+/**
+ * Everything a filter bar needs, without the markup: the board's filters with
+ * their value, options and what they narrow, whether there is anything to
+ * show, and how to change or clear the selection. `<FilterBar>` draws it with
+ * plain controls; a host with a design system of its own draws it with that.
+ */
+export function useFilters() {
   const { board, selections, setSelection, clearSelections, host, catalogue } = useBoard();
   const filters = board.config.filters;
   const [options, setOptions] = React.useState<Record<string, FilterOption[]>>({});
@@ -58,32 +64,46 @@ export function FilterBar() {
     };
   }, [host, filters]);
 
-  const drilling = Object.values(catalogue.hierarchies ?? {}).some((ls) => ls.some((l) => selections[l]));
-  if (filters.length === 0 && !drilling) return null;
-  const active = filters.filter((f) => selections[f.field]);
   const titles = Object.fromEntries(Object.entries(board.config.widgets).map(([id, w]) => [id, w.title]));
+  const drilling = Object.values(catalogue.hierarchies ?? {}).some((ls) => ls.some((l) => selections[l]));
+  return {
+    filters: filters.map((f) => ({
+      ...f,
+      value: selections[f.field] ?? "",
+      options: options[f.field] ?? [],
+      /** What the filter applies to, for a tooltip: "Narrows everything", "Narrows <widget titles>". */
+      narrows: `Narrows ${f.applies.includes("*") ? "everything" : f.applies.map((id) => titles[id] ?? id).join(", ")}`,
+    })),
+    /** False with no filter and no drill-down: draw nothing. */
+    shown: filters.length > 0 || drilling,
+    /** Some filter has a value: offer Clear. */
+    active: filters.some((f) => selections[f.field]),
+    select: setSelection,
+    clear: clearSelections,
+  };
+}
 
+export function FilterBar() {
+  const { filters, shown, active, select, clear } = useFilters();
+  if (!shown) return null;
   return (
     <div className="lp-filter-bar" data-testid="lp-filter-bar">
       <DrillPath />
-      {filters.map((filter) => {
-        const covers = filter.applies.includes("*") ? "everything" : filter.applies.map((id) => titles[id] ?? id).join(", ");
-        return (
-          <label key={filter.id} className="lp-filter" title={`Narrows ${covers}`}>
-            <span className="lp-filter-label">{filter.label}</span>
-            <select data-testid={`filter-${filter.field}`} value={selections[filter.field] ?? ""} onChange={(e) => setSelection(filter.field, e.target.value)}>
-              <option value="">All</option>
-              {(options[filter.field] ?? []).map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.value} ({o.count.toLocaleString()})
-                </option>
-              ))}
-            </select>
-          </label>
-        );
-      })}
-      {active.length > 0 && (
-        <button type="button" className="lp-link" onClick={clearSelections}>
+      {filters.map((filter) => (
+        <label key={filter.id} className="lp-filter" title={filter.narrows}>
+          <span className="lp-filter-label">{filter.label}</span>
+          <select data-testid={`filter-${filter.field}`} value={filter.value} onChange={(e) => select(filter.field, e.target.value)}>
+            <option value="">All</option>
+            {filter.options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.value} ({o.count.toLocaleString()})
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      {active && (
+        <button type="button" className="lp-link" onClick={clear}>
           Clear
         </button>
       )}

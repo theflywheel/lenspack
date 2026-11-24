@@ -36,7 +36,7 @@ FROM (SELECT *, `made_at` AS `__t`, (colour) AS `__d_colour`, `size` AS `__m_siz
 LEFT JOIN (SELECT *, (upper(tier)) AS `__d_tier` FROM `Owners`) AS `owners` ON `things`.`owner_id` = `owners`.`id`
 GROUP BY `owners`.`__d_tier`, `things`.`__d_colour`
 ORDER BY `value` DESC, `group` IS NULL, `group` ASC, `series` IS NULL, `series` ASC
-LIMIT 10;
+LIMIT 10000;
 
 -- {"kind":"breakdown","dimension":"origin","measure":"labelled","limit":10,"sort":"desc"}
 -- params: [99,"ke_1","ke\\_1.%","test"]
@@ -305,7 +305,7 @@ WHERE ((`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? A
 GROUP BY `things`.`__d_colour`, `owners`.`__d_tier`, `things`.`__k`) AS `__n`
 GROUP BY `__n`.`group`, `__n`.`series`
 ORDER BY `value` DESC, `group` IS NULL, `group` ASC, `series` IS NULL, `series` ASC
-LIMIT 10;
+LIMIT 10000;
 
 -- {"kind":"series","measure":"things_per_owner","grain":"month","by":"colour","time":{"last":"12w"}}
 -- params: ["ke_1","ke\\_1.%","test","2025-11-23 12:34:56.000","2026-02-15 12:34:56.000"]
@@ -364,7 +364,16 @@ WHERE (`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS
 GROUP BY `owners`.`__d_tier`, `things`.`__d_colour`
 HAVING (count(CASE WHEN ((`things`.`__t` >= CAST(? AS DATETIME(3))) AND (`things`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) > 0)
 ORDER BY `value` DESC, `group` IS NULL, `group` ASC, `series` IS NULL, `series` ASC
-LIMIT 10;
+LIMIT 10000;
+
+-- {"kind":"breakdown","dimension":"colour","by":"tier","measure":"things","limit":3,"sort":"desc"}
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT `things`.`__d_colour` AS `group`, `owners`.`__d_tier` AS `series`, count(*) AS `value`, count(*) AS `n`
+FROM (SELECT *, `made_at` AS `__t`, (colour) AS `__d_colour` FROM `app`.`things` WHERE (((`tenant_id` = ?) OR (`tenant_id` LIKE ?))) AND (deleted = false) AND (NOT (`kind` <=> ?))) AS `things`
+LEFT JOIN (SELECT *, (upper(tier)) AS `__d_tier` FROM `Owners`) AS `owners` ON `things`.`owner_id` = `owners`.`id`
+GROUP BY `things`.`__d_colour`, `owners`.`__d_tier`
+ORDER BY `value` DESC, `group` IS NULL, `group` ASC, `series` IS NULL, `series` ASC
+LIMIT 10000;
 
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
 -- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here

@@ -15,7 +15,7 @@ import { openMysql } from "../src/executors/mysql";
 import { openPostgres } from "../src/executors/pg";
 import { openSqlite } from "../src/executors/sqlite";
 import { postgresRules } from "../src/print/postgres";
-import { runSql } from "../src/run-sql";
+import { describeSources, runSql } from "../src/run-sql";
 import { GOLDEN_QUERIES, ctx, goldenPackInput } from "./golden-pack";
 
 // Every driver, end to end: the URL picks it, the golden queries (every node
@@ -79,6 +79,30 @@ describe("the registry", () => {
     // Its own fragment, its own placeholders.
     expect(seen!.sql).toContain("(flag = 1)");
     expect(capabilitiesFor("acme").percentiles).toBe(false);
+  });
+});
+
+describe("run_sql's table list", () => {
+  it("names each entity's time, whatever form the pack gives it", () => {
+    const pack = parsePack({
+      pack: "p",
+      version: 1,
+      entities: {
+        plain: { source: "plain_t", grain: "one row per visit", time: "at" },
+        epoch: { source: "epoch_t", time: { field: "created_ms", unit: "epoch_ms" } },
+        expr: { source: "expr_t", time: { sql: "to_timestamp(created_s)" } },
+        dialects: { source: "dialects_t", time: { sql: { postgres: "to_timestamp(created_s)", duckdb: "to_timestamp(created_s)" } } },
+        timeless: { source: "targets_t" },
+      },
+      measures: [{ key: "n", entity: "plain", agg: "count" }],
+    });
+    expect(describeSources(pack).split("\n")).toEqual([
+      "plain: plain_t — one row per visit (time: at)",
+      "epoch: epoch_t (time: created_ms, epoch milliseconds)",
+      "expr: expr_t (time: to_timestamp(created_s))",
+      "dialects: dialects_t (time: a SQL expression per dialect)",
+      "timeless: targets_t",
+    ]);
   });
 });
 

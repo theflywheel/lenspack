@@ -1,7 +1,7 @@
 import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/spec";
 
 import { type Ast, type Expr, type Grouped, type Join, type Source, and } from "./ast";
-import { type BoundDimension, type BoundFilter, type BoundPlan, type TimeWindow, bucketZone } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, SPLIT_ROWS, type TimeWindow, bucketZone } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
 // projects the pack's dimension and measure fragments under reserved aliases,
@@ -88,12 +88,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       const def = pack.entities[entity]!;
       s = { alias: entity, table: def.source, projections: [], where: [] };
       const tenant = tenantOf(def);
-      if (tenant && bound.tenant !== null) {
-        const eq: Expr = { t: "bin", op: "=", l: col("", tenant.field), r: param(bound.tenant) };
-        // A subtree tenant owns itself and "<id>.*"; LIKE wildcards in the id are escaped.
-        const escaped = bound.tenant.replace(/[\\%_]/g, (c) => `\\${c}`);
-        s.where.push(tenant.match === "subtree" ? { t: "paren", arg: { t: "bin", op: "OR", l: eq, r: { t: "bin", op: "LIKE", l: col("", tenant.field), r: param(`${escaped}.%`) } } } : eq);
-      }
+      // A subtree tenant owns itself and "<id>.*".
+      if (tenant && bound.tenant !== null) s.where.push(filterExpr(col("", tenant.field), tenant.match === "subtree" ? "subtree" : "eq", bound.tenant));
       // The entity's own predicate (soft deletes, "current" rows) applies to
       // every query that touches it, in every role.
       if (def.filter) s.where.push(raw(def.filter));
@@ -146,7 +142,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     r: { t: "bin", op: "<", l: c, r: bound_(w.to) },
   });
 
-  for (const f of bound.filters) where.push(filterExpr(dimRef(f.dimension), f));
+  for (const f of bound.filters) where.push(filterExpr(dimRef(f.dimension), f.op, f.value));
 
   // For a comparison, both windows share one scan and the aggregate picks its
   // rows with a CASE; otherwise the window is an ordinary predicate.
@@ -239,7 +235,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       else if (query.sortBy === "measure") orderBy.push({ expr: col("", "value"), dir: query.sort });
       else if (query.sortBy !== "none") orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
       if (bound.split && query.sortBy !== "none" && query.sortBy !== "measure") orderBy.push({ expr: col("", "series"), dir: "asc" });
-      limit = query.limit;
+      // Split, the limit is on groups: every row comes back and the engine keeps the top groups.
+      limit = bound.split ? SPLIT_ROWS : query.limit;
       shape = "breakdown";
       break;
     }
@@ -336,10 +333,13 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   return { ast: { select: outer, from: inner, joins: [], where: [], groupBy: groups.map((s) => col(N, s.alias)), having, orderBy, limit }, shape };
 }
 
-function filterExpr(ref: Expr, f: BoundFilter): Expr {
-  const v = f.value as string | number | boolean | (string | number | boolean)[];
+// LIKE's own wildcards (and its escape character), matched literally.
+const likeEscape = (v: unknown) => String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
+
+function filterExpr(ref: Expr, op: BoundFilter["op"], value: unknown): Expr {
+  const v = value as string | number | boolean | (string | number | boolean)[];
   const one = (x: unknown) => param(x);
-  switch (f.op) {
+  switch (op) {
     case "eq":
       return { t: "bin", op: "=", l: ref, r: one(v) };
     case "neq":
@@ -357,11 +357,9 @@ function filterExpr(ref: Expr, f: BoundFilter): Expr {
     case "segment":
       // Whole segments of a "|"-separated path: "BOMET" matches "KE|BOMET|SOTIK", not "BOM".
       return { t: "segment", arg: ref, values: (Array.isArray(v) ? v : [v]).map(one) };
-    case "subtree": {
-      const escaped = String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
-      return { t: "paren", arg: { t: "bin", op: "OR", l: { t: "bin", op: "=", l: ref, r: one(v) }, r: { t: "bin", op: "LIKE", l: ref, r: one(`${escaped}.%`) } } };
-    }
+    case "subtree":
+      return { t: "paren", arg: { t: "bin", op: "OR", l: { t: "bin", op: "=", l: ref, r: one(v) }, r: { t: "bin", op: "LIKE", l: ref, r: one(`${likeEscape(v)}.%`) } } };
     case "contains":
-      return { t: "bin", op: "ILIKE", l: { t: "cast", arg: ref, to: "text" }, r: one(`%${String(v).replace(/[%_\\]/g, (c) => `\\${c}`)}%`) };
+      return { t: "bin", op: "ILIKE", l: { t: "cast", arg: ref, to: "text" }, r: one(`%${likeEscape(v)}%`) };
   }
 }

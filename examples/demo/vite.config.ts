@@ -41,6 +41,9 @@ export default defineConfig({
       { find: "@lenspack/react", replacement: pkg("react", "index.tsx") },
     ],
   },
+  // React in a chunk of its own: it changes far less often than the app, so a
+  // new build leaves it in the browser's cache.
+  build: { rollupOptions: { output: { manualChunks: (id) => (/\/node_modules\/(react|react-dom|scheduler)\//.test(id) ? "react" : undefined) } } },
   server: { proxy: { "/api": "http://localhost:8787" } },
   preview: { proxy: { "/api": "http://localhost:8787" } },
 });
