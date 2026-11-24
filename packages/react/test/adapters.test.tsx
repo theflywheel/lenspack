@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import "./setup";
 import { rechartsAdapter } from "../src/adapters/recharts";
 import { svgAdapter } from "../src/adapters/svg";
-import { type ChartAdapter, type ChartSpec, buildChartSpec, pivot } from "../src/charts";
+import { type ChartAdapter, type ChartSpec, buildChartSpec, lazyAdapter, pivot } from "../src/charts";
 
 // Adapter conformance: one fixed ChartSpec through every adapter, every chart
 // kind. jsdom has no layout, so the assertion is "mounts, no throw, leaves a
@@ -25,7 +25,8 @@ const spec = (chart: ChartSpec["chart"], split = false): ChartSpec => ({
   legend: true,
 });
 
-const adapters: ChartAdapter[] = [svgAdapter, rechartsAdapter];
+// lazyAdapter: the same adapter, loaded on first use.
+const adapters: ChartAdapter[] = [svgAdapter, rechartsAdapter, lazyAdapter("svg, lazily", async () => svgAdapter)];
 
 for (const adapter of adapters) {
   describe(`adapter ${adapter.name}`, () => {

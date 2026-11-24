@@ -8,7 +8,7 @@ import "./setup";
 import { formatDelta, formatValue } from "../src/format";
 import { Board } from "../src/grid";
 import { FilterBar } from "../src/filter-bar";
-import { BoardProvider, useBoardOps } from "../src/provider";
+import { BoardProvider, useBoard, useBoardOps } from "../src/provider";
 import type { BoardHost, WidgetData } from "../src/types";
 import { VersionHistory } from "../src/versions";
 
@@ -181,6 +181,7 @@ describe("<FilterBar>", () => {
       </BoardProvider>,
     );
     await waitFor(() => expect(screen.getByText("north (3)")).toBeTruthy());
+    expect(screen.getByTitle("Narrows everything")).toBeTruthy();
     fireEvent.change(screen.getByTestId("filter-region"), { target: { value: "north" } });
     expect(onChange).toHaveBeenCalledWith({ region: "north" });
     await waitFor(() => expect(h.loadBoardData).toHaveBeenLastCalledWith(expect.anything(), { region: "north" }));
@@ -211,6 +212,45 @@ describe("<VersionHistory>", () => {
       fireEvent.click(screen.getByTestId("restore-1"));
     });
     expect(revertTo).toHaveBeenCalledWith(1);
+  });
+
+  it("shows a version read-only on a click, and a restore shows the board it made", async () => {
+    const v1 = config();
+    const v2 = applyOps(v1, [{ op: "set_title", title: "Renamed" }], catalogue);
+    if (!v2.ok) throw new Error(v2.error);
+    const restored = { ...board(v1), version: 3 };
+    const onEdit = vi.fn();
+    const h = host({
+      loadVersions: async () => [
+        { version: 2, source: "chat", summary: "renamed", createdAt: new Date(), config: v2.config },
+        { version: 1, source: "create", summary: "created", createdAt: new Date(), config: v1 },
+      ],
+      revertTo: vi.fn(async () => restored),
+    });
+    function Title() {
+      const { board: b, editable } = useBoard();
+      return <h1 data-testid="title" data-editable={String(editable)}>{b.config.title} v{b.version}</h1>;
+    }
+    render(
+      <BoardProvider board={{ ...board(v2.config), version: 2 }} catalogue={catalogue} host={h} onEdit={onEdit}>
+        <Title />
+        <VersionHistory />
+      </BoardProvider>,
+    );
+    fireEvent.click(screen.getByTestId("history-toggle"));
+    await waitFor(() => expect(screen.getByTestId("version-1")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("version-1"));
+    expect(screen.getByTestId("title").textContent).toBe("Fixture board v1");
+    expect(screen.getByTestId("title").dataset.editable).toBe("false");
+    expect(screen.getByTestId("history-toggle").textContent).toContain("viewing v1");
+    fireEvent.click(screen.getByTestId("version-2"));
+    expect(screen.getByTestId("title").textContent).toBe("Renamed v2");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("restore-1"));
+    });
+    expect(screen.getByTestId("title").textContent).toBe("Fixture board v3");
+    expect(screen.getByTestId("title").dataset.editable).toBe("true");
+    expect(onEdit).toHaveBeenCalledWith(restored);
   });
 });
 

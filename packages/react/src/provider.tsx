@@ -21,6 +21,8 @@ type State = {
   clearSelections(): void;
   apply(ops: BoardOp[]): Promise<PatchResult>;
   saveLayout(layout: LayoutItem[], summary?: string): Promise<void>;
+  /** Restore an older version as a new one (so it can itself be undone) and show it. */
+  revert(version: number): Promise<void>;
   refresh(): Promise<void>;
   host: BoardHost;
   editable: boolean;
@@ -126,6 +128,18 @@ export function BoardProvider({
     [host, previewing, onEdit],
   );
 
+  const revert = React.useCallback(
+    async (version: number) => {
+      if (!host.revertTo) return;
+      const next = await host.revertTo(version);
+      setPreviewing(null);
+      if (!next) return;
+      setBoard(next);
+      onEdit?.(next);
+    },
+    [host, onEdit],
+  );
+
   const setSelection = React.useCallback(
     (field: string, value: string) => {
       setSelections((prev) => {
@@ -165,8 +179,8 @@ export function BoardProvider({
   }, [onSelectionsChange]);
 
   const value = React.useMemo<State>(
-    () => ({ board, catalogue, data, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, refresh: load, host, editable, previewing, preview: setPreviewing, currency, charts, mapTiles }),
-    [board, catalogue, data, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, load, host, editable, previewing, currency, charts, mapTiles],
+    () => ({ board, catalogue, data, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, revert, refresh: load, host, editable, previewing, preview: setPreviewing, currency, charts, mapTiles }),
+    [board, catalogue, data, selections, setSelection, drill, drillTarget, clearSelections, apply, saveLayout, revert, load, host, editable, previewing, currency, charts, mapTiles],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
