@@ -10,7 +10,7 @@
   "dependencies": {
     "@ai-sdk/react": "^4.0.112",
     "@lenspack/core": "workspace:*",
-    "@lenspack/mcp": "workspace:*",
+    "@lenspack/agent": "workspace:*",
     "@lenspack/react": "workspace:*",
     "@lenspack/sql": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
