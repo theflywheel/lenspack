@@ -14,6 +14,7 @@ import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson,
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
+import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
@@ -540,6 +541,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
+    // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
+    const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
     const before = summarise(config);
 
     // The summary a turn ends with when the step cap stopped its tool loop before the model
@@ -561,7 +564,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       try {
         const r = withMeter({ role, effort: roundEffort }, () => {
           const call = shapeCall(builder, { system, messages: [...history, { role: "user", content: prompt }], tools: tools as ToolSet, effort: roundEffort });
-          return streamText({ model: builder.languageModel, ...call, toolChoice: "none", stopWhen: stepCountIs(1) });
+          return streamText({ model: builder.languageModel, ...call, toolChoice: "none", stopWhen: stepCountIs(1), experimental_transform: replyGuard });
         });
         text = (await r.text).trim();
       } catch {
@@ -589,7 +592,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             const call = shapeCall(builder, { system, messages, tools: tools as ToolSet, loop: true, effort: roundEffort });
             // The stream is started and read inside the round's scope, so every step of its tool loop is attributed to it.
             const result = withMeter({ role: round === 1 ? "build" : "escalate", effort: roundEffort }, () => {
-              const r = streamText({ model: builder.languageModel, ...call, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)] });
+              const r = streamText({ model: builder.languageModel, ...call, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)], experimental_transform: replyGuard });
               // A rejected tool call shows its reason (a chart kind that does not exist, a missing title), not "An error occurred.".
               writer.merge(r.toUIMessageStream({ sendStart: round === 1, sendFinish: false, onError: (e) => (e instanceof Error ? e.message : String(e)).slice(0, 300) }));
               return r;

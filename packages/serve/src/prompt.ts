@@ -5,7 +5,7 @@ import type { Pack } from "@lenspack/spec";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it changes so eval results can be compared.
-export const PROMPT_VERSION = 18;
+export const PROMPT_VERSION = 19;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -93,7 +93,7 @@ export function languageText(p?: LanguagePolicy) {
   const reply =
     p.reply && p.reply !== "auto"
       ? `The user chose ${languageName(p.reply)} for this chat: write every reply in ${languageName(p.reply)}${REPLY_NOTES[p.reply.split("-")[0]!] ?? ""}, even when their message is in another language.`
-      : "Reply in the language of the user's latest message.";
+      : "Reply in the language and script of the user's latest message; never in a language or script they have not used in this chat.";
   const titles =
     (p.titles ?? "board") === "board"
       ? `Write new board and widget titles in ${languageName(p.board ?? "en")}, the board's language, even when replying in another; keep existing titles unless asked to rename them.`
