@@ -120,6 +120,20 @@ Hidden keys are kept from use, not secret as names: a widget error names its key
 
 Pack descriptions, instructions and hints are shown to everyone who may open the pack: keep values out of them.
 
+## How the layers combine
+
+One pure function, `decide()` in `@lenspack/policy`, settles what a caller may use of a pack. Every host goes through it: `lenspack serve` with any sign-in, Superset mode, and the CCRS API.
+
+1. **The host says who the caller is and what it already allows.** The sign-in (or Superset, or CCRS) gives an identity: user, roles, tenant, and whatever the host limits itself: a row scope, keys it keeps from them, capabilities it grants.
+2. **Lenspack's rules only narrow it.** The rights by user and role add edit, maintain and usage rights. A pack's access rule adds its `scope` to the host's and the caller's, and its `hide`/`only` keys to the host's hidden keys. Nothing in lenspack.yaml can widen what the host allows.
+3. **The engine enforces the result.** Every query carries the scope (`ctx.scope`) and is refused if it names a hidden key (`ctx.hidden`). The engine reads both by shape and does not know who decided them.
+
+The scope is the pack's own (its `ctx.scope`), then the caller's, then their rule's, all applied together. A query that cannot be narrowed by one of them is refused (`OUT_OF_SCOPE`) rather than answered unnarrowed.
+
+### CCRS
+
+The CCRS API (`@lenspack/ccrs`) puts the caller's CCRS row scope (departments, jurisdictions, own records) through the same path: it becomes the caller's scope, so every query carries it, inline filter-menu queries included, and no parameter or KPI filter can drop it. A KPI whose entity cannot be narrowed by a scope dimension is refused (`OUT_OF_SCOPE`, reported as `query_failed`) rather than failing on an unknown join. The capabilities CCRS's `/_access` returns are the caller's grants: with none returned (a trusted deployment), every tile is visible.
+
 ## What this does not do yet
 
 - Bearer access tokens from the provider for API clients (the `oidc` kind signs in browsers).

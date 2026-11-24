@@ -1,5 +1,6 @@
 import type { FilterClause, Query } from "@lenspack/core";
-import { type Connector, type WidgetData, addDays, localDate, run, startOfLocalDay } from "@lenspack/engine";
+import { type Connector, type Ctx, type WidgetData, addDays, localDate, run, startOfLocalDay } from "@lenspack/engine";
+import { type Identity, type Principal, decide, holds, principalOf } from "@lenspack/policy";
 import type { Pack } from "@lenspack/spec";
 
 import type { Skin, SkinTile } from "./index";
@@ -35,6 +36,16 @@ export type CcrsApiOptions = {
 
 export type RowScope = { departments?: string[]; jurisdictions?: string[]; accountId?: string; restrictedTo?: string };
 
+/** CCRS's row scope as the filters every query of the caller carries (ctx.scope). An empty list admits nothing. */
+export function scopeFilters(s: RowScope | null): FilterClause[] {
+  const some = (v: string[]) => (v.length ? v : ["\u0000none"]);
+  return [
+    ...(s?.departments ? [{ dimension: "department_code", op: "in", value: some(s.departments) }] : []),
+    ...(s?.jurisdictions ? [{ dimension: "boundary_path", op: "segment", value: some(s.jurisdictions) }] : []),
+    ...(s?.accountId ? [{ dimension: "account_id", op: "eq", value: s.accountId }] : []),
+  ] as FilterClause[];
+}
+
 type InlineQuery = { grain?: string; window?: { name?: string }; dimensions?: string[]; measures?: { name: string; agg: string; column?: string; filter?: unknown }[]; limit?: number; filters?: unknown; sort?: unknown };
 type Ref = { kpiId?: string; params?: Record<string, string> } & InlineQuery;
 type Result = { grain: string; columns: string[]; rows: Record<string, unknown>[]; rowCount: number; tookMs: number; paramsIgnored?: string[]; suppressed?: string };
@@ -54,7 +65,9 @@ const round4 = (v: number | null) => (v === null ? null : Math.round(v * 10_000)
 export function ccrsApi(opts: CcrsApiOptions) {
   const tz = opts.pack.timeZone ?? "UTC";
   const now = () => (opts.now ? opts.now() : new Date());
-  const exec = (q: Query) => run(q, { pack: opts.pack, connector: opts.connector, ctx: { tenant: opts.tenant, now: now() } });
+  const exec = (q: Query, ctx: Ctx = { tenant: opts.tenant, now: now() }) => run(q, { pack: opts.pack, connector: opts.connector, ctx });
+  // The caller's row scope narrows every query they run, as policy decides it: no step below can drop it.
+  const ctxOf = (who: Principal) => decide(who, opts.pack, { host: { tenant: opts.tenant, now: now() } as Ctx })!.ctx;
   const measureOf = (key: string) => opts.pack.measures.find((m) => m.key === key);
   const isRatio = (key: string) => {
     const m = measureOf(key);
@@ -83,7 +96,8 @@ export function ccrsApi(opts: CcrsApiOptions) {
     params: t.params ?? [],
   });
 
-  const visible = (t: SkinTile, caps: string[] | null, isPublic: boolean) => (isPublic ? t.public : caps === null || (!!t.requiredActionUrl && caps.includes(t.requiredActionUrl)));
+  // A tile without a required action is for trusted callers (no grants) only.
+  const visible = (t: SkinTile, who: Identity, isPublic: boolean) => (isPublic ? t.public : holds(who, t.requiredActionUrl));
 
   // ── Windows, as pgr-services computes them ─────────────────────────────
   const startOf = (name: string, today: string): string | null => {
@@ -139,14 +153,10 @@ export function ccrsApi(opts: CcrsApiOptions) {
   };
 
   // ── One reference → one lenspack query ─────────────────────────────────
-  const build = (tile: SkinTile, params: Record<string, string>, isPublic: boolean, scope: RowScope | null = null) => {
+  const build = (tile: SkinTile, params: Record<string, string>, isPublic: boolean) => {
     const ignored: string[] = [];
     let q: Query = JSON.parse(JSON.stringify(tile.query));
     const filters: FilterClause[] = [...((q as { filters?: FilterClause[] }).filters ?? [])];
-    // The caller's rows, as CCRS scopes them. An empty list admits nothing.
-    if (scope?.departments) filters.push({ dimension: "department_code", op: "in", value: scope.departments.length ? scope.departments : ["\u0000none"] });
-    if (scope?.jurisdictions) filters.push({ dimension: "boundary_path", op: "segment", value: scope.jurisdictions.length ? scope.jurisdictions : ["\u0000none"] });
-    if (scope?.accountId) filters.push({ dimension: "account_id", op: "eq", value: scope.accountId });
     // The KPI's own filters narrow the rows, as CCRS's WHERE does.
     for (const f of tile.rowFilters ?? []) if (!filters.some((x) => x.dimension === f.dimension && x.op === f.op)) filters.push(f as FilterClause);
     const narrow = (dimension: string, op: FilterClause["op"], value: string, param: string) => {
@@ -238,30 +248,30 @@ export function ccrsApi(opts: CcrsApiOptions) {
   // The inline queries a CCRS page sends itself: distinct values of one
   // dimension with a count (the ward and complaint-type menus). Anything
   // richer is refused rather than guessed.
-  const runInline = async (ref: InlineQuery, scope: RowScope | null): Promise<Result | { error: string; message: string }> => {
+  const runInline = async (ref: InlineQuery, ctx: Ctx): Promise<Result | { error: string; message: string }> => {
     const started = Date.now();
     const [dim, ...more] = ref.dimensions ?? [];
     const measure = ref.measures?.[0];
     if (!dim || more.length || (ref.measures?.length ?? 0) !== 1 || measure?.agg !== "count" || measure.filter || ref.filters || !opts.pack.dimensions.some((d) => d.key === dim))
       return { error: "unsupported_query", message: "unsupported_query: only distinct values of one dimension with a count are answered inline" };
     const tile = { dimensions: [dim], grain: "facts", live: true, query: { kind: "breakdown", dimension: dim, measure: "complaints", limit: Math.min(1000, ref.limit ?? 1000), sort: "desc", sortBy: "none" } } as unknown as SkinTile;
-    const { q } = build(tile, {}, false, scope);
-    const data = await exec(q);
+    const { q } = build(tile, {}, false);
+    const data = await exec(q, ctx);
     if (data.error) return { error: "query_failed", message: data.error };
     const rows = data.rows.map((r) => ({ [dim]: r.group === "(none)" ? null : r.group, [measure.name]: r.value }));
     return { grain: ref.grain ?? "facts", columns: [dim, measure.name], rows, rowCount: rows.length, tookMs: Date.now() - started };
   };
 
-  const runRef = async (ref: Ref, isPublic: boolean, caps: string[] | null, scope: RowScope | null): Promise<Result | { error: string; message: string }> => {
+  const runRef = async (ref: Ref, isPublic: boolean, who: Principal, ctx: Ctx): Promise<Result | { error: string; message: string }> => {
     if (!ref.kpiId) {
-      if (isPublic || (caps !== null && !caps.includes(`${ACTION}/_query`))) return { error: "kpi_forbidden", message: "kpi_forbidden: inline queries need the query capability" };
-      return runInline(ref, scope);
+      if (isPublic || !holds(who, `${ACTION}/_query`)) return { error: "kpi_forbidden", message: "kpi_forbidden: inline queries need the query capability" };
+      return runInline(ref, ctx);
     }
     const tile = opts.skin.tiles[ref.kpiId];
-    if (!tile || !visible(tile, caps, isPublic)) return { error: "kpi_forbidden", message: `kpi_forbidden: '${ref.kpiId}' is not available` };
+    if (!tile || !visible(tile, who, isPublic)) return { error: "kpi_forbidden", message: `kpi_forbidden: '${ref.kpiId}' is not available` };
     const params = { ...Object.fromEntries((tile.params ?? []).filter((p) => p.default).map((p) => [p.name, p.default!])), ...(ref.params ?? {}) };
     const started = Date.now();
-    const { q, ignored, dims } = build(tile, params, isPublic, scope);
+    const { q, ignored, dims } = build(tile, params, isPublic);
     const range = rangeOf(params);
     const prior = params.compare === "prior";
     const series = params.series === "daily" && !prior;
@@ -287,7 +297,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
 
     if (!series) {
       const query = withWindow(q, w);
-      const data = await exec(query);
+      const data = await exec(query, ctx);
       if (data.error) return { error: "query_failed", message: data.error };
       return toResult(tile, query, data, tile.grain, started, ignored);
     }
@@ -299,7 +309,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
       // The day joins the sort unless the KPI already sorts by it.
       const r = q as Extract<Query, { kind: "rows" }>;
       const query = withWindow({ ...r, limit: cap, ...(r.orderBy ? {} : { orderBy: { key: tile.seriesDate, dir: "asc" } }) } as Query, w);
-      const data = await exec(query);
+      const data = await exec(query, ctx);
       if (data.error) return { error: "query_failed", message: data.error };
       return toResult(tile, query, data, tile.grain, started, ignored);
     }
@@ -324,7 +334,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
       } as Query,
       w,
     );
-    const data = await exec(query);
+    const data = await exec(query, ctx);
     if (data.error) return { error: "query_failed", message: data.error };
     // Rows are (day, group): order them as the KPI orders its groups, then by day.
     const sortBy = (b as { sortBy?: string }).sortBy, dir = (b as { sort?: string }).sort === "asc" ? 1 : -1;
@@ -373,14 +383,15 @@ export function ccrsApi(opts: CcrsApiOptions) {
     },
   });
 
-  const batch = async (queries: Record<string, Ref>, isPublic: boolean, caps: string[] | null, scope: RowScope | null) => {
+  const batch = async (queries: Record<string, Ref>, isPublic: boolean, who: Principal, scope: RowScope | null) => {
+    const ctx = ctxOf(who);
     const names = Object.keys(queries);
     if (names.length > MAX_BATCH) throw Object.assign(new Error(`invalid_param: at most ${MAX_BATCH} queries per batch`), { status: 400 });
     const results: Record<string, unknown> = {};
     let partial = false;
     await Promise.all(
       names.map(async (n) => {
-        const r = await runRef(queries[n]!, isPublic, caps, scope).catch((e) => {
+        const r = await runRef(queries[n]!, isPublic, who, ctx).catch((e) => {
           const message = e instanceof Error ? e.message : String(e);
           return { error: message.includes(":") ? message.split(":")[0]! : "query_failed", message };
         });
@@ -394,8 +405,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
   // CCRS's getBestPack: the first pack, in catalog order, the caller can see.
   // An employee needs the pack's requiredActionUrl; a pack with neither that
   // nor public is visible to no one.
-  const packFor = (caps: string[] | null, isPublic: boolean) =>
-    opts.boards.find((b) => (isPublic ? b.public : !!b.requiredActionUrl && (caps === null || caps.includes(b.requiredActionUrl))));
+  const packFor = (who: Identity, isPublic: boolean) => opts.boards.find((b) => (isPublic ? b.public : !!b.requiredActionUrl && holds(who, b.requiredActionUrl)));
 
   const options = async () => {
     const distinct = async (dimension: string) => {
@@ -411,13 +421,15 @@ export function ccrsApi(opts: CcrsApiOptions) {
     try {
       const isPublic = path.startsWith("/public/");
       const caps = isPublic ? null : opts.capabilities ? await opts.capabilities(body, request) : null;
-      const tilesFor = (board: Board | undefined) => (board?.tiles ?? Object.keys(opts.skin.tiles)).map((k) => opts.skin.tiles[k]).filter((t): t is SkinTile => !!t && visible(t, caps, isPublic)).map(safeTile);
+      // The caller as CCRS says: the capabilities it grants (none named: a trusted, private deployment).
+      const who: Identity = { user: "ccrs", ...(caps ? { grants: caps } : {}) };
+      const tilesFor = (board: Board | undefined) => (board?.tiles ?? Object.keys(opts.skin.tiles)).map((k) => opts.skin.tiles[k]).filter((t): t is SkinTile => !!t && visible(t, who, isPublic)).map(safeTile);
       switch (path) {
         case "/_access":
-          return { status: 200, body: { allowed: caps === null || caps.includes(`${ACTION}/_access`) || caps.length > 0, capabilities: caps ?? [] } };
+          return { status: 200, body: { allowed: holds(who, `${ACTION}/_access`) || !!caps?.length, capabilities: caps ?? [] } };
         case "/packs":
         case "/public/packs": {
-          const board = packFor(caps, isPublic);
+          const board = packFor(who, isPublic);
           const tiles = tilesFor(board);
           const ids = new Set(tiles.map((t) => t.kpiId));
           const layout = (board?.layout ?? []).filter((l) => ids.has(l.i)).map((l) => ({ kpiId: l.i, x: l.x, y: l.y, w: l.w, h: l.h }));
@@ -439,7 +451,7 @@ export function ccrsApi(opts: CcrsApiOptions) {
         case "/public/_query": {
           const queries = (body.queries as Record<string, Ref>) ?? (body.query ? { result: body.query as Ref } : {});
           const scope = isPublic || !opts.scope ? null : await opts.scope(body, request);
-          return { status: 200, body: await batch(queries, isPublic, caps, scope) };
+          return { status: 200, body: await batch(queries, isPublic, principalOf({ ...who, scope: scopeFilters(scope) }), scope) };
         }
         default:
           return { status: 404, body: { error: "not_found", message: `no analytics endpoint ${path}` } };

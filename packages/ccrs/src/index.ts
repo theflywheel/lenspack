@@ -378,4 +378,4 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
   const skin: Skin = { tiles, packs: Object.fromEntries(packs.map((p) => [p.id, { public: p.public === true, ...(p.requiredActionUrl ? { requiredActionUrl: p.requiredActionUrl } : {}) }])) };
   return { pack, packYaml, boards, skin, notes };
 }
-export { ccrsApi, type CcrsApiOptions, type Board as CcrsBoard } from "./api";
+export { ccrsApi, type CcrsApiOptions, type Board as CcrsBoard, type RowScope, scopeFilters } from "./api";

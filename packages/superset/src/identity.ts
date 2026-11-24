@@ -10,7 +10,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-import { type Access, type AuthAdapter, type Identity as Caller, NO_RIGHTS, withRights } from "@lenspack/serve";
+import { type Identity as Caller, NO_RIGHTS } from "@lenspack/policy";
+import { type AuthAdapter, withRights } from "@lenspack/serve";
 
 export const IDENTITY_HEADER = "x-lenspack-identity";
 
@@ -111,4 +112,4 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
 }
 
 /** The same as an access hook, for createApp without the runtime. */
-export const supersetAccess = (key: () => string | null, policy: EditPolicy, editsOn?: () => boolean): Access => withRights(supersetAuth(key, policy, editsOn), NO_RIGHTS);
+export const supersetAccess = (key: () => string | null, policy: EditPolicy, editsOn?: () => boolean) => withRights(supersetAuth(key, policy, editsOn), NO_RIGHTS);

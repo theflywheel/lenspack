@@ -1,8 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-import { type FilterClause, filterClauseSchema } from "@lenspack/core";
-import { type Pack, operands, parseExpr } from "@lenspack/spec";
+import { filterClauseSchema } from "@lenspack/core";
+import { type Identity, NO_RIGHTS, type Principal as Settled, type Rights, principalOf } from "@lenspack/policy";
 import { z } from "zod";
 
 import { join, resolve } from "node:path";
@@ -10,48 +10,18 @@ import { join, resolve } from "node:path";
 import { oidcAdapter } from "./oidc";
 import { passwordAdapter } from "./password";
 
-// Who is asking, and what they may see and change. An auth adapter says who
-// a caller is: the built-in admin with a password (the default), an OpenID
-// Connect sign-in, the login proxy in front, or a bearer token. Above every
-// adapter alike, lenspack applies the answer: the rights (editors,
-// maintainers, usage) by user and role, the tenant and row scope to every
-// query, and each pack's access rules to what the caller may see at all. A board someone makes is theirs: others see it once it is shared,
-// and change it only by saving a copy. The pack's own boards, from its board
-// files, are everyone's to read and a maintainer's to change.
+// How a caller signs in. An auth adapter says who a caller is: the built-in
+// admin with a password (the default), an OpenID Connect sign-in, the login
+// proxy in front, or a bearer token. Above every adapter alike, the rights by
+// user and role and each pack's access rules apply (@lenspack/policy).
 
-export type Principal = {
-  user: string;
-  /** Narrows every query to this tenant. Must agree with a tenant the pack is pinned to. */
-  tenant?: string;
-  /** Row scope: filters every query carries, whatever the board asks. */
-  scope?: FilterClause[];
-  /** May make boards of their own, and change (ops, layout, revert, chat), share and delete them. */
-  edit?: boolean;
-  /** May also change the pack's own boards, for everyone. Implies edit. */
-  maintain?: boolean;
-  /** The packs this caller may open; absent means all. */
-  packs?: string[];
-  /** Roles and groups from the identity provider: what a pack's access rules match. */
-  roles?: string[];
-  /** May read the AI usage page, which names every user. Absent: as maintain. */
-  usage?: boolean;
-  /**
-   * Set when the caller may read a board and ask about it, but not change it: the chat still answers,
-   * and every edit tool replies with this message (e.g. "you can view this dashboard but not edit it").
-   * Absent, a caller without the edit right gets 403 from the chat, as before.
-   */
-  readOnly?: string;
-};
+export { type Identity, NO_RIGHTS, type PackRule, type Rights, hiddenKeys, packRuleSchema, principalOf } from "@lenspack/policy";
+
+/** What an access hook answers: an Identity. The name is kept for hooks written against it; @lenspack/policy's Principal is the settled one. */
+export type Principal = Identity;
 
 /** Decides who a request is. null: not signed in (401). */
-export type Access = (req: IncomingMessage) => Principal | null | Promise<Principal | null>;
-
-/**
- * Who an adapter says a caller is: a user and their roles, and what the
- * adapter itself grants (a token's rights, the admin's). The rights by role
- * are added above it (principalOf).
- */
-export type Identity = { user: string; roles: string[]; tenant?: string; scope?: FilterClause[]; packs?: string[]; edit?: boolean; maintain?: boolean; usage?: boolean; readOnly?: string };
+export type Access = (req: IncomingMessage) => Identity | null | Promise<Identity | null>;
 
 /** One way of signing in. auth.kind in lenspack.yaml (or LENSPACK_AUTH) picks it. */
 export interface AuthAdapter {
@@ -78,83 +48,6 @@ const roleRules = {
   /** May read the AI usage page; absent, the maintainers may. */
   usage: z.array(z.string()).optional(),
 };
-export type Rights = { editors: string[]; maintainers: string[]; usage?: string[] };
-export const NO_RIGHTS: Rights = { editors: [], maintainers: [] };
-
-/** The principal an identity is under the rights by user and role, whichever adapter named it. */
-export function principalOf(id: Identity, rules: Rights = NO_RIGHTS): Principal {
-  const { user, roles } = id;
-  // A role: entry matches roles only, so a user named like one gets nothing from it.
-  const among = (list: string[]) => list.some((e) => e === "*" || (e.startsWith("role:") ? roles.includes(e.slice(5)) : e === user));
-  const maintain = !!id.maintain || among(rules.maintainers);
-  const usage = id.usage ?? (rules.usage ? among(rules.usage) : maintain);
-  return {
-    user,
-    roles,
-    edit: maintain || !!id.edit || among(rules.editors),
-    ...(maintain ? { maintain } : {}),
-    usage,
-    ...(id.tenant ? { tenant: id.tenant } : {}),
-    ...(id.scope ? { scope: id.scope } : {}),
-    ...(id.packs ? { packs: id.packs } : {}),
-    ...(id.readOnly ? { readOnly: id.readOnly } : {}),
-  };
-}
-
-/**
- * Who may open a pack, and what of it they see. Rules are tried in order and
- * the first whose roles the caller has decides: hide (or only) names the
- * dimensions and measures they may not (or only may) use, and scope adds row
- * filters to every query they run. A caller no rule matches does not see the
- * pack. A pack with no rules is open to everyone signed in.
- */
-export const packRuleSchema = z
-  .object({
-    /** Roles or groups this rule is for; "*" for everyone signed in. */
-    roles: z.array(z.string().min(1)).min(1),
-    hide: z.array(z.string().min(1)).optional(),
-    only: z.array(z.string().min(1)).optional(),
-    scope: scopeSchema,
-  })
-  .strict()
-  .refine((r) => !(r.hide && r.only), { message: "a rule has hide or only, not both" });
-export type PackRule = z.infer<typeof packRuleSchema>;
-
-/** What one caller may use of a pack. */
-export type Grant = { hidden: ReadonlySet<string>; scope: FilterClause[] };
-export const FULL_GRANT: Grant = { hidden: new Set(), scope: [] };
-
-/**
- * The keys a rule keeps from its callers. A measure computed from a hidden
- * one is hidden with it: a ratio or a per-level target says what its parts are.
- * An unknown key is an error, so a typo cannot leave a key showing.
- */
-export function hiddenKeys(pack: Pack, rule: PackRule): ReadonlySet<string> {
-  const keys = [...pack.dimensions.map((d) => d.key), ...pack.measures.map((m) => m.key)];
-  for (const k of [...(rule.hide ?? []), ...(rule.only ?? [])]) if (!keys.includes(k)) throw new Error(`an access rule of pack "${pack.pack}" names "${k}", which is not one of its dimensions or measures`);
-  const hidden = new Set(rule.only ? keys.filter((k) => !rule.only!.includes(k)) : (rule.hide ?? []));
-  const parts = (m: Pack["measures"][number]) => [...(m.derived ? operands(parseExpr(m.derived)) : []), ...Object.values(m.levels ?? {})];
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const m of pack.measures)
-      if (!hidden.has(m.key) && parts(m).some((k) => hidden.has(k))) {
-        hidden.add(m.key);
-        grew = true;
-      }
-  }
-  return hidden;
-}
-
-const grants = new WeakMap<PackRule, Grant>();
-/** The caller's grant on a pack under its rules, or null: they may not open it. */
-export function grantOf(pack: Pack, rules: PackRule[] | undefined, who: Principal): Grant | null {
-  if (!rules) return FULL_GRANT;
-  const rule = rules.find((r) => r.roles.some((role) => role === "*" || (who.roles ?? []).includes(role)));
-  if (!rule) return null;
-  let grant = grants.get(rule);
-  if (!grant) grants.set(rule, (grant = { hidden: hiddenKeys(pack, rule), scope: rule.scope ?? [] }));
-  return grant;
-}
 
 export const authSchema = z.discriminatedUnion("kind", [
   // Explicitly open, for a local demo: anyone who reaches the port may read
@@ -335,8 +228,8 @@ export function accessFrom(auth: AuthConfig, opts: Parameters<typeof authFrom>[1
   return adapter ? withRights(adapter, rights) : undefined;
 }
 
-/** An adapter's identities as principals, under the rights by user and role. */
-export const withRights = (adapter: AuthAdapter, rights: Rights): Access => async (req) => {
+/** An adapter's identities as settled principals, under the rights by user and role. */
+export const withRights = (adapter: AuthAdapter, rights: Rights): ((req: IncomingMessage) => Promise<Settled | null>) => async (req) => {
   const id = await adapter.identify(req);
   return id ? principalOf(id, rights) : null;
 };

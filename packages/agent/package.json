@@ -13,6 +13,7 @@
   "dependencies": {
     "@lenspack/core": "workspace:*",
     "@lenspack/engine": "workspace:*",
+    "@lenspack/policy": "workspace:*",
     "@lenspack/spec": "workspace:*",
     "zod": "^3.25.76"
   },

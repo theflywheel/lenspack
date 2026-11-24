@@ -18,6 +18,7 @@
     "@lenspack/dss": "workspace:*",
     "@lenspack/elasticsearch": "workspace:*",
     "@lenspack/engine": "workspace:*",
+    "@lenspack/policy": "workspace:*",
     "@lenspack/spec": "workspace:*",
     "@lenspack/sql": "workspace:*",
     "ai": "^7.0.109",

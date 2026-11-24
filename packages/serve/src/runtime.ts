@@ -1,7 +1,8 @@
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 
+import type { Principal } from "@lenspack/policy";
+
 import { type AppOptions, type Host, accessOf, createApp } from "./app";
-import type { Principal } from "./auth";
 import { NO_STORE, json } from "./http";
 import { type Provider, type ProviderConfig, buildProvider, probe, providersFromEnv } from "./llm";
 import { type Budget, addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";

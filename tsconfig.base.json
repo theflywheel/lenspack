@@ -16,6 +16,7 @@
     "paths": {
       "@lenspack/core": ["packages/core/src/index.ts"],
       "@lenspack/spec": ["packages/spec/src/index.ts"],
+      "@lenspack/policy": ["packages/policy/src/index.ts"],
       "@lenspack/engine": ["packages/engine/src/index.ts"],
       "@lenspack/elasticsearch": ["packages/elasticsearch/src/index.ts"],
       "@lenspack/superset": ["packages/superset/src/index.ts"],
