@@ -1,4 +1,4 @@
-import { type BoardConfig, type BoardOp, type MeasuredQuery, type Query, type Widget, measured, nearest } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, MAX_OFFSET, type MeasuredQuery, type Query, measured, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
@@ -428,17 +428,6 @@ export function checkOps(
   return { ok: true };
 }
 
-// Merges a board's filter selections into a widget's own filter clauses. A
-// filter narrows only the widgets it says it applies to.
-export function widgetQuery(config: BoardConfig, id: string, widget: Widget, selections: Record<string, string> = {}): Query | null {
-  if (widget.kind === "text") return null;
-  const extra = config.filters
-    .filter((f) => selections[f.field] && (f.applies.includes("*") || f.applies.includes(id)))
-    .map((f) => ({ dimension: f.field, op: "eq" as const, value: selections[f.field]! }));
-  if (extra.length === 0) return widget.query;
-  return { ...widget.query, filters: [...(widget.query.filters ?? []), ...extra] } as Query;
-}
-
 /**
  * One pass over a board, resolving each widget. Identical queries run once:
  * three widgets drawing the same breakdown differently should cost one scan.
@@ -463,9 +452,6 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
   return data;
 }
 
-/** The deepest row a page may start at: a deep page is still a small top-N sort in the source. */
-export const MAX_PAGE_OFFSET = 10000;
-
 export type WidgetPage = WidgetData & { page: number; pageSize: number; offset: number; hasNext: boolean };
 
 /**
@@ -483,7 +469,7 @@ export async function widgetPage(config: BoardConfig, id: string, page: number, 
   const pageSize = Math.min(widget.pageSize, query.limit);
   const n = Math.max(0, Math.floor(page) || 0);
   const offset = n * pageSize;
-  if (offset > MAX_PAGE_OFFSET) throw new ResolveError("NOT_SUPPORTED", `Pages go as deep as row ${MAX_PAGE_OFFSET}; narrow the table with a filter or a shorter time to see further`, id);
+  if (offset > MAX_OFFSET) throw new ResolveError("NOT_SUPPORTED", `Pages go as deep as row ${MAX_OFFSET}; narrow the table with a filter or a shorter time to see further`, id);
   const data = await run({ ...query, limit: pageSize + 1, offset }, opts);
   const records = data.records ?? [];
   return { ...data, records: records.slice(0, pageSize), total: Math.min(records.length, pageSize), page: n, pageSize, offset, hasNext: records.length > pageSize };

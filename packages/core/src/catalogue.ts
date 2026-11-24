@@ -2,9 +2,11 @@
 // input. It is derived from a pack at runtime by @lenspack/spec; core never
 // knows where it came from, which is what keeps this package domain-free.
 
-export type MeasureFormat = "number" | "percent" | "currency" | "compact" | "duration";
-export type DimensionType = "string" | "number" | "boolean" | "time" | "enum";
-export type Grain = "hour" | "day" | "week" | "month" | "quarter" | "year";
+import type { DIMENSION_TYPES, FORMATS, GRAINS } from "./schema";
+
+export type MeasureFormat = (typeof FORMATS)[number];
+export type DimensionType = (typeof DIMENSION_TYPES)[number];
+export type Grain = (typeof GRAINS)[number];
 
 export type CatalogueDimension = {
   key: string;
@@ -127,15 +129,6 @@ export function drilledDimension(dimension: string, selections: Record<string, s
     return index > deepest ? dimension : levels[Math.min(deepest + 1, levels.length - 1)]!;
   }
   return dimension;
-}
-
-/** The next level below a dimension, if it is a level with one. */
-export function nextLevel(dimension: string, hierarchies: Record<string, string[]> = {}): string | null {
-  for (const levels of Object.values(hierarchies)) {
-    const index = levels.indexOf(dimension);
-    if (index >= 0) return levels[index + 1] ?? null;
-  }
-  return null;
 }
 
 /** Selecting a level clears the finer levels below it in the same hierarchy. */
