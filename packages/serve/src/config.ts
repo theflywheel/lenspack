@@ -11,7 +11,7 @@ import YAML from "yaml";
 import { z } from "zod";
 
 import type { BoardFile, Host } from "./app";
-import { authSchema } from "./auth";
+import { authSchema, hiddenKeys, packRuleSchema } from "./auth";
 
 // lenspack.yaml: which sources exist, which pack reads which source, and where
 // boards are kept. Secrets are never written here — only `env:NAME`, read from
@@ -52,6 +52,8 @@ export const configSchema = z.object({
         tenant: z.string().optional(),
         /** Pin "now" (for fixed demo data); otherwise the clock. */
         now: z.string().datetime({ offset: true }).optional(),
+        /** Who may open this pack and what of it they see, by role; first match wins. Absent: everyone signed in sees all of it. */
+        access: z.array(packRuleSchema).min(1).optional(),
       }),
     )
     .min(1),
@@ -79,12 +81,11 @@ export const configSchema = z.object({
     .optional(),
   port: z.number().int().positive().optional(),
   /**
-   * Who may use the API. Absent: the server listens on 127.0.0.1 only, for
-   * local use. `{ kind: none }` opens it to the network with no sign-in —
-   * say so explicitly; `tokens` or `proxy` identify each caller.
+   * How callers sign in. Absent: `password`, the built-in admin. `{ kind:
+   * none }` is open, for a local demo; LENSPACK_AUTH overrides the kind.
    */
   auth: authSchema.optional(),
-  /** Interface to listen on; defaults to 127.0.0.1 without auth, 0.0.0.0 with it. */
+  /** Interface to listen on; defaults to 127.0.0.1 when open (none), 0.0.0.0 with a sign-in. */
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
@@ -182,6 +183,8 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
         throw new Error(`pack ${p.pack} examples[${i}] ("${ex.question}"): ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    // A rule naming a key the pack does not have stops the server here, not at the first request.
+    for (const rule of p.access ?? []) hiddenKeys(pack, rule);
     const name = p.name ?? pack.pack;
     hosts.push({
       name,
@@ -192,6 +195,7 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
       ctx: { ...(p.tenant ? { tenant: p.tenant } : {}), ...(p.now ? { now: new Date(p.now) } : {}) },
       boards: p.boards ? readBoards(at(p.boards)) : [],
       proposals: fileProposals(at(join(config.proposals ?? ".", `${name}.proposals.json`))),
+      ...(p.access ? { access: p.access } : {}),
     });
   }
   return { hosts, sources: connectors, close: async () => void (await Promise.all(closers.map((c) => c()))) };

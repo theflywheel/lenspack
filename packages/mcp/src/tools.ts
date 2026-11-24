@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type BoardOp, type BoardStore, type FilterClause, type Query, layoutChanges, nearest, querySchema, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardOp, type BoardStore, type FilterClause, type Query, layoutChanges, nearest, querySchema, summarise, verifiedOnly, withoutKeys } from "@lenspack/core";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/spec";
 import { type Connector, type Ctx, type Executor, checkOps, describeSources, explain, run, runSql, sqlConnector, valuesQuery } from "@lenspack/sql";
 
@@ -293,13 +293,16 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     throw new Error(
       `run_sql would read "${pack.pack}" past its tenant and row scope. Enable it as "role-scoped" only when the database role behind this connection already limits the rows it can read.`,
     );
+  // Raw SQL does not pass through the pack, so it cannot keep a key from a caller either.
+  if (opts.runSql && opts.ctx?.hidden?.size) throw new Error(`run_sql would read "${pack.pack}" past the keys this caller may not use`);
   const connector = opts.connector ?? (opts.executor ? sqlConnector(opts.executor) : null);
   if (!connector) throw new Error("boardTools needs a connector (or a SQL executor)");
   const executor = opts.executor ?? (connector as { executor?: Executor }).executor;
   // What the model sees the compiled query called: SQL, or a search request.
   const nativeKey = connector.kind === "postgres" || connector.kind === "duckdb" ? "sql" : "request";
-  const catalogue = verifiedOnly(catalogueFrom(pack));
   const ctx = opts.ctx ?? {};
+  // What the model may name: verified keys this caller may use.
+  const catalogue = withoutKeys(verifiedOnly(catalogueFrom(pack)), ctx.hidden);
   const proposals = opts.proposals ?? memoryProposals();
 
   // Models call several edit tools in one step and the SDK runs them in
@@ -353,7 +356,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
 
   // A missing value is grouped as "(none)", which no filter can match, so it is never offered.
   const values = async (dimension: string, q = "", limit = 50, exact?: string[]) => {
-    const query = valuesQuery(dimension, pack, limit, q);
+    const query = valuesQuery(dimension, pack, limit, q, ctx.hidden);
     if (!query) return null;
     const data = await run(exact ? { ...query, filters: [{ dimension, op: "in", value: exact }] } : query, { pack, connector, ctx, timeoutMs: opts.timeoutMs });
     return { ...data, rows: data.rows.filter((r) => r.group !== "(none)") };

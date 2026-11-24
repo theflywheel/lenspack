@@ -1,4 +1,4 @@
-import { type FilterClause, type Query, nearest } from "@lenspack/core";
+import { type FilterClause, type Query, nearest, queryKeys } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/spec";
 
 import { bucketZone, calendarRange } from "./calendar";
@@ -17,6 +17,12 @@ export type Ctx = {
    * (OUT_OF_SCOPE) rather than answered unnarrowed.
    */
   scope?: FilterClause[];
+  /**
+   * Keys this caller may not use: a query naming one is refused
+   * (NOT_PERMITTED), whatever asked for it. The scope above may still filter
+   * on one, as the server set it, not the caller.
+   */
+  hidden?: ReadonlySet<string>;
 };
 
 export type ResolveErrorCode =
@@ -32,7 +38,8 @@ export type ResolveErrorCode =
   | "TIME_DIMENSION"
   | "NEEDS_JOIN"
   | "NOT_SUPPORTED"
-  | "OUT_OF_SCOPE";
+  | "OUT_OF_SCOPE"
+  | "NOT_PERMITTED";
 
 /** What a backend can do. Resolution refuses the rest up front. */
 export type Capabilities = {
@@ -75,6 +82,18 @@ export class ResolveError extends Error {
   toJSON() {
     return { code: this.code, error: this.message, key: this.key, nearest: this.nearest };
   }
+}
+
+/**
+ * The refusal for a query that names a key the caller may not use, or null.
+ * Checked on the query as asked, before anything is resolved, so no answer,
+ * filter menu or compiled statement is ever built over a hidden key.
+ */
+export function notPermitted(query: Query, ctx: Ctx = {}): ResolveError | null {
+  if (!ctx.hidden?.size) return null;
+  const k = queryKeys(query);
+  const key = [...k.measures, ...k.dimensions].find((x) => ctx.hidden!.has(x));
+  return key ? new ResolveError("NOT_PERMITTED", `"${key}" is not available to you`, key) : null;
 }
 
 export type JoinStep = { from: string; to: string; on: { left: { entity: string; column: string }; right: { entity: string; column: string } } };
@@ -124,7 +143,7 @@ function edges(pack: Pack): Map<string, Edge[]> {
 
 // Shortest path over joins that cannot multiply rows. If the only way there
 // is through a one-to-many step, that is a fan-out and it is refused.
-function joinPath(pack: Pack, graph: Map<string, Edge[]>, root: string, target: string, dimensionKey: string): JoinStep[] {
+function joinPath(pack: Pack, graph: Map<string, Edge[]>, root: string, target: string, dimensionKey: string, shown: (key: string) => boolean = () => true): JoinStep[] {
   if (root === target) return [];
   const search = (allowFanout: boolean) => {
     const prev = new Map<string, { from: string; step: JoinStep }>();
@@ -161,8 +180,8 @@ function joinPath(pack: Pack, graph: Map<string, Edge[]>, root: string, target: 
     // (the join table rather than its far end), and a target with no measures
     // of its own would otherwise produce a refusal with no way forward.
     const crossed = [target, ...fanout.map((step) => step.to)];
-    const onPath = pack.measures.filter((m) => crossed.includes(m.entity) && !m.derived).map((m) => m.key);
-    const onRoot = pack.dimensions.filter((d) => d.entity === root && d.type !== "time").map((d) => d.key);
+    const onPath = pack.measures.filter((m) => crossed.includes(m.entity) && !m.derived).map((m) => m.key).filter(shown);
+    const onRoot = pack.dimensions.filter((d) => d.entity === root && d.type !== "time").map((d) => d.key).filter(shown);
     throw new ResolveError(
       "FANOUT_REFUSED",
       `"${dimensionKey}" lives on "${target}", which has many rows per "${root}" row; grouping a ${root}-level measure by it would multiply the numbers.` +
@@ -201,9 +220,14 @@ function window(query: Query, now: Date, timeZone?: string): { time: TimeWindow;
 export const nowOf = (ctx: Ctx = {}) => ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
 
 export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilities = SQL_CAPABILITIES): BoundPlan {
+  // Every path to a source resolves here: whatever built the query, a hidden key stops it.
+  const denied = notPermitted(query, ctx);
+  if (denied) throw denied;
   const now = nowOf(ctx);
-  const dimKeys = pack.dimensions.map((d) => d.key);
-  const measureKeys = pack.measures.map((m) => m.key);
+  // A suggestion never names a key the caller may not use.
+  const shown = (key: string) => !ctx.hidden?.has(key);
+  const dimKeys = pack.dimensions.map((d) => d.key).filter(shown);
+  const measureKeys = pack.measures.map((m) => m.key).filter(shown);
   const graph = edges(pack);
 
   const findMeasure = (key: string): PackMeasure => {
@@ -280,7 +304,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     const local = def.entity !== root ? def.also?.[root] : undefined;
     if (local) return { def: { ...def, entity: root, field: local.field, sql: local.sql, json: local.json, also: undefined }, path: [] };
     if (!caps.joins && def.entity !== root) {
-      const here = pack.dimensions.filter((d) => d.type !== "time" && (d.entity === root || d.also?.[root])).map((d) => d.key);
+      const here = pack.dimensions.filter((d) => d.type !== "time" && (d.entity === root || d.also?.[root])).map((d) => d.key).filter(shown);
       throw new ResolveError(
         "NEEDS_JOIN",
         `"${key}" lives on "${def.entity}" and this source cannot join it to "${root}".` + (here.length ? ` Dimensions on "${root}": ${here.join(", ")}.` : ""),
@@ -288,7 +312,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
         nearest(key, here) ?? here[0],
       );
     }
-    return { def, path: joinPath(pack, graph, root, def.entity, key) };
+    return { def, path: joinPath(pack, graph, root, def.entity, key, shown) };
   };
 
   let dimension: BoundDimension | null = null;

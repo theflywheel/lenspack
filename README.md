@@ -244,7 +244,8 @@ A heatmap (one measure over two dimensions: a breakdown's dimension as columns a
 - No URLs, HTML or colours in any config; text widgets render as text nodes.
 - Tenancy is structural: if an entity declares `tenant`, a query without one does not compile.
 - Every query runs read-only, one statement at a time, under a statement timeout and a row cap, enforced by the database's driver rather than trusted from the SQL; boards are stored apart from the data.
-- **Who is asking** is the deployment's answer, not lenspack's: an `access(request)` hook (or `auth:` in `lenspack.yaml`) names the caller, their tenant, their row scope and whether they may edit. Unknown callers get 401; viewers cannot change boards.
+- **Who is asking** is the deployment's answer, not lenspack's: an `access(request)` hook (or `auth:` in `lenspack.yaml`: by default the built-in `admin` with a password, or OpenID Connect sign-in, a login proxy's headers, or tokens) names the caller, their roles, tenant, row scope and whether they may edit. Unknown callers get 401; viewers cannot change boards.
+- **Packs are access rules too.** By role, a pack's `access:` says who may open it, which keys they may use (a phone or free-text key hidden from partners) and which rows. Enforced in resolution on every path, and left out of the catalogue and the chat's prompt. See [docs/access.md](docs/access.md).
 - **Boards have owners.** A board someone makes is theirs, hidden until they share it and read-only to others after (they save a copy). The pack's own boards, from its board files, are everyone's to read and a `maintain`er's to change.
 - **Row scope** (`ctx.scope`) narrows every query, filter menus included, on every connector. A number the scope cannot reach is refused (`OUT_OF_SCOPE`), never shown unnarrowed.
 - Every change, refused change and denied request is passed to an `audit` hook with the user (`audit: file.jsonl` in the config).
@@ -253,9 +254,11 @@ A heatmap (one measure over two dimensions: a breakdown's dimension as columns a
 - Pack `sql` fragments are trusted code. Review them like code.
 
 ```yaml
-# lenspack.yaml — no auth block: 127.0.0.1 only. `auth: { kind: none }` opens it, on purpose.
+# lenspack.yaml. No auth block: the built-in admin and a password (LENSPACK_ADMIN_PASSWORD,
+# or one made at first start and written once to .lenspack/admin-password.txt).
+# `auth: { kind: none }` is open, for a local demo, on 127.0.0.1.
 auth:
-  kind: tokens                     # or: proxy (a login proxy's user header, trusted only with its shared secret)
+  kind: tokens                     # or: password (default), oidc (lenspack signs people in), proxy (a login proxy's headers, trusted only with its shared secret)
   users:
     - { user: ops,  token: env:OPS_TOKEN, edit: true, maintain: true }
     - { user: kenya, token: env:KE_TOKEN, tenant: ke, scope: [{ dimension: province, op: in, value: [Nairobi] }] }
