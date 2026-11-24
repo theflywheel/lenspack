@@ -12,10 +12,11 @@ import { BUCKET, type Metric, N, columnOf, computeRefusalForSuperset, metricLabe
 // So a metric means one thing in both, and Superset's row-level security
 // applies to whatever the service account may see.
 
-// A widget with compute is kept as a Superset chart only where Superset's own advanced analytics
-// recompute it (computeForm). Reading through this connector, the steps are not sent as Superset
-// post-processing: the engine asks for the base rows and computes them, as for every source, so
-// a chat answer follows the same rules for zeros and gaps whatever the source (docs/compute.md).
+// A widget with compute is kept as a Superset chart only where Superset recomputes it the same
+// way: with its advanced analytics, or as a pivot table (computeForm). Reading through this
+// connector, the steps are not sent as Superset post-processing: the engine asks for the base rows
+// and computes them, as for every source, so a chat answer follows the same rules for zeros and
+// gaps whatever the source (docs/compute.md).
 export const SUPERSET_CAPABILITIES: Capabilities = {
   joins: false,
   exactDistinct: true,

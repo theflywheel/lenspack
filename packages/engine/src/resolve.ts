@@ -70,7 +70,7 @@ export type Capabilities = {
    * steps itself (Superset): why one with this compute cannot be kept, or null.
    * Absent: any compute is kept, as Lenspack draws the widget.
    */
-  savedCompute?: (widget: Widget) => string | null;
+  savedCompute?: (widget: Widget, pack: Pack) => string | null;
 };
 
 export const SQL_CAPABILITIES: Capabilities = { joins: true, exactDistinct: true, exactPercentiles: true, points: true };
