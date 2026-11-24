@@ -1,0 +1,5 @@
+requests
+jiwer
+# only for local:<size> systems
+# faster-whisper
+# numpy

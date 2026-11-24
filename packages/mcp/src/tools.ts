@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type BoardOp, type BoardStore, type FilterClause, type Query, nearest, querySchema, summarise, verifiedOnly, withoutKeys } from "@lenspack/core";
+import { type BoardOp, type BoardStore, type FilterClause, type Query, layoutChanges, nearest, querySchema, summarise, verifiedOnly, withoutKeys } from "@lenspack/core";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/spec";
 import { type Connector, type Ctx, type Executor, checkOps, describeSources, explain, run, runSql, sqlConnector, valuesQuery } from "@lenspack/sql";
 
@@ -42,6 +42,13 @@ export type BoardToolsOptions = {
   runSql?: boolean | "role-scoped";
   proposals?: ProposalStore;
   timeoutMs?: number;
+  /**
+   * The caller may read this board but not change it. Every edit tool then answers with this
+   * message instead of changing the board, so the model can say why (reading tools still work).
+   */
+  readOnly?: string;
+  /** Told of every edit a tool applied or refused (an audit log). Never throws into the tool. */
+  onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; error?: string }) => void;
 };
 
 // Lenient scalars: a null, a numeric string or a "true" from a weaker model
@@ -73,14 +80,15 @@ const period = z.preprocess((v) => {
   return s === "day" ? "today" : ["week", "month", "quarter", "year"].includes(s) ? `this_${s}` : s;
 }, oneOf(["", ...(Object.keys(PERIODS) as PeriodName[])], ""));
 
-const PLACE = str("bottom").describe('Where to put it: "top", "bottom", or "after:<widgetId>"');
+const PLACE = str("bottom").describe('Where to put it: "top", "bottom", "after:<widgetId>" (beside that widget; a full row makes room by narrowing its widgets) or "below:<widgetId>" (a new row under that widget\'s row)');
 const WIDTH = oneOf(["full", "half", "third", "quarter"], "half").describe("full is the whole row, half is two across, third is three across, quarter is four across");
 const QUERY_SHAPE = {
-  query_kind: z.enum(["breakdown", "series", "value", "rows"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records"),
-  measure: str().describe("Measure key from list_metrics (not for rows)"),
+  query_kind: z.enum(["breakdown", "series", "value", "rows", "points"]).describe("breakdown = a measure per group; series = a measure over time; value = one number; rows = a list of records; points = each record's location, for a map (entities with a location only)"),
+  measure: str().describe("Measure key from list_metrics (not for rows). For points: optional, sizes each point (a measure of the entity)"),
   measures: str().describe("Optional, comma-separated: further measures over the same groups, as extra table columns or chart series (not with a split series)"),
-  dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns"),
-  entity: str().describe("For rows: the entity to list"),
+  dimension: str().describe("For breakdown: the dimension to group by. For series: optional split. For rows: comma-separated columns. For points: optional, colours each point by this category"),
+  entity: str().describe("For rows or points: the entity to list"),
+  label: str().describe("For points: optional dimension that names each point (shown on hover and in answers)"),
   grain: oneOf(["hour", "day", "week", "month", "quarter", "year"], "day").describe("For series"),
   time_last: str().describe('Rolling window back from now, like "30d", "12w", "6m" ("last 30 days" -> "30d", "last 10 weeks" -> "10w"); empty means all time. For a calendar period ("this month", "last week") use time_period'),
   time_period: period.describe('Calendar period, weeks from Monday: "this_month" is to date, "last_month" the whole previous one. Not with time_last or time_from'),
@@ -90,9 +98,11 @@ const QUERY_SHAPE = {
   compare: bool(false).describe("For value or breakdown: also compute the previous period, the same length just before (so not the previous calendar month)"),
   share: bool(false).describe("For breakdown: each group's share of the whole population, not of the groups shown"),
   other: bool(false).describe('For breakdown: add one "(other)" row for everything outside the groups shown'),
-  limit: num(0, 0, 500).describe("Max groups or rows; 0 for the default"),
+  limit: num(0, 0, 5000).describe("Max groups (500), rows (1000) or points (5000); 0 for the default"),
   sort: oneOf(["asc", "desc"], "desc").describe('For breakdown: "desc" = largest first (default), "asc" = smallest first ("lowest first", "bottom N")'),
-  split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars"),
+  split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars, or as the rows of a heatmap (dimension is then its columns)"),
+  order_by: str().describe('For rows: the column to order the list by, e.g. a time column to list newest first; empty keeps the source order'),
+  order: oneOf(["asc", "desc"], "desc").describe('For rows with order_by: "desc" = newest or largest first (default), "asc" = oldest or smallest first'),
   filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; size >= 18". Ops: =, !=, >=, <=, in (comma-separated), contains, between <a> and <b>'),
   filter_dimension: str().describe("Optional: narrow by this dimension"),
   filter_value: str().describe("Optional: the value the filter dimension must equal"),
@@ -142,6 +152,20 @@ function typedValue(pack: Pack, dimension: string, v: string, clause: string) {
   return v;
 }
 
+type ChartKind = "bar" | "line" | "pie" | "area" | "heatmap" | "map";
+
+/**
+ * A chart widget from its kind and query. A heatmap's columns read in their own order (days,
+ * codes) rather than ranked by the measure, and it is shaded on the sequential scale.
+ */
+function chartWidget(chart: ChartKind, title: string, query: Query) {
+  if (chart === "heatmap") {
+    const q = query.kind === "breakdown" && !query.sortBy ? { ...query, sortBy: "group" as const, sort: "asc" as const } : query;
+    return { kind: "chart" as const, chart, title, query: q, options: { legend: true, colorScheme: "sequential" as const } };
+  }
+  return { kind: "chart" as const, chart, title, query, options: { legend: true, colorScheme: "default" as const } };
+}
+
 export function assembleQuery(a: QueryArgs, pack: Pack): Query {
   if (Boolean(a.time_from) !== Boolean(a.time_to)) throw new Error("time_from and time_to go together: give both, or use time_last");
   if (a.time_period && (a.time_last || a.time_from)) throw new Error("time_period goes alone: not with time_last or time_from/time_to");
@@ -152,7 +176,7 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
   const period = unit ? { period: unit, ...(offset ? { offset } : {}), ...(a.time_count > 1 ? { count: a.time_count } : {}) } : undefined;
   const time = a.time_from && a.time_to ? { from: a.time_from, to: a.time_to } : period ?? (a.time_last ? { last: a.time_last } : undefined);
   const more = a.measures.split(",").map((s) => s.trim()).filter((s) => s && s !== a.measure);
-  const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" ? { measures: more } : {}) };
+  const base = { ...(filters ? { filters } : {}), ...(time ? { time } : {}), ...(more.length && a.query_kind !== "rows" && a.query_kind !== "points" ? { measures: more } : {}) };
   switch (a.query_kind) {
     case "breakdown":
       return querySchema.parse({
@@ -176,6 +200,17 @@ export function assembleQuery(a: QueryArgs, pack: Pack): Query {
         kind: "rows",
         entity: a.entity,
         columns: a.dimension.split(",").map((s) => s.trim()).filter(Boolean),
+        ...(a.order_by ? { orderBy: { key: a.order_by, dir: a.order } } : {}),
+        ...(a.limit ? { limit: a.limit } : {}),
+        ...base,
+      });
+    case "points":
+      return querySchema.parse({
+        kind: "points",
+        entity: a.entity,
+        ...(a.dimension.trim() ? { color: a.dimension.trim() } : {}),
+        ...(a.measure.trim() ? { size: a.measure.trim() } : {}),
+        ...(a.label.trim() ? { label: a.label.trim() } : {}),
         ...(a.limit ? { limit: a.limit } : {}),
         ...base,
       });
@@ -201,7 +236,9 @@ function scalarsOf(q: Query) {
     case "value":
       return { query_kind: q.kind, measure: q.measure, compare: !!q.compare };
     case "rows":
-      return { query_kind: q.kind, entity: q.entity, dimension: q.columns.join(",") };
+      return { query_kind: q.kind, entity: q.entity, dimension: q.columns.join(","), order_by: q.orderBy?.key ?? "", order: q.orderBy?.dir ?? "desc" };
+    case "points":
+      return { query_kind: q.kind, entity: q.entity, dimension: q.color ?? "", measure: q.size ?? "", label: q.label ?? "" };
   }
 }
 
@@ -240,6 +277,15 @@ function fail(e: unknown) {
   return { applied: false, error: e instanceof Error ? e.message : String(e) };
 }
 
+// Rows per page of a table. A table of rows reads one row past its first
+// page with the board, so Prev/Next know whether another page exists.
+export const DEFAULT_PAGE_SIZE = 25;
+const PAGE_SIZE = num(0, 0, 200).describe("For a table: rows per page, up to 200; 0 for the default (25). A table of rows pages through all matching rows with Prev/Next");
+function tableOf(title: string, query: Query, pageSize: number, limitGiven: boolean) {
+  const rows = query.kind === "rows" && !limitGiven ? { ...query, limit: Math.min(1000, Math.max(query.limit, pageSize + 1)) } : query;
+  return { kind: "table" as const, title, query: rows, pageSize: Math.max(5, pageSize) };
+}
+
 export function boardTools(opts: BoardToolsOptions): Tool[] {
   const { pack, store, boardId } = opts;
   const scoped = Object.values(pack.entities).some((e) => e.tenant) || !!opts.ctx?.scope?.length;
@@ -264,21 +310,49 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // the last write would win. Edits queue per tool set instead, and a patch
   // passes a function so it reads the board inside the queue.
   let queue: Promise<unknown> = Promise.resolve();
+  const told = (e: Parameters<NonNullable<BoardToolsOptions["onEdit"]>>[0]) => {
+    try {
+      opts.onEdit?.(e);
+    } catch {
+      /* an audit sink must not break an edit */
+    }
+  };
   const apply = (edit: BoardOp[] | (() => Promise<BoardOp[] | ReturnType<typeof fail> | { applied: true; [k: string]: unknown }>)) => {
+    if (opts.readOnly) {
+      told({ outcome: "refused", ops: Array.isArray(edit) ? edit.map((o) => o.op) : [], error: "read-only" });
+      return Promise.resolve({ applied: false as const, error: opts.readOnly, readOnly: true as const });
+    }
     const work = async () => {
       const ops = Array.isArray(edit) ? edit : await edit();
       if (!Array.isArray(ops)) return ops;
+      const names = ops.map((o) => o.op);
       // Refuse at edit time what the compiler would refuse at render time.
       const checked = checkOps(ops, pack, { ctx, capabilities: connector.capabilities });
-      if (!checked.ok) return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      if (!checked.ok) {
+        told({ outcome: "refused", ops: names, error: checked.error });
+        return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      }
+      const layoutEdit = ops.some((op) => op.op === "move_widget" || op.op === "resize_widget" || op.op === "remove_widget");
+      const before = layoutEdit ? (await store.get(boardId))?.config : undefined;
       const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
-      if (!result.ok) return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
-      return { applied: true, version: result.board.version, board: summarise(result.board.config) };
+      if (!result.ok) {
+        told({ outcome: "refused", ops: names, error: result.error });
+        return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
+      }
+      told({ outcome: "ok", ops: names, version: result.board.version });
+      // What the edit did besides what was asked (room made, a widget widened), so the model can say so.
+      const layout = before ? layoutChanges(before, result.board.config, ops) : [];
+      return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: summarise(result.board.config) };
     };
     const next = queue.then(work, work);
     queue = next.catch(() => undefined);
     return next;
   };
+  // Reads wait for the edits already asked for. The SDK runs a step's tool calls together, so a
+  // get_board beside a move_widget read the board before the move landed and showed the version
+  // before it: the model saw a layout one edit behind the edit's own result and called the
+  // readings inconsistent.
+  const afterEdits = <T>(read: () => Promise<T>): Promise<T> => queue.then(read, read);
 
   // A missing value is grouped as "(none)", which no filter can match, so it is never offered.
   const values = async (dimension: string, q = "", limit = 50, exact?: string[]) => {
@@ -321,7 +395,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           !needle || [x.key, x.label, ...(x.synonyms ?? []), x.hint ?? ""].some((s) => s.toLowerCase().includes(needle));
         return {
           pack: `${pack.pack} v${pack.version}`,
-          entities: catalogue.entities.map((e) => ({ key: e.key, grain: e.grain, hasTime: e.hasTime })),
+          entities: catalogue.entities.map((e) => ({ key: e.key, grain: e.grain, hasTime: e.hasTime, ...(e.hasLocation ? { hasLocation: true } : {}) })),
           dimensions: catalogue.dimensions.filter(matches).map((d) => ({ key: d.key, label: d.label, entity: d.entity, type: d.type, ...(d.hint ? { hint: d.hint } : {}) })),
           measures: catalogue.measures.filter(matches).map((m) => ({ key: m.key, label: m.label, entity: m.entity, format: m.format, ...(m.hint ? { hint: m.hint } : {}) })),
           note: "A measure is computed at its entity's grain. A dimension on another entity works only through a many-to-one join; otherwise the query is refused rather than multiplied.",
@@ -392,7 +466,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       description: "Read what is currently on the board: widgets, their ids, and how they are arranged by row. Call this before editing so you refer to widgets by the ids they actually have.",
       inputSchema: z.object({}),
       async execute() {
-        const board = await store.get(boardId);
+        const board = await afterEdits(() => store.get(boardId));
         if (!board) return { error: "This board no longer exists" };
         return { board: summarise(board.config), version: board.version };
       },
@@ -403,7 +477,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         "The board's saved versions, newest first: number, who or what made it (chat, by hand, board file, rollback) and what changed. Call this before restore_version when the user names a point in the history rather than the original.",
       inputSchema: z.object({ limit: num(20, 1, 100).describe("How many versions, newest first (default 20)") }),
       async execute({ limit }) {
-        const all = await store.versions(boardId);
+        const all = await afterEdits(() => store.versions(boardId));
         if (all.length === 0) return { error: "This board has no history" };
         const base = baselineOf(all);
         return {
@@ -433,17 +507,19 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
     defineTool({
       name: "add_widget",
-      description: "Put something new on the board. Use chart for a breakdown or series, kpi for a single headline number, table for a list, text for a note.",
+      description:
+        'Put something new on the board. Use chart for a breakdown or series, kpi for a single headline number, table for a list, text for a note. A heatmap chart shades one measure over two dimensions: "ward by day" is a series with grain day and dimension ward (rows), or a breakdown with dimension as the columns and split as the rows. Give a heatmap full width. A map chart draws a points query: the records of an entity with a location (list_metrics marks them), coloured by a dimension and sized by a measure, e.g. "facilities by zero-dose band" is query_kind points, entity facility, dimension the band, label the facility name. Give a map half or full width.',
       inputSchema: z.object({
         id: z.string().describe("Short lowercase id, e.g. revenue_by_country"),
         kind: z.enum(["chart", "kpi", "table", "text"]),
         title: z.string().describe("What the reader sees above it"),
-        chart: oneOf(["bar", "line", "pie", "area"], "bar").describe("Only when kind is chart"),
-        body: str().describe("Only when kind is text: the note itself"),
+        chart: oneOf(["bar", "line", "pie", "area", "heatmap", "map"], "bar").describe("Only when kind is chart"),
+        body: str().describe("Only when kind is text: the note itself, in markdown (paragraphs, **bold**, *italics*, - lists, [links](https://...)); up to 2000 characters"),
         ...QUERY_SHAPE,
         place: PLACE,
         width: WIDTH,
         height: num(0, 0, 20).describe("Rows tall; 0 lets the server choose"),
+        page_size: PAGE_SIZE,
       }),
       async execute(a) {
         try {
@@ -453,8 +529,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
               : a.kind === "kpi"
                 ? { kind: "kpi" as const, title: a.title, query: assembleQuery(a, pack), aggregate: "last" as const }
                 : a.kind === "table"
-                  ? { kind: "table" as const, title: a.title, query: assembleQuery(a, pack), pageSize: 10 }
-                  : { kind: "chart" as const, chart: a.chart as "bar" | "line" | "pie" | "area", title: a.title, query: assembleQuery(a, pack), options: { legend: true, colorScheme: "default" as const } };
+                  ? tableOf(a.title, assembleQuery(a, pack), a.page_size || DEFAULT_PAGE_SIZE, a.limit > 0)
+                  : chartWidget(a.chart as ChartKind, a.title, assembleQuery(a, pack));
           return apply([{ op: "add_widget", id: a.id, widget, placement: { place: a.place, width: a.width as "full" | "half" | "third" | "quarter", ...(a.height > 0 ? { height: a.height } : {}) } }]);
         } catch (e) {
           return fail(e);
@@ -469,11 +545,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         id: z.string(),
         kind: given(z.enum(["chart", "kpi", "table", "text"])).describe("Only to change it"),
         title: given(z.string()),
-        chart: given(z.enum(["bar", "line", "pie", "area"])),
-        body: given(z.string()),
+        chart: given(z.enum(["bar", "line", "pie", "area", "heatmap", "map"])),
+        body: given(z.string()).describe("Only for text: the note, in markdown"),
+        page_size: given(PAGE_SIZE),
         ...PATCH_SHAPE,
       }),
-      async execute({ id, kind, title, chart, body, ...fields }) {
+      async execute({ id, kind, title, chart, body, page_size, ...fields }) {
         const changed = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) as Partial<QueryArgs>;
         try {
           return await apply(async () => {
@@ -497,15 +574,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
               to === "kpi"
                 ? { aggregate: "last" as const, ...(current.kind === "kpi" ? current : {}), kind: "kpi" as const, title: name, query }
                 : to === "table"
-                  ? { pageSize: 10, ...(current.kind === "table" ? current : {}), kind: "table" as const, title: name, query }
-                  : {
-                      options: { legend: true, colorScheme: "default" as const },
-                      ...(current.kind === "chart" ? current : {}),
-                      kind: "chart" as const,
-                      chart: chart ?? (current.kind === "chart" ? current.chart : "bar"),
-                      title: name,
-                      query,
-                    };
+                  ? tableOf(name, query, page_size || (current.kind === "table" ? current.pageSize : DEFAULT_PAGE_SIZE), !page_size || !!changed.limit)
+                  : (() => {
+                      const kindNow = (chart ?? (current.kind === "chart" ? current.chart : "bar")) as ChartKind;
+                      const fresh = chartWidget(kindNow, name, query);
+                      // Options carry over, except across the heatmap line (its scale is sequential).
+                      return { ...fresh, ...(current.kind === "chart" && (current.chart === "heatmap") === (kindNow === "heatmap") ? { options: current.options } : {}) };
+                    })();
             return [{ op: "update_widget", id, widget }];
           });
         } catch (e) {
@@ -519,7 +594,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       inputSchema: z.object({ id: z.string(), place: PLACE, width: WIDTH }),
       execute: ({ id, place, width }) => {
         const w = width as "full" | "half" | "third" | "quarter";
-        return apply([{ op: "move_widget", id, placement: { place, width: w } }, { op: "resize_widget", id, width: w }]);
+        // Resize first, so the move looks for room at the width asked for.
+        return apply([{ op: "resize_widget", id, width: w }, { op: "move_widget", id, placement: { place, width: w } }]);
       },
     }),
     defineTool({

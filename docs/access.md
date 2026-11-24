@@ -14,6 +14,8 @@ Who may sign in, what they may do in the app, and what of each pack's data they 
 | `tokens` | bearer tokens the deployment issues | `roles:` per token |
 | `none` | open, for a local demo; listens on 127.0.0.1 unless `host:` says otherwise (opened by `LENSPACK_AUTH`, only `--host` moves it, so in a container pass `--host 0.0.0.0` too) | none: the one local user sees everything |
 
+Superset mode (`packages/superset/bin/serve.ts`) takes none of these kinds: Superset signs who is asking on every request, and that signed identity, with Superset's own dashboard rights, is the only sign-in there (`createApp` refuses an `auth` adapter alongside its `access` hook). See [packages/superset/README.md](../packages/superset/README.md).
+
 ### `password`
 
 For a deployment with no identity provider. There is one user, `admin`, with every right (editor, maintainer, usage) and the role `admin`, which pack rules can match. lenspack keeps no other users and has no user management: for named people, use `oidc` or a login proxy.

@@ -1,0 +1,210 @@
+{"id": "niger/niger_sys1_1_101", "hyp": " Personne ne peut voyager dans cette direction pour le moment.  c'est trop dangereux.", "latency": 2.315, "usage": {"seconds": 7.25, "cost": 2.41425e-05}}
+{"id": "niger/niger_sys1_2_126", "hyp": " Je m'appelle Moubarak Babadi, je suis stagiaire en renseignement.", "latency": 2.884, "usage": {"seconds": 4.25, "cost": 1.41525e-05}}
+{"id": "niger/niger_sys1_3_182", "hyp": " La semaine passée.", "latency": 0.809, "usage": {"seconds": 1.5, "cost": 4.995e-06}}
+{"id": "niger/niger_sys1_4_218", "hyp": " Vous devrez faire demi-tour..!  et passer par les villages.", "latency": 1.125, "usage": {"seconds": 4.25, "cost": 1.41525e-05}}
+{"id": "niger/niger_sys1_5_291", "hyp": " pourrait être utilisée dans un", "latency": 1.178, "usage": {"seconds": 2, "cost": 6.66e-06}}
+{"id": "niger/niger_sys1_6_367", "hyp": " coma  s'est-il passé ?", "latency": 1.616, "usage": {"seconds": 4, "cost": 1.332e-05}}
+{"id": "niger/niger_sys1_7_458", "hyp": " Il y a un réservoir de Wissendly.", "latency": 1.534, "usage": {"seconds": 2.5, "cost": 8.325e-06}}
+{"id": "niger/niger_sys2_1_030", "hyp": " Bonjour messieurs.", "latency": 2.987, "usage": {"seconds": 1.75, "cost": 5.8275e-06}}
+{"id": "niger/niger_sys2_2_114", "hyp": " vous ne pouvez pas  aller dans cette direction.", "latency": 1.758, "usage": {"seconds": 4.75, "cost": 1.58175e-05}}
+{"id": "niger/niger_sys2_3_266", "hyp": " vous verrez  un chemin de terre rouge.", "latency": 3.36, "usage": {"seconds": 4.25, "cost": 1.41525e-05}}
+{"id": "niger/niger_sys2_4_311", "hyp": "Quelqu'un a planté des explosifs le long de la route.", "latency": 0.884, "usage": {"seconds": 2.5, "cost": 2.777777777775e-05}}
+{"id": "niger/niger_sys2_5_387", "hyp": " C'est trop dangereux..!", "latency": 1.386, "usage": {"seconds": 2, "cost": 6.66e-06}}
+{"id": "niger/niger_sys2_6_513", "hyp": " vous devez faire demi-tour  et passer par le village", "latency": 8.214, "usage": {"seconds": 4.5, "cost": 1.4985e-05}}
+{"id": "niger/niger_sys2_7_581", "hyp": "Juste devant le pont, vous verrez un chemin de la terre rouge.", "latency": 0.855, "usage": {"seconds": 3.75, "cost": 4.1666666666625e-05}}
+{"id": "niger/niger_sys2_8_612", "hyp": " Vous ne pouvez pas conduire votre véhicule ou marcher dans cette direction.", "latency": 2.76, "usage": {"seconds": 5, "cost": 1.665e-05}}
+{"id": "niger/niger_sys2_9_677", "hyp": " D'où venez-vous ?", "latency": 1.492, "usage": {"seconds": 2.25, "cost": 7.4925e-06}}
+{"id": "niger/niger_sys3_1_119", "hyp": " Je crois que ça ne marche pas.", "latency": 0.615, "usage": {"seconds": 10, "cost": 0.000111111111111}}
+{"id": "niger/niger_sys3_2_181", "hyp": " Avec un peu d'amélioration, ça n'a pas fonctionné.", "latency": 1.13, "usage": {"seconds": 4, "cost": 1.332e-05}}
+{"id": "niger/niger_sys3_3_211", "hyp": " nous avons de l'essence", "latency": 2.302, "usage": {"seconds": 2, "cost": 6.66e-06}}
+{"id": "niger/niger_sys3_4_260", "hyp": " Quand s'est-elle blessée ?", "latency": 2.148, "usage": {"seconds": 2.5, "cost": 8.325e-06}}
+{"id": "niger/niger_sys3_5_372", "hyp": "Nous espérons apporter tout soutien essentiel.", "latency": 0.821, "usage": {"seconds": 4.75, "cost": 5.2777777777725e-05}}
+{"id": "niger/niger_sys3_6_435", "hyp": " Oui, il y a une route à l'ouest d'ici.", "latency": 6.607, "usage": {"seconds": 3, "cost": 9.99e-06}}
+{"id": "niger/niger_sys3_7_486", "hyp": " Tout mouvement sur cette route est interdit.", "latency": 2.229, "usage": {"seconds": 3.25, "cost": 1.08225e-05}}
+{"id": "niger/niger_sys1_1_110", "hyp": " Quand s'est-il blessé ?  Comment s'est-il passé ?", "latency": 5.194, "usage": {"seconds": 4.5, "cost": 1.4985e-05}}
+{"id": "niger/niger_sys1_2_128", "hyp": " Est-ce que votre équipe  peut apporter un générateur", "latency": 1.937, "usage": {"seconds": 5, "cost": 1.665e-05}}
+{"id": "niger/niger_sys1_3_173", "hyp": " J'apprécie cet appareil.", "latency": 0.552, "usage": {"seconds": 10, "cost": 0.000111111111111}}
+{"id": "niger/niger_sys1_4_207", "hyp": " C'est vrai que vous avez besoin de médecins", "latency": 1.076, "usage": {"seconds": 2.75, "cost": 9.1575e-06}}
+{"id": "niger/niger_sys1_5_314", "hyp": " Ça a été interrompu la semaine dernière à cause d'une tempête.", "latency": 3.082, "usage": {"seconds": 3.25, "cost": 1.08225e-05}}
+{"id": "niger/niger_sys1_6_387", "hyp": " cela pose un problème.", "latency": 2.011, "usage": {"seconds": 3.25, "cost": 1.08225e-05}}
+{"id": "niger/niger_sys1_7_433", "hyp": " Nous n'avons pas le générateur.", "latency": 1.404, "usage": {"seconds": 2.25, "cost": 7.4925e-06}}
+{"id": "niger/niger_sys2_1_038", "hyp": " ne peut voyager dans cette direction pour le moment. C'est dangereux.", "latency": 3.092, "usage": {"seconds": 3.75, "cost": 1.24875e-05}}
+{"id": "niger/niger_sys2_2_146", "hyp": " C'est vrai !  Vous avez besoin de médicaments.", "latency": 0.777, "usage": {"seconds": 3.25, "cost": 1.08225e-05}}
+{"id": "niger/niger_sys2_3_242", "hyp": " Où exactement est-ce qu'il s'est passé ?", "latency": 1.791, "usage": {"seconds": 2.75, "cost": 9.1575e-06}}
+{"id": "niger/niger_sys2_4_334", "hyp": " juste devant le pont...  Vous verrez un chemin de terre rouge.", "latency": 1.271, "usage": {"seconds": 3.75, "cost": 1.24875e-05}}
+{"id": "niger/niger_sys2_5_441", "hyp": " Oui bien sûr", "latency": 1.445, "usage": {"seconds": 1.5, "cost": 4.995e-06}}
+{"id": "niger/niger_sys2_6_518", "hyp": " Il va vous apporter à l'hôpital.", "latency": 1.107, "usage": {"seconds": 3, "cost": 9.99e-06}}
+{"id": "niger/niger_sys2_7_552", "hyp": " Tout mouvement sur cette route est interdit.", "latency": 0.9, "usage": {"seconds": 2.25, "cost": 7.4925e-06}}
+{"id": "niger/niger_sys2_8_616", "hyp": " Toute la zone est sous le contrôle de la police.", "latency": 0.902, "usage": {"seconds": 3.75, "cost": 1.24875e-05}}
+{"id": "niger/niger_sys2_9_680", "hyp": " Connaissez-vous le corps de la paix ?", "latency": 1.556, "usage": {"seconds": 3.5, "cost": 1.1655e-05}}
+{"id": "niger/niger_sys3_1_116", "hyp": "Pourquoi ça ne marche pas en français ?", "latency": 0.901, "usage": {"seconds": 3.5, "cost": 3.888888888885e-05}}
+{"id": "niger/niger_sys3_2_163", "hyp": " Nous n'avons pas de générateurs électriques disponibles.", "latency": 3.346, "usage": {"seconds": 3.75, "cost": 1.24875e-05}}
+{"id": "niger/niger_sys3_3_197", "hyp": " Sériez-vous prêt à tester le système avec moi ?", "latency": 1.407, "usage": {"seconds": 2.75, "cost": 9.1575e-06}}
+{"id": "niger/niger_sys3_4_244", "hyp": " Tu m'ouvre ma interdiction, c'est tout.", "latency": 1.752, "usage": {"seconds": 2.25, "cost": 7.4925e-06}}
+{"id": "niger/niger_sys3_5_412", "hyp": " C'est vrai que vous avez besoin  d'un médecin", "latency": 1.25, "usage": {"seconds": 5, "cost": 1.665e-05}}
+{"id": "niger/niger_sys3_6_449", "hyp": " Nous n'avons pas de jénérateur électrique disponible.", "latency": 0.858, "usage": {"seconds": 3.25, "cost": 1.08225e-05}}
+{"id": "niger/niger_sys3_7_476", "hyp": " Merci beaucoup.  L'équipe scientifique et moi-même, nous apprécions votre soutien.", "latency": 2.726, "usage": {"seconds": 6.75, "cost": 2.24775e-05}}
+{"id": "niger/niger_sys1_1_113", "hyp": " Quand s'est-il blessé ?", "latency": 0.505, "usage": {"seconds": 10, "cost": 0.000111111111111}}
+{"id": "niger/niger_sys1_2_139", "hyp": " Oui, l'équipe américaine peut acheter des provisions au magasin situé à environ 300 mètres de l'entrée.", "latency": 0.829, "usage": {"seconds": 8, "cost": 2.664e-05}}
+{"id": "niger/niger_sys1_3_155", "hyp": " il y a un peu de difficulté dans la traduction.", "latency": 3.757, "usage": {"seconds": 2.75, "cost": 9.1575e-06}}
+{"id": "niger/niger_sys1_4_206", "hyp": " Puis-je voir  La blessure ?", "latency": 1.447, "usage": {"seconds": 3.5, "cost": 1.1655e-05}}
+{"id": "niger/niger_sys1_5_295", "hyp": " pour être utilisée dans un art", "latency": 1.186, "usage": {"seconds": 2, "cost": 6.66e-06}}
+{"id": "niger/niger_sys1_6_381", "hyp": "Oui !", "latency": 0.615, "usage": {"seconds": 1.5, "cost": 1.666666666665e-05}}
+{"id": "niger/niger_sys1_7_454", "hyp": " Merci.  L'eau potable vient...", "latency": 0.951, "usage": {"seconds": 1.75, "cost": 5.8275e-06}}
+{"id": "niger/niger_sys2_1_022", "hyp": "Non, je peux rester debout.", "latency": 0.594, "usage": {"seconds": 2, "cost": 2.22222222222e-05}}
+{"id": "niger/niger_sys2_2_168", "hyp": " vous serez là  dans une...", "latency": 6.706, "usage": {"seconds": 4, "cost": 1.332e-05}}
+{"id": "niger/niger_sys2_3_262", "hyp": " juste devant le point  Vous verrez un chemin de terre rouge.", "latency": 1.791, "usage": {"seconds": 6.25, "cost": 2.08125e-05}}
+{"id": "niger/niger_sys2_4_303", "hyp": " Personne ne peut voyager dans cette direction pour le moment", "latency": 2.366, "usage": {"seconds": 3, "cost": 9.99e-06}}
+{"id": "niger/niger_sys2_5_412", "hyp": " que vous avez besoin des médecins", "latency": 1.545, "usage": {"seconds": 2.75, "cost": 9.1575e-06}}
+{"id": "niger/niger_sys2_6_467", "hyp": " Tout mouvement sur cette route est interdit.", "latency": 0.566, "usage": {"seconds": 3.5, "cost": 1.1655e-05}}
+{"id": "niger/niger_sys2_7_580", "hyp": " faire demi-tour et passer par le village.", "latency": 0.979, "usage": {"seconds": 2.5, "cost": 8.325e-06}}
+{"id": "niger/niger_sys2_8_658", "hyp": " Moi c'est Ismaël.  Achanté", "latency": 0.914, "usage": {"seconds": 2.75, "cost": 9.1575e-06}}
+{"id": "niger/niger_sys2_9_689", "hyp": "les mails", "latency": 0.64, "usage": {"seconds": 2.5, "cost": 2.777777777775e-05}}
+{"id": "niger/niger_sys3_1_113", "hyp": " Quand j'appuie.  Ça ne fait pas la translation en français, mais en anglais.", "latency": 2.694, "usage": {"seconds": 6, "cost": 1.998e-05}}
+{"id": "niger/niger_sys3_2_184", "hyp": " C'est un bon appareil.", "latency": 0.606, "usage": {"seconds": 1.5, "cost": 4.995e-06}}
+{"id": "niger/niger_sys3_3_217", "hyp": " Oui, c'est un bon outil à utiliser.", "latency": 1.581, "usage": {"seconds": 2.25, "cost": 7.4925e-06}}
+{"id": "niger/niger_sys3_4_297", "hyp": " Nous voulons comprendre bien ce dont les soldats américains ont besoin.", "latency": 1.244, "usage": {"seconds": 5, "cost": 1.665e-05}}
+{"id": "niger/niger_sys3_5_374", "hyp": " Oui, il y a un bâtiment disponible exclusivement pour...  - Oui.", "latency": 1.063, "usage": {"seconds": 5.5, "cost": 1.8315e-05}}
+{"id": "niger/niger_sys3_6_440", "hyp": " vous serez là dans  dans une heure  Merci.", "latency": 0.719, "usage": {"seconds": 5, "cost": 1.665e-05}}
+{"id": "niger/niger_sys3_7_473", "hyp": " - Oh, OK.  L'image pourrait être utilisée dans un article.", "latency": 2.643, "usage": {"seconds": 3.5, "cost": 1.1655e-05}}
+{"id": "niger/niger_sys1_1_088", "hyp": "Bonjour Monsieur, tout mouvement sur cette route est interdit.", "latency": 0.62, "usage": {"seconds": 4, "cost": 4.44444444444e-05}}
+{"id": "niger/niger_sys1_2_136", "hyp": " Oui, les Américains peuvent dîner avec nous dans notre salle à manger.", "latency": 1.228, "usage": {"seconds": 4.5, "cost": 1.4985e-05}}
+{"id": "niger/niger_sys1_3_186", "hyp": "D'accord, merci beaucoup à vous.", "latency": 0.616, "usage": {"seconds": 1.75, "cost": 1.9444444444425e-05}}
+{"id": "niger/niger_sys1_4_194", "hyp": " Puis, puis-je enregistrer votre discours lors de l'essai ?", "latency": 1.414, "usage": {"seconds": 5.5, "cost": 1.8315e-05}}
+{"id": "niger/niger_sys1_5_284", "hyp": " pas aller dans cette direction.", "latency": 0.668, "usage": {"seconds": 1, "cost": 3.33e-06}}
+{"id": "niger/niger_sys1_6_369", "hyp": " C'est vrai que vous avez besoin d'un médecin", "latency": 1.339, "usage": {"seconds": 4.75, "cost": 1.58175e-05}}
+{"id": "niger/niger_sys1_7_422", "hyp": " Oui, il y a un embattement exclusifiquement pour le", "latency": 2.243, "usage": {"seconds": 4.5, "cost": 1.4985e-05}}
+{"id": "niger/niger_sys2_1_071", "hyp": "Il va vous conduire à l'hôpital.", "latency": 0.617, "usage": {"seconds": 2.5, "cost": 2.777777777775e-05}}
+{"id": "niger/niger_sys2_2_187", "hyp": " Avec un peu d'amélioration, ça va aller, ça sera très performant.", "latency": 1.037, "usage": {"seconds": 5.25, "cost": 1.74825e-05}}
+{"id": "niger/niger_sys2_3_249", "hyp": " C'est vrai que vous avez besoin d'un docteur.", "latency": 0.802, "usage": {"seconds": 2.5, "cost": 8.325e-06}}
+{"id": "niger/niger_sys2_4_332", "hyp": " Vous devez faire demi-tour et passer par les villages.", "latency": 0.996, "usage": {"seconds": 3, "cost": 9.99e-06}}
+{"id": "fleurs-fr/10043298898524273336", "hyp": "L'accident a eu lieu en terrain montagneux et il semblerait que cela ait été causé par un incendie malveillant.", "latency": 2.629, "usage": {"seconds": 10.2, "cost": 0.00011333333333322}}
+{"id": "fleurs-fr/10097171356371990207", "hyp": " Nous sommes d'accord avec la déclaration de l'USOC, Comité Olympique des États-Unis, selon laquelle les intérêts de nos athlètes et de nos clubs ainsi que de leur sport pour être mieux servis.  Cela peut être fait en allant de l'avant et en procédant plutôt à des changements significatifs au sein de notre organisation qu'à la révocation d'accréditation.", "latency": 5.083, "usage": {"seconds": 23.4, "cost": 7.7922e-05}}
+{"id": "fleurs-fr/10138021779681596478", "hyp": " Il ajoutait qu'on ne devrait cependant pas leur demander d'assumer des obligations qui dépassent leur stade de développement,  leurs responsabilités et leurs capacités.", "latency": 1.926, "usage": {"seconds": 8.28, "cost": 2.75724e-05}}
+{"id": "fleurs-fr/10143749263702132703", "hyp": " L'eurgissement du tigre ne ressemble pas au reurgissement en plus du lion, mais plutôt à une phrase dont les mots seraient des cris et des grondements.  Merci.  Merci.", "latency": 1.235, "usage": {"seconds": 10.2, "cost": 3.3966e-05}}
+{"id": "fleurs-fr/10166091086920486572", "hyp": " Le même mois, un autre avion de ligne a fait une sortie de piste à Machad et heurté un mur, tuant ainsi 17 personnes.", "latency": 1.408, "usage": {"seconds": 8.34, "cost": 2.77722e-05}}
+{"id": "fleurs-fr/10174413140250646001", "hyp": " Jean-Carlo Ficciela a perdu le contrôle de sa voiture et a terminé la course peu après le démarrage.", "latency": 30.032, "usage": {"seconds": 7.2, "cost": 2.3976e-05}}
+{"id": "fleurs-fr/10221277978969763776", "hyp": " malgré le net avantage de Delpotro pendant le deuxième set il a fallu passer par un tie break une fois que le score atteint 6-6", "latency": 1.463, "usage": {"seconds": 8.4, "cost": 2.7972e-05}}
+{"id": "fleurs-fr/10334413597118469552", "hyp": " Malheureusement, il est difficile d'étudier le flux de circulation car les comportements des conducteurs ne peuvent être prédits avec 100% de certitude.", "latency": 2.499, "usage": {"seconds": 11.64, "cost": 3.87612e-05}}
+{"id": "fleurs-fr/10385751433252343757", "hyp": " Les deux composés réagissent l'un avec l'autre pour former des cristaux qui peuvent bloquer la fonction rénale, ont déclaré des chercheurs de l'université.", "latency": 0.912, "usage": {"seconds": 7.68, "cost": 2.55744e-05}}
+{"id": "fleurs-fr/10399459061919571703", "hyp": " par exemple des étudiants de l'école béné en caroline du nord on soit chaque année un site web  consacrés à leur visite.  de la capitale de l'État.  Chaque année, le site est remis un jour, mais les anciennes versions sont conservées en ligne pour servir d'album.", "latency": 2.058, "usage": {"seconds": 14.82, "cost": 4.93506e-05}}
+{"id": "fleurs-fr/10451502537136425109", "hyp": " Par exemple, le format de photographie le plus courant du monde est le 35 mm. C'était le format de pellicule le plus répandu à la fin de l'ère des films analogiques.", "latency": 1.562, "usage": {"seconds": 8.1, "cost": 2.6973e-05}}
+{"id": "fleurs-fr/10473501692975174389", "hyp": " Merci.  Tout bien considéré, nous ne devrions pas être surpris si nos propres ancêtres ont résolu  leurs problèmes de protéines un peu de la même manière que les chimpanzés de la savane le font aujourd'hui.", "latency": 2.161, "usage": {"seconds": 14.4, "cost": 4.7952e-05}}
+{"id": "fleurs-fr/10481242713503018126", "hyp": " Le bus 403 de Scotterb se rend régulièrement à Sintra.  avec un arrêt à Cabo Daroka.", "latency": 0.631, "usage": {"seconds": 10.2, "cost": 3.3966e-05}}
+{"id": "fleurs-fr/10496509281839367149", "hyp": " Les troupes de lions agissent comme des meutes de loups ou de chiens, des animaux étonnamment semblables aux lions, mais pas aux autres grands félins, dont leur comportement est aussi très mortel pour leur proie.", "latency": 0.745, "usage": {"seconds": 11.640000512, "cost": 0.0001293333390220929}}
+{"id": "fleurs-fr/10550408276028637262", "hyp": " Merci.  Sa réputation en tant qu'épicentre du luxe a débuté aux environs de l'an 400.  et a duré jusqu'à 1100 environ.", "latency": 1.419, "usage": {"seconds": 10.74, "cost": 3.57642e-05}}
+{"id": "fleurs-fr/10551999992203614767", "hyp": " La professeure Pamela Ferguson de l'université de Dundee note que les journalistes semblent  suivre une ligne dangereuse.  S'il publie des photos,  etc. de suspects.", "latency": 2.66, "usage": {"seconds": 13.68, "cost": 4.55544e-05}}
+{"id": "fleurs-fr/1057422269812878594", "hyp": " Mais ces plans sont devenus obsolètes presque du jour au lendemain, quand plus de 800 000 soldats de l'armée rouge de l'Union soviétique sont arrivés et ont créé le front biélorusse et ukrainien après avoir envahi les régions.  est de la Pologne, violant ainsi le traité de la paix de Riga, le pacte de non-d'agression sovieto-polonais,  ainsi que d'autres traités internationaux, qu'ils soient bilatéraux ou multilatéraux.", "latency": 2.158, "usage": {"seconds": 27.6, "cost": 9.1908e-05}}
+{"id": "fleurs-fr/10583265778505453148", "hyp": " La plupart des petites îles sont des nations indépendantes ou associées à la France et sont connues pour être des stations bannaires de luxe.", "latency": 1.944, "usage": {"seconds": 7.8, "cost": 2.5974e-05}}
+{"id": "fleurs-fr/10603531439273760949", "hyp": " Les scientifiques espèrent comprendre comment les planètes se forment, et plus particulièrement, comment la Terre s'est formée, puisque les comètes sont entrées en collision avec elles il y a longtemps.", "latency": 10.33, "usage": {"seconds": 14.28, "cost": 4.75524e-05}}
+{"id": "fleurs-fr/1063626966878784571", "hyp": " L'île de Hong Kong donne son nom au territoire de Hong Kong,  et représente le principal centre d'intérêt pour de nombreux touristes.", "latency": 1.991, "usage": {"seconds": 10.08, "cost": 3.35664e-05}}
+{"id": "fleurs-fr/10677508033193966655", "hyp": " Des éléments comme le calcium et le potassium sont considérés comme des métaux.  Bien sûr, il y a aussi des métaux comme l'argent et l'or.", "latency": 1.243, "usage": {"seconds": 8.28, "cost": 2.75724e-05}}
+{"id": "fleurs-fr/10703796668246155041", "hyp": " Le chocolat chaud est conforme aux normes belges.  Les jus de fruits sont chers, mais excellents.", "latency": 1.904, "usage": {"seconds": 5.04, "cost": 1.67832e-05}}
+{"id": "fleurs-fr/10709985934106699878", "hyp": " Daniel Lantagne, experte de l'ONU sur la maladie,  a déclaré que l'épidémie avait probablement été causée par les casques bleus.", "latency": 2.696, "usage": {"seconds": 11.16, "cost": 3.71628e-05}}
+{"id": "fleurs-fr/10777874021057022864", "hyp": " En outre, il existe de nombreux petits chats, y compris les chats de compagnie en liberté, qui mangent les petites proies.  bien plus nombreuses, comme les insectes, les rongeurs, les lézards et les oiseaux.", "latency": 1.209, "usage": {"seconds": 14.28, "cost": 4.75524e-05}}
+{"id": "fleurs-fr/10876086819338968684", "hyp": " Martelly a intronisé hier un nouveau conseil électoral provisoire CEP composé de 9 membres.", "latency": 3.848, "usage": {"seconds": 7.2, "cost": 2.3976e-05}}
+{"id": "fleurs-hi/10011266027513218401", "hyp": " झाल", "latency": 5.411, "usage": {"seconds": 9.12, "cost": 3.03696e-05}}
+{"id": "fleurs-hi/10014385262415025488", "hyp": "", "latency": 3.292, "usage": {"seconds": 13.8, "cost": 4.5954e-05}}
+{"id": "fleurs-hi/10015817292782645020", "hyp": " आईसी कोई वैस्पिक परिवार्षा नहीं है  जिसके लिये निर्मित समान  एंटिक होते हैं  कुछ कर एजेंशिया शव साल से पुराने समान को  एंटिक के तोर पर  परिवार्शित करती है", "latency": 2.727, "usage": {"seconds": 15, "cost": 4.995e-05}}
+{"id": "fleurs-hi/10027305580492162464", "hyp": " टेलेविजन रिपोर्टों में प्लांट से निकलने वाला सफेद धुआ दिखाया गया है।", "latency": 0.97, "usage": {"seconds": 5.1, "cost": 1.6983e-05}}
+{"id": "fleurs-hi/10069289676238419279", "hyp": " इंटरनेट पर ये खोज  सतुरतापून  परियावरं पाठिकरम  के लिए अक्सर आपको एक इस्थान में कमपनी का पता  प्रदान करेगी", "latency": 1.116, "usage": {"seconds": 13.2, "cost": 4.3956e-05}}
+{"id": "fleurs-hi/10107687492910459268", "hyp": " अपनी सरकार के अलावा आप अन्य देशों की सरकारों की सला ले सकते हैं  हलाकि उनकी सला उनके नागरिकों को ध्यान में रगल दी जाती है।", "latency": 2.858, "usage": {"seconds": 10.62, "cost": 3.53646e-05}}
+{"id": "fleurs-hi/10128382631186456345", "hyp": " क्योंकि इन्हें प्रकृति में मूल्स्वरी में धूना चा सकता है।  और इन्हें प्राथमिक उपकरनों के जर्दिये  दुना  अपेक्षा  कृत आसान है", "latency": 3.801, "usage": {"seconds": 17.1, "cost": 5.6943e-05}}
+{"id": "fleurs-hi/10135688561274120767", "hyp": " इसे केमिकल का पी-एच कहा जाता है आप लाल गोभी के जूस को इस्तमाल करके एक संकेत तक बना सकते हैं", "latency": 2.69, "usage": {"seconds": 8.22, "cost": 2.73726e-05}}
+{"id": "fleurs-hi/10200643191519059428", "hyp": "सबसे नजदी की सिरे पर क्रिस्ट की मोटाई करिव 70 किलो मीटर है और सबसे दूर के सिरे पर यह 100 किलो मीटर है", "latency": 0.945, "usage": {"seconds": 7.8, "cost": 8.666666666658e-05}}
+{"id": "fleurs-hi/10245365873747218908", "hyp": "", "latency": 3.388, "usage": {"seconds": 13.68, "cost": 4.55544e-05}}
+{"id": "fleurs-hi/10286778291956788434", "hyp": " पुर्शों के स्टेंडिंग सुपर जी में आस्ट्रेलिया के मिशेल  गौर्डले ग्यार्वे स्थान पर रहे, चेक प्रतियोगी और्डरिच गौर्ड़।  जैली नेक पूजिशों के सिटिंग सुपर जी में सोल में इस्थान पर रहे।", "latency": 4.813, "usage": {"seconds": 14.28, "cost": 4.75524e-05}}
+{"id": "fleurs-hi/10291152526359423424", "hyp": " के वल दो हफ्तों में अमेरीकियों  और फ्रेंच बलोने  दक्षिनी फ्रांसको मुटत कर दियाता  और  जर्मिनी की ओर बढ़ रहे थे।", "latency": 1.262, "usage": {"seconds": 12.9, "cost": 4.2957e-05}}
+{"id": "fleurs-hi/10359991159058879218", "hyp": "", "latency": 4.651, "usage": {"seconds": 9, "cost": 2.997e-05}}
+{"id": "fleurs-hi/10550791631951016124", "hyp": "", "latency": 2.02, "usage": {"seconds": 10.26, "cost": 3.41658e-05}}
+{"id": "fleurs-hi/10582204498174558997", "hyp": " एक पूरी तरह से बिकसित एथलेट की तरह बाग चड़ाई कर सकता है  हाला के अच्छी तरह से नहीं  तेर सकता है।  बड़ी दूरी तक छलंग लगा सकता है और एक सक्तिसालिय मनुष के पांच गुना बल के  साथ किंच सकता है", "latency": 4.259, "usage": {"seconds": 20.88, "cost": 6.95304e-05}}
+{"id": "fleurs-hi/10587318592827006604", "hyp": "", "latency": 2.911, "usage": {"seconds": 8.88, "cost": 2.95704e-05}}
+{"id": "fleurs-hi/10590937942465254187", "hyp": "", "latency": 9.127, "usage": {"seconds": 10.5, "cost": 3.4965e-05}}
+{"id": "fleurs-hi/10622951485514869484", "hyp": " हाला कि यह अकेला नहीं है प्रयोग करना और प्रयोग एक ऐसा परिक्षण होता है जिसका इस्तिमाल करने  एक या इससे जादा संभावित परिकल्पराओं को खत्व करने के  मिलता है", "latency": 3.473, "usage": {"seconds": 17.94, "cost": 5.97402e-05}}
+{"id": "fleurs-hi/10761312360331088376", "hyp": "", "latency": 6.867, "usage": {"seconds": 5.94, "cost": 1.97802e-05}}
+{"id": "fleurs-hi/1078154098564425938", "hyp": " hot chocolate  बेल्जियम की मानकों पर बनती है।  फोलुकाई जूस मांगा है  लेकिन बहुत अच्छा है.", "latency": 6.108, "usage": {"seconds": 10.44, "cost": 3.47652e-05}}
+{"id": "fleurs-hi/10798430940133763019", "hyp": " जिस समय घटना है हुए  उसके यू  को सामान्य रूप से यूरोप के इतिहास में  11, 12 और 13 सधी  में यूरोपियन इतिहास के उच मद्योग यूग की अवदी के रूप में बताया जाता है", "latency": 4.838, "usage": {"seconds": 17.76, "cost": 5.91408e-05}}
+{"id": "fleurs-hi/10847487616323903195", "hyp": " कुछ लोग यह सोचते थे कि कि यह सही था लेकिन बहुत से लोग इसके विपरित मानते थे कि सोर मंडल सुर्य  और यहां तक की अन्य सितारे सहित प्रिथवी के चारो और चक्कर लगाता था", "latency": 4.935, "usage": {"seconds": 19.74, "cost": 6.57342e-05}}
+{"id": "fleurs-hi/10907654079731428081", "hyp": "यदि आप केवल शिप बोर्ड ब्रमन का उपयोग करके किनारे तक जाते हैं तो आपको एक अलग वीजा की अवशक्ता नहीं होगी 2009 तक", "latency": 1.207, "usage": {"seconds": 12.78, "cost": 0.000141999999999858}}
+{"id": "fleurs-hi/10921902647446458507", "hyp": "", "latency": 7.268, "usage": {"seconds": 14.94, "cost": 4.97502e-05}}
+{"id": "fleurs-hi/10924000697500767031", "hyp": " झाल  इटेलियन भी रोजाना इस्तेमाल होने वाली भाशा है जिसे राज में काम करने वाले अधिकांस लोग उप्योग मिलाते हैं जबकि लेटिन का धार्मिक रस्मों में इस्तेमाल किया जाता है।  झाल", "latency": 1.781, "usage": {"seconds": 18.36, "cost": 6.11388e-05}}
+{"id": "ca16/cameroon_m_006_022", "hyp": " gauche sur la porte d'un bâtiment  blanc.", "latency": 2.984, "usage": {"seconds": 3.5, "cost": 1.1655e-05, "extra": {}}}
+{"id": "ca16/cameroon_m_006_001", "hyp": " S'il vous plaît, Monsieur l'Agent.", "latency": 0.878, "usage": {"seconds": 2.75, "cost": 9.1575e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_006_008", "hyp": "Depuis quand votre ami est malade ?", "latency": 0.628, "usage": {"seconds": 3.5, "cost": 3.888888888885e-05, "extra": {}}}
+{"id": "ca16/cameroon_m_006_014", "hyp": " Alors, vous devrez aller par l'église là-bas.", "latency": 0.54, "usage": {"seconds": 10, "cost": 0.000111111111111, "extra": {}}}
+{"id": "ca16/cameroon_m_006_020", "hyp": " Vous allez voir une croix verte sur la pharmacie.", "latency": 1.466, "usage": {"seconds": 4.25, "cost": 1.41525e-05, "extra": {}}}
+{"id": "ca16/cameroon_m_006_006", "hyp": " D'où venez-vous ?", "latency": 1.361, "usage": {"seconds": 1.75, "cost": 5.8275e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_006_015", "hyp": " Est-ce que le médecin est loin d'ici ?", "latency": 3.754, "usage": {"seconds": 3.25, "cost": 1.08225e-05, "extra": {}}}
+{"id": "ca16/cameroon_m_006_009", "hyp": " Il a de la fièvre depuis 36 heures.", "latency": 0.563, "usage": {"seconds": 10, "cost": 0.000111111111111, "extra": {}}}
+{"id": "ca16/cameroon_m_012_009", "hyp": " un véhicule", "latency": 2.326, "usage": {"seconds": 1.169, "cost": 3.89277e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_012_015", "hyp": " Est-ce que le médecin est loin d'ici ?", "latency": 0.673, "usage": {"seconds": 10, "cost": 0.000111111111111, "extra": {}}}
+{"id": "ca16/cameroon_m_012_021", "hyp": " C'est à droite ou à gauche ?", "latency": 1.064, "usage": {"seconds": 1.126, "cost": 3.74958e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_012_007", "hyp": " Quand votre ami est malade", "latency": 0.945, "usage": {"seconds": 1.655, "cost": 5.51115e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_012_011", "hyp": "Oui, on a du transport.", "latency": 0.52, "usage": {"seconds": 1.2364375, "cost": 1.3738194444430707e-05, "extra": {}}}
+{"id": "ca16/cameroon_m_012_022", "hyp": " à guise  sur la porte d'un bâtiment blanc.", "latency": 1.098, "usage": {"seconds": 2.901, "cost": 9.66033e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_012_017", "hyp": " Croyez-vous qu'il y a un docteur ou une infirmière ?", "latency": 0.818, "usage": {"seconds": 2.28, "cost": 7.5924e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_012_010", "hyp": " Avez-vous un véhicule ?", "latency": 1.289, "usage": {"seconds": 1.371, "cost": 4.56543e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_099_003", "hyp": " Mon camarade est malade.", "latency": 0.64, "usage": {"seconds": 1.693, "cost": 5.63769e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_099_014", "hyp": " qui est un docteur ou une enfimeie.", "latency": 0.967, "usage": {"seconds": 1.901, "cost": 6.33033e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_099_013", "hyp": " il y a une pharmacie à 1 km plus loin sur cette route.", "latency": 1.389, "usage": {"seconds": 3.224, "cost": 1.073592e-05, "extra": {}}}
+{"id": "ca16/cameroon_m_099_007", "hyp": " Avez-vous un véhicule ?", "latency": 2.132, "usage": {"seconds": 1.262, "cost": 4.20246e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_099_021", "hyp": " vous amerez.", "latency": 0.745, "usage": {"seconds": 0.665, "cost": 2.21445e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_099_018", "hyp": " A droite ou à gauche", "latency": 1.964, "usage": {"seconds": 1.506, "cost": 5.01498e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_099_006", "hyp": " fièvre depuis 36 heures.", "latency": 0.995, "usage": {"seconds": 2.069, "cost": 6.88977e-06, "extra": {}}}
+{"id": "ca16/cameroon_m_099_023", "hyp": " Je suis dans la ville depuis pratiquement un an.", "latency": 2.84, "usage": {"seconds": 2.859, "cost": 9.52047e-06, "extra": {}}}
+{"id": "ca16/chad_m_001_018", "hyp": " Y a-t-il une autre route pour se rendre à l'hôpital ?", "latency": 0.445, "usage": {"seconds": 10, "cost": 0.000111111111111, "extra": {}}}
+{"id": "ca16/chad_m_001_015", "hyp": " Cette femme a une mauvaise blessure au bras.  nous avons arrêté le saignement  mais il peut reprendre  Elle a besoin d'un médecin.  Merci.", "latency": 2.183, "usage": {"seconds": 10, "cost": 3.33e-05, "extra": {}}}
+{"id": "ca16/chad_m_001_014", "hyp": " la femme dans le siège derrière  Moi, j'ai besoin de voir un médecin, c'est urgent.", "latency": 1.802, "usage": {"seconds": 7.25, "cost": 2.41425e-05, "extra": {}}}
+{"id": "ca16/chad_m_001_001", "hyp": " S'il vous plaît, monsieur l'agent.", "latency": 1.78, "usage": {"seconds": 2, "cost": 6.66e-06, "extra": {}}}
+{"id": "ca16/chad_m_001_011", "hyp": " Merci bien de votre assistance.", "latency": 2.342, "usage": {"seconds": 2, "cost": 6.66e-06, "extra": {}}}
+{"id": "ca16/chad_m_001_017", "hyp": " Ça s'est passé dans le village.  au bord de la route  à côté d'un vendeur de fruits", "latency": 3.817, "usage": {"seconds": 7, "cost": 2.331e-05, "extra": {}}}
+{"id": "ca16/chad_m_001_013", "hyp": " Je ne comprends pas. Nous sommes sur le chemin de l'hôpital.", "latency": 1.037, "usage": {"seconds": 10, "cost": 0.000111111111111, "extra": {}}}
+{"id": "ca16/chad_m_001_005", "hyp": " Oui.  on a du transport", "latency": 1.113, "usage": {"seconds": 2.5, "cost": 8.325e-06, "extra": {}}}
+{"id": "ca16/congo_m_013_003", "hyp": " Nous sommes Canadiens", "latency": 1.43, "usage": {"seconds": 2.75, "cost": 9.1575e-06, "extra": {}}}
+{"id": "ca16/congo_m_013_009", "hyp": " depuis quand votre ami est  Si le malade", "latency": 2.037, "usage": {"seconds": 5.14, "cost": 1.71162e-05, "extra": {}}}
+{"id": "ca16/congo_m_013_007", "hyp": " d'où venez-vous ?", "latency": 1.905, "usage": {"seconds": 3.25, "cost": 1.08225e-05, "extra": {}}}
+{"id": "ca16/congo_m_013_006", "hyp": " Mon camarade est malade.", "latency": 2.152, "usage": {"seconds": 3.25, "cost": 1.08225e-05, "extra": {}}}
+{"id": "ca16/congo_m_013_010", "hyp": " Il a de la fièvre des pouilles.  36 heures", "latency": 1.376, "usage": {"seconds": 6, "cost": 1.998e-05, "extra": {}}}
+{"id": "ca16/congo_m_013_002", "hyp": " Mon camarade est malade.", "latency": 1.836, "usage": {"seconds": 2.75, "cost": 9.1575e-06, "extra": {}}}
+{"id": "ca16/congo_m_013_012", "hyp": " Alors...  Vous devez aller par...  l'église  là-bas", "latency": 1.522, "usage": {"seconds": 7.951, "cost": 2.647683e-05, "extra": {}}}
+{"id": "ca16/congo_m_013_013", "hyp": " Oui.  on a du transport", "latency": 0.831, "usage": {"seconds": 4, "cost": 1.332e-05, "extra": {}}}
+{"id": "ca16/gabon_f_024_017", "hyp": " Bienvenue au 30 d'entretien.", "latency": 2.179, "usage": {"seconds": 1.989, "cost": 6.62337e-06, "extra": {}}}
+{"id": "ca16/gabon_f_024_014", "hyp": " vous allez voir  Une croix verte sur la pharmacie.", "latency": 1.473, "usage": {"seconds": 4.064, "cost": 1.353312e-05, "extra": {}}}
+{"id": "ca16/gabon_f_024_006", "hyp": " Oui, qu'est-ce que vous voulez ?", "latency": 0.839, "usage": {"seconds": 1.653, "cost": 5.50449e-06, "extra": {}}}
+{"id": "ca16/gabon_f_024_029", "hyp": " Voulez-vous voir le salon d'instruction ?", "latency": 2.65, "usage": {"seconds": 2.775, "cost": 9.24075e-06, "extra": {}}}
+{"id": "ca16/gabon_f_024_032", "hyp": " A tout à l'heure, monsieur.", "latency": 1.177, "usage": {"seconds": 1.63, "cost": 5.4279e-06, "extra": {}}}
+{"id": "ca16/gabon_f_024_009", "hyp": " Avez-vous un véhicule ?", "latency": 0.87, "usage": {"seconds": 1.461, "cost": 4.86513e-06, "extra": {}}}
+{"id": "ca16/gabon_f_024_010", "hyp": " C'est prudent d'aller voir un médecin.", "latency": 1.084, "usage": {"seconds": 1.889, "cost": 6.29037e-06, "extra": {}}}
+{"id": "ca16/gabon_f_024_016", "hyp": " Je vous en prie.", "latency": 0.986, "usage": {"seconds": 0.951, "cost": 3.16683e-06, "extra": {}}}
+{"id": "ca16/gabon_f_026_026", "hyp": " Après le repas alors.", "latency": 3.049, "usage": {"seconds": 1.368, "cost": 4.55544e-06, "extra": {}}}
+{"id": "ca16/gabon_f_026_019", "hyp": " Vous allez dormir ici, n'est-ce pas ?", "latency": 1.202, "usage": {"seconds": 1.632, "cost": 5.43456e-06, "extra": {}}}
+{"id": "ca16/gabon_f_026_039", "hyp": " Je vous remercie.", "latency": 0.485, "usage": {"seconds": 10, "cost": 0.000111111111111, "extra": {}}}
+{"id": "ca16/gabon_f_026_031", "hyp": " J'ai un pneu crévé.", "latency": 0.612, "usage": {"seconds": 1.545, "cost": 5.14485e-06, "extra": {}}}
+{"id": "ca16/gabon_f_026_077", "hyp": " Voici la manivelle qui soulève le cri.", "latency": 1.212, "usage": {"seconds": 2.008, "cost": 6.68664e-06, "extra": {}}}
+{"id": "ca16/gabon_f_026_041", "hyp": " Bon, c'est une bonne idée.", "latency": 0.543, "usage": {"seconds": 1.543, "cost": 5.13819e-06, "extra": {}}}
+{"id": "ca16/gabon_f_026_012", "hyp": " À gauche, sur la porte d'un bâtiment blanc.", "latency": 1.067, "usage": {"seconds": 1.934, "cost": 6.44022e-06, "extra": {}}}
+{"id": "ca16/gabon_f_026_004", "hyp": " de Vnevo.", "latency": 0.728, "usage": {"seconds": 0.792, "cost": 2.63736e-06, "extra": {}}}
+{"id": "ca16/gabon_m_003_008", "hyp": " la pharmacienne est aussi médecin", "latency": 1.94, "usage": {"seconds": 3, "cost": 9.99e-06, "extra": {}}}
+{"id": "ca16/gabon_m_003_026", "hyp": " Je vais tout de suite", "latency": 0.762, "usage": {"seconds": 2, "cost": 6.66e-06, "extra": {}}}
+{"id": "ca16/gabon_m_003_010", "hyp": " à gauche sur la porte d'un bâtiment blanc.", "latency": 1.284, "usage": {"seconds": 3, "cost": 9.99e-06, "extra": {}}}
+{"id": "ca16/gabon_m_003_039", "hyp": " Mais c'est trop cher.", "latency": 0.81, "usage": {"seconds": 2, "cost": 6.66e-06, "extra": {}}}
+{"id": "ca16/gabon_m_003_014", "hyp": " Quand est-ce qu'ils vont arriver ?", "latency": 5.286, "usage": {"seconds": 2.25, "cost": 7.4925e-06, "extra": {}}}
+{"id": "ca16/gabon_m_003_012", "hyp": " Bienvenue au centre d'entraînement.", "latency": 1.036, "usage": {"seconds": 2.75, "cost": 9.1575e-06, "extra": {}}}
+{"id": "ca16/gabon_m_003_003", "hyp": " Depuis quand votre ami est-il malade ?", "latency": 0.949, "usage": {"seconds": 3.25, "cost": 1.08225e-05, "extra": {}}}
+{"id": "ca16/gabon_m_003_011", "hyp": " vous en prie.", "latency": 0.789, "usage": {"seconds": 0.75, "cost": 2.4975e-06, "extra": {}}}
+{"id": "ca16/gabon_m_058_030", "hyp": " Quand est-ce qu'ils vont arriver ?", "latency": 0.893, "usage": {"seconds": 1.856, "cost": 6.18048e-06, "extra": {}}}
+{"id": "ca16/gabon_m_058_011", "hyp": " D'accord ? Je ne connais pas cet endroit.", "latency": 1.109, "usage": {"seconds": 2.488, "cost": 8.28504e-06, "extra": {}}}
+{"id": "ca16/gabon_m_058_050", "hyp": " après le repas alors", "latency": 0.874, "usage": {"seconds": 1.591, "cost": 5.29803e-06, "extra": {}}}
+{"id": "ca16/gabon_m_058_052", "hyp": " A tout à l'heure, monsieur.", "latency": 0.887, "usage": {"seconds": 1.139, "cost": 3.79287e-06, "extra": {}}}
+{"id": "ca16/gabon_m_058_006", "hyp": " depuis quand votre ami est-il malade", "latency": 1.031, "usage": {"seconds": 2.019, "cost": 6.72327e-06, "extra": {}}}
+{"id": "ca16/gabon_m_058_034", "hyp": " alors vous partirez à la fin du mois", "latency": 0.609, "usage": {"seconds": 10, "cost": 0.000111111111111, "extra": {}}}
+{"id": "ca16/gabon_m_058_004", "hyp": " D'où venez-vous ?", "latency": 0.59, "usage": {"seconds": 0.931, "cost": 3.10023e-06, "extra": {}}}
+{"id": "ca16/gabon_m_058_047", "hyp": " oui civile et 14 militaires alors", "latency": 1.261, "usage": {"seconds": 2.948, "cost": 9.81684e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_019", "hyp": " Oui.  Si c'est possible.", "latency": 1.122, "usage": {"seconds": 1.54, "cost": 5.1282e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_012", "hyp": " Bonjour, madame.  Bonjour Monsieur.", "latency": 2.318, "usage": {"seconds": 2.272, "cost": 7.56576e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_050", "hyp": " La personne est très malade.", "latency": 0.669, "usage": {"seconds": 1.407, "cost": 4.68531e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_066", "hyp": " c'est un médicament dangereux.", "latency": 0.939, "usage": {"seconds": 1.688, "cost": 5.62104e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_065", "hyp": " Avez-vous déjà été opéré ?", "latency": 1.439, "usage": {"seconds": 1.815, "cost": 6.04395e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_029", "hyp": " lui donner des antibiotiques", "latency": 1.841, "usage": {"seconds": 1.839, "cost": 6.12387e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_025", "hyp": " Merci, je reviens dans 10 minutes.", "latency": 3.074, "usage": {"seconds": 2.115, "cost": 7.04295e-06, "extra": {}}}
+{"id": "ca16/gabon_m_060_011", "hyp": " Merci bien de votre assistance.", "latency": 4.791, "usage": {"seconds": 1.674, "cost": 5.57442e-06, "extra": {}}}

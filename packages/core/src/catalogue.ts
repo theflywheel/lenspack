@@ -32,6 +32,8 @@ export type CatalogueEntity = {
   grain?: string;
   hasTime: boolean;
   hasTenant: boolean;
+  /** Each row has a latitude and longitude: it can be drawn as points on a map. */
+  hasLocation?: boolean;
 };
 
 export type Catalogue = {

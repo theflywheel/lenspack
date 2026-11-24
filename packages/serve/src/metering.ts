@@ -40,7 +40,7 @@ export type Usage = Tokens & {
   unpriced: number;
 };
 
-export type Role = "build" | "escalate" | "review" | "probe" | "eval" | "judge" | "other";
+export type Role = "build" | "escalate" | "review" | "probe" | "eval" | "judge" | "speech" | "other";
 
 /** Who and what a call is for. */
 export type Attribution = {
@@ -67,6 +67,8 @@ export type CallRecord = Attribution &
     ms: number;
     ok: boolean;
     error?: string;
+    /** A transcription's language hint and the length of the text it returned (never the text), for debugging from the server. */
+    speech?: { language: string | null; chars: number; retried?: boolean };
   };
 
 /** Where call records go: the in-memory ledger, the usage file, anything else. A sink that throws is skipped, never the call. */
@@ -179,6 +181,11 @@ function emit(frame: Frame | undefined, r: CallRecord) {
   }
 }
 
+/** Records a call made outside a metered model (a transcription): to the process-wide sinks and these, each once. */
+export function recordCall(r: CallRecord, sinks: UsageSink[] = []) {
+  emit({ attribution: {}, sinks, collectors: [] }, r);
+}
+
 /** Starts timing a call in the current scope; end() records it once, however the call ends. */
 function startCall(info: MeterInfo) {
   // Captured now: the scope is the caller's, whichever stream reader finishes the call.
@@ -271,6 +278,33 @@ export function turnCost(calls: CallRecord[], queries: QueryMeter = emptyQueryMe
     else models.push({ role: r.role, provider: r.provider, model: r.model, ...(r.effort ? { effort: r.effort } : {}), ...usageOfRecord(r) });
   }
   return { total: rounded(models.reduce((t, m) => addUsage(t, m), emptyUsage())), models: models.map(rounded), queries: { ...queries, ms: Math.round(queries.ms) } };
+}
+
+/**
+ * A turn's cost in the few fields people read: what the chat panel shows under a reply and the audit
+ * line keeps (the settings page totals them). usd is an estimate from list prices for the chat models
+ * (see each adapter's price table) plus what the speech provider reported for a spoken question.
+ */
+export type TurnSummary = {
+  costUsd: number;
+  tokens: { in: number; out: number; cacheRead: number; cacheWrite: number };
+  /** The models the turn called, by name, chat first. */
+  models: string[];
+  /** The part of costUsd spent turning the spoken question into text; 0 when it was typed. */
+  sttUsd: number;
+  /** Calls with no price: their cost is not in costUsd. */
+  unpriced: number;
+};
+
+export function turnSummary(cost: TurnCost): TurnSummary {
+  const stt = cost.models.filter((m) => m.role === "speech");
+  return {
+    costUsd: cost.total.usd,
+    tokens: { in: cost.total.inputTokens, out: cost.total.outputTokens, cacheRead: cost.total.cachedInputTokens, cacheWrite: cost.total.cacheWriteTokens },
+    models: [...new Set([...cost.models.filter((m) => m.role !== "speech"), ...stt].map((m) => m.model))],
+    sttUsd: round(stt.reduce((s, m) => s + m.usd, 0)),
+    unpriced: cost.total.unpriced,
+  };
 }
 
 // --- the ledger -----------------------------------------------------------

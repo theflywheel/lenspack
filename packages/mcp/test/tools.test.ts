@@ -100,6 +100,37 @@ describe("board tools", () => {
     expect(fine.didYouMean).toBeUndefined();
   });
 
+  it("refuses every edit with the given message on a read-only board, and still answers questions", async () => {
+    const store = memoryStore();
+    await store.create({ id: "ro", pack, title: "Read only" });
+    const message = "You can view this dashboard but not edit it.";
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "ro", ctx: { tenant: "t1" }, readOnly: message }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown> = {}) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    const before = (await store.get("ro"))!.version;
+    expect(await go("add_widget", { id: "w", kind: "kpi", title: "Things", query_kind: "value", measure: "things" })).toEqual({ applied: false, error: message, readOnly: true });
+    expect(await go("rename_board", { title: "Mine" })).toMatchObject({ applied: false, error: message });
+    expect(await go("restore_version", { to: "baseline" })).toMatchObject({ applied: false, error: message });
+    expect((await store.get("ro"))!.version).toBe(before);
+    // Reading still works.
+    expect(await go("query", { query_kind: "value", measure: "things" })).not.toHaveProperty("readOnly");
+  });
+
+  it("tells onEdit of every edit it applied or refused", async () => {
+    const store = memoryStore();
+    await store.create({ id: "au", pack, title: "Audited" });
+    const seen: { outcome: string; ops: string[]; version?: number; error?: string }[] = [];
+    const tools = (readOnly?: string) => Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "au", ctx: { tenant: "t1" }, readOnly, onEdit: (e) => seen.push(e) }).map((x) => [x.name, x]));
+    const go = (t: ReturnType<typeof tools>, name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    await go(tools(), "rename_board", { title: "Renamed" });
+    await go(tools(), "add_widget", { id: "w", kind: "kpi", title: "Nope", query_kind: "value", measure: "no_such_measure" });
+    await go(tools("view only"), "rename_board", { title: "Again" });
+    await go(tools(), "query", { query_kind: "value", measure: "things" });
+    expect(seen.map((e) => e.outcome)).toEqual(["ok", "refused", "refused"]);
+    expect(seen[0]).toMatchObject({ ops: ["set_title"], version: expect.any(Number) });
+    expect(seen[1]!.error).toBeTruthy();
+    expect(seen[2]).toMatchObject({ error: "read-only" });
+  });
+
   it("patches a widget: only the fields given change", async () => {
     const store = memoryStore();
     await store.create({ id: "u", pack, title: "Patch" });
@@ -127,7 +158,7 @@ describe("board tools", () => {
   it("adds, moves and removes widgets through the store", async () => {
     const added = (await call("add_widget", { id: "by_colour", kind: "chart", title: "By colour", query_kind: "breakdown", measure: "things", dimension: "colour", place: "top", width: "half" })) as { applied: boolean; board: string; version: number };
     expect(added.applied).toBe(true);
-    expect(added.board).toContain("by_colour (bar, 6/12 wide) things by colour");
+    expect(added.board).toContain("by_colour (bar, half width (6/12)) things by colour");
     const kpi = (await call("add_widget", { id: "total", kind: "kpi", title: "Total", query_kind: "value", measure: "things", time_last: "30d", compare: true, width: "quarter" })) as { applied: boolean };
     expect(kpi.applied).toBe(true);
     const lastMonth = (await call("add_widget", { id: "last_month", kind: "kpi", title: "Last month", query_kind: "value", measure: "things", time_period: "Last month", width: "quarter" })) as { board: string };
@@ -144,6 +175,85 @@ describe("board tools", () => {
     const renamed = (await call("rename_board", { title: "Renamed" })) as { applied: boolean; board: string; version: number };
     expect(renamed.board).toContain("Renamed");
     expect(renamed.version).toBeGreaterThan(4);
+  });
+
+  it("adds a heatmap with its columns in their own order on the sequential scale, and turns it back into a bar", async () => {
+    const store = memoryStore();
+    await store.create({ id: "h", pack: { pack: pack.pack, version: pack.version }, title: "H" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "h", ctx: { tenant: "t1", now: new Date("2026-02-15T00:00:00Z") } }).map((x) => [x.name, x])) as Record<string, Tool>;
+    const run = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args));
+    const added = (await run("add_widget", { id: "heat", kind: "chart", chart: "heatmap", title: "Things, colour by origin", query_kind: "breakdown", measure: "things", dimension: "origin", split: "colour", width: "full" })) as { applied: boolean; board: string };
+    expect(added, JSON.stringify(added)).toMatchObject({ applied: true });
+    expect(added.board).toContain("heat (heatmap, full width (12/12)) things by origin and colour in origin order");
+    const w = () => store.get("h").then((b) => b!.config.widgets.heat);
+    expect(await w()).toMatchObject({ chart: "heatmap", options: { colorScheme: "sequential" }, query: { kind: "breakdown", dimension: "origin", by: "colour", sort: "asc", sortBy: "group" } });
+    expect(((await run("add_widget", { id: "flat", kind: "chart", chart: "heatmap", title: "x", query_kind: "breakdown", measure: "things", dimension: "origin" })) as { error?: string }).error).toContain("rows as well as columns");
+    await run("update_widget", { id: "heat", chart: "bar" });
+    expect(await w()).toMatchObject({ chart: "bar", options: { colorScheme: "default" } });
+  });
+
+  it("moves a widget beside another in a full row and says what it narrowed", async () => {
+    const store = memoryStore();
+    await store.create({ id: "m", pack, title: "Move" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "m", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; layout?: string; error?: string; didYouMean?: string; board: string }>;
+    const bar = (id: string, width: string, place = "bottom") => go("add_widget", { id, kind: "chart", title: id, query_kind: "breakdown", measure: "things", dimension: "colour", width, place });
+    // The eval's shape: a bar and a pie half wide on one row, a full-width bar alone further down.
+    await bar("c49", "half");
+    await go("add_widget", { id: "pie", kind: "chart", chart: "pie", title: "pie", query_kind: "breakdown", measure: "things", dimension: "colour", width: "half" });
+    await bar("c50", "full");
+    const moved = await go("move_widget", { id: "c50", place: "after:c49", width: "half" });
+    expect(moved.applied).toBe(true);
+    const layout = (await store.get("m"))!.config.layout;
+    const y = layout.find((item) => item.i === "c49")!.y;
+    expect(layout.filter((item) => item.y === y).sort((a, b) => a.x - b.x).map((item) => [item.i, item.w])).toEqual([["c49", 3], ["c50", 6], ["pie", 3]]);
+    expect(moved.layout).toContain("c50: now row 1, half width (6/12), beside c49, pie");
+    expect(moved.layout).toContain("also resized: c49 now a quarter width (3/12, was 6/12), pie now a quarter width (3/12, was 6/12)");
+    expect(moved.layout).toContain("row 1 (c49, c50, pie) is now full (3+6+3); no resize needed");
+
+    // The eval's follow-up: the model widens c49 back to half. The row narrows the others and
+    // stays three across; nobody is pushed to another row.
+    const resized = await go("resize_widget", { id: "c49", width: "half", height: 0 });
+    expect(resized.applied).toBe(true);
+    const after = (await store.get("m"))!.config.layout;
+    expect(after.filter((item) => item.y === y).sort((a, b) => a.x - b.x).map((item) => [item.i, item.w])).toEqual([["c49", 6], ["c50", 3], ["pie", 3]]);
+    expect(resized.layout).toContain("also resized: c50 now a quarter width (3/12, was 6/12)");
+    expect(resized.layout).toContain("is now full (6+3+3); no resize needed");
+    expect(resized.layout).not.toMatch(/moved to row/);
+  });
+
+  it("says when an edit pushes another widget to a different row", async () => {
+    const store = memoryStore();
+    await store.create({ id: "r", pack, title: "Rows" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "r", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; layout?: string; error?: string; didYouMean?: string }>;
+    for (const id of ["a", "b"]) await go("add_widget", { id, kind: "chart", title: id, query_kind: "breakdown", measure: "things", dimension: "colour", width: "half" });
+    const full = await go("resize_widget", { id: "a", width: "full", height: 0 });
+    expect(full.applied).toBe(true);
+    expect(full.layout).toContain("b no longer fits beside a and moved to row 2");
+  });
+
+  it("refuses a resize the row cannot make room for, with the choices", async () => {
+    const store = memoryStore();
+    await store.create({ id: "q", pack, title: "Quarters" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "q", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied: boolean; error?: string; didYouMean?: string }>;
+    for (const id of ["a", "b", "c", "d"]) await go("add_widget", { id, kind: "chart", title: id, query_kind: "breakdown", measure: "things", dimension: "colour", width: "quarter" });
+    const wide = await go("resize_widget", { id: "a", width: "half", height: 0 });
+    expect(wide.applied).toBe(false);
+    expect(wide.error).toMatch(/row of "a" is full/);
+    expect(wide.didYouMean).toMatch(/smaller width/);
+  });
+
+  it("a get_board called beside an edit reads the board after the edit", async () => {
+    const store = memoryStore();
+    await store.create({ id: "g", pack, title: "Read after write" });
+    const t = Object.fromEntries(boardTools({ pack, executor: db.executor, store, boardId: "g", ctx: { tenant: "t1" } }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<{ applied?: boolean; version: number; board: string }>;
+    // As the SDK runs one step's calls: the edit and the read start together.
+    const [edit, read] = await Promise.all([go("rename_board", { title: "Renamed" }), go("get_board", {})]);
+    expect(read.version).toBe(edit.version);
+    expect(read.board).toContain("Renamed");
   });
 
   it("serialises parallel edits so none is lost", async () => {

@@ -132,5 +132,29 @@ export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?:
       const records = raw.map((r) => Object.fromEntries(columns.map((c) => [c, r[c] instanceof Date ? (r[c] as Date).toISOString() : typeof r[c] === "bigint" ? Number(r[c]) : r[c]])));
       return { rows: [], records, columns, total: records.length, format: "number" };
     }
+    case "points": {
+      // Connectors answer with lat, lon, color, label and size, and one row past the limit
+      // so a cut list can say so. Records are keyed by the query's own keys.
+      const columns = pointColumns(query);
+      const cut = raw.length > query.limit;
+      const records: Row[] = [];
+      for (const r of raw.slice(0, query.limit)) {
+        const lat = toNumber(r.lat);
+        const lon = toNumber(r.lon);
+        if (lat === null || lon === null || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+        const rec: Row = { lat, lon };
+        if (query.label) rec[query.label] = r.label === null || r.label === undefined ? null : String(r.label);
+        if (query.color) rec[query.color] = groupLabel(r.color);
+        if (query.size) rec[query.size] = toNumber(r.size);
+        records.push(rec);
+      }
+      const notes = cut ? [`the first ${query.limit} points only${query.size ? `, largest ${query.size} first` : ""}; there are more`] : undefined;
+      return { rows: [], records, columns, total: records.length, format, ...(notes ? { notes } : {}) };
+    }
   }
+}
+
+/** The record keys of a points answer, in reading order. */
+export function pointColumns(query: Extract<Query, { kind: "points" }>): string[] {
+  return ["lat", "lon", ...[query.label, query.color, query.size].filter((k): k is string => !!k)];
 }

@@ -1,4 +1,4 @@
-import { type BoardConfig, type BoardOp, type Query, type Widget, nearest } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type MeasuredQuery, type Query, type Widget, measured, nearest } from "@lenspack/core";
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
@@ -31,7 +31,7 @@ export type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] 
  * results are combined per group. Returns null for anything else.
  */
 export function acrossEntities(query: Query, pack: Pack): Across | null {
-  if (query.kind === "rows") return null;
+  if (!measured(query)) return null;
   const def = pack.measures.find((m) => m.key === query.measure);
   if (!def?.derived) return null;
   const expr = expandedExpr(pack, def.key);
@@ -177,7 +177,7 @@ export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
   // Per-level measures are read at the level this query views.
   const view = { ...opts, pack: packAtLevel(opts.pack, viewedLevel(query, opts.pack)) };
   if (query.kind === "breakdown" && (query.share || query.other)) return withWhole(query, view);
-  const data = query.kind !== "rows" && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
+  const data = measured(query) && query.measures?.length ? await runMeasures(query, view) : await runOne(query, view);
   return query.kind === "breakdown" ? withoutEmptyGroups(data, query.measure, view.pack) : data;
 }
 
@@ -259,7 +259,7 @@ async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: Run
 
 /** The query without its further measures, and one query per further measure. */
 export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { key: string; query: Query }[] } {
-  if (query.kind === "rows" || !query.measures?.length) return { primary: query, extras: [] };
+  if (!measured(query) || !query.measures?.length) return { primary: query, extras: [] };
   const { measures, ...primary } = query;
   // A further measure on an entity with no time (a target beside today's
   // deliveries) shows its whole value rather than refusing the window.
@@ -286,7 +286,7 @@ export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extr
 // Further measures follow the primary's groups: the primary decides which
 // groups are shown and in what order, and each other measure fills in its
 // column, from whichever entity it lives on.
-async function runMeasures(query: Exclude<Query, { kind: "rows" }>, opts: RunOptions): Promise<WidgetData> {
+async function runMeasures(query: MeasuredQuery, opts: RunOptions): Promise<WidgetData> {
   const { primary, extras } = splitMeasures(query, opts.pack);
   const [main, ...others] = await Promise.all([runOne(primary, opts), ...extras.map((e) => runOne(e.query, opts))]);
   if (main!.error) return main!;
@@ -410,6 +410,14 @@ export function checkOps(
   for (const [opIndex, op] of ops.entries()) {
     if (op.op !== "add_widget" && op.op !== "update_widget") continue;
     if (op.widget.kind === "text") continue;
+    if (op.widget.kind === "chart" && op.widget.chart === "heatmap" && opts.capabilities?.heatmap === false)
+      return { ok: false, opIndex, error: "Heatmaps are turned off on this deployment, so none was made. Offer a bar chart or a table instead" };
+    if (op.widget.kind === "chart" && op.widget.chart === "heatmap" && op.widget.query.kind === "series" && opts.capabilities?.timeHeatmap === false)
+      return {
+        ok: false,
+        opIndex,
+        error: "This dashboard's heatmap cannot keep a time axis in order once it is bucketed by day, week or month. Make it a breakdown instead: columns a day or date label dimension, if the pack has one, split by the rows",
+      };
     try {
       check(op.widget.query, pack, opts);
     } catch (e) {
@@ -453,6 +461,32 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
     }),
   );
   return data;
+}
+
+/** The deepest row a page may start at: a deep page is still a small top-N sort in the source. */
+export const MAX_PAGE_OFFSET = 10000;
+
+export type WidgetPage = WidgetData & { page: number; pageSize: number; offset: number; hasNext: boolean };
+
+/**
+ * One page of a table widget's rows query, with the board's selections
+ * applied as resolveBoard applies them. A page is never larger than the
+ * widget's own limit, so page 0 is the rows the board already shows; one
+ * more row is read to tell whether a next page exists.
+ */
+export async function widgetPage(config: BoardConfig, id: string, page: number, opts: RunOptions, selections: Record<string, string> = {}): Promise<WidgetPage> {
+  const widget = config.widgets[id];
+  if (!widget) throw new ResolveError("NOT_SUPPORTED", `There is no widget "${id}" on this board`, id);
+  if (widget.kind !== "table" || widget.query.kind !== "rows") throw new ResolveError("NOT_SUPPORTED", "Only a table of rows pages through its source", id);
+  const query = drilledQuery(config, id, widget, selections, opts.pack, { ctx: opts.ctx, capabilities: opts.connector.capabilities });
+  if (!query || query.kind !== "rows") throw new ResolveError("NOT_SUPPORTED", "Only a table of rows pages through its source", id);
+  const pageSize = Math.min(widget.pageSize, query.limit);
+  const n = Math.max(0, Math.floor(page) || 0);
+  const offset = n * pageSize;
+  if (offset > MAX_PAGE_OFFSET) throw new ResolveError("NOT_SUPPORTED", `Pages go as deep as row ${MAX_PAGE_OFFSET}; narrow the table with a filter or a shorter time to see further`, id);
+  const data = await run({ ...query, limit: pageSize + 1, offset }, opts);
+  const records = data.records ?? [];
+  return { ...data, records: records.slice(0, pageSize), total: Math.min(records.length, pageSize), page: n, pageSize, offset, hasNext: records.length > pageSize };
 }
 
 /** The query behind a dimension's values: its groups by a count, largest first, optionally those containing q. */

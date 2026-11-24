@@ -158,13 +158,14 @@ Humans write the `sql:` fragments and review them in git, portable or per dialec
 
 ## A query
 
-Four shapes, closed. Every string is a key the pack must know.
+Five shapes, closed. Every string is a key the pack must know.
 
 ```ts
 { kind: "breakdown", dimension: "country", measure: "revenue", limit: 10 }
 { kind: "series",    measure: "orders", grain: "week", by: "channel", time: { last: "12w" } }
 { kind: "value",     measure: "refund_rate", compare: "previous_period", time: { last: "30d" } }
 { kind: "rows",      entity: "orders", columns: ["status", "channel"], limit: 20 }
+{ kind: "points",    entity: "stores", color: "format", size: "revenue" }   // the entity declares geo: { lat, lon }
 ```
 
 The compiler guarantees, and property tests check, that every identifier in the SQL came from the pack, every value is a bound parameter, the tenant predicate is present whenever an entity declares one, `LIMIT` is always emitted, and **a fan-out is refused rather than computed** — asking for an order-level measure by a dimension that lives across a one-to-many join is a compile error with a hint, not a silently inflated number. See [docs/query-ir.md](docs/query-ir.md).
@@ -232,6 +233,10 @@ import { svgAdapter } from "@lenspack/react/adapters/svg";               // no d
 ```
 
 Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. The conformance test in `packages/react/test/adapters.test.tsx` runs every adapter through every chart kind.
+
+A map (a `points` query: one dot per location, coloured by a dimension, its area by a measure) is lenspack's own `MapChart`, also the same under every adapter: points in Web Mercator fitted to their extent, a legend, tooltips, the series colours, on a plain latitude and longitude grid. A basemap is off by default. `<BoardProvider mapTiles={{ url: "https://tiles.example.org/{z}/{x}/{y}.png", attribution: "© …" }}>` puts XYZ raster tiles under the points; use a tile service whose terms allow it (not tile.openstreetmap.org for anything beyond light personal use).
+
+A heatmap (one measure over two dimensions: a breakdown's dimension as columns and its split as rows, or a series' time buckets as columns) is drawn by lenspack's own `HeatmapChart`, the same under every adapter, on eight steps of `--lp-heat-1..8` (by default the sequential scale, faintest to `--lp-sequential-1`). `--lp-sequential-1` is the colour with the most ink against the page in either theme, so a host's dark theme flips the sequential scale, as the default stylesheet does.
 
 ## Security model
 

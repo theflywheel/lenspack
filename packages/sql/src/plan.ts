@@ -79,7 +79,7 @@ function timeExpr(time: NonNullable<Pack["entities"][string]["time"]>): Expr {
   return { t: "epoch", unit: time.unit, arg: col("", time.field) };
 }
 
-export type Shape = "breakdown" | "series" | "value" | "rows";
+export type Shape = "breakdown" | "series" | "value" | "rows" | "points";
 
 export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   const { query, root } = bound;
@@ -215,6 +215,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   const having: Expr[] = [];
   const orderBy: Ast["orderBy"] = [];
   let limit: number;
+  let offset: number | undefined;
   let shape: Shape;
 
   switch (query.kind) {
@@ -276,14 +277,47 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       if (bound.orderBy) {
         orderBy.push({ expr: dimRef(bound.orderBy.dimension), dir: bound.orderBy.dir });
         for (const c of bound.columns) if (c.def.key !== bound.orderBy.dimension.def.key) orderBy.push({ expr: dimRef(c), dir: "asc" });
+      } else if (query.offset !== undefined) {
+        // A page needs an order, or the next page is any rows at all: the
+        // columns in the order listed.
+        for (const c of bound.columns) orderBy.push({ expr: dimRef(c), dir: "asc" });
       }
       limit = query.limit;
+      if (query.offset) offset = query.offset;
       shape = "rows";
+      break;
+    }
+    case "points": {
+      // One point per location (and colour and label): rows at one spot add up
+      // under a size measure. Rows with no location are left out. One row past
+      // the limit tells the caller the list was cut; with a size the largest stay,
+      // without one the source's order (sorting by place would keep one corner).
+      project(root, D("__lat"), col("", bound.geo!.lat));
+      project(root, D("__lon"), col("", bound.geo!.lon));
+      const lat = col(root, D("__lat"));
+      const lon = col(root, D("__lon"));
+      where.push({ t: "notnull", arg: lat }, { t: "notnull", arg: lon });
+      select.push({ alias: "lat", expr: lat }, { alias: "lon", expr: lon });
+      groupBy.push(lat, lon);
+      const named = (key: string | undefined, alias: string) => {
+        if (!key) return;
+        const g = dimRef(bound.columns.find((c) => c.def.key === key)!);
+        select.push({ alias, expr: g });
+        groupBy.push(g);
+      };
+      named(query.color, "color");
+      named(query.label, "label");
+      if (bound.measure) {
+        select.push({ alias: "size", expr: valueExpr(null) });
+        orderBy.push({ expr: col("", "size"), dir: "desc" }, { expr: col("", "lat"), dir: "desc" }, { expr: col("", "lon"), dir: "asc" });
+      }
+      limit = query.limit + 1;
+      shape = "points";
       break;
     }
   }
 
-  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, having, orderBy, limit }, shape };
+  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, having, orderBy, limit, ...(offset ? { offset } : {}) }, shape };
 
   // Two stages: one value per key and group, then the measure's agg over those;
   // n counts keys, and rows with no key are not counted.
