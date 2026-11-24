@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { checkOps } from "@lenspack/engine";
+import { SPLIT_ROWS, checkOps, run } from "@lenspack/engine";
 
-import { SUPERSET_CAPABILITIES } from "../src/connector";
+import { SUPERSET_CAPABILITIES, supersetConnector } from "../src/connector";
 import { chartToWidget, packFromDatasets, queryContextOf, widgetToChart, type SupersetDataset } from "../src/index";
 
 // A made-up dataset: visits to sites, by day.
@@ -106,4 +106,45 @@ describe("heatmaps in Superset", () => {
     const byValue = (queryContextOf(widgetToChart(cases[1] as never, pack, binding)!) as { queries: Record<string, any>[] }).queries[0]!;
     expect(byValue.orderby).toEqual([["visits", false], ["site", true]]);
   });
+});
+
+describe("a split breakdown run through Superset", () => {
+  // Superset answers every (column, row) cell; the engine keeps the breakdown's top columns, as on every source.
+  const cells = [
+    { region: "north", site: "a", visits: 9 },
+    { region: "south", site: "a", visits: 6 },
+    { region: "south", site: "b", visits: 5 },
+    { region: "east", site: "a", visits: 4 },
+    { region: "east", site: "b", visits: 4 },
+    { region: "east", site: "c", visits: 4 },
+  ].map((r) => ({ ...r, __lenspack_n: r.visits }));
+  const sent: { queries: { row_limit: number; orderby: [unknown, boolean][] }[] }[] = [];
+  // Rows come back in the order asked, as Superset sorts them: by the metric, or by the column A to Z.
+  const ordered = (by: unknown) => (by === "region" ? [...cells].sort((a, b) => a.region.localeCompare(b.region)) : cells);
+  const client = { post: async (_path: string, body: (typeof sent)[number]) => (sent.push(body), { result: [{ data: ordered(body.queries[0]!.orderby[0]?.[0]) }] }) } as never;
+  const connector = supersetConnector(client, binding);
+  const shown = async (q: Record<string, unknown>) =>
+    (await run({ kind: "breakdown", dimension: "region", by: "site", measure: "visits", limit: 2, sort: "desc", ...q } as never, { pack, connector })).rows.map((r) => `${r.group}/${r.series}`);
+
+  it("keeps the top groups by their total, every split inside them, from every row Superset has", async () => {
+    expect(await shown({})).toEqual(["south/a", "south/b", "east/a", "east/b", "east/c"]);
+    expect(sent.at(-1)!.queries[0]!.row_limit).toBe(SPLIT_ROWS);
+  });
+
+  it("keeps the first groups in the order asked when sorted by group", async () => {
+    expect(await shown({ sortBy: "group", sort: "asc" })).toEqual(["east/a", "east/b", "east/c", "north/a"]);
+  });
+});
+
+it("orders a split series by bucket, then series, as every source does", async () => {
+  const day = (d: string) => Date.parse(`2026-01-0${d}T00:00:00Z`);
+  const data = [
+    { __lenspack_bucket: day("2"), site: "b", visits: 1, __lenspack_n: 1 },
+    { __lenspack_bucket: day("1"), site: "b", visits: 1, __lenspack_n: 1 },
+    { __lenspack_bucket: day("2"), site: "a", visits: 1, __lenspack_n: 1 },
+    { __lenspack_bucket: day("1"), site: "a", visits: 1, __lenspack_n: 1 },
+  ];
+  const connector = supersetConnector({ post: async () => ({ result: [{ data }] }) } as never, binding);
+  const { rows } = await run({ kind: "series", measure: "visits", grain: "day", by: "site" }, { pack, connector });
+  expect(rows.map((r) => `${r.group}/${r.series}`)).toEqual(["2026-01-01/a", "2026-01-01/b", "2026-01-02/a", "2026-01-02/b"]);
 });

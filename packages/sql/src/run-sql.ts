@@ -1,4 +1,4 @@
-import type { Pack } from "@lenspack/spec";
+import { type Pack, maybeFragmentFor } from "@lenspack/spec";
 
 import type { Executor, Row } from "./executor";
 
@@ -21,9 +21,16 @@ export async function runSql(sql: string, executor: Executor, opts: { maxRows?: 
   return { rows: rows.slice(0, maxRows), rowCount: Math.min(rows.length, maxRows), truncated, sql: wrapped };
 }
 
+// An entity's time as SQL would read it: its column, an epoch column and its unit, or its expression.
+function timeText(time: NonNullable<Pack["entities"][string]["time"]>): string {
+  if (typeof time === "string") return time;
+  if ("field" in time) return `${time.field}, epoch ${time.unit === "epoch_ms" ? "milliseconds" : "seconds"}`;
+  return maybeFragmentFor(time.sql, "default", true) ?? "a SQL expression per dialect";
+}
+
 /** What the model may be told about the tables behind a pack: sources only. */
 export function describeSources(pack: Pack) {
   return Object.entries(pack.entities)
-    .map(([key, e]) => `${key}: ${e.source}${e.grain ? ` — ${e.grain}` : ""}${e.time ? ` (time: ${e.time})` : ""}`)
+    .map(([key, e]) => `${key}: ${e.source}${e.grain ? ` — ${e.grain}` : ""}${e.time ? ` (time: ${timeText(e.time)})` : ""}`)
     .join("\n");
 }

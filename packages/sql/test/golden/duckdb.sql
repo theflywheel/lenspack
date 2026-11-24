@@ -36,7 +36,7 @@ FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "size" AS "__m_siz
 LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
 GROUP BY "owners"."__d_tier", "things"."__d_colour"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10;
+LIMIT 10000;
 
 -- {"kind":"breakdown","dimension":"origin","measure":"labelled","limit":10,"sort":"desc"}
 -- params: [99,"ke_1","ke\\_1.%","test"]
@@ -311,7 +311,7 @@ WHERE (("things"."__t" >= CAST($6 AS TIMESTAMP)) AND ("things"."__t" < CAST($7 A
 GROUP BY "things"."__d_colour", "owners"."__d_tier", "things"."__k") AS "__n"
 GROUP BY "__n"."group", "__n"."series"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10;
+LIMIT 10000;
 
 -- {"kind":"series","measure":"things_per_owner","grain":"month","by":"colour","time":{"last":"12w"}}
 -- params: ["ke_1","ke\\_1.%","test","2025-11-23 12:34:56.000","2026-02-15 12:34:56.000"]
@@ -376,7 +376,16 @@ WHERE ("things"."__t" >= CAST($18 AS TIMESTAMP)) AND ("things"."__t" < CAST($19 
 GROUP BY "owners"."__d_tier", "things"."__d_colour"
 HAVING (count(CASE WHEN (("things"."__t" >= CAST($20 AS TIMESTAMP)) AND ("things"."__t" < CAST($21 AS TIMESTAMP))) THEN 1 END) > 0)
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10;
+LIMIT 10000;
+
+-- {"kind":"breakdown","dimension":"colour","by":"tier","measure":"things","limit":3,"sort":"desc"}
+-- params: ["ke_1","ke\\_1.%","test"]
+SELECT "things"."__d_colour" AS "group", "owners"."__d_tier" AS "series", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2 ESCAPE '\'))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
+GROUP BY "things"."__d_colour", "owners"."__d_tier"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 10000;
 
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
 -- params: ["ke_1","ke\\_1.%","test"]

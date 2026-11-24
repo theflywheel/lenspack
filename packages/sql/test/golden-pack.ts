@@ -134,6 +134,8 @@ export const GOLDEN_QUERIES: Query[] = [
   { kind: "value", measure: "heavy_share" },
   { kind: "breakdown", dimension: "colour", measure: "weight", limit: 10, sort: "asc", compare: "previous_period", time: between },
   { kind: "breakdown", dimension: "tier", by: "colour", measure: "per_thing", limit: 10, sort: "desc", compare: "previous_period", time: { last: "30d" } },
+  // Split, the limit counts groups: three colours, every tier inside each.
+  { kind: "breakdown", dimension: "colour", by: "tier", measure: "things", limit: 3, sort: "desc" },
 ];
 
 // The same pack in a zone half an hour off UTC: buckets start at local hours

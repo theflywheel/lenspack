@@ -2,7 +2,7 @@ import { type BoardConfig, type Query, type Widget, drilledDimension } from "@le
 import type { Pack } from "@lenspack/spec";
 
 import { dateRangeWindow, defaultRange } from "./calendar";
-import { type Capabilities, type Ctx, ResolveError } from "./resolve";
+import { type Capabilities, type Ctx, ResolveError, nowOf } from "./resolve";
 import { check } from "./run";
 
 // Hierarchies: dimensions that nest, coarse to fine. Two things follow from
@@ -81,7 +81,7 @@ export function drilledQuery(
   // A date range sets the window of the widgets it covers: the selection, or
   // the filter's default ("the last month"), in the pack's time zone.
   for (const f of config.filters.filter((x) => x.type === "daterange" && covers(x))) {
-    const chosen = selections[f.field] || defaultRange(f.default, opts.ctx?.now ?? new Date(), pack.timeZone);
+    const chosen = selections[f.field] || defaultRange(f.default, nowOf(opts.ctx), pack.timeZone);
     const window = chosen ? dateRangeWindow(chosen, pack.timeZone) : null;
     if (window) q = { ...q, time: window } as Query;
   }

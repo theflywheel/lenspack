@@ -3,28 +3,35 @@ import * as React from "react";
 import { BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, Share2, Trash2, Undo2, X } from "lucide-react";
 
 import type { Board as BoardT, Catalogue } from "@lenspack/core";
-import { Board, BoardProvider, DrillPath, useBoard, type BoardHost, type BoardVersion, type FilterOption, type RemovedWidget, type WidgetData } from "@lenspack/react";
+import { Board, BoardProvider, DrillPath, lazyAdapter, useBoard, useFilters, useVersions, versionByline, type BoardHost, type FilterOption, type RemovedWidget, type WidgetData } from "@lenspack/react";
 
 import { Button } from "./components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Separator } from "./components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
+
+import type { ModelInfo } from "./chat";
+import { page } from "./page";
+import { ProfileMenu } from "./profile";
+import { SplitView } from "./split";
 
 // The board app, built from shadcn components. The board itself is rendered
 // by @lenspack/react; everything around it — chat, ops, filters, history —
 // is host UI, and the provider's hooks give it all it needs.
 
-import { rechartsAdapter as charts } from "@lenspack/react/adapters/recharts";
-
-import { page } from "./page";
-import { type ModelInfo, effortOf } from "./chat";
-import { MetricsReference } from "./metrics";
-import { ProfileMenu } from "./profile";
-import { SplitView } from "./split";
-import { UsagePage } from "./usage";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
-
+// What the first paint can do without comes in chunks of its own: the chat
+// and the AI SDK, the metrics and usage pages, and recharts. recharts starts
+// loading with this module, alongside the board request, and charts draw when
+// it lands; KPIs and tables do not wait for it.
 const ChatPanel = React.lazy(() => import("./chat").then((m) => ({ default: m.ChatPanel })));
+const MetricsReference = React.lazy(() => import("./metrics").then((m) => ({ default: m.MetricsReference })));
+const UsagePage = React.lazy(() => import("./usage").then((m) => ({ default: m.UsagePage })));
+const recharts = import("@lenspack/react/adapters/recharts").then((m) => m.rechartsAdapter);
+const charts = lazyAdapter("recharts", () => recharts);
+
+/** The effort a turn asks for: the remembered one if this model takes it; "" leaves it to the server's default. */
+const effortOf = (info: ModelInfo | undefined, remembered: string) => (info?.efforts?.levels.includes(remembered) ? remembered : "");
 
 // Requests the page's HTML already started (see vite.config.ts), taken once.
 type Boot = { index: Promise<any>; board: Promise<any> | null; path: string | null };
@@ -56,36 +63,24 @@ function reloadToSignIn() {
   return true;
 }
 
-// Filter bar on shadcn Select. What a board filters by is configuration;
-// what you have selected is not, and lives in the provider.
+// @lenspack/react's filter bar and history, drawn with shadcn components: the
+// hooks hold the behaviour, this file only the look.
 function FilterBar() {
-  const { board, selections, setSelection, clearSelections, host, catalogue } = useBoard();
-  const filters = board.config.filters;
-  const [options, setOptions] = React.useState<Record<string, FilterOption[]>>({});
-  React.useEffect(() => {
-    if (!host.loadFilterOptions) return;
-    let cancelled = false;
-    for (const f of filters) void host.loadFilterOptions(f.field).then((o) => !cancelled && setOptions((prev) => ({ ...prev, [f.field]: o })));
-    return () => {
-      cancelled = true;
-    };
-  }, [host, filters]);
-  const drilling = Object.values(catalogue.hierarchies ?? {}).some((ls) => ls.some((l) => selections[l]));
-  if (filters.length === 0 && !drilling) return null;
-  const active = filters.some((f) => selections[f.field]);
+  const { filters, shown, active, select, clear } = useFilters();
+  if (!shown) return null;
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2" data-testid="lp-filter-bar">
       <DrillPath />
       {filters.map((f) => (
-        <div key={f.id} className="flex items-center gap-2 text-sm">
+        <div key={f.id} className="flex items-center gap-2 text-sm" title={f.narrows}>
           <span className="text-muted-foreground">{f.label}</span>
-          <Select value={selections[f.field] ?? "__all__"} onValueChange={(v) => setSelection(f.field, v === "__all__" ? "" : v)}>
+          <Select value={f.value || "__all__"} onValueChange={(v) => select(f.field, v === "__all__" ? "" : v)}>
             <SelectTrigger size="sm" className="min-w-32" data-testid={`filter-${f.field}`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All</SelectItem>
-              {(options[f.field] ?? []).map((o) => (
+              {f.options.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.value} <span className="text-muted-foreground">({o.count.toLocaleString()})</span>
                 </SelectItem>
@@ -95,7 +90,7 @@ function FilterBar() {
         </div>
       ))}
       {active && (
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearSelections}>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clear}>
           <X /> Clear
         </Button>
       )}
@@ -125,26 +120,12 @@ function LayoutMode() {
   );
 }
 
-// Version history in a popover. Rolling back appends rather than rewinds,
-// so a rollback can itself be undone.
+// Version history in a popover. Clicking a version shows it; nothing changes until Restore.
 function VersionHistory({ onReverted }: { onReverted: () => void }) {
-  const { board, host, previewing, preview } = useBoard();
-  const [versions, setVersions] = React.useState<BoardVersion[]>([]);
+  const { board, previewing, preview } = useBoard();
   const [open, setOpen] = React.useState(false);
-  const [busy, setBusy] = React.useState<number | null>(null);
-  const latest = versions[0]?.version;
-  React.useEffect(() => {
-    if (open && host.loadVersions) void host.loadVersions().then(setVersions);
-  }, [open, host, board.version]);
-  if (!host.loadVersions) return null;
-  const restore = async (version: number) => {
-    setBusy(version);
-    await host.revertTo!(version);
-    setBusy(null);
-    setOpen(false);
-    preview(null);
-    onReverted();
-  };
+  const { available, versions, latest, busy, restore } = useVersions(open);
+  if (!available) return null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -166,7 +147,6 @@ function VersionHistory({ onReverted }: { onReverted: () => void }) {
                 key={v.version}
                 data-testid={`version-${v.version}`}
                 aria-current={shown ? "true" : undefined}
-                // Clicking a version shows it; nothing changes until Restore.
                 onClick={() => preview(isLatest ? null : v)}
                 className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-accent ${shown ? "bg-accent" : ""}`}
               >
@@ -175,11 +155,9 @@ function VersionHistory({ onReverted }: { onReverted: () => void }) {
                     <span className="font-mono text-xs">v{v.version}</span> {v.summary || "no change recorded"}
                     {isLatest && <span className="ml-1 text-xs text-muted-foreground">(current)</span>}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {v.source === "chat" ? "by chat" : v.source === "revert" ? "rollback" : v.source === "layout" ? "by hand" : v.source} · {v.createdAt.toLocaleString()}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{versionByline(v)}</p>
                 </div>
-                {!isLatest && host.revertTo && (
+                {!isLatest && restore && (
                   <span
                     role="button"
                     tabIndex={0}
@@ -187,7 +165,7 @@ function VersionHistory({ onReverted }: { onReverted: () => void }) {
                     data-testid={`restore-${v.version}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (busy === null) void restore(v.version);
+                      void restore(v.version).then(() => (setOpen(false), onReverted()));
                     }}
                   >
                     <RotateCcw className="size-3" /> {busy === v.version ? "…" : "restore"}
@@ -204,8 +182,8 @@ function VersionHistory({ onReverted }: { onReverted: () => void }) {
 
 /** While an older version is shown: say so, and offer the two ways out. */
 function PreviewBanner({ onReverted }: { onReverted: () => void }) {
-  const { previewing, preview, host } = useBoard();
-  const [busy, setBusy] = React.useState(false);
+  const { previewing, preview } = useBoard();
+  const { busy, restore } = useVersions(false);
   if (!previewing) return null;
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-3 py-2 text-sm" data-testid="preview-banner">
@@ -216,19 +194,8 @@ function PreviewBanner({ onReverted }: { onReverted: () => void }) {
       <Button variant="ghost" size="sm" onClick={() => preview(null)}>
         Back to current
       </Button>
-      {host.revertTo && (
-        <Button
-          size="sm"
-          disabled={busy}
-          data-testid="preview-restore"
-          onClick={async () => {
-            setBusy(true);
-            await host.revertTo!(previewing.version);
-            setBusy(false);
-            preview(null);
-            onReverted();
-          }}
-        >
+      {restore && (
+        <Button size="sm" disabled={busy !== null} data-testid="preview-restore" onClick={() => void restore(previewing.version).then(onReverted)}>
           <RotateCcw /> Restore this version
         </Button>
       )}
@@ -405,7 +372,7 @@ export function App() {
         ? {
             revertTo: async (version: number) => {
               const b = await api(`${base}/revert`, { method: "POST", body: JSON.stringify({ version }) });
-              return b ? { ...b, updatedAt: new Date(b.updatedAt) } : null;
+              return b?.config ? { ...b, updatedAt: new Date(b.updatedAt) } : null;
             },
           }
         : {}),
@@ -551,10 +518,10 @@ export function App() {
       </header>
 
       <main className="mx-auto max-w-[2400px] px-4 py-6 lg:px-5">
-        {view === "metrics" ? (
-          <MetricsReference example={example} load={api} onClose={() => setView("board")} />
-        ) : view === "usage" ? (
-          <UsagePage load={api} onClose={() => setView("board")} />
+        {view !== "board" ? (
+          <React.Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+            {view === "metrics" ? <MetricsReference example={example} load={api} onClose={() => setView("board")} /> : <UsagePage load={api} onClose={() => setView("board")} />}
+          </React.Suspense>
         ) : (
         <SplitView
           enabled={chatEnabled}
@@ -588,11 +555,11 @@ export function App() {
                     </>
                   )}
                   {writable && <LayoutMode />}
-                  <VersionHistory onReverted={() => (noteEdit(), reloadBoard())} />
+                  <VersionHistory onReverted={reloadBoard} />
                 </div>
               </div>
               <div className="space-y-3">
-                <PreviewBanner onReverted={() => (noteEdit(), reloadBoard())} />
+                <PreviewBanner onReverted={reloadBoard} />
                 <FilterBar />
               </div>
               <Separator className="my-4" />

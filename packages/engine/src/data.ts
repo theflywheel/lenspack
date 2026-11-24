@@ -1,8 +1,10 @@
 import type { FORMATS, Query } from "@lenspack/core";
 
+import type { BoundPlan } from "./resolve";
+
 // What a widget draws, whatever computed it. Connectors hand back raw rows in
 // one agreed shape (group / series / bucket / value / n / previous) and
-// shapeRows turns them into this, so every backend labels, sorts and
+// shapeBound turns them into this, so every backend labels, sorts and
 // truncates the same way.
 
 export type Row = Record<string, unknown>;
@@ -50,17 +52,10 @@ export function compared(value: number | null, previous: number | null): { previ
 
 export function toNumber(v: unknown): number | null {
   if (v === null || v === undefined) return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
   if (typeof v === "bigint") return Number(v);
-  if (typeof v === "string") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-  if (typeof v === "object" && v !== null && "toString" in v) {
-    const n = Number(String(v));
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+  // A driver's decimal or big-number object reads through its text.
+  const n = typeof v === "number" ? v : typeof v === "string" || (typeof v === "object" && "toString" in v) ? Number(String(v)) : NaN;
+  return Number.isFinite(n) ? n : null;
 }
 
 export function toDate(v: unknown): Date | null {
@@ -90,24 +85,80 @@ export function groupLabel(v: unknown): string {
   return String(v);
 }
 
+type Breakdown = Extract<Query, { kind: "breakdown" }>;
+
+/**
+ * A breakdown's rows in the order it asks for: by value, ties by group then
+ * series (the default); by value alone, tied rows left as given ("measure");
+ * by group then series ("group"); or as given ("none"). No value sorts last.
+ */
+export function sortGroups<R extends { group?: unknown; series?: unknown; value?: unknown }>(rows: R[], query: Pick<Breakdown, "sort" | "sortBy">): R[] {
+  if (query.sortBy === "none") return rows;
+  const dir = query.sort === "asc" ? 1 : -1;
+  const text = (v: unknown) => String(v ?? "");
+  const byValue = (a: R, b: R) => {
+    const [x, y] = [toNumber(a.value), toNumber(b.value)];
+    return x === null ? (y === null ? 0 : 1) : y === null ? -1 : (x - y) * dir;
+  };
+  const byName = (a: R, b: R) => text(a.group).localeCompare(text(b.group)) * (query.sortBy === "group" ? dir : 1) || text(a.series).localeCompare(text(b.series));
+  return rows.sort(query.sortBy === "group" ? byName : query.sortBy === "measure" ? byValue : (a, b) => byValue(a, b) || byName(a, b));
+}
+
+/** Rows a source returns for a breakdown split by a second dimension, which limitGroups then cuts to its top groups. */
+export const SPLIT_ROWS = 10_000;
+
+/**
+ * A breakdown's first `limit` groups, rows in the order given. Split by a
+ * second dimension, the limit counts groups, not rows: every row of the top
+ * groups, ranked by their total value in the sort's direction (ties by name,
+ * or as given under "measure"), or taken in the order given when the
+ * breakdown is sorted by group or not at all.
+ */
+export function limitGroups(rows: DataRow[], query: Pick<Breakdown, "by" | "limit" | "sort" | "sortBy">): DataRow[] {
+  if (!query.by) return rows.slice(0, query.limit);
+  const totals = new Map<string, number>();
+  for (const r of rows) totals.set(r.group, (totals.get(r.group) ?? 0) + (r.value ?? 0));
+  const ranked = [...totals.keys()];
+  if (query.sortBy !== "group" && query.sortBy !== "none") {
+    const dir = query.sort === "asc" ? 1 : -1;
+    ranked.sort((a, b) => (totals.get(a)! - totals.get(b)!) * dir || (query.sortBy === "measure" ? 0 : a.localeCompare(b)));
+  }
+  const keep = new Set(ranked.slice(0, query.limit));
+  return rows.filter((r) => keep.has(r.group));
+}
+
+/** A connector's raw rows for a bound plan → widget data, in its measure's format. */
+export function shapeBound(raw: Row[], bound: BoundPlan): WidgetData {
+  const def = bound.measure?.def;
+  return shapeRows(raw, bound.query, def?.format ?? "number", def?.key);
+}
+
+/** A series' rows by bucket, then series A to Z: one order, whatever order the source answered in. */
+export function sortSeries(rows: DataRow[]): DataRow[] {
+  return rows.sort((a, b) => (a.group < b.group ? -1 : a.group > b.group ? 1 : (a.series ?? "").localeCompare(b.series ?? "")));
+}
+
 /** Raw connector rows → widget data. `columns` names the record keys for a rows query. */
 export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?: string): WidgetData {
   switch (query.kind) {
     case "breakdown": {
-      const rows = raw.map((r): DataRow => {
+      const all = raw.map((r): DataRow => {
         const value = toNumber(r.value);
         return { group: groupLabel(r.group), ...("series" in r ? { series: groupLabel(r.series) } : {}), value, count: toNumber(r.n) ?? 0, ...("previous" in r ? { compare: compared(value, toNumber(r.previous)) } : {}) };
       });
+      const rows = limitGroups(all, query);
       return { rows, total: rows.reduce((s, r) => s + r.count, 0), format };
     }
     case "series": {
       let notes: string[] | undefined;
-      let rows: DataRow[] = raw.map((r) => ({
-        group: bucketLabel(r.bucket, query.grain),
-        ...("series" in r ? { series: groupLabel(r.series) } : {}),
-        value: toNumber(r.value),
-        count: toNumber(r.n) ?? 0,
-      }));
+      let rows: DataRow[] = sortSeries(
+        raw.map((r) => ({
+          group: bucketLabel(r.bucket, query.grain),
+          ...("series" in r ? { series: groupLabel(r.series) } : {}),
+          value: toNumber(r.value),
+          count: toNumber(r.n) ?? 0,
+        })),
+      );
       if (query.by) {
         // Keep the top series by total value; the rest are dropped, never
         // bucketed as "other", so every number stays attributable.

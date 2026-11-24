@@ -87,11 +87,6 @@ function StepBadge({ name, part }: { name: string; part: Part }) {
 // when its turn ends the board is fetched again and re-rendered.
 export type ModelInfo = { name: string; model: string; available: boolean | null; latencyMs?: number; error?: string; efforts?: { levels: string[]; default: string } };
 
-/** The effort a turn asks for: the remembered one if this model takes it; "" leaves it to the server's default. */
-export function effortOf(info: ModelInfo | undefined, remembered: string) {
-  return info?.efforts?.levels.includes(remembered) ? remembered : "";
-}
-
 // Provider names carry the host in parentheses ("glm-5.3-flash (openrouter)")
 // so roles and URLs can name them exactly; the menu shows just the model,
 // keeping the host only where two available entries would otherwise collide.
