@@ -158,9 +158,9 @@ export function walk(aggrQuery: string, placeholders: Set<string>): Walked {
     // Pipeline scripts refer to their siblings, so they resolve after them.
     for (const [name, def] of scripts) {
       const at = [...path, name];
-      const vars = def.buckets_path as Record<string, string>;
+      const vars: Record<string, string> = def.buckets_path && typeof def.buckets_path === "object" ? def.buckets_path : {};
       const script = String(typeof def.script === "string" ? def.script : def.script?.source ?? "").trim();
-      const sibling = (v: string) => here[String(vars?.[v] ?? "").split(">")[0]!];
+      const sibling = (v: string) => here[String(vars[v] ?? "").split(">")[0]!];
       const scaled = script.match(/^\(?\s*params\.(\w+)\s*\)?\s*\*\s*(-?[0-9]*\.?[0-9]+)$/);
       if (scaled && sibling(scaled[1]!) && Number(scaled[2]) !== 0) {
         // One leaf times a constant is still one measure, scaled.
@@ -177,7 +177,7 @@ export function walk(aggrQuery: string, placeholders: Set<string>): Walked {
       } catch {
         expr = null;
       }
-      const bound = Object.fromEntries(Object.keys(vars0(def)).map((v) => [`v_${v.toLowerCase()}`, sibling(v)]));
+      const bound = Object.fromEntries(Object.keys(vars).map((v) => [`v_${v.toLowerCase()}`, sibling(v)]));
       if (!expr || operands(expr).some((o) => !bound[o])) {
         out.problems.push(`${at.join(" > ")}: bucket_script "${script.slice(0, 60)}"`);
         continue;
@@ -208,8 +208,6 @@ export function walk(aggrQuery: string, placeholders: Set<string>): Walked {
   visit(root.aggs ?? root.aggregations ?? {}, [], [], []);
   return out;
 }
-
-const vars0 = (def: Json): Record<string, string> => (def?.buckets_path && typeof def.buckets_path === "object" ? def.buckets_path : {});
 
 function leafOf(path: string[], agg: Agg, field: string | undefined, where: Where[], buckets: Bucket[]): Leaf {
   return { path, agg, ...(field ? { field } : {}), where, buckets };
