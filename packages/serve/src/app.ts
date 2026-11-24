@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
 import { type Principal, boardRights, decide, principalOf } from "@lenspack/policy";
@@ -16,7 +16,7 @@ import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
-import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "./review";
+import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable } from "./review";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
@@ -172,6 +172,14 @@ const writeText = (writer: UIMessageStreamWriter, id: string, text: string) => {
   writer.write({ type: "text-delta", id, delta: text });
   writer.write({ type: "text-end", id });
 };
+
+/** A round's stream without its text, which is written later, once it is known to be true. */
+const withoutText = <T extends { type: string }>() =>
+  new TransformStream<T, T>({
+    transform(chunk, out) {
+      if (!chunk.type.startsWith("text-")) out.enqueue(chunk);
+    },
+  });
 
 /** The effort to ask for: the client's, else the configured default when it is for this model and one it takes. */
 export function pickEffort(p: Pickable, asked: string | null | undefined, fallback?: ChatDefault): string | null {
@@ -495,15 +503,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       return json(res, 429, { error: over });
     }
     // Roles. The builder is small and fast by default; the reviewer and the
-    // escalation model (used for the heal round) can be larger. ?review=off
+    // escalation model (used for the fix round) can be larger. ?review=off
     // disables review.
     const reviewWanted = url.searchParams.get("review");
     const reviewer = reviewWanted === "off" || opts.review?.() === false ? null : (usable(providers, reviewWanted) ?? usable(providers, opts.roles?.reviewer) ?? builderModel);
     const escalate = usable(providers, url.searchParams.get("escalate")) ?? usable(providers, opts.roles?.escalate) ?? builderModel;
-    // Review informs; healing is opt-in (?rounds=2). A wrong "not satisfied"
-    // from the reviewer must not be able to damage a correct board on its own.
-    // At most 3: each round is a build and a review, both model calls.
-    const maxRounds = Math.min(3, Math.max(1, Math.floor(Number(url.searchParams.get("rounds") ?? 1)) || 1));
+    // With a reviewer, the turn edits a staged copy of the board: its changes are saved when the
+    // turn ends, and not at all if the reviewer still finds them misleading after one fix round.
+    // Without one, every edit is saved as it is made.
+    const staged = reviewer ? stagedStore(h.store, boardId) : null;
+    const store = staged ?? h.store;
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
     const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown };
@@ -512,7 +521,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store: h.store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly,
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly,
       onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
@@ -526,100 +535,154 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
     const before = summarise(config);
 
-    // The summary a turn ends with when the step cap stopped its tool loop before the model
-    // said anything. Streamed like any reply; when it fails or says nothing, a plain line from
-    // the board's versions takes its place, so no edit ends in silence.
-    const closingSummary = async (writer: UIMessageStreamWriter, role: "build" | "escalate", builder: Provider, roundEffort: string | undefined, history: ModelMessage[], refused: string[]) => {
-      const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion).reverse();
-      const now = summarise((await h.store.get(boardId))!.config);
-      const fallback = () => {
-        const left = refused.length ? ` Not done: ${[...new Set(refused)].join("; ")}.` : "";
-        return versions.length
-          ? `I ran out of steps before finishing. Changed so far: ${versions.map((v) => v.summary).join("; ")}.${left}`
-          : `I ran out of steps before finishing, and the board is unchanged.${left}`;
-      };
-      // The summary is grounded in the board itself, start of turn against now, so it cannot
-      // mistake the last tool error for the outcome.
-      const prompt = `${CLOSING_PROMPT}\n\nBoard at the start of this turn:\n${before}\n\nBoard now${versions.length ? "" : " (unchanged)"}:\n${now}`;
-      let text = "";
+    // One more call to a builder with tools off, for the words a turn ends with when its tool
+    // loop could not supply them. Empty when the call fails or says nothing.
+    const toolsOff = async (role: "build" | "escalate", builder: Provider, roundEffort: string | undefined, history: ModelMessage[], prompt: string) => {
       try {
         const r = withMeter({ role, effort: roundEffort }, () => {
           const call = shapeCall(builder, { system, messages: [...history, { role: "user", content: prompt }], tools: tools as ToolSet, effort: roundEffort });
           return streamText({ model: builder.languageModel, ...call, toolChoice: "none", stopWhen: stepCountIs(1), experimental_transform: replyGuard });
         });
-        text = (await r.text).trim();
+        return (await r.text).trim();
       } catch {
-        text = "";
+        return "";
       }
-      if (!text) text = fallback();
-      writeText(writer, `closing-${randomUUID()}`, text);
-      return text;
     };
 
-    // Build, then review, then heal — all in one response stream. The
-    // reviewer's verdict is written as a data part the UI renders.
+    // The summary a turn ends with when the step cap stopped its tool loop before the model
+    // said anything. When the call fails or says nothing, a plain line from the board's
+    // versions takes its place, so no edit ends in silence.
+    const closingSummary = async (role: "build" | "escalate", builder: Provider, roundEffort: string | undefined, history: ModelMessage[], refused: string[]) => {
+      const versions = (await store.versions(boardId)).filter((v) => v.version > startVersion).reverse();
+      const now = summarise((await store.get(boardId))!.config);
+      // The summary is grounded in the board itself, start of turn against now, so it cannot
+      // mistake the last tool error for the outcome.
+      const text = await toolsOff(role, builder, roundEffort, history, `${CLOSING_PROMPT}\n\nBoard at the start of this turn:\n${before}\n\nBoard now${versions.length ? "" : " (unchanged)"}:\n${now}`);
+      if (text) return text;
+      const left = refused.length ? ` Not done: ${[...new Set(refused)].join("; ")}.` : "";
+      return versions.length
+        ? `I ran out of steps before finishing. Changed so far: ${versions.map((v) => v.summary).join("; ")}.${left}`
+        : `I ran out of steps before finishing, and the board is unchanged.${left}`;
+    };
+
+    const review = async (writer: UIMessageStreamWriter, reviewer: Provider, refusals: string[]): Promise<Review> => {
+      const current = (await store.get(boardId))!;
+      const receipt = (await store.versions(boardId)).filter((v) => v.version > startVersion).map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
+      const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
+      try {
+        // The reviewer keeps its own configuration, effort included.
+        return await withMeter({ role: "review", effort: effortFor(reviewer) }, () => reviewTurn(reviewer, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals }));
+      } catch (e) {
+        return unavailable(`review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}`);
+      } finally {
+        clearInterval(beat);
+      }
+    };
+
+    // Build, review, and when the reviewer finds a misleading change, one fix round and a
+    // second review — all in one response stream. The reviewer's findings go out as a data part
+    // for tools that want them; the person reads the outcome in the reply.
     const stream = createUIMessageStream({
       execute: ({ writer }) => withMeter(scope, async () => {
         let messages = modelMessages;
-        // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdict.
-        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; review?: unknown } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [] };
+        // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
+        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
+        // The findings that would make the held edits mislead; while there are any, they are dropped rather than saved.
+        let misleading: Finding[] = [];
+        let toldUnchanged = false;
+        // A fix round put a misleading change right: the turn is saved as one version, so the wrong one never reaches the board.
+        let corrected = false;
+        const say = (text: string) => {
+          writeText(writer, `reply-${randomUUID()}`, text);
+          turn.answer = text.slice(0, 2000);
+        };
         try {
-          for (let round = 1; round <= Math.max(1, maxRounds); round++) {
-            const builder = round === 1 ? builderModel : escalate;
+          // Round 1 builds. Round 2 runs only to fix a misleading change, and its words are held
+          // back until the fix has been checked, so a fix that failed never claims to have worked.
+          for (let round = 1; round <= 2; round++) {
+            const fixing = round === 2;
+            const builder = fixing ? escalate : builderModel;
+            const role = fixing ? "escalate" : "build";
             // The asked-for effort goes with the chosen model; a different escalation model runs at its own default.
             const roundEffort = builder === builderModel ? effort : effortFor(builder);
             writer.write({ type: "data-round", data: { round, builder: builder.name, ...(roundEffort ? { effort: roundEffort } : {}) } });
             // Shaped per round: the escalation model may speak another API.
             const call = shapeCall(builder, { system, messages, tools: tools as ToolSet, loop: true, effort: roundEffort });
             // The stream is started and read inside the round's scope, so every step of its tool loop is attributed to it.
-            const result = withMeter({ role: round === 1 ? "build" : "escalate", effort: roundEffort }, () => {
+            const result = withMeter({ role, effort: roundEffort }, () => {
               const r = streamText({ model: builder.languageModel, ...call, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)], experimental_transform: replyGuard });
               // A rejected tool call shows its reason (a chart kind that does not exist, a missing title), not "An error occurred.".
-              writer.merge(r.toUIMessageStream({ sendStart: round === 1, sendFinish: false, onError: (e) => (e instanceof Error ? e.message : String(e)).slice(0, 300) }));
+              const ui = r.toUIMessageStream({ sendStart: round === 1, sendFinish: false, onError: (e) => (e instanceof Error ? e.message : String(e)).slice(0, 300) });
+              writer.merge(fixing ? ui.pipeThrough(withoutText()) : ui);
               return r;
             });
             const steps = await result.steps;
-            turn.answer = (await result.text).slice(0, 2000);
+            let answer = (await result.text).trim();
             turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));
             const refused = refusalsFrom(steps as never);
             turn.refusals.push(...refused);
+            const history = [...messages, ...steps.flatMap((s) => s.response.messages)];
             const finish = await result.finishReason;
-            if (!turn.answer.trim()) {
-              if (finish === "tool-calls") {
-                // A tool loop stopped before the model said a word (the step cap, or the guard on
-                // repeated refusals). The board may have changed on the way, so the reply describes
-                // the board as it now is against the start of the turn, never just the last refusal.
-                turn.answer = (await closingSummary(writer, round === 1 ? "build" : "escalate", builder, roundEffort, [...messages, ...steps.flatMap((s) => s.response.messages)], refused)).slice(0, 2000);
-              } else if (finish === "content-filter" || refused.length) {
-                // The provider's own safety check declined the turn, or the model stopped on refusals
-                // without editing: say so, rather than end it in silence.
-                turn.answer = finish === "content-filter" ? `${builder.name} declined to answer this request.` : `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
-                writeText(writer, `refused-${round}`, turn.answer);
-              }
+            if (!answer) {
+              // A tool loop stopped before the model said a word (the step cap, or the guard on
+              // repeated refusals). The board may have changed on the way, so the reply describes
+              // the board as it now is against the start of the turn, never just the last refusal.
+              if (finish === "tool-calls") answer = await closingSummary(role, builder, roundEffort, history, refused);
+              // The provider's own safety check declined the turn, or the model stopped on refusals
+              // without editing: say so, rather than end it in silence.
+              else if (finish === "content-filter") answer = `${builder.name} declined to answer this request.`;
+              else if (refused.length) answer = `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
+              if (answer && !fixing) say(answer);
             }
+            if (!fixing) turn.answer = answer.slice(0, 2000);
             if (!reviewer) break;
-            const current = (await h.store.get(boardId))!;
-            const versions = (await h.store.versions(boardId)).filter((v) => v.version > startVersion);
-            const receipt = versions.map((v) => `v${v.version} ${v.summary}`).reverse().join("\n");
             // Questions get no review: there is nothing on the board to check.
-            if (versions.length === 0 && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
-            let review: Review;
-            const beat = setInterval(() => writer.write({ type: "data-status", data: { phase: "reviewing" }, transient: true }), 10_000);
-            try {
-              // The reviewer keeps its own configuration, effort included.
-              review = await withMeter({ role: "review", effort: effortFor(reviewer) }, () => reviewTurn(reviewer, { catalogue: catalogueText(h.pack, h.catalogue), instructions: h.pack.instructions, instruction, before, after: summarise(current.config), receipt, refusals: refused }));
-            } catch (e) {
-              review = { satisfied: true, unavailable: true, missing: [], wrong: [], note: `review skipped: ${(e instanceof Error ? e.message : String(e)).slice(0, 80)}` };
-            } finally {
-              clearInterval(beat);
+            const gained = (await store.versions(boardId)).some((v) => v.version > startVersion);
+            if (!fixing && !gained && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
+            const verdict = await review(writer, reviewer, turn.refusals.slice(-8));
+            writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...verdict, raw: undefined } });
+            turn.reviews.push({ round, satisfied: verdict.satisfied, unavailable: verdict.unavailable, findings: verdict.findings, note: verdict.note });
+            const material = materialFindings(verdict);
+            if (!fixing && material.length) {
+              // The change would mislead: one round to correct it, with the findings as the instruction.
+              misleading = material;
+              messages = [...history, { role: "user", content: fixPrompt(material) }];
+              continue;
             }
-            writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...review, raw: undefined } });
-            turn.review = { satisfied: review.satisfied, unavailable: review.unavailable, missing: review.missing, wrong: review.wrong, note: review.note };
-            if (review.satisfied || review.unavailable || round === maxRounds) break;
-            // Another round with the review as the instruction; the model keeps its own history.
-            messages = [...messages, ...steps.flatMap((s) => s.response.messages), { role: "user", content: healingPrompt(review) }];
+            if (fixing && material.length) {
+              // Still misleading after its one fix: nothing from this turn is saved, and the reply says so.
+              misleading = material;
+              const why = material.map((f) => `- ${f.problem}`).join("\n");
+              say((await toolsOff(role, builder, roundEffort, history, `${ROLLBACK_PROMPT}\n${why}`)) || rolledBackLine(material));
+              toldUnchanged = true;
+              break;
+            }
+            if (fixing) {
+              say(answer || `I corrected my earlier change. ${misleading.map((f) => f.forUser).join(" ")}`.trim());
+              corrected = true;
+            }
+            misleading = [];
+            // Minor findings: the change stands, and the reply says what to know in one plain sentence.
+            const minor = verdict.userNote || verdict.findings.map((f) => f.forUser).filter(Boolean).join(" ");
+            if (minor) writeText(writer, `note-${randomUUID()}`, minor);
+            break;
           }
         } finally {
+          if (staged) {
+            if (misleading.length) {
+              staged.discard();
+              turn.outcome = "left unchanged";
+              // The fix round failed part-way: the board is still as it was, and the reply should say so.
+              if (!toldUnchanged) say(rolledBackLine(misleading));
+            } else {
+              try {
+                await staged.commit({ asOne: corrected });
+              } catch (e) {
+                turn.outcome = "not saved";
+                say(`The change could not be saved: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+              }
+            }
+          }
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);
           const summary = turnSummary(cost);
@@ -642,7 +705,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     try {
       if (response.body) for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
     } catch {
-      // The reader went away mid-turn; the edits are already committed.
+      // The reader went away mid-turn. The turn runs on, and its edits are saved, or not, as if they were still there.
     }
     return res.end();
   }

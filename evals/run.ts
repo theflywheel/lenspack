@@ -18,7 +18,7 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { SMALL, contextFor, examples } from "../examples/index";
 import { type CallRecord, type ProviderConfig, type TurnCost, type Usage, addUsage, buildProvider, emptyUsage, probe, providersFromEnv, shapeCall, stopOnRepeatedRefusals, turnCost, withMeter } from "@lenspack/serve";
 import { PROMPT_VERSION, catalogueText, systemParts } from "@lenspack/serve";
-import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "@lenspack/serve";
+import { type Review, fixPrompt, refusalsFrom, reviewTurn } from "@lenspack/serve";
 import { type HcmFacts, hcmTasks } from "./tasks-hcm";
 import { type Facts, tasks } from "./tasks";
 import { type Lang, hcmPrompts, replyVariants } from "./tasks-i18n";
@@ -156,7 +156,7 @@ async function main() {
             const history = out.steps.flatMap((st) => st.response.messages);
             const again = await as("escalate", () => generateText({
               model: (escalateProvider ?? provider).languageModel,
-              ...shapeCall(escalateProvider ?? provider, { system: systemParts(ex.pack, catalogue, seeded.board.config, undefined, [], languagePolicy), messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: healingPrompt(review) }], tools, loop: true }),
+              ...shapeCall(escalateProvider ?? provider, { system: systemParts(ex.pack, catalogue, seeded.board.config, undefined, [], languagePolicy), messages: [{ role: "user", content: t.prompt }, ...history, { role: "user", content: fixPrompt(review.findings) }], tools, loop: true }),
               stopWhen: stepCountIs(12),
               abortSignal: AbortSignal.timeout(120_000),
             }));

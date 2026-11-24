@@ -16,34 +16,32 @@ import { Markdown } from "./markdown";
 // The chat panel beside the board.
 
 type Part = { type: string; state?: string; output?: unknown; errorText?: string; text?: string; data?: unknown };
-type ReviewData = { round: number; reviewer: string; satisfied: boolean; unavailable?: boolean; missing: string[]; wrong: string[]; note: string };
+type ReviewData = { round: number; reviewer: string; satisfied: boolean; unavailable?: boolean; findings: { severity: "material" | "minor"; problem: string; forUser: string }[]; note: string };
 
-// The adversarial reviewer's verdict, as the server streamed it. When it is
-// not satisfied, the findings can be sent back as the next instruction — by
-// the person, not automatically.
+// The reviewer's verdict, as the server streamed it, in the person's words. A
+// change it found misleading was already fixed or left unsaved before the
+// reply; what is left can be sent back as the next instruction — by the
+// person, not automatically.
 function ReviewBlock({ r, onApply }: { r: ReviewData; onApply?: (text: string) => void }) {
-  const fixes = [...r.missing.map((m) => `missing: ${m}`), ...r.wrong.map((w) => `wrong: ${w}`)];
+  const fixes = r.findings.map((f) => f.problem);
   return (
     <div className={`rounded-md border px-2 py-1.5 text-xs ${r.satisfied ? "border-border text-muted-foreground" : "border-destructive/40 text-destructive"}`} data-testid="review">
       <div className="flex items-center gap-2">
-        <Badge variant={r.unavailable ? "outline" : r.satisfied ? "secondary" : "destructive"} className="font-mono">review {r.round}</Badge>
-        <span className={r.satisfied && !r.unavailable ? "text-foreground" : ""}>{r.unavailable ? "unavailable" : r.satisfied ? "satisfied" : "not satisfied"}</span>
-        <span className="ml-auto truncate text-muted-foreground">{r.reviewer}</span>
+        <Badge variant={r.unavailable ? "outline" : r.satisfied ? "secondary" : "destructive"} className="font-mono">check {r.round}</Badge>
+        <span className={r.satisfied && !r.unavailable ? "text-foreground" : ""}>{r.unavailable ? "unavailable" : r.satisfied ? "as asked" : `${r.findings.length} to note`}</span>
       </div>
-      {(r.missing.length > 0 || r.wrong.length > 0) && (
+      {r.findings.length > 0 && (
         <ul className="mt-1 space-y-0.5">
-          {r.missing.map((m, i) => <li key={`m${i}`}>missing: {m}</li>)}
-          {r.wrong.map((w, i) => <li key={`w${i}`}>wrong: {w}</li>)}
+          {r.findings.map((f, i) => <li key={i}>{f.forUser || f.problem}</li>)}
         </ul>
       )}
-      {r.note && <p className="mt-1 text-muted-foreground">{r.note}</p>}
       {!r.satisfied && !r.unavailable && fixes.length > 0 && onApply && (
         <Button
           variant="outline"
           size="sm"
           className="mt-2 h-7 text-xs"
           data-testid="apply-fixes"
-          onClick={() => onApply(`A review found the last edit incomplete. Fix exactly these points, then verify with get_board:\n${fixes.map((f) => `- ${f}`).join("\n")}`)}
+          onClick={() => onApply(`A check found these problems with the last edit. Fix exactly these points, then verify with get_board:\n${fixes.map((f) => `- ${f}`).join("\n")}`)}
         >
           Apply fixes
         </Button>
@@ -300,7 +298,8 @@ export function ChatPanel({
                   // The assistant's replies may carry a short list or bold names; what a person typed stays as typed.
                   m.role === "assistant" ? <Markdown key={i} text={p.text} /> : <p key={i} className="whitespace-pre-wrap text-sm leading-6">{p.text}</p>
                 ) : p.type === "data-review" ? (
-                  <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
+                  // Only the last check: an earlier one's findings were fixed, or the board was left as it was.
+                  p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (

@@ -4,8 +4,8 @@ import type { Pack } from "@lenspack/spec";
 
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
-// it changes so eval results can be compared.
-export const PROMPT_VERSION = 20;
+// it, or the reviewer's prompts in review.ts, change so eval results can be compared.
+export const PROMPT_VERSION = 21;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than

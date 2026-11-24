@@ -8,11 +8,30 @@ import { WIDGET_LIMITS } from "./prompt";
 // the receipt of versions the board actually gained. Its job is to find
 // every way the result falls short, so the builder can fix it — and to say
 // so honestly when nothing does.
+//
+// Each finding is material or minor. Material: the board would now mislead
+// whoever reads it (wrong or double-counted numbers, a title that claims what
+// the query does not do, a required filter missing, the wrong widget
+// changed). The chat gives such a change one fix round and saves nothing
+// that is still wrong after it. Minor: anything else; the change is saved
+// and the reply mentions it.
+
+export type Finding = {
+  severity: "material" | "minor";
+  /** The widget it is about, when there is one. */
+  widget?: string;
+  /** What is wrong, for the assistant that fixes it. */
+  problem: string;
+  /** The same in plain words for the person who asked: no widget ids, no mention of a review. */
+  forUser: string;
+};
 
 export type Review = {
+  /** No findings. */
   satisfied: boolean;
-  missing: string[];
-  wrong: string[];
+  findings: Finding[];
+  /** One plain sentence for the person who asked, about the minor findings; empty when there are none. */
+  userNote: string;
   note: string;
   /** The reviewer produced no usable verdict; never treat as a failure. */
   unavailable?: boolean;
@@ -36,7 +55,11 @@ If the instruction was a question about the data (not an edit) and the assistant
 If the instruction asked to reset, undo or restore an earlier version and the RECEIPT shows a restore ("restored vN") to the right version, that is satisfied: the whole board changing back is the requested change, not unasked-for edits.
 ${WIDGET_LIMITS} A request for something widgets cannot do is satisfied when the assistant says so.
 
-Reply with JSON only: {"satisfied": boolean, "missing": ["what was asked and is absent, naming the widget kind and keys"], "wrong": ["what exists but differs from the request, with the widget id"], "note": "one sentence"}.`;
+Give each finding a severity:
+- "material" when a changed widget would mislead whoever reads the board: numbers that are wrong or counted more than once (a query whose grouping or measure counts the same record twice); a title or label that claims something the query does not do (a level, filter, window or measure it lacks); a filter the instruction or a DOMAIN RULE requires that the query lacks; a change to, or removal of, a widget the instruction did not mean.
+- "minor" for everything else: an extra column, split or widget nobody asked for, wording or style, placement not quite as asked, something requested that is still missing.
+
+Reply with JSON only: {"findings": [{"severity": "material" | "minor", "widget": "the widget id, or empty", "problem": "what is wrong, precisely enough for the assistant to fix it", "forUser": "the same in one plain sentence for the person who asked, in the language of the instruction, with no widget ids and no mention of a review"}], "userNote": "one plain sentence for the person who asked about the minor findings only, in the language of the instruction, with no widget ids and no mention of a review; empty when there are none", "note": "one sentence"}. No findings means the edit is right: {"findings": [], "userNote": "", "note": "…"}.`;
 
 /** `reviewer` is a model, or a provider, whose adapter may shape the call (a cache breakpoint on the fixed prompt). */
 export async function reviewTurn(
@@ -57,21 +80,49 @@ export async function reviewTurn(
   const raw = out.text.trim();
   const m = /\{[\s\S]*\}/.exec(raw);
   try {
-    const p = JSON.parse(m ? m[0] : raw) as Partial<Review>;
-    if (typeof p.satisfied !== "boolean") throw new Error("no verdict");
-    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw };
+    const p = JSON.parse(m ? m[0] : raw) as { findings?: unknown; satisfied?: unknown; userNote?: unknown; note?: unknown };
+    if (!Array.isArray(p.findings) && p.satisfied !== true) throw new Error("no verdict");
+    const findings = (Array.isArray(p.findings) ? p.findings : []).flatMap(findingOf);
+    return { satisfied: findings.length === 0, findings, userNote: text(p.userNote), note: text(p.note), raw };
   } catch {
-    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw };
+    return { ...unavailable(raw ? "reviewer returned no verdict" : "reviewer returned nothing"), raw };
   }
 }
 
-/** What the builder is told when the reviewer is not satisfied. */
-export function healingPrompt(review: Review) {
+/** A review that could not be had: the change stands, as it would with no reviewer. */
+export const unavailable = (note: string): Review => ({ satisfied: true, unavailable: true, findings: [], userNote: "", note });
+
+const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+
+/** A finding as the reviewer wrote it; a severity it did not name is minor, so an unclear finding never undoes a change. */
+function findingOf(v: unknown): Finding[] {
+  if (!v || typeof v !== "object") return [];
+  const f = v as Record<string, unknown>;
+  const problem = text(f.problem);
+  if (!problem) return [];
+  const widget = text(f.widget);
+  return [{ severity: f.severity === "material" ? "material" : "minor", ...(widget ? { widget } : {}), problem, forUser: text(f.forUser) }];
+}
+
+export const materialFindings = (r: Review) => r.findings.filter((f) => f.severity === "material");
+
+/** What the builder is told in its one round to correct a change the reviewer found wrong. */
+export function fixPrompt(findings: Finding[]) {
   return [
-    "A reviewer checked the board against the request and found it incomplete. Fix exactly these points with tool calls, then call get_board and report only what it shows:",
-    ...review.missing.map((m) => `- missing: ${m}`),
-    ...review.wrong.map((w) => `- wrong: ${w}`),
+    "Before your changes were saved, a check found these problems with them. Nothing from this turn is saved yet. Correct exactly these points with tool calls: change the widget so it is right, or remove it; do not leave the wrong version on the board. Then call get_board.",
+    'Then reply to the user in one or two plain sentences, in the language they wrote in: say what was wrong with your earlier change and what you did about it (for example: "I removed the table because its numbers counted each transfer twice; here is the corrected one."), describing the board only as get_board shows it. Do not mention a check or a reviewer, and do not name widget ids.',
+    ...findings.map((f) => `- ${f.widget ? `${f.widget}: ` : ""}${f.problem}`),
   ].join("\n");
+}
+
+/** Sent, tools off, when a change is still wrong after its fix round and nothing from the turn was saved. */
+export const ROLLBACK_PROMPT =
+  "None of your changes in this turn were saved: even after one correction they would have misled whoever reads the board, so the board is exactly as it was before this message. In one or two plain sentences, in the language the user wrote in, tell them you could not make a correct version, so you left the board unchanged, and say why in plain words. Do not mention a check or a reviewer, and do not name widget ids. The problem:";
+
+/** The plain line a turn ends with when nothing from it was saved and no model could say so. */
+export function rolledBackLine(findings: Finding[]) {
+  const why = findings.map((f) => f.forUser).filter(Boolean).join(" ");
+  return `I couldn't make a correct version, so I left the board unchanged.${why ? ` ${why}` : ""}`;
 }
 
 /** The refusals in a turn's tool results, as short lines for the reviewer. */
