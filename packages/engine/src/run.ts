@@ -2,7 +2,7 @@ import { type BoardConfig, type BoardOp, MAX_OFFSET, type MeasuredQuery, type Qu
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
-import { type DataRow, MAX_SERIES, type WidgetData, compared, sortGroups } from "./data";
+import { type DataRow, MAX_SERIES, type WidgetData, compared, limitGroups, sortGroups } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
 import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, nowOf, resolve } from "./resolve";
 
@@ -155,7 +155,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
     return { group: shape.group, ...(shape.series !== undefined ? { series: shape.series } : {}), value, count: byKey[homeIndex]!.get(k)?.count ?? 0 };
   });
   // Unsorted ("none"), the home operand's rows come first, as they came.
-  const shown = query.kind === "breakdown" ? sortGroups(rows, query).slice(0, query.limit) : sortGroups(rows, { sort: "asc", sortBy: "group" });
+  const shown = query.kind === "breakdown" ? limitGroups(sortGroups(rows, query), query) : sortGroups(rows, { sort: "asc", sortBy: "group" });
   return { rows: shown, total: shown.reduce((s, r) => s + r.count, 0), format, approximate, notes };
 }
 

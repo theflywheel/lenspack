@@ -273,7 +273,8 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const read = (b: Bucket): Row =>
         windows ? { value: metricAggs.read(b.cur ?? {}), n: b.cur?.doc_count ?? 0, previous: metricAggs.read(b.prev ?? {}) } : { value: metricAggs.read(b), n: b.doc_count };
       // With a second dimension, a comparison, or an order the terms aggregation
-      // cannot express, every group comes back and the rows are sorted and cut here.
+      // cannot express, every group comes back and the rows are sorted here; the
+      // engine keeps the first groups.
       const sortAfter = metricAggs.order === null || !!bound.split || !!windows;
       const order = query.sortBy === "group" ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, ...(query.sortBy === "measure" ? [] : [{ _key: "asc" }])];
       const leaf = windows ?? metricAggs.aggs;
@@ -288,7 +289,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         // Buckets sorted here have no order of their own to keep, so ties
         // under "measure" fall to the names, as under "value".
         if (sortAfter) rows = sortGroups(rows, { sort: query.sort, sortBy: query.sortBy === "measure" ? "value" : query.sortBy });
-        return rows.slice(0, query.limit);
+        return rows;
       });
     }
     case "series": {

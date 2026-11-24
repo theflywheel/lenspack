@@ -111,6 +111,29 @@ export function sortGroups<R extends { group?: unknown; series?: unknown; value?
   return rows.sort(query.sortBy === "group" ? byName : query.sortBy === "measure" ? byValue : (a, b) => byValue(a, b) || byName(a, b));
 }
 
+/** Rows a source returns for a breakdown split by a second dimension, which limitGroups then cuts to its top groups. */
+export const SPLIT_ROWS = 10_000;
+
+/**
+ * A breakdown's first `limit` groups, rows in the order given. Split by a
+ * second dimension, the limit counts groups, not rows: every row of the top
+ * groups, ranked by their total value in the sort's direction (ties by name,
+ * or as given under "measure"), or taken in the order given when the
+ * breakdown is sorted by group or not at all.
+ */
+export function limitGroups(rows: DataRow[], query: Pick<Breakdown, "by" | "limit" | "sort" | "sortBy">): DataRow[] {
+  if (!query.by) return rows.slice(0, query.limit);
+  const totals = new Map<string, number>();
+  for (const r of rows) totals.set(r.group, (totals.get(r.group) ?? 0) + (r.value ?? 0));
+  const ranked = [...totals.keys()];
+  if (query.sortBy !== "group" && query.sortBy !== "none") {
+    const dir = query.sort === "asc" ? 1 : -1;
+    ranked.sort((a, b) => (totals.get(a)! - totals.get(b)!) * dir || (query.sortBy === "measure" ? 0 : a.localeCompare(b)));
+  }
+  const keep = new Set(ranked.slice(0, query.limit));
+  return rows.filter((r) => keep.has(r.group));
+}
+
 /** A connector's raw rows for a bound plan → widget data, in its measure's format. */
 export function shapeBound(raw: Row[], bound: BoundPlan): WidgetData {
   const def = bound.measure?.def;
@@ -121,10 +144,11 @@ export function shapeBound(raw: Row[], bound: BoundPlan): WidgetData {
 export function shapeRows(raw: Row[], query: Query, format: Format, measureKey?: string): WidgetData {
   switch (query.kind) {
     case "breakdown": {
-      const rows = raw.map((r): DataRow => {
+      const all = raw.map((r): DataRow => {
         const value = toNumber(r.value);
         return { group: groupLabel(r.group), ...("series" in r ? { series: groupLabel(r.series) } : {}), value, count: toNumber(r.n) ?? 0, ...("previous" in r ? { compare: compared(value, toNumber(r.previous)) } : {}) };
       });
+      const rows = limitGroups(all, query);
       return { rows, total: rows.reduce((s, r) => s + r.count, 0), format };
     }
     case "series": {

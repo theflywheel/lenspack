@@ -1,7 +1,7 @@
 import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/spec";
 
 import { type Ast, type Expr, type Grouped, type Join, type Source, and } from "./ast";
-import { type BoundDimension, type BoundFilter, type BoundPlan, type TimeWindow, bucketZone } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, SPLIT_ROWS, type TimeWindow, bucketZone } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
 // projects the pack's dimension and measure fragments under reserved aliases,
@@ -235,7 +235,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       else if (query.sortBy === "measure") orderBy.push({ expr: col("", "value"), dir: query.sort });
       else if (query.sortBy !== "none") orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
       if (bound.split && query.sortBy !== "none" && query.sortBy !== "measure") orderBy.push({ expr: col("", "series"), dir: "asc" });
-      limit = query.limit;
+      // Split, the limit is on groups: every row comes back and the engine keeps the top groups.
+      limit = bound.split ? SPLIT_ROWS : query.limit;
       shape = "breakdown";
       break;
     }

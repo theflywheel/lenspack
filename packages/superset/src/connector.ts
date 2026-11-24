@@ -50,15 +50,10 @@ export function supersetConnector(client: SupersetClient, binding: Binding, opts
         case "breakdown": {
           const g = columnOf(bound.dimension!.def);
           const s = bound.split ? columnOf(bound.split.def) : null;
-          const before = new Map((previous ?? []).map((r) => [`${r[g]}\u0000${s ? r[s] : ""}`, r[value]]));
-          raw = current.map((r) => ({ group: r[g], ...(s ? { series: r[s] } : {}), value: r[value], n: r[N], ...(previous ? { previous: before.get(`${r[g]}\u0000${s ? r[s] : ""}`) ?? null } : {}) }));
-          if (s) {
-            // The top groups by their total, every split inside them.
-            const totals = new Map<unknown, number>();
-            for (const r of raw) totals.set(r.group, (totals.get(r.group) ?? 0) + (Number(r.value) || 0));
-            const keep = new Set([...totals].sort((a, b) => (q.sort === "asc" ? a[1] - b[1] : b[1] - a[1])).slice(0, q.limit).map(([k]) => k));
-            raw = raw.filter((r) => keep.has(r.group));
-          }
+          const key = (r: Row) => `${r[g]}\u0000${s ? r[s] : ""}`;
+          const before = new Map((previous ?? []).map((r) => [key(r), r[value]]));
+          // Split, the engine keeps the top groups, every split inside them.
+          raw = current.map((r) => ({ group: r[g], ...(s ? { series: r[s] } : {}), value: r[value], n: r[N], ...(previous ? { previous: before.get(key(r)) ?? null } : {}) }));
           break;
         }
         case "series": {
