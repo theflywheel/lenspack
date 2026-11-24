@@ -20,6 +20,8 @@ export type QueryObject = {
   filters: QueryFilter[];
   orderby: [Metric | string, boolean][];
   row_limit: number;
+  /** Rows skipped first: a later page of a paged table. */
+  row_offset?: number;
   series_limit?: number;
   series_limit_metric?: Metric;
   extras: { where?: string; having?: string; time_grain_sqla?: string };
@@ -179,9 +181,13 @@ export function queryObjects(bound: BoundPlan, binding: Binding): { queries: Que
       queries = [{ ...base(bound.time), columns: [axis, ...(bound.dimension ? [col(bound.dimension)] : [])], metrics: [metric!, n], orderby: [], row_limit: 50_000, extras: { ...base(bound.time).extras, time_grain_sqla: GRAIN[q.grain] } }];
       break;
     }
-    case "rows":
-      queries = [{ ...base(bound.time), columns: bound.columns.map(col), metrics: [], orderby: bound.orderBy ? [[col(bound.orderBy.dimension), bound.orderBy.dir === "asc"]] : [], row_limit: q.limit }];
+    case "rows": {
+      // A page needs an order, or the next page is any rows at all: without one, the columns
+      // in the order listed (as the SQL planner orders a page).
+      const orderby: [string, boolean][] = bound.orderBy ? [[col(bound.orderBy.dimension), bound.orderBy.dir === "asc"]] : q.offset !== undefined ? bound.columns.map((c) => [col(c), true]) : [];
+      queries = [{ ...base(bound.time), columns: bound.columns.map(col), metrics: [], orderby, row_limit: q.limit, ...(q.offset ? { row_offset: q.offset } : {}) }];
       break;
+    }
     case "points": {
       // Each point's coordinates (and colour, label); with a size, grouped per point
       // and largest first. One row past the limit says the list was cut.

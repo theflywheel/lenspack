@@ -112,6 +112,15 @@ describe("maps in Superset", () => {
     expect(queries[0]!.filters.slice(0, 2)).toEqual([{ col: "latitude", op: "IS NOT NULL" }, { col: "longitude", op: "IS NOT NULL" }]);
   });
 
+  it("asks chart data for a later page of a table of rows, ordered so pages do not overlap", () => {
+    const page = (q: Record<string, unknown>) => queryObjects(resolve({ kind: "rows", entity: "site", columns: ["site", "area"], limit: 26, ...q } as never, pack, {}, SUPERSET_CAPABILITIES), binding).queries[0]!;
+    expect(page({})).toMatchObject({ orderby: [], row_limit: 26 });
+    expect(page({}).row_offset).toBeUndefined();
+    expect(page({ offset: 0 })).toMatchObject({ orderby: [["site", true], ["area", true]] });
+    expect(page({ offset: 50 })).toMatchObject({ orderby: [["site", true], ["area", true]], row_limit: 26, row_offset: 50 });
+    expect(page({ offset: 50, orderBy: { key: "area", dir: "desc" } })).toMatchObject({ orderby: [["area", false]], row_offset: 50 });
+  });
+
   it("validates a map before it reaches the board", () => {
     const cat = catalogueFrom(pack);
     const add = (widget: unknown) => applyOps(emptyBoard(pack, "b"), [{ op: "add_widget", id: "m", widget } as never], cat);

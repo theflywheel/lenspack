@@ -24,6 +24,9 @@ export type WidgetData = {
 
 export type FilterOption = { value: string; count: number };
 
+/** One page of a table of rows: `records` holds at most `pageSize` rows starting at `offset`. */
+export type WidgetPage = WidgetData & { page: number; pageSize: number; offset: number; hasNext: boolean };
+
 export type BoardHost = {
   /** Rows for every non-text widget, e.g. resolveBoard() on the server. */
   loadBoardData(config: BoardConfig, selections: Record<string, string>): Promise<Record<string, WidgetData>>;
@@ -31,6 +34,8 @@ export type BoardHost = {
   applyOps?(ops: BoardOp[]): Promise<PatchResult>;
   /** Save a drag/resize as a version of its own; `summary` says what it did ("moved “Total”"). */
   saveLayout?(layout: LayoutItem[], summary?: string): Promise<Board>;
+  /** One page (0 first) of a table widget's rows, under the board's selections: Prev/Next on the table. */
+  loadWidgetPage?(id: string, page: number, selections: Record<string, string>): Promise<WidgetPage>;
   /** Distinct values for a filter control. */
   loadFilterOptions?(field: string): Promise<FilterOption[]>;
   loadVersions?(): Promise<BoardVersion[]>;

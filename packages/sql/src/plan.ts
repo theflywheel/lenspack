@@ -215,6 +215,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   const having: Expr[] = [];
   const orderBy: Ast["orderBy"] = [];
   let limit: number;
+  let offset: number | undefined;
   let shape: Shape;
 
   switch (query.kind) {
@@ -276,8 +277,13 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       if (bound.orderBy) {
         orderBy.push({ expr: dimRef(bound.orderBy.dimension), dir: bound.orderBy.dir });
         for (const c of bound.columns) if (c.def.key !== bound.orderBy.dimension.def.key) orderBy.push({ expr: dimRef(c), dir: "asc" });
+      } else if (query.offset !== undefined) {
+        // A page needs an order, or the next page is any rows at all: the
+        // columns in the order listed.
+        for (const c of bound.columns) orderBy.push({ expr: dimRef(c), dir: "asc" });
       }
       limit = query.limit;
+      if (query.offset) offset = query.offset;
       shape = "rows";
       break;
     }
@@ -311,7 +317,7 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
     }
   }
 
-  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, having, orderBy, limit }, shape };
+  if (!per) return { ast: { select, from: rootSource, joins, where, groupBy, having, orderBy, limit, ...(offset ? { offset } : {}) }, shape };
 
   // Two stages: one value per key and group, then the measure's agg over those;
   // n counts keys, and rows with no key are not counted.
