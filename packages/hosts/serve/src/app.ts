@@ -103,6 +103,19 @@ export type AppOptions = {
 };
 
 const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
+
+/** The board API's route as the server reads a request: /api/<pack>/<board>/<action>. Empty parts are absent. */
+export type ApiRoute = { api: boolean; pack?: string; board?: string; action?: string };
+
+/**
+ * The parts of a request's path that the board API acts on. URL resolves "." and ".." segments (written plainly or
+ * as %2e), so these are the parts after that. A sign-in that grants rights on one board reads the board from here
+ * too, so the board it checks is the board the request changes.
+ */
+export function apiRoute(target: string | undefined): ApiRoute {
+  const [, api, pack, board, action] = new URL(target ?? "/", "http://x").pathname.split("/");
+  return { api: api === "api", pack: pack || undefined, board: board || undefined, action: action || undefined };
+}
 const randomId = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 
 /**
@@ -243,10 +256,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
 
   return async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
-    const [, api, packName, boardId, action] = url.pathname.split("/");
+    const { api, pack: packName, board: boardId, action } = apiRoute(req.url);
     try {
       if (opts.auth?.handle && (await opts.auth.handle(req, res, url))) return;
-      if (api !== "api") {
+      if (!api) {
         if (!opts.ui) return json(res, 404, { error: "not found" });
         // With lenspack's own sign-in, a page without a session goes to sign in first.
         if (opts.auth?.signInPath && access && !(await access(req))) {

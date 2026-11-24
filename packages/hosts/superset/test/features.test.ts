@@ -75,7 +75,7 @@ describe("what the server refuses when a switch is off", () => {
     const admin = as({ u: "admin", a: true, e: true });
     expect(canEdit(admin, "superset")).toBe(true);
     expect(canEdit(admin, "signed-in", false)).toBe(false);
-    expect(callerOf(admin, "signed-in", false)).toEqual({ user: "admin", roles: ["admin"], readOnly: EDITS_OFF_MESSAGE });
+    expect(callerOf(admin, "signed-in", false)).toEqual({ user: "admin", roles: ["admin"], usage: true, readOnly: EDITS_OFF_MESSAGE });
   });
 
   const DATASETS: SupersetDataset[] = [

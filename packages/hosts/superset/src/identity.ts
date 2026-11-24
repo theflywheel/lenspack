@@ -4,6 +4,11 @@
 // and whether Superset would let them view and edit that dashboard. Lenspack keeps no users and
 // trusts nothing else: a request without a valid, fresh signature is not signed in.
 //
+// The rights on a dashboard hold for that dashboard only. Lenspack reads the board from its own
+// route (apiRoute, the parts the board API acts on) and refuses a request whose board is not the
+// one Superset signed for, so a path that names one dashboard to Superset and another to Lenspack
+// gets nowhere. The usage page and the settings go by the signed admin flag, never by a board right.
+//
 // The signing key is derived from Superset's SECRET_KEY on the Superset side and handed to
 // Lenspack's service account on request, so neither side needs a second shared secret.
 
@@ -11,7 +16,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 import { type Identity as Caller, NO_RIGHTS } from "@lenspack/policy";
-import { type AuthAdapter, withRights } from "@lenspack/serve";
+import { type AuthAdapter, NO_STORE, apiRoute, json, withRights } from "@lenspack/serve";
 
 import type { HostPolicy } from "./access";
 
@@ -25,6 +30,10 @@ export type Identity = {
   a: boolean;
   /** The dashboard this request is about, when it is about one. */
   d?: number | null;
+  /** The board the rights below are for, as Superset read it from the path: superset-<d>. Older plugins sign only d. */
+  b?: string;
+  /** The pack in that path. Older plugins do not sign it. */
+  p?: string;
   /** Superset would let this user edit that dashboard (owner with can_write on Dashboard, or admin). */
   e?: boolean;
   /** Superset would let this user view that dashboard. */
@@ -95,27 +104,90 @@ export function canEdit(id: Identity, policy: EditPolicy, editsOn = true): boole
   return editsOn && (policy === "signed-in" || id.a || id.e === true);
 }
 
-/** Who the signed identity is to lenspack. A Superset admin has the role admin: the settings page and the audit log. */
+/**
+ * Who the signed identity is to lenspack. A Superset admin has the role admin (the settings page and the audit log)
+ * and the usage right: the usage page names every user's spend, so it goes by the admin flag, never by a dashboard's
+ * edit right.
+ */
 export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Caller {
   const roles = id.a ? ["admin"] : [];
-  if (!editsOn) return { user: id.u, roles, readOnly: EDITS_OFF_MESSAGE };
-  if (canEdit(id, policy)) return { user: id.u, roles, edit: true, maintain: true };
+  const usage = id.a === true;
+  if (!editsOn) return { user: id.u, roles, usage, readOnly: EDITS_OFF_MESSAGE };
+  if (canEdit(id, policy)) return { user: id.u, roles, usage, edit: true, maintain: true };
   // Asks are fine; every edit tool answers with the refusal, which the model passes on.
-  return { user: id.u, roles, readOnly: READ_ONLY_MESSAGE };
+  return { user: id.u, roles, usage, readOnly: READ_ONLY_MESSAGE };
+}
+
+/** Lenspack's name for a Superset dashboard's board. */
+const DASHBOARD_BOARD = /^superset-\d+$/;
+
+/** The board an identity's dashboard rights are for: b, else superset-<d> (as plugins before b sign it), else none. */
+export function signedBoard(id: Identity): string | null {
+  if (typeof id.b === "string" && id.b) return id.b;
+  return typeof id.d === "number" && Number.isSafeInteger(id.d) ? `superset-${id.d}` : null;
+}
+
+/** A "." or ".." path segment (also as %2e), or an encoded slash or backslash. Superset's route forwards none of them. */
+const DOTTED = /(?:^|\/)(?:\.|%2e){1,2}(?:\/|$)|%2f|%5c|\\/i;
+
+/** Why a request target's path is refused before anything reads it, or null. */
+export function pathRefusal(target: string | undefined): string | null {
+  const path = (target ?? "/").split("?")[0]!;
+  return DOTTED.test(path) ? "a path with a dot segment or an encoded slash is not accepted" : null;
 }
 
 /**
+ * Whether one request may go ahead under its signed identity, and whether the identity's dashboard rights (e) apply
+ * to it. They apply only when the board API's own route names the board Superset signed for (and the pack, when
+ * signed). Refused: a dot segment or an encoded slash in the path; a dashboard board Superset did not sign for; any
+ * other board, pack or none on a request that carries a dashboard's rights; a dashboard the user may not view.
+ */
+export function boardCheck(id: Identity, target: string | undefined): { refused: string | null; onBoard: boolean } {
+  const bad = pathRefusal(target);
+  if (bad) return { refused: bad, onBoard: false };
+  const route = apiRoute(target);
+  // Off the board API (the settings page, binding a dashboard), nothing goes by a board right.
+  if (!route.api) return { refused: null, onBoard: false };
+  const signed = signedBoard(id);
+  const other = "This request names another dashboard than the one Superset checked your rights on, so it was refused.";
+  if (signed === null) return { refused: route.board && DASHBOARD_BOARD.test(route.board) ? other : null, onBoard: false };
+  if (route.board !== signed) return { refused: other, onBoard: false };
+  if (id.p !== undefined && decodePart(route.pack) !== id.p) return { refused: other, onBoard: false };
+  if (id.v === false) return { refused: "You don't have access to this dashboard in Superset.", onBoard: false };
+  return { refused: null, onBoard: true };
+}
+
+const decodePart = (s: string | undefined) => {
+  try {
+    return s === undefined ? undefined : decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+
+/**
  * Superset's signed header as lenspack's sign-in, the only one in Superset mode: an unsigned request is not signed in.
+ * A dashboard's rights count only on that dashboard's board (boardCheck); a request that names another is refused
+ * with 403 before the board API reads it, and is not signed in at all for anything that skips that step.
  * With a host policy (hostPolicy: superset), the user's own Superset roles, dataset access and row-level security
  * come with them, and policy narrows every query by those rather than by the service account's.
  */
 export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy): AuthAdapter {
   return {
     kind: "superset",
+    handle: async (req, res) => {
+      const id = identityOf(req, key);
+      const refused = id ? boardCheck(id, req.url).refused : null;
+      if (!refused) return false;
+      json(res, 403, { error: refused }, NO_STORE);
+      return true;
+    },
     identify: async (req) => {
       const id = identityOf(req, key);
       if (!id) return null;
-      const caller = callerOf(id, policy, editsOn());
+      const check = boardCheck(id, req.url);
+      if (check.refused) return null;
+      const caller = callerOf(check.onBoard ? id : { ...id, e: false }, policy, editsOn());
       if (!host) return caller;
       // "admin" stays the signed admin flag's: a Superset role of that name grants nothing here.
       return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...(await host(id.u, id.r)) };
