@@ -63,7 +63,7 @@ describe("the system prompt's parts", () => {
   it("keeps replies after edits to plain sentences, and allows short lists and bold for an informational answer", async () => {
     const pack = await loadPack(tickets);
     const [stable] = systemParts(pack, catalogueFrom(pack));
-    expect(PROMPT_VERSION).toBe(18);
+    expect(PROMPT_VERSION).toBe(19);
     expect(stable).toContain("After edits, reply in one or two plain sentences with the outcome only.");
     expect(stable).toContain("may use a short bullet list and **bold**");
     expect(stable).toContain("Never use markdown headings.");
@@ -102,7 +102,7 @@ describe("languageText", () => {
   });
   it("replies in the user's language on auto and titles in the board's language by default", () => {
     const t = languageText({ reply: "auto" });
-    expect(t).toContain("Reply in the language of the user's latest message.");
+    expect(t).toContain("Reply in the language and script of the user's latest message; never in a language or script they have not used in this chat.");
     expect(t).toContain("titles in English, the board's language");
   });
   it("replies in a picked language, and titles follow the reply when the setting says speaker", () => {
