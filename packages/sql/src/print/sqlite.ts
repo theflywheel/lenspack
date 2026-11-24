@@ -1,12 +1,9 @@
 import type { Ast } from "../ast";
-import { type DialectRules, type Printed, printerFor } from "./base";
+import { type DialectRules, type Printed, printerFor, quoteIdent as quote, quoteString as lit } from "./base";
 
 // SQLite keeps time as ISO text ("2026-01-05 10:00:00"), so buckets are text
 // too and compare in the same order the instants do. It has no percentile
 // aggregate, and its LIKE folds ASCII case only.
-
-const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
-const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 /** Text in the form SQLite's date functions write, whole seconds unless there are milliseconds. */
 export function sqliteTime(d: Date) {

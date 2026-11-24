@@ -1,4 +1,4 @@
-import type { Query } from "@lenspack/core";
+import type { FORMATS, Query } from "@lenspack/core";
 
 // What a widget draws, whatever computed it. Connectors hand back raw rows in
 // one agreed shape (group / series / bucket / value / n / previous) and
@@ -22,7 +22,7 @@ export type DataRow = {
   other?: true;
 };
 
-export type Format = "number" | "percent" | "currency" | "compact" | "duration";
+export type Format = (typeof FORMATS)[number];
 
 export type WidgetData = {
   rows: DataRow[];

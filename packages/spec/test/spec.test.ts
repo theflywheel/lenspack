@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { catalogueFrom } from "../src/catalogue";
 import { PackError, parsePack, parsePackText } from "../src/load";
+import { maybeFragmentFor } from "../src/pack";
 
 const minimal = {
   pack: "fixture",
@@ -99,4 +100,15 @@ measures:
       p.measures[1].verified = false;
       p.examples = [{ question: "Count and amount by region?", query: { kind: "breakdown", dimension: "region", measure: "count", measures: ["amount"] } }];
     }, 'examples[0].query: no verified measure "amount"'));
+});
+
+describe("maybeFragmentFor", () => {
+  it("serves a bare string or default only to a SQL reader, a named entry to anyone", () => {
+    expect(maybeFragmentFor("a = 1", "postgres", true)).toBe("a = 1");
+    expect(maybeFragmentFor("a = 1", "elasticsearch")).toBeUndefined();
+    const f = { default: "x", elasticsearch: "doc['x'].value" };
+    expect(maybeFragmentFor(f, "custom", true)).toBe("x");
+    expect(maybeFragmentFor(f, "superset")).toBeUndefined();
+    expect(maybeFragmentFor(f, "elasticsearch")).toBe("doc['x'].value");
+  });
 });

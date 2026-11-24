@@ -1,7 +1,8 @@
+import type { Grain } from "@lenspack/core";
 import { type Capabilities, ResolveError } from "@lenspack/engine";
 import { maybeFragmentFor } from "@lenspack/spec";
 
-import type { Ast, Expr, Grain, Grouped, Join, Source } from "../ast";
+import type { Ast, Expr, Grouped, Join, Source } from "../ast";
 
 /** The SQL dialects lenspack ships; a driver registered from outside adds its own name. */
 export type Dialect = "postgres" | "duckdb" | "mysql" | "sqlite" | "clickhouse" | (string & {});
@@ -45,6 +46,10 @@ export type DialectRules = {
   capabilities?: Partial<Capabilities>;
 };
 
+/** Standard SQL quoting, a doubled quote inside: an identifier, and a string literal. */
+export const quoteIdent = (id: string) => `"${id.replace(/"/g, '""')}"`;
+export const quoteString = (s: string) => `'${s.replace(/'/g, "''")}'`;
+
 export function print(ast: Ast, rules: DialectRules): Printed {
   const params: unknown[] = [];
   const q = rules.quote;
@@ -57,7 +62,7 @@ export function print(ast: Ast, rules: DialectRules): Printed {
   const expr = (e: Expr): string => {
     switch (e.t) {
       case "raw": {
-        const sql = maybeFragmentFor(e.sql, rules.dialect);
+        const sql = maybeFragmentFor(e.sql, rules.dialect, true);
         if (!sql) throw new ResolveError("NOT_SUPPORTED", `The pack has no ${rules.dialect} form of the fragment ${JSON.stringify(e.sql)}; add a ${rules.dialect}: or default: entry`);
         return `(${sql})`;
       }
@@ -66,7 +71,7 @@ export function print(ast: Ast, rules: DialectRules): Printed {
       case "param":
         return P(e.value, e.cast);
       case "str":
-        return `'${e.value.replace(/'/g, "''")}'`;
+        return quoteString(e.value);
       case "lit":
         return String(e.value);
       case "star":

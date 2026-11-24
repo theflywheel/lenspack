@@ -8,11 +8,15 @@ import { z } from "zod";
 // passes to the validator (see ops.ts), never by anything imported here.
 
 export const GRAINS = ["hour", "day", "week", "month", "quarter", "year"] as const;
+export const FORMATS = ["number", "percent", "currency", "compact", "duration"] as const;
+export const DIMENSION_TYPES = ["string", "number", "boolean", "time", "enum"] as const;
 // heatmap: one measure over two dimensions as a grid of shaded cells. Columns are a
 // breakdown's dimension (or a series' time buckets) and rows its `by`.
 // map: the rows of an entity with a location, as points (a points query).
 export const CHART_KINDS = ["bar", "line", "pie", "area", "heatmap", "map"] as const;
 export const MAX_POINTS = 5000;
+// A rows query's deepest page: capped so it stays a small top-N sort in the source.
+export const MAX_OFFSET = 10000;
 // subtree: a node of a dotted path and everything under it ("a.b" matches
 // "a.b" and "a.b.c", not "a.bc").
 // segment: one of the values is a whole segment of a "|"-separated path
@@ -37,7 +41,7 @@ export const timeRangeSchema = z.union([
   z.object({ last: z.string().regex(/^[1-9]\d{0,3}[hdwmy]$/, 'e.g. "30d", "12w", "6m"') }),
   z.object({ from: z.string().datetime({ offset: true }), to: z.string().datetime({ offset: true }) }),
   z.object({
-    period: z.enum(["day", "week", "month", "quarter", "year"]),
+    period: z.enum(GRAINS).exclude(["hour"]),
     offset: z.number().int().min(-500).max(0).optional(),
     count: z.number().int().min(1).max(500).optional(),
   }),
@@ -105,9 +109,8 @@ export const querySchema = z.discriminatedUnion("kind", [
     limit: z.number().int().min(1).max(1000).default(50),
     orderBy: z.object({ key: z.string(), dir: z.enum(["asc", "desc"]).default("desc") }).optional(),
     // Rows skipped before the first one returned: a later page of a paged
-    // table. Set per request, not stored on a board. Capped so a deep page
-    // stays a small top-N sort in the source.
-    offset: z.number().int().min(0).max(10000).optional(),
+    // table. Set per request, not stored on a board.
+    offset: z.number().int().min(0).max(MAX_OFFSET).optional(),
     ...common,
   }),
   // The rows of an entity that has a location, one point each: its latitude and
@@ -127,6 +130,8 @@ export const querySchema = z.discriminatedUnion("kind", [
 ]);
 export type Query = z.infer<typeof querySchema>;
 
+// Grid columns (of 12) per named width.
+export const WIDTHS: Record<string, number> = { full: 12, half: 6, third: 4, quarter: 3 };
 const placementWidth = z.union([z.enum(["full", "half", "third", "quarter"]), z.number().int().min(1).max(12)]);
 
 // Intent rather than coordinates. Grid arithmetic is the one thing a language
@@ -179,7 +184,7 @@ export const widgetSchema = z.discriminatedUnion("kind", [
     // Only meaningful when the query is a series: how the points collapse to
     // one number. A value query is already one number.
     aggregate: z.enum(["sum", "avg", "max", "min", "count", "last"]).default("last"),
-    format: z.enum(["number", "percent", "compact", "currency", "duration"]).optional(),
+    format: z.enum(FORMATS).optional(),
   }),
   z.object({
     ...baseWidget,

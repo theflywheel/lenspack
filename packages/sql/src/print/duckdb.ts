@@ -1,8 +1,6 @@
 import type { Ast } from "../ast";
-import { type DialectRules, type Printed, printerFor } from "./base";
+import { type DialectRules, type Printed, printerFor, quoteIdent as quote } from "./base";
 import { zoned } from "./postgres";
-
-const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
 export const duckdbRules: DialectRules = {
   dialect: "duckdb",
