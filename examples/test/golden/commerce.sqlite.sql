@@ -3,8 +3,8 @@ SELECT strftime('%Y-%m-%d 00:00:00', "orders"."__t", '-' || ((CAST(strftime('%w'
 FROM (SELECT *, "placed_at" AS "__t", (total_cents / 100.0) AS "__m_revenue" FROM "orders") AS "orders"
 WHERE (("orders"."__t" >= CAST(? AS TEXT)) AND ("orders"."__t" < CAST(? AS TEXT)))
 GROUP BY strftime('%Y-%m-%d 00:00:00', "orders"."__t", '-' || ((CAST(strftime('%w', "orders"."__t") AS INTEGER) + 6) % 7) || ' days')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- params: ["2026-08-02 00:00:00","2026-09-01 00:00:00","2026-08-02 00:00:00","2026-09-01 00:00:00","2026-07-03 00:00:00","2026-08-02 00:00:00","2026-07-03 00:00:00","2026-09-01 00:00:00"]
 SELECT count(CASE WHEN (("orders"."__t" >= CAST(? AS TEXT)) AND ("orders"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "value", count(CASE WHEN (("orders"."__t" >= CAST(? AS TEXT)) AND ("orders"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "n", count(CASE WHEN (("orders"."__t" >= CAST(? AS TEXT)) AND ("orders"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "previous"
@@ -59,5 +59,5 @@ SELECT strftime('%Y-%m-01 00:00:00', "orders"."__t") AS "bucket", "customers"."_
 FROM (SELECT *, "placed_at" AS "__t" FROM "orders") AS "orders"
 LEFT JOIN (SELECT *, "signed_up_at" AS "__t", (segment) AS "__d_segment" FROM "customers") AS "customers" ON "orders"."customer_id" = "customers"."id"
 GROUP BY strftime('%Y-%m-01 00:00:00', "orders"."__t"), "customers"."__d_segment"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;

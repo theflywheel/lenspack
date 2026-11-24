@@ -82,6 +82,17 @@ describe("<Board>", () => {
     expect(screen.getByTestId("kpi-value").textContent).toBe("1,234");
   });
 
+  it("says beside the title when the source cut the answer", async () => {
+    const note = "only the latest 20,000 hours are shown; the source has more than 20,000 rows for this series";
+    const h = host({ loadBoardData: async () => ({ ...data, c: { ...data.c!, truncated: true, notes: [note] } }) });
+    render(
+      <BoardProvider board={board()} catalogue={catalogue} host={h}>
+        <Board />
+      </BoardProvider>,
+    );
+    await waitFor(() => expect(screen.getByText(note).className).toBe("lp-widget-note"));
+  });
+
   it("lets any UI drive edits through useBoardOps", async () => {
     const store = memoryStore();
     await store.create({ id: "b", pack: { pack: "fx", version: 1 }, config: config(), title: "x" });

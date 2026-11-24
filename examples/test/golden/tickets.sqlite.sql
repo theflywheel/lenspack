@@ -3,8 +3,8 @@ SELECT strftime('%Y-%m-%d 00:00:00', "tickets"."__t", '-' || ((CAST(strftime('%w
 FROM (SELECT *, "created_at" AS "__t", CASE WHEN (resolved_at IS NOT NULL) THEN (CASE WHEN (unixepoch(resolved_at) - unixepoch(created_at)) / 3600.0 > sla_hours THEN 1 ELSE 0 END) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
 WHERE (("tickets"."__t" >= CAST(? AS TEXT)) AND ("tickets"."__t" < CAST(? AS TEXT)))
 GROUP BY strftime('%Y-%m-%d 00:00:00', "tickets"."__t", '-' || ((CAST(strftime('%w', "tickets"."__t") AS INTEGER) + 6) % 7) || ' days')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- params: ["2026-08-02 00:00:00","2026-09-01 00:00:00","2026-08-02 00:00:00","2026-09-01 00:00:00","2026-07-03 00:00:00","2026-08-02 00:00:00","2026-07-03 00:00:00","2026-09-01 00:00:00"]
 SELECT avg(CASE WHEN (("tickets"."__t" >= CAST(? AS TEXT)) AND ("tickets"."__t" < CAST(? AS TEXT))) THEN "tickets"."__m_sla_breach_rate" END) AS "value", count(CASE WHEN (("tickets"."__t" >= CAST(? AS TEXT)) AND ("tickets"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "n", avg(CASE WHEN (("tickets"."__t" >= CAST(? AS TEXT)) AND ("tickets"."__t" < CAST(? AS TEXT))) THEN "tickets"."__m_sla_breach_rate" END) AS "previous"
@@ -53,5 +53,5 @@ LIMIT 1;
 SELECT strftime('%Y-%m-%d 00:00:00', "tickets"."__t", '-' || ((CAST(strftime('%w', "tickets"."__t") AS INTEGER) + 6) % 7) || ' days') AS "bucket", "tickets"."__d_priority" AS "series", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "created_at" AS "__t", (priority) AS "__d_priority" FROM "tickets") AS "tickets"
 GROUP BY strftime('%Y-%m-%d 00:00:00', "tickets"."__t", '-' || ((CAST(strftime('%w', "tickets"."__t") AS INTEGER) + 6) % 7) || ' days'), "tickets"."__d_priority"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;

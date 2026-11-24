@@ -18,6 +18,8 @@ export type WidgetData = {
   measures?: { key: string; format: Format }[];
   /** What the answer leaves out on purpose, shown beside the widget's title. */
   notes?: string[];
+  /** The source stopped at its row limit; a note says what is shown (the latest days of a series, say). */
+  truncated?: boolean;
   /** A computed answer's name for its numbers ("average daily units dispatched"): the value's label. */
   label?: string;
   /** What was computed after the source answered, in plain words: the value's tooltip. */

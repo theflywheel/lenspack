@@ -128,7 +128,7 @@ describe("a split breakdown run through Superset", () => {
 
   it("keeps the top groups by their total, every split inside them, from every row Superset has", async () => {
     expect(await shown({})).toEqual(["south/a", "south/b", "east/a", "east/b", "east/c"]);
-    expect(sent.at(-1)!.queries[0]!.row_limit).toBe(SPLIT_ROWS);
+    expect(sent.at(-1)!.queries[0]!.row_limit).toBe(SPLIT_ROWS + 1);
   });
 
   it("keeps the first groups in the order asked when sorted by group", async () => {

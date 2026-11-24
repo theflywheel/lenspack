@@ -3,8 +3,8 @@ SELECT toDateTime(toMonday("tickets"."__t"), 'UTC') AS "bucket", avg("tickets"."
 FROM (SELECT *, "created_at" AS "__t", CASE WHEN (resolved_at IS NOT NULL) THEN (CASE WHEN dateDiff('millisecond', created_at, resolved_at) / 3600000.0 > sla_hours THEN 1 ELSE 0 END) END AS "__m_sla_breach_rate" FROM "tickets") AS "tickets"
 WHERE (("tickets"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("tickets"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))))
 GROUP BY toDateTime(toMonday("tickets"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- params: ["2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-07-03 00:00:00.000","2026-08-02 00:00:00.000","2026-07-03 00:00:00.000","2026-09-01 00:00:00.000"]
 SELECT avg(CASE WHEN (("tickets"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("tickets"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "tickets"."__m_sla_breach_rate" END) AS "value", count(CASE WHEN (("tickets"."__t" >= CAST({p3:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("tickets"."__t" < CAST({p4:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "n", avg(CASE WHEN (("tickets"."__t" >= CAST({p5:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("tickets"."__t" < CAST({p6:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN "tickets"."__m_sla_breach_rate" END) AS "previous"
@@ -66,5 +66,5 @@ LIMIT 1;
 SELECT toDateTime(toMonday("tickets"."__t"), 'UTC') AS "bucket", "tickets"."__d_priority" AS "series", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "created_at" AS "__t", (priority) AS "__d_priority" FROM "tickets") AS "tickets"
 GROUP BY toDateTime(toMonday("tickets"."__t"), 'UTC'), "tickets"."__d_priority"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;

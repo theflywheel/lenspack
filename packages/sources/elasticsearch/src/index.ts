@@ -109,7 +109,7 @@ export function elasticsearchConnector(opts: ElasticsearchOptions): Connector & 
       const req = plan.native as SearchRequest;
       const timeoutMs = o?.timeoutMs ?? opts.defaultTimeoutMs ?? 15_000;
       const response = await request("POST", `/${indexPath(req.index)}/_search`, { ...req.body, timeout: `${Math.max(1, Math.floor(timeoutMs / 1000))}s` }, timeoutMs);
-      const data = shapeBound(req.decode(response), plan.bound);
+      const data = shapeBound(req.decode(response), plan.bound, req.cut?.(response));
       return req.approximate ? { ...data, approximate: true } : data;
     },
     async introspect(): Promise<SourceSchema> {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { type Tool, boardTools } from "@lenspack/agent";
 import { memoryStore } from "@lenspack/core";
-import { COMPUTE_ROWS, checkOps, run } from "@lenspack/engine";
+import { COMPUTE_ROWS, SERIES_ROWS, checkOps, run } from "@lenspack/engine";
 
 import { SUPERSET_CAPABILITIES, supersetConnector } from "../src/connector";
 import { chartToWidget, packFromDatasets, queryContextOf, widgetToChart, type SupersetDataset } from "../src/index";
@@ -127,6 +127,23 @@ describe("compute as Superset's own advanced analytics", () => {
     ]);
     expect(sent[0]!.queries[0]!.row_limit).toBe(COMPUTE_ROWS + 1);
     expect(sent[0]!.queries[0]!.post_processing).toBeUndefined();
+  });
+
+  it("asks for a series latest buckets first, one row past the limit, and says when it was cut", async () => {
+    const sent: { queries: { row_limit: number; orderby: unknown[] }[] }[] = [];
+    // Superset answers with as many rows as it was asked for: more than a series may hold.
+    const day = (i: number) => new Date(Date.UTC(2026, 0, 1) - i * 86400e3).toISOString().slice(0, 10);
+    const post = async (_p: string, body: (typeof sent)[number]) => {
+      sent.push(body);
+      return { result: [{ data: Array.from({ length: body.queries[0]!.row_limit }, (_, i) => ({ __lenspack_bucket: day(Math.floor(i / 2)), ward: i % 2 ? "north" : "south", dispatched: 1, __lenspack_n: 1 })) }] };
+    };
+    const data = await run({ kind: "series", measure: "dispatched", grain: "day", by: "ward" }, { pack, connector: supersetConnector({ post } as never, binding) });
+    expect(sent[0]!.queries[0]!.row_limit).toBe(SERIES_ROWS + 1);
+    // Ordered by the latest record in each bucket, newest first: the same order as by bucket.
+    expect(sent[0]!.queries[0]!.orderby).toEqual([[{ expressionType: "SQL", sqlExpression: "MAX(moved_on)", label: "__lenspack_latest" }, false]]);
+    expect(data.truncated).toBe(true);
+    expect(data.rows.at(-1)!.group).toBe("2026-01-01");
+    expect(data.notes).toContainEqual(expect.stringMatching(/^only the latest [\d,]+ days are shown, and series are ranked on those days/));
   });
 });
 

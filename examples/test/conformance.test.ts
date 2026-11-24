@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Dialect } from "../_shared/seed-util";
 import { type ExampleName, SMALL, buildBoard, contextFor, examples } from "../index";
+import { seedTicks, ticksCases, ticksPack } from "./ticks";
 
 // The genericity proof, parts one, two and four. One test suite runs over
 // every pack; every dimension × measure × shape either compiles or fails with
@@ -36,7 +37,7 @@ const ENGINES: Engine[] = [
   { name: "clickhouse", dialect: "clickhouse", url: process.env.LENSPACK_CLICKHOUSE_URL, seed: async () => (await import("@lenspack/sql/clickhouse")).openClickhouse(process.env.LENSPACK_CLICKHOUSE_URL!) },
 ];
 
-const duck: Partial<Record<ExampleName, Awaited<ReturnType<typeof openDuckdb>>>> = {};
+const duck: Partial<Record<ExampleName | "ticks", Awaited<ReturnType<typeof openDuckdb>>>> = {};
 // Engines that were reachable and seeded, each opened through its URL as a source would be.
 const live = new Map<string, { connector: Connector & { executor: Executor }; close(): Promise<void> }>();
 
@@ -46,6 +47,8 @@ beforeAll(async () => {
     await examples[name].seed(db.writer, "duckdb", SMALL[name] as never);
     duck[name] = db;
   }
+  duck.ticks = await openDuckdb();
+  await seedTicks(duck.ticks.writer, "duckdb");
   await Promise.all(
     ENGINES.map(async (engine) => {
       if (!engine.url) return;
@@ -53,6 +56,7 @@ beforeAll(async () => {
       try {
         seeded = await engine.seed();
         for (const name of NAMES) await examples[name].seed(seeded.writer, engine.dialect, SMALL[name] as never);
+        await seedTicks(seeded.writer, engine.dialect);
         const { connector, connection } = await openSource(engine.url);
         live.set(engine.name, { connector, close: connection.close });
       } catch (e) {
@@ -263,3 +267,27 @@ for (const name of NAMES) {
     }
   });
 }
+
+// Ratios whose numerator has empty days, and a series cut at the row limit:
+// each case has one right answer, and every driver must give it.
+describe("made-up ticks: every driver gives the one right answer", () => {
+  for (const c of ticksCases) {
+    it(`duckdb: ${c.label}`, async () => {
+      const data = await run(c.query, { pack: ticksPack, connector: sqlConnector(duck.ticks!.executor) });
+      expect(data.error).toBeUndefined();
+      c.check(data);
+    });
+  }
+  for (const engine of ENGINES) {
+    it(`${engine.name} agrees with duckdb`, async ({ skip }) => {
+      const other = live.get(engine.name);
+      if (!other) return skip();
+      for (const c of ticksCases) {
+        const mine = await run(c.query, { pack: ticksPack, connector: other.connector });
+        expect(mine.error, `${engine.name}: ${c.label}`).toBeUndefined();
+        c.check(mine);
+        agrees(engine.name, c.label, mine, await run(c.query, { pack: ticksPack, connector: sqlConnector(duck.ticks!.executor) }), false);
+      }
+    });
+  }
+});

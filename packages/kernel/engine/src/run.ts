@@ -126,17 +126,21 @@ function combine(query: Query, across: Across, data: WidgetData[], pack: Pack): 
   const { def, expr, sides } = across;
   const format = def.format ?? "number";
   const approximate = data.some((d) => d.approximate) || undefined;
+  const truncated = data.some((d) => d.truncated) || undefined;
   // Each operand of a split series keeps its own top series, so the combined
   // answer cannot count what was left out, only say which operand lost some.
-  const lost = sides.filter((_, i) => data[i]!.notes).map((s) => `${s.named} keeps only its top ${MAX_SERIES} series; the others are computed without it`);
-  const notes = notesOf([], [...sides.filter((s) => s.unfiltered.length).map(unnarrowed), ...lost]);
+  // An operand the source cut says so in its own words.
+  const topOnly = (n: string) => /^top \d+ of/.test(n);
+  const lost = sides.filter((_, i) => data[i]!.notes?.some(topOnly)).map((s) => `${s.named} keeps only its top ${MAX_SERIES} series; the others are computed without it`);
+  const cut = data.flatMap((d) => (d.truncated ? (d.notes ?? []).filter((n) => !topOnly(n)) : []));
+  const notes = notesOf([], [...sides.filter((s) => s.unfiltered.length).map(unnarrowed), ...lost, ...cut]);
   const homeIndex = Math.max(0, sides.findIndex((s) => s.measure.entity === def.entity));
   const home = data[homeIndex]!;
 
   if (query.kind === "value") {
     const now = (i: number) => data[i]!.rows[0]?.value ?? null;
     const value = evaluate(expr, (k) => now(sides.findIndex((s) => s.measure.key === k)));
-    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate, notes };
+    const out: WidgetData = { rows: [{ group: def.key, value, count: home.total }], total: home.total, format, approximate, notes, truncated };
     if (sides.every((s, i) => s.timeless || data[i]!.compare)) {
       const previous = evaluate(expr, (k) => {
         const i = sides.findIndex((s) => s.measure.key === k);
@@ -166,7 +170,7 @@ function combine(query: Query, across: Across, data: WidgetData[], pack: Pack): 
   });
   // Unsorted ("none"), the home operand's rows come first, as they came.
   const shown = query.kind === "breakdown" ? limitGroups(sortGroups(rows, query), query) : sortSeries(rows);
-  return { rows: shown, total: shown.reduce((s, r) => s + r.count, 0), format, approximate, notes };
+  return { rows: shown, total: shown.reduce((s, r) => s + r.count, 0), format, approximate, notes, truncated };
 }
 
 // One row per group and series: how the operands of a combined measure line up.
@@ -338,6 +342,7 @@ async function runMeasures(query: MeasuredQuery, opts: RunOptions): Promise<Widg
     rows,
     measures: [{ key: query.measure, format: main!.format }, ...extras.map((e, i) => ({ key: e.key, format: others[i]!.format }))],
     approximate: main!.approximate || others.some((o) => o.approximate) || undefined,
+    truncated: main!.truncated || others.find((o) => o.truncated)?.truncated,
     notes: notesOf([main!, ...others]),
   };
 }

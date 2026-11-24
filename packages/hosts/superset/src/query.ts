@@ -1,5 +1,5 @@
 import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query, type TimeRange, type Widget, grainWords } from "@lenspack/core";
-import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, computeRefusal } from "@lenspack/engine";
+import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, computeRefusal, rowCap } from "@lenspack/engine";
 import { type Pack, maybeFragmentFor, natureOf } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
@@ -170,7 +170,7 @@ export function queryObjects(bound: BoundPlan, binding: Binding): { queries: Que
       const orderby: [Metric | string, boolean][] =
         sortBy === "group" ? [[columns[0]!, q.sort === "asc"]] : sortBy === "none" ? [] : [[metric!, q.sort === "asc"], ...(sortBy === "value" ? ([[columns[0]!, true]] as [string, boolean][]) : [])];
       // With a split, the limit is on groups: the rows come back whole and the engine keeps the top groups.
-      const one: QueryObject = { ...base(bound.time), columns, metrics: [metric!, n], orderby, row_limit: bound.split ? SPLIT_ROWS : q.limit };
+      const one: QueryObject = { ...base(bound.time), columns, metrics: [metric!, n], orderby, row_limit: bound.split ? SPLIT_ROWS + 1 : q.limit };
       queries = [one];
       if (bound.previous) queries.push({ ...base(bound.previous), columns, metrics: [metric!], orderby: [], row_limit: 10_000 });
       break;
@@ -178,7 +178,19 @@ export function queryObjects(bound: BoundPlan, binding: Binding): { queries: Que
     case "series": {
       if (!ds.time) throw new ResolveError("NO_TIME", `"${bound.root}" has no time column in Superset`, q.measure);
       const axis: Column = { expressionType: "SQL", sqlExpression: ds.time, label: BUCKET, columnType: "BASE_AXIS", timeGrain: GRAIN[q.grain] };
-      queries = [{ ...base(bound.time), columns: [axis, ...(bound.dimension ? [col(bound.dimension)] : [])], metrics: [metric!, n], orderby: [], row_limit: bound.base ? bound.base.rows + 1 : 50_000, extras: { ...base(bound.time).extras, time_grain_sqla: GRAIN[q.grain] } }];
+      // Latest buckets first, one row past the cap, so a cut keeps the latest dates and says so. Superset
+      // orders only by a metric or a column, not by the bucket; the latest record in each bucket sorts the same.
+      const latest: Metric = { expressionType: "SQL", sqlExpression: `MAX(${ds.time})`, label: "__lenspack_latest" };
+      queries = [
+        {
+          ...base(bound.time),
+          columns: [axis, ...(bound.dimension ? [col(bound.dimension)] : [])],
+          metrics: [metric!, n],
+          orderby: [[latest, false]],
+          row_limit: rowCap(bound)! + 1,
+          extras: { ...base(bound.time).extras, time_grain_sqla: GRAIN[q.grain] },
+        },
+      ];
       break;
     }
     case "rows": {

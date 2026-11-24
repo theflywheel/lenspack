@@ -9,8 +9,8 @@ SELECT CAST(DATE_SUB(DATE(`tasks`.`__t`), INTERVAL WEEKDAY(`tasks`.`__t`) DAY) A
 FROM (SELECT *, (TIMESTAMPADD(MICROSECOND, createdtime * 1000, TIMESTAMP '1970-01-01 00:00:00')) AS `__t` FROM `project_task` WHERE (`tenantid` = ?) AND (isdeleted = false)) AS `tasks`
 LEFT JOIN (SELECT *, (root) AS `__d_campaign` FROM `v_project` WHERE (`tenantid` = ?)) AS `projects` ON `tasks`.`projectid` = `projects`.`id`
 GROUP BY CAST(DATE_SUB(DATE(`tasks`.`__t`), INTERVAL WEEKDAY(`tasks`.`__t`) DAY) AS DATETIME), `projects`.`__d_campaign`
-ORDER BY `bucket` IS NULL, `bucket` ASC, `series` IS NULL, `series` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC, `series` IS NULL, `series` ASC
+LIMIT 20001;
 
 -- params: ["ng.state","ng.state"]
 SELECT `addresses`.`__d_locality` AS `group`, avg(CAST(`tasks`.`__m_success_rate` AS DOUBLE)) AS `value`, count(*) AS `n`
@@ -32,8 +32,8 @@ LIMIT 15;
 SELECT CAST(DATE_SUB(DATE(`households`.`__t`), INTERVAL WEEKDAY(`households`.`__t`) DAY) AS DATETIME) AS `bucket`, count(*) AS `value`, count(*) AS `n`
 FROM (SELECT *, (TIMESTAMPADD(MICROSECOND, createdtime * 1000, TIMESTAMP '1970-01-01 00:00:00')) AS `__t` FROM `household` WHERE (`tenantid` = ?) AND (isdeleted = false)) AS `households`
 GROUP BY CAST(DATE_SUB(DATE(`households`.`__t`), INTERVAL WEEKDAY(`households`.`__t`) DAY) AS DATETIME)
-ORDER BY `bucket` IS NULL, `bucket` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC
+LIMIT 20001;
 
 -- params: ["ng.state"]
 SELECT `households`.`__d_household_type` AS `group`, avg(CAST(`households`.`__m_household_size` AS DOUBLE)) AS `value`, count(*) AS `n`

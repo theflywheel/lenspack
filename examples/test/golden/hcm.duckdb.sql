@@ -25,8 +25,8 @@ SELECT date_trunc('week', "tasks"."__t") AS "bucket", "projects"."__d_campaign" 
 FROM (SELECT *, (epoch_ms(createdtime)) AS "__t" FROM "project_task" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "tasks"
 LEFT JOIN (SELECT *, (root) AS "__d_campaign" FROM "v_project" WHERE ("tenantid" = $2)) AS "projects" ON "tasks"."projectid" = "projects"."id"
 GROUP BY date_trunc('week', "tasks"."__t"), "projects"."__d_campaign"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["ng.state"]
 SELECT "households"."__d_household_type" AS "group", avg("households"."__m_household_size") AS "value", count(*) AS "n"
@@ -89,5 +89,5 @@ LIMIT 1;
 SELECT date_trunc('week', "households"."__t") AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, (epoch_ms(createdtime)) AS "__t" FROM "household" WHERE ("tenantid" = $1) AND (isdeleted = false)) AS "households"
 GROUP BY date_trunc('week', "households"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;

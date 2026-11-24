@@ -46,15 +46,15 @@ LIMIT 1;
 SELECT date_trunc('day', "task"."__t") AS "bucket", count("task"."__m_visits") AS "value", count(*) AS "n"
 FROM (SELECT *, (to_timestamp("Data.createdTime" / 1000.0) AT TIME ZONE 'UTC') AS "__t", "Data.createdTime" AS "__t_raw", CASE WHEN ("Data.deliveredTo" = $1) THEN "Data.id" END AS "__m_visits" FROM "project-task-index-v1") AS "task"
 GROUP BY date_trunc('day', "task"."__t")
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- params: ["HOUSEHOLD"]
 SELECT date_trunc('week', "task"."__t") AS "bucket", "task"."__d_product_variant" AS "series", sum("task"."__m_nets_distributed") AS "value", count(*) AS "n"
 FROM (SELECT *, (to_timestamp("Data.createdTime" / 1000.0) AT TIME ZONE 'UTC') AS "__t", "Data.createdTime" AS "__t_raw", "Data.productVariant" AS "__d_product_variant", CASE WHEN ("Data.deliveredTo" = $1) THEN "Data.quantity" END AS "__m_nets_distributed" FROM "project-task-index-v1") AS "task"
 GROUP BY date_trunc('week', "task"."__t"), "task"."__d_product_variant"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["HOUSEHOLD"]
 SELECT sum("project"."__m_household_target_at_province") AS "value", count(*) AS "n"

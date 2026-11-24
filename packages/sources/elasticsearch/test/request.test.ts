@@ -66,3 +66,34 @@ describe("a split breakdown", () => {
     expect(rows.map((r) => `${r.group}/${r.series}`)).toEqual(["south/a", "south/b", "east/a", "east/b", "east/c"]);
   });
 });
+
+// Terms aggregations stop at their size and count the documents past it as
+// sum_other_doc_count. Where every group was asked for, more there is a cut.
+describe("groups past the size the request asked for", () => {
+  const group = (key: string, other = 0) => ({ key, doc_count: 1, s: { buckets: [{ key: "a", doc_count: 1 }], sum_other_doc_count: other } });
+
+  it("a split breakdown with more groups, or more splits in a group, says it was cut", () => {
+    const bound = resolve({ kind: "breakdown", dimension: "region", by: "kind", measure: "visits", limit: 2, sort: "desc" }, regions, {}, ELASTICSEARCH_CAPABILITIES);
+    const req = toRequest(bound, regions, env);
+    const shaped = (response: object) => shapeBound(req.decode(response), bound, req.cut?.(response));
+    expect(shaped({ aggregations: { g: { buckets: [group("north")], sum_other_doc_count: 0 } } }).truncated).toBeUndefined();
+    expect(shaped({ aggregations: { g: { buckets: [group("north")], sum_other_doc_count: 4 } } })).toMatchObject({ truncated: true, notes: [expect.stringMatching(/^groups are ranked on part of the data/)] });
+    expect(shaped({ aggregations: { g: { buckets: [group("north", 2)], sum_other_doc_count: 0 } } }).truncated).toBe(true);
+  });
+
+  it("a breakdown that asks for its top groups only is not cut by the rest", () => {
+    const bound = resolve({ kind: "breakdown", dimension: "region", measure: "visits", limit: 2, sort: "desc" }, regions, {}, ELASTICSEARCH_CAPABILITIES);
+    const req = toRequest(bound, regions, env);
+    expect(req.cut?.({ aggregations: { g: { buckets: [{ key: "north", doc_count: 3 }], sum_other_doc_count: 40 } } }) ?? false).toBe(false);
+  });
+
+  it("a computed query's base with more series than it may read says it was cut, and compute refuses it", () => {
+    const bound = { ...resolve({ kind: "series", measure: "visits", grain: "day", by: "region" }, regions, {}, ELASTICSEARCH_CAPABILITIES), base: { rows: 20_000 } };
+    const req = toRequest(bound, regions, env);
+    const response = { aggregations: { s: { buckets: [{ key: "north", doc_count: 1, t: { buckets: [{ key: Date.parse("2026-01-01T00:00:00Z"), doc_count: 1 }] } }], sum_other_doc_count: 9 } } };
+    expect(req.cut?.(response)).toBe(true);
+    // A plain split series asks for its top series only; the rest are not a cut.
+    const plain = resolve({ kind: "series", measure: "visits", grain: "day", by: "region" }, regions, {}, ELASTICSEARCH_CAPABILITIES);
+    expect(toRequest(plain, regions, env).cut?.(response) ?? false).toBe(false);
+  });
+});

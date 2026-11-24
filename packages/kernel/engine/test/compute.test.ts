@@ -2,7 +2,7 @@ import type { Query } from "@lenspack/core";
 import { parsePack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { COMPUTE_ROWS, type Connector, type Row, SQL_CAPABILITIES, bucketsOf, check, checkOps, describeComputed, explain, readWindow, run, shapeRows } from "../src";
+import { COMPUTE_ROWS, type Connector, type Row, SQL_CAPABILITIES, bucketsOf, check, checkOps, describeComputed, explain, readWindow, run, shapeBound } from "../src";
 
 // Steps run on the source's aggregated answer, so a stub that answers the base
 // query from canned rows (those in its window) pins every rule: gaps, zeros,
@@ -34,7 +34,7 @@ const time = { from: "2026-09-01T00:00:00Z", to: "2026-09-06T00:00:00Z" };
 const ctx = { now: new Date("2026-09-10T00:00:00Z") };
 const day = (n: number) => `2026-09-0${n}`;
 
-function stub(answers: (q: Query) => Row[]): Connector & { seen: { query: Query; base: boolean }[] } {
+function stub(answers: (q: Query) => Row[], cut = false): Connector & { seen: { query: Query; base: boolean }[] } {
   const seen: { query: Query; base: boolean }[] = [];
   return {
     kind: "stub",
@@ -46,7 +46,7 @@ function stub(answers: (q: Query) => Row[]): Connector & { seen: { query: Query;
       seen.push({ query: q, base: !!plan.bound.base });
       const t = "time" in q && q.time && "from" in q.time ? q.time : null;
       const rows = answers(q).filter((r) => !t || !r.bucket || (r.bucket >= t.from.slice(0, 10) && r.bucket < t.to.slice(0, 10)));
-      return shapeRows(rows, q, plan.bound.measure?.def.format ?? "number", plan.bound.measure?.def.key, !!plan.bound.base);
+      return shapeBound(rows, plan.bound, cut);
     },
   };
 }
@@ -318,6 +318,21 @@ describe("refusals, with what would work", () => {
     const many: Row[] = Array.from({ length: COMPUTE_ROWS + 1 }, (_, i) => ({ bucket: day(1 + (i % 5)), series: `w${Math.floor(i / 5)}`, value: 1, n: 1 }));
     const data = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 5, sort: "desc", time, compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } }, { pack, connector: stub(() => many), ctx });
     expect(data.error).toMatch(/needs the measure for every ward and day: more than 20,000 numbers.*week instead of day/);
+  });
+
+  it("refuses a base the source says it cut, however few rows came back", async () => {
+    const q: Query = { kind: "series", measure: "dispatched", grain: "day", by: "ward", time, compute: { steps: [{ op: "running_total" }] } };
+    const data = await run(q, { pack, connector: stub(() => daily, true), ctx });
+    expect(data.error).toMatch(/more than 20,000 numbers from the source/);
+    // A ratio alone, per group, is refused the same way.
+    const ratio = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 5, sort: "desc", compute: { steps: [{ op: "ratio", to: "received" }] } }, { pack, connector: stub(() => [{ group: "north", value: 1, n: 1 }], true), ctx });
+    expect(ratio.error).toMatch(/more than 20,000 numbers from the source/);
+  });
+
+  it("a cut answer stays marked as cut through further measures", async () => {
+    const data = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", measures: ["received"], limit: 5, sort: "desc" }, { pack, connector: stub(() => [{ group: "north", value: 1, n: 1 }], true), ctx });
+    expect(data.truncated).toBe(true);
+    expect(data.notes).toEqual(["groups are ranked on part of the data; the source stops at its row limit for this breakdown"]);
   });
 
   it("refuses at edit time what the host cannot keep as its own chart", () => {

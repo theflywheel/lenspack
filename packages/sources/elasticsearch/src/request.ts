@@ -21,7 +21,12 @@ export type SearchRequest = {
   approximate: boolean;
   /** Response → the engine's raw rows (group / series / bucket / value / n / previous). */
   decode(response: Bucket): Row[];
+  /** Whether the response left out groups the request asked for in full (terms past their size). */
+  cut?(response: Bucket): boolean;
 };
+
+// Documents past a terms aggregation's size: groups it did not return.
+const past = (terms: Bucket | undefined) => (terms?.sum_other_doc_count ?? 0) > 0;
 
 const refuse = (message: string, key?: string): never => {
   throw new ResolveError("NOT_SUPPORTED", message, key);
@@ -257,7 +262,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
   if (must.length + mustNot.length === 0) body.query = { match_all: {} };
 
   const interval = atLeast(env, 7, 2) ? "calendar_interval" : "interval";
-  const answer = (approximate: boolean, decode: (r: Bucket) => Row[]): SearchRequest => ({ index: entity.source, body, approximate, decode });
+  const answer = (approximate: boolean, decode: (r: Bucket) => Row[], cut?: (r: Bucket) => boolean): SearchRequest => ({ index: entity.source, body, approximate, decode, ...(cut ? { cut } : {}) });
 
   switch (query.kind) {
     case "breakdown": {
@@ -274,7 +279,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         windows ? { value: metricAggs.read(b.cur ?? {}), n: b.cur?.doc_count ?? 0, previous: metricAggs.read(b.prev ?? {}) } : { value: metricAggs.read(b), n: b.doc_count };
       // With a second dimension, a comparison, or an order the terms aggregation
       // cannot express, every group comes back and the rows are sorted here; the
-      // engine keeps the first groups.
+      // engine keeps the first groups. Past 10,000 groups (1,000 splits in a group) the answer says it was cut.
       const sortAfter = metricAggs.order === null || !!bound.split || !!windows;
       const order = query.sortBy === "group" ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, ...(query.sortBy === "measure" ? [] : [{ _key: "asc" }])];
       const leaf = windows ?? metricAggs.aggs;
@@ -290,7 +295,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         // under "measure" fall to the names, as under "value".
         if (sortAfter) rows = sortGroups(rows, { sort: query.sort, sortBy: query.sortBy === "measure" ? "value" : query.sortBy });
         return rows;
-      });
+      }, sortAfter ? (r) => past(r.aggregations?.g) || ((r.aggregations?.g?.buckets ?? []) as Bucket[]).some((g) => past(g.s)) : undefined);
     }
     case "series": {
       const metricAggs = measureAggs(bound, env);
@@ -326,8 +331,10 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const order = metricAggs.order ? [{ [metricAggs.order]: "desc" }, { _key: "asc" }] : [{ _count: "desc" }, { _key: "asc" }];
       const size = bound.base ? Math.min(bound.base.rows + 1, 10_000) : MAX_SERIES;
       body.aggs = { s: { terms: { ...src, size, order }, aggs: { ...metricAggs.aggs, t: histogram } } };
-      return answer(metricAggs.approximate, (r) =>
-        ((r.aggregations?.s?.buckets ?? []) as Bucket[]).flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count }))),
+      return answer(
+        metricAggs.approximate,
+        (r) => ((r.aggregations?.s?.buckets ?? []) as Bucket[]).flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count }))),
+        bound.base ? (r) => past(r.aggregations?.s) : undefined,
       );
     }
     case "value": {

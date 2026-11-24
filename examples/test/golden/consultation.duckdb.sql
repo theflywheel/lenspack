@@ -3,8 +3,8 @@ SELECT date_trunc('day', "submissions"."__t") AS "bucket", "submissions"."__d_ch
 FROM (SELECT *, "submitted_at" AS "__t", (channel) AS "__d_channel" FROM "submissions" WHERE ("tenant_id" = $1)) AS "submissions"
 WHERE (("submissions"."__t" >= CAST($2 AS TIMESTAMP)) AND ("submissions"."__t" < CAST($3 AS TIMESTAMP)))
 GROUP BY date_trunc('day', "submissions"."__t"), "submissions"."__d_channel"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["dopt","dopt"]
 SELECT "submissions"."__d_channel" AS "group", avg("wait_signal"."__m_wants_human_rate") AS "value", count(*) AS "n"

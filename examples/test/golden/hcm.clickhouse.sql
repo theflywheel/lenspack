@@ -25,8 +25,8 @@ SELECT toDateTime(toMonday("tasks"."__t"), 'UTC') AS "bucket", "projects"."__d_c
 FROM (SELECT *, (fromUnixTimestamp64Milli(createdtime, 'UTC')) AS "__t" FROM "project_task" WHERE ("tenantid" = {p1:String}) AND (isdeleted = false)) AS "tasks"
 LEFT JOIN (SELECT *, (root) AS "__d_campaign" FROM "v_project" WHERE ("tenantid" = {p2:String})) AS "projects" ON "tasks"."projectid" = "projects"."id"
 GROUP BY toDateTime(toMonday("tasks"."__t"), 'UTC'), "projects"."__d_campaign"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["ng.state"]
 SELECT "households"."__d_household_type" AS "group", avg("households"."__m_household_size") AS "value", count(*) AS "n"
@@ -89,5 +89,5 @@ LIMIT 1;
 SELECT toDateTime(toMonday("households"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, (fromUnixTimestamp64Milli(createdtime, 'UTC')) AS "__t" FROM "household" WHERE ("tenantid" = {p1:String}) AND (isdeleted = false)) AS "households"
 GROUP BY toDateTime(toMonday("households"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;

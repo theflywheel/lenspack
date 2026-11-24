@@ -36,7 +36,7 @@ FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "size" AS "__m_siz
 LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
 GROUP BY "owners"."__d_tier", "things"."__d_colour"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"breakdown","dimension":"origin","measure":"labelled","limit":10,"sort":"desc"}
 -- params: ["99","ke_1","ke\\\\_1.%","test"]
@@ -173,48 +173,48 @@ LIMIT 1;
 SELECT toDateTime(toStartOfHour("things"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toStartOfHour("things"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"day"}
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toStartOfDay("things"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toStartOfDay("things"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"week"}
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toMonday("things"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toMonday("things"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"month"}
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toStartOfMonth("things"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toStartOfMonth("things"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"quarter"}
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toStartOfQuarter("things"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toStartOfQuarter("things"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"year"}
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toStartOfYear("things"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toStartOfYear("things"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"weight","grain":"week","by":"tier","time":{"last":"12w"}}
 -- params: ["ke_1","ke\\\\_1.%","test","2025-11-23 12:34:56.000","2026-02-15 12:34:56.000"]
@@ -223,8 +223,8 @@ FROM (SELECT *, "made_at" AS "__t", (weight_g / 1000.0) AS "__m_weight" FROM "ap
 LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
 WHERE (("things"."__t" >= CAST({p4:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p5:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))))
 GROUP BY toDateTime(toMonday("things"."__t"), 'UTC'), "owners"."__d_tier"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"parts","grain":"day","time":{"last":"60d"}}
 -- params: ["ke_1","1765974896000","1771158896000"]
@@ -232,16 +232,16 @@ SELECT toDateTime(toStartOfDay("parts"."__t"), 'UTC') AS "bucket", count(*) AS "
 FROM (SELECT *, fromUnixTimestamp64Milli(CAST("added_ms" AS Int64), 'UTC') AS "__t", "added_ms" AS "__t_raw" FROM "parts" WHERE ("tenant_id" = {p1:String})) AS "parts"
 WHERE (("parts"."__t_raw" >= CAST({p2:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p3:Int64} AS Int64)))
 GROUP BY toDateTime(toStartOfDay("parts"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"logs","grain":"month"}
 -- params: []
 SELECT toDateTime(toStartOfMonth("logs"."__t"), 'UTC') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, fromUnixTimestamp64Milli(CAST("at_s" AS Int64) * 1000, 'UTC') AS "__t", "at_s" AS "__t_raw" FROM "logs") AS "logs"
 GROUP BY toDateTime(toStartOfMonth("logs"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"events","grain":"hour","time":{"last":"2d"}}
 -- params: ["2026-02-13 12:34:56.000","2026-02-15 12:34:56.000"]
@@ -249,8 +249,8 @@ SELECT toDateTime(toStartOfHour("events"."__t"), 'UTC') AS "bucket", count(*) AS
 FROM (SELECT *, (toDateTime(t, 'UTC')) AS "__t" FROM "events") AS "events"
 WHERE (("events"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("events"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))))
 GROUP BY toDateTime(toStartOfHour("events"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"value","measure":"things","filters":[{"dimension":"colour","op":"eq","value":"red"},{"dimension":"colour","op":"neq","value":"blue"},{"dimension":"size","op":"gte","value":10},{"dimension":"size","op":"lte","value":90},{"dimension":"colour","op":"in","value":["red","green"]},{"dimension":"size","op":"between","value":[20,40]},{"dimension":"path","op":"segment","value":["B%1","C"]},{"dimension":"path","op":"subtree","value":"a_b"},{"dimension":"colour","op":"contains","value":"E%D"},{"dimension":"tier","op":"eq","value":"GOLD"}]}
 -- params: ["ke_1","ke\\\\_1.%","test","red","blue","10","90","red","green","20","40","B%1","C","a_b","a\\\\_b.%","%E\\\\%D%","GOLD"]
@@ -311,7 +311,7 @@ WHERE (("things"."__t" >= CAST({p6:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')
 GROUP BY "things"."__d_colour", "owners"."__d_tier", "things"."__k") AS "__n"
 GROUP BY "__n"."group", "__n"."series"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"series","measure":"things_per_owner","grain":"month","by":"colour","time":{"last":"12w"}}
 -- params: ["ke_1","ke\\\\_1.%","test","2025-11-23 12:34:56.000","2026-02-15 12:34:56.000"]
@@ -321,8 +321,8 @@ FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour", "owner_id" AS "__k
 WHERE (("things"."__t" >= CAST({p4:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p5:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) AND ("things"."__k" IS NOT NULL)
 GROUP BY toDateTime(toStartOfMonth("things"."__t"), 'UTC'), "things"."__d_colour", "things"."__k") AS "__n"
 GROUP BY "__n"."bucket", "__n"."series"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"value","measure":"median_colours_per_owner"}
 -- params: ["ke_1","ke\\\\_1.%","test"]
@@ -376,7 +376,7 @@ WHERE ("things"."__t" >= CAST({p18:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')
 GROUP BY "owners"."__d_tier", "things"."__d_colour"
 HAVING (count(CASE WHEN (("things"."__t" >= CAST({p20:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("things"."__t" < CAST({p21:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) > 0)
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"breakdown","dimension":"colour","by":"tier","measure":"things","limit":3,"sort":"desc"}
 -- params: ["ke_1","ke\\\\_1.%","test"]
@@ -385,31 +385,31 @@ FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour" FROM "app"."things"
 LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "things"."owner_id" = "owners"."id"
 GROUP BY "things"."__d_colour", "owners"."__d_tier"
 ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 10000;
+LIMIT 10001;
 
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toStartOfHour("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toStartOfHour("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"week"} in Asia/Kolkata
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toMonday("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toMonday("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"things","grain":"month"} in Asia/Kolkata
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT toDateTime(toStartOfMonth("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') AS "bucket", count(*) AS "value", count(*) AS "n"
 FROM (SELECT *, "made_at" AS "__t" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
 GROUP BY toDateTime(toStartOfMonth("things"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
 
 -- {"kind":"series","measure":"parts","grain":"day","time":{"period":"month","offset":-1}} in Asia/Kolkata
 -- params: ["ke_1","1767205800000","1769884200000"]
@@ -417,5 +417,5 @@ SELECT toDateTime(toStartOfDay("parts"."__t", 'Asia/Kolkata'), 'Asia/Kolkata') A
 FROM (SELECT *, fromUnixTimestamp64Milli(CAST("added_ms" AS Int64), 'UTC') AS "__t", "added_ms" AS "__t_raw" FROM "parts" WHERE ("tenant_id" = {p1:String})) AS "parts"
 WHERE (("parts"."__t_raw" >= CAST({p2:Int64} AS Int64)) AND ("parts"."__t_raw" < CAST({p3:Int64} AS Int64)))
 GROUP BY toDateTime(toStartOfDay("parts"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;

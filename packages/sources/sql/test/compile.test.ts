@@ -9,7 +9,8 @@ import { type Executor, sqlConnector } from "../src/executor";
 
 const run = (q: Parameters<typeof runWith>[0], o: { pack: Parameters<typeof runWith>[1]["pack"]; executor: Executor; ctx?: Parameters<typeof runWith>[1]["ctx"] }) =>
   runWith(q, { pack: o.pack, connector: sqlConnector(o.executor), ctx: o.ctx });
-import { ResolveError } from "@lenspack/engine";
+import { ResolveError, SERIES_ROWS } from "@lenspack/engine";
+import { parsePack } from "@lenspack/pack";
 import { openDuckdb } from "../src/executors/duckdb";
 import { pack, seedFixture } from "./fixture-pack";
 
@@ -126,6 +127,22 @@ describe("series and value", () => {
       { group: "(other)", value: 0, count: 0, compare: { previous: 2, delta: -1 }, share: 0, other: true },
     ]);
     expect(data.total).toBe(2);
+  });
+
+  it("a series past the row limit keeps its latest buckets and says it was cut", async () => {
+    // Five hours more than a series may return, one row an hour.
+    await db.writer.exec(`CREATE TABLE ticks AS SELECT TIMESTAMP '2020-01-01 00:00:00' + to_hours(i) AS at FROM range(${SERIES_ROWS + 5}) t(i)`);
+    const ticks = parsePack({ pack: "ticks", version: 1, entities: { ticks: { source: "ticks", time: "at" } }, measures: [{ key: "ticks", entity: "ticks", agg: "count" }] });
+    const query = { kind: "series", measure: "ticks", grain: "hour" } as const;
+    const c = compile(query, ticks, { dialect: "duckdb" });
+    expect(c.sql).toMatch(new RegExp(`ORDER BY "bucket" DESC NULLS LAST\\s+LIMIT ${SERIES_ROWS + 1}$`));
+    const data = await run(query, { pack: ticks, executor, ctx: {} });
+    expect(data.truncated).toBe(true);
+    expect(data.rows.length).toBe(SERIES_ROWS);
+    // The earliest five hours are the ones left out; the latest hour is there.
+    expect(data.rows[0]!.group).toBe("2020-01-01T05:00");
+    expect(data.rows.at(-1)!.group).toBe(new Date(Date.UTC(2020, 0, 1) + (SERIES_ROWS + 4) * 3600e3).toISOString().slice(0, 13) + ":00");
+    expect(data.notes).toEqual([`only the latest ${SERIES_ROWS.toLocaleString("en")} hours are shown; the source has more than ${SERIES_ROWS.toLocaleString("en")} rows for this series`]);
   });
 
   it("a rate over the whole population is not the mean of group rates", async () => {

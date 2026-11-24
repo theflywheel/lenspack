@@ -3,8 +3,8 @@ SELECT CAST(DATE_SUB(DATE(`orders`.`__t`), INTERVAL WEEKDAY(`orders`.`__t`) DAY)
 FROM (SELECT *, `placed_at` AS `__t`, (total_cents / 100.0) AS `__m_revenue` FROM `orders`) AS `orders`
 WHERE ((`orders`.`__t` >= CAST(? AS DATETIME(3))) AND (`orders`.`__t` < CAST(? AS DATETIME(3))))
 GROUP BY CAST(DATE_SUB(DATE(`orders`.`__t`), INTERVAL WEEKDAY(`orders`.`__t`) DAY) AS DATETIME)
-ORDER BY `bucket` IS NULL, `bucket` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC
+LIMIT 20001;
 
 -- params: ["2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-08-02 00:00:00.000","2026-09-01 00:00:00.000","2026-07-03 00:00:00.000","2026-08-02 00:00:00.000","2026-07-03 00:00:00.000","2026-09-01 00:00:00.000"]
 SELECT count(CASE WHEN ((`orders`.`__t` >= CAST(? AS DATETIME(3))) AND (`orders`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) AS `value`, count(CASE WHEN ((`orders`.`__t` >= CAST(? AS DATETIME(3))) AND (`orders`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) AS `n`, count(CASE WHEN ((`orders`.`__t` >= CAST(? AS DATETIME(3))) AND (`orders`.`__t` < CAST(? AS DATETIME(3)))) THEN 1 END) AS `previous`
@@ -23,8 +23,8 @@ SELECT CAST(DATE_FORMAT(`orders`.`__t`, '%Y-%m-01') AS DATETIME) AS `bucket`, `c
 FROM (SELECT *, `placed_at` AS `__t` FROM `orders`) AS `orders`
 LEFT JOIN (SELECT *, `signed_up_at` AS `__t`, (segment) AS `__d_segment` FROM `customers`) AS `customers` ON `orders`.`customer_id` = `customers`.`id`
 GROUP BY CAST(DATE_FORMAT(`orders`.`__t`, '%Y-%m-01') AS DATETIME), `customers`.`__d_segment`
-ORDER BY `bucket` IS NULL, `bucket` ASC, `series` IS NULL, `series` ASC
-LIMIT 5000;
+ORDER BY `bucket` DESC, `series` IS NULL, `series` ASC
+LIMIT 20001;
 
 -- params: []
 SELECT `customers`.`__d_country` AS `group`, avg(CAST(`orders`.`__m_refund_rate` AS DOUBLE)) AS `value`, count(*) AS `n`

@@ -1,7 +1,7 @@
 import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/pack";
 
 import { type Ast, type Expr, type Grouped, type Join, type Source, and } from "./ast";
-import { type BoundDimension, type BoundFilter, type BoundPlan, SPLIT_ROWS, type TimeWindow, bucketZone } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, SPLIT_ROWS, type TimeWindow, bucketZone, rowCap } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
 // projects the pack's dimension and measure fragments under reserved aliases,
@@ -235,8 +235,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       else if (query.sortBy === "measure") orderBy.push({ expr: col("", "value"), dir: query.sort });
       else if (query.sortBy !== "none") orderBy.push({ expr: col("", "value"), dir: query.sort }, { expr: col("", "group"), dir: "asc" });
       if (bound.split && query.sortBy !== "none" && query.sortBy !== "measure") orderBy.push({ expr: col("", "series"), dir: "asc" });
-      // Split, the limit is on groups: every row comes back and the engine keeps the top groups.
-      limit = bound.split ? SPLIT_ROWS : query.limit;
+      // Split, the limit is on groups: every row comes back (one past the cap, to tell a cut) and the engine keeps the top groups.
+      limit = bound.split ? SPLIT_ROWS + 1 : query.limit;
       shape = "breakdown";
       break;
     }
@@ -250,10 +250,10 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
         groupBy.push(g);
       }
       select.push({ alias: "value", expr: valueExpr(null) }, { alias: "n", expr: { t: "agg", fn: "count", arg: { t: "star" } } });
-      orderBy.push({ expr: col("", "bucket"), dir: "asc" });
+      // Latest buckets first, one row past the cap: a cut keeps the latest dates, and says so.
+      orderBy.push({ expr: col("", "bucket"), dir: "desc" });
       if (bound.dimension) orderBy.push({ expr: col("", "series"), dir: "asc" });
-      // A computed query's base: every series, one row past the cap to tell it was cut.
-      limit = bound.base ? bound.base.rows + 1 : 5000;
+      limit = rowCap(bound)! + 1;
       shape = "series";
       break;
     }

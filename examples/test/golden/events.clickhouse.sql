@@ -19,8 +19,8 @@ SELECT toDateTime(toStartOfDay("pageviews"."__t"), 'UTC') AS "bucket", "pageview
 FROM (SELECT *, "ts" AS "__t", (device) AS "__d_device", (session_id) AS "__m_sessions" FROM "pageviews") AS "pageviews"
 WHERE (("pageviews"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("pageviews"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))))
 GROUP BY toDateTime(toStartOfDay("pageviews"."__t"), 'UTC'), "pageviews"."__d_device"
-ORDER BY "bucket" ASC NULLS LAST, "series" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST, "series" ASC NULLS LAST
+LIMIT 20001;
 
 -- params: ["2026-08-25 00:00:00.000","2026-09-01 00:00:00.000","2026-08-25 00:00:00.000","2026-09-01 00:00:00.000","2026-08-18 00:00:00.000","2026-08-25 00:00:00.000","2026-08-18 00:00:00.000","2026-09-01 00:00:00.000"]
 SELECT count(CASE WHEN (("pageviews"."__t" >= CAST({p1:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("pageviews"."__t" < CAST({p2:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "value", count(CASE WHEN (("pageviews"."__t" >= CAST({p3:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("pageviews"."__t" < CAST({p4:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "n", count(CASE WHEN (("pageviews"."__t" >= CAST({p5:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC'))) AND ("pageviews"."__t" < CAST({p6:DateTime64(3, 'UTC')} AS DateTime64(3, 'UTC')))) THEN 1 END) AS "previous"
@@ -64,5 +64,5 @@ LIMIT 10;
 SELECT toDateTime(toMonday("pageviews"."__t"), 'UTC') AS "bucket", count(DISTINCT "pageviews"."__m_users") AS "value", count(*) AS "n"
 FROM (SELECT *, "ts" AS "__t", (user_id) AS "__m_users" FROM "pageviews") AS "pageviews"
 GROUP BY toDateTime(toMonday("pageviews"."__t"), 'UTC')
-ORDER BY "bucket" ASC NULLS LAST
-LIMIT 5000;
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
