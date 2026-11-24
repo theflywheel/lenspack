@@ -25,6 +25,10 @@ async function main() {
 
   const served = await openMcp(opts);
   const what = `pack ${served.pack}, board ${served.board} (kept in ${served.store})`;
+  const { imported } = served;
+  if (imported?.boards)
+    console.error(`lenspack-mcp: copied ${imported.boards} board(s) and ${imported.versions} version(s) from the data database into ${served.store}; the data database was not changed`);
+  if (imported?.skipped.length) console.error(`lenspack-mcp: left ${imported.skipped.join(", ")} in the data database: unreadable, or its id is taken in the store`);
 
   if (opts.http) {
     const { url } = await serveHttp(served.tools, opts.http);

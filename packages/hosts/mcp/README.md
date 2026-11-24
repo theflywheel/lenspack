@@ -38,6 +38,10 @@ The data is opened the same way `lenspack serve` opens a source: read-only, thro
 
 The board is kept apart from the data, in its own store (`--store`). For Postgres and the other server databases, still connect with a read-only database role: the driver's guards are a second line, not the first.
 
+### Boards from earlier versions
+
+Earlier versions kept boards inside the data database, in the tables `lenspack_boards` and `lenspack_board_versions`. When the store has no boards for the pack yet and those tables are there, `lenspack-mcp` copies that pack's boards across, with their whole history, and says so in one line when it starts. It only reads the old tables; it never changes them. Once you have checked the copied boards, you can drop the old tables yourself.
+
 ## HTTP
 
 ```bash
