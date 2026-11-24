@@ -6,7 +6,8 @@ import { type Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { memoryStore } from "@lenspack/core";
+import { type BoardConfig, memoryStore } from "@lenspack/core";
+import { catalogueFrom } from "@lenspack/pack";
 import { type Host, type Provider, buildProvider, createApp, registerLlmAdapter } from "@lenspack/serve";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -78,11 +79,15 @@ const say = (text: string) => [{ type: "text-start", id: "t" }, { type: "text-de
 const kpi = (id: string) => ({ id, kind: "kpi", title: "Stock moved at health facility level", query_kind: "value", measure: "quantity" });
 const MATERIAL = { severity: "material", widget: "moved", problem: "moved: no facility level filter, though the title claims one", forUser: "The number was not limited to health facilities." };
 
-function scripted(steps: unknown[][], verdicts: unknown[]) {
+/** A model that takes these steps and gives these verdicts; `before[n]` runs just before step n is answered. */
+function scripted(steps: unknown[][], verdicts: unknown[], before: Record<number, () => Promise<void>> = {}) {
   let step = 0;
   let review = 0;
   return new MockLanguageModelV4({
-    doStream: async () => stream(steps[step++] ?? say("Done.")),
+    doStream: async () => {
+      await before[step]?.();
+      return stream(steps[step++] ?? say("Done."));
+    },
     doGenerate: async () => ({ content: [{ type: "text", text: JSON.stringify(verdicts[review++] ?? { findings: [] }) }], finishReason: { unified: "stop", raw: "stop" }, usage, warnings: [] }),
   });
 }
@@ -90,10 +95,12 @@ function scripted(steps: unknown[][], verdicts: unknown[]) {
 describe("the reviewer on a Superset dashboard", () => {
   const servers: Server[] = [];
 
-  async function turn(name: string, model: MockLanguageModelV4) {
+  type Boards = ReturnType<typeof supersetBoards>;
+  async function turn(name: string, model: MockLanguageModelV4, setup?: (store: Boards, superset: ReturnType<typeof fakeSuperset>) => Promise<void>) {
     const superset = fakeSuperset();
     const store = supersetBoards({ inner: memoryStore(), client: superset.client, pack, binding, dashboards: { "superset-7": 7 }, stateFile: join(mkdtempSync(join(tmpdir(), "lp-gate-")), "boards.json") });
     await store.seed();
+    await setup?.(store, superset);
     const host: Host = { name: "stock", pack, packYaml, connector: supersetConnector(superset.client, binding), store, ctx: {}, boards: [] };
     registerLlmAdapter({ kind: `superset-gate-${name}`, defaultBaseUrl: "mock:", build: () => model });
     const providers: Provider[] = [{ ...buildProvider({ name, kind: `superset-gate-${name}`, model: "m" }), available: true }];
@@ -130,5 +137,55 @@ describe("the reviewer on a Superset dashboard", () => {
     const t = await turn("right", scripted([tool("add_widget", kpi("moved")), tool("update_widget", { id: "moved", title: "Stock moved (facilities)" }), say("Added.")], [{ findings: [] }]));
     expect(t.writes).toEqual(["POST /api/v1/chart", "PUT /api/v1/dashboard/7", "PUT /api/v1/chart/100", "PUT /api/v1/dashboard/7"]);
     expect(t.versions.map((v) => v.version)).toEqual([3, 2, 1]);
+  });
+
+  describe("when the dashboard is changed by hand while the turn works", () => {
+    const catalogue = catalogueFrom(pack);
+    // Before the turn: one chart, "w". During it, a person changes the dashboard.
+    const handEdited = async (change: (config: BoardConfig) => BoardConfig) => {
+      let boards: Boards | undefined;
+      let writesBefore = 0;
+      const setup = async (store: Boards, superset: ReturnType<typeof fakeSuperset>) => {
+        boards = store;
+        const r = await store.patch({ id: "superset-7", catalogue, ops: [{ op: "add_widget", id: "w", widget: { kind: "kpi", title: "Stock moved, all levels", query: { kind: "value", measure: "quantity" } } }] });
+        expect(r.ok).toBe(true);
+        // What Superset was sent from here on is the hand edit's, then the turn's.
+        writesBefore = superset.writes.length;
+      };
+      const byHand = async () => {
+        const board = (await boards!.get("superset-7"))!;
+        await boards!.replaceConfig({ id: "superset-7", config: change(board.config), source: "layout", summary: "changed by hand" });
+      };
+      return { setup, byHand, since: (writes: string[]) => writes.slice(writesBefore) };
+    };
+
+    it("a later edit no longer fits: nothing from the turn reaches Superset, and the reply says so", async () => {
+      const removeW = (c: BoardConfig): BoardConfig => {
+        const { w: _w, ...widgets } = c.widgets;
+        return { ...c, widgets, layout: c.layout.filter((l) => l.i !== "w") };
+      };
+      const h = await handEdited(removeW);
+      // Step 1 adds a chart (it would still fit); the hand edit comes before step 2, which changes "w".
+      const model = scripted([tool("add_widget", kpi("moved")), tool("update_widget", { id: "w", title: "Stock moved (facilities)" }), say("Done.")], [{ findings: [] }], { 1: h.byHand });
+      const t = await turn("hand-conflict", model, h.setup);
+      const turnWrites = h.since(t.writes);
+      // The hand edit's own writes only: the turn's chart was never created.
+      expect(turnWrites.filter((w) => w.startsWith("POST"))).toEqual([]);
+      expect(t.board.config.widgets).toEqual({});
+      expect(t.versions.map((v) => `${v.version} ${v.summary}`)).toEqual(["3 changed by hand", "2 added w", "1 created"]);
+      expect(t.body).toContain('The change could not be saved: the board was changed meanwhile, and \\"changed w\\" no longer fits it (No widget called \\"w\\"). Nothing was saved');
+    });
+
+    it("the edits still fit: they are saved on top of the hand edit, in one save", async () => {
+      const h = await handEdited((c) => ({ ...c, title: "Stock, edited by hand" }));
+      const model = scripted([tool("add_widget", kpi("moved")), tool("update_widget", { id: "moved", title: "Stock moved (facilities)" }), say("Done.")], [{ findings: [] }], { 1: h.byHand });
+      const t = await turn("hand-fits", model, h.setup);
+      expect(t.board.config.title).toBe("Stock, edited by hand");
+      expect(Object.keys(t.board.config.widgets).sort()).toEqual(["moved", "w"]);
+      expect(t.versions.map((v) => v.version)).toEqual([4, 3, 2, 1]);
+      // After the hand edit's save: one new chart and one dashboard save for the whole turn.
+      const afterHand = h.since(t.writes).slice(h.since(t.writes).indexOf("PUT /api/v1/dashboard/7") + 1);
+      expect(afterHand).toEqual(["POST /api/v1/chart", "PUT /api/v1/dashboard/7"]);
+    });
   });
 });

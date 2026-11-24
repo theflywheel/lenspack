@@ -85,7 +85,7 @@ describe("lenspack serve from a config file", () => {
     const added = await post(`${sqlApi}/campaign/${id}/ops`, {
       ops: [
         { op: "add_widget", id: "turns", widget: { kind: "table", title: "Visits", query: rows, pageSize: 5 } },
-        { op: "add_widget", id: "count", widget: { kind: "kpi", title: "n", query: { kind: "value", measure: "visits" }, aggregate: "last" } },
+        { op: "add_widget", id: "count", widget: { kind: "kpi", title: "n", query: { kind: "value", measure: "visits" } } },
       ],
     });
     expect(added.ok ?? added.applied ?? true).not.toBe(false);

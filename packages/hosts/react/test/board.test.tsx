@@ -27,7 +27,7 @@ function config(): BoardConfig {
   const r = applyOps(
     emptyBoard({ pack: "fx", version: 1 }, "Fixture board"),
     [
-      { op: "add_widget", id: "k", widget: { kind: "kpi", title: "Total", query: { kind: "value", measure: "count", compare: "previous_period", time: { last: "7d" } }, aggregate: "last" }, placement: { place: "top", width: "third" } },
+      { op: "add_widget", id: "k", widget: { kind: "kpi", title: "Total", query: { kind: "value", measure: "count", compare: "previous_period", time: { last: "7d" } } }, placement: { place: "top", width: "third" } },
       { op: "add_widget", id: "c", widget: { kind: "chart", chart: "bar", title: "By region", query: { kind: "breakdown", dimension: "region", measure: "count", limit: 5, sort: "desc" }, options: { legend: true, colorScheme: "default" } } },
       { op: "add_widget", id: "t", widget: { kind: "table", title: "Rates", query: { kind: "breakdown", dimension: "region", measure: "rate", limit: 5, sort: "desc" }, pageSize: 10 } },
       { op: "add_widget", id: "n", widget: { kind: "text", title: "Note", body: "<b>not markup</b>" } },

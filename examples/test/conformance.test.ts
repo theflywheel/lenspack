@@ -139,7 +139,7 @@ for (const name of NAMES) {
       const add = applyOps(
         config,
         [
-          { op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: m0.key }, aggregate: "last" }, placement: { place: "top", width: "third" } },
+          { op: "add_widget", id: "a", widget: { kind: "kpi", title: "K", query: { kind: "value", measure: m0.key } }, placement: { place: "top", width: "third" } },
           { op: "add_widget", id: "b", widget: { kind: "chart", chart: "line", title: "S", query: { kind: "series", measure: m0.key, grain: "day" }, options: { legend: true, colorScheme: "default" } } },
           { op: "add_filter", filter: { id: "f", type: "select", label: dims[0]!.label, field: dims[0]!.key, applies: ["*"] } },
         ],

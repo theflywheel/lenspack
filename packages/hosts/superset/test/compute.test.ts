@@ -68,7 +68,7 @@ describe("compute as Superset's own advanced analytics", () => {
   });
 
   it("a KPI's trend line takes a rolling window too", () => {
-    const kpi = { title: "7-day average", kind: "kpi", aggregate: "last", query: { kind: "series", measure: "dispatched", grain: "day", compute: { steps: [{ op: "rolling", fn: "sum", window: 7 }] } } } as never;
+    const kpi = { title: "7-day average", kind: "kpi", query: { kind: "series", measure: "dispatched", grain: "day", compute: { steps: [{ op: "rolling", fn: "sum", window: 7 }] } } } as never;
     const spec = widgetToChart(kpi, pack, binding)!;
     expect(spec).toMatchObject({ viz_type: "big_number", params: { rolling_type: "sum", rolling_periods: 7, min_periods: 7 } });
     expect((queryContextOf(spec) as { queries: Record<string, any>[] }).queries[0]!.post_processing[1].operation).toBe("rolling");
@@ -214,7 +214,7 @@ describe("a summary per group as Superset's pivot table", () => {
       ok: false,
       error: expect.stringMatching(/no step before the summary, and this asks for the day-on-day % change first. Superset keeps exactly: the day-on-day % change of dispatched by ward as a line chart/),
     });
-    const value = { title: "t", kind: "kpi", aggregate: "last", query: { kind: "value", measure: "avg_out", time: month, compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } } };
+    const value = { title: "t", kind: "kpi", query: { kind: "value", measure: "avg_out", time: month, compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } } };
     expect(ok(value)).toMatchObject({ ok: false, error: expect.stringMatching(/kept per group, as a pivot table, not as one number/) });
     expect(ok(perWard("avg_out", "mean", {}, { kind: "chart", chart: "pie", options: { legend: true, colorScheme: "default" } }))).toMatchObject({ ok: false, error: expect.stringMatching(/make the widget a table or a bar chart/) });
     expect(ok(perWard("avg_out", "mean"))).toEqual({ ok: true });
