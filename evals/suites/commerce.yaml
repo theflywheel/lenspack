@@ -1,0 +1,216 @@
+# A synthetic suite on the commerce example (DuckDB, seeded in process). It
+# exercises every scorer and outcome without client data or a paid model:
+# run it with --stub, and each question's `stub` script plays the model.
+# Truth is computed from the same DuckDB with the SQL below, never through Lenspack.
+suite: commerce-synthetic
+example: commerce
+board: { example_board: overview }
+
+questions:
+  - id: C1
+    tier: T1
+    prompt: How many orders are there in total?
+    expect: answer
+    accept: { measures: [orders] }
+    truth: { shape: scalar, unit: count, sql: "SELECT count(*) FROM orders" }
+    stub:
+      - - { tool: query, input: { query_kind: value, measure: orders } }
+        - { text: "There are {{rows}} orders in total." }
+
+  - id: C2
+    tier: T2
+    prompt: Revenue by channel.
+    expect: answer
+    accept: { measures: [revenue], dimension: [channel] }
+    truth: { shape: map, unit: number, sql: "SELECT channel, sum(total_cents) / 100.0 FROM orders GROUP BY channel" }
+    stub:
+      - - { tool: query, input: { query_kind: breakdown, measure: revenue, dimension: channel } }
+        - { text: "Revenue by channel:\n{{rows}}" }
+
+  - id: C3
+    tier: T4
+    prompt: What is the refund rate in each country?
+    expect: answer
+    accept: { measures: [refund_rate], dimension: [country] }
+    truth: { shape: map, unit: ratio, sql: "SELECT c.country, avg(CASE WHEN o.status = 'refunded' THEN 1 ELSE 0 END) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.country" }
+    stub:
+      - - { tool: query, input: { query_kind: breakdown, measure: refund_rate, dimension: country } }
+        - { text: "Refund rate by country:\n{{rows}}" }
+
+  - id: C4
+    tier: T5
+    prompt: Which 3 countries bring in the most revenue?
+    expect: answer
+    accept: { measures: [revenue], dimension: [country] }
+    truth: { shape: list, unit: number, k: 3, sql: "SELECT c.country, sum(o.total_cents) / 100.0 r FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.country ORDER BY r DESC LIMIT 3" }
+    stub:
+      - - { tool: query, input: { query_kind: breakdown, measure: revenue, dimension: country, limit: 3 } }
+        - { text: "The top three:\n{{rows}}" }
+
+  - id: C5
+    tier: T5
+    prompt: Which order statuses account for more than 6% of orders?
+    expect: answer
+    accept: { measures: [orders], dimension: [status] }
+    truth:
+      shape: set
+      sql: "SELECT status FROM orders GROUP BY status HAVING count(*) > 0.06 * (SELECT count(*) FROM orders)"
+      universe_sql: "SELECT DISTINCT status FROM orders"
+    # The stub lists every status with its share instead of answering: named statuses outside the
+    # answer cost precision, so this scores partial (on purpose).
+    stub:
+      - - { tool: query, input: { query_kind: breakdown, measure: orders, dimension: status, share: true } }
+        - { text: "Share of orders by status:\n{{rows}}" }
+
+  - id: C6
+    tier: T1
+    prompt: How many orders went through?
+    expect: answer
+    tags: [ambiguous]
+    accept: { measures: [orders] }
+    truth:
+      shape: scalar
+      unit: count
+      sql: "SELECT count(*) FROM orders WHERE status <> 'cancelled'"
+      alternatives:
+        - { label: "delivered only", sql: "SELECT count(*) FROM orders WHERE status = 'delivered'" }
+    disclose: [cancelled, delivered, refunded, excluding, definition]
+    # The stub answers with the delivered count and never says which definition: partial.
+    stub:
+      - - { tool: query, input: { query_kind: value, measure: orders, filters: "status = delivered" } }
+        - { text: "{{rows}} orders went through." }
+
+  - id: C7
+    tier: T1
+    prompt: How many customers do we have?
+    expect: answer
+    accept: { measures: [customers] }
+    truth: { shape: scalar, unit: count, sql: "SELECT count(*) FROM customers" }
+    # A deliberately wrong stub: a made-up number, no tool call. confidently_wrong.
+    stub:
+      - - { text: "We have 12,345 customers." }
+
+  - id: C8
+    tier: T7
+    prompt: Add a bar chart of orders by status.
+    expect: edit
+    widget: { kind: [chart], chart: [bar], query: { kind: [breakdown], dimension: [status], measure: [orders] } }
+    truth: { shape: map, unit: count, sql: "SELECT status, count(*) FROM orders GROUP BY status" }
+    stub:
+      - - { tool: add_widget, input: { id: orders_by_status, kind: chart, chart: bar, title: Orders by status, query_kind: breakdown, measure: orders, dimension: status, width: half } }
+        - { text: "Added a bar chart of orders by status." }
+
+  - id: C9
+    tier: T7
+    turns:
+      - Add a bar chart of revenue by channel.
+      - Make that by customer segment instead.
+    expect: edit
+    widget: { kind: [chart], chart: [bar], query: { kind: [breakdown], dimension: [segment], measure: [revenue] } }
+    absent: { query: { dimension: [channel], measure: [revenue] }, new_only: true }
+    stub:
+      - - { tool: add_widget, input: { id: rev_channel, kind: chart, chart: bar, title: Revenue by channel, query_kind: breakdown, measure: revenue, dimension: channel } }
+        - { text: "Added." }
+      - - { tool: update_widget, input: { id: rev_channel, title: Revenue by segment, query_kind: breakdown, measure: revenue, dimension: segment } }
+        - { text: "Now by segment." }
+
+  - id: C10
+    tier: T7
+    prompt: Rename the board to "Shop health".
+    expect: edit
+    title: Shop health
+    stub:
+      - - { tool: rename_board, input: { title: Shop health } }
+        - { text: "Renamed." }
+
+  - id: C11
+    tier: T7
+    prompt: Remove the pie chart.
+    expect: edit
+    removed: { title: "(?i)category" }
+    stub:
+      - - { tool: remove_widget, input: { id: by_category } }
+        - { text: "Removed the pie chart." }
+
+  - id: C12
+    tier: T3
+    prompt: Plot orders per month as a line chart.
+    expect: edit
+    widget: { kind: [chart], chart: [line, area], query: { kind: [series], grain: [month], measure: [orders] } }
+    stub:
+      - - { tool: add_widget, input: { id: orders_monthly, kind: chart, chart: line, title: Orders per month, query_kind: series, measure: orders, grain: month } }
+        - { text: "Added a monthly line of orders." }
+
+  - id: C15
+    tier: T1
+    prompt: Which country is doing best?
+    expect: answer
+    tags: [ambiguous]
+    accept: { measures: [revenue, orders], dimension: [country] }
+    truth:
+      shape: list
+      unit: number
+      k: 1
+      sql: "SELECT c.country, sum(o.total_cents) / 100.0 r FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.country ORDER BY r DESC LIMIT 1"
+      alternatives:
+        - { label: "most orders", sql: "SELECT c.country, count(*) n FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.country ORDER BY n DESC LIMIT 1" }
+    disclose: [revenue, orders, refund]
+    # "Best" needs a measure: asking which one is a pass (declined_ok on an answer question).
+    stub:
+      - - { text: "Best by revenue, by number of orders, or by lowest refund rate?" }
+
+  # A move into a full row, the shape of a real bug: the bar sits alone at the bottom and the row it
+  # should join is full. Right: it ends on that row (widths shrink to fit), or the reply says there's no room.
+  # Wrong in the worst way: saying it moved when the board didn't change.
+  - id: C16
+    tier: T7
+    prompt: Move the revenue by country bar up next to the weekly revenue chart.
+    expect: edit
+    start_layout: &full_row
+      - { title: "Weekly revenue", x: 0, y: 3, w: 6, h: 7 }
+      - { title: "Line revenue by category", x: 6, y: 3, w: 6, h: 7 }
+      - { title: "Revenue by country", x: 0, y: 10, w: 12, h: 7 }
+    moved: &beside { title: "Revenue by country", beside: "Weekly revenue" }
+    stub:
+      - - { tool: resize_widget, input: { id: revenue_trend, width: third, height: 0 } }
+        - { tool: resize_widget, input: { id: by_category, width: third, height: 0 } }
+        - { tool: move_widget, input: { id: by_country, place: "after:revenue_trend", width: third } }
+        - { text: "Moved the country bar up beside weekly revenue; the three charts are a third wide each." }
+
+  - id: C17
+    tier: T7
+    prompt: "देश वाला बार ग्राफ भी ऊपर weekly revenue के साथ रख दो ना"
+    expect: edit
+    start_layout: *full_row
+    moved: *beside
+    # A false claim, in Hindi: no tool call, board unchanged.
+    stub:
+      - - { text: "बार ग्राफ को weekly revenue के साथ ऊपर रख दिया है।" }
+
+  - id: C18
+    tier: T7
+    prompt: Put the country revenue bar beside the weekly revenue chart, up top.
+    expect: edit
+    start_layout: *full_row
+    moved: *beside
+    stub:
+      - - { text: "That row is full: weekly revenue and the category pie take half each. I can make all three a third wide so the country bar fits, or swap it with the pie. Which do you want?" }
+
+  - id: C13
+    tier: T8
+    prompt: What is revenue per sales rep?
+    expect: decline
+    why: data
+    note: There is no sales rep in this data.
+    stub:
+      - - { text: "This data has no sales rep, so I can't break revenue down that way. I can show revenue by channel or country instead." }
+
+  - id: C14
+    tier: T8
+    prompt: What will revenue be next quarter?
+    expect: decline
+    why: engine
+    note: Lenspack does not forecast.
+    # A deliberately overconfident stub: confidently_wrong.
+    stub:
+      - - { text: "Revenue next quarter will be $1,234,567." }
