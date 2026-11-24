@@ -58,7 +58,7 @@ Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue
 | `@lenspack/engine` | the backend-neutral half: resolve (keys, join paths, fan-out refusal, tenancy, time, capability refusals), the `Connector` interface, `run` / `explain` / `checkOps`, cross-entity ratios | core, spec |
 | `@lenspack/sql` | `sqlConnector()` and the driver registry: compiler (plan → print) and read-only drivers for **Postgres, DuckDB, SQLite, MySQL/MariaDB and ClickHouse**, chosen by connection URL; cache, SQL board store | engine |
 | `@lenspack/elasticsearch` | `elasticsearchConnector()`: the IR as aggregations over plain HTTP — **Elasticsearch 6.x–8.x and OpenSearch**; text→keyword from the mapping; approximate aggregations flagged ≈ | engine |
-| `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; chart adapters for **recharts, ECharts, shadcn** and a zero-dependency SVG fallback | core, react-grid-layout (chart libraries are optional peers) |
+| `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; a chart adapter seam with a zero-dependency SVG adapter (the default) and **recharts**; any other library is one component | core, react-grid-layout (recharts is an optional peer) |
 | `@lenspack/agent` | `boardTools()` — provider-agnostic tool definitions over any `Connector`, edits queued and checked before they land — plus `toVercelAI()` | core, spec, engine |
 | `@lenspack/mcp` | `createMcpServer()` and the `lenspack-mcp` CLI (stdio or streamable HTTP); re-exports `@lenspack/agent` | agent, sql |
 | `@lenspack/serve` | the `lenspack` CLI: `serve` (board API + chat with review, from a `lenspack.yaml`), `check`, `sources`, `dss` | all of the above |
@@ -81,7 +81,7 @@ Installing needs a GitHub token with the `read:packages` scope, even for public 
 }
 ```
 
-Every import shown here, subpaths included (`@lenspack/react/adapters/shadcn`, `@lenspack/react/styles.css`, `@lenspack/sql/pg`), then works unchanged. The packages depend on each other through the same aliases, so you only list the ones you import.
+Every import shown here, subpaths included (`@lenspack/react/adapters/recharts`, `@lenspack/react/styles.css`, `@lenspack/sql/pg`), then works unchanged. The packages depend on each other through the same aliases, so you only list the ones you import.
 
 ## Sources
 
@@ -221,19 +221,16 @@ The renderer never touches a database or a model: everything arrives through the
 
 ### Charting libraries are adapters
 
-A chart widget builds a `ChartSpec` — pivoted rows, series keys, a formatter, a palette of CSS variables — and hands it to whichever adapter the provider holds. The board config never changes; only the library does, and it can change at runtime (try the "charts:" selector on the live demo).
+A chart widget builds a `ChartSpec` — pivoted rows, series keys, a formatter, a palette of CSS variables — and hands it to whichever adapter the provider holds. The board config never changes; only the library does, and the provider can swap it at runtime.
 
 ```tsx
+import { svgAdapter } from "@lenspack/react/adapters/svg";             // no dependencies; the default
 import { rechartsAdapter } from "@lenspack/react/adapters/recharts";   // recharts ≥ 3
-import { createEchartsAdapter } from "@lenspack/react/adapters/echarts"; // canvas, imperative
-import { createShadcnAdapter } from "@lenspack/react/adapters/shadcn";   // your copy of shadcn's chart.tsx
-import { svgAdapter } from "@lenspack/react/adapters/svg";               // no dependencies; the default
 
 <BoardProvider charts={rechartsAdapter} …>
-<BoardProvider charts={createShadcnAdapter(shadcnChart, { palette: ["var(--chart-1)", "var(--chart-2)"] })} …>
 ```
 
-Writing your own is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. The conformance test in `packages/react/test/adapters.test.tsx` runs every adapter through every chart kind.
+Any other library (ECharts, Chart.js, Vega, your design system's chart component) is an adapter you write, and it is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. Add yours to the conformance test in `packages/react/test/adapters.test.tsx`, which runs every adapter through every chart kind.
 
 A map (a `points` query: one dot per location, coloured by a dimension, its area by a measure) is lenspack's own `MapChart`, also the same under every adapter: points in Web Mercator fitted to their extent, a legend, tooltips, the series colours, on a plain latitude and longitude grid. A basemap is off by default. `<BoardProvider mapTiles={{ url: "https://tiles.example.org/{z}/{x}/{y}.png", attribution: "© …" }}>` puts XYZ raster tiles under the points; use a tile service whose terms allow it (not tile.openstreetmap.org for anything beyond light personal use).
 

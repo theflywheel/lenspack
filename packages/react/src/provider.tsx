@@ -66,7 +66,7 @@ export function BoardProvider({
   host: BoardHost;
   editable?: boolean;
   currency?: string;
-  /** Chart adapter: svg (no dependencies) by default; recharts, echarts or shadcn from `@lenspack/react/adapters/*`. */
+  /** Chart adapter: svg (no dependencies) by default, recharts from `@lenspack/react/adapters/recharts`, or your own. */
   charts?: ChartAdapter;
   /** XYZ raster tiles under maps, with their attribution. None by default: the points are drawn on a plain grid, and no tile server is called. */
   mapTiles?: MapTiles;

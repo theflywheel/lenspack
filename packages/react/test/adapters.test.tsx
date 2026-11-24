@@ -3,16 +3,13 @@ import * as React from "react";
 import { describe, expect, it } from "vitest";
 
 import "./setup";
-import { createEchartsAdapter } from "../src/adapters/echarts";
 import { rechartsAdapter } from "../src/adapters/recharts";
-import { createShadcnAdapter } from "../src/adapters/shadcn";
 import { svgAdapter } from "../src/adapters/svg";
 import { type ChartAdapter, type ChartSpec, buildChartSpec, pivot } from "../src/charts";
-import * as shadcn from "./fixtures/shadcn-chart";
 
 // Adapter conformance: one fixed ChartSpec through every adapter, every chart
 // kind. jsdom has no layout, so the assertion is "mounts, no throw, leaves a
-// chart element behind" — the pixel-level check is the demo's runtime switch.
+// chart element behind".
 
 const spec = (chart: ChartSpec["chart"], split = false): ChartSpec => ({
   chart,
@@ -28,12 +25,7 @@ const spec = (chart: ChartSpec["chart"], split = false): ChartSpec => ({
   legend: true,
 });
 
-const adapters: ChartAdapter[] = [
-  svgAdapter,
-  rechartsAdapter,
-  createEchartsAdapter({ renderer: "svg" }),
-  createShadcnAdapter(shadcn),
-];
+const adapters: ChartAdapter[] = [svgAdapter, rechartsAdapter];
 
 for (const adapter of adapters) {
   describe(`adapter ${adapter.name}`, () => {
@@ -44,7 +36,7 @@ for (const adapter of adapters) {
             <adapter.Chart spec={spec(kind, kind !== "pie")} />
           </div>,
         );
-        await waitFor(() => expect(container.querySelector("svg, canvas, .lp-echarts, .recharts-responsive-container, [data-chart]")).toBeTruthy());
+        await waitFor(() => expect(container.querySelector("svg, .recharts-responsive-container")).toBeTruthy());
       });
     }
   });
