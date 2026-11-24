@@ -18,21 +18,16 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { SMALL, contextFor, examples } from "../examples/index";
 import { type CallRecord, type ProviderConfig, type TurnCost, type Usage, addUsage, buildProvider, emptyUsage, probe, providersFromEnv, shapeCall, stopOnRepeatedRefusals, turnCost, withMeter } from "@lenspack/serve";
 import { PROMPT_VERSION, catalogueText, systemParts } from "@lenspack/serve";
-import { screenshotBoard } from "./screenshot";
 import { type Review, healingPrompt, refusalsFrom, reviewTurn } from "@lenspack/serve";
 import { type HcmFacts, hcmTasks } from "./tasks-hcm";
 import { type Facts, tasks } from "./tasks";
 import { type Lang, hcmPrompts, replyVariants } from "./tasks-i18n";
-import { type VisualVerdict, judgeScreenshot } from "./visual";
 
 const arg = (name: string) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
 const only = arg("only")?.split(",");
-// --visual <provider name>: screenshot each resulting board through the demo
-// server at --demo (default http://127.0.0.1:8787) and have that model judge it.
-const visualName = arg("visual");
 // --review [<provider name>]: an adversarial text review after each task
 // (default reviewer = the builder itself); --heal gives the builder one more
 // round when the reviewer is not satisfied, and reports pass rates both ways.
@@ -42,7 +37,6 @@ const heal = process.argv.includes("--heal");
 const escalateName = arg("escalate");
 // --pack commerce|hcm: which example, its canonical board and task set.
 const packName = (arg("pack") ?? "commerce") as "commerce" | "hcm";
-const demoUrl = arg("demo") ?? "http://127.0.0.1:8787";
 const modelFilter = arg("models")?.split(",");
 // --lang fr|fr-spoken|hi: ask the hcm tasks in that language (tasks-i18n.ts).
 const lang = (arg("lang") ?? "en") as Lang;
@@ -71,10 +65,9 @@ type Result = {
   reply: string;
   titles?: string[];
   error?: string;
-  visual?: VisualVerdict;
   review?: Review & { agrees: boolean };
   healed?: { pass: boolean; note: string | null; latencyMs: number };
-  /** Every model call the task made (build, review, heal, visual judge), from the metering every provider carries. */
+  /** Every model call the task made (build, review, heal), from the metering every provider carries. */
   usage?: Omit<TurnCost, "queries">;
 };
 
@@ -107,13 +100,11 @@ async function main() {
   }
 
   const results: Result[] = [];
-  const judge = visualName ? await probe(buildProvider(providerConfigs.find((c) => c.name.includes(visualName))!)) : null;
   const reviewerCfg = reviewName && !reviewName.startsWith("--") ? providerConfigs.find((c) => c.name.includes(reviewName)) : undefined;
   const fixedReviewer = reviewerCfg ? await probe(buildProvider(reviewerCfg)) : null;
   const escalateCfg = escalateName ? providerConfigs.find((c) => c.name.includes(escalateName)) : undefined;
   const escalateProvider = escalateCfg ? await probe(buildProvider(escalateCfg)) : null;
   if (escalateName && !escalateProvider?.available) throw new Error(`escalate provider ${escalateName} unavailable`);
-  if (visualName && !judge?.available) throw new Error(`visual judge ${visualName} unavailable: ${judge?.error}`);
   for (const cfg of providerConfigs) {
     if (modelFilter && !modelFilter.some((m) => cfg.name.includes(m))) continue;
     const provider = await probe(buildProvider(cfg));
@@ -174,21 +165,13 @@ async function main() {
             r.healed = { pass: healedNote === null, note: healedNote, latencyMs: Date.now() - healStart };
           }
         }
-        if (judge && (t.kind ?? "edit") !== "question") {
-          try {
-            const png = await screenshotBoard(board.config, { baseUrl: demoUrl, example: packName });
-            r.visual = await as("judge", () => judgeScreenshot(judge.languageModel, png, t.prompt));
-          } catch (e) {
-            r.visual = { ok: false, score: 0, issues: [`visual check failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`], seen: "", raw: "" };
-          }
-        }
       } catch (e) {
         r = { provider: cfg.name, task: t.id, pass: false, note: "threw", steps: 0, toolCalls: 0, toolErrors: 0, narrated: false, latencyMs: Date.now() - started, reply: "", error: (e instanceof Error ? e.message : String(e)).slice(0, 200) };
       }
       const { queries: _, ...usage } = turnCost(metered);
       r.usage = usage;
       results.push(r);
-      console.log(`  ${r.pass ? "PASS" : "FAIL"}  ${t.id.padEnd(16)} ${String(r.latencyMs).padStart(6)}ms  steps=${r.steps} calls=${r.toolCalls} errs=${r.toolErrors}${r.narrated ? " NARRATED" : ""}${r.review ? `  review=${r.review.satisfied ? "ok" : "no"}${r.review.agrees ? "" : "(disagrees)"}` : ""}${r.healed ? `  healed=${r.healed.pass ? "PASS" : "FAIL"} +${r.healed.latencyMs}ms` : ""}${r.visual ? `  visual=${r.visual.ok ? "ok" : "no"}(${r.visual.score})${r.visual.issues.length ? ` ${r.visual.issues.join("; ").slice(0, 100)}` : ""}` : ""}${r.note ? `  — ${r.note}` : ""}${r.error ? `  — ${r.error}` : ""}  ${cost(r.usage!.total)}`);
+      console.log(`  ${r.pass ? "PASS" : "FAIL"}  ${t.id.padEnd(16)} ${String(r.latencyMs).padStart(6)}ms  steps=${r.steps} calls=${r.toolCalls} errs=${r.toolErrors}${r.narrated ? " NARRATED" : ""}${r.review ? `  review=${r.review.satisfied ? "ok" : "no"}${r.review.agrees ? "" : "(disagrees)"}` : ""}${r.healed ? `  healed=${r.healed.pass ? "PASS" : "FAIL"} +${r.healed.latencyMs}ms` : ""}${r.note ? `  — ${r.note}` : ""}${r.error ? `  — ${r.error}` : ""}  ${cost(r.usage!.total)}`);
     }
   }
   await db.close();
@@ -201,17 +184,16 @@ async function main() {
   const names = [...new Set(results.map((r) => r.provider))];
   const taskIds = [...new Set(results.map((r) => r.task))];
   const lines = [
-    `| model | pass | after heal | reviewer agrees | avg latency | avg steps | tool errors | narrated | visual ok | tokens in / out | cost |`,
-    `|---|---|---|---|---|---|---|---|---|---|---|`,
+    `| model | pass | after heal | reviewer agrees | avg latency | avg steps | tool errors | narrated | tokens in / out | cost |`,
+    `|---|---|---|---|---|---|---|---|---|---|`,
     ...names.map((n) => {
       const rs = results.filter((r) => r.provider === n);
       const ran = rs.filter((r) => !r.error || r.note !== "provider unavailable");
       const avg = (f: (r: Result) => number) => (ran.length ? Math.round(ran.reduce((s, r) => s + f(r), 0) / ran.length) : 0);
-      const vis = rs.filter((r) => r.visual);
       const rev = rs.filter((r) => r.review);
       const finalPass = rs.filter((r) => (r.healed ? r.healed.pass : r.pass)).length;
       const spent = rs.reduce((t, r) => (r.usage ? addUsage(t, r.usage.total) : t), emptyUsage());
-      return `| ${n} | ${rs.filter((r) => r.pass).length}/${rs.length} | ${rs.some((r) => r.healed) ? `${finalPass}/${rs.length}` : "—"} | ${rev.length ? `${rev.filter((r) => r.review!.agrees).length}/${rev.length}` : "—"} | ${avg((r) => r.latencyMs)} ms | ${avg((r) => r.steps)} | ${rs.reduce((s, r) => s + r.toolErrors, 0)} | ${rs.filter((r) => r.narrated).length} | ${vis.length ? `${vis.filter((r) => r.visual!.ok).length}/${vis.length}` : "—"} | ${spent.inputTokens} / ${spent.outputTokens} | ${cost(spent)} |`;
+      return `| ${n} | ${rs.filter((r) => r.pass).length}/${rs.length} | ${rs.some((r) => r.healed) ? `${finalPass}/${rs.length}` : "—"} | ${rev.length ? `${rev.filter((r) => r.review!.agrees).length}/${rev.length}` : "—"} | ${avg((r) => r.latencyMs)} ms | ${avg((r) => r.steps)} | ${rs.reduce((s, r) => s + r.toolErrors, 0)} | ${rs.filter((r) => r.narrated).length} | ${spent.inputTokens} / ${spent.outputTokens} | ${cost(spent)} |`;
     }),
     ``,
     `| task | ${names.join(" | ")} |`,

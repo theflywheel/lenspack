@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - name: Typecheck
+      - name: Typecheck (packages, then examples, demo, evals and scripts)
         run: pnpm typecheck
       - name: Zero-domain grep (core and compiler know no domain)
         run: pnpm lint:domain
