@@ -178,14 +178,6 @@ body { background: var(--paper); color: var(--body); font-family: var(--font-san
   border-radius: 2px;
   white-space: nowrap;
 }
-.refusal {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-  color: var(--refused);
-  background: var(--refused-soft);
-  padding: 0.5px 4px;
-  border-radius: 2px;
-}
 
 /* Visible keyboard focus on everything, once. */
 :where(a, button, input, select, [tabindex]):focus-visible {

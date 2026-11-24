@@ -269,6 +269,13 @@ budget: { usdPerDay: 20, usdPerUserPerDay: 2 }
 
 More in [docs/security.md](docs/security.md).
 
+## Docs
+
+- [Overview](docs/overview.md): the idea, the refusal, the three steps, the example packs and the claims CI holds
+- [Pack spec](docs/pack-spec.md) and [writing a pack](docs/writing-a-pack.md)
+- [Query IR](docs/query-ir.md), [SQL drivers](docs/drivers.md), [chat models](docs/llm.md)
+- [Security model](docs/security.md)
+
 ## Status
 
 `0.1.0`. The design spec is in [docs/superpowers/specs](docs/superpowers/specs/2026-09-22-lenspack-design.md). Not yet built: rollups/pre-aggregation, catalogue retrieval by embedding (packs with hundreds of metrics should scope `list_metrics` with `q`), warehouse drivers (BigQuery, Snowflake). Contributions, drivers and fifth packs welcome.
