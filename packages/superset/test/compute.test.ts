@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { type Tool, boardTools } from "@lenspack/agent";
+import { memoryStore } from "@lenspack/core";
 import { COMPUTE_ROWS, checkOps, run } from "@lenspack/engine";
 
 import { SUPERSET_CAPABILITIES, supersetConnector } from "../src/connector";
@@ -18,6 +20,8 @@ const DATASETS: SupersetDataset[] = [
     metrics: [
       { metric_name: "dispatched", expression: "SUM(qty_out)" },
       { metric_name: "received", expression: "SUM(qty_in)" },
+      { metric_name: "movements", expression: "COUNT(*)" },
+      { metric_name: "avg_out", expression: "AVG(qty_out)" },
     ],
   },
 ];
@@ -93,13 +97,12 @@ describe("compute as Superset's own advanced analytics", () => {
   });
 
   it("refuses at edit time what no Superset chart recomputes, and says what to do instead", () => {
-    const perWard = { title: "Average daily", kind: "chart", chart: "bar", options: { legend: true, colorScheme: "default" }, query: { kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } } };
-    const refused = checkOps(add(perWard), pack, { capabilities: SUPERSET_CAPABILITIES });
-    expect(refused).toMatchObject({ ok: false, error: expect.stringMatching(/no chart that summarises the time buckets of each group.*give the answer in the chat, or save the series/) });
+    const ratio = { title: "Share", kind: "table", pageSize: 10, query: { kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", compute: { steps: [{ op: "ratio", to: "received" }] } } };
+    expect(checkOps(add(ratio), pack, { capabilities: SUPERSET_CAPABILITIES })).toMatchObject({ ok: false, error: expect.stringMatching(/divides one metric by another.*give the answer in the chat, or save the series/) });
     expect(checkOps(add(line({ steps: [{ op: "change" }, { op: "rolling", fn: "mean", window: 3 }] })), pack, { capabilities: SUPERSET_CAPABILITIES })).toMatchObject({ ok: false, error: expect.stringMatching(/one step over time/) });
     expect(checkOps(add(line({ steps: [{ op: "change" }] }, { time: undefined })), pack, { capabilities: SUPERSET_CAPABILITIES })).toMatchObject({ ok: false, error: expect.stringMatching(/within a time range/) });
     expect(checkOps(add(line({ steps: [{ op: "rolling", fn: "mean", window: 7 }] })), pack, { capabilities: SUPERSET_CAPABILITIES })).toEqual({ ok: true });
-    expect(() => widgetToChart(perWard as never, pack, binding)).toThrow(/no chart that summarises/);
+    expect(() => widgetToChart(ratio as never, pack, binding)).toThrow(/divides one metric by another/);
   });
 
   it("answers in the chat all the same: the connector reads the base rows, the engine computes", async () => {
@@ -120,5 +123,123 @@ describe("compute as Superset's own advanced analytics", () => {
     ]);
     expect(sent[0]!.queries[0]!.row_limit).toBe(COMPUTE_ROWS + 1);
     expect(sent[0]!.queries[0]!.post_processing).toBeUndefined();
+  });
+});
+
+// A summary of each group's buckets ("the average daily units dispatched per ward") is kept as
+// Superset's pivot table: a row per ward, a column per day, and the summary in each row's total,
+// computed by the pivot table's own aggregation function over the cells of the row.
+describe("a summary per group as Superset's pivot table", () => {
+  const perWard = (measure: string, fn: string, extra: Record<string, unknown> = {}, kind: Record<string, unknown> = { kind: "table", pageSize: 10 }) =>
+    ({ title: "Per ward", ...kind, query: { kind: "breakdown", dimension: "ward", measure, limit: 12, sort: "desc", time: month, compute: { grain: "day", steps: [{ op: "over_time", fn }] }, ...extra } }) as never;
+  const ok = (w: unknown) => checkOps(add(w), pack, { capabilities: SUPERSET_CAPABILITIES });
+
+  it("the chart: rows the dimension, columns the days, the summary in the row totals", () => {
+    const spec = widgetToChart(perWard("dispatched", "sum"), pack, binding)!;
+    expect(spec.viz_type).toBe("pivot_table_v2");
+    expect(spec.params).toMatchObject({
+      groupbyRows: ["ward"],
+      groupbyColumns: ["moved_on"],
+      temporal_columns_lookup: { moved_on: true },
+      time_grain_sqla: "P1D",
+      metrics: ["dispatched"],
+      aggregateFunction: "Sum",
+      rowTotals: true,
+      colTotals: false,
+      transposePivot: false,
+      rowOrder: "value_z_to_a",
+      row_limit: COMPUTE_ROWS,
+      conditional_formatting: [{ column: "dispatched", operator: "None", colorScheme: "#ACE1C4" }],
+    });
+    // Superset's pivot table asks for every cell, a day at its grain then the ward, largest first, with no post-processing.
+    const query = (queryContextOf(spec) as { queries: Record<string, unknown>[] }).queries[0]!;
+    expect(query.columns).toEqual([{ columnType: "BASE_AXIS", sqlExpression: "moved_on", label: "moved_on", expressionType: "SQL", timeGrain: "P1D" }, "ward"]);
+    expect(query.orderby).toEqual([["dispatched", false]]);
+    expect(query.row_limit).toBe(COMPUTE_ROWS);
+    expect(query.post_processing).toBeUndefined();
+  });
+
+  it("maps each summary to the aggregation function that computes it the same way", () => {
+    const fn = (measure: string, f: string, extra?: Record<string, unknown>) => (widgetToChart(perWard(measure, f, extra), pack, binding)!.params as { aggregateFunction: string; rowOrder: string }).aggregateFunction;
+    // An average has no value on a day with no records, in both: every summary agrees.
+    expect(["mean", "median", "min", "max"].map((f) => fn("avg_out", f))).toEqual(["Average", "Median", "Minimum", "Maximum"]);
+    // A day with no records is 0 for a count: it never beats a day with records, so the highest agrees.
+    expect(fn("movements", "max")).toBe("Maximum");
+    // Adding 0 changes nothing: a total agrees for any count or sum.
+    expect(fn("dispatched", "sum")).toBe("Sum");
+    const order = (extra: Record<string, unknown>) => (widgetToChart(perWard("dispatched", "sum", extra), pack, binding)!.params as { rowOrder: string }).rowOrder;
+    expect([order({ sort: "asc" }), order({ sortBy: "group", sort: "asc" }), order({ sortBy: "group", sort: "desc" })]).toEqual(["value_a_to_z", "key_a_to_z", "key_z_to_a"]);
+    // A bar chart of the summary is kept as the same pivot table.
+    expect(widgetToChart(perWard("dispatched", "sum", {}, { kind: "chart", chart: "bar", options: { legend: true, colorScheme: "default" } }), pack, binding)!.viz_type).toBe("pivot_table_v2");
+  });
+
+  it("reads its own pivot tables back, and one made in Superset with the same shape as a computed table", () => {
+    for (const [measure, f] of [["dispatched", "sum"], ["avg_out", "mean"], ["avg_out", "median"], ["movements", "max"]] as const) {
+      const w = perWard(measure, f);
+      const spec = widgetToChart(w, pack, binding)!;
+      expect(chartToWidget({ slice_name: "Per ward", viz_type: spec.viz_type, params: spec.params, datasource_id: 3 }, pack, binding)).toEqual({ widget: w });
+    }
+    // Made by hand in Superset: no copy of a Lenspack widget, Superset's own defaults.
+    const byHand = { groupbyRows: ["ward"], groupbyColumns: ["moved_on"], temporal_columns_lookup: { moved_on: true }, time_grain_sqla: "P1W", metrics: ["avg_out"], aggregateFunction: "Average", rowTotals: true, rowOrder: "value_z_to_a", row_limit: 10000, datasource: "3__table", adhoc_filters: [{ expressionType: "SIMPLE", clause: "WHERE", subject: "moved_on", operator: "TEMPORAL_RANGE", comparator: "Last month" }] };
+    expect(chartToWidget({ slice_name: "Weekly average", viz_type: "pivot_table_v2", params: byHand, datasource_id: 3 }, pack, binding)).toEqual({
+      widget: { title: "Weekly average", kind: "table", pageSize: 10, query: { kind: "breakdown", dimension: "ward", measure: "avg_out", limit: 500, sort: "desc", compute: { grain: "week", steps: [{ op: "over_time", fn: "mean" }] }, time: { last: "30d" } } },
+    });
+  });
+
+  it("keeps as Superset's a pivot table whose totals Lenspack would compute differently, and says why", () => {
+    const { lenspack: _l, ...plain } = widgetToChart(perWard("avg_out", "mean"), pack, binding)!.params as Record<string, unknown>;
+    const read = (more: Record<string, unknown>) => chartToWidget({ slice_name: "x", viz_type: "pivot_table_v2", params: { ...plain, ...more }, datasource_id: 3 }, pack, binding);
+    expect(read({ metrics: ["dispatched"] })).toEqual({ widget: null, reason: "it averages only the days that have records, while Lenspack counts a day with no records as 0 for a count or a sum, so the two would differ wherever a group has a day with none" });
+    expect(read({ aggregateFunction: "Last" })).toEqual({ widget: null, reason: 'its aggregation "Last" has no Lenspack summary' });
+    expect(read({ rowTotals: false })).toMatchObject({ widget: null, reason: expect.stringMatching(/no total per row/) });
+    expect(read({ colTotals: true })).toMatchObject({ widget: null, reason: expect.stringMatching(/total row across the groups/) });
+    expect(read({ series_limit: 5 })).toMatchObject({ widget: null, reason: expect.stringMatching(/top groups/) });
+    expect(read({ transposePivot: true })).toMatchObject({ widget: null, reason: expect.stringMatching(/swapped/) });
+    expect(read({ groupbyColumns: ["ward"], groupbyRows: ["moved_on"] })).toMatchObject({ widget: null, reason: expect.stringMatching(/columns are not the dataset's time column/) });
+  });
+
+  it("refuses at edit time a summary Superset's pivot table computes differently, with the nearest chart it keeps", () => {
+    // The burn rate: units dispatched per ward and day, then the average. A day with no dispatch is
+    // 0 for Lenspack and no cell for Superset's pivot table, so the averages would differ.
+    expect(ok(perWard("dispatched", "mean"))).toMatchObject({
+      ok: false,
+      error:
+        "Superset's pivot table averages only the days that have records, while Lenspack counts a day with no records as 0 for a count or a sum, so the two would differ wherever a group has a day with none. Superset keeps exactly: the total per ward over the days (the sum step), as a pivot table with a column per day; or the daily dispatched by ward as a line chart (a series split by ward).",
+    });
+    expect(ok(perWard("dispatched", "max"))).toMatchObject({ ok: false, error: expect.stringMatching(/takes the highest of only the days that have records.*a sum can be below 0/) });
+    expect(ok(perWard("movements", "min"))).toMatchObject({ ok: false, error: expect.stringMatching(/takes the lowest of only the days/) });
+    expect(ok(perWard("avg_out", "last"))).toMatchObject({ ok: false, error: expect.stringMatching(/no latest day: its "Last" is the largest value.*daily avg_out by ward as a line chart/) });
+    const steps = (s: unknown[]) => ({ title: "t", kind: "table", pageSize: 10, query: { kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", time: month, compute: { grain: "day", steps: s } } });
+    expect(ok(steps([{ op: "change", percent: true }, { op: "over_time", fn: "mean" }]))).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/no step before the summary, and this asks for the day-on-day % change first. Superset keeps exactly: the day-on-day % change of dispatched by ward as a line chart/),
+    });
+    const value = { title: "t", kind: "kpi", aggregate: "last", query: { kind: "value", measure: "avg_out", time: month, compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } } };
+    expect(ok(value)).toMatchObject({ ok: false, error: expect.stringMatching(/kept per group, as a pivot table, not as one number/) });
+    expect(ok(perWard("avg_out", "mean", {}, { kind: "chart", chart: "pie", options: { legend: true, colorScheme: "default" } }))).toMatchObject({ ok: false, error: expect.stringMatching(/make the widget a table or a bar chart/) });
+    expect(ok(perWard("avg_out", "mean"))).toEqual({ ok: true });
+  });
+
+  it("the agent's tools save a summary Superset computes the same way, and offer the nearest one when it does not", async () => {
+    const store = memoryStore();
+    await store.create({ id: "b", pack, title: "Stock" });
+    const connector = supersetConnector({ post: async () => ({ result: [{ data: [] }] }) } as never, binding);
+    const tools = Object.fromEntries(boardTools({ pack, connector, store, boardId: "b", ctx: { now: new Date("2026-09-10T00:00:00Z") } }).map((t) => [t.name, t])) as Record<string, Tool>;
+    const call = async (args: Record<string, unknown>) => (await tools.add_widget!.execute(tools.add_widget!.inputSchema.parse({ kind: "table", query_kind: "breakdown", dimension: "ward", grain: "day", time_last: "30d", ...args }) as never)) as { applied: boolean; error?: string; board?: string };
+    // “Add the average dispatch per movement handled, per ward”: an average, so the pivot table agrees.
+    const average = await call({ id: "avg", title: "Average dispatch per ward", measure: "avg_out", compute: "mean" });
+    expect(average.applied, average.error).toBe(true);
+    // “Add the busiest day per ward”: the highest daily count of movements.
+    const busiest = await call({ id: "busiest", title: "Busiest day per ward", measure: "movements", compute: "max" });
+    expect(busiest.applied, busiest.error).toBe(true);
+    // “Add burn rate per ward to the dashboard”: the average of a sum over days, where a day with no
+    // dispatch counts as 0. Not kept as is; the refusal names what Superset keeps exactly.
+    const burn = await call({ id: "burn", title: "Burn rate per ward", measure: "dispatched", compute: "mean" });
+    expect(burn).toMatchObject({ applied: false, error: expect.stringMatching(/the total per ward over the days \(the sum step\), as a pivot table with a column per day; or the daily dispatched by ward as a line chart/) });
+    const total = await call({ id: "burn", title: "Units dispatched per ward, by day", measure: "dispatched", compute: "sum" });
+    expect(total.applied, total.error).toBe(true);
+    expect(total.board).toContain("dispatched → sum over days by ward");
+    const board = (await store.get("b"))!;
+    for (const id of ["avg", "busiest", "burn"]) expect(widgetToChart(board.config.widgets[id]!, pack, binding)!.viz_type).toBe("pivot_table_v2");
   });
 });

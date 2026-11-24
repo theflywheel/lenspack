@@ -2,10 +2,11 @@ import type { Query } from "@lenspack/core";
 import { parsePack } from "@lenspack/spec";
 import { describe, expect, it } from "vitest";
 
-import { COMPUTE_ROWS, type Connector, type Row, SQL_CAPABILITIES, bucketsOf, check, checkOps, describeComputed, explain, run, shapeRows } from "../src";
+import { COMPUTE_ROWS, type Connector, type Row, SQL_CAPABILITIES, bucketsOf, check, checkOps, describeComputed, explain, readWindow, run, shapeRows } from "../src";
 
 // Steps run on the source's aggregated answer, so a stub that answers the base
-// query from canned rows pins every rule: gaps, zeros, windows, grains.
+// query from canned rows (those in its window) pins every rule: gaps, zeros,
+// windows, grains.
 
 const pack = parsePack({
   pack: "stock",
@@ -41,13 +42,17 @@ function stub(answers: (q: Query) => Row[]): Connector & { seen: { query: Query;
     async execute(plan) {
       const q = plan.native as Query;
       seen.push({ query: q, base: !!plan.bound.base });
-      return shapeRows(answers(q), q, plan.bound.measure?.def.format ?? "number", plan.bound.measure?.def.key, !!plan.bound.base);
+      const t = "time" in q && q.time && "from" in q.time ? q.time : null;
+      const rows = answers(q).filter((r) => !t || !r.bucket || (r.bucket >= t.from.slice(0, 10) && r.bucket < t.to.slice(0, 10)));
+      return shapeRows(rows, q, plan.bound.measure?.def.format ?? "number", plan.bound.measure?.def.key, !!plan.bound.base);
     },
   };
 }
 
 // Dispatched per ward and day. North has nothing on the 3rd (no rows at all), south dispatched 0 on the 1st.
+// The day before the window, 31 August, is read only for a change from it.
 const daily: Row[] = [
+  { bucket: "2026-08-31", series: "north", value: 4, n: 1 },
   { bucket: day(1), series: "north", value: 10, n: 2 },
   { bucket: day(2), series: "north", value: 20, n: 2 },
   { bucket: day(4), series: "north", value: 10, n: 1 },
@@ -63,21 +68,46 @@ const values = (rows: { value: number | null }[]) => rows.map((r) => (r.value ==
 describe("steps over time on a series", () => {
   const north = (rows: Row[]) => rows.filter((r) => r.series === "north").map(({ series: _s, ...r }) => r);
 
-  it("change: against the bucket before; a day with no records is 0 for a sum, the first day has none", async () => {
+  it("change: against the bucket before; a day with no records is 0 for a sum", async () => {
     const c = stub(() => north(daily));
     const data = await run({ kind: "series", measure: "dispatched", grain: "day", time, compute: { steps: [{ op: "change" }] } }, { pack, connector: c, ctx });
     expect(data.rows.map((r) => r.group)).toEqual([day(1), day(2), day(3), day(4), day(5)]);
-    expect(values(data.rows)).toEqual([null, 10, -20, 10, 5]);
+    expect(values(data.rows)).toEqual([6, 10, -20, 10, 5]);
     expect(data.format).toBe("number");
     expect(data.label).toBe("day-on-day change in dispatched");
     expect(c.seen[0]).toMatchObject({ query: { kind: "series", grain: "day", measure: "dispatched" }, base: true });
   });
 
+  it("change: the first bucket changes from the one before the window, as Superset's time comparison reads it", async () => {
+    const c = stub(() => north(daily));
+    const data = await run({ kind: "series", measure: "dispatched", grain: "day", time, compute: { steps: [{ op: "change" }] } }, { pack, connector: c, ctx });
+    // The source is asked for one more day, 31 August; it is read, not shown or counted.
+    expect((c.seen[0]!.query as { time: unknown }).time).toEqual({ from: "2026-08-31T00:00:00.000Z", to: "2026-09-06T00:00:00.000Z" });
+    expect(data.rows[0]).toEqual({ group: day(1), value: 6, count: 2 });
+    expect(data.computed).toContain("the first day changes from the day before the time range");
+    // With no time range there is no bucket before the first, so it has no change.
+    const open = await run({ kind: "series", measure: "dispatched", grain: "day", compute: { steps: [{ op: "change" }] } }, { pack, connector: stub(() => north(daily).slice(1)), ctx });
+    expect(values(open.rows)).toEqual([null, 10, -20, 10, 5]);
+    expect(open.computed).toContain("the first day has no day before it, so it has no change");
+  });
+
+  it("one bucket back is one step of the local calendar: a month back from 31 March is 28 February", () => {
+    const q = (grain: "day" | "week" | "month" | "quarter") => ({ kind: "series", measure: "dispatched", grain, compute: { steps: [{ op: "change" }] } }) as Extract<Query, { kind: "series" }>;
+    const from = (grain: "day" | "week" | "month" | "quarter", at: string, zone?: string) => readWindow(q(grain), { from: new Date(at), to: new Date("2026-04-01T00:00:00Z") }, zone)!.from.toISOString();
+    expect(from("month", "2026-03-31T00:00:00Z")).toBe("2026-02-28T00:00:00.000Z");
+    expect(from("quarter", "2026-03-15T06:30:00Z")).toBe("2025-12-15T06:30:00.000Z");
+    expect(from("week", "2026-03-02T00:00:00Z")).toBe("2026-02-23T00:00:00.000Z");
+    // Midnight in Nairobi (UTC+3) is 21:00 UTC the day before.
+    expect(from("day", "2026-02-28T21:00:00Z", "Africa/Nairobi")).toBe("2026-02-27T21:00:00.000Z");
+    // A step that does not change from the bucket before reads the window as it is.
+    expect(readWindow({ ...q("day"), compute: { steps: [{ op: "running_total" }] } }, { from: new Date(), to: new Date() })).toBeNull();
+  });
+
   it("% change: a change from 0 is skipped, never infinite", async () => {
     const c = stub(() => north(daily));
     const data = await run({ kind: "series", measure: "dispatched", grain: "day", time, compute: { steps: [{ op: "change", percent: true }] } }, { pack, connector: c, ctx });
-    // 10 → 20 (+100%), 20 → 0 (−100%), 0 → 10 (from 0: skipped), 10 → 15 (+50%).
-    expect(values(data.rows)).toEqual([null, 1, -1, null, 0.5]);
+    // 4 → 10 (+150%), 10 → 20 (+100%), 20 → 0 (−100%), 0 → 10 (from 0: skipped), 10 → 15 (+50%).
+    expect(values(data.rows)).toEqual([1.5, 1, -1, null, 0.5]);
     expect(data.format).toBe("percent");
     expect(data.computed).toContain("a change from 0 has no percentage and is skipped");
   });
@@ -85,7 +115,7 @@ describe("steps over time on a series", () => {
   it("an average has no value on a day with no records, so the change across that gap is skipped", async () => {
     const c = stub(() => north(daily));
     const data = await run({ kind: "series", measure: "avg_out", grain: "day", time, compute: { steps: [{ op: "change" }] } }, { pack, connector: c, ctx });
-    expect(values(data.rows)).toEqual([null, 10, null, null, 5]);
+    expect(values(data.rows)).toEqual([6, 10, null, null, 5]);
     expect(data.computed).toContain("a day with no records has no value and is skipped");
   });
 
@@ -117,7 +147,8 @@ describe("steps over time on a series", () => {
   it("split by a dimension: every series is computed on its own, the top ones kept", async () => {
     const c = stub(() => daily);
     const data = await run({ kind: "series", measure: "dispatched", grain: "day", by: "ward", time, compute: { steps: [{ op: "change" }] } }, { pack, connector: c, ctx });
-    expect(values(data.rows.filter((r) => r.series === "south"))).toEqual([null, 5, 5, 0, -5]);
+    // South has no row on 31 August: 0 for a sum, so its first change is 0 - 0.
+    expect(values(data.rows.filter((r) => r.series === "south"))).toEqual([0, 5, 5, 0, -5]);
     expect(c.seen[0]!.base).toBe(true);
   });
 
@@ -146,15 +177,17 @@ describe("a summary of the buckets per group", () => {
     expect(c.seen[0]).toMatchObject({ query: { kind: "series", by: "ward", grain: "day" }, base: true });
   });
 
-  it("average day-on-day % change per ward: changes from 0 and the first day are skipped", async () => {
+  it("average day-on-day % change per ward: changes from 0 are skipped, the first day changes from the day before", async () => {
     const data = await run(perWard([{ op: "change", percent: true }, { op: "over_time", fn: "mean" }], { sort: "asc" }), { pack, connector: stub(() => daily), ctx });
-    // north: +100%, −100%, (from 0), +50% → 50/3 %; south: (from 0), +100%, 0%, −50% → 50/3 %.
-    expect(data.rows.map((r) => r.group)).toEqual(["north", "south"]);
-    expect(values(data.rows)).toEqual([0.166667, 0.166667]);
+    // north: +150%, +100%, −100%, (from 0), +50% → 50 %; south: (from 0), (from 0), +100%, 0%, −50% → 50/3 %.
+    expect(data.rows.map((r) => r.group)).toEqual(["south", "north"]);
+    expect(values(data.rows)).toEqual([0.166667, 0.5]);
+    // The day read before the window is not counted.
+    expect(data.rows.map((r) => r.count)).toEqual([5, 8]);
     expect(data.format).toBe("percent");
     expect(data.label).toBe("average day-on-day % change in dispatched");
     expect(data.computed).toBe(
-      "average day-on-day % change in dispatched: a day with no records counts as 0; the first day has no day before it, so it has no change; a change from 0 has no percentage and is skipped; days without a value are skipped in the average",
+      "average day-on-day % change in dispatched: a day with no records counts as 0; the first day changes from the day before the time range; a change from 0 has no percentage and is skipped; days without a value are skipped in the average",
     );
   });
 

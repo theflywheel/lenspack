@@ -1,5 +1,5 @@
-import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query, type TimeRange, type Widget } from "@lenspack/core";
-import { type BoundDimension, type BoundPlan, ResolveError, SPLIT_ROWS } from "@lenspack/engine";
+import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query, type TimeRange, type Widget, grainWords } from "@lenspack/core";
+import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, natureOf } from "@lenspack/engine";
 import { type Pack, maybeFragmentFor } from "@lenspack/spec";
 
 import type { Binding } from "./catalogue";
@@ -229,25 +229,75 @@ export function columnFor(key: string, entity: string, binding: Binding): string
 // The offset one bucket back, as Superset's time comparison reads it.
 export const OFFSET: Record<Grain, string> = { hour: "1 hour ago", day: "1 day ago", week: "1 week ago", month: "1 month ago", quarter: "3 months ago", year: "1 year ago" };
 
+type Summary = Extract<ComputeStep, { op: "over_time" }>["fn"];
+
+// Superset's pivot table functions that compute a summary the way Lenspack does: over each
+// row's cells, skipping cells with no value. Its "Last" is the largest value, not the latest bucket.
+const PIVOT_FN: Partial<Record<Summary, string>> = { mean: "Average", median: "Median", min: "Minimum", max: "Maximum", sum: "Sum" };
+const PIVOT_BACK = Object.fromEntries(Object.entries(PIVOT_FN).map(([k, v]) => [v, k])) as Record<string, Summary>;
+const PIVOT_VERB: Record<Summary, string> = { mean: "averages", median: "takes the median of", min: "takes the lowest of", max: "takes the highest of", sum: "adds up", last: "reads" };
+
 /**
- * A widget's compute as the form_data controls Superset's charts already have, so the saved
- * chart is an ordinary Superset chart that recomputes itself: a rolling window (rolling_type
- * mean or sum, every window full: min_periods = rolling_periods), a running total (cumsum), or a
- * change against the bucket before (time_compare one grain back, comparison_type difference or
- * percentage). Superset's line, bar and area charts turn these into its chart-data post-processing
- * (rolling, cum, compare); its big number with a trend line does the first two. Anything else has
- * no Superset chart that computes it (a summary of the buckets per group, a ratio of two metrics,
- * several steps), so it is refused with what to do instead; Lenspack still computes it in the chat.
+ * Why Superset's pivot table would summarise a measure's buckets differently from Lenspack, or
+ * null when the two agree exactly. The pivot table summarises the cells its query returns, one
+ * per group and bucket with records; a bucket with no records is no cell. Lenspack counts such a
+ * bucket as 0 for a count or a sum, and skips it for anything else (docs/compute.md). So they
+ * agree for an average or another level (skipped in both), for a total (adding 0 changes
+ * nothing), and for the highest count (a bucket with records counts at least 1, more than 0).
  */
-export function computeForm(widget: Widget): { form: Record<string, unknown> } | { refusal: string } | null {
+function pivotDisagrees(fn: Summary, measure: string, pack: Pack, grain: Grain): string | null {
+  const nature = natureOf(pack, measure);
+  if (nature === "level" || fn === "sum") return null;
+  const agg = pack.measures.find((m) => m.key === measure)?.agg;
+  if (fn === "max" && (agg === "count" || agg === "count_distinct")) return null;
+  const { plural } = grainWords(grain);
+  return `Superset's pivot table ${PIVOT_VERB[fn]} only the ${plural} that have records, while Lenspack counts a ${grain} with no records as 0 for a count or a sum${fn === "max" ? " (and a sum can be below 0)" : ""}, so the two would differ wherever a group has a ${grain} with none`;
+}
+
+/**
+ * A widget's compute as Superset's own controls, so the saved chart is an ordinary Superset
+ * chart that recomputes itself.
+ *
+ * On a series, the advanced analytics of Superset's line, bar and area charts, which Superset
+ * turns into its chart-data post-processing: a rolling window (rolling_type mean or sum, every
+ * window full: min_periods = rolling_periods), a running total (cumsum, as cum), or a change
+ * against the bucket before (time_compare one grain back, comparison_type difference or
+ * percentage, as compare). Its big number with a trend line does the first two.
+ *
+ * On a breakdown whose one step summarises each group's buckets, a pivot table: a row per group,
+ * a column per bucket, and the summary as the row total (`pivot`, its aggregation function),
+ * where the pivot table's arithmetic is Lenspack's (pivotDisagrees).
+ *
+ * Anything else has no Superset chart that computes it the same way, so it is refused with the
+ * nearest chart Superset can keep; Lenspack still computes it in the chat.
+ */
+export function computeForm(widget: Widget, pack: Pack): { form: Record<string, unknown> } | { pivot: string } | { refusal: string } | null {
   if (widget.kind === "text") return null;
   const q = widget.query;
   if (q.kind === "rows" || q.kind === "points" || !q.compute) return null;
   const keep = " Superset recomputes a saved chart itself, so this one is not kept on the dashboard; give the answer in the chat, or save the series it is computed from.";
   const steps = q.compute.steps;
+  const last = steps.at(-1)!;
   if (q.kind !== "series") {
-    const summary = steps.find((s) => s.op === "over_time");
-    return { refusal: `Superset has no chart that ${summary ? "summarises the time buckets of each group (an average per day per group)" : "divides one metric by another after it is aggregated"}.${keep}` };
+    if (last.op !== "over_time") return { refusal: `Superset has no chart that divides one metric by another after it is aggregated.${keep}` };
+    const grain = q.compute.grain ?? "day";
+    const { adjective, on, plural } = grainWords(grain);
+    const daily = `the ${adjective} ${q.measure}`;
+    if (q.kind !== "breakdown") return { refusal: `In Superset a summary of the ${plural} is kept per group, as a pivot table, not as one number; ask it per group (a breakdown with the same steps). Superset keeps exactly: ${daily} as a line chart.` };
+    // The nearest chart Superset keeps exactly: the buckets themselves (after a step Superset has), per group.
+    const by = q.dimension;
+    const line = (what: string) => `${what} by ${by} as a line chart (a series split by ${by})`;
+    if (steps.length > 1) {
+      const first = steps[0]!;
+      if (first.op === "ratio") return { refusal: `Superset has no chart that divides one metric by another after it is aggregated.${keep}` };
+      const word = first.op === "change" ? `${on} ${first.percent ? "% " : ""}change` : first.op === "rolling" ? `${first.window}-${grain} rolling ${first.fn === "mean" ? "average" : "sum"}` : "running total";
+      return { refusal: `Superset's pivot table summarises each group's ${plural} as the source answers them, with no step before the summary, and this asks for the ${word} first.${steps.length === 2 ? ` Superset keeps exactly: ${line(`the ${word} of ${q.measure}`)}.` : keep}` };
+    }
+    if (!PIVOT_FN[last.fn]) return { refusal: `Superset's pivot table has no latest ${grain}: its "Last" is the largest value. Superset keeps exactly: ${line(daily)}.` };
+    const differs = pivotDisagrees(last.fn, q.measure, pack, grain);
+    if (differs) return { refusal: `${differs}. Superset keeps exactly: the total per ${by} over the ${plural} (the sum step), as a pivot table with a column per ${grain}; or ${line(daily)}.` };
+    if (widget.kind !== "table" && !(widget.kind === "chart" && widget.chart === "bar")) return { refusal: `In Superset a summary of each group's ${plural} is kept as a pivot table; make the widget a table or a bar chart` };
+    return { pivot: PIVOT_FN[last.fn]! };
   }
   if (steps.length > 1) return { refusal: `A Superset chart applies one step over time, and this asks for ${steps.length}.${keep}` };
   const s: ComputeStep = steps[0]!;
@@ -269,8 +319,8 @@ export function computeForm(widget: Widget): { form: Record<string, unknown> } |
 }
 
 /** Why Superset cannot keep this widget's compute as a chart, or null: the connector's savedCompute capability. */
-export function computeRefusalForSuperset(widget: Widget): string | null {
-  const c = computeForm(widget);
+export function computeRefusalForSuperset(widget: Widget, pack: Pack): string | null {
+  const c = computeForm(widget, pack);
   return c && "refusal" in c ? c.refusal : null;
 }
 
@@ -287,11 +337,48 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
   const common = { datasource: `${ds.id}__table`, adhoc_filters, time_range: timeRangeOf(q.time), slice_name: widget.title, lenspack: { widget: { ...widget, title: undefined } } };
   if (q.kind === "points") return pointsChart(widget, q, ds.id, entity, common, colFor, pack, binding);
   const metrics = q.kind === "rows" ? [] : [metricOf(q.measure, binding), ...(q.measures ?? []).map((m) => metricOf(m, binding))];
-  const computed = computeForm(widget);
+  const computed = computeForm(widget, pack);
   if (computed && "refusal" in computed) throw new ResolveError("NOT_SUPPORTED", computed.refusal);
-  const analytics = computed?.form ?? {};
+  const analytics = computed && "form" in computed ? computed.form : {};
   // A percentage change is a fraction whatever the metric's own format.
   const fmt = q.kind === "rows" ? undefined : analytics.comparison_type === "percentage" ? D3.percent : D3[pack.measures.find((m) => m.key === q.measure)?.format ?? "number"];
+
+  if (computed && "pivot" in computed && q.kind === "breakdown") {
+    if (!ds.time) throw new ResolveError("NO_TIME", `"${entity}" has no time column in Superset`, q.measure);
+    const asc = q.sort === "asc";
+    return {
+      viz_type: "pivot_table_v2",
+      datasetId: ds.id,
+      params: {
+        ...common,
+        // Superset's reports and exports compute a pivot table's totals from the saved form, by its viz_type.
+        viz_type: "pivot_table_v2",
+        groupbyRows: [colFor(q.dimension)],
+        groupbyColumns: [ds.time],
+        temporal_columns_lookup: { [ds.time]: true },
+        time_grain_sqla: GRAIN[q.compute!.grain!],
+        metrics,
+        metricsLayout: "COLUMNS",
+        // The summary is each row's total, over its cells: the buckets with records.
+        aggregateFunction: computed.pivot,
+        rowTotals: true,
+        colTotals: false,
+        rowSubTotals: false,
+        colSubTotals: false,
+        transposePivot: false,
+        combineMetric: false,
+        rowOrder: q.sortBy === "group" ? (asc ? "key_a_to_z" : "key_z_to_a") : asc ? "value_a_to_z" : "value_z_to_a",
+        colOrder: "key_a_to_z",
+        // Every cell, or the totals would be over part of each row; Lenspack refuses past this.
+        row_limit: COMPUTE_ROWS,
+        order_desc: true,
+        valueFormat: fmt === ",d" ? "SMART_NUMBER" : fmt,
+        date_format: "smart_date",
+        // The buckets shaded by value, as a heatmap of the groups over time.
+        conditional_formatting: [{ column: metricLabel(metrics[0]!), operator: "None", colorScheme: "#ACE1C4" }],
+      },
+    };
+  }
 
   if (widget.kind === "kpi") {
     if (q.kind === "series") return { viz_type: "big_number", datasetId: ds.id, params: { ...common, metric: metrics[0], x_axis: ds.time, time_grain_sqla: GRAIN[q.grain], show_trend_line: true, y_axis_format: fmt, ...analytics } };
@@ -414,10 +501,14 @@ export function queryContextOf(spec: ChartSpec): Record<string, unknown> | null 
   if (spec.viz_type === "heatmap_v2") return heatmapContext(spec);
   const metrics = p.metrics ?? (p.metric ? [p.metric] : []);
   const isTime = p.x_axis && p.x_axis === p.adhoc_filters?.find((f: AdhocFilter) => f.operator === "TEMPORAL_RANGE")?.subject;
+  const axis = (c: string) => ({ columnType: "BASE_AXIS", sqlExpression: c, label: c, expressionType: "SQL", timeGrain: p.time_grain_sqla });
+  // A pivot table groups by its columns, then its rows, a time column at its grain (as Superset's pivot table builds it).
   const columns =
     p.query_mode === "raw"
       ? p.all_columns
-      : [...(p.x_axis ? [isTime ? { columnType: "BASE_AXIS", sqlExpression: p.x_axis, label: p.x_axis, expressionType: "SQL", timeGrain: p.time_grain_sqla } : p.x_axis] : []), ...(p.groupby ?? [])];
+      : spec.viz_type === "pivot_table_v2"
+        ? [...p.groupbyColumns, ...p.groupbyRows].map((c: string) => (p.temporal_columns_lookup?.[c] ? axis(c) : c))
+        : [...(p.x_axis ? [isTime ? axis(p.x_axis) : p.x_axis] : []), ...(p.groupby ?? [])];
   return {
     datasource: { id: spec.datasetId, type: "table" },
     force: false,
@@ -612,6 +703,31 @@ export function chartToWidget(chart: { slice_name: string; viz_type: string; par
       const limit = Math.max(2, Math.min(500, Math.ceil((p.row_limit ?? 10_000) / 50)));
       return { widget: { title, kind: "chart", chart: "heatmap", options, query: { kind: "breakdown", dimension: d, by, measure: m, limit, sort: sortX[1], sortBy: sortX[0], ...common } } as Widget };
     }
+    case "pivot_table_v2": {
+      // A summary of each group's buckets: rows a pack dimension, columns the time column at a
+      // grain, one saved metric, and the summary in each row's total.
+      const ms = metricKeys(p.metrics ?? []);
+      if (ms.length !== 1 || !ms[0]) return { widget: null, reason: "it shows other than one saved metric of the dataset" };
+      if (p.transposePivot) return { widget: null, reason: "its rows and columns are swapped" };
+      const cols: unknown[] = p.groupbyColumns ?? [];
+      if (!ds.time || cols.length !== 1 || cols[0] !== ds.time || !p.temporal_columns_lookup?.[ds.time]) return { widget: null, reason: "its columns are not the dataset's time column, by day, week or month" };
+      const grain = GRAIN_BACK[p.time_grain_sqla];
+      if (!grain) return { widget: null, reason: "its time grain has no Lenspack form" };
+      const rows: unknown[] = p.groupbyRows ?? [];
+      const d = rows.length === 1 ? dimKey(rows[0]) : null;
+      if (!d) return { widget: null, reason: "its rows are not one pack dimension" };
+      if (!p.rowTotals) return { widget: null, reason: "it shows no total per row, which is the summary Lenspack reads" };
+      if (p.colTotals) return { widget: null, reason: "it adds a total row across the groups" };
+      if (p.series_limit) return { widget: null, reason: "it keeps only its top groups by the metric over the whole window" };
+      const fn = PIVOT_BACK[p.aggregateFunction ?? "Sum"];
+      if (!fn) return { widget: null, reason: `its aggregation "${p.aggregateFunction}" has no Lenspack summary` };
+      const differs = pivotDisagrees(fn, ms[0], pack, grain);
+      if (differs) return { widget: null, reason: differs.replace(/^Superset's pivot table/, "it") };
+      const order = String(p.rowOrder ?? "key_a_to_z");
+      const sort = { sort: order.endsWith("z_to_a") ? "desc" : "asc", ...(order.startsWith("key") ? { sortBy: "group" } : {}) };
+      const query = { kind: "breakdown", dimension: d, measure: ms[0], limit: 500, ...sort, compute: { grain, steps: [{ op: "over_time", fn }] }, ...common };
+      return { widget: { title, kind: "table", pageSize: 10, query } as Widget };
+    }
     case "deck_scatter": {
       const geo = binding.geo.get(entity);
       const sp = p.spatial ?? {};
@@ -661,7 +777,11 @@ function computeBack(p: Record<string, any>, grain: Grain): { compute?: { steps:
 }
 
 // Fields a person may change in Superset that our own query would not survive.
-const MEANINGFUL = ["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode", "sort_x_axis", "sort_y_axis", "normalize_across", "normalized", "spatial", "point_radius_fixed", "dimension", "js_columns", "rolling_type", "rolling_periods", "min_periods", "time_compare", "comparison_type"];
+const MEANINGFUL = [
+  ...["metric", "metrics", "groupby", "x_axis", "time_grain_sqla", "adhoc_filters", "row_limit", "all_columns", "query_mode", "sort_x_axis", "sort_y_axis", "normalize_across", "normalized"],
+  ...["spatial", "point_radius_fixed", "dimension", "js_columns", "rolling_type", "rolling_periods", "min_periods", "time_compare", "comparison_type"],
+  ...["groupbyRows", "groupbyColumns", "aggregateFunction", "rowTotals", "colTotals", "transposePivot", "series_limit", "rowOrder"],
+];
 function sameForm(a: Record<string, unknown>, b: Record<string, unknown>) {
   return MEANINGFUL.every((k) => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
 }
