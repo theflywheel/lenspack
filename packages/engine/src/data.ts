@@ -52,17 +52,10 @@ export function compared(value: number | null, previous: number | null): { previ
 
 export function toNumber(v: unknown): number | null {
   if (v === null || v === undefined) return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
   if (typeof v === "bigint") return Number(v);
-  if (typeof v === "string") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-  }
-  if (typeof v === "object" && v !== null && "toString" in v) {
-    const n = Number(String(v));
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+  // A driver's decimal or big-number object reads through its text.
+  const n = typeof v === "number" ? v : typeof v === "string" || (typeof v === "object" && "toString" in v) ? Number(String(v)) : NaN;
+  return Number.isFinite(n) ? n : null;
 }
 
 export function toDate(v: unknown): Date | null {

@@ -56,18 +56,11 @@ function acrossEntities(query: Query, pack: Pack): Across | null {
     const home = m.entity === def.entity;
     const kept = home ? filters : filters.filter((f) => has(m.entity, f.dimension));
     const unfiltered = home ? [] : [...new Set(filters.filter((f) => !has(m.entity, f.dimension)).map((f) => f.dimension))];
-    let q = { ...base(m.key), filters: kept.length ? kept : undefined } as Query;
+    const q = { ...base(m.key), filters: kept.length ? kept : undefined } as Query;
     // An operand with no time (a target, a capacity) is the same in every
     // period: each bucket, and the previous period, use that one number.
     const timeless = !home && !pack.entities[m.entity]?.time;
-    if (timeless) {
-      const { time: _time, ...rest } = q as Query & { time?: unknown };
-      if (q.kind === "series")
-        q = q.by ? { kind: "breakdown", dimension: q.by, measure: m.key, limit: ACROSS_LIMIT, sort: "desc", filters: rest.filters } : { kind: "value", measure: m.key, filters: rest.filters };
-      else if (q.kind === "value") q = { kind: "value", measure: m.key, filters: rest.filters };
-      else q = rest as Query;
-    }
-    return { measure: m, named: named(m.key), query: q, timeless, unfiltered };
+    return { measure: m, named: named(m.key), query: timeless ? untimed(q, m.key, true) : q, timeless, unfiltered };
   });
   // Left whole, an operand that only divides reads as "this kind over the
   // whole goal" when it is a reference value (a target, a capacity), not
@@ -88,6 +81,15 @@ function acrossEntities(query: Query, pack: Pack): Across | null {
       );
     }
   return { def, expr, sides };
+}
+
+// A query over an entity with no time: one value for every period, or one per
+// series of a split series when `perSeries`; a breakdown just loses its window.
+function untimed(q: Query, measure: string, perSeries = false): Query {
+  const { time: _time, ...rest } = q as Query & { time?: unknown };
+  if (q.kind === "series" && q.by && perSeries) return { kind: "breakdown", dimension: q.by, measure, limit: ACROSS_LIMIT, sort: "desc", filters: rest.filters };
+  if (q.kind === "series" || q.kind === "value") return { kind: "value", measure, filters: rest.filters };
+  return rest as Query;
 }
 
 // Operands under an odd number of divisors (b in a / b, b and c in
@@ -265,12 +267,8 @@ function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { k
     primary: primary as Query,
     extras: measures.map((key) => {
       // Only the primary is compared: the others fill in its groups as they are now.
-      let q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT, compare: undefined } : { ...primary, measure: key }) as Query;
-      if (timeless(key)) {
-        const { time: _t, ...rest } = q as Query & { time?: unknown; compare?: unknown };
-        q = (q.kind === "series" ? { kind: "value", measure: key, filters: rest.filters } : q.kind === "value" ? { kind: "value", measure: key, filters: rest.filters } : rest) as Query;
-      }
-      return { key, query: q };
+      const q = (query.kind === "breakdown" ? { ...primary, measure: key, limit: ACROSS_LIMIT, compare: undefined } : { ...primary, measure: key }) as Query;
+      return { key, query: timeless(key) ? untimed(q, key) : q };
     }),
   };
 }
