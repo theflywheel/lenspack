@@ -22,6 +22,7 @@ export default defineConfig({
       { find: "@lenspack/ccrs", replacement: pkg("ccrs") },
       { find: "@lenspack/serve", replacement: pkg("serve") },
       { find: "@lenspack/sql", replacement: pkg("sql") },
+      { find: "@lenspack/agent", replacement: pkg("agent") },
       { find: "@lenspack/mcp", replacement: pkg("mcp") },
       { find: /^@lenspack\/react\/adapters\/(.*)$/, replacement: pkg("react", "adapters/$1.tsx") },
       { find: "@lenspack/react/styles.css", replacement: pkg("react", "styles.css") },

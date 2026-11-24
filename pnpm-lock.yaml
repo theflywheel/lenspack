@@ -90,9 +90,6 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      echarts:
-        specifier: ^6.1.0
-        version: 6.1.0
       lucide-react:
         specifier: ^1.47.0
         version: 1.47.0(react@19.3.0)
@@ -139,6 +136,25 @@ importers:
   examples/hcm: {}
 
   examples/tickets: {}
+
+  packages/agent:
+    dependencies:
+      '@lenspack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@lenspack/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@lenspack/spec':
+        specifier: workspace:*
+        version: link:../spec
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@lenspack/sql':
+        specifier: workspace:*
+        version: link:../sql
 
   packages/ccrs:
     dependencies:
@@ -202,9 +218,9 @@ importers:
       '@duckdb/node-api':
         specifier: '*'
         version: 2.0.0-r.1
-      '@lenspack/core':
+      '@lenspack/agent':
         specifier: workspace:*
-        version: link:../core
+        version: link:../agent
       '@lenspack/spec':
         specifier: workspace:*
         version: link:../spec
