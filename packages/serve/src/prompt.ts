@@ -118,7 +118,7 @@ export function userChangesText(changes: BoardChange[] = []) {
  * (the catalogue, the examples, the rules), then the current board, which
  * changes with every edit, and the user's own edits since the last turn.
  * Stable first, so a provider's prompt cache keeps the long first part across
- * edits; joined, it is SYSTEM.
+ * edits.
  */
 export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy): [stable: string, board: string] => [
   `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
@@ -151,5 +151,3 @@ Rules:
 - An informational answer (what the data holds) may use a short bullet list and **bold** for names; keep it brief. Several numbers side by side for a few groups may be one compact markdown table (at most 6 rows and 4 columns, figures formatted as on the board); anything larger belongs on the board as a table widget. Never use markdown headings.`,
   `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}${languageText(language)}`,
 ];
-
-export const SYSTEM = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy) => systemParts(pack, catalogue, board, now, changes, language).join("");

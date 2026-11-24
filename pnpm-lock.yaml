@@ -279,6 +279,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.53
         version: 3.0.53(zod@3.25.76)
+      '@lenspack/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@lenspack/core':
         specifier: workspace:*
         version: link:../core
@@ -291,9 +294,6 @@ importers:
       '@lenspack/engine':
         specifier: workspace:*
         version: link:../engine
-      '@lenspack/mcp':
-        specifier: workspace:*
-        version: link:../mcp
       '@lenspack/spec':
         specifier: workspace:*
         version: link:../spec

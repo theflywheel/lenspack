@@ -6,8 +6,6 @@ import type { IncomingMessage } from "node:http";
 // expiry under an HMAC, so it cannot be altered, outlive its time, or pass
 // for another kind of cookie.
 
-export type Sealer = ReturnType<typeof sealer>;
-
 export function sealer(secret: string, now: () => number = Date.now) {
   const mac = (s: string) => createHmac("sha256", secret).update(s).digest();
   return {
@@ -71,4 +69,3 @@ export function sameSite(req: IncomingMessage, origin?: string) {
 // refused outright: a browser drops a tab from "/\t/x" and reads "//x".
 export const safeReturn = (r: string | null) => (r && /^\/(?![/\\])/.test(r) && !/[\x00-\x20\x7f\\]/.test(r) && !r.startsWith("/auth/") ? r : "/");
 
-export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);

@@ -2,7 +2,8 @@ import { type KeyObject, constants, createHash, createPublicKey, randomBytes, ve
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { AuthAdapter, Identity } from "./auth";
-import { cookie as makeCookie, cookies, escapeHtml, safeReturn, sameSite, sealer } from "./session";
+import { escapeHtml } from "./http";
+import { cookie as makeCookie, cookies, safeReturn, sameSite, sealer } from "./session";
 
 // Sign-in with an OpenID Connect provider (Keycloak, Entra ID, Google, any
 // issuer with discovery), so a deployment needs no login proxy in front.

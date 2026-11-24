@@ -4,9 +4,9 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { type BoardStore, memoryStore } from "@lenspack/core";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
 import { type Connector, check } from "@lenspack/engine";
-import { fileProposals } from "@lenspack/mcp";
+import { fileProposals } from "@lenspack/agent";
 import { parsePackText } from "@lenspack/spec";
-import { type Executor, type Writer, driverFor, openSource, sqlStore } from "@lenspack/sql";
+import { type Executor, type Writer, driverFor, filePath, openSource, sqlStore } from "@lenspack/sql";
 import YAML from "yaml";
 import { z } from "zod";
 
@@ -30,7 +30,8 @@ import { authSchema, hiddenKeys, packRuleSchema } from "./auth";
 // of its own: its SQL API cannot join, and the native one is proven in CI.
 
 const secret = z.string().min(1);
-const limits = { timeoutMs: z.number().int().positive().optional(), maxRows: z.number().int().positive().optional(), cacheTtlMs: z.number().int().positive().optional() };
+// optional: a file database that is not there is skipped, with every pack on it, instead of stopping the server.
+const limits = { timeoutMs: z.number().int().positive().optional(), maxRows: z.number().int().positive().optional(), cacheTtlMs: z.number().int().positive().optional(), optional: z.boolean().optional() };
 const SEARCH = ["elasticsearch", "opensearch"];
 const sourceSchema = z.union([
   z.object({ kind: z.literal("elasticsearch"), url: secret, apiKey: secret.optional(), username: secret.optional(), password: secret.optional(), timeoutMs: z.number().int().positive().optional() }),
@@ -59,20 +60,17 @@ export const configSchema = z.object({
     .min(1),
   store: z.union([z.object({ kind: z.literal("memory") }), z.object({ kind: z.literal("duckdb"), path: z.string().min(1) }), z.object({ kind: z.literal("postgres"), url: secret })]).default({ kind: "memory" }),
   /**
-   * The bundled UI: its directory, or how it presents itself. mode demo (the
-   * default) is the lenspack demo; app opens the boards at "/", without the
-   * demo's landing page, chart-library switch, ops box and query captions.
-   * home ("pack/board") is the board "/" opens; title names the page.
-   * intro is the deployment's own line under a board's title: without it the
-   * demo shows the pack's description (written for the model) and an app
-   * shows nothing.
+   * The bundled UI: its directory, or how it presents itself. home
+   * ("pack/board") is the board "/" opens; title names the page; intro is the
+   * deployment's own line under a board's title. mode is accepted and ignored:
+   * the demo's landing page is gone, so every UI is the app.
    */
   ui: z
     .union([
       z.string(),
       z.object({
         dir: z.string().optional(),
-        mode: z.enum(["demo", "app"]).default("demo"),
+        mode: z.enum(["demo", "app"]).optional(),
         title: z.string().max(80).optional(),
         home: z.string().regex(/^[a-z][a-z0-9_-]*\/[^/]+$/).optional(),
         intro: z.string().max(600).optional(),
@@ -138,6 +136,7 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
   const at = (p: string) => (isAbsolute(p) ? p : join(dir, p));
   const closers: (() => Promise<void>)[] = [];
   const connectors = new Map<string, Connector>();
+  const skipped = new Set<string>();
   for (const [name, raw] of Object.entries(config.sources)) {
     const src = resolveSecrets(raw, env);
     if (src.kind === "elasticsearch" || src.kind === "opensearch") {
@@ -149,6 +148,12 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
     const driver = driverFor(url);
     if (src.kind && src.kind !== driver.name && !driver.schemes.includes(src.kind))
       throw new Error(`source "${name}" says kind: ${src.kind}, but its URL is a ${driver.name} URL`);
+    const file = ["duckdb", "sqlite"].includes(driver.name) ? filePath(url, dir) : ":memory:";
+    if ("optional" in src && src.optional && file !== ":memory:" && !existsSync(file)) {
+      console.warn(`lenspack: source "${name}" has no ${file}, so it and its packs are skipped`);
+      skipped.add(name);
+      continue;
+    }
     const { connector, connection } = await openSource(url, { base: dir, defaultTimeoutMs: src.timeoutMs, maxRows: "maxRows" in src ? src.maxRows : undefined, cacheTtlMs: "cacheTtlMs" in src ? src.cacheTtlMs : undefined });
     closers.push(connection.close);
     connectors.set(name, connector);
@@ -171,6 +176,7 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
   const hosts: Host[] = [];
   for (const p of config.packs) {
     const connector = connectors.get(p.source);
+    if (!connector && skipped.has(p.source)) continue;
     if (!connector) throw new Error(`pack ${p.pack} names source "${p.source}", which lenspack.yaml does not define`);
     const packYaml = readFileSync(at(p.pack), "utf8");
     const pack = parsePackText(packYaml);

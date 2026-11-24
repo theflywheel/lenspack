@@ -8,14 +8,14 @@ import { catalogueFrom, loadPack, parsePack } from "@lenspack/spec";
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
-import { INLINE_KEYS, PROMPT_VERSION, SYSTEM, configSchema, languageText, openConfig, recentTurns, systemParts, userChangesText } from "../src";
+import { INLINE_KEYS, PROMPT_VERSION, configSchema, languageText, openConfig, recentTurns, systemParts, userChangesText } from "../src";
 
 const tickets = fileURLToPath(new URL("../../../examples/tickets/pack.yaml", import.meta.url));
 
 describe("the system prompt", () => {
   it("carries the pack's domain rules and checked examples", async () => {
     const pack = await loadPack(tickets);
-    const system = SYSTEM(pack, catalogueFrom(pack));
+    const [system] = systemParts(pack, catalogueFrom(pack));
     expect(system).toContain("DOMAIN RULES:\nCompare resolution times on the median or p90");
     expect(system).toContain('- "How often do tickets get escalated?" → value transitions where transition eq "escalated" (tickets by transition would fan out, so count status changes)');
   });
@@ -23,7 +23,7 @@ describe("the system prompt", () => {
   it("lists only keys and labels for a catalogue too large to inline, and points at list_metrics", () => {
     const measures = Array.from({ length: INLINE_KEYS + 1 }, (_, i) => ({ key: `m${i}`, entity: "t", agg: "count", label: i === 0 ? "First" : undefined, hint: "a long meaning" }));
     const pack = parsePack({ pack: "big", version: 1, entities: { t: { source: "t" } }, measures });
-    const system = SYSTEM(pack, catalogueFrom(pack));
+    const [system] = systemParts(pack, catalogueFrom(pack));
     expect(system).toContain("- t: m0 (First), m1, m2,");
     expect(system).not.toContain("a long meaning");
     expect(system).toContain("Meanings are not listed: call list_metrics");
@@ -51,7 +51,6 @@ describe("the system prompt's parts", () => {
     // The board first, then the user's edits since the last turn, last of all.
     expect(boardB.indexOf("CURRENT BOARD:")).toBe(2);
     expect(boardB.indexOf("CHANGES MADE BY THE USER")).toBeGreaterThan(boardB.indexOf("Board: “Two”"));
-    expect(SYSTEM(pack, catalogue, board("Two"), now, changes)).toBe(stableB + boardB);
   });
 
   it("words the user's changes by version and by who made them", () => {

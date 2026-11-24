@@ -13,6 +13,8 @@ sources:
 
 `kind:` may still be written next to a URL and must then agree with it. The older `{ kind: duckdb, path: … }` form still works.
 
+A DuckDB or SQLite source with `optional: true` whose file is not there is skipped with a warning, and so is every pack on it. Without it, a missing file stops the server.
+
 ## The drivers lenspack ships
 
 | driver | URL | client library (an optional peer dependency) |

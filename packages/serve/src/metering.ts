@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { type LanguageModel, type LanguageModelUsage, wrapLanguageModel } from "ai";
+import { type LanguageModel, wrapLanguageModel } from "ai";
 
 import { type QueryMeter, emptyQueryMeter } from "@lenspack/engine";
 
@@ -100,18 +100,6 @@ export function tokensOf(u: ProviderUsage | undefined): Tokens {
   };
 }
 
-/** A call-level SDK usage (result.usage), priced. For callers outside the wrapped models. */
-export function usageOf(u: LanguageModelUsage | undefined, pricing?: Pricing, calls = 1): Usage {
-  const t: Tokens = {
-    inputTokens: u?.inputTokens ?? 0,
-    cachedInputTokens: u?.inputTokenDetails?.cacheReadTokens ?? 0,
-    cacheWriteTokens: u?.inputTokenDetails?.cacheWriteTokens ?? 0,
-    outputTokens: u?.outputTokens ?? 0,
-    reasoningTokens: u?.outputTokenDetails?.reasoningTokens ?? 0,
-  };
-  return { calls, failed: 0, ...t, usd: pricing ? costOf(t, pricing) : 0, unpriced: pricing ? 0 : calls };
-}
-
 export function usageOfRecord(r: CallRecord): Usage {
   return { calls: 1, failed: r.ok ? 0 : 1, inputTokens: r.inputTokens, cachedInputTokens: r.cachedInputTokens, cacheWriteTokens: r.cacheWriteTokens, outputTokens: r.outputTokens, reasoningTokens: r.reasoningTokens, usd: r.usd ?? 0, unpriced: r.priced ? 0 : 1 };
 }
@@ -163,11 +151,6 @@ export function withMeter<T>(scope: MeterScope, fn: () => T): T {
     },
     fn,
   );
-}
-
-/** The attribution a call made here would get. */
-export function currentAttribution(): Attribution {
-  return { role: "other", ...frames.getStore()?.attribution };
 }
 
 function emit(frame: Frame | undefined, r: CallRecord) {

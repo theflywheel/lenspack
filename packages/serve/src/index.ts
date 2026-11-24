@@ -3,6 +3,7 @@ export * from "./auth";
 export * from "./oidc";
 export * from "./password";
 export * from "./session";
+export * from "./http";
 export * from "./config";
 export * from "./llm";
 export * from "./prompt";

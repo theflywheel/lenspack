@@ -1,4 +1,4 @@
-import { type LanguageModel, type LanguageModelUsage, generateText } from "ai";
+import { type LanguageModel, generateText } from "ai";
 
 import { type Provider, shapeCall } from "./llm";
 import { WIDGET_LIMITS } from "./prompt";
@@ -17,8 +17,6 @@ export type Review = {
   /** The reviewer produced no usable verdict; never treat as a failure. */
   unavailable?: boolean;
   raw?: string;
-  /** Tokens the review call used, for metering; absent when the call never returned. */
-  usage?: LanguageModelUsage;
 };
 
 export const REVIEW_PROMPT = `You are a strict, adversarial reviewer of a dashboard edit made by another assistant.
@@ -57,14 +55,13 @@ export async function reviewTurn(
     abortSignal: AbortSignal.timeout(timeoutMs),
   });
   const raw = out.text.trim();
-  const usage = out.totalUsage;
   const m = /\{[\s\S]*\}/.exec(raw);
   try {
     const p = JSON.parse(m ? m[0] : raw) as Partial<Review>;
     if (typeof p.satisfied !== "boolean") throw new Error("no verdict");
-    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw, usage };
+    return { satisfied: p.satisfied, missing: p.missing ?? [], wrong: p.wrong ?? [], note: p.note ?? "", raw };
   } catch {
-    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw, usage };
+    return { satisfied: true, unavailable: true, missing: [], wrong: [], note: raw ? "reviewer returned no verdict" : "reviewer returned nothing", raw };
   }
 }
 

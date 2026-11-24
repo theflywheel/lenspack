@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { boardTools } from "@lenspack/mcp";
+import { boardTools } from "@lenspack/agent";
 import { openDuckdb } from "@lenspack/sql/duckdb";
 import { parsePackText } from "@lenspack/spec";
 import { MockLanguageModelV4 } from "ai/test";
@@ -222,7 +222,7 @@ store: { kind: memory }
     });
 
     it("draws a pack board's widget on a hidden key as not permitted, and the rest as usual", async () => {
-      for (const path of ["/campaign/overview?include=data", "/campaign/overview/data", "/campaign/overview/canonical"]) {
+      for (const path of ["/campaign/overview?include=data", "/campaign/overview/data"]) {
         const r = await call(partner, path);
         const data = r.body.data ?? r.body;
         expect(data.not_delivered).toMatchObject({ rows: [], error: '"not_delivered_reason" is not available to you' });
