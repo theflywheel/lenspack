@@ -98,7 +98,7 @@ registerLlmAdapter(mine);
 
 ## Metering
 
-Metering happens at the model, not at the call site. `buildProvider` wraps every provider's model, whatever its adapter, so every call is recorded: chat rounds, the reviewer, the startup probe, evals, the visual judge. A new adapter is metered without writing any metering code. It only declares `pricing(cfg)` for the models it knows, and, if its provider reports usage in an unusual way, `tokens(usage)`.
+Metering happens at the model, not at the call site. `buildProvider` wraps every provider's model, whatever its adapter, so every call is recorded: chat rounds, the reviewer, the startup probe, evals. A new adapter is metered without writing any metering code. It only declares `pricing(cfg)` for the models it knows, and, if its provider reports usage in an unusual way, `tokens(usage)`.
 
 - **Generate calls** are recorded when they return or throw.
 - **Streaming calls** are recorded when their finish part passes, or when they error or are cancelled.
@@ -177,4 +177,4 @@ When today's metered spend reaches a cap, the chat answers **429** with a messag
 
 ### Evals
 
-`pnpm eval` runs in the same scopes: `eval` for the build, `review`, `escalate` for the heal round and `judge` for the visual check. Each task's result in `evals/results/*.json` carries `usage`, with the total and one line per role and provider. The markdown table adds tokens in and out and the cost per model.
+`pnpm eval` runs in the same scopes: `eval` for the build, `review`, and `escalate` for the heal round. Each task's result in `evals/results/*.json` carries `usage`, with the total and one line per role and provider. The markdown table adds tokens in and out and the cost per model.

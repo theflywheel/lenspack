@@ -9,7 +9,7 @@ import { dirname, resolve } from "node:path";
 
 import { type BoardConfig, memoryStore } from "@lenspack/core";
 import { type Connector, type WidgetData, run } from "@lenspack/engine";
-import { type Host, type Provider, createApp, usageLedger } from "@lenspack/serve";
+import { type Host, type Provider, createApp, resolveSecrets, usageLedger } from "@lenspack/serve";
 import type { Pack } from "@lenspack/spec";
 import type { UIMessage, UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
@@ -35,17 +35,6 @@ type SupersetConfig = {
   overlay?: Record<string, unknown>;
 };
 
-const fromEnv = (v: unknown, file: string): unknown => {
-  if (typeof v === "string" && v.startsWith("env:")) {
-    const value = process.env[v.slice(4)];
-    if (value === undefined) throw new Error(`${file}: environment variable ${v.slice(4)} is not set`);
-    return value;
-  }
-  if (Array.isArray(v)) return v.map((x) => fromEnv(x, file));
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fromEnv(x, file)]));
-  return v;
-};
-
 /**
  * A deployment's Superset config, read the way packages/superset/bin/serve.ts
  * reads it (same pack, catalogue and connector), with a memory store. The seed
@@ -54,31 +43,15 @@ const fromEnv = (v: unknown, file: string): unknown => {
  */
 export async function supersetRig(configPath: string, opts: { dashboard?: number; boardCache?: string; now?: Date; supersetUrl?: string }): Promise<Rig> {
   const sup = await import("@lenspack/superset");
-  const file = resolve(configPath);
-  const raw = YAML.parse(readFileSync(file, "utf8")) as SupersetConfig & { superset: { url: unknown } };
+  const raw = YAML.parse(readFileSync(configPath, "utf8")) as SupersetConfig & { superset: { url: unknown } };
   // The deployment's url is usually a compose hostname; the runner may reach Superset elsewhere.
   if (opts.supersetUrl) raw.superset.url = opts.supersetUrl;
-  const config = fromEnv(raw, file) as SupersetConfig;
+  const config = resolveSecrets(raw) as SupersetConfig;
   const password = config.superset.password ?? process.env[config.superset.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"];
   if (!password) throw new Error("No Superset password: set the config's passwordEnv variable");
   const client = sup.supersetClient({ url: config.superset.url, username: config.superset.username, password });
-  // Under load the dataset lookup has returned the wrong dataset for a name (2026-11-22: ni_members came
-  // back as ni_referrals, and the pack silently lost an entity). Check each one and retry the batch.
-  const want = (ref: number | string) => (typeof ref === "number" || /^\d+$/.test(String(ref)) ? null : String(ref).split(".").at(-1)!);
-  let datasets: Awaited<ReturnType<typeof sup.fetchDatasets>> = [];
-  for (let attempt = 1; ; attempt++) {
-    try {
-      datasets = await sup.fetchDatasets(client, config.datasets);
-      const wrong = config.datasets.map((ref, i) => [ref, datasets[i]?.table_name] as const).filter(([ref, got]) => want(ref) !== null && got !== want(ref));
-      const ids = new Set(datasets.map((d) => d.id));
-      if (wrong.length === 0 && ids.size === datasets.length) break;
-      throw new Error(`datasets came back wrong: ${wrong.map(([r, g]) => `${r} -> ${g}`).join(", ") || "duplicate ids"}`);
-    } catch (e) {
-      if (attempt >= 5) throw e;
-      console.error(`superset rig: ${(e as Error).message}; retrying (${attempt}/5)`);
-      await new Promise((r) => setTimeout(r, 1000 * attempt));
-    }
-  }
+  // fetchDatasets checks each dataset is the one asked for and retries a wrong or partial answer.
+  const datasets = await sup.fetchDatasets(client, config.datasets, { log: (s) => console.error(`superset rig: ${s}`) });
   const { pack, packYaml, binding } = sup.packFromDatasets(datasets, config.overlay as never);
   const connector = sup.supersetConnector(client, binding);
   let seed: BoardConfig | null = null;

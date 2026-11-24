@@ -123,7 +123,7 @@ createServer(async (req, res) => {
     // Everything else is CCRS's own.
     const body = req.method === "GET" || req.method === "HEAD" ? undefined : await read(req);
     const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => !HOP.has(k)).map(([k, v]) => [k, String(v)]));
-    const r = await fetch(`${upstream}${url.pathname}${url.search}`, { method: req.method, headers, body, redirect: "manual" });
+    const r = await fetch(`${upstream}${url.pathname}${url.search}`, { method: req.method, headers, body: body as BodyInit | undefined, redirect: "manual" });
     const out: Record<string, string> = {};
     r.headers.forEach((v, k) => {
       if (!HOP.has(k)) out[k] = v;
