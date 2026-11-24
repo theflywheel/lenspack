@@ -1,5 +1,5 @@
 import { type BoardConfig, type BoardOp, MAX_OFFSET, type MeasuredQuery, type Query, measured, nearest } from "@lenspack/core";
-import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/pack";
+import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, natureOf, operands } from "@lenspack/pack";
 
 import { COMPUTE_ROWS, applyCompute, computeBase, computeRefusal, describeComputed, readWindow } from "./compute";
 import type { Connector } from "./connector";
@@ -120,9 +120,9 @@ const notesOf = (data: WidgetData[], more: string[] = []) => {
 
 // A group missing from an operand had no rows there: zero for a count, a
 // distinct count or a sum (nothing delivered yet), unknown for anything else.
-const additive = (m: PackMeasure) => m.agg === "count" || m.agg === "count_distinct" || m.agg === "sum";
+const emptyIs = (pack: Pack, key: string) => (natureOf(pack, key) === "level" ? null : 0);
 
-function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
+function combine(query: Query, across: Across, data: WidgetData[], pack: Pack): WidgetData {
   const { def, expr, sides } = across;
   const format = def.format ?? "number";
   const approximate = data.some((d) => d.approximate) || undefined;
@@ -156,10 +156,10 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
       const s = sides[i]!;
       if (s.timeless && query.kind === "series") {
         const hit = query.by ? data[i]!.rows.find((d) => d.group === shape.series) : data[i]!.rows[0];
-        return hit ? hit.value : additive(s.measure) ? 0 : null;
+        return hit ? hit.value : emptyIs(pack, s.measure.key);
       }
       const r = byKey[i]!.get(k);
-      return r ? r.value : additive(s.measure) ? 0 : null;
+      return r ? r.value : emptyIs(pack, s.measure.key);
     };
     const value = evaluate(expr, (key) => operand(sides.findIndex((s) => s.measure.key === key)));
     return { group: shape.group, ...(shape.series !== undefined ? { series: shape.series } : {}), value, count: byKey[homeIndex]!.get(k)?.count ?? 0 };
@@ -221,19 +221,20 @@ function withoutEmptyGroups(data: WidgetData, measure: string, pack: Pack): Widg
 }
 
 // Share needs a measure that adds up over groups (or a distinct count, whose
-// shares can sum past 1); Other needs a count or a sum. A per-key measure is
-// like a distinct count: a key in two groups counts in each.
+// shares can sum past 1); Other needs one that adds up. The measure's nature
+// decides, as it does for compute: a per-key measure is like a distinct count.
 function wholeRefusal(query: Query, pack: Pack, hidden?: ReadonlySet<string>): ResolveError | null {
   if (query.kind !== "breakdown" || (!query.share && !query.other)) return null;
-  let m = pack.measures.find((x) => x.key === query.measure);
-  if (m?.derived && ALIAS.test(m.derived)) m = pack.measures.find((x) => x.key === m!.derived!.trim());
+  const m = pack.measures.find((x) => x.key === query.measure);
   if (!m) return null;
   const asked = query.other ? "other" : "share";
-  const adds = (x: PackMeasure) => x.agg === "count" || x.agg === "sum";
-  const fits = (x: PackMeasure) => !x.derived && x.format !== "percent" && ((adds(x) && !x.per) || (asked === "share" && (x.agg === "count_distinct" || adds(x))));
+  const fits = (x: PackMeasure) => {
+    const nature = natureOf(pack, x.key);
+    return nature === "adds" || (asked === "share" && nature === "distinct");
+  };
   if (!fits(m)) {
-    const near = pack.measures.filter((x) => x.entity === m!.entity && fits(x)).map((x) => x.key).filter((k) => !hidden?.has(k));
-    const what = m.derived ? "arithmetic over other measures" : m.format === "percent" ? "a percentage" : m.per ? "one value per key" : `agg: ${m.agg}`;
+    const near = pack.measures.filter((x) => x.entity === m.entity && fits(x)).map((x) => x.key).filter((k) => !hidden?.has(k));
+    const what = m.format === "percent" ? "a percentage" : m.derived ? "arithmetic over other measures" : m.per ? "one value per key" : `agg: ${m.agg}`;
     return new ResolveError(
       "NOT_SUPPORTED",
       `"${query.measure}" is ${what}, which does not add up over groups, so it has no ${asked === "other" ? "Other row" : "share"}; that needs a count or a sum${asked === "share" ? " (or a distinct count)" : ""}`,
@@ -311,9 +312,15 @@ async function runMeasures(query: MeasuredQuery, opts: RunOptions): Promise<Widg
   if (main!.error) return main!;
   const failed = others.findIndex((o) => o.error);
   if (failed >= 0) return { ...others[failed]!, error: `${extras[failed]!.key}: ${others[failed]!.error}` };
-  const defs = extras.map((e) => opts.pack.measures.find((m) => m.key === e.key));
   const lookups = others.map((o) => new Map(o.rows.map((r) => [keyOf(r), r.value])));
-  const rows = main!.rows.map((r) => ({
+  // A computed ratio's base (baseRows is set) keys on both measures' groups: a group or
+  // bucket where only the divisor has rows is in the answer, its numerator empty (0 for a count).
+  const seen = new Set(main!.rows.map(keyOf));
+  const missing = opts.baseRows
+    ? others.flatMap((o, i) => (extras[i]!.query.kind === primary.kind ? o.rows : [])).filter((r) => !seen.has(keyOf(r)) && seen.add(keyOf(r)))
+    : [];
+  const primaryRows = [...main!.rows, ...missing.map((r): DataRow => ({ group: r.group, ...(r.series !== undefined ? { series: r.series } : {}), value: null, count: 0 }))];
+  const rows = (query.kind === "series" && missing.length ? sortSeries(primaryRows) : primaryRows).map((r) => ({
     ...r,
     values: Object.fromEntries(
       extras.map((e, i) => {
@@ -322,7 +329,7 @@ async function runMeasures(query: MeasuredQuery, opts: RunOptions): Promise<Widg
         const flat = e.query.kind === "value" && query.kind !== "breakdown";
         const perSeries = e.query.kind === "breakdown" && query.kind === "series";
         const hit = flat ? (others[i]!.rows[0]?.value ?? null) : perSeries ? others[i]!.rows.find((o) => o.group === r.series)?.value : lookups[i]!.get(keyOf(r));
-        return [e.key, hit !== undefined ? hit : defs[i] && additive(defs[i]!) ? 0 : null];
+        return [e.key, hit !== undefined ? hit : emptyIs(opts.pack, e.key)];
       }),
     ),
   }));
@@ -346,7 +353,7 @@ async function runOne(query: Query, opts: RunOptions): Promise<WidgetData> {
         }),
       );
       const failed = data.find((d) => d.error);
-      return failed ?? combine(query, across, data);
+      return failed ?? combine(query, across, data, opts.pack);
     }
     const bound = resolve(query, opts.pack, opts.ctx, opts.connector.capabilities);
     if (opts.baseRows) bound.base = { rows: opts.baseRows };

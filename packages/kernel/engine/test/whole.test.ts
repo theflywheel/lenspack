@@ -22,6 +22,8 @@ const pack = parsePack({
     { key: "done_avg", entity: "done", agg: "avg", field: "qty" },
     { key: "goal_n", entity: "goal", agg: "sum", field: "n" },
     { key: "progress", entity: "done", derived: "done_n / goal_n", format: "percent" },
+    { key: "total_work", entity: "done", derived: "done_n + done_qty" },
+    { key: "regulars", entity: "done", agg: "count", per: { key: "who", agg: "count", having: { op: "gte", value: 2 } } },
   ],
 });
 
@@ -84,6 +86,10 @@ describe("share and other", () => {
     expect(refused({ ...b, measure: "progress", share: true })?.code).toBe("NOT_SUPPORTED");
     expect(refused({ ...b, measure: "done_people", share: true })).toBeNull();
     expect(refused({ ...b, measure: "done_people", other: true })?.code).toBe("NOT_SUPPORTED");
+    // The same rule as compute's: a sum of measures that add up adds up; a per-key count is like a distinct count.
+    expect(refused({ ...b, measure: "total_work", other: true, share: true })).toBeNull();
+    expect(refused({ ...b, measure: "regulars", share: true })).toBeNull();
+    expect(refused({ ...b, measure: "regulars", other: true })?.code).toBe("NOT_SUPPORTED");
     expect(refused({ ...b, measure: "done_n", other: true, by: "kind" })?.code).toBe("NOT_SUPPORTED");
     expect(refused({ ...b, measure: "progress", compare: "previous_period", time })).toEqual({ code: "NOT_SUPPORTED", hint: "value" });
     expect(refused({ ...b, measure: "done_n", compare: "previous_period" })?.code).toBe("NEEDS_TIME_RANGE");

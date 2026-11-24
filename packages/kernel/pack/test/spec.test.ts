@@ -102,6 +102,23 @@ measures:
     }, 'examples[0].query: no verified measure "amount"'));
 });
 
+describe("how a measure adds up", () => {
+  it("is one fact per measure: counts and sums add, distinct and per-key counts do not, the rest are levels", () => {
+    const pack = parsePack({
+      ...minimal,
+      measures: [
+        ...minimal.measures,
+        { key: "owners_seen", entity: "items", agg: "count_distinct", sql: "owner_id" },
+        { key: "repeat_owners", entity: "items", agg: "count", per: { key: "owner_id", agg: "count", having: { op: "gte", value: 2 } } },
+        { key: "items_per_owner", entity: "items", agg: "avg", per: { key: "owner_id", agg: "count" } },
+        { key: "count_and_amount", entity: "items", derived: "count + amount" },
+      ],
+    });
+    const nature = Object.fromEntries(catalogueFrom(pack).measures.map((m) => [m.key, m.nature]));
+    expect(nature).toEqual({ count: "adds", amount: "adds", avg_amount: "level", owners_seen: "distinct", repeat_owners: "distinct", items_per_owner: "level", count_and_amount: "adds" });
+  });
+});
+
 describe("maybeFragmentFor", () => {
   it("serves a bare string or default only to a SQL reader, a named entry to anyone", () => {
     expect(maybeFragmentFor("a = 1", "postgres", true)).toBe("a = 1");

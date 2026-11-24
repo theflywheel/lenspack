@@ -55,5 +55,7 @@ export function natureOf(pack: Pack, key: string): MeasureNature {
     const expr = expandedExpr(pack, m.key);
     return expr.t === "measure" ? natureOf(pack, expr.key) : adds(expr) ? "adds" : "level";
   }
+  // One value per key first (users with 3+ sessions): a key on two days would count on both, as in a distinct count.
+  if (m.per) return m.agg === "count" || m.agg === "sum" || m.agg === "count_distinct" ? "distinct" : "level";
   return m.agg === "count" || m.agg === "sum" ? "adds" : m.agg === "count_distinct" ? "distinct" : "level";
 }

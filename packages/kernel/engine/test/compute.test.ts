@@ -22,6 +22,8 @@ const pack = parsePack({
     { key: "movements", entity: "movement", agg: "count" },
     { key: "avg_out", entity: "movement", agg: "avg", field: "qty_out" },
     { key: "handlers", entity: "movement", agg: "count_distinct", field: "user" },
+    // Handlers with 3 or more movements: one value per key, so a handler busy on two days would count twice.
+    { key: "busy_handlers", entity: "movement", agg: "count", per: { key: "user", agg: "count", having: { op: "gte", value: 3 } } },
     { key: "out_share", entity: "movement", derived: "dispatched / received", format: "percent" },
     { key: "capacity", entity: "site", agg: "sum", field: "capacity" },
   ],
@@ -236,6 +238,39 @@ describe("ratios after aggregation", () => {
     expect(c.seen.map((s) => (s.query as { measure?: string }).measure).sort()).toEqual(["dispatched", "movements"]);
   });
 
+  // Received on three days, dispatched on two of them: the third day dispatched nothing, a ratio of 0.
+  const receivedOnly: Row[] = [1, 2, 3].map((n) => ({ bucket: day(n), series: "north", value: 10, n: 1 }));
+  const dispatchedOnTwo: Row[] = [1, 2].map((n) => ({ bucket: day(n), series: "north", value: 10, n: 1 }));
+  const flat = (rows: Row[]) => rows.map(({ series: _s, ...r }) => r);
+
+  it("per group: a group with a divisor and no rows for the numerator is 0, not missing", async () => {
+    const c = stub((q) => ((q as { measure?: string }).measure === "dispatched" ? [{ group: "north", value: 30, n: 3 }] : [{ group: "north", value: 60, n: 3 }, { group: "south", value: 50, n: 2 }]));
+    const data = await run({ kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", compute: { steps: [{ op: "ratio", to: "received", percent: true }] } }, { pack, connector: c, ctx });
+    expect(data.rows).toEqual([
+      { group: "north", value: 0.5, count: 3 },
+      { group: "south", value: 0, count: 0 },
+    ]);
+  });
+
+  it("per day, then the average per ward: a day with receipts and no dispatches counts as 0", async () => {
+    const c = stub((q) => ((q as { measure?: string }).measure === "dispatched" ? dispatchedOnTwo : receivedOnly));
+    const data = await run(
+      { kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", time, compute: { grain: "day", steps: [{ op: "ratio", to: "received" }, { op: "over_time", fn: "mean" }] } },
+      { pack, connector: c, ctx },
+    );
+    // (1 + 1 + 0) / 3: the days with nothing received (the 4th and 5th) have no ratio and are skipped.
+    expect(values(data.rows)).toEqual([0.666667]);
+  });
+
+  it("per day on a series: a day where only the divisor has rows is 0", async () => {
+    const c = stub((q) => flat((q as { measure?: string }).measure === "received" ? receivedOnly : dispatchedOnTwo));
+    const data = await run({ kind: "series", measure: "dispatched", grain: "day", time, compute: { steps: [{ op: "ratio", to: "received" }] } }, { pack, connector: c, ctx });
+    expect(data.rows.map((r) => [r.group, r.value])).toEqual([[day(1), 1], [day(2), 1], [day(3), 0]]);
+    // An average with no rows has no value, so its ratio is skipped rather than 0.
+    const avg = await run({ kind: "series", measure: "avg_out", grain: "day", time, compute: { steps: [{ op: "ratio", to: "received" }] } }, { pack, connector: c, ctx });
+    expect(values(avg.rows)).toEqual([1, 1, null]);
+  });
+
   it("a divisor on an entity without time is one number per series", async () => {
     const c = stub((q) => ((q as { measure?: string }).measure === "capacity" ? [{ group: "north", value: 100, n: 1 }, { group: "south", value: 50, n: 1 }] : daily));
     const data = await run(
@@ -264,6 +299,9 @@ describe("refusals, with what would work", () => {
     expect(refused(series([{ op: "change", percent: true }, { op: "running_total" }]))).toMatch(/A percentage change is never added up/);
     expect(refused({ kind: "value", measure: "dispatched", compute: { grain: "day", steps: [{ op: "ratio", to: "received" }, { op: "over_time", fn: "sum" }] } })).toMatch(/A ratio is never added up/);
     expect(refused(series([{ op: "running_total" }]))).toBeNull();
+    // A per-key count ("handlers with 3+ movements") counts each key once, like a distinct count.
+    expect(refused(series([{ op: "running_total" }], "busy_handlers"))).toMatch(/distinct count: one key seen on two days would count twice/);
+    expect(refused({ kind: "value", measure: "busy_handlers", compute: { grain: "day", steps: [{ op: "over_time", fn: "sum" }] } })).toMatch(/would count twice/);
     expect(refused(series([{ op: "rolling", fn: "mean", window: 7 }], "handlers"))).toBeNull();
   });
 

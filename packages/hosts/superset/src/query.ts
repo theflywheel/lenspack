@@ -1,5 +1,5 @@
 import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query, type TimeRange, type Widget, grainWords } from "@lenspack/core";
-import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS } from "@lenspack/engine";
+import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, computeRefusal } from "@lenspack/engine";
 import { type Pack, maybeFragmentFor, natureOf } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
@@ -582,8 +582,19 @@ function heatmapContext(spec: ChartSpec): Record<string, unknown> {
 
 export type Recognised = { widget: Widget } | { widget: null; reason: string };
 
-/** A Superset chart as a lenspack widget. Charts lenspack wrote carry their query; others are read when they map exactly. */
-export function chartToWidget(chart: { slice_name: string; viz_type: string; params: Record<string, any>; datasource_id?: number }, pack: Pack, binding: Binding): Recognised {
+type SavedChart = { slice_name: string; viz_type: string; params: Record<string, any>; datasource_id?: number };
+
+/**
+ * A Superset chart as a lenspack widget. Charts lenspack wrote carry their query; others are read when they map
+ * exactly, and only into a widget the engine would answer: a total of an average stays Superset's.
+ */
+export function chartToWidget(chart: SavedChart, pack: Pack, binding: Binding): Recognised {
+  const read = readChart(chart, pack, binding);
+  const refused = read.widget && read.widget.kind !== "text" ? computeRefusal(read.widget.query, pack) : null;
+  return refused ? { widget: null, reason: `Lenspack would refuse its computation: ${refused.message}` } : read;
+}
+
+function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised {
   const p = chart.params ?? {};
   const title = (chart.slice_name || "Untitled chart").slice(0, 120);
   // Our own: the query it was written from, if Superset's form still says the same thing.
