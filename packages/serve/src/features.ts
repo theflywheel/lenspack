@@ -1,7 +1,7 @@
 // Off switches: parts of the assistant a deployment can turn off, each on by default. A value comes
 // from, lowest first: these defaults, the config's `features:`, LENSPACK_FEATURES, then an admin on
-// Superset's AI assistant page (kept in settings.json, section "features"). The browser hears the
-// effective values from /_superset/info and hides what is off; the server refuses what is off as well
+// the host's settings page (kept in settings.json, section "features"). The browser hears the
+// effective values from <prefix>/info (admin.ts) and hides what is off; the server refuses what is off as well
 // (edits, heatmaps, maps, the reviewer, speech to text), so turning a part off doesn't rely on the page.
 
 import type { SettingsStore } from "./settings";

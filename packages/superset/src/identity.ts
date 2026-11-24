@@ -10,11 +10,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-// The shapes of @lenspack/serve's Principal and Access that this module produces, kept here so the library
-// does not depend on the server package (bin/serve.ts passes them to createApp, which checks them).
-export type IdentityPrincipal = { user: string; edit: boolean; maintain: boolean; readOnly?: string };
-type Principal = IdentityPrincipal;
-type Access = (req: IncomingMessage) => Principal | null;
+import { type Access, type AuthAdapter, type Identity as Caller, NO_RIGHTS, withRights } from "@lenspack/serve";
 
 export const IDENTITY_HEADER = "x-lenspack-identity";
 
@@ -94,17 +90,25 @@ export function canEdit(id: Identity, policy: EditPolicy, editsOn = true): boole
   return editsOn && (policy === "signed-in" || id.a || id.e === true);
 }
 
-export function principalOf(id: Identity, policy: EditPolicy, editsOn = true): Principal {
-  if (!editsOn) return { user: id.u, edit: false, maintain: false, readOnly: EDITS_OFF_MESSAGE };
-  if (canEdit(id, policy)) return { user: id.u, edit: true, maintain: true };
+/** Who the signed identity is to lenspack. A Superset admin has the role admin: the settings page and the audit log. */
+export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Caller {
+  const roles = id.a ? ["admin"] : [];
+  if (!editsOn) return { user: id.u, roles, readOnly: EDITS_OFF_MESSAGE };
+  if (canEdit(id, policy)) return { user: id.u, roles, edit: true, maintain: true };
   // Asks are fine; every edit tool answers with the refusal, which the model passes on.
-  return { user: id.u, edit: false, maintain: false, readOnly: READ_ONLY_MESSAGE };
+  return { user: id.u, roles, readOnly: READ_ONLY_MESSAGE };
 }
 
-/** createApp's access: the signed identity under the policy; unsigned requests are not signed in. */
-export function supersetAccess(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true): Access {
-  return (req) => {
-    const id = identityOf(req, key);
-    return id ? principalOf(id, policy, editsOn()) : null;
+/** Superset's signed header as lenspack's sign-in, the only one in Superset mode: an unsigned request is not signed in. */
+export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true): AuthAdapter {
+  return {
+    kind: "superset",
+    identify: (req) => {
+      const id = identityOf(req, key);
+      return id ? callerOf(id, policy, editsOn()) : null;
+    },
   };
 }
+
+/** The same as an access hook, for createApp without the runtime. */
+export const supersetAccess = (key: () => string | null, policy: EditPolicy, editsOn?: () => boolean): Access => withRights(supersetAuth(key, policy, editsOn), NO_RIGHTS);

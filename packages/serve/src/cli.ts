@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
 import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
-import { buildBoard, createApp, seedBoards } from "./app";
-import { authFrom, effectiveAuth, fileAudit } from "./auth";
+import { buildBoard, seedBoards } from "./app";
+import { fileAudit } from "./audit";
+import { authFrom, effectiveAuth } from "./auth";
 import { openConfig, readConfig, resolveSecrets } from "./config";
-import { buildProvider, probe, providersFromEnv } from "./llm";
-import { addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";
 import { hashPassword } from "./password";
+import { startRuntime } from "./runtime";
 
 const USAGE = `lenspack <command>
 
-  serve  --config lenspack.yaml [--port 8787]   the board API (and --ui dir, or ui: in the config)
+  serve  --config lenspack.yaml [--port 8787]   the board API (and --ui dir, LENSPACK_UI, or ui: in the config);
+                                                the command may be left out: lenspack --config lenspack.yaml
+  superset --config superset.yaml               the chat inside Apache Superset (@lenspack/superset)
   check  --config lenspack.yaml                 draw every board against its source; exit 1 on any error
   sources --config lenspack.yaml [--source s]   what each source holds: tables or indexes, fields, types, rows
   hash-password                                 a scrypt hash of the password on stdin, for LENSPACK_ADMIN_PASSWORD_HASH
@@ -29,7 +30,8 @@ const flag = (name: string) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const command = args[0];
+// Flags first and no command is serve, so `docker run lenspack --config …` works as before.
+const command = /^--(config|port|ui|host)$/.test(args[0] ?? "") ? "serve" : args[0];
 
 async function main() {
   switch (command) {
@@ -37,25 +39,8 @@ async function main() {
       const { config, dir } = readConfig(flag("config") ?? "lenspack.yaml");
       const { hosts, close } = await openConfig(config, dir);
       for (const h of hosts) await seedBoards(h);
-      // As a container's PID 1, node ignores SIGTERM unless told otherwise: close the
-      // sources and the board store (a database file is checkpointed) and exit.
-      for (const sig of ["SIGTERM", "SIGINT"] as const) process.once(sig, () => void close().finally(() => process.exit(0)));
-      // Every model call is metered into the ledger (GET /api/_usage, the budget) and,
-      // with usage: in the config, a file that outlives the process. Process-wide, so
-      // the startup probes are counted too.
-      const ledger = usageLedger();
-      addUsageSink(ledger);
-      if (config.usage) {
-        const usageFile = resolve(dir, config.usage);
-        ledger.restore(readUsageFile(usageFile));
-        addUsageSink(jsonlUsageSink(usageFile));
-      }
-      const providers = providersFromEnv().map(buildProvider);
-      if (config.budget && providers.some((p) => !p.pricing)) console.warn(`lenspack: budget set, but ${providers.filter((p) => !p.pricing).map((p) => p.name).join(", ")} has no price, so its spend does not count toward it`);
-      void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
-      const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
       const uiDir = typeof config.ui === "string" ? config.ui : config.ui?.dir;
-      const ui = flag("ui") ?? (uiDir ? resolve(dir, uiDir) : undefined);
+      const ui = flag("ui") ?? process.env.LENSPACK_UI ?? (uiDir ? resolve(dir, uiDir) : undefined);
       const page = typeof config.ui === "object" ? { ...(config.ui.title ? { title: config.ui.title } : {}), ...(config.ui.home ? { home: config.ui.home } : {}), ...(config.ui.intro ? { intro: config.ui.intro } : {}) } : undefined;
       const port = Number(flag("port") ?? config.port ?? process.env.PORT ?? 8787);
       // Sign-in: auth.kind (or LENSPACK_AUTH); with neither, the built-in admin and a password.
@@ -66,10 +51,25 @@ async function main() {
       const openedByEnv = !adapter && config.auth?.kind !== "none";
       const host = flag("host") ?? (openedByEnv ? "127.0.0.1" : (config.host ?? (adapter ? "0.0.0.0" : "127.0.0.1")));
       if (!adapter) console.warn(`lenspack: auth is \`none\`: anyone who reaches ${host}:${port} may read and edit every board`);
-      const audit = config.audit ? fileAudit(resolve(dir, config.audit)) : undefined;
-      createServer(createApp(hosts, { ui, page, providers, roles, auth: adapter, rights, audit, historyTurns: config.historyTurns, ledger, budget: config.budget, log: (m) => console.error(`lenspack: ${m}`) })).listen(port, host, () => {
-        console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}`);
+      startRuntime({
+        hosts,
+        close,
+        port,
+        host,
+        // With usage: in the config, every model call is also kept in a file that outlives the process.
+        usageFile: config.usage ? resolve(dir, config.usage) : undefined,
+        budget: config.budget,
+        app: { ui, page, auth: adapter, rights, audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined, historyTurns: config.historyTurns },
+        log: (m) => console.error(`lenspack: ${m}`),
+        onListening: () => console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}`),
       });
+      return;
+    }
+    case "superset": {
+      // Superset mode lives in @lenspack/superset, which builds on this package, so it is loaded only when asked for.
+      const superset = "@lenspack/superset/server";
+      const { serveSuperset } = (await import(superset)) as { serveSuperset(file: string): Promise<void> };
+      await serveSuperset(flag("config") ?? args[1] ?? "superset.yaml");
       return;
     }
     case "check": {

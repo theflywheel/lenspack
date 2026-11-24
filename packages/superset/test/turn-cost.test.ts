@@ -9,10 +9,10 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { rotatingAudit } from "../src/audit";
-import { FEATURES, features } from "../src/features";
-import { settingsStore } from "../src/settings";
-import { turnRow, turnsReport } from "../src/turns";
+import { rotatingAudit } from "@lenspack/serve";
+import { FEATURES, features } from "@lenspack/serve";
+import { settingsStore } from "@lenspack/serve";
+import { turnRow, turnsReport } from "@lenspack/serve";
 
 const web = (f: string) => readFileSync(join(__dirname, "..", "web", f), "utf8");
 

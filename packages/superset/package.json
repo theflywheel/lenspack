@@ -1,15 +1,18 @@
 {
   "name": "@lenspack/superset",
   "version": "0.1.0",
-  "description": "Apache Superset as a lenspack backend: the catalogue from Superset datasets, numbers from /api/v1/chart/data, and boards kept in step with Superset dashboards.",
+  "description": "Apache Superset as a lenspack host: the catalogue from Superset datasets, numbers from /api/v1/chart/data, boards kept in step with Superset dashboards, Superset's signed sign-in, and the chat overlay (lenspack superset).",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.js" }
+  },
+  "files": ["dist", "web"],
   "sideEffects": false,
-  "scripts": { "build": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
-  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/engine": "workspace:*", "@lenspack/spec": "workspace:*", "yaml": "^2.6.1" },
+  "scripts": { "build": "tsup src/index.ts src/server.ts --format esm --dts --clean --tsconfig tsconfig.build.json" },
+  "dependencies": { "@lenspack/core": "workspace:*", "@lenspack/engine": "workspace:*", "@lenspack/serve": "workspace:*", "@lenspack/spec": "workspace:*", "yaml": "^2.6.1" },
   "repository": { "type": "git", "url": "https://github.com/theflywheel/lenspack", "directory": "packages/superset" }
 }

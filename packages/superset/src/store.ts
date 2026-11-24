@@ -6,7 +6,7 @@ import type { Pack } from "@lenspack/spec";
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
 import { type DashboardState, dashboardToBoard, pushBoard, readDashboard } from "./dashboard";
-import { diskProblem, writeWhole } from "./settings";
+import { diskProblem, writeWhole } from "@lenspack/serve";
 
 // Superset stays the record. A board bound to a dashboard is read from
 // Superset when Superset has changed (someone edited it there), and every

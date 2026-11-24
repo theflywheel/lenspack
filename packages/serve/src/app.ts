@@ -8,7 +8,8 @@ import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, empt
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
 import { type Pack, catalogueFrom } from "@lenspack/spec";
 
-import { type Access, type Audit, type AuthAdapter, FULL_GRANT, type Grant, type PackRule, type Principal, type Rights, grantOf, withRights } from "./auth";
+import type { Audit } from "./audit";
+import { type Access, type AuthAdapter, FULL_GRANT, type Grant, NO_RIGHTS, type PackRule, type Principal, type Rights, grantOf, withRights } from "./auth";
 import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson, serveStatic } from "./http";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
@@ -199,9 +200,14 @@ export function pickEffort(p: Pickable, asked: string | null | undefined, fallba
   return fallback?.model === p.name && fallback.effort && p.efforts?.levels.includes(fallback.effort) ? fallback.effort : null;
 }
 
-export function createApp(hosts: Host[], opts: AppOptions = {}) {
+/** Who a request is under these options: the sign-in adapter with the rights above it, or the access hook. */
+export function accessOf(opts: Pick<AppOptions, "auth" | "access" | "rights">): Access | undefined {
   if (opts.auth && opts.access) throw new Error("createApp takes auth or access, not both");
-  const access: Access | undefined = opts.auth ? withRights(opts.auth, opts.rights ?? { editors: [], maintainers: [] }) : opts.access;
+  return opts.auth ? withRights(opts.auth, opts.rights ?? NO_RIGHTS) : opts.access;
+}
+
+export function createApp(hosts: Host[], opts: AppOptions = {}) {
+  const access = accessOf(opts);
   const signOutUrl = opts.auth?.signOutUrl ?? opts.signOutUrl;
   const ledger = opts.ledger ?? usageLedger();
   // Every query a pack runs, from a board load or a chat tool, is counted against it.

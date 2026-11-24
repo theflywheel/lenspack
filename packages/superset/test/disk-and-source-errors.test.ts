@@ -3,11 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { scrubAddresses } from "@lenspack/engine";
+import { SettingsSaveError, diskProblem, features, settingsStore } from "@lenspack/serve";
 import { describe, expect, it } from "vitest";
 
 import { SupersetError } from "../src/client";
-import { features } from "../src/features";
-import { SettingsSaveError, diskProblem, settingsStore } from "../src/settings";
 import { sourceError } from "../src/source-errors";
 import { savedStates } from "../src/store";
 

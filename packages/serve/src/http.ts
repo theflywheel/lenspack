@@ -4,8 +4,10 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 
 // The few HTTP helpers every lenspack server shares: no framework, node:http as it is.
 
-export const json = (res: ServerResponse, status: number, body: unknown) => {
-  res.writeHead(status, { "content-type": "application/json" });
+export const NO_STORE = { "cache-control": "no-store" };
+
+export const json = (res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => {
+  res.writeHead(status, { "content-type": "application/json", ...headers });
   res.end(JSON.stringify(body));
 };
 

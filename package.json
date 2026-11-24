@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@ai-sdk/openai-compatible": "^3.0.53",
+    "@lenspack/superset": "workspace:*",
     "@types/node": "^22.10.0",
     "ai": "^7.0.109",
     "pixelmatch": "^7.2.0",
