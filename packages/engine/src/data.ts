@@ -1,8 +1,10 @@
 import type { FORMATS, Query } from "@lenspack/core";
 
+import type { BoundPlan } from "./resolve";
+
 // What a widget draws, whatever computed it. Connectors hand back raw rows in
 // one agreed shape (group / series / bucket / value / n / previous) and
-// shapeRows turns them into this, so every backend labels, sorts and
+// shapeBound turns them into this, so every backend labels, sorts and
 // truncates the same way.
 
 export type Row = Record<string, unknown>;
@@ -88,6 +90,31 @@ export function groupLabel(v: unknown): string {
   if (v === null || v === undefined || v === "") return "(none)";
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
+}
+
+type Breakdown = Extract<Query, { kind: "breakdown" }>;
+
+/**
+ * A breakdown's rows in the order it asks for: by value, ties by group then
+ * series (the default); by value alone, tied rows left as given ("measure");
+ * by group then series ("group"); or as given ("none"). No value sorts last.
+ */
+export function sortGroups<R extends { group?: unknown; series?: unknown; value?: unknown }>(rows: R[], query: Pick<Breakdown, "sort" | "sortBy">): R[] {
+  if (query.sortBy === "none") return rows;
+  const dir = query.sort === "asc" ? 1 : -1;
+  const text = (v: unknown) => String(v ?? "");
+  const byValue = (a: R, b: R) => {
+    const [x, y] = [toNumber(a.value), toNumber(b.value)];
+    return x === null ? (y === null ? 0 : 1) : y === null ? -1 : (x - y) * dir;
+  };
+  const byName = (a: R, b: R) => text(a.group).localeCompare(text(b.group)) * (query.sortBy === "group" ? dir : 1) || text(a.series).localeCompare(text(b.series));
+  return rows.sort(query.sortBy === "group" ? byName : query.sortBy === "measure" ? byValue : (a, b) => byValue(a, b) || byName(a, b));
+}
+
+/** A connector's raw rows for a bound plan → widget data, in its measure's format. */
+export function shapeBound(raw: Row[], bound: BoundPlan): WidgetData {
+  const def = bound.measure?.def;
+  return shapeRows(raw, bound.query, def?.format ?? "number", def?.key);
 }
 
 /** Raw connector rows → widget data. `columns` names the record keys for a rows query. */

@@ -2,7 +2,7 @@ import { type BoardConfig, type BoardOp, MAX_OFFSET, type MeasuredQuery, type Qu
 import { type MeasureExpr, type Pack, type PackMeasure, evaluate, expandedExpr, formatExpr, operands } from "@lenspack/spec";
 
 import type { Connector } from "./connector";
-import { type DataRow, MAX_SERIES, type WidgetData, compared } from "./data";
+import { type DataRow, MAX_SERIES, type WidgetData, compared, sortGroups } from "./data";
 import { drilledQuery, packAtLevel, viewedLevel } from "./levels";
 import { type Capabilities, type Ctx, ResolveError, SQL_CAPABILITIES, nowOf, resolve } from "./resolve";
 
@@ -12,7 +12,7 @@ export type RunOptions = { pack: Pack; connector: Connector; ctx?: Ctx; timeoutM
 // combined after aggregation, so each must return every group, not its own top N.
 const ACROSS_LIMIT = 10_000;
 
-export type AcrossSide = {
+type AcrossSide = {
   measure: PackMeasure;
   /** The operand as the pack names it: a per-level measure by its levels key. */
   named: string;
@@ -22,7 +22,7 @@ export type AcrossSide = {
   /** Filters this operand's entity has no dimension for, so they do not narrow it. */
   unfiltered: string[];
 };
-export type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] };
+type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] };
 
 /**
  * Arithmetic whose operands live on different entities (delivered per target,
@@ -30,7 +30,7 @@ export type Across = { def: PackMeasure; expr: MeasureExpr; sides: AcrossSide[] 
  * per-key measure. Each operand is the same query over its own measure; the
  * results are combined per group. Returns null for anything else.
  */
-export function acrossEntities(query: Query, pack: Pack): Across | null {
+function acrossEntities(query: Query, pack: Pack): Across | null {
   if (!measured(query)) return null;
   const def = pack.measures.find((m) => m.key === query.measure);
   if (!def?.derived) return null;
@@ -122,7 +122,6 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   const notes = notesOf([], [...sides.filter((s) => s.unfiltered.length).map(unnarrowed), ...lost]);
   const homeIndex = Math.max(0, sides.findIndex((s) => s.measure.entity === def.entity));
   const home = data[homeIndex]!;
-  const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
 
   if (query.kind === "value") {
     const now = (i: number) => data[i]!.rows[0]?.value ?? null;
@@ -133,7 +132,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
         const i = sides.findIndex((s) => s.measure.key === k);
         return sides[i]!.timeless ? now(i) : data[i]!.compare!.previous;
       });
-      out.compare = { previous, delta: value !== null && previous !== null && previous !== 0 ? (value - previous) / Math.abs(previous) : null };
+      out.compare = compared(value, previous);
     }
     return out;
   }
@@ -141,7 +140,7 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
   const byKey = data.map((d) => new Map(d.rows.map((r) => [keyOf(r), r])));
   // A timeless operand of a series has no buckets of its own to contribute.
   const keys = [...new Set(sides.flatMap((s, i) => (s.timeless && query.kind === "series" ? [] : data[i]!.rows.map(keyOf))))];
-  let rows: DataRow[] = keys.map((k) => {
+  const rows: DataRow[] = keys.map((k) => {
     const shape = sides.map((_, i) => byKey[i]!.get(k)).find(Boolean)!;
     const operand = (i: number): number | null => {
       const s = sides[i]!;
@@ -155,20 +154,13 @@ function combine(query: Query, across: Across, data: WidgetData[]): WidgetData {
     const value = evaluate(expr, (key) => operand(sides.findIndex((s) => s.measure.key === key)));
     return { group: shape.group, ...(shape.series !== undefined ? { series: shape.series } : {}), value, count: byKey[homeIndex]!.get(k)?.count ?? 0 };
   });
-  if (query.kind === "breakdown") {
-    const dir = query.sort === "asc" ? 1 : -1;
-    if (query.sortBy === "none") {
-      // The source's own order: the home operand's rows first, as they came.
-    } else if (query.sortBy === "measure") {
-      rows.sort((a, b) => (a.value === null ? (b.value === null ? 0 : 1) : b.value === null ? -1 : (a.value - b.value) * dir));
-    } else if (query.sortBy === "group") rows.sort((a, b) => a.group.localeCompare(b.group) * dir || (a.series ?? "").localeCompare(b.series ?? ""));
-    else rows.sort((a, b) => (a.value === null ? 1 : b.value === null ? -1 : (a.value - b.value) * dir) || a.group.localeCompare(b.group) || (a.series ?? "").localeCompare(b.series ?? ""));
-    rows = rows.slice(0, query.limit);
-  } else {
-    rows.sort((a, b) => a.group.localeCompare(b.group) || (a.series ?? "").localeCompare(b.series ?? ""));
-  }
-  return { rows, total: rows.reduce((s, r) => s + r.count, 0), format, approximate, notes };
+  // Unsorted ("none"), the home operand's rows come first, as they came.
+  const shown = query.kind === "breakdown" ? sortGroups(rows, query).slice(0, query.limit) : sortGroups(rows, { sort: "asc", sortBy: "group" });
+  return { rows: shown, total: shown.reduce((s, r) => s + r.count, 0), format, approximate, notes };
 }
+
+// One row per group and series: how the operands of a combined measure line up.
+const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
 
 const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: "number", error: e.message, hint: e.nearest });
 
@@ -258,7 +250,7 @@ async function withWhole(query: Extract<Query, { kind: "breakdown" }>, opts: Run
 }
 
 /** The query without its further measures, and one query per further measure. */
-export function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { key: string; query: Query }[] } {
+function splitMeasures(query: Query, pack?: Pack): { primary: Query; extras: { key: string; query: Query }[] } {
   if (!measured(query) || !query.measures?.length) return { primary: query, extras: [] };
   const { measures, ...primary } = query;
   // A further measure on an entity with no time (a target beside today's
@@ -292,7 +284,6 @@ async function runMeasures(query: MeasuredQuery, opts: RunOptions): Promise<Widg
   if (main!.error) return main!;
   const failed = others.findIndex((o) => o.error);
   if (failed >= 0) return { ...others[failed]!, error: `${extras[failed]!.key}: ${others[failed]!.error}` };
-  const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
   const defs = extras.map((e) => opts.pack.measures.find((m) => m.key === e.key));
   const lookups = others.map((o) => new Map(o.rows.map((r) => [keyOf(r), r.value])));
   const rows = main!.rows.map((r) => ({
@@ -340,6 +331,15 @@ async function runOne(query: Query, opts: RunOptions): Promise<WidgetData> {
 
 export type Explained = { text: string; root: string; entities: string[]; tenant: string | null; approximate: boolean };
 
+// Several explained queries as one: the first one's root, every entity, the tenant if any.
+const merged = (text: string, parts: Explained[]): Explained => ({
+  text,
+  root: parts[0]!.root,
+  entities: [...new Set(parts.flatMap((p) => p.entities))],
+  tenant: parts.find((p) => p.tenant)?.tenant ?? null,
+  approximate: parts.some((p) => p.approximate),
+});
+
 /** What would run, without running it. Throws ResolveError for a refusal. */
 export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">): Promise<Explained> {
   const opts = { ...given, pack: packAtLevel(given.pack, viewedLevel(query, given.pack)) };
@@ -348,18 +348,12 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
     if (refused) throw refused;
     const { share: _s, other: _o, ...groups } = query;
     const [main, whole] = await Promise.all([explain(groups, opts), explain(wholeOf(query), opts)]);
-    return { ...main, text: `${main.text}\n-- the whole population, for share and other\n${whole.text}`, approximate: main.approximate || whole.approximate };
+    return merged(`${main.text}\n-- the whole population, for share and other\n${whole.text}`, [main, whole]);
   }
   const { primary, extras } = splitMeasures(query, opts.pack);
   if (extras.length) {
     const parts = await Promise.all([explain(primary, opts), ...extras.map((e) => explain(e.query, opts))]);
-    return {
-      text: parts.map((p, i) => `-- ${i === 0 ? (primary as { measure: string }).measure : extras[i - 1]!.key}\n${p.text}`).join("\n"),
-      root: parts[0]!.root,
-      entities: [...new Set(parts.flatMap((p) => p.entities))],
-      tenant: parts.find((p) => p.tenant)?.tenant ?? null,
-      approximate: parts.some((p) => p.approximate),
-    };
+    return merged(parts.map((p, i) => `-- ${i === 0 ? (primary as { measure: string }).measure : extras[i - 1]!.key}\n${p.text}`).join("\n"), parts);
   }
   const across = acrossEntities(query, opts.pack);
   if (across) {
@@ -368,13 +362,7 @@ export async function explain(query: Query, given: Omit<RunOptions, "timeoutMs">
       ...(s.unfiltered.length ? [`-- ${unnarrowed(s)}`] : []),
       ...(s.timeless ? [`-- "${s.measure.entity}" has no time: every period uses the same ${s.measure.key}`] : []),
     ]);
-    return {
-      text: [`-- ${across.def.key} = ${formatExpr(across.expr)}, each measure computed on its own and combined per group`, ...notes, ...across.sides.map((s, i) => `-- ${s.measure.key}\n${parts[i]!.text}`)].join("\n"),
-      root: parts[0]!.root,
-      entities: [...new Set(parts.flatMap((p) => p.entities))],
-      tenant: parts.find((p) => p.tenant)?.tenant ?? null,
-      approximate: parts.some((p) => p.approximate),
-    };
+    return merged([`-- ${across.def.key} = ${formatExpr(across.expr)}, each measure computed on its own and combined per group`, ...notes, ...across.sides.map((s, i) => `-- ${s.measure.key}\n${parts[i]!.text}`)].join("\n"), parts);
   }
 
   const bound = resolve(query, opts.pack, opts.ctx, opts.connector.capabilities);
