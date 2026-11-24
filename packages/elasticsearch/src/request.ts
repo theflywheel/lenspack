@@ -1,4 +1,4 @@
-import { type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock } from "@lenspack/engine";
+import { type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock, sortGroups } from "@lenspack/engine";
 import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/spec";
 
 // The query IR, compiled to one search request. Every structural decision —
@@ -34,6 +34,15 @@ function exact(path: string, env: Env): string {
 }
 
 const isDate = (path: string, env: Env) => /^date/.test(env.typeOf(path) ?? "");
+
+/** The search engine is this version or later. */
+const atLeast = ({ version: v }: Env, major: number, minor: number) => v.major > major || (v.major === major && v.minor >= minor);
+
+// A wildcard pattern's own characters, matched literally.
+const wild = (x: unknown) => String(x).replace(/[*?\\]/g, (c) => `\\${c}`);
+
+// A node of a dotted path and everything under it.
+const subtree = (field: string, v: unknown): Json => ({ bool: { should: [{ term: { [field]: v } }, { prefix: { [field]: `${String(v)}.` } }], minimum_should_match: 1 } });
 
 function esFragment(fragment: Fragment, what: string, key: string): string {
   return maybeFragmentFor(fragment, "elasticsearch") ?? refuse(`${what} "${key}" is written in SQL only; add an elasticsearch: entry to use it on this source`, key);
@@ -91,15 +100,13 @@ function filterClause(f: BoundFilter, env: Env): { must: Json[]; mustNot: Json[]
     }
     case "segment": {
       const values = Array.isArray(v) ? v : [v];
-      const esc = (x: unknown) => String(x).replace(/[*?\\]/g, (c) => `\\${c}`);
-      return { must: [{ bool: { should: values.flatMap((x) => [{ term: { [field]: x } }, { wildcard: { [field]: `${esc(x)}|*` } }, { wildcard: { [field]: `*|${esc(x)}` } }, { wildcard: { [field]: `*|${esc(x)}|*` } }]), minimum_should_match: 1 } }], mustNot: [] };
+      return { must: [{ bool: { should: values.flatMap((x) => [{ term: { [field]: x } }, { wildcard: { [field]: `${wild(x)}|*` } }, { wildcard: { [field]: `*|${wild(x)}` } }, { wildcard: { [field]: `*|${wild(x)}|*` } }]), minimum_should_match: 1 } }], mustNot: [] };
     }
     case "subtree":
-      return { must: [{ bool: { should: [{ term: { [field]: v } }, { prefix: { [field]: `${String(v)}.` } }], minimum_should_match: 1 } }], mustNot: [] };
+      return { must: [subtree(field, v)], mustNot: [] };
     case "contains": {
-      const needle = `*${String(v).replace(/[*?\\]/g, (c) => `\\${c}`)}*`;
-      const insensitive = env.version.major > 7 || (env.version.major === 7 && env.version.minor >= 10);
-      return { must: [{ wildcard: { [field]: insensitive ? { value: needle, case_insensitive: true } : { value: needle.toLowerCase() } } }], mustNot: [] };
+      const needle = `*${wild(v)}*`;
+      return { must: [{ wildcard: { [field]: atLeast(env, 7, 10) ? { value: needle, case_insensitive: true } : { value: needle.toLowerCase() } } }], mustNot: [] };
     }
   }
 }
@@ -217,7 +224,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
   const tenant = tenantOf(entity);
   if (tenant && bound.tenant !== null) {
     const f = exact(tenant.field, env);
-    must.push(tenant.match === "subtree" ? { bool: { should: [{ term: { [f]: bound.tenant } }, { prefix: { [f]: `${bound.tenant}.` } }], minimum_should_match: 1 } } : { term: { [f]: bound.tenant } });
+    must.push(tenant.match === "subtree" ? subtree(f, bound.tenant) : { term: { [f]: bound.tenant } });
   }
   const own = predicates(entity.where, entity.filter, env, root);
   must.push(...own.must);
@@ -249,7 +256,8 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
   const body: Json = { size: 0, query: bool(must, mustNot) };
   if (must.length + mustNot.length === 0) body.query = { match_all: {} };
 
-  const interval = env.version.major > 7 || (env.version.major === 7 && env.version.minor >= 2) ? "calendar_interval" : "interval";
+  const interval = atLeast(env, 7, 2) ? "calendar_interval" : "interval";
+  const answer = (approximate: boolean, decode: (r: Bucket) => Row[]): SearchRequest => ({ index: entity.source, body, approximate, decode });
 
   switch (query.kind) {
     case "breakdown": {
@@ -259,7 +267,6 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
         const missing = d.field && (d.type === "string" || d.type === "enum") && env.typeOf(exact(d.field, env)) === "keyword" ? { missing: "" } : {};
         return { ...dimensionSource(d, env), ...missing, size, ...(order ? { order } : {}) };
       };
-      const byGroup = query.sortBy === "group";
       // A comparison reads each group's two windows as filter buckets; the
       // groups are the current period's, so one with no current rows is dropped.
       const windows = bound.previous ? { cur: { filter: range(bound.time!), aggs: metricAggs.aggs }, prev: { filter: range(bound.previous), aggs: metricAggs.aggs } } : null;
@@ -268,32 +275,21 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       // With a second dimension, a comparison, or an order the terms aggregation
       // cannot express, every group comes back and the rows are sorted and cut here.
       const sortAfter = metricAggs.order === null || !!bound.split || !!windows;
-      const order = byGroup ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, ...(query.sortBy === "measure" ? [] : [{ _key: "asc" }])];
+      const order = query.sortBy === "group" ? [{ _key: query.sort }] : sortAfter ? undefined : [{ [metricAggs.order!]: query.sort }, ...(query.sortBy === "measure" ? [] : [{ _key: "asc" }])];
       const leaf = windows ?? metricAggs.aggs;
       const inner = bound.split ? { s: { terms: termsOf(bound.split.def, 1000), aggs: leaf } } : leaf;
       body.aggs = { g: { terms: termsOf(dim, sortAfter ? 10_000 : query.limit, order), aggs: inner } };
-      return {
-        index: entity.source,
-        body,
-        approximate: metricAggs.approximate,
-        decode(r) {
-          const groups = (r.aggregations?.g?.buckets ?? []) as Bucket[];
-          let rows: Row[] = bound.split
-            ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), ...read(b) })))
-            : groups.map((b) => ({ group: groupKey(b), ...read(b) }));
-          if (windows) rows = rows.filter((r) => (r.n as number) > 0);
-          if (sortAfter && query.sortBy !== "none") {
-            const dir = query.sort === "asc" ? 1 : -1;
-            const cmp = (x: unknown, y: unknown) => String(x).localeCompare(String(y));
-            rows.sort((a, b) =>
-              byGroup
-                ? cmp(a.group, b.group) * dir || cmp(a.series ?? "", b.series ?? "")
-                : ((a.value as number | null) === null ? 1 : (b.value as number | null) === null ? -1 : ((a.value as number) - (b.value as number)) * dir) || cmp(a.group, b.group) || cmp(a.series ?? "", b.series ?? ""),
-            );
-          }
-          return rows.slice(0, query.limit);
-        },
-      };
+      return answer(metricAggs.approximate, (r) => {
+        const groups = (r.aggregations?.g?.buckets ?? []) as Bucket[];
+        let rows: Row[] = bound.split
+          ? groups.flatMap((g) => ((g.s?.buckets ?? []) as Bucket[]).map((b) => ({ group: groupKey(g), series: groupKey(b), ...read(b) })))
+          : groups.map((b) => ({ group: groupKey(b), ...read(b) }));
+        if (windows) rows = rows.filter((r) => (r.n as number) > 0);
+        // Buckets sorted here have no order of their own to keep, so ties
+        // under "measure" fall to the names, as under "value".
+        if (sortAfter) rows = sortGroups(rows, { sort: query.sort, sortBy: query.sortBy === "measure" ? "value" : query.sortBy });
+        return rows.slice(0, query.limit);
+      });
     }
     case "series": {
       const metricAggs = measureAggs(bound, env);
@@ -307,8 +303,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       // rather than bucketed at UTC midnight under a local label.
       let histogramField = timeField!;
       if (zone && env.typeOf(timeField!) !== "date" && env.typeOf(timeField!) !== "date_nanos") {
-        const { major, minor } = env.version;
-        if (major < 7 || (major === 7 && minor < 11))
+        if (!atLeast(env, 7, 11))
           refuse(`"${root}" keeps time as epoch numbers, which this source cannot bucket in ${pack.timeZone}; it needs Elasticsearch 7.11+ (runtime fields)`, root);
         histogramField = "__lenspack_time";
         body.runtime_mappings = {
@@ -321,54 +316,35 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const histogram = { date_histogram: { field: histogramField, [interval]: query.grain, min_doc_count: 1, ...(zone ? { time_zone: zone } : {}) }, aggs: metricAggs.aggs };
       if (!bound.dimension) {
         body.aggs = { t: histogram };
-        return {
-          index: entity.source,
-          body,
-          approximate: metricAggs.approximate,
-          decode: (r) => ((r.aggregations?.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), value: metricAggs.read(b), n: b.doc_count })),
-        };
+        return answer(metricAggs.approximate, (r) => ((r.aggregations?.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), value: metricAggs.read(b), n: b.doc_count })));
       }
       // The top series by the measure over the whole window, each over time:
       // the same series the SQL path keeps.
       const src = dimensionSource(bound.dimension.def, env);
       const order = metricAggs.order ? [{ [metricAggs.order]: "desc" }, { _key: "asc" }] : [{ _count: "desc" }, { _key: "asc" }];
       body.aggs = { s: { terms: { ...src, size: MAX_SERIES, order }, aggs: { ...metricAggs.aggs, t: histogram } } };
-      return {
-        index: entity.source,
-        body,
-        approximate: metricAggs.approximate,
-        decode: (r) =>
-          ((r.aggregations?.s?.buckets ?? []) as Bucket[])
-            .flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count })))
-            .sort((a, b) => a.bucket - b.bucket || String(a.series).localeCompare(String(b.series))),
-      };
+      return answer(metricAggs.approximate, (r) =>
+        ((r.aggregations?.s?.buckets ?? []) as Bucket[])
+          .flatMap((s) => ((s.t?.buckets ?? []) as Bucket[]).map((b) => ({ bucket: local(b.key), series: groupKey(s), value: metricAggs.read(b), n: b.doc_count })))
+          .sort((a, b) => a.bucket - b.bucket || String(a.series).localeCompare(String(b.series))),
+      );
     }
     case "value": {
       const metricAggs = measureAggs(bound, env);
       if (bound.previous) {
         body.aggs = { w: { filters: { filters: { current: range(bound.time!), previous: range(bound.previous) } }, aggs: metricAggs.aggs } };
-        return {
-          index: entity.source,
-          body,
-          approximate: metricAggs.approximate,
-          decode(r) {
-            const b = r.aggregations?.w?.buckets ?? {};
-            return [{ value: metricAggs.read(b.current ?? {}), n: b.current?.doc_count ?? 0, previous: metricAggs.read(b.previous ?? {}) }];
-          },
-        };
+        return answer(metricAggs.approximate, (r) => {
+          const b = r.aggregations?.w?.buckets ?? {};
+          return [{ value: metricAggs.read(b.current ?? {}), n: b.current?.doc_count ?? 0, previous: metricAggs.read(b.previous ?? {}) }];
+        });
       }
       // A match_all bucket gives the row count the same way on every version,
       // where hits.total changed shape and stopped being exact by default.
       body.aggs = { all: { filter: { match_all: {} }, aggs: metricAggs.aggs } };
-      return {
-        index: entity.source,
-        body,
-        approximate: metricAggs.approximate,
-        decode(r) {
-          const b = r.aggregations?.all ?? {};
-          return [{ value: metricAggs.read(b), n: b.doc_count ?? 0 }];
-        },
-      };
+      return answer(metricAggs.approximate, (r) => {
+        const b = r.aggregations?.all ?? {};
+        return [{ value: metricAggs.read(b), n: b.doc_count ?? 0 }];
+      });
     }
     case "rows": {
       const cols = bound.columns.map((c) => ({ key: c.def.key, path: dimensionField(c.def, env, "listed").replace(/\.keyword$/, "") }));
@@ -381,13 +357,7 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const order = bound.orderBy ?? (query.offset !== undefined && bound.columns[0] ? { dimension: bound.columns[0], dir: "asc" as const } : null);
       if (order)
         body.sort = [order, ...bound.columns.filter((c) => c.def.key !== order.dimension.def.key).map((dimension) => ({ dimension, dir: "asc" as const }))].map((o) => ({ [dimensionField(o.dimension.def, env, "sorted")]: { order: o.dir } }));
-      return {
-        index: entity.source,
-        body,
-        approximate: false,
-        decode: (r) =>
-          ((r.hits?.hits ?? []) as Bucket[]).map((h) => Object.fromEntries(cols.map((c) => [c.key, get(h._source ?? {}, c.path) ?? null]))),
-      };
+      return answer(false, (r) => ((r.hits?.hits ?? []) as Bucket[]).map((h) => Object.fromEntries(cols.map((c) => [c.key, get(h._source ?? {}, c.path) ?? null]))));
     }
     case "points":
       // Not in ELASTICSEARCH_CAPABILITIES: resolution refuses a map before it gets here.
