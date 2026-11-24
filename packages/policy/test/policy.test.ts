@@ -105,6 +105,9 @@ describe("decide", () => {
     const board = { id: "b", config: { widgets: { w: { query: { kind: "value", measure: "visits", filters: [{ dimension: "delivered_by", op: "in", value: ["Ann"] }] } } } } };
     expect(d.board(board).config.widgets.w.query.filters).toEqual([{ dimension: "delivered_by", op: "in", value: ["(hidden)"] }]);
     expect(d.board(null)).toBeNull();
+    // A board filter's default selection on a hidden key is that key's data too.
+    const filtered = { config: { widgets: {}, filters: [{ field: "delivered_by", default: { values: ["Ann"] } }, { field: "visit_type", default: { values: ["home"] } }] } };
+    expect(d.board(filtered).config.filters).toEqual([{ field: "delivered_by", default: { values: ["(hidden)"] } }, { field: "visit_type", default: { values: ["home"] } }]);
   });
 
   it("stops at an unknown key, so a typo cannot leave a key showing", () => {

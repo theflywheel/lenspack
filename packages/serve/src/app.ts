@@ -418,7 +418,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const [data, options] = await Promise.all([
             include.has("data") ? resolveBoard(board.config, run) : undefined,
             include.has("options")
-              ? Promise.all(board.config.filters.map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
+              ? Promise.all(board.config.filters.filter((f) => f.type !== "host").map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
               : undefined,
           ]);
           return json(res, 200, { board: shown(board), catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });

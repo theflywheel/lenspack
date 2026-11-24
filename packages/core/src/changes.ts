@@ -69,11 +69,16 @@ export function describeChanges(before: BoardConfig, after: BoardConfig): string
     else if (isMoved) out.push(`moved ${title(after, id)}`);
     else if (resized) out.push(`resized ${title(after, id)}`);
   }
-  const filters = (c: BoardConfig) => new Map(c.filters.map((f) => [f.id, f.label]));
+  const filters = (c: BoardConfig) => new Map(c.filters.map((f) => [f.id, f]));
   const fa = filters(before);
   const fb = filters(after);
-  for (const [id, label] of fb) if (!fa.has(id)) out.push(`added the filter “${label}”`);
-  for (const [id, label] of fa) if (!fb.has(id)) out.push(`removed the filter “${label}”`);
+  for (const [id, f] of fb) {
+    const was = fa.get(id);
+    if (!was) out.push(`added the filter “${f.label}”`);
+    else if (was.label !== f.label) out.push(`renamed the filter “${was.label}” to “${f.label}”`);
+    else if (JSON.stringify(was) !== JSON.stringify(f)) out.push(`changed the filter “${f.label}”`);
+  }
+  for (const [id, f] of fa) if (!fb.has(id)) out.push(`removed the filter “${f.label}”`);
   if (before.grid.density !== after.grid.density) out.push(`made the board ${after.grid.density}`);
   if (before.grid.fill !== after.grid.fill) out.push(after.grid.fill ? "packed the board" : "unpacked the board");
   return out;

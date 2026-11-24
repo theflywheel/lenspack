@@ -13,6 +13,16 @@ Apache Superset as a lenspack backend, without forking Superset.
   `position_json` becomes the grid. A chart lenspack cannot say exactly (custom SQL filters, ad hoc metrics, a
   heatmap shaded per row or column) is kept as Superset's: a text widget the model can move, resize or remove but
   not rewrite.
+- **The filter bar is the board's filters.** A dashboard's native filters (`json_metadata.native_filter_configuration`)
+  are read as board filters: a value filter (`filter_select`) on a column the pack has as a dimension becomes a
+  select, a time range (`filter_time`) becomes a date range, each with the charts its scope covers and the value it
+  is set to by default, so the chat can say what the dashboard is filtered to. Every other filter stays exactly as
+  Superset has it and is shown to the model as "Superset-only filter: <name>" with what it does: a numeric range,
+  a time grain or time column picker, a value filter on a column outside the pack, one that excludes the values
+  picked or picks its first value, one reading several datasets, or a time range default other than "last N days
+  or months". The chat can add, change (label, charts, default) and remove filters, and remove a Superset-only one,
+  but never rewrite one. Writing back changes only the filters the board changed; every other key, section
+  heading and filter is kept as it was. What a viewer has picked in their browser is not seen.
 - **Heatmaps.** A heatmap widget is Superset's `heatmap_v2`: a breakdown's dimension on `x_axis`, its split as
   `groupby`, one saved metric, rows A to Z, one scale across the grid. A heatmap over time is refused before the
   change (capability `timeHeatmap: false`): Superset 5 sorts a time axis by the raw column while grouping by its
@@ -28,7 +38,7 @@ Apache Superset as a lenspack backend, without forking Superset.
   setting maps: latlong on the entity's location columns, a fixed or saved-metric radius, a dimension colour, at
   most one dimension in `js_columns`, no time grain and no JavaScript; otherwise it stays Superset's. Shaded areas
   (`deck_polygon`) are not done: they need boundary shapes in a dataset column.
-  `pushBoard` sends only what changed: `POST`/`PUT /api/v1/chart`, then the dashboard's layout and title.
+  `pushBoard` sends only what changed: `POST`/`PUT /api/v1/chart`, then the dashboard's layout, title and filters.
 - **Superset stays the record.** `supersetBoards` wraps any `BoardStore`: reads pick up edits made in Superset,
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's
   version history is the undo Superset lacks.
@@ -273,5 +283,5 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 admin, `source` is `default`, `config`, `env` or `settings` per switch, and `options` gives each switch's label
 and help text. A page holding an old copy picks up a change on its next dashboard load.
 
-Gaps: board filters are not yet written as Superset native filters; a previous-period KPI is drawn by Superset
+Gaps: a previous-period KPI is drawn by Superset
 without its comparison; tabs and columns in a dashboard are kept, and new widgets are added below them.

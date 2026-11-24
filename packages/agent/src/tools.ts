@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type BoardOp, type BoardStore, CHART_KINDS, type Query, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardOp, type BoardStore, CHART_KINDS, type Filter, type Query, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
 import { type Connector, type Ctx, checkOps, explain, run, valuesQuery } from "@lenspack/engine";
 import { withoutKeys } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/spec";
@@ -92,6 +92,32 @@ export const DEFAULT_PAGE_SIZE = 25;
 function tableOf(title: string, query: Query, pageSize: number, limitGiven: boolean) {
   const rows = query.kind === "rows" && !limitGiven ? { ...query, limit: Math.min(1000, Math.max(query.limit, pageSize + 1)) } : query;
   return { kind: "table" as const, title, query: rows, pageSize: Math.max(5, pageSize) };
+}
+
+const targetsOf = (applies: string) => {
+  const ids = applies.split(",").map((s) => s.trim()).filter(Boolean);
+  return ids.length ? ids : ["*"];
+};
+
+/** A filter's default from the words given: values for a select, "3 months" / "30 days" for a date range. */
+function defaultOf(type: Filter["type"], given: string): { default?: Filter["default"] } {
+  if (!given.trim()) return {};
+  if (type !== "daterange") return { default: { values: given.split(",").map((v) => v.trim()).filter(Boolean) } };
+  const m = /^(?:last\s+)?(\d+)?\s*(day|week|month|quarter|year)s?$/i.exec(given.trim());
+  if (!m) throw new Error(`Cannot read the date range "${given}": write it as "3 months" or "30 days"`);
+  const n = Number(m[1] ?? 1);
+  const unit = m[2]!.toLowerCase();
+  return { default: unit === "day" ? { days: n } : unit === "week" ? { days: 7 * n } : { months: n * (unit === "quarter" ? 3 : unit === "year" ? 12 : 1) } };
+}
+
+/** The board filter a person or the model names: by its label or the dimension it is on (or its id). */
+function filterNamed(filters: Filter[], name: string): Filter {
+  const n = name.trim().toLowerCase();
+  const found = [(f: Filter) => f.id.toLowerCase() === n, (f: Filter) => f.label.toLowerCase() === n, (f: Filter) => f.field.toLowerCase() === n].map((test) => filters.filter(test)).find((hits) => hits.length);
+  if (found?.length === 1) return found[0]!;
+  if (found) throw new Error(`Several filters match "${name}": ${found.map((f) => `“${f.label}” (${f.id})`).join(", ")}; name one by its id`);
+  const near = nearest(name, filters.map((f) => f.label));
+  throw new Error(filters.length ? `No filter called "${name}". The board's filters: ${filters.map((f) => `“${f.label}”`).join(", ")}${near ? `. Did you mean “${near}”?` : ""}` : `The board has no filters`);
 }
 
 // A board's original: the newest version its board file wrote, else the
@@ -404,23 +430,42 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }),
     defineTool({
       name: "add_filter",
-      description: "Add a control at the top of the board that narrows it to one value of a dimension.",
+      description: 'Add a control to the board\'s filter bar: one that narrows it to values of a dimension, or, with field "time", a date range.',
       inputSchema: z.object({
-        field: z.string().describe("The dimension key, from list_metrics"),
+        field: z.string().describe('The dimension key, or "time" for a date range'),
         label: str().describe("What the control is called; defaults to the dimension's label"),
         applies: str("*").describe('"*" for every widget, or widget ids separated by commas'),
+        default: str().describe('Optional: what it is set to before anyone picks: values separated by commas (exactly as the data has them), or for a date range "3 months" / "30 days"'),
       }),
-      execute: ({ field, label, applies }) => {
-        const targets = applies.split(",").map((s) => s.trim()).filter(Boolean);
+      execute: ({ field, label, applies, default: given }) => {
         const dim = catalogue.dimensions.find((d) => d.key === field);
-        return apply([{ op: "add_filter", filter: { id: `filter_${field}`, type: "select", label: label.trim() || dim?.label || field, field, applies: targets.length ? targets : ["*"] } }]);
+        const type = field === "time" ? "daterange" : "select";
+        const filter = { id: `filter_${field}`, type, label: label.trim() || dim?.label || (field === "time" ? "Dates" : field), field, applies: targetsOf(applies) } as const;
+        return apply([{ op: "add_filter", filter: { ...filter, ...defaultOf(type, given) } }]);
       },
     }),
     defineTool({
+      name: "update_filter",
+      description: "Change a filter on the board: its label, the widgets it applies to, or what it is set to by default. Name it as the board shows it.",
+      inputSchema: z.object({
+        filter: z.string().describe("The filter's label, or the dimension it is on"),
+        label: str().describe("A new label; empty keeps it"),
+        applies: str().describe('"*" for every widget, or widget ids separated by commas; empty keeps it'),
+        default: str().describe('Values separated by commas, or for a date range "3 months" / "30 days"; "clear" removes the default; empty keeps it'),
+      }),
+      execute: ({ filter: name, label, applies, default: given }) =>
+        apply(async () => {
+          const f = filterNamed((await store.get(boardId))?.config.filters ?? [], name);
+          const { default: _old, ...rest } = f;
+          const def = given.trim().toLowerCase() === "clear" ? {} : given.trim() ? defaultOf(f.type, given) : f.default ? { default: f.default } : {};
+          return [{ op: "update_filter", id: f.id, filter: { ...rest, ...(label.trim() ? { label: label.trim() } : {}), ...(applies.trim() ? { applies: targetsOf(applies) } : {}), ...def } }];
+        }),
+    }),
+    defineTool({
       name: "remove_filter",
-      description: "Take a filter off the board.",
-      inputSchema: z.object({ field: z.string().describe("The dimension the filter is on") }),
-      execute: ({ field }) => apply([{ op: "remove_filter", id: `filter_${field}` }]),
+      description: "Take a filter off the board, including one the board keeps as its host has it. Name it as the board shows it.",
+      inputSchema: z.object({ filter: z.string().describe("The filter's label, or the dimension it is on") }),
+      execute: ({ filter: name }) => apply(async () => [{ op: "remove_filter", id: filterNamed((await store.get(boardId))?.config.filters ?? [], name).id }]),
     }),
     defineTool({
       name: "set_layout_mode",
