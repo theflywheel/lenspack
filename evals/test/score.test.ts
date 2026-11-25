@@ -221,3 +221,27 @@ describe("a turn the server failed", () => {
     expect(r.outcome).not.toBe("error");
   });
 });
+
+describe("names and rounding in a reply", () => {
+  it("doesn't find a name inside a longer word", () => {
+    const t: Truth = { shape: "set", unit: "count", value: ["Bakor", "Lino"], universe: ["Bakor", "Lino", "Kor", "Alinor"] };
+    expect(scoreAnswer(t, "Two wards: Bakor and Lino.").correct).toBe(true); // "Kor" is inside "Bakor", not a ward of its own
+  });
+
+  it("still reads a day written with the full month name", () => {
+    const t: Truth = { shape: "list", unit: "count", k: 1, value: [["2026-06-27", 5120]] };
+    expect(scoreAnswer(t, "The busiest day was 27 June 2026, with 5,120.").correct).toBe(true);
+    expect(scoreAnswer(t, "The busiest day was September 27, with 5,120.").correct).toBe(false);
+  });
+
+  it("reads a name ending in capitalised words written with their initials", () => {
+    const t: Truth = { shape: "list", unit: "number", k: 2, value: [["Tama Primary Health Centre", 412.5], ["Ubi Health Post", 380.1]] };
+    expect(scoreAnswer(t, "- Tama PHC: 412.5 a day\n- Ubi HP: 380.1 a day").correct).toBe(true);
+  });
+
+  it("allows half the precision shown plus 0.5% for arithmetic on rounded figures", () => {
+    expect(numberMatches(3.5833, "number", n("3.6")).ok).toBe(true);
+    expect(numberMatches(3.5833, "number", n("3.7")).ok).toBe(false);
+    expect(numberMatches(415.37, "number", n("415")).ok).toBe(true);
+  });
+});
