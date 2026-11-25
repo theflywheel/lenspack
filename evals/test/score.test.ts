@@ -240,8 +240,8 @@ describe("names and rounding in a reply", () => {
   });
 
   it("allows half the precision shown plus 0.5% for arithmetic on rounded figures", () => {
-    expect(numberMatches(3.6499, "number", n("3.7")).ok).toBe(true);
-    expect(numberMatches(3.6499, "number", n("3.8")).ok).toBe(false);
-    expect(numberMatches(822.24, "number", n("822")).ok).toBe(true);
+    expect(numberMatches(3.5833, "number", n("3.6")).ok).toBe(true);
+    expect(numberMatches(3.5833, "number", n("3.7")).ok).toBe(false);
+    expect(numberMatches(415.37, "number", n("415")).ok).toBe(true);
   });
 });

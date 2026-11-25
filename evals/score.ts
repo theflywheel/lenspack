@@ -83,8 +83,8 @@ export function numberMatches(truth: number, unit: Unit, n: Num): { ok: boolean;
     const rounded = n.sig <= 3 && Math.abs(truth) >= 1000;
     return { ok: rounded && Math.abs(n.value - truth) <= Math.abs(truth) * 0.005, coarse: rounded };
   }
-  // Half a unit of the precision shown, plus 0.5% for arithmetic on rounded figures (3,418 / 936 = 3.7 when the
-  // exact quotient is 3.65).
+  // Half a unit of the precision shown, plus 0.5% for arithmetic on rounded figures (2,150 / 600 = 3.6 when the
+  // exact quotient is 3.58).
   const tol = 0.5 * 10 ** -n.decimals + Math.abs(truth) * 0.005;
   return { ok: Math.abs(n.value - truth) <= tol + 1e-9, coarse: false };
 }
@@ -102,8 +102,8 @@ function spellings(key: string, ordinal?: number): string[] {
   const out = new Set([loose(key), loose(key.replace(/_/g, " ")), ...(SYNONYMS[loose(key)] ?? [])]);
   // "Health facility" is also written "Health facilities".
   if (/[^aeiou]y$/.test(loose(key))) out.add(`${loose(key).slice(0, -1)}ies`);
-  // A name ending in capitalised words may be written with their initials: "Ajegunle Primary Health Centre" as
-  // "Ajegunle PHC", "Osupa Health Centre" as "Osupa HC".
+  // A name ending in capitalised words may be written with their initials: "Tama Primary Health Centre" as
+  // "Tama PHC", "Ubi Health Centre" as "Ubi HC".
   const words = key.split(/\s+/).filter(Boolean);
   for (let n = 2; n <= Math.min(4, words.length - 1); n++) {
     const tail = words.slice(-n);
@@ -122,7 +122,7 @@ function spellings(key: string, ordinal?: number): string[] {
   return [...out].filter(Boolean);
 }
 
-/** Does the text hold this loose form as whole words: not "Jagun" inside "Ajaguna"? A plural s or es may follow. */
+/** Does the text hold this loose form as whole words: not "Ola" inside "Kolawa"? A plural s or es may follow. */
 function hasWhole(text: string, form: string): boolean {
   let l = "";
   const starts = new Set<number>();
