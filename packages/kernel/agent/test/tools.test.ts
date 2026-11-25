@@ -130,6 +130,20 @@ describe("board tools", () => {
     expect(seen[0]).toMatchObject({ ops: ["set_title"], version: expect.any(Number) });
     expect(seen[1]!.error).toBeTruthy();
     expect(seen[2]).toMatchObject({ error: "read-only" });
+    expect(seen[0]).not.toHaveProperty("held");
+  });
+
+  it("with a store that holds edits back, says an applied edit is a draft, in its result and to onEdit", async () => {
+    const store = memoryStore();
+    await store.create({ id: "dr", pack, title: "Draft" });
+    const seen: { held?: boolean; version?: number }[] = [];
+    const t = Object.fromEntries(boardTools({ pack, connector: sqlConnector(db.executor), store, boardId: "dr", ctx: { tenant: "t1" }, held: true, onEdit: (e) => seen.push(e) }).map((x) => [x.name, x]));
+    const go = (name: string, args: Record<string, unknown>) => t[name]!.execute(t[name]!.inputSchema.parse(args) as never) as Promise<Record<string, unknown>>;
+    expect(await go("rename_board", { title: "Renamed" })).toMatchObject({ applied: true, held: true, version: 2 });
+    // A refused edit is not a draft of anything.
+    expect(await go("add_widget", { id: "w", kind: "kpi", title: "Nope", query_kind: "value", measure: "no_such_measure" })).not.toHaveProperty("held");
+    expect(seen).toMatchObject([{ held: true, version: 2 }, {}]);
+    expect(seen[1]).not.toHaveProperty("held");
   });
 
   it("patches a widget: only the fields given change", async () => {

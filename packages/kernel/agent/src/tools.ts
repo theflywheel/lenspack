@@ -56,8 +56,14 @@ export type BoardToolsOptions = {
    * message instead of changing the board, so the model can say why (reading tools still work).
    */
   readOnly?: string;
+  /**
+   * The store holds edits back until the turn ends (a staged store, while a reviewer checks them),
+   * so an applied edit is a draft: its result and onEdit say `held`, and its version is the number
+   * it will have if it is saved, not one the board already has.
+   */
+  held?: boolean;
   /** Told of every edit a tool applied or refused (an audit log). Never throws into the tool. */
-  onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; error?: string }) => void;
+  onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; held?: boolean; error?: string }) => void;
 };
 
 /** The shape the Vercel AI SDK's `tool()` accepts, keyed by name: spread it into `tools:`. */
@@ -195,10 +201,11 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         told({ outcome: "refused", ops: names, error: result.error });
         return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
       }
-      told({ outcome: "ok", ops: names, version: result.board.version });
+      const held = opts.held ? { held: true as const } : {};
+      told({ outcome: "ok", ops: names, version: result.board.version, ...held });
       // What the edit did besides what was asked (room made, a widget widened), so the model can say so.
       const layout = before ? layoutChanges(before, result.board.config, ops) : [];
-      return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: shown(result.board.config) };
+      return { applied: true, version: result.board.version, ...held, ...(layout.length ? { layout: layout.join("; ") } : {}), board: shown(result.board.config) };
     };
     const next = queue.then(work, work);
     queue = next.catch(() => undefined);

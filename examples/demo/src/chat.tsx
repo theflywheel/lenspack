@@ -68,14 +68,14 @@ function UsageLine({ u }: { u: UsageData }) {
 }
 
 function StepBadge({ name, part }: { name: string; part: Part }) {
-  const r = part.output as { applied?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
+  const r = part.output as { applied?: boolean; held?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
   const failed = part.errorText !== undefined || r?.applied === false || r?.ok === false;
   const pending = !part.errorText && part.state && part.state !== "output-available";
   return (
     <div className="flex items-start gap-2 text-xs">
       <Badge variant={failed ? "destructive" : r?.applied ? "default" : "secondary"} className="font-mono">{name}</Badge>
       <span className={failed ? "text-destructive" : "text-muted-foreground"}>
-        {part.errorText ? part.errorText.slice(0, 160) : failed ? `${r?.error ?? ""}${r?.didYouMean ? ` — retrying with “${r.didYouMean}”` : ""}` : r?.applied ? `saved as v${r.version}` : pending ? "…" : ""}
+        {part.errorText ? part.errorText.slice(0, 160) : failed ? `${r?.error ?? ""}${r?.didYouMean ? ` — retrying with “${r.didYouMean}”` : ""}` : r?.applied ? (r.held ? `draft v${r.version}, saved only if the check passes` : `saved as v${r.version}`) : pending ? "…" : ""}
       </span>
     </div>
   );
