@@ -45,6 +45,13 @@ pnpm eval:suite --suite my-suite.yaml --truth truth.json --models claude-haiku-5
 - **Cost:** models run interleaved per question, so a stopped run still compares them on the same questions. `--max-usd` is checked before each batch against the dearest batch so far, and progress is saved to `results/_partial.json`.
 - **Superset rig check:** before trusting a pack, the rig checks that every dataset came back under its own name and retries otherwise. (A concurrent-lookup race in Flask-AppBuilder 4.5.5, which Superset 5 pins, once returned one dataset for another.)
 
+## Speech to text
+
+[`speech/`](speech/README.md) measures the speech-to-text models behind the chat panel's microphone: word error rate,
+latency and cost on 315 public recordings in French (including African-accented French), Hindi and Portuguese, with
+and without a language hint. It is Python, separate from the TypeScript evals above; its README says how to fetch the
+audio and run it.
+
 ### The suites in this repo
 
 Each suite holds only for the dataset it was built on: its expected answers are that data's answers on the suite's
