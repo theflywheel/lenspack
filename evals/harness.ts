@@ -91,8 +91,12 @@ export type TurnRecord = {
   reply: string;
   steps: number;
   toolCalls: { tool: string; input: unknown; output?: unknown; error?: string }[];
-  usage: { usd: number; inputTokens: number; outputTokens: number; cacheReadTokens?: number; calls: number; unpriced: number } | null;
+  usage: { usd: number; inputTokens: number; outputTokens: number; cacheReadTokens?: number; calls: number; unpriced: number; byRole?: Record<string, number> } | null;
   latencyMs: number;
+  /** Build rounds the turn ran (2 when the reviewer sent it back for a fix). */
+  rounds?: number;
+  /** The reviewer's verdicts, one per review it ran (none for a question it skipped). */
+  reviews?: { round: number; satisfied: boolean; material: number; minor: number; unavailable?: boolean }[];
   error?: string;
 };
 
@@ -156,11 +160,12 @@ async function* chunks(body: ReadableStream<Uint8Array>): AsyncGenerator<UIMessa
 }
 
 /** One chat turn, as the browser sends it: the conversation so far plus the new message. */
-export async function chatTurn(srv: Server2, boardId: string, history: UIMessage[], text: string, opts: { model: string; effort?: string; timeoutMs?: number }): Promise<{ record: TurnRecord; messages: UIMessage[] }> {
+export async function chatTurn(srv: Server2, boardId: string, history: UIMessage[], text: string, opts: { model: string; effort?: string; timeoutMs?: number; review?: boolean }): Promise<{ record: TurnRecord; messages: UIMessage[] }> {
   const user: UIMessage = { id: `u${history.length}`, role: "user", parts: [{ type: "text", text }] };
   const messages = [...history, user];
   const started = Date.now();
-  const params = new URLSearchParams({ model: opts.model, review: "off", ...(opts.effort ? { effort: opts.effort } : {}) });
+  // review: as production runs it (the deployment's reviewer, the builder model by default), or off.
+  const params = new URLSearchParams({ model: opts.model, ...(opts.review ? {} : { review: "off" }), ...(opts.effort ? { effort: opts.effort } : {}) });
   const record: TurnRecord = { reply: "", steps: 0, toolCalls: [], usage: null, latencyMs: 0 };
   try {
     const res = await fetch(`${srv.base}/${boardId}/chat?${params}`, { method: "POST", body: JSON.stringify({ messages }), signal: AbortSignal.timeout(opts.timeoutMs ?? 180_000) });
@@ -182,8 +187,16 @@ export async function chatTurn(srv: Server2, boardId: string, history: UIMessage
       if (c.type === "start-step") record.steps++;
       else if (c.type === "error") record.error = String(c.errorText ?? "error");
       else if (c.type === "data-usage") {
-        const total = (c.data as { total?: Record<string, number> }).total ?? {};
-        record.usage = { usd: total.usd ?? 0, inputTokens: total.inputTokens ?? 0, outputTokens: total.outputTokens ?? 0, cacheReadTokens: total.cachedInputTokens, calls: total.calls ?? 0, unpriced: total.unpriced ?? 0 };
+        const data = c.data as { total?: Record<string, number>; models?: { role: string; usd?: number }[] };
+        const total = data.total ?? {};
+        const byRole: Record<string, number> = {};
+        for (const m of data.models ?? []) byRole[m.role] = (byRole[m.role] ?? 0) + (m.usd ?? 0);
+        record.usage = { usd: total.usd ?? 0, inputTokens: total.inputTokens ?? 0, outputTokens: total.outputTokens ?? 0, cacheReadTokens: total.cachedInputTokens, calls: total.calls ?? 0, unpriced: total.unpriced ?? 0, byRole };
+      } else if (c.type === "data-round") record.rounds = Math.max(record.rounds ?? 0, (c.data as { round?: number }).round ?? 0);
+      else if (c.type === "data-review") {
+        const v = c.data as { round?: number; satisfied?: boolean; unavailable?: boolean; findings?: { severity?: string }[] };
+        const f = v.findings ?? [];
+        (record.reviews ??= []).push({ round: v.round ?? 0, satisfied: !!v.satisfied, material: f.filter((x) => x.severity === "material").length, minor: f.filter((x) => x.severity !== "material").length, ...(v.unavailable ? { unavailable: true } : {}) });
       }
     }
     const byId = new Map<string, TurnRecord["toolCalls"][number]>();

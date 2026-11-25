@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 // pnpm eval:suite --suite <suite.yaml> [--truth truth.json] [--models a,b | --stub] [--repeats 1]
 //                 [--only ids] [--tiers T1,T8] [--judge <provider>] [--max-usd 1] [--effort low]
-//                 [--out dir] [--board-cache board.json] [--superset-url http://…]
+//                 [--out dir] [--board-cache board.json] [--superset-url http://…] [--review]
 //
 // Accuracy against frozen truth: every question gets a fresh board and one
 // chat turn (or several, for a multi-turn question) through the real chat
@@ -69,6 +69,11 @@ export type Result = {
   toolErrors: number;
   latencyMs: number;
   usd: number;
+  /** The turn's cost by role (build, review, escalate, …), judge excluded. */
+  roleUsd?: Record<string, number>;
+  /** Most build rounds any turn ran: 2 when the reviewer sent it back to fix. */
+  rounds?: number;
+  reviews?: NonNullable<TurnRecord["reviews"]>;
   judgeUsd: number;
   inputTokens: number;
   outputTokens: number;
@@ -161,7 +166,7 @@ async function main() {
           stopped = `stopped at $${spent.toFixed(4)} before ${q.id} #${rep}: --max-usd ${maxUsd} (dearest batch $${dearest.toFixed(4)})`;
           break outer;
         }
-        const batch = await Promise.all(providers.map((p) => runQuestion(rig, srv, p, q, truth.questions[q.id], { effort: arg("effort"), judge, rep })));
+        const batch = await Promise.all(providers.map((p) => runQuestion(rig, srv, p, q, truth.questions[q.id], { effort: arg("effort"), judge, rep, review: flag("review") })));
         const cost = batch.reduce((t, r) => t + r.usd + r.judgeUsd, 0);
         dearest = Math.max(dearest, cost);
         spent += cost;
@@ -180,7 +185,7 @@ async function main() {
   if (stopped) console.log(stopped);
 
   const stamp = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}-${suite.suite}`;
-  const meta = { suite: suite.suite, suiteFile: basename(suitePath), pack: rig.host.pack.pack, truthComputed: truth.computed, fingerprint: truth.fingerprint ?? null, now: suite.now ?? null, effort: arg("effort") ?? null, judge: judgeName ?? null, repeats, stopped, spentUsd: spent };
+  const meta = { suite: suite.suite, suiteFile: basename(suitePath), pack: rig.host.pack.pack, truthComputed: truth.computed, fingerprint: truth.fingerprint ?? null, now: suite.now ?? null, effort: arg("effort") ?? null, review: flag("review"), judge: judgeName ?? null, repeats, stopped, spentUsd: spent };
   writeFileSync(join(outDir, `${stamp}.json`), JSON.stringify({ meta, results }, null, 1));
   const md = report(meta, results);
   writeFileSync(join(outDir, `${stamp}.md`), md);
@@ -190,7 +195,7 @@ async function main() {
 /** What a question's run left behind, enough to score it again without a model (--rescore). */
 export type Raw = {
   reply: string;
-  records: { steps: number; latencyMs: number; usage: TurnRecord["usage"]; error?: string }[];
+  records: { steps: number; latencyMs: number; usage: TurnRecord["usage"]; rounds?: number; reviews?: TurnRecord["reviews"]; error?: string }[];
   calls: TurnRecord["toolCalls"];
   before: BoardConfig;
   after: BoardConfig;
@@ -199,13 +204,13 @@ export type Raw = {
   judge?: { label: DeclineLabel; by: "judge" | "heuristic"; usd: number };
 };
 
-export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve>>, p: Provider, q: Question, truth: Truth | undefined, o: { effort?: string; judge: Provider | null; rep: number }): Promise<Result> {
+export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve>>, p: Provider, q: Question, truth: Truth | undefined, o: { effort?: string; judge: Provider | null; rep: number; review?: boolean }): Promise<Result> {
   const boardId = `eval-${q.id.replace(/\W/g, "_")}-${p.name.replace(/\W/g, "_")}-${o.rep}`;
   const before: BoardConfig = await freshBoard(rig, boardId, q.start_layout);
   let history: Parameters<typeof chatTurn>[2] = [];
   const records: TurnRecord[] = [];
   for (const text of turnsOf(q)) {
-    const { record, messages } = await chatTurn(srv, boardId, history, text, { model: p.name, effort: o.effort });
+    const { record, messages } = await chatTurn(srv, boardId, history, text, { model: p.name, effort: o.effort, review: o.review });
     records.push(record);
     history = messages;
     if (record.error && !record.reply) break;
@@ -218,7 +223,7 @@ export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve
     const w = after.widgets[id];
     if (w && "query" in w) widgetRows[id] = (await widgetData(rig, w.query))?.rows.map((r) => ({ group: r.group, value: r.value, ...(r.values ? { values: r.values } : {}) })) ?? null;
   }
-  const raw: Raw = { reply, records: records.map((r) => ({ steps: r.steps, latencyMs: r.latencyMs, usage: r.usage, ...(r.error ? { error: r.error } : {}) })), calls: records.flatMap((r) => r.toolCalls), before, after, widgetRows };
+  const raw: Raw = { reply, records: records.map((r) => ({ steps: r.steps, latencyMs: r.latencyMs, usage: r.usage, ...(r.rounds ? { rounds: r.rounds } : {}), ...(r.reviews?.length ? { reviews: r.reviews } : {}), ...(r.error ? { error: r.error } : {}) })), calls: records.flatMap((r) => r.toolCalls), before, after, widgetRows };
   // Declines are labelled once, when the run happens; a rescore reuses the label.
   if (q.expect === "decline") {
     if (!o.judge) raw.judge = { label: heuristicDecline(reply, diff.any), by: "heuristic", usd: 0 };
@@ -260,6 +265,12 @@ export function scoreRaw(model: string, rep: number, q: Question, truth: Truth |
     toolErrors: calls.filter((c) => !okOf(c)).length,
     latencyMs: raw.records.reduce((s, r) => s + r.latencyMs, 0),
     usd: raw.records.reduce((s, r) => s + (r.usage?.usd ?? 0), 0),
+    roleUsd: raw.records.reduce<Record<string, number>>((acc, r) => {
+      for (const [k, v] of Object.entries(r.usage?.byRole ?? {})) acc[k] = (acc[k] ?? 0) + v;
+      return acc;
+    }, {}),
+    rounds: Math.max(0, ...raw.records.map((r) => r.rounds ?? 0)),
+    reviews: raw.records.flatMap((r) => r.reviews ?? []),
     judgeUsd: raw.judge?.usd ?? 0,
     inputTokens: raw.records.reduce((s, r) => s + (r.usage?.inputTokens ?? 0), 0),
     outputTokens: raw.records.reduce((s, r) => s + (r.usage?.outputTokens ?? 0), 0),
