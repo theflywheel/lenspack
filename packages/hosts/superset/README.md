@@ -10,7 +10,10 @@ signed-in user from Superset and puts the chat inside Superset's pages. It sits 
 - **Catalogue from Superset.** `packFromDatasets` turns datasets into a pack: a dataset is an entity, its saved
   metrics are measures (`sql: { superset: <metric_name> }`), its groupable columns are dimensions (a column on
   several datasets becomes one conformed dimension). Hints come from Superset's descriptions; an `Overlay` adds
-  what Superset has no field for (instructions, examples, hierarchies, entity names).
+  what Superset has no field for (instructions, examples, hierarchies, entity names). Something in a dataset the
+  pack can't use never stops Lenspack starting: a metric with no name or SQL, or a column with no name, is left
+  out; a groupable column with the same name as a saved metric becomes `<name>_value` (the metric keeps the name).
+  Each change is one warning line in the log and in the settings API (`warnings`).
 - **Numbers from Superset.** `supersetConnector` compiles a resolved query into Superset query objects and runs
   them through `/api/v1/chart/data`, so a metric means the same in both and Superset's row-level security applies.
   No joins (a chart reads one dataset); share, Other and further measures are composed by the engine as usual.

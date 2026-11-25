@@ -28,8 +28,14 @@ const DATASET = {
   columns: [
     { column_name: "created_at", is_dttm: true, type: "TIMESTAMP" },
     { column_name: "region", groupby: true, type: "TEXT" },
+    // Groups, and has the same name as the saved metric: the metric keeps the key, the column becomes visit_count_value.
+    { column_name: "visit_count", groupby: true, type: "BIGINT" },
   ],
-  metrics: [{ metric_name: "visit_count", expression: "COUNT(*)", verbose_name: "Visits" }],
+  // A metric with no expression is left out, with a warning.
+  metrics: [
+    { metric_name: "visit_count", expression: "COUNT(*)", verbose_name: "Visits" },
+    { metric_name: "half_made", expression: "" },
+  ],
 };
 
 /** Just enough of Superset's API for Lenspack to start, bind a dashboard and list them; and a model list for speech. */
@@ -186,10 +192,21 @@ describe("Superset mode's server", () => {
     expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "viewer", action: "GET /_superset/settings", outcome: "denied", detail: "not a Superset admin" }));
   });
 
+  it("starts when a column and a metric come to one key, and says what it changed", async () => {
+    const r = await call("/_superset/settings", { as: ADMIN });
+    expect(r.body.measures).toEqual([expect.objectContaining({ key: "visit_count", agg: "count" })]);
+    expect(r.body.dimensions).toBe(2);
+    expect(r.body.warnings).toEqual([
+      'Superset dataset "visits" (1): metric "half_made" has no SQL expression and is left out',
+      'Superset dataset "visits" (1): column "visit_count" and a metric both come to the key "visit_count"; the metric keeps it, and the column is the dimension "visit_count_value"',
+    ]);
+    for (const w of r.body.warnings) expect(output).toContain(`lenspack-superset: warning: ${w}`);
+  });
+
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "speech", "superset"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "speech", "superset", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
