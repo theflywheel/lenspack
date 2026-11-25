@@ -2,6 +2,7 @@
 // pnpm eval:suite --suite <suite.yaml> [--truth truth.json] [--models a,b | --stub] [--repeats 1]
 //                 [--only ids] [--tiers T1,T8] [--judge <provider>] [--max-usd 1] [--effort low]
 //                 [--out dir] [--board-cache board.json] [--superset-url http://…] [--review]
+//                 [--reviewer <provider>] [--escalate <provider>]
 //
 // Accuracy against frozen truth: every question gets a fresh board and one
 // chat turn (or several, for a multi-turn question) through the real chat
@@ -151,7 +152,22 @@ async function main() {
   const judge = judgeName ? await probe(buildProvider(providersFromEnv().find((c) => c.name.includes(judgeName))!)) : null;
   if (judgeName && !judge?.available) throw new Error(`judge ${judgeName} unavailable`);
 
-  const srv = await serve(rig, providers);
+  // Reviewer and fix-round models other than the builder: served so the chat can call them, but not run as builders.
+  const roleModel = async (key: "reviewer" | "escalate") => {
+    const name = arg(key);
+    if (!name) return undefined;
+    const c = providersFromEnv().find((x) => x.name.includes(name));
+    if (!c) throw new Error(`--${key} ${name}: no such provider in LENSPACK_LLM_PROVIDERS`);
+    const p = await probe(buildProvider(c));
+    if (!p.available) throw new Error(`${p.name} unavailable: ${p.error}`);
+    return p;
+  };
+  const reviewerP = await roleModel("reviewer");
+  const escalateP = await roleModel("escalate");
+  const review = flag("review") || !!reviewerP || !!escalateP;
+  const served = [...providers];
+  for (const p of [reviewerP, escalateP]) if (p && !served.some((x) => x.name === p.name)) served.push(p);
+  const srv = await serve(rig, served);
   const results: Result[] = [];
   let spent = 0;
   let stopped: string | null = null;
@@ -166,7 +182,7 @@ async function main() {
           stopped = `stopped at $${spent.toFixed(4)} before ${q.id} #${rep}: --max-usd ${maxUsd} (dearest batch $${dearest.toFixed(4)})`;
           break outer;
         }
-        const batch = await Promise.all(providers.map((p) => runQuestion(rig, srv, p, q, truth.questions[q.id], { effort: arg("effort"), judge, rep, review: flag("review") })));
+        const batch = await Promise.all(providers.map((p) => runQuestion(rig, srv, p, q, truth.questions[q.id], { effort: arg("effort"), judge, rep, review, reviewer: reviewerP?.name, escalate: escalateP?.name })));
         const cost = batch.reduce((t, r) => t + r.usd + r.judgeUsd, 0);
         dearest = Math.max(dearest, cost);
         spent += cost;
@@ -185,7 +201,7 @@ async function main() {
   if (stopped) console.log(stopped);
 
   const stamp = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}-${suite.suite}`;
-  const meta = { suite: suite.suite, suiteFile: basename(suitePath), pack: rig.host.pack.pack, truthComputed: truth.computed, fingerprint: truth.fingerprint ?? null, now: suite.now ?? null, effort: arg("effort") ?? null, review: flag("review"), judge: judgeName ?? null, repeats, stopped, spentUsd: spent };
+  const meta = { suite: suite.suite, suiteFile: basename(suitePath), pack: rig.host.pack.pack, truthComputed: truth.computed, fingerprint: truth.fingerprint ?? null, now: suite.now ?? null, effort: arg("effort") ?? null, review, reviewer: reviewerP?.name ?? null, escalate: escalateP?.name ?? null, judge: judgeName ?? null, repeats, stopped, spentUsd: spent };
   writeFileSync(join(outDir, `${stamp}.json`), JSON.stringify({ meta, results }, null, 1));
   const md = report(meta, results);
   writeFileSync(join(outDir, `${stamp}.md`), md);
@@ -204,13 +220,13 @@ export type Raw = {
   judge?: { label: DeclineLabel; by: "judge" | "heuristic"; usd: number };
 };
 
-export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve>>, p: Provider, q: Question, truth: Truth | undefined, o: { effort?: string; judge: Provider | null; rep: number; review?: boolean }): Promise<Result> {
+export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve>>, p: Provider, q: Question, truth: Truth | undefined, o: { effort?: string; judge: Provider | null; rep: number; review?: boolean; reviewer?: string; escalate?: string }): Promise<Result> {
   const boardId = `eval-${q.id.replace(/\W/g, "_")}-${p.name.replace(/\W/g, "_")}-${o.rep}`;
   const before: BoardConfig = await freshBoard(rig, boardId, q.start_layout);
   let history: Parameters<typeof chatTurn>[2] = [];
   const records: TurnRecord[] = [];
   for (const text of turnsOf(q)) {
-    const { record, messages } = await chatTurn(srv, boardId, history, text, { model: p.name, effort: o.effort, review: o.review });
+    const { record, messages } = await chatTurn(srv, boardId, history, text, { model: p.name, effort: o.effort, review: o.review, reviewer: o.reviewer, escalate: o.escalate });
     records.push(record);
     history = messages;
     if (record.error && !record.reply) break;

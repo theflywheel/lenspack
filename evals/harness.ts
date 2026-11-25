@@ -160,12 +160,18 @@ async function* chunks(body: ReadableStream<Uint8Array>): AsyncGenerator<UIMessa
 }
 
 /** One chat turn, as the browser sends it: the conversation so far plus the new message. */
-export async function chatTurn(srv: Server2, boardId: string, history: UIMessage[], text: string, opts: { model: string; effort?: string; timeoutMs?: number; review?: boolean }): Promise<{ record: TurnRecord; messages: UIMessage[] }> {
+export async function chatTurn(srv: Server2, boardId: string, history: UIMessage[], text: string, opts: { model: string; effort?: string; timeoutMs?: number; review?: boolean; reviewer?: string; escalate?: string }): Promise<{ record: TurnRecord; messages: UIMessage[] }> {
   const user: UIMessage = { id: `u${history.length}`, role: "user", parts: [{ type: "text", text }] };
   const messages = [...history, user];
   const started = Date.now();
   // review: as production runs it (the deployment's reviewer, the builder model by default), or off.
-  const params = new URLSearchParams({ model: opts.model, ...(opts.review ? {} : { review: "off" }), ...(opts.effort ? { effort: opts.effort } : {}) });
+  // reviewer / escalate: name the models for those roles (as a deployment's LENSPACK_LLM_ROLES would); the builder's otherwise.
+  const params = new URLSearchParams({
+    model: opts.model,
+    ...(opts.review ? (opts.reviewer ? { review: opts.reviewer } : {}) : { review: "off" }),
+    ...(opts.review && opts.escalate ? { escalate: opts.escalate } : {}),
+    ...(opts.effort ? { effort: opts.effort } : {}),
+  });
   const record: TurnRecord = { reply: "", steps: 0, toolCalls: [], usage: null, latencyMs: 0 };
   try {
     const res = await fetch(`${srv.base}/${boardId}/chat?${params}`, { method: "POST", body: JSON.stringify({ messages }), signal: AbortSignal.timeout(opts.timeoutMs ?? 180_000) });
