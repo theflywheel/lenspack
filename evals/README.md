@@ -44,3 +44,10 @@ pnpm eval:suite --suite my-suite.yaml --truth truth.json --models claude-haiku-5
 - **Reviewer:** turns run with `review=off` unless `--review` is given. With it, each turn runs as production does: the deployment's reviewer (the builder model by default) checks edits, and a material finding gets one fix round. Each result records its cost by role (`build`, `review`, `escalate`, …), the build rounds and the reviewer's verdicts. `--reviewer <model>` and `--escalate <model>` pick other models for those two roles, as a deployment's `LENSPACK_LLM_ROLES` does; either one turns review on.
 - **Cost:** models run interleaved per question, so a stopped run still compares them on the same questions. `--max-usd` is checked before each batch against the dearest batch so far, and progress is saved to `results/_partial.json`.
 - **Superset rig check:** before trusting a pack, the rig checks that every dataset came back under its own name and retries otherwise. (A concurrent-lookup race in Flask-AppBuilder 4.5.5, which Superset 5 pins, once returned one dataset for another.)
+
+## Speech to text
+
+[`speech/`](speech/README.md) measures the speech-to-text models behind the chat panel's microphone: word error rate,
+latency and cost on 315 public recordings in French (including African-accented French), Hindi and Portuguese, with
+and without a language hint. It is Python, separate from the TypeScript evals above; its README says how to fetch the
+audio and run it.

@@ -1,0 +1,10 @@
+# The audio is downloaded for a run and deleted after; it is never committed.
+data/slr57/
+data/fleurs/
+data/cv/
+data/own_wav/
+data/own.jsonl
+# A run's transcripts and scores stay local (the published ones are linked from README.md).
+results/
+__pycache__/
+.venv/
