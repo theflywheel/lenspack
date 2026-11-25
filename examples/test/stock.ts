@@ -25,13 +25,37 @@ const rows = (): { on_day: string; ward: string; units: number }[] =>
     ...(i % 2 === 0 ? [{ on_day: day(i), ward: "south", units: 10 }] : []),
   ]).flat();
 
+// A second table of movements in and out, for the days a computed summary is
+// taken over. Dispatches run from 20 to 29 October (north every day but the
+// 25th, 10 units; south from the 22nd, 5 units), then two days of 0. The other
+// rows are receipts on days with no dispatch (1 October and 5 November), and
+// one dispatch dated after "today" (20 November).
+const MOVES = "lenspack_moves";
+const moves = (): { on_day: string; ward: string; kind: string; units: number }[] => [
+  ...Array.from({ length: 10 }, (_, i) => day(i)).flatMap((d, i) => [
+    ...(d === "2025-10-25" ? [] : [{ on_day: d, ward: "north", kind: "dispatch", units: 10 }]),
+    ...(i >= 2 ? [{ on_day: d, ward: "south", kind: "dispatch", units: 5 }] : []),
+  ]),
+  { on_day: "2025-10-30", ward: "north", kind: "dispatch", units: 0 },
+  { on_day: "2025-10-31", ward: "north", kind: "dispatch", units: 0 },
+  { on_day: "2025-10-01", ward: "north", kind: "receipt", units: 50 },
+  { on_day: "2025-11-05", ward: "south", kind: "receipt", units: 50 },
+  { on_day: "2025-11-20", ward: "north", kind: "dispatch", units: 100 },
+];
+
 export const stockPack = parsePack({
   pack: "stock",
   version: 1,
   timeZone: "America/New_York",
-  entities: { stock: { source: TABLE, time: { field: "on_day", type: "date" } } },
-  dimensions: [{ key: "ward", entity: "stock", field: "ward" }],
-  measures: [{ key: "dispatched", entity: "stock", agg: "sum", field: "units" }],
+  entities: { stock: { source: TABLE, time: { field: "on_day", type: "date" } }, moves: { source: MOVES, time: { field: "on_day", type: "date" } } },
+  dimensions: [
+    { key: "ward", entity: "stock", field: "ward", also: { moves: { field: "ward" } } },
+  ],
+  measures: [
+    { key: "dispatched", entity: "stock", agg: "sum", field: "units" },
+    { key: "moved_out", entity: "moves", agg: "sum", field: "units", where: [{ field: "kind", value: "dispatch" }], label: "Units moved out" },
+    { key: "moved_in", entity: "moves", agg: "sum", field: "units", where: [{ field: "kind", value: "receipt" }], label: "Units moved in" },
+  ],
 });
 
 /** 22:00 on 9 November in New York; already 10 November in UTC. */
@@ -41,6 +65,9 @@ export async function seedStock(writer: Writer, dialect: Dialect) {
   await writer.exec(`DROP TABLE IF EXISTS ${TABLE}`);
   await execAll(writer, [`CREATE TABLE ${TABLE} (on_day DATE, ward VARCHAR, units INTEGER)`], dialect);
   await insertRows(writer, TABLE, ["on_day", "ward", "units"], rows().map((r) => [r.on_day, r.ward, r.units]));
+  await writer.exec(`DROP TABLE IF EXISTS ${MOVES}`);
+  await execAll(writer, [`CREATE TABLE ${MOVES} (on_day DATE, ward VARCHAR, kind VARCHAR, units INTEGER)`], dialect);
+  await insertRows(writer, MOVES, ["on_day", "ward", "kind", "units"], moves().map((r) => [r.on_day, r.ward, r.kind, r.units]));
 }
 
 type Request = (method: string, path: string, body?: unknown) => Promise<any>;
@@ -55,6 +82,15 @@ export async function seedStockSearch(request: Request) {
   const res = await request("POST", `/${TABLE}/_bulk`, lines.join("\n") + "\n");
   if (res?.errors) throw new Error(`bulk into ${TABLE} reported errors`);
   await request("POST", `/${TABLE}/_refresh`);
+  await request("DELETE", `/${MOVES}`).catch(() => undefined);
+  await request("PUT", `/${MOVES}`, {
+    settings: { number_of_shards: 1, number_of_replicas: 0 },
+    mappings: { properties: { on_day: { type: "date", format: "yyyy-MM-dd" }, ward: { type: "keyword" }, kind: { type: "keyword" }, units: { type: "integer" } } },
+  });
+  const moved = moves().flatMap((r) => [JSON.stringify({ index: {} }), JSON.stringify(r)]);
+  const out = await request("POST", `/${MOVES}/_bulk`, moved.join("\n") + "\n");
+  if (out?.errors) throw new Error(`bulk into ${MOVES} reported errors`);
+  await request("POST", `/${MOVES}/_refresh`);
 }
 
 // The expected numbers, from the rows themselves.
@@ -68,6 +104,7 @@ const daily = (from: string, to: string) => {
   return out;
 };
 const groupsAndValues = (data: WidgetData) => data.rows.map((r) => ({ group: r.group, value: r.value }));
+const dailyMean = { grain: "day" as const, steps: [{ op: "over_time" as const, fn: "mean" as const }] };
 
 /** Each query with the answer every source must give. */
 export const stockCases: { label: string; query: Query; check(data: WidgetData): void }[] = [
@@ -110,6 +147,40 @@ export const stockCases: { label: string; query: Query; check(data: WidgetData):
     check: (data) => {
       expect(data.rows.map((r) => r.group)).toEqual(["north", "south"]);
       for (const r of data.rows) expect(r.value).toBeCloseTo(total("2025-11-03", "2025-11-09", r.group) / 7, 9);
+    },
+  },
+  {
+    label: "the average daily units moved out: from the first to the last day with a dispatch, not the receipts' days or a day after today",
+    query: { kind: "value", measure: "moved_out", compute: dailyMean },
+    // 90 + 40 units over the 10 days from 20 to 29 October.
+    check: (data) => {
+      expect(data.rows[0]!.value).toBeCloseTo(13, 9);
+      expect(data.window).toEqual({ from: "2025-10-20", to: "2025-10-29", buckets: 10, grain: "day" });
+      expect(data.computed).toContain("averaged over 10 days, 2025-10-20 to 2025-10-29 (the first to the last day with units moved out); days after today are left out");
+    },
+  },
+  {
+    label: "per ward, every ward averaged over the same days",
+    query: { kind: "breakdown", dimension: "ward", measure: "moved_out", limit: 10, sort: "desc", compute: dailyMean },
+    // South starts on the 22nd, and is still averaged over the 10 days: 40 / 10, not 40 / 8.
+    check: (data) => expect(groupsAndValues(data)).toEqual([{ group: "north", value: 9 }, { group: "south", value: 4 }]),
+  },
+  {
+    label: "within a time range: the days with a dispatch inside it",
+    query: { kind: "value", measure: "moved_out", time: { from: "2025-10-24T00:00:00Z", to: "2025-11-01T00:00:00Z" }, compute: dailyMean },
+    // 24 to 29 October: north 50, south 30, over 6 days (the 30th and 31st dispatched 0).
+    check: (data) => {
+      expect(data.rows[0]!.value).toBeCloseTo(80 / 6, 9);
+      expect(data.window).toEqual({ from: "2025-10-24", to: "2025-10-29", buckets: 6, grain: "day" });
+    },
+  },
+  {
+    label: "a time range that runs on past today stops at today",
+    query: { kind: "value", measure: "moved_out", time: { from: "2025-10-26T00:00:00Z", to: "2025-12-01T00:00:00Z" }, compute: dailyMean },
+    // 26 to 29 October: 40 + 20 over 4 days; the dispatch dated 20 November is not counted.
+    check: (data) => {
+      expect(data.rows[0]!.value).toBeCloseTo(15, 9);
+      expect(data.window?.buckets).toBe(4);
     },
   },
   {

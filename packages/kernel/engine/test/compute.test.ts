@@ -86,7 +86,7 @@ describe("steps over time on a series", () => {
     // The source is asked for one more day, 31 August; it is read, not shown or counted.
     expect((c.seen[0]!.query as { time: unknown }).time).toEqual({ from: "2026-08-31T00:00:00.000Z", to: "2026-09-06T00:00:00.000Z" });
     expect(data.rows[0]).toEqual({ group: day(1), value: 6, count: 2 });
-    expect(data.computed).toContain("the first day changes from the day before the time range");
+    expect(data.computed).toContain("the first day changes from the day before it, even when that is before the time range");
     // With no time range there is no bucket before the first, so it has no change.
     const open = await run({ kind: "series", measure: "dispatched", grain: "day", compute: { steps: [{ op: "change" }] } }, { pack, connector: stub(() => north(daily).slice(1)), ctx });
     expect(values(open.rows)).toEqual([null, 10, -20, 10, 5]);
@@ -189,7 +189,7 @@ describe("a summary of the buckets per group", () => {
     expect(data.format).toBe("percent");
     expect(data.label).toBe("average day-on-day % change in dispatched");
     expect(data.computed).toBe(
-      "average day-on-day % change in dispatched: a day with no records counts as 0; the first day changes from the day before the time range; a change from 0 has no percentage and is skipped; days without a value are skipped in the average",
+      "average day-on-day % change in dispatched: a day with no records counts as 0; the first day changes from the day before it, even when that is before the time range; a change from 0 has no percentage and is skipped; days without a value are skipped in the average; averaged over 5 days, 2026-09-01 to 2026-09-05 (the first to the last day with dispatched in the time range)",
     );
   });
 
@@ -206,7 +206,83 @@ describe("a summary of the buckets per group", () => {
   it("one number for everything: a value", async () => {
     const c = stub(() => daily.filter((r) => r.series === "south").map(({ series: _s, ...r }) => r));
     const data = await run({ kind: "value", measure: "dispatched", time, compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } }, { pack, connector: c, ctx });
-    expect(data.rows).toEqual([{ group: "dispatched", value: 6, count: 5 }]);
+    // South dispatched 0 on the 1st, so its days run from the 2nd: (5 + 10 + 10 + 5) / 4.
+    expect(data.rows).toEqual([{ group: "dispatched", value: 7.5, count: 4 }]);
+    expect(data.window).toEqual({ from: day(2), to: day(5), buckets: 4, grain: "day" });
+  });
+});
+
+describe("the days a summary is taken over", () => {
+  // North's dispatches, 1 to 5 September: (10 + 20 + 0 + 10 + 15) / 5 = 11 a day.
+  const north = daily.filter((r) => r.series === "north" && r.bucket !== "2026-08-31").map(({ series: _s, ...r }) => r);
+  const mean = (extra: Partial<Extract<Query, { kind: "value" }>> = {}): Query => ({ kind: "value", measure: "dispatched", compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] }, ...extra });
+  const later = { now: new Date("2027-01-01T00:00:00Z") };
+
+  it("rows of another measure on other days do not stretch the days: they run from the first to the last day with the measure", async () => {
+    // The dataset has rows months later (receipts, say): the source answers those days with no dispatch at all.
+    const stray: Row[] = [
+      { bucket: "2026-10-15", value: null, n: 3 },
+      { bucket: "2026-12-20", value: 0, n: 2 },
+    ];
+    const data = await run(mean(), { pack, connector: stub(() => [...north, ...stray]), ctx: later });
+    expect(data.rows).toEqual([{ group: "dispatched", value: 11, count: 8 }]);
+    expect(data.window).toEqual({ from: day(1), to: day(5), buckets: 5, grain: "day" });
+    expect(data.computed).toBe("average daily dispatched: a day with no records counts as 0; averaged over 5 days, 2026-09-01 to 2026-09-05 (the first to the last day with dispatched)");
+  });
+
+  it("days of 0 at the end are not counted; a day of 0 between two with the measure is", async () => {
+    const zeros: Row[] = [6, 7, 8].map((n) => ({ bucket: day(n), value: 0, n: 1 }));
+    const data = await run(mean(), { pack, connector: stub(() => [...north, ...zeros]), ctx: later });
+    expect(data.rows[0]!.value).toBe(11);
+    expect(data.window?.buckets).toBe(5);
+  });
+
+  it("with a time range: the measure's own days inside it; the range alone when none of its days has the measure", async () => {
+    // The 2nd to the 4th: (20 + 0 + 10) / 3.
+    const inside = await run(mean({ time: { from: "2026-09-02T00:00:00Z", to: "2026-09-05T00:00:00Z" } }), { pack, connector: stub(() => north), ctx });
+    expect(inside.rows[0]!.value).toBe(10);
+    expect(inside.window).toEqual({ from: day(2), to: day(4), buckets: 3, grain: "day" });
+    // A range that starts weeks before the first dispatch: the days still start at the first dispatch.
+    const wide = await run(mean({ time: { from: "2026-08-01T00:00:00Z", to: "2026-09-06T00:00:00Z" } }), { pack, connector: stub(() => north), ctx });
+    expect(wide.rows[0]!.value).toBe(11);
+    expect(wide.computed).toContain("averaged over 5 days, 2026-09-01 to 2026-09-05 (the first to the last day with dispatched in the time range)");
+    // Nothing dispatched in the range: every day of it counts, as 0.
+    const none = await run(mean({ time: { from: "2026-08-20T00:00:00Z", to: "2026-08-25T00:00:00Z" } }), { pack, connector: stub(() => north), ctx });
+    expect(none.rows[0]!.value).toBe(0);
+    expect(none.computed).toContain("averaged over 5 days, 2026-08-20 to 2026-08-24 (the time range; no day in it has dispatched)");
+  });
+
+  it("never goes past today: a row dated later is left out, and the words say so", async () => {
+    // Midday on the 4th: the 5th has not happened yet. (10 + 20 + 0 + 10) / 4.
+    const midweek = { now: new Date("2026-09-04T12:00:00Z") };
+    const open = await run(mean(), { pack, connector: stub(() => north), ctx: midweek });
+    expect(open.rows).toEqual([{ group: "dispatched", value: 10, count: 5 }]);
+    expect(open.window).toEqual({ from: day(1), to: day(4), buckets: 4, grain: "day" });
+    expect(open.computed).toContain("averaged over 4 days, 2026-09-01 to 2026-09-04 (the first to the last day with dispatched); days after today are left out");
+    // The same with a time range that runs on past today.
+    const ranged = await run(mean({ time: { from: "2026-09-01T00:00:00Z", to: "2026-09-30T00:00:00Z" } }), { pack, connector: stub(() => north), ctx: midweek });
+    expect(ranged.rows[0]!.value).toBe(10);
+    // A series over that range stops at today too, rather than drawing the rest of the month as 0.
+    const series = await run({ kind: "series", measure: "dispatched", grain: "day", time: { from: "2026-09-01T00:00:00Z", to: "2026-09-30T00:00:00Z" }, compute: { steps: [{ op: "running_total" }] } }, { pack, connector: stub(() => north), ctx: midweek });
+    expect(series.rows.map((r) => [r.group, r.value])).toEqual([[day(1), 10], [day(2), 30], [day(3), 30], [day(4), 40]]);
+    expect(series.computed).toContain("over 4 days, 2026-09-01 to 2026-09-04 (the time range up to today)");
+  });
+
+  it("every group is averaged over the same days, the whole answer's first to last", async () => {
+    // South dispatches from the 3rd only: (10 + 10 + 5) / 5 over north's days too, not / 3.
+    const south: Row[] = [3, 4, 5].map((n, i) => ({ bucket: day(n), series: "south", value: [10, 10, 5][i]!, n: 1 }));
+    const data = await run(
+      { kind: "breakdown", dimension: "ward", measure: "dispatched", limit: 12, sort: "desc", compute: { grain: "day", steps: [{ op: "over_time", fn: "mean" }] } },
+      { pack, connector: stub(() => [...north.map((r) => ({ ...r, series: "north" })), ...south]), ctx: later },
+    );
+    expect(data.rows.map((r) => [r.group, r.value])).toEqual([["north", 11], ["south", 5]]);
+    expect(data.window?.buckets).toBe(5);
+  });
+
+  it("a series with no time range runs over the measure's own days too", async () => {
+    const stray: Row[] = [{ bucket: "2026-11-01", value: null, n: 4 }];
+    const data = await run({ kind: "series", measure: "dispatched", grain: "day", compute: { steps: [{ op: "running_total" }] } }, { pack, connector: stub(() => [...north, ...stray]), ctx: later });
+    expect(data.rows.map((r) => r.group)).toEqual([day(1), day(2), day(3), day(4), day(5)]);
   });
 });
 

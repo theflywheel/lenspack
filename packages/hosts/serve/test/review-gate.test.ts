@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { type Host, type Provider, ROLLBACK_PROMPT, buildProvider, configSchema, createApp, openConfig, registerLlmAdapter, reviewTurn } from "../src";
+import { type Host, type Provider, ROLLBACK_PROMPT, buildProvider, claimsEdit, configSchema, createApp, openConfig, registerLlmAdapter, reviewTurn, wantsReview } from "../src";
 
 const pack = fileURLToPath(new URL("../../../../examples/tickets/pack.yaml", import.meta.url));
 const usage = { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 2, text: 2, reasoning: 0 } };
@@ -92,6 +92,15 @@ describe("a chat turn with the reviewer", () => {
       ),
       minor: scripted([tool("add_widget", textWidget("hf_burn", "Stock burn")), say("I added the burn rate.")], [{ findings: [EXTRA_COLUMNS], userNote: "The table also shows stock received, which you didn't ask for.", note: "extra column" }]),
       off: scripted([tool("add_widget", textWidget("hf_burn", "Stock burn")), say("I added the burn rate.")], []),
+      // Words before the edit stream as they are written; the words after it wait for the verdict.
+      preamble: scripted(
+        [[{ type: "text-start", id: "p" }, { type: "text-delta", id: "p", delta: "Let me build that." }, { type: "text-end", id: "p" }, ...tool("add_widget", textWidget("hf_burn", "Stock burn at health facility level"))], say("I added the burn rate at health facility level."), ...fixedSteps.slice(2)],
+        [{ findings: [DOUBLE_COUNTED] }, { findings: [] }],
+      ),
+      // A question answered with numbers and no edit: nothing on the board to check, whatever words it uses.
+      question: scripted([say("Here are the 12 tickets created last week.")], []),
+      // No edit, but the reply says there was one (in French): the reviewer checks the board.
+      claimed: scripted([say("J'ai ajouté le graphique des tickets par région.")], [{ findings: [{ severity: "minor", problem: "no chart was added", forUser: "Le graphique n'a pas été ajouté." }], userNote: "Le graphique n'a pas été ajouté." }]),
     });
     const providers: Provider[] = Object.entries(scripts).map(([name, s]) => {
       registerLlmAdapter({ kind: `gate-${name}`, defaultBaseUrl: "mock:", build: () => s.model });
@@ -107,9 +116,9 @@ describe("a chat turn with the reviewer", () => {
     await close();
   });
 
-  const turn = async (name: string, query = "") => {
+  const turn = async (name: string, query = "", text = "add the stock burn rate at health facility level") => {
     await host.store.create({ id: name, pack: host.pack, title: "Stock" });
-    const res = await fetch(`${base}/${name}/chat?model=${name}${query}`, { method: "POST", body: JSON.stringify({ messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "add the stock burn rate at health facility level" }] }] }) });
+    const res = await fetch(`${base}/${name}/chat?model=${name}${query}`, { method: "POST", body: JSON.stringify({ messages: [{ id: "u1", role: "user", parts: [{ type: "text", text }] }] }) });
     const parts = (await res.text())
       .split("\n")
       .filter((l) => l.startsWith("data: ") && l !== "data: [DONE]")
@@ -131,8 +140,10 @@ describe("a chat turn with the reviewer", () => {
     expect(t.versions.map((v) => `${v.version} ${v.source} ${v.summary}`)).toEqual(["2 chat added “Stock burn at health facility level”", "1 create created"]);
     // Neither review saw a saved edit: the wrong table never reached the board.
     expect(savedAtReview).toEqual([1, 1]);
-    // The first answer streams as it is written; the fix round's words come only after its check passed.
-    expect(t.texts).toEqual(["I added the burn rate at health facility level.", "I removed the table because its numbers counted each transfer twice; here is the corrected one."]);
+    // The reply describes only the board as it ended: the first round's claim, which the fix replaced,
+    // is never shown, and the fix round's words come only after its check passed.
+    expect(t.texts).toEqual(["I removed the table because its numbers counted each transfer twice; here is the corrected one."]);
+    expect(t.texts.join(" ")).not.toContain("I added the burn rate");
     expect(t.texts.join(" ")).not.toMatch(/review/i);
     const reviews = t.parts.filter((p) => p.type === "data-review").map((p) => p.data);
     expect(reviews.map((r) => r.findings.length)).toEqual([1, 0]);
@@ -149,8 +160,8 @@ describe("a chat turn with the reviewer", () => {
     expect(t.board.config.widgets).toEqual({});
     expect(t.versions).toHaveLength(1);
     expect(savedAtReview).toEqual([1, 1]);
-    // The fix round's own claim ("Here is the corrected one.") is never shown.
-    expect(t.texts).toEqual(["I added the burn rate at health facility level.", "I couldn't build a correct version: the table would count each transfer twice, so the board is as it was."]);
+    // Neither round's claim ("I added…", "Here is the corrected one.") is shown: only that the board is as it was.
+    expect(t.texts).toEqual(["I couldn't build a correct version: the table would count each transfer twice, so the board is as it was."]);
     // The closing words come from one more builder call, tools off, told why.
     expect(scripts.failed!.seen.toolsOff[0]).toContain(ROLLBACK_PROMPT);
     expect(scripts.failed!.seen.toolsOff[0]).toContain("counted at both ends");
@@ -166,12 +177,46 @@ describe("a chat turn with the reviewer", () => {
     expect(t.texts.join(" ")).not.toContain("hf_burn");
   });
 
+  it("words before the first edit stream as written; the words after it are dropped when a fix replaces the edit", async () => {
+    const t = await turn("preamble");
+    expect(t.texts).toEqual(["Let me build that.", "I removed the table because its numbers counted each transfer twice; here is the corrected one."]);
+  });
+
+  it("a question answered with no edit is not reviewed, even when it says “show”; its answer streams as it is written", async () => {
+    const t = await turn("question", "", "show me how many tickets were created last week");
+    expect(scripts.question!.seen.reviews).toBe(0);
+    expect(t.parts.some((p) => p.type === "data-review")).toBe(false);
+    expect(t.texts).toEqual(["Here are the 12 tickets created last week."]);
+  });
+
+  it("a reply that claims an edit the board did not gain is reviewed, in any of the chat's languages", async () => {
+    const t = await turn("claimed", "", "ajoute un graphique des tickets par région");
+    expect(scripts.claimed!.seen.reviews).toBe(1);
+    expect(t.board.version).toBe(1);
+    expect(t.texts).toEqual(["J'ai ajouté le graphique des tickets par région.", "Le graphique n'a pas été ajouté."]);
+  });
+
   it("with the reviewer off, edits are saved as they are made and nothing is checked", async () => {
     const t = await turn("off", "&review=off");
     expect(Object.keys(t.board.config.widgets)).toEqual(["hf_burn"]);
     expect(t.parts.some((p) => p.type === "data-review")).toBe(false);
     expect(scripts.off!.seen.reviews).toBe(0);
     expect(t.texts).toEqual(["I added the burn rate."]);
+  });
+});
+
+describe("which turns the reviewer sees", () => {
+  it("one whose board gained a version, one that tried an edit, or one whose words claim an edit", () => {
+    expect(wantsReview(true, [])).toBe(true);
+    // A refused edit: the board gained nothing, and the reply may still say it did.
+    expect(wantsReview(false, [{ text: "", toolResults: [{ output: { applied: false, error: "no such measure" } }] }])).toBe(true);
+    expect(wantsReview(false, [{ text: "", toolResults: [{ output: { ok: true, rows: [] } }] }, { text: "There were 12." }])).toBe(false);
+  });
+
+  it("reads a claim of an edit in English, French, Portuguese, Spanish and Hindi, and not in an answer about the data", () => {
+    for (const said of ["I added a bar chart of visits.", "J'ai supprimé le tableau.", "Adicionei um gráfico de barras.", "Eliminé la tabla.", "मैंने चार्ट जोड़ दिया है।", "मैंने चार्ट जोड़ दिया है।".normalize("NFD")])
+      expect(claimsEdit(said), said).toBe(true);
+    for (const said of ["Show: 12 tickets were created last week.", "Il y a 12 tickets ouverts.", "Foram registados 12 casos.", "पिछले हफ़्ते 12 टिकट बने।"]) expect(claimsEdit(said), said).toBe(false);
   });
 });
 

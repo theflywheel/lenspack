@@ -127,7 +127,8 @@ store: { kind: memory }
     for (const h of opened.hosts) await seedBoards(h);
     hosts = opened.hosts;
     close = opened.close;
-    // A chat model that only answers, so each turn's system prompt, and what its reviewer reads, can be read.
+    // A chat model that only answers, so each turn's system prompt, and what its reviewer reads, can be read. Its
+    // answer claims an edit the board did not gain, so the reviewer looks.
     registerLlmAdapter({
       kind: "access-mock",
       defaultBaseUrl: "mock:",
@@ -143,7 +144,7 @@ store: { kind: memory }
               stream: new ReadableStream({
                 start(c) {
                   c.enqueue({ type: "text-start", id: "t" });
-                  c.enqueue({ type: "text-delta", id: "t", delta: "ok" });
+                  c.enqueue({ type: "text-delta", id: "t", delta: "I added the chart." });
                   c.enqueue({ type: "text-end", id: "t" });
                   c.enqueue({ type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } } });
                   c.close();

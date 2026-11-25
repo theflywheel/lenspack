@@ -112,6 +112,12 @@ export function readWindow(query: MeasuredQuery, own: TimeWindow | null, timeZon
   return { from: new Date(bucketBack(own.from.getTime(), grain, timeZone)), to: own.to };
 }
 
+/** The start of the bucket holding an instant, in the pack's time zone (as a wall-clock time written as UTC). */
+const bucketAt = (d: Date, grain: Grain, timeZone?: string) => {
+  const zone = bucketZone(timeZone);
+  return bucketStart(zone ? localWallClock(d.getTime(), zone) : d.getTime(), grain);
+};
+
 const parseLabel = (s: string) => Date.parse(s.length === 10 ? `${s}T00:00:00Z` : `${s.replace(":00", ":00:00")}Z`);
 
 /**
@@ -120,10 +126,8 @@ const parseLabel = (s: string) => Date.parse(s.length === 10 ? `${s}T00:00:00Z` 
  * to the last. A bucket with no records is in the list all the same.
  */
 export function bucketsOf(seen: string[], grain: Grain, window: TimeWindow | null, timeZone?: string): string[] {
-  const zone = bucketZone(timeZone);
-  const wall = (d: Date) => (zone ? localWallClock(d.getTime(), zone) : d.getTime());
   const known = seen.map(parseLabel).filter((n) => Number.isFinite(n));
-  const ends = window ? [bucketStart(wall(window.from), grain), bucketStart(wall(new Date(window.to.getTime() - 1)), grain)] : [];
+  const ends = window ? [bucketAt(window.from, grain, timeZone), bucketAt(new Date(window.to.getTime() - 1), grain, timeZone)] : [];
   const all = [...ends, ...known];
   if (!all.length) return [];
   const [from, to] = [Math.min(...all), Math.max(...all)];
@@ -133,6 +137,49 @@ export function bucketsOf(seen: string[], grain: Grain, window: TimeWindow | nul
     if (out.length > GRID_CELLS) break;
   }
   return out;
+}
+
+/** The buckets the steps ran over, for the answer and for its words. */
+export type ComputeWindow = NonNullable<WidgetData["window"]>;
+
+type Span = { from: string; to: string; by: "data" | "range"; future: boolean; capped: boolean };
+
+/**
+ * The first and last bucket the steps run over (docs/compute.md), or null when
+ * there are none. A summary runs from the first to the last bucket where the
+ * measure has a value (`filled`), the same buckets for every group, within the
+ * query's time range (`range`, as bucket labels), when it has one. A series
+ * with a time range runs over the whole range. Neither goes past the bucket
+ * holding now (`clock`). With no time range, both run over the measure's own
+ * buckets; a summary with a time range and no value in it runs over the range.
+ */
+function spanOf(all: string[], filled: Set<string>, range: [string, string] | null, clock: string, summary: boolean): Span | null {
+  const inRange = (b: string) => !range || (b >= range[0] && b <= range[1]);
+  const data = all.filter((b) => filled.has(b) && inRange(b) && b <= clock);
+  const future = all.some((b) => filled.has(b) && inRange(b) && b > clock);
+  if (data.length && (summary || !range)) return { from: data[0]!, to: data.at(-1)!, by: "data", future, capped: false };
+  if (!range) return null;
+  const to = range[1] < clock ? range[1] : clock;
+  return range[0] <= to ? { from: range[0], to, by: "range", future, capped: to < range[1] } : null;
+}
+
+const SPAN_VERB = { mean: "averaged over", sum: "added up over", min: "the lowest of", max: "the highest of", median: "the median of", last: "the latest of" } as const;
+
+/** The buckets the steps ran over, in words the reply can repeat: "averaged over 20 days, 2026-03-01 to 2026-03-20 (…)". */
+function spanWords(span: Span, n: number, query: MeasuredQuery, pack: Pack, ranged: boolean): string {
+  const grain = computeGrain(query) ?? "day";
+  const { plural } = grainWords(grain);
+  const last = query.compute!.steps.at(-1)!;
+  const ratio = query.compute!.steps.find((s) => s.op === "ratio");
+  const what = ratio ? `${labelOf(pack, query.measure)} or ${labelOf(pack, ratio.to)}` : labelOf(pack, query.measure);
+  const verb = last.op === "over_time" ? SPAN_VERB[last.fn] : "over";
+  const dates = n === 1 ? span.from : `${span.from} to ${span.to}`;
+  const now = grain === "day" ? "today" : `this ${grain}`;
+  const why =
+    span.by === "data"
+      ? `the first to the last ${grain} with ${what}${ranged ? " in the time range" : ""}`
+      : `the time range${span.capped ? ` up to ${now}` : ""}${last.op === "over_time" ? `; no ${grain} in it has ${what}` : ""}`;
+  return `${verb} ${n} ${n === 1 ? grain : plural}, ${dates} (${why})${span.future ? `; ${plural} after ${now} are left out` : ""}`;
 }
 
 // ---- the steps ------------------------------------------------------------------
@@ -208,11 +255,12 @@ const too = (what: string, grain: Grain | undefined) =>
   );
 
 /**
- * The computed answer from the base query's answer, over the window the base
- * read (readWindow). Throws ResolveError when the base was cut at the row
- * limit, or holds too few buckets for a window.
+ * The computed answer from the base query's answer. `own` is the query's own
+ * time range (the base may have read one bucket more: readWindow), `now` the
+ * clock no bucket goes past. Throws ResolveError when the base was cut at the
+ * row limit, or holds too few buckets for a window.
  */
-export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack, window: TimeWindow | null): WidgetData {
+export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack, own: TimeWindow | null, now: Date = new Date()): WidgetData {
   const steps = query.compute!.steps;
   const grain = computeGrain(query);
   const ratio = steps.find((s): s is Extract<ComputeStep, { op: "ratio" }> => s.op === "ratio");
@@ -226,12 +274,15 @@ export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack,
   const { label: name, text } = describeComputed(query, pack);
   const format: Format = ratio ? (ratio.percent ? "percent" : "number") : base.format;
   const outFormat: Format = steps.some((s) => s.op === "change" && s.percent) ? "percent" : format;
+  let window: ComputeWindow | undefined;
+  let spanText = "";
   const out = (rows: DataRow[], notes?: string[]): WidgetData => ({
     rows,
     total: rows.reduce((n, r) => n + r.count, 0),
     format: outFormat,
     label: name,
-    computed: text,
+    computed: spanText ? `${text}${text.includes(": ") ? "; " : ": "}${spanText}` : text,
+    ...(window ? { window } : {}),
     ...(base.approximate ? { approximate: true } : {}),
     ...(notes?.length || base.notes?.length ? { notes: [...(base.notes ?? []), ...(notes ?? [])] } : {}),
   });
@@ -249,21 +300,37 @@ export function applyCompute(query: MeasuredQuery, base: WidgetData, pack: Pack,
   }
 
   if (base.truncated || base.rows.length > COMPUTE_ROWS) throw too(`the measure for every ${query.kind === "breakdown" ? `${query.dimension} and ` : query.kind === "series" && query.by ? `${query.by} and ` : ""}${grain}`, grain);
-  const buckets = bucketsOf(base.rows.map((r) => r.group), grain!, window, pack.timeZone);
-  // The bucket read before the window for a change is not shown, counted or ranked.
-  const lead = window && steps.some((s) => s.op === "change") ? 1 : 0;
+  const read = readWindow(query, own, pack.timeZone);
+  const all = bucketsOf(base.rows.map((r) => r.group), grain!, read ?? own, pack.timeZone);
+  // The buckets where the measure has a value: not empty, and not 0 for a count or a sum. A ratio
+  // has one where either of its measures does. Rows of other measures on other days are not.
+  const has = (v: number | null | undefined, n: Nature) => v !== null && v !== undefined && (n === "level" || v !== 0);
+  const filled = new Set(base.rows.filter((r) => has(r.value, nature) || (ratio && has(r.values?.[ratio.to], toNature))).map((r) => r.group));
+  const at = (d: Date) => label(bucketAt(d, grain!, pack.timeZone), grain!);
+  const range: [string, string] | null = own ? [at(own.from), at(new Date(own.to.getTime() - 1))] : null;
+  const span = spanOf(all, filled, range, at(now), steps.at(-1)!.op === "over_time");
+  const [lo, hi] = span ? [all.indexOf(span.from), all.indexOf(span.to)] : [0, -1];
+  // The bucket before the window, read for a change when the query has a time range, is not shown, counted or ranked.
+  const lead = read && span && lo > 0 ? 1 : 0;
+  const buckets = all.slice(lo - lead, hi + 1);
+  if (span) {
+    window = { from: span.from, to: span.to, buckets: buckets.length - lead, grain: grain! };
+    spanText = spanWords(span, window.buckets, query, pack, !!range);
+  }
+  // A value is one group even when the source has no row: its days still count, as 0 for a count or a sum.
   const keys = [...new Set(base.rows.map((r) => r.series ?? ""))];
-  if (buckets.length * Math.max(1, keys.length) > GRID_CELLS) throw too(`${buckets.length.toLocaleString("en")} ${grain}s for each of ${keys.length} groups`, grain);
+  if (!keys.length && query.kind === "value") keys.push("");
+  if (all.length > GRID_CELLS || buckets.length * Math.max(1, keys.length) > GRID_CELLS) throw too(`${Math.max(all.length, buckets.length).toLocaleString("en")} ${grain}s for each of ${keys.length} groups`, grain);
   const rolling = steps.find((s): s is Extract<ComputeStep, { op: "rolling" }> => s.op === "rolling");
   if (rolling && buckets.length - lead < rolling.window)
     throw new ResolveError("NOT_SUPPORTED", `A ${rolling.window}-${grain} rolling ${rolling.fn === "mean" ? "average" : "sum"} needs at least ${rolling.window} ${grain}s, and this window has ${buckets.length - lead}. Widen the time range or shorten the window`, query.measure);
   const index = new Map(buckets.map((b, i) => [b, i]));
-  const shown = base.rows.filter((r) => (index.get(r.group) ?? lead) >= lead);
+  const shown = base.rows.filter((r) => (index.get(r.group) ?? -1) >= lead);
   const byKey = new Map<string, DataRow[]>();
   for (const r of base.rows) byKey.set(r.series ?? "", [...(byKey.get(r.series ?? "") ?? []), r]);
 
   const groups = keys.map((key) => {
-    const rows = byKey.get(key)!;
+    const rows = byKey.get(key) ?? [];
     const counts = buckets.map(() => 0);
     // Every bucket of the window: an empty one is 0 for a count or a sum, no value otherwise.
     let values: Cell[] = buckets.map(() => (ratio ? divide(empty(nature), empty(toNature)) : empty(nature)));
@@ -331,7 +398,7 @@ export function describeComputed(query: MeasuredQuery, pack: Pack): { label: str
         break;
       case "change":
         name = `${on} ${s.percent ? "% " : ""}change in ${name}`;
-        rules.push(query.time ? `the first ${grain} changes from the ${grain} before the time range` : `the first ${grain} has no ${grain} before it, so it has no change`);
+        rules.push(query.time ? `the first ${grain} changes from the ${grain} before it, even when that is before the time range` : `the first ${grain} has no ${grain} before it, so it has no change`);
         if (s.percent) rules.push(`a change from 0 has no percentage and is skipped`);
         gaps = true;
         break;
