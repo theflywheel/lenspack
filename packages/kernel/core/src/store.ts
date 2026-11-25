@@ -132,12 +132,16 @@ export type StagedStore = BoardStore & {
    * each; `asOne` saves only where they ended up, as a single version, so an edit that was later
    * corrected never reaches the store. When the board changed underneath meanwhile, the edits
    * are applied again on top of that change and saved as one version, or, when one of them no
-   * longer applies, nothing is saved and commit throws, saying which.
+   * longer applies, nothing is saved and commit throws, saying which. Returns the versions it
+   * saved, numbered as the store underneath numbered them (none when nothing was held).
    */
-  commit(opts?: { asOne?: boolean }): Promise<void>;
-  /** Drops the held edits: the board stays as the store underneath has it. */
-  discard(): void;
+  commit(opts?: { asOne?: boolean }): Promise<SavedVersion[]>;
+  /** Drops the held edits, the board staying as the store underneath has it; returns the version numbers they had held. */
+  discard(): number[];
 };
+
+/** A version a commit saved: its number in the store underneath, and what it changed. */
+export type SavedVersion = { version: number; summary: string };
 
 /**
  * Holds edits to one board back from the store underneath until commit().
@@ -206,15 +210,19 @@ export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
     },
     async commit(opts = {}) {
       const writes = held.map((h) => h.write);
+      const summaries = held.map((h) => h.version.summary);
       const last = held.at(-1)?.version;
       const from = base;
       held = [];
       base = null;
-      if (!last || !from) return;
+      if (!last || !from) return [];
       const now = await inner.get(boardId);
       if (!now) throw new Error(`No board called "${boardId}"`);
-      const saveOne = (before: BoardConfig, config: BoardConfig) =>
-        inner.replaceConfig({ id: boardId, config, source: last.source, summary: describeChanges(before, config).join(", ") || last.summary });
+      const saveOne = async (before: BoardConfig, config: BoardConfig) => {
+        const summary = describeChanges(before, config).join(", ") || last.summary;
+        const board = await inner.replaceConfig({ id: boardId, config, source: last.source, summary });
+        return [{ version: board.version, summary }];
+      };
       if (now.version !== from.version) {
         // Changed meanwhile (by hand, or in the host). The ops are applied again rather than their
         // result copied, so that change is kept, all of them before anything is saved: a turn
@@ -228,32 +236,33 @@ export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
             config = r.config;
           }
         }
-        await saveOne(now.config, config);
-        return;
+        return saveOne(now.config, config);
       }
-      if (opts.asOne) {
-        await saveOne(from.config, last.config);
-        return;
-      }
-      let saved = 0;
+      if (opts.asOne) return saveOne(from.config, last.config);
+      const saved: SavedVersion[] = [];
       try {
-        for (const w of writes) {
+        for (const [i, w] of writes.entries()) {
+          let board: Board;
           if ("ops" in w) {
             const r = await inner.patch({ id: boardId, ...w });
             if (!r.ok) throw new Error(r.error);
-          } else await inner.replaceConfig({ id: boardId, ...w });
-          saved++;
+            board = r.board;
+          } else board = await inner.replaceConfig({ id: boardId, ...w });
+          saved.push({ version: board.version, summary: summaries[i]! });
         }
       } catch (e) {
         // The store underneath refused a later edit (a host that would not take it): the board goes
         // back to where it was, so the turn is not left saved in part.
-        if (saved) await inner.revertTo(boardId, from.version);
+        if (saved.length) await inner.revertTo(boardId, from.version);
         throw e;
       }
+      return saved;
     },
     discard() {
+      const dropped = held.map((h) => h.version.version);
       held = [];
       base = null;
+      return dropped;
     },
   };
 }

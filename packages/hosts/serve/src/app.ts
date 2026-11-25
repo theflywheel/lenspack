@@ -243,6 +243,9 @@ export function heldReply(writer: UIMessageStreamWriter) {
   };
 }
 
+/** Draft version numbers as a short range for an audit line: "v3", "v3–v5". */
+const draftRange = (versions: number[]) => (versions.length > 1 ? `v${versions[0]}–v${versions.at(-1)}` : `v${versions[0]}`);
+
 /** The effort to ask for: the client's, else the configured default when it is for this model and one it takes. */
 export function pickEffort(p: Pickable, asked: string | null | undefined, fallback?: ChatDefault): string | null {
   if (asked) return asked;
@@ -586,8 +589,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly,
-      onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
+    // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
+    // chat-save line says which versions were saved, if any.
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged,
+      onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const view = (c: BoardConfig) => shownConfig(c, h.ctx);
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
@@ -652,7 +657,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       execute: ({ writer }) => withMeter(scope, async () => {
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
-        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
+        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[] } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
         // The findings that would make the held edits mislead; while there are any, they are dropped rather than saved.
         let misleading: Finding[] = [];
         let toldUnchanged = false;
@@ -744,17 +749,27 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // A turn that ended before a verdict (no review, or a failure part-way) shows what round 1 said.
           held?.release();
           if (staged) {
+            const saveLine = (outcome: "ok" | "refused", detail: string) => audit({ user, pack: h.name, board: boardId, action: "chat-save", outcome, detail });
+            turn.saved = [];
             if (misleading.length) {
-              staged.discard();
+              const dropped = staged.discard();
               turn.outcome = "left unchanged";
+              if (dropped.length) saveLine("refused", `nothing saved: ${dropped.length} draft ${dropped.length === 1 ? "edit" : "edits"} (${draftRange(dropped)}) dropped`);
               // The fix round failed part-way: the board is still as it was, and the reply should say so.
               if (!toldUnchanged) say(rolledBackLine(misleading));
             } else {
               try {
-                await staged.commit({ asOne: corrected });
+                const saved = await staged.commit({ asOne: corrected });
+                turn.saved = saved.map((v) => `v${v.version}`);
+                if (saved.length) {
+                  turn.outcome = "saved";
+                  saveLine("ok", `saved ${saved.map((v) => `v${v.version}: ${v.summary}`).join("; ")}`);
+                }
               } catch (e) {
+                const why = (e instanceof Error ? e.message : String(e)).slice(0, 200);
                 turn.outcome = "not saved";
-                say(`The change could not be saved: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+                saveLine("refused", `nothing saved: ${why}`);
+                say(`The change could not be saved: ${why}`);
               }
             }
           }
