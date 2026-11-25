@@ -97,17 +97,25 @@ a closing `mean`, `sum`, `min`, `max`, `median` or `last`.
 
 These rules are the same on every source, and the answer says which ones applied (the `computed` text below).
 
-- **Empty buckets.** The steps run over every bucket of the window, from the bucket holding its start to the bucket
-  holding its end, in the pack's time zone. With no time range, from the first bucket the source answered to the
-  last. A bucket with no records is **0 for a count, a sum or a distinct count** (nothing happened). For anything
-  else (an average, a percentile, a ratio) it **has no value** and is skipped.
+- **The window is the measure's own days.** A summary (`over_time`) runs from the first bucket where the measure has
+  a value to the last, in the pack's time zone. A bucket of 0 for a count or a sum is not a value here: rows that
+  are only of another measure (receipts, on days with no dispatch) do not stretch the window, nor do days of 0 at
+  either end. The window is the same for every group, so each group is averaged over the same days. With a time
+  range, the window stays inside it; when no bucket in the range has a value, the window is the whole range. A
+  series with a time range runs over the whole range; with none, over the measure's own buckets, like a summary.
+- **Never past now.** No window goes past the bucket holding the current time in the pack's time zone (today, for
+  days). A row dated later is not counted, and the answer says so.
+- **Empty buckets.** Inside the window the steps run over every bucket. A bucket with no records is **0 for a
+  count, a sum or a distinct count** (nothing happened). For anything else (an average, a percentile, a ratio) it
+  **has no value** and is skipped.
 - **A ratio is taken wherever either measure has rows.** A group or bucket where the divisor has rows and the
   numerator has none is 0 for a count or a sum (nothing happened), and has no value for anything else.
 - **Zero or missing bases are skipped, never counted as 0 or as infinite.** A ratio whose divisor is 0 or missing has
   no value. A % change from 0 has no value. A change from or to a bucket with no value has no value.
-- **The first bucket changes from the bucket before the time range.** The source is asked for that one bucket
-  too; it is read only for this change, and is not shown or counted. With no time range there is no bucket before
-  the first, so the first bucket has no change.
+- **The first bucket changes from the bucket before it.** With a time range, the source is asked for one bucket
+  before the range too, so the window's first bucket has one to change from even at the start of the range; it is
+  read only for this change, and is not shown or counted. With no time range there is no bucket before the first,
+  so the first bucket has no change.
 - **A rolling window is full or nothing.** The first `window - 1` buckets of the window are left out of the answer,
   and a window that contains a bucket with no value has no value.
 - **A running total** starts at the first bucket shown; a bucket with no value adds nothing.
@@ -133,11 +141,16 @@ Every computed answer carries a name for its numbers and the rules it followed, 
 ```
 label:    average day-on-day % change in units dispatched
 computed: average day-on-day % change in units dispatched: a day with no records counts as 0; the first day
-          changes from the day before the time range; a change from 0 has no percentage and is skipped; days
-          without a value are skipped in the average
+          changes from the day before it, even when that is before the time range; a change from 0 has no
+          percentage and is skipped; days without a value are skipped in the average; averaged over 20 days,
+          2026-03-01 to 2026-03-20 (the first to the last day with units dispatched in the time range)
 ```
 
-The chart and table use the label; the agent's `query` tool returns `computed`, and `explain` starts with it.
+The answer also carries the window itself, `window: { from, to, buckets, grain }` (the first and last bucket, named
+as the rows name them, and how many), so a reply can say "averaged over 20 days, 1 to 20 March".
+
+The chart and table use the label; the agent's `query` tool returns `computed`, and `explain` starts with the rules
+(the window is known only once the source has answered).
 
 ## Superset
 

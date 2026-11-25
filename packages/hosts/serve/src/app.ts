@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
+import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
@@ -16,7 +16,7 @@ import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
-import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable } from "./review";
+import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
@@ -193,6 +193,55 @@ const withoutText = <T extends { type: string }>() =>
       if (!chunk.type.startsWith("text-")) out.enqueue(chunk);
     },
   });
+
+/**
+ * The first round's words once it has tried an edit, held until the reviewer has looked: written
+ * out when the edit stands, dropped when a fix round replaces it, so the reply describes only the
+ * board as it ends, never "I added the chart" followed by "I removed the chart I added". Words
+ * before the first edit, and all of an answer to a question (no edit), stream as they are written.
+ */
+export function heldReply(writer: UIMessageStreamWriter) {
+  let state: "streaming" | "holding" | "released" | "dropped" = "streaming";
+  // Text parts begun before the hold finish as they began, so no part is left open.
+  const passing = new Set<string>();
+  const held: UIMessageChunk[] = [];
+  const stream = new TransformStream<UIMessageChunk, UIMessageChunk>({
+    transform(chunk, out) {
+      if (state === "streaming" && chunk.type === "tool-output-available" && isEditResult(chunk.output)) state = "holding";
+      if (chunk.type === "text-start" || chunk.type === "text-delta" || chunk.type === "text-end") {
+        if (state === "streaming" && chunk.type === "text-start") passing.add(chunk.id);
+        if (!passing.has(chunk.id) && state === "holding") return void held.push(chunk);
+        if (!passing.has(chunk.id) && state === "dropped") return;
+        if (chunk.type === "text-end") passing.delete(chunk.id);
+      }
+      out.enqueue(chunk);
+    },
+  });
+  return {
+    stream,
+    /** True once the round has tried an edit, so its words wait for the reviewer. */
+    get holding() {
+      return state === "holding";
+    },
+    /** Words the server writes for the round (a closing summary), held with the model's while holding. */
+    say(id: string, text: string) {
+      if (state !== "holding") return writeText(writer, id, text);
+      held.push({ type: "text-start", id }, { type: "text-delta", id, delta: text }, { type: "text-end", id });
+    },
+    /** The edit stands: what was held goes out, and later words pass. Does nothing once dropped. */
+    release() {
+      if (state === "dropped" || state === "released") return;
+      state = "released";
+      for (const c of held.splice(0)) writer.write(c);
+    },
+    /** A fix round replaces the edit: what was held, and anything still on its way, is never shown. */
+    drop() {
+      if (state === "released") return;
+      state = "dropped";
+      held.length = 0;
+    },
+  };
+}
 
 /** The effort to ask for: the client's, else the configured default when it is for this model and one it takes. */
 export function pickEffort(p: Pickable, asked: string | null | undefined, fallback?: ChatDefault): string | null {
@@ -613,9 +662,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           writeText(writer, `reply-${randomUUID()}`, text);
           turn.answer = text.slice(0, 2000);
         };
+        // With a reviewer, round 1's words after its first edit wait for the verdict (heldReply).
+        const held = reviewer ? heldReply(writer) : null;
         try {
           // Round 1 builds. Round 2 runs only to fix a misleading change, and its words are held
           // back until the fix has been checked, so a fix that failed never claims to have worked.
+          // Round 1's words after an edit are held too, and dropped when round 2 replaces the edit:
+          // the reply then says once what the board ended as.
           for (let round = 1; round <= 2; round++) {
             const fixing = round === 2;
             const builder = fixing ? escalate : builderModel;
@@ -630,7 +683,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
               const r = streamText({ model: builder.languageModel, ...call, stopWhen: [stepCountIs(12), stopOnRepeatedRefusals(3)], experimental_transform: replyGuard });
               // A rejected tool call shows its reason (a chart kind that does not exist, a missing title), not "An error occurred.".
               const ui = r.toUIMessageStream({ sendStart: round === 1, sendFinish: false, onError: (e) => (e instanceof Error ? e.message : String(e)).slice(0, 300) });
-              writer.merge(fixing ? ui.pipeThrough(withoutText()) : ui);
+              writer.merge(fixing ? ui.pipeThrough(withoutText()) : held ? ui.pipeThrough(held.stream) : ui);
               return r;
             });
             const steps = await result.steps;
@@ -649,17 +702,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
               // without editing: say so, rather than end it in silence.
               else if (finish === "content-filter") answer = `${builder.name} declined to answer this request.`;
               else if (refused.length) answer = `I could not do that with the "${h.pack.pack}" pack. Refused: ${[...new Set(refused)].join("; ")}`;
-              if (answer && !fixing) say(answer);
+              if (answer && !fixing) (held ? held.say(`reply-${randomUUID()}`, answer) : say(answer));
             }
             if (!fixing) turn.answer = answer.slice(0, 2000);
             if (!reviewer) break;
-            // Questions get no review: there is nothing on the board to check.
+            // Questions get no review: there is nothing on the board to check. A turn is reviewed when
+            // the board gained a version, or when the model tried an edit or its reply claims one.
             const gained = (await store.versions(boardId)).some((v) => v.version > startVersion);
-            if (!fixing && !gained && !/\b(add|rename|remove|move|resize|make|put|show|plot|pack|compact|set)\b/i.test(instruction)) break;
+            if (!fixing && !wantsReview(gained, steps as never)) break;
             const verdict = await review(writer, reviewer, turn.refusals.slice(-8));
+            const material = materialFindings(verdict);
+            // Round 1's held words go out when its edit stands; a fix round's words will replace them.
+            if (!fixing) material.length ? held?.drop() : held?.release();
             writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...verdict, raw: undefined } });
             turn.reviews.push({ round, satisfied: verdict.satisfied, unavailable: verdict.unavailable, findings: verdict.findings, note: verdict.note });
-            const material = materialFindings(verdict);
             if (!fixing && material.length) {
               // The change would mislead: one round to correct it, with the findings as the instruction.
               misleading = material;
@@ -685,6 +741,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             break;
           }
         } finally {
+          // A turn that ended before a verdict (no review, or a failure part-way) shows what round 1 said.
+          held?.release();
           if (staged) {
             if (misleading.length) {
               staged.discard();

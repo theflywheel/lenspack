@@ -200,7 +200,7 @@ async function runComputed(query: MeasuredQuery, opts: RunOptions): Promise<Widg
   const data = await run(computeBase(query, read), { ...opts, ctx, baseRows: COMPUTE_ROWS });
   if (data.error) return data;
   try {
-    return applyCompute(query, data, opts.pack, read ?? own);
+    return applyCompute(query, data, opts.pack, own, ctx.now);
   } catch (e) {
     if (e instanceof ResolveError) return refusal(e);
     throw e;
