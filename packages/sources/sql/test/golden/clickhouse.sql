@@ -419,3 +419,28 @@ WHERE (("parts"."__t_raw" >= CAST({p2:Int64} AS Int64)) AND ("parts"."__t_raw" <
 GROUP BY toDateTime(toStartOfDay("parts"."__t", 'Asia/Kolkata'), 'Asia/Kolkata')
 ORDER BY "bucket" DESC NULLS LAST
 LIMIT 20001;
+
+-- {"kind":"series","measure":"dispatched","grain":"day","time":{"last":"7d"}} in Asia/Kolkata
+-- params: ["2026-02-09","2026-02-16"]
+SELECT toDateTime(toStartOfDay(CAST("stock"."__t" AS DateTime64(3, 'UTC'))), 'UTC') AS "bucket", sum("stock"."__m_dispatched") AS "value", count(*) AS "n"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE (("stock"."__t" >= CAST({p1:String} AS Date)) AND ("stock"."__t" < CAST({p2:String} AS Date)))
+GROUP BY toDateTime(toStartOfDay(CAST("stock"."__t" AS DateTime64(3, 'UTC'))), 'UTC')
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
+
+-- {"kind":"series","measure":"dispatched","grain":"week","time":{"period":"month","offset":-1}} in Asia/Kolkata
+-- params: ["2026-01-01","2026-02-01"]
+SELECT toDateTime(toMonday(CAST("stock"."__t" AS DateTime64(3, 'UTC'))), 'UTC') AS "bucket", sum("stock"."__m_dispatched") AS "value", count(*) AS "n"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE (("stock"."__t" >= CAST({p1:String} AS Date)) AND ("stock"."__t" < CAST({p2:String} AS Date)))
+GROUP BY toDateTime(toMonday(CAST("stock"."__t" AS DateTime64(3, 'UTC'))), 'UTC')
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
+
+-- {"kind":"value","measure":"dispatched","compare":"previous_period","time":{"period":"month"}} in Asia/Kolkata
+-- params: ["2026-02-01","2026-02-16","2026-02-01","2026-02-16","2026-01-01","2026-01-16","2026-01-01","2026-02-16"]
+SELECT sum(CASE WHEN (("stock"."__t" >= CAST({p1:String} AS Date)) AND ("stock"."__t" < CAST({p2:String} AS Date))) THEN "stock"."__m_dispatched" END) AS "value", count(CASE WHEN (("stock"."__t" >= CAST({p3:String} AS Date)) AND ("stock"."__t" < CAST({p4:String} AS Date))) THEN 1 END) AS "n", sum(CASE WHEN (("stock"."__t" >= CAST({p5:String} AS Date)) AND ("stock"."__t" < CAST({p6:String} AS Date))) THEN "stock"."__m_dispatched" END) AS "previous"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE ("stock"."__t" >= CAST({p7:String} AS Date)) AND ("stock"."__t" < CAST({p8:String} AS Date))
+LIMIT 1;

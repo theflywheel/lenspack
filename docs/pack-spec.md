@@ -15,6 +15,8 @@ entities:
     time: <column>          # default time column for series, windows and comparisons
     # …or a field holding epoch numbers, which every connector converts:
     # time: { field: createdtime, unit: epoch_ms }
+    # …or a column of calendar dates with no time of day (a DATE column), whose days are the same in every zone:
+    # time: { field: dispatched_on, type: date }
     # …or an expression, one per dialect where they differ:
     # time: { sql: { postgres: "(to_timestamp(createdtime / 1000.0) AT TIME ZONE 'UTC')", duckdb: "epoch_ms(createdtime)", … } }
     tenant: <column>        # when present, every query over this entity MUST carry a tenant

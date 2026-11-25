@@ -90,6 +90,7 @@ describe("run_sql's table list", () => {
       entities: {
         plain: { source: "plain_t", grain: "one row per visit", time: "at" },
         epoch: { source: "epoch_t", time: { field: "created_ms", unit: "epoch_ms" } },
+        dated: { source: "dated_t", time: { field: "on_day", type: "date" } },
         expr: { source: "expr_t", time: { sql: "to_timestamp(created_s)" } },
         dialects: { source: "dialects_t", time: { sql: { postgres: "to_timestamp(created_s)", duckdb: "to_timestamp(created_s)" } } },
         timeless: { source: "targets_t" },
@@ -99,6 +100,7 @@ describe("run_sql's table list", () => {
     expect(describeSources(pack).split("\n")).toEqual([
       "plain: plain_t — one row per visit (time: at)",
       "epoch: epoch_t (time: created_ms, epoch milliseconds)",
+      "dated: dated_t (time: on_day, calendar dates)",
       "expr: expr_t (time: to_timestamp(created_s))",
       "dialects: dialects_t (time: a SQL expression per dialect)",
       "timeless: targets_t",

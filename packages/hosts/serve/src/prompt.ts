@@ -1,6 +1,6 @@
 import type { BoardChange, BoardConfig, Catalogue } from "@lenspack/core";
 import { describeQuery, summarise } from "@lenspack/core";
-import type { Pack } from "@lenspack/pack";
+import { type Pack, datedTime, timeFieldOf } from "@lenspack/pack";
 
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
@@ -29,7 +29,8 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
   const onEntity = (entity: string) => pack.dimensions.filter((d) => usable.has(d.key) && d.type !== "time" && (d.entity === entity || d.also?.[entity])).map((d) => d.key);
   const entities = Object.entries(pack.entities).map(([k, e]) => {
     const joins = e.joins.map((j) => `→ ${j.to} (${j.type.replace(/_/g, "-")})`).join(", ");
-    return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${e.geo ? `; has a location (latitude, longitude): a points query lists them, a map draws them${onEntity(k).length ? `, named or coloured by ${onEntity(k).join(", ")}` : ""}` : ""}${joins ? `; joins ${joins}` : ""}`;
+    // A column of calendar dates is named as its column, as a plain time column is.
+    return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${datedTime(e) ? timeFieldOf(e) : e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${e.geo ? `; has a location (latitude, longitude): a points query lists them, a map draws them${onEntity(k).length ? `, named or coloured by ${onEntity(k).join(", ")}` : ""}` : ""}${joins ? `; joins ${joins}` : ""}`;
   });
   const located = Object.entries(pack.entities).filter(([, e]) => e.geo);
   // A large catalogue: one line per entity, and a label that only restates its key left out.

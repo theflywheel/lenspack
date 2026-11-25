@@ -9,6 +9,7 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { campaign, contextFor } from "../index";
+import { seedStock, seedStockSearch, stockCases, stockCtx, stockPack } from "./stock";
 import { seedTicks, seedTicksSearch, ticksCases, ticksPack } from "./ticks";
 
 // One pack, one set of generated documents, two backends. Every query below
@@ -163,6 +164,23 @@ describe.skipIf(!url)("elasticsearch agrees with duckdb on the campaign pack", (
     for (const c of ticksCases)
       it(c.label, async () => {
         const [a, b] = await Promise.all([run(c.query, { pack: ticksPack, connector: sqlConnector(ticks.executor) }), run(c.query, { pack: ticksPack, connector: es })]);
+        c.check(a);
+        c.check(b);
+        expect(b.rows).toEqual(a.rows);
+      });
+  });
+
+  describe("made-up stock by calendar date, in a pack whose days start in New York", () => {
+    let stock: Awaited<ReturnType<typeof openDuckdb>>;
+    beforeAll(async () => {
+      stock = await openDuckdb(":memory:");
+      await Promise.all([seedStock(stock.writer, "duckdb"), seedStockSearch(es.request)]);
+    });
+    afterAll(async () => stock?.close());
+    for (const c of stockCases)
+      it(c.label, async () => {
+        const [a, b] = await Promise.all([run(c.query, { pack: stockPack, connector: sqlConnector(stock.executor), ctx: stockCtx }), run(c.query, { pack: stockPack, connector: es, ctx: stockCtx })]);
+        expect(b.error, b.error).toBeUndefined();
         c.check(a);
         c.check(b);
         expect(b.rows).toEqual(a.rows);

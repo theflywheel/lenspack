@@ -1,7 +1,7 @@
-import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, tenantOf } from "@lenspack/pack";
+import { type Fragment, type MeasureExpr, type Pack, type PackDimension, type PackMeasure, type Where, datedTime, tenantOf } from "@lenspack/pack";
 
 import { type Ast, type Expr, type Grouped, type Join, type Source, and } from "./ast";
-import { type BoundDimension, type BoundFilter, type BoundPlan, SPLIT_ROWS, type TimeWindow, bucketZone, rowCap } from "@lenspack/engine";
+import { type BoundDimension, type BoundFilter, type BoundPlan, SPLIT_ROWS, type TimeWindow, bucketZoneOf, dayStartFrom, localDate, rowCap } from "@lenspack/engine";
 
 // Planning turns a bound plan into an AST. Each entity becomes a subquery that
 // projects the pack's dimension and measure fragments under reserved aliases,
@@ -21,7 +21,7 @@ const HAVING = { eq: "=", neq: "<>", gt: ">", gte: ">=", lt: "<", lte: "<=" } as
 
 const col = (alias: string, name: string): Expr => ({ t: "col", alias, col: name });
 const raw = (sql: Fragment): Expr => ({ t: "raw", sql });
-const param = (value: unknown, cast?: "timestamp" | "double" | "int" | "bigint"): Expr => ({ t: "param", value, cast });
+const param = (value: unknown, cast?: "timestamp" | "date" | "double" | "int" | "bigint"): Expr => ({ t: "param", value, cast });
 
 function dimensionExpr(d: PackDimension): Expr {
   if (d.field) return col("", d.field);
@@ -74,7 +74,8 @@ function measureRowExpr(m: Aggregated): Expr | null {
 function timeExpr(time: NonNullable<Pack["entities"][string]["time"]>): Expr {
   if (typeof time === "string") return col("", time);
   if ("sql" in time) return raw(time.sql);
-  return { t: "epoch", unit: time.unit, arg: col("", time.field) };
+  if ("unit" in time) return { t: "epoch", unit: time.unit, arg: col("", time.field) };
+  return col("", time.field);
 }
 
 export type Shape = "breakdown" | "series" | "value" | "rows" | "points";
@@ -133,7 +134,11 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
   // where converting every row first would hide both.
   const epoch = typeof bound.rootEntity.time === "object" && bound.rootEntity.time && "unit" in bound.rootEntity.time ? bound.rootEntity.time : null;
   if (epoch) project(root, TRAW, col("", epoch.field));
-  const bound_ = (d: Date): Expr => (epoch ? param(epoch.unit === "epoch_ms" ? d.getTime() : Math.floor(d.getTime() / 1000), "bigint") : param(d, "timestamp"));
+  // Calendar dates are compared with dates: the dates whose day starts in the window, in the pack's zone.
+  const dated = datedTime(bound.rootEntity);
+  const day = (d: Date) => localDate(dayStartFrom(d, pack.timeZone), pack.timeZone);
+  const bound_ = (d: Date): Expr =>
+    epoch ? param(epoch.unit === "epoch_ms" ? d.getTime() : Math.floor(d.getTime() / 1000), "bigint") : dated ? param(day(d), "date") : param(d, "timestamp");
   const windowCol = epoch ? col(root, TRAW) : timeCol;
   const inWindow = (w: TimeWindow, c: Expr = windowCol!): Expr => ({
     t: "bin",
@@ -241,7 +246,8 @@ export function plan(bound: BoundPlan, pack: Pack): { ast: Ast; shape: Shape } {
       break;
     }
     case "series": {
-      const bucket: Expr = { t: "trunc", grain: query.grain, arg: timeCol!, zone: bucketZone(pack.timeZone) };
+      // A date is read as midnight with no zone, so its bucket is the same day whatever zone the database session is in.
+      const bucket: Expr = { t: "trunc", grain: query.grain, arg: dated ? { t: "cast", arg: timeCol!, to: "timestamp" } : timeCol!, zone: bucketZoneOf(pack, bound.rootEntity) };
       select.push({ alias: "bucket", expr: bucket });
       groupBy.push(bucket);
       if (bound.dimension) {

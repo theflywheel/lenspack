@@ -1,6 +1,6 @@
 import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query, type TimeRange, type Widget, grainWords } from "@lenspack/core";
-import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, computeRefusal, rowCap } from "@lenspack/engine";
-import { type Pack, maybeFragmentFor, natureOf } from "@lenspack/pack";
+import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, computeRefusal, rowCap, windowDates } from "@lenspack/engine";
+import { type Pack, datedTime, maybeFragmentFor, natureOf } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
 
@@ -97,6 +97,11 @@ export function adhocFilters(col: string, op: Op, value: unknown): AdhocFilter[]
 
 const iso = (d: Date) => d.toISOString().slice(0, 19);
 export const absoluteRange = (w: { from: Date; to: Date }) => `${iso(w.from)} : ${iso(w.to)}`;
+/** A window over calendar dates: the dates whose day starts in it, in the pack's zone, from midnight to midnight. */
+export const dateRange = (w: { from: Date; to: Date }, timeZone?: string) => {
+  const d = windowDates(w, timeZone);
+  return `${d.from}T00:00:00 : ${d.to}T00:00:00`;
+};
 
 const UNIT: Record<string, string> = { h: "hour", d: "day", w: "week", m: "month", y: "year" };
 
@@ -138,7 +143,7 @@ export function timeRangeBack(s: string | undefined | null): TimeRange | undefin
 // ---- the connector's query object ---------------------------------------------------
 
 /** A bound plan as one or two Superset query objects (the second: the previous period). */
-export function queryObjects(bound: BoundPlan, binding: Binding): { queries: QueryObject[]; datasetId: number; metric: Metric | null } {
+export function queryObjects(bound: BoundPlan, binding: Binding, timeZone?: string): { queries: QueryObject[]; datasetId: number; metric: Metric | null } {
   const ds = binding.datasets.get(bound.root);
   if (!ds) throw new ResolveError("UNKNOWN_ENTITY", `"${bound.root}" is not a Superset dataset`, bound.root);
   const q = bound.query;
@@ -152,7 +157,10 @@ export function queryObjects(bound: BoundPlan, binding: Binding): { queries: Que
     if (p.sql) where.push(p.sql);
   }
   const col = (d: BoundDimension) => columnOf(d.def);
-  const timed = (w: { from: Date; to: Date } | null): QueryFilter[] => (w && ds.time ? [{ col: ds.time, op: "TEMPORAL_RANGE", val: absoluteRange(w) }] : []);
+  // Calendar dates are compared with dates: the dates whose day starts in the window, in the pack's zone.
+  const dated = datedTime(bound.rootEntity);
+  const range = (w: { from: Date; to: Date }) => (dated ? dateRange(w, timeZone) : absoluteRange(w));
+  const timed = (w: { from: Date; to: Date } | null): QueryFilter[] => (w && ds.time ? [{ col: ds.time, op: "TEMPORAL_RANGE", val: range(w) }] : []);
   const base = (window: { from: Date; to: Date } | null): Omit<QueryObject, "columns" | "metrics" | "orderby" | "row_limit"> => ({
     filters: [...filters, ...timed(window)],
     extras: where.length ? { where: where.join(" AND ") } : {},

@@ -1,7 +1,7 @@
 import { type Query, type ScopeClause, type Widget, nearest, queryKeys } from "@lenspack/core";
-import { type MeasureExpr, type Pack, type PackDimension, type PackMeasure, expandedExpr, operands, parseJoinOn } from "@lenspack/pack";
+import { type MeasureExpr, type Pack, type PackDimension, type PackEntity, type PackMeasure, datedTime, expandedExpr, operands, parseJoinOn } from "@lenspack/pack";
 
-import { bucketZone, calendarRange } from "./calendar";
+import { addDays, bucketZone, calendarRange, dayStartFrom, localDate, startOfLocalDay, writtenDayStart } from "./calendar";
 
 // Resolution binds every key in a query to a pack object and finds a join path
 // for every dimension. It is where the model's mistakes surface as loud
@@ -214,25 +214,52 @@ const UNITS: Record<string, number> = { h: 3600e3, d: 86400e3, w: 7 * 86400e3, m
 // The window and the one a comparison reads. A calendar range is compared
 // with the calendar span before it; any other window with the same length
 // of time just before it.
-function window(query: Query, now: Date, timeZone?: string): { time: TimeWindow; previous: TimeWindow } | null {
+//
+// Over a column of calendar dates (`dated`), a window is whole local days:
+// each end moves to the start of a day in the pack's zone (the next one,
+// unless it is at one already), so a date is in the window when its day
+// starts in it. "The last 7 days" is today and the 6 days before, today
+// being the date in the pack's zone. The source then compares dates.
+function window(query: Query, now: Date, timeZone?: string, dated = false): { time: TimeWindow; previous: TimeWindow } | null {
   if (!query.time) return null;
-  if ("period" in query.time) {
-    const { previous, ...time } = calendarRange(query.time, now, timeZone);
-    return { time, previous };
+  const t = query.time;
+  const days = (w: TimeWindow): TimeWindow => ({ from: dayStartFrom(w.from, timeZone), to: dayStartFrom(w.to, timeZone) });
+  if ("period" in t) {
+    const { previous, ...time } = calendarRange(t, now, timeZone);
+    return dated ? { time: days(time), previous: days(previous) } : { time, previous };
   }
   let time: TimeWindow;
-  if ("last" in query.time) {
-    const n = Number(query.time.last.slice(0, -1));
-    const unit = query.time.last.slice(-1);
+  if ("last" in t) {
+    const n = Number(t.last.slice(0, -1));
+    const unit = t.last.slice(-1);
     time = { from: new Date(now.getTime() - n * UNITS[unit]!), to: now };
+  } else if (dated) {
+    time = { from: writtenDayStart(t.from, timeZone), to: writtenDayStart(t.to, timeZone) };
   } else {
-    time = { from: new Date(query.time.from), to: new Date(query.time.to) };
+    time = { from: new Date(t.from), to: new Date(t.to) };
+  }
+  if (dated) {
+    time = days(time);
+    // As many days just before it.
+    const [from, to] = [localDate(time.from, timeZone), localDate(time.to, timeZone)];
+    const n = Math.round((Date.parse(to) - Date.parse(from)) / 86400e3);
+    return { time, previous: { from: startOfLocalDay(addDays(from, -n), timeZone), to: time.from } };
   }
   return { time, previous: { from: new Date(time.from.getTime() - (time.to.getTime() - time.from.getTime())), to: time.from } };
 }
 
+/** The entity a query reads: its own for rows and points, else its measure's. */
+const entityOf = (query: Query, pack: Pack): PackEntity | undefined =>
+  pack.entities[query.kind === "rows" || query.kind === "points" ? query.entity : (pack.measures.find((m) => m.key === query.measure)?.entity ?? "")];
+
 /** The window a query reads, on the clock resolve would read it with. */
-export const timeWindowOf = (query: Query, pack: Pack, ctx: Ctx = {}): TimeWindow | null => window(query, nowOf(ctx), pack.timeZone)?.time ?? null;
+export const timeWindowOf = (query: Query, pack: Pack, ctx: Ctx = {}): TimeWindow | null => window(query, nowOf(ctx), pack.timeZone, datedTime(entityOf(query, pack)))?.time ?? null;
+
+/**
+ * The zone an entity's series buckets are cut in: none for UTC, and none for
+ * calendar dates, whose days, weeks and months are the same in every zone.
+ */
+export const bucketZoneOf = (pack: Pack, entity: PackEntity | undefined): string | undefined => (datedTime(entity) ? undefined : bucketZone(pack.timeZone));
 
 // The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
 export const nowOf = (ctx: Ctx = {}) => ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
@@ -345,8 +372,13 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     if (query.by) split = bind(query.by);
   } else if (query.kind === "series") {
     if (!rootEntity.time) throw new ResolveError("NO_TIME", `"${root}" has no time column, so nothing on it can be plotted over time`, query.measure);
-    if (caps.zonedBuckets === false && bucketZone(pack.timeZone))
-      throw new ResolveError("NOT_SUPPORTED", `Pack "${pack.pack}" starts its days in ${pack.timeZone}, and this source can only bucket time by UTC days, so a series is not drawn here`, query.measure);
+    // Calendar dates need no zone: a day of them is the same day anywhere.
+    if (caps.zonedBuckets === false && bucketZoneOf(pack, rootEntity))
+      throw new ResolveError(
+        "NOT_SUPPORTED",
+        `Pack "${pack.pack}" starts its days in ${pack.timeZone}, and this source can only bucket time by UTC days. "${root}" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC`,
+        query.measure,
+      );
     if (query.by) dimension = bind(query.by);
   } else if (query.kind === "rows") {
     for (const key of query.columns) {
@@ -384,7 +416,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   if (query.time && !rootEntity.time)
     throw new ResolveError("NO_TIME", `"${root}" has no time column, so a time range cannot apply`, query.kind === "rows" || query.kind === "points" ? query.entity : query.measure);
 
-  const windows = window(query, now, pack.timeZone);
+  const windows = window(query, now, pack.timeZone, datedTime(rootEntity));
   const time = windows?.time ?? null;
   const previous = compare ? (windows?.previous ?? null) : null;
 

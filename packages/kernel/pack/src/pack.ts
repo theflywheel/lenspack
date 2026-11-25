@@ -78,7 +78,18 @@ export const entitySchema = z.object({
   // support: `time: { sql: { postgres: "to_timestamp(createdtime / 1000.0)", duckdb: "epoch_ms(createdtime)" } }`.
   // A field holding numbers rather than timestamps says its unit, and every
   // connector converts: `time: { field: Data.createdTime, unit: epoch_ms }`.
-  time: z.union([fieldPath, z.object({ sql: fragmentSchema }), z.object({ field: fieldPath, unit: z.enum(["epoch_ms", "epoch_s"]) })]).optional(),
+  // A column of calendar dates with no time of day says so:
+  // `time: { field: dispatched_on, type: date }`. A day, week or month of
+  // dates is the same in every time zone, so the dates are bucketed as they
+  // are, and a window is compared with them as dates.
+  time: z
+    .union([
+      fieldPath,
+      z.object({ sql: fragmentSchema, type: z.literal("date").optional() }),
+      z.object({ field: fieldPath, unit: z.enum(["epoch_ms", "epoch_s"]) }),
+      z.object({ field: fieldPath, type: z.literal("date") }),
+    ])
+    .optional(),
   // A tenant column, or one whose tenant ids nest ("ke" owns "ke.bomet"):
   // `tenant: { field: tenant_id, match: subtree }` lets a parent tenant read
   // its own rows and every descendant's.
@@ -243,6 +254,20 @@ export function tenantOf(entity: PackEntity): { field: string; match: "exact" | 
   return typeof t === "string" ? { field: t, match: "exact" } : { field: t.field, match: t.match ?? "exact" };
 }
 export type Agg = (typeof AGGS)[number];
+
+/** True when an entity's time is a calendar date with no time of day (`type: date`). */
+export function datedTime(entity: PackEntity | undefined): boolean {
+  const t = entity?.time;
+  return !!t && typeof t === "object" && "type" in t && t.type === "date";
+}
+
+/** The column or field an entity's time reads, or null for none or an expression. */
+export function timeFieldOf(entity: PackEntity | undefined): string | null {
+  const t = entity?.time;
+  if (!t) return null;
+  if (typeof t === "string") return t;
+  return "field" in t ? t.field : null;
+}
 
 export type ParsedJoin = { left: { entity: string; column: string }; right: { entity: string; column: string } };
 

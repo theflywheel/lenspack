@@ -41,8 +41,8 @@ export function supersetConnector(client: SupersetClient, binding: Binding, opts
     get capabilities(): Capabilities {
       return opts.capabilities ? { ...SUPERSET_CAPABILITIES, ...opts.capabilities() } : SUPERSET_CAPABILITIES;
     },
-    compile(bound: BoundPlan, _pack: Pack): Plan {
-      const { queries, datasetId, metric } = queryObjects(bound, binding);
+    compile(bound: BoundPlan, pack: Pack): Plan {
+      const { queries, datasetId, metric } = queryObjects(bound, binding, pack.timeZone);
       const native: Native = { datasetId, queries, metric };
       return { text: JSON.stringify({ datasource: { id: datasetId, type: "table" }, queries }, null, 2), native, bound };
     },

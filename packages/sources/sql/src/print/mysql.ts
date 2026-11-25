@@ -12,7 +12,7 @@ const EPOCH = "TIMESTAMP '1970-01-01 00:00:00'";
 export const mysqlRules: DialectRules = {
   dialect: "mysql",
   quote,
-  cast: (to) => ({ double: "DOUBLE", text: "CHAR", timestamp: "DATETIME(3)", int: "SIGNED", bigint: "SIGNED" })[to],
+  cast: (to) => ({ double: "DOUBLE", text: "CHAR", timestamp: "DATETIME(3)", date: "DATE", int: "SIGNED", bigint: "SIGNED" })[to],
   json: (col, path) => {
     if (path.length === 0) return `CAST(${col} AS CHAR)`;
     // JSON_UNQUOTE(JSON_EXTRACT()) rather than ->>, which MariaDB lacks.

@@ -30,6 +30,8 @@ export const goldenPackInput = {
       source: "events",
       time: { sql: { postgres: "to_timestamp(t)", duckdb: "to_timestamp(t)", mysql: "TIMESTAMPADD(SECOND, t, TIMESTAMP '1970-01-01 00:00:00')", sqlite: "datetime(t, 'unixepoch')", clickhouse: "toDateTime(t, 'UTC')" } },
     },
+    // Calendar dates with no time of day: the same days in any zone.
+    stock: { source: "stock", time: { field: "on_day", type: "date" } },
   },
   dimensions: [
     { key: "colour", entity: "things", sql: "colour" },
@@ -63,6 +65,7 @@ export const goldenPackInput = {
     { key: "logs", entity: "logs", agg: "count" },
     { key: "events", entity: "events", agg: "count" },
     { key: "owners", entity: "owners", agg: "count" },
+    { key: "dispatched", entity: "stock", agg: "sum", field: "units" },
     { key: "things_per_owner", entity: "things", agg: "avg", per: { key: "owner_id", agg: "count" } },
     { key: "heavy_owners", entity: "things", agg: "count", per: { key: "owner_id", agg: "sum", field: "size", where: [{ field: "status", op: "neq", value: "broken" }], having: { op: "gte", value: 500 } } },
     { key: "median_colours_per_owner", entity: "things", agg: "median", scale: 2, per: { key: { sql: "owner_id" }, agg: "count_distinct", sql: "colour", filter: "status = 'ok'" } },
@@ -144,4 +147,8 @@ export const zonedPack = parsePack({ ...goldenPackInput, timeZone: "Asia/Kolkata
 export const ZONED_QUERIES: Query[] = [
   ...(["hour", "week", "month"] as const).map((grain): Query => ({ kind: "series", measure: "things", grain })),
   { kind: "series", measure: "parts", grain: "day", time: { period: "month", offset: -1 } },
+  // Calendar dates: bucketed as they are, in every dialect, and compared with the dates of the window in the zone.
+  { kind: "series", measure: "dispatched", grain: "day", time: { last: "7d" } },
+  { kind: "series", measure: "dispatched", grain: "week", time: { period: "month", offset: -1 } },
+  { kind: "value", measure: "dispatched", compare: "previous_period", time: { period: "month" } },
 ];
