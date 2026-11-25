@@ -1,19 +1,20 @@
 import * as React from "react";
 
-import { BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, Share2, Trash2, Undo2, X } from "lucide-react";
+import { BookOpen, ChevronDown, Copy, History, LayoutGrid, Lock, Plus, RotateCcw, Trash2, Undo2, Users, X } from "lucide-react";
 
 import type { Board as BoardT, Catalogue } from "@lenspack/core";
 import { Board, BoardProvider, DrillPath, lazyAdapter, useBoard, useFilters, useVersions, versionByline, type BoardHost, type FilterOption, type RemovedWidget, type WidgetData } from "@lenspack/react";
 
 import { Button } from "./components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Separator } from "./components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 
 import type { ModelInfo } from "./chat";
 import { page } from "./page";
 import { ProfileMenu } from "./profile";
+import { type Entry, ShareButton, boardGroups } from "./sharing";
 import { SplitView } from "./split";
 
 // The board app, built from shadcn components. The board itself is rendered
@@ -207,22 +208,9 @@ const VIEWS = ["board", "metrics", "usage"] as const;
 type View = (typeof VIEWS)[number];
 const isView = (v: string | null): v is View => (VIEWS as readonly string[]).includes(v ?? "");
 
-type Entry = { id: string; title: string; owner?: string; shared?: boolean; writable?: boolean };
 type Catalog = { example: string; description?: string; boards: Entry[] }[];
 /** Who the server says is signed in; absent on an open server. */
 type Me = { user: string; edit: boolean; maintain: boolean; usage?: boolean; signOut?: string };
-
-// The board menu: the pack's own boards, yours, and those others shared.
-// Temporary boards (previews, evals) stay out of it.
-function boardGroups(boards: Entry[], me: Me | null): [string, Entry[]][] {
-  const listed = boards.filter((b) => !b.id.startsWith("tmp_"));
-  const mine = (b: Entry) => !!b.owner && (!me || b.owner === me.user);
-  return [
-    ["The pack's boards", listed.filter((b) => !b.owner)],
-    ["Yours", listed.filter(mine)],
-    ["Shared by others", listed.filter((b) => b.owner && !mine(b))],
-  ];
-}
 
 // "Removed … · Undo": no confirmation before a removal, because every change is
 // a version; this is the quick way back. It goes by itself after a while.
@@ -302,7 +290,7 @@ export function App() {
       if (!known) return setProblem("No examples are seeded on this server. Run: pnpm seed commerce ./commerce.duckdb");
       if (known.example !== example || !known.boards.some((b: { id: string }) => b.id === boardId)) {
         setExample(known.example);
-        setBoardId(boardGroups(known.boards, r.me ?? null).flatMap(([, list]) => list)[0]?.id ?? "");
+        setBoardId(boardGroups(known.boards, r.me ?? null).flatMap((g) => g.boards)[0]?.id ?? "");
       }
     });
   }, []);
@@ -396,11 +384,6 @@ export function App() {
     if (title) await open(await api(`/${example}/boards`, { method: "POST", body: JSON.stringify({ title }) }));
   };
   const copyBoard = async () => open(await api(`${base}/copy`, { method: "POST", body: "{}" }));
-  const shareBoard = async (shared: boolean) => {
-    const r = await api(`${base}/share`, { method: "POST", body: JSON.stringify({ shared }) });
-    setNotice(r.error ?? null);
-    await loadIndex();
-  };
   const deleteBoard = async () => {
     if (!window.confirm(`Delete “${state?.board.config.title}”? Its history goes with it.`)) return;
     const r = await api(base, { method: "DELETE" });
@@ -464,7 +447,7 @@ export function App() {
                 onValueChange={(v) => {
                   const next = catalog.find((c) => c.example === v);
                   setExample(v);
-                  setBoardId(boardGroups(next?.boards ?? [], me).flatMap(([, list]) => list)[0]?.id ?? "");
+                  setBoardId(boardGroups(next?.boards ?? [], me).flatMap((g) => g.boards)[0]?.id ?? "");
                 }}
               >
                 <SelectTrigger size="sm" className="max-w-56 text-xs" aria-label="Pack" data-testid="pack-select">
@@ -479,20 +462,28 @@ export function App() {
                 <span className="shrink-0 text-muted-foreground">Board</span>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {boardGroups(current?.boards ?? [], me).map(([label, list]) =>
-                  list.length === 0 ? null : (
-                    <SelectGroup key={label}>
-                      <SelectLabel>{label}</SelectLabel>
-                      {list.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>
-                          {b.title}
-                          {b.owner && me && b.owner !== me.user && <span className="text-muted-foreground"> · {b.owner}</span>}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ),
-                )}
+              <SelectContent position="popper" align="start" className="min-w-64">
+                {/* Each group under its own heading, apart from the next; empty ones are left out. */}
+                {boardGroups(current?.boards ?? [], me)
+                  .filter((g) => g.boards.length > 0)
+                  .map((g, i) => (
+                    <React.Fragment key={g.key}>
+                      {i > 0 && <SelectSeparator className="my-1.5" />}
+                      <SelectGroup data-testid={`board-group-${g.key}`}>
+                        <SelectLabel className="flex items-center gap-1.5 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                          <g.icon className="size-3.5" /> {g.label}
+                          <span className="ml-auto pl-3 font-mono font-normal tabular-nums">{g.boards.length}</span>
+                        </SelectLabel>
+                        {g.boards.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.title}
+                            {g.key === "shared" && <span className="text-muted-foreground"> · {b.owner}</span>}
+                            {g.key === "yours" && b.shared && <Users className="size-3.5" aria-label="shared" />}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </React.Fragment>
+                  ))}
               </SelectContent>
             </Select>
             <Button variant={view === "metrics" ? "secondary" : "ghost"} size="sm" className="text-xs" onClick={() => setView(view === "metrics" ? "board" : "metrics")} aria-pressed={view === "metrics"} data-testid="metrics-view">
@@ -533,7 +524,7 @@ export function App() {
                   {intro && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground" data-testid="intro">{intro}</p>}
                   {!writable && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="read-only">
-                      <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board, shared with everyone.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}
+                      <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board, shared with you.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}
                     </p>
                   )}
                   {notice && <p className="mt-1 text-xs text-destructive">{notice}</p>}
@@ -546,9 +537,7 @@ export function App() {
                   )}
                   {writable && state.board.owner && (
                     <>
-                      <Button variant="outline" size="sm" onClick={() => shareBoard(!entry?.shared)} data-testid="share-board" aria-pressed={!!entry?.shared}>
-                        <Share2 /> {entry?.shared ? "Shared: stop sharing" : "Share with everyone"}
-                      </Button>
+                      <ShareButton base={base} title={state.board.config.title} owner={state.board.owner} entry={entry} load={api} onSaved={() => void loadIndex()} />
                       <Button variant="ghost" size="sm" onClick={deleteBoard} data-testid="delete-board" aria-label="Delete board">
                         <Trash2 />
                       </Button>

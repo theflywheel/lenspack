@@ -233,7 +233,7 @@ describe("boards kept in a database", () => {
     const again = await open();
     expect(await again.north.get("mine")).toMatchObject({ owner: "amina", shared: false });
     // The pack's own boards list first, even after someone's board changed more recently.
-    await again.north.share("mine", true);
+    await again.north.share("mine", { everyone: true, people: [] });
     const { server, base } = await listen(createApp(again.hosts));
     const listed = (await (await fetch(`${base}/north`)).json()).boards.map((b: { id: string }) => b.id);
     server.close();

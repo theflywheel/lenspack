@@ -228,13 +228,22 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
 }
 
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
-// to change. A board someone made is theirs to change, and everyone's to read
-// once they share it: everyone in their tenant, as one user name may sign in
-// under two tenants.
+// to change. A board someone made is theirs to change, and readable by those
+// they share it with: everyone in their tenant, or the users they name in it,
+// as one user name may sign in under two tenants. A store that says only
+// `shared` means everyone.
 export function boardRights(who: Principal, b: Ownership): { view: boolean; edit: boolean } {
   const sameTenant = (b.tenant ?? "") === (who.tenant ?? "");
+  const sharedWith = (b.everyone ?? !!b.shared) || !!b.people?.includes(who.user);
   return {
-    view: !b.owner || (sameTenant && (!!b.shared || b.owner === who.user)),
+    view: !b.owner || (sameTenant && (sharedWith || b.owner === who.user)),
     edit: b.owner ? b.owner === who.user && sameTenant && who.edit : !!who.maintain,
   };
+}
+
+/** A board as one caller is told of it: who else it is shared with is for its owner only; others learn only that it is shared. */
+export function sharingShown<B extends Ownership>(who: Principal, b: B): B {
+  if (!b.owner || (b.owner === who.user && (b.tenant ?? "") === (who.tenant ?? ""))) return b;
+  const { everyone: _everyone, people: _people, ...rest } = b;
+  return rest as B;
 }

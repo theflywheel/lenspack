@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Identity, type PackRule, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
+import { type Identity, type PackRule, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, sharingShown, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -146,6 +146,27 @@ describe("boardRights", () => {
     expect(boardRights(maintainer, { owner: "ann" })).toEqual({ view: false, edit: false });
     expect(boardRights(maintainer, { owner: "ann", shared: true })).toEqual({ view: true, edit: false });
     expect(boardRights(principalOf({ user: "ann", tenant: "t1" }), { owner: "ann", tenant: "t1" })).toEqual({ view: true, edit: false });
+  });
+
+  it("a board shared by name: its owner, the people named and, with everyone, the rest of its tenant read it; nobody else", () => {
+    const as = (user: string, tenant = "t1") => principalOf({ user, edit: true, tenant });
+    const byName = { owner: "ann", tenant: "t1", shared: true, everyone: false, people: ["bob"] };
+    expect(boardRights(as("ann"), byName)).toEqual({ view: true, edit: true });
+    expect(boardRights(as("bob"), byName)).toEqual({ view: true, edit: false });
+    expect(boardRights(as("cy"), byName)).toEqual({ view: false, edit: false });
+    expect(boardRights(as("bob", "t2"), byName)).toEqual({ view: false, edit: false });
+    const toAll = { ...byName, everyone: true };
+    expect(boardRights(as("cy"), toAll)).toEqual({ view: true, edit: false });
+    expect(boardRights(as("cy", "t2"), toAll)).toEqual({ view: false, edit: false });
+    // Not shared: everyone false and nobody named, whatever an old `shared` says.
+    expect(boardRights(as("bob"), { owner: "ann", tenant: "t1", shared: true, everyone: false, people: [] })).toEqual({ view: false, edit: false });
+  });
+
+  it("tells only a board's owner who else it is shared with", () => {
+    const board = { owner: "ann", tenant: "t1", shared: true, everyone: true, people: ["bob"] };
+    expect(sharingShown(principalOf({ user: "ann", tenant: "t1" }), board)).toEqual(board);
+    expect(sharingShown(principalOf({ user: "bob", tenant: "t1" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true });
+    expect(sharingShown(principalOf({ user: "ann", tenant: "t2" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true });
   });
 });
 

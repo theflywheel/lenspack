@@ -69,7 +69,7 @@ export async function importLegacyBoards(data: Executor, target: { store: BoardS
     const first = boardConfigSchema.parse(safeJson(configs[0]!.config));
     await store.create({ id, pack, title: first.title, config: first, ...(b.owner == null ? {} : { owner: String(b.owner), ...(b.tenant == null ? {} : { tenant: String(b.tenant) }) }) });
     for (const v of configs.slice(1)) await store.replaceConfig({ id, config: boardConfigSchema.parse(safeJson(v.config)), source: String(v.source), summary: String(v.summary) });
-    if (b.owner != null && bool(b.shared)) await store.share(id, true);
+    if (b.owner != null && bool(b.shared)) await store.share(id, { everyone: true, people: [] });
   };
 
   // All or nothing: a copy that fails half way is undone, so the next start tries again from the beginning.

@@ -32,6 +32,8 @@ describe("serve with sign-in", () => {
     alice_a: { user: "alice", edit: true, tenant: "a" },
     alice_b: { user: "alice", edit: true, tenant: "b" },
     bob_a: { user: "bob", edit: true, tenant: "a" },
+    bob_b: { user: "bob", edit: true, tenant: "b" },
+    carol_a: { user: "carol", edit: true, tenant: "a" },
     viewer: { user: "viewer" },
     reader: { user: "reader", readOnly: "You can view this board but not edit it." },
     scoped: { user: "scoped" }, // scope filled in once a province is known
@@ -140,6 +142,61 @@ describe("serve with sign-in", () => {
     expect((await call("bob_a", `/campaign/${made.body.id}`)).status).toBe(200);
     expect((await call("alice_b", `/campaign/${made.body.id}`)).status).toBe(404);
     expect((await call("alice_b", `/campaign/${made.body.id}`, { method: "DELETE" })).status).toBe(404);
+  });
+
+  it("shares a board with the people its owner names, everyone optional, and tells only the owner who they are", async () => {
+    const share = (who: string, id: string, body: unknown) => call(who, `/campaign/${id}/share`, { method: "POST", body: JSON.stringify(body) });
+    const made = await call("alice_a", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "For bob" }) });
+    const id = made.body.id as string;
+    await call("carol_a", "/campaign");
+    const named = await share("alice_a", id, { everyone: false, people: [" bob ", "bob", "alice", ""] });
+    expect(named.body).toMatchObject({ owner: "alice", shared: true, everyone: false, people: ["bob"] });
+    expect(events.at(-1)).toMatchObject({ user: "alice", board: id, action: "share", outcome: "ok", detail: "everyone no, 1 by name" });
+
+    expect((await call("bob_a", `/campaign/${id}`)).body).toMatchObject({ writable: false, board: { owner: "alice", shared: true } });
+    expect((await call("bob_a", `/campaign/${id}`)).body.board).not.toHaveProperty("people");
+    const listed = async (who: string) => ((await call(who, "/campaign")).body.boards as Record<string, unknown>[]).find((b) => b.id === id);
+    expect(await listed("bob_a")).toEqual(expect.objectContaining({ owner: "alice", shared: true, writable: false }));
+    expect(await listed("bob_a")).not.toHaveProperty("people");
+    expect(await listed("alice_a")).toMatchObject({ everyone: false, people: ["bob"] });
+    // Neither someone not named, nor the same name in another tenant.
+    expect((await call("carol_a", `/campaign/${id}`)).status).toBe(404);
+    expect(await listed("carol_a")).toBeUndefined();
+    expect((await call("bob_b", `/campaign/${id}`)).status).toBe(404);
+    // Only its owner says who it is shared with.
+    expect((await share("bob_a", id, { everyone: true, people: [] })).status).toBe(403);
+    expect((await share("carol_a", id, { everyone: true, people: [] })).status).toBe(404);
+    expect((await share("alice_a", id, { people: "bob" })).status).toBe(400);
+    expect((await share("alice_a", id, {})).status).toBe(400);
+
+    expect((await share("alice_a", id, { everyone: true, people: ["bob"] })).body).toMatchObject({ everyone: true, people: ["bob"] });
+    expect((await call("carol_a", `/campaign/${id}`)).status).toBe(200);
+    expect((await call("bob_b", `/campaign/${id}`)).status).toBe(404);
+    expect((await share("alice_a", id, { everyone: false, people: [] })).body).toMatchObject({ shared: false });
+    expect(events.at(-1)).toMatchObject({ action: "unshare", detail: "everyone no, 0 by name" });
+    expect((await call("bob_a", `/campaign/${id}`)).status).toBe(404);
+  });
+
+  it("still takes { shared } from an older client: true is everyone, false is nobody", async () => {
+    const made = await call("alice_a", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "Old client" }) });
+    const share = (body: unknown) => call("alice_a", `/campaign/${made.body.id}/share`, { method: "POST", body: JSON.stringify(body) });
+    await share({ everyone: false, people: ["bob"] });
+    expect((await share({ shared: true })).body).toMatchObject({ shared: true, everyone: true, people: ["bob"] });
+    expect((await call("carol_a", `/campaign/${made.body.id}`)).status).toBe(200);
+    expect((await share({ shared: false })).body).toMatchObject({ shared: false, everyone: false, people: [] });
+    expect((await call("bob_a", `/campaign/${made.body.id}`)).status).toBe(404);
+  });
+
+  it("offers editors the names of people in their tenant to share with, and nobody else", async () => {
+    await call("bob_a", "/campaign");
+    await call("bob_b", "/campaign");
+    const names = (await call("alice_a", "/_people")).body.people as string[];
+    expect(names).toContain("bob");
+    expect(names).not.toContain("alice");
+    expect(names).not.toContain("eve");
+    expect((await call("alice_b", "/_people")).body.people).not.toContain("carol");
+    expect((await call("viewer", "/_people")).status).toBe(403);
+    expect((await call("reader", "/_people")).status).toBe(403);
   });
 
   it("narrows every number to the caller's scope", async () => {

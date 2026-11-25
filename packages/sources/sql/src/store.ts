@@ -1,4 +1,4 @@
-import { type Board, type BoardConfig, type BoardStore, type BoardVersion, applyOps, boardConfigSchema, describeOps, emptyBoard } from "@lenspack/core";
+import { type Board, type BoardConfig, type BoardStore, type BoardVersion, applyOps, boardConfigSchema, describeOps, emptyBoard, ownershipOf } from "@lenspack/core";
 
 import type { Dialect } from "./print/base";
 import type { Executor, Writer } from "./executor";
@@ -8,6 +8,8 @@ import { toDate } from "@lenspack/engine";
 // runs on Postgres and DuckDB. Every patch inserts a version row; the boards
 // row is a pointer to the latest. A space keeps one pack's boards apart from
 // another's in the same tables: lenspack serve gives each pack its own.
+// An owned board's `shared` column shares it with everyone in its tenant, and
+// `people` (a JSON array, or NULL for none) with the users it names.
 
 export const STORE_DDL = `
 CREATE TABLE IF NOT EXISTS lenspack_boards (
@@ -18,6 +20,7 @@ CREATE TABLE IF NOT EXISTS lenspack_boards (
   owner VARCHAR,
   tenant VARCHAR,
   shared BOOLEAN NOT NULL,
+  people TEXT,
   version INTEGER NOT NULL,
   config TEXT NOT NULL,
   updated_at TIMESTAMP NOT NULL,
@@ -34,8 +37,17 @@ CREATE TABLE IF NOT EXISTS lenspack_board_versions (
   PRIMARY KEY (space, board_id, version)
 );`;
 
+// A list that does not read shares the board with nobody by name.
+const peopleOf = (v: unknown): string[] => {
+  try {
+    const list = JSON.parse(String(v ?? "[]")) as unknown;
+    return Array.isArray(list) ? list.filter((p): p is string => typeof p === "string") : [];
+  } catch {
+    return [];
+  }
+};
 const ownership = (r: Record<string, unknown>) =>
-  r.owner == null ? {} : { owner: String(r.owner), shared: r.shared === true || r.shared === 1, ...(r.tenant == null ? {} : { tenant: String(r.tenant) }) };
+  r.owner == null ? {} : ownershipOf(String(r.owner), r.tenant == null ? null : String(r.tenant), { everyone: r.shared === true || r.shared === 1, people: peopleOf(r.people) });
 
 function rowToBoard(r: Record<string, unknown>): Board {
   return {
@@ -65,7 +77,7 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
         `INSERT INTO lenspack_boards (space, id, pack, title, owner, tenant, shared, version, config, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CAST($10 AS TIMESTAMP))`,
         [space, id, pack, config.title, owner ?? null, (owner && tenant) || null, false, version, json, now()],
       );
-      return { id, pack, config, version, updatedAt: new Date(), ...(owner ? { owner, shared: false, ...(tenant ? { tenant } : {}) } : {}) };
+      return { id, pack, config, version, updatedAt: new Date(), ...ownershipOf(owner, tenant) };
     }
     await writer.exec(`UPDATE lenspack_boards SET title = $1, version = $2, config = $3, updated_at = CAST($4 AS TIMESTAMP) WHERE space = $5 AND id = $6`, [config.title, version, json, now(), space, id]);
     return { ...current, config, version, updatedAt: new Date() };
@@ -78,13 +90,15 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
       await executor.query(`SELECT space, owner, tenant, shared FROM lenspack_boards WHERE 1 = 0`, []).catch(() => {
         throw new Error("lenspack_boards is from a lenspack before board owners: rename it and lenspack_board_versions aside, and the boards from files are made again");
       });
+      // Sharing with people came later: a table from before gets the column, and its shared boards stay shared with everyone.
+      await writer.exec(`ALTER TABLE lenspack_boards ADD COLUMN IF NOT EXISTS people TEXT`);
     },
     async get(id) {
       const [r] = await executor.query(`SELECT * FROM lenspack_boards WHERE space = $1 AND id = $2`, [space, id]);
       return r ? rowToBoard(r) : null;
     },
     async list() {
-      const rows = await executor.query(`SELECT id, pack, title, owner, tenant, shared, version, updated_at FROM lenspack_boards WHERE space = $1 ORDER BY updated_at DESC`, [space]);
+      const rows = await executor.query(`SELECT id, pack, title, owner, tenant, shared, people, version, updated_at FROM lenspack_boards WHERE space = $1 ORDER BY updated_at DESC`, [space]);
       return rows.map((r) => ({ id: String(r.id), pack: String(r.pack), title: String(r.title), version: Number(r.version), updatedAt: toDate(r.updated_at) ?? new Date(), ...ownership(r) }));
     },
     async create({ id, pack, title, config, owner, tenant }) {
@@ -127,11 +141,11 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
       if (JSON.stringify(config) === JSON.stringify(current.config)) return current;
       return record(current, id, current.pack, config, "revert", `restored v${version}`);
     },
-    async share(id, shared) {
+    async share(id, to) {
       const current = await store.get(id);
       if (!current?.owner) return null;
-      await writer.exec(`UPDATE lenspack_boards SET shared = $1 WHERE space = $2 AND id = $3`, [shared, space, id]);
-      return { ...current, shared };
+      await writer.exec(`UPDATE lenspack_boards SET shared = $1, people = $2 WHERE space = $3 AND id = $4`, [to.everyone, to.people.length ? JSON.stringify(to.people) : null, space, id]);
+      return { ...current, ...ownershipOf(current.owner, current.tenant, to) };
     },
     async delete(id) {
       await writer.exec(`DELETE FROM lenspack_board_versions WHERE space = $1 AND board_id = $2`, [space, id]);
