@@ -252,6 +252,10 @@ export async function runQuestion(rig: Rig, srv: Awaited<ReturnType<typeof serve
   return scoreRaw(p.name, o.rep, q, truth, raw);
 }
 
+/** A data call's error that is the server's fault, not the query's: a gateway or 5xx, a timeout, a lost connection,
+ * or the database out of disk, memory or query slots. */
+export const SERVER_FAULT = /(→ 5\d\d\b|\b50[234]\b|bad gateway|timed? ?out|ECONN[A-Z]+|socket hang up|no space left on device|MEMORY_LIMIT_EXCEEDED|memory limit \(total\) exceeded|TOO_MANY_SIMULTANEOUS_QUERIES|service unavailable)/i;
+
 /** Scores a run from what it left behind: no model, no database. */
 export function scoreRaw(model: string, rep: number, q: Question, truth: Truth | undefined, raw: Raw): Result {
   const { reply, calls, before, after } = raw;
@@ -297,9 +301,12 @@ export function scoreRaw(model: string, rep: number, q: Question, truth: Truth |
     raw,
   };
   if (!reply && base.error && !diff.any) return { ...base, outcome: "error", detail: base.error };
-  // Every data call failed and the reply blames the server: the run says nothing about the model.
+  // Every data call failed on the server's side (the calls' own errors say so, or the reply blames the server): the
+  // run says nothing about the model. A database out of disk or memory answers 400 through Superset, so the error
+  // text decides, not the status.
   const dataCalls = calls.filter((c) => c.tool === "query" || c.tool === "list_values");
-  if (dataCalls.length > 0 && dataCalls.every((c) => !okOf(c)) && /\b(50[234]|bad gateway|gateway|timed? ?out|server error|unavailable)\b/i.test(reply)) return { ...base, outcome: "error", detail: "every data call failed (server)" };
+  const serverSide = (c: (typeof calls)[number]) => SERVER_FAULT.test(`${c.error ?? ""} ${(c.output as { error?: string } | undefined)?.error ?? ""}`);
+  if (dataCalls.length > 0 && dataCalls.every((c) => !okOf(c)) && (dataCalls.every(serverSide) || /\b(50[234]|bad gateway|gateway|timed? ?out|server error|unavailable)\b/i.test(reply))) return { ...base, outcome: "error", detail: "every data call failed (server)" };
   const asserts = numbersIn(reply).length > 0 || diff.added.length > 0;
 
   if (q.expect === "decline") {
