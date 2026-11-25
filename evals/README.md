@@ -51,3 +51,31 @@ pnpm eval:suite --suite my-suite.yaml --truth truth.json --models claude-haiku-5
 latency and cost on 315 public recordings in French (including African-accented French), Hindi and Portuguese, with
 and without a language hint. It is Python, separate from the TypeScript evals above; its README says how to fetch the
 audio and run it.
+
+### The suites in this repo
+
+Each suite holds only for the dataset it was built on: its expected answers are that data's answers on the suite's
+`now:` date. To use a suite on other data, point its config at your own Superset datasets and recompute the answers.
+
+| Suite | Dataset | What it tests |
+|---|---|---|
+| `suites/commerce.yaml` | the repo's commerce example, seeded into DuckDB in process | the runner and every scoring outcome, with no model and no spend (`--stub`) |
+| `suites/hcm/joins.yaml` | eGov's synthetic HCM campaign data (the Kebbi demo data in eGov's development ClickHouse database: a 7-day polio vaccination campaign), read through Superset from four joins we made over eGov's analytics tables plus five of eGov's views | 85 questions a campaign manager would ask: totals, breakdowns, time series, coverage, rankings, several-step arithmetic, dashboard edits, questions it should decline, definitions, heatmaps and maps |
+| `suites/hcm/views.yaml` | the same campaign, read from eGov's ready-made Superset views | the same questions, with the measure names those views give |
+| `suites/hcm/views-definitions.yaml` | the same views, plus people in registered households | the same questions, with pack instructions that say which definition each ambiguous term uses |
+
+Each HCM suite sits next to its expected answers (`<suite>.truth.json`) and has a frozen Lenspack config and a seed
+dashboard in `suites/hcm/configs/` (pass the seed with `--board-cache`, since the suite's `board.dashboard` id is
+the one in our Superset). `joins.yaml` is the source: `make_suites.py` writes the other two from it. `truth.py`
+recomputes a suite's answers from ClickHouse, read-only:
+
+```bash
+CLICKHOUSE_URL=http://host:8123 CLICKHOUSE_USER=reader CLICKHOUSE_PASSWORD=... \
+  python3 evals/suites/hcm/truth.py --suite views-definitions.yaml          # --check: has the data changed?
+pnpm eval:suite --suite evals/suites/hcm/views-definitions.yaml --truth evals/suites/hcm/views-definitions.truth.json \
+  --board-cache evals/suites/hcm/configs/views-definitions.board.json --superset-url http://superset:8088 \
+  --models claude-haiku-5-5 --judge claude-haiku-5-5 --max-usd 1
+```
+
+Results and write-ups for these suites are published with the deployment they were run on (eGov's innovations
+repository, `nl-dashboard/evals/agent`).

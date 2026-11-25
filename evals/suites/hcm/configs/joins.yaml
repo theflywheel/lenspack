@@ -1,0 +1,60 @@
+# The Lenspack config these questions were run with, frozen (built for eGov's synthetic HCM campaign data):
+# the Superset datasets these questions ran on: four joins we made over eGov's analytics tables, plus five of eGov's
+# ready-made views.
+# Lenspack never connects to ClickHouse: it asks Superset, which runs the SQL. "env:NAME" reads the environment
+# variable NAME. The dataset names must exist in your Superset.
+superset:
+  url: env:SUPERSET_URL
+  username: lenspack
+  passwordEnv: LENSPACK_SUPERSET_PASSWORD
+  publicUrl: env:SUPERSET_PUBLIC_URL
+
+publicPath: /lenspack
+host: 0.0.0.0
+port: 8795
+
+# Virtual datasets over eGov's analytics marts, one tenant, boundary names joined in.
+datasets: [analytics.ch_smc_doses, analytics.ch_households, analytics.ch_referrals, analytics.ch_stock,
+  # The national-style nOPV2 view (dashboard "Kebbi nOPV2 campaign: national view"), built by a
+  # separate setup script on eGov's default.su_ni_* views; if they are missing, remove these five lines.
+  analytics.ch_ng_coverage, analytics.ch_ng_status, analytics.ch_ng_daily, analytics.ch_ng_children, analytics.ch_ng_facilities]
+dashboards: []
+state: /data/superset-boards.json
+budget: { usdPerDay: 15, usdPerUserPerDay: 10 }
+
+overlay:
+  pack: hcm_clickhouse
+  entities: { ch_smc_doses: smc, ch_households: household, ch_referrals: referral, ch_stock: stock, ch_ng_coverage: coverage, ch_ng_status: coverage_status, ch_ng_daily: daily_progress, ch_ng_children: child_visit, ch_ng_facilities: facility }
+  description: HCM campaign analytics from eGov's ClickHouse marts (SMC administration, household registration, referrals, stock), one tenant, boundary names joined in.
+  timeZone: UTC
+  hierarchies:
+    boundary: [state, lga, ward, health_facility, settlement]
+  instructions: >-
+    This is a field test: SMC doses, households and referrals cover a few days only, so relative windows like
+    "last 30 days" can be empty; use no time range or explicit dates, and a daily grain for series. Stock has no
+    dates at all. SMC doses, households, referrals and stock are separate datasets: a chart reads one of them, and
+    a dimension works only with a measure from a dataset that has it (the boundary levels are on all four; product
+    is on SMC and stock; outcome, gender and cycle on SMC only; facility type and movement on stock only).
+    children_reached counts distinct children and does not add up over groups: never sum it yourself. The rows of
+    these datasets are already summed per day and boundary, so prefer the named measures over row counts.
+    The nOPV2 campaign datasets: coverage (one row per settlement, end of campaign: children vaccinated vs target,
+    households registered vs target, vials; its _pct measures are ratios, never sum them), coverage_status (status =
+    Vaccinated/Registered vs Remaining, grp = Children or Households: for coverage pies filter grp to one of them),
+    daily_progress (one row per campaign day, cumulative actual vs planned as a share of target; use a daily line),
+    child_visit (one row per child visit: gender, outcome, age band, vaccinated and zero-dose counts) and facility
+    (health facilities with locations). Vial wastage assumes 50 doses per vial.
+    Layout: the board packs itself (gaps close, rows fill). Make layout changes in one batch: four tiles in a row are
+    quarter width each, three are third. Widgets kept as Superset's can be moved, resized or removed but not edited.
+  examples:
+    - question: Add a bar chart of doses administered by LGA
+      query: { kind: breakdown, dimension: lga, measure: doses_administered, limit: 20 }
+    - question: Show children reached per day as a line
+      query: { kind: series, measure: children_reached, grain: day }
+    - question: Add households registered and people in them by ward, as a table
+      query: { kind: breakdown, dimension: ward, measure: households, measures: [people_registered], limit: 20 }
+    - question: Add children coverage % by ward, lowest first
+      query: { kind: breakdown, dimension: ward, measure: children_coverage_pct, limit: 32 }
+    - question: Show zero-dose children by age band
+      query: { kind: breakdown, dimension: age_band, measure: zero_dose_children, limit: 10 }
+    - question: Break down doses administered by outcome
+      query: { kind: breakdown, dimension: administration_status, measure: doses_administered, limit: 10 }

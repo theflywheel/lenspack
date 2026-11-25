@@ -1,0 +1,291 @@
+{
+ "version": 2,
+ "pack": "hcm_clickhouse",
+ "packVersion": 1,
+ "title": "nOPV2 field test: national view (ClickHouse)",
+ "grid": {
+  "cols": 12,
+  "rowHeight": 40,
+  "density": "comfortable",
+  "fill": true
+ },
+ "layout": [
+  {
+   "i": "c43",
+   "x": 0,
+   "y": 0,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c44",
+   "x": 6,
+   "y": 0,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c45",
+   "x": 0,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c46",
+   "x": 3,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c47",
+   "x": 6,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c48",
+   "x": 9,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c49",
+   "x": 0,
+   "y": 11,
+   "w": 12,
+   "h": 7
+  },
+  {
+   "i": "c50",
+   "x": 0,
+   "y": 18,
+   "w": 12,
+   "h": 7
+  },
+  {
+   "i": "c51",
+   "x": 0,
+   "y": 25,
+   "w": 12,
+   "h": 10
+  },
+  {
+   "i": "c52",
+   "x": 0,
+   "y": 35,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c53",
+   "x": 6,
+   "y": 35,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c54",
+   "x": 0,
+   "y": 42,
+   "w": 12,
+   "h": 7
+  }
+ ],
+ "widgets": {
+  "c43": {
+   "title": "Children coverage: vaccinated vs remaining (target)",
+   "kind": "chart",
+   "chart": "pie",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "status",
+    "measure": "people",
+    "limit": 10,
+    "sort": "desc",
+    "filters": [
+     {
+      "dimension": "grp",
+      "op": "eq",
+      "value": "Children"
+     }
+    ]
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c44": {
+   "title": "Household coverage: registered vs remaining (target)",
+   "kind": "chart",
+   "chart": "pie",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "status",
+    "measure": "people",
+    "limit": 10,
+    "sort": "desc",
+    "filters": [
+     {
+      "dimension": "grp",
+      "op": "eq",
+      "value": "Households"
+     }
+    ]
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c45": {
+   "title": "Children vaccinated",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "children_vaccinated"
+   },
+   "aggregate": "last"
+  },
+  "c46": {
+   "title": "Households registered",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "households_registered"
+   },
+   "aggregate": "last"
+  },
+  "c47": {
+   "title": "Vial wastage",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "vial_wastage_pct"
+   },
+   "aggregate": "last"
+  },
+  "c48": {
+   "title": "Spoilt vials",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "spoilt_vials_pct"
+   },
+   "aggregate": "last"
+  },
+  "c49": {
+   "title": "Coverage by LGA (children and households)",
+   "kind": "chart",
+   "chart": "bar",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "lga",
+    "measure": "children_coverage_pct",
+    "limit": 50,
+    "sort": "asc",
+    "measures": [
+     "households_coverage_pct"
+    ]
+   },
+   "options": {
+    "legend": true,
+    "colorScheme": "default"
+   }
+  },
+  "c50": {
+   "title": "Coverage by ward (children and households)",
+   "kind": "chart",
+   "chart": "bar",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "ward",
+    "measure": "children_coverage_pct",
+    "limit": 50,
+    "sort": "asc",
+    "measures": [
+     "households_coverage_pct"
+    ]
+   },
+   "options": {
+    "legend": true,
+    "colorScheme": "default"
+   }
+  },
+  "c51": {
+   "title": "Health facilities",
+   "kind": "text",
+   "body": "Superset chart “Health facilities” (deck_scatter), kept as it is in Superset because lenspack has no deck_scatter chart. It can be moved, resized or removed here; edit its contents in Superset."
+  },
+  "c52": {
+   "title": "Vaccinated children: gender",
+   "kind": "chart",
+   "chart": "pie",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "gender",
+    "measure": "visits",
+    "limit": 10,
+    "sort": "desc",
+    "filters": [
+     {
+      "dimension": "vaccinated",
+      "op": "eq",
+      "value": "Yes"
+     }
+    ]
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c53": {
+   "title": "Zero-dose children: gender",
+   "kind": "chart",
+   "chart": "pie",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "gender",
+    "measure": "visits",
+    "limit": 10,
+    "sort": "desc",
+    "filters": [
+     {
+      "dimension": "zero_dose",
+      "op": "eq",
+      "value": "Yes"
+     }
+    ]
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c54": {
+   "title": "Planned vs actual (cumulative % of target)",
+   "kind": "chart",
+   "chart": "line",
+   "query": {
+    "kind": "series",
+    "measure": "planned_children_cum_pct",
+    "grain": "day",
+    "measures": [
+     "actual_children_cum_pct",
+     "planned_households_cum_pct",
+     "actual_households_cum_pct"
+    ]
+   },
+   "options": {
+    "legend": true,
+    "colorScheme": "default"
+   }
+  }
+ },
+ "filters": []
+}
