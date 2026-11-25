@@ -15,7 +15,7 @@ export const sqliteRules: DialectRules = {
   dialect: "sqlite",
   quote,
   // A timestamp stays text: CAST(... AS TIMESTAMP) would take NUMERIC affinity and keep only the year.
-  cast: (to) => ({ double: "REAL", text: "TEXT", timestamp: "TEXT", int: "INTEGER", bigint: "INTEGER" })[to],
+  cast: (to) => ({ double: "REAL", text: "TEXT", timestamp: "TEXT", date: "TEXT", int: "INTEGER", bigint: "INTEGER" })[to],
   json: (col, path) => {
     if (path.length === 0) return `CAST(${col} AS TEXT)`;
     return `CAST(json_extract(${col}, ${lit(`$${path.map((s) => `."${s.replace(/"/g, '\\"')}"`).join("")}`)}) AS TEXT)`;

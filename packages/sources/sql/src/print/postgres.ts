@@ -8,7 +8,7 @@ export const zoned = (arg: string, zone: string) => `(CAST(${arg} AS TIMESTAMP) 
 export const postgresRules: DialectRules = {
   dialect: "postgres",
   quote,
-  cast: (to) => ({ double: "DOUBLE PRECISION", text: "TEXT", timestamp: "TIMESTAMP", int: "INTEGER", bigint: "BIGINT" })[to],
+  cast: (to) => ({ double: "DOUBLE PRECISION", text: "TEXT", timestamp: "TIMESTAMP", date: "DATE", int: "INTEGER", bigint: "BIGINT" })[to],
   json: (col, path) => {
     // (col #>> ARRAY['a','b']) reads nested keys as text; a single key uses ->>.
     if (path.length === 0) return `CAST(${col} AS TEXT)`;

@@ -376,13 +376,38 @@ ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAS
 LIMIT 10001;
 
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "things" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
 
 -- {"kind":"series","measure":"things","grain":"week"} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "things" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
 
 -- {"kind":"series","measure":"things","grain":"month"} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "things" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
 
 -- {"kind":"series","measure":"parts","grain":"day","time":{"period":"month","offset":-1}} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days, so a series is not drawn here
+-- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "parts" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
+
+-- {"kind":"series","measure":"dispatched","grain":"day","time":{"last":"7d"}} in Asia/Kolkata
+-- params: ["2026-02-09","2026-02-16"]
+SELECT strftime('%Y-%m-%d 00:00:00', CAST("stock"."__t" AS TEXT)) AS "bucket", sum("stock"."__m_dispatched") AS "value", count(*) AS "n"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE (("stock"."__t" >= CAST(? AS TEXT)) AND ("stock"."__t" < CAST(? AS TEXT)))
+GROUP BY strftime('%Y-%m-%d 00:00:00', CAST("stock"."__t" AS TEXT))
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
+
+-- {"kind":"series","measure":"dispatched","grain":"week","time":{"period":"month","offset":-1}} in Asia/Kolkata
+-- params: ["2026-01-01","2026-02-01"]
+SELECT strftime('%Y-%m-%d 00:00:00', CAST("stock"."__t" AS TEXT), '-' || ((CAST(strftime('%w', CAST("stock"."__t" AS TEXT)) AS INTEGER) + 6) % 7) || ' days') AS "bucket", sum("stock"."__m_dispatched") AS "value", count(*) AS "n"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE (("stock"."__t" >= CAST(? AS TEXT)) AND ("stock"."__t" < CAST(? AS TEXT)))
+GROUP BY strftime('%Y-%m-%d 00:00:00', CAST("stock"."__t" AS TEXT), '-' || ((CAST(strftime('%w', CAST("stock"."__t" AS TEXT)) AS INTEGER) + 6) % 7) || ' days')
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
+
+-- {"kind":"value","measure":"dispatched","compare":"previous_period","time":{"period":"month"}} in Asia/Kolkata
+-- params: ["2026-02-01","2026-02-16","2026-02-01","2026-02-16","2026-01-01","2026-01-16","2026-01-01","2026-02-16"]
+SELECT sum(CASE WHEN (("stock"."__t" >= CAST(? AS TEXT)) AND ("stock"."__t" < CAST(? AS TEXT))) THEN "stock"."__m_dispatched" END) AS "value", count(CASE WHEN (("stock"."__t" >= CAST(? AS TEXT)) AND ("stock"."__t" < CAST(? AS TEXT))) THEN 1 END) AS "n", sum(CASE WHEN (("stock"."__t" >= CAST(? AS TEXT)) AND ("stock"."__t" < CAST(? AS TEXT))) THEN "stock"."__m_dispatched" END) AS "previous"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE ("stock"."__t" >= CAST(? AS TEXT)) AND ("stock"."__t" < CAST(? AS TEXT))
+LIMIT 1;

@@ -9,7 +9,7 @@ export type { Grain };
 export type Expr =
   | { t: "raw"; sql: Fragment } // a fragment from the pack, inlined verbatim (per dialect)
   | { t: "col"; alias: string; col: string }
-  | { t: "param"; value: unknown; cast?: "timestamp" | "double" | "int" | "bigint" }
+  | { t: "param"; value: unknown; cast?: "timestamp" | "date" | "double" | "int" | "bigint" }
   | { t: "lit"; value: number }
   | { t: "str"; value: string } // a constant string the planner writes, never a request value
   | { t: "star" }
@@ -23,7 +23,7 @@ export type Expr =
   | { t: "in"; l: Expr; values: Expr[] }
   | { t: "case"; when: Expr; then: Expr } // CASE WHEN when THEN then END (else NULL)
   | { t: "trunc"; grain: Grain; arg: Expr; zone?: string }
-  | { t: "cast"; arg: Expr; to: "double" | "text" }
+  | { t: "cast"; arg: Expr; to: "double" | "text" | "timestamp" }
   | { t: "nullif0"; arg: Expr }
   | { t: "paren"; arg: Expr };
 

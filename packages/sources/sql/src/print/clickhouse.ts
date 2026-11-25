@@ -22,7 +22,7 @@ function typeOf(v: unknown): string {
 export const clickhouseRules: DialectRules = {
   dialect: "clickhouse",
   quote,
-  cast: (to) => ({ double: "Float64", text: "String", timestamp: TS, int: "Int32", bigint: "Int64" })[to],
+  cast: (to) => ({ double: "Float64", text: "String", timestamp: TS, date: "Date", int: "Int32", bigint: "Int64" })[to],
   json: (col, path) => {
     if (path.length === 0) return `CAST(${col} AS String)`;
     return `JSONExtract(${col}, ${path.map(lit).join(", ")}, 'Nullable(String)')`;

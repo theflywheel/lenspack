@@ -60,6 +60,8 @@ export type Binding = {
 export const slug = (s: string) => packSlug(s, { camel: true, digit: "k", empty: "k" });
 
 const COLUMN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// A column type that holds calendar dates with no time of day, as Superset reports it: DATE, Date, Date32, Nullable(Date).
+const DATE_TYPE = /^\s*(nullable\(\s*)?date(32)?\s*\)?\s*$/i;
 // COUNT(*), or ClickHouse's count().
 const COUNT_STAR = /^\s*count\s*\(\s*\*?\s*\)\s*$/i;
 
@@ -232,7 +234,9 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     if (entities[entity]) throw new Error(`Superset datasets ${binding.datasets.get(entity)?.table} and ${ds.table_name} both map to entity "${entity}"; give each its own name in overlay.entities`);
     const geo = geoOf(ds, overlay.geo?.[entity] ?? overlay.geo?.[String(ds.id)] ?? overlay.geo?.[ds.table_name]);
     if (geo) binding.geo.set(entity, geo);
-    entities[entity] = { source: `ds_${ds.id}`, grain: cut(ds.description ?? `one row of ${ds.table_name}`, 200), ...(time ? { time } : {}), ...(geo ? { geo } : {}) };
+    // A time column of calendar dates (DATE, or ClickHouse's Date and Date32) says so: its days need no time zone.
+    const dated = !!time && DATE_TYPE.test(ds.columns.find((c) => c.column_name === time)?.type ?? "");
+    entities[entity] = { source: `ds_${ds.id}`, grain: cut(ds.description ?? `one row of ${ds.table_name}`, 200), ...(time ? { time: dated ? { field: time, type: "date" } : time } : {}), ...(geo ? { geo } : {}) };
     binding.datasets.set(entity, { id: ds.id, table: ds.table_name, time, countMetric });
     binding.entityOf.set(ds.id, entity);
     binding.measureOf.set(entity, new Map());

@@ -21,6 +21,17 @@ it("buckets a series at local midnight in the pack's zone and labels it with the
   expect(bucketLabel(rows[0]!.bucket, "day")).toBe("2026-01-05");
 });
 
+it("buckets calendar dates as they are, and reads a window as the dates in the pack's zone", () => {
+  const dated = parsePack({ ...pack, timeZone: "America/New_York", entities: { visits: { source: "visits", time: { field: "on_day", type: "date" } } } });
+  // 22:00 on 9 November in New York, already the 10th in UTC.
+  const bound = resolve({ kind: "series", measure: "visits", grain: "day", time: { last: "7d" } }, dated, { now: new Date("2025-11-10T03:00:00Z") }, ELASTICSEARCH_CAPABILITIES);
+  const request = toRequest(bound, dated, { typeOf: () => "date", version: { major: 8, minor: 0 } });
+  expect(request.body.aggs).toEqual({ t: expect.objectContaining({ date_histogram: { field: "on_day", calendar_interval: "day", min_doc_count: 1 } }) });
+  expect(JSON.stringify(request.body.query)).toContain('{"range":{"on_day":{"gte":"2025-11-03","lt":"2025-11-10","format":"yyyy-MM-dd"}}}');
+  const rows = request.decode({ aggregations: { t: { buckets: [{ key: Date.parse("2025-11-03T00:00:00Z"), doc_count: 3 }] } } });
+  expect(bucketLabel(rows[0]!.bucket, "day")).toBe("2025-11-03");
+});
+
 // The search request for a compared breakdown, decoded from a canned
 // response: the live parity suite (examples/test/elasticsearch.test.ts) checks
 // the numbers against DuckDB when a search engine is running.

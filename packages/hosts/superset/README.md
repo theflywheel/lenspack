@@ -14,6 +14,11 @@ signed-in user from Superset and puts the chat inside Superset's pages. It sits 
 - **Numbers from Superset.** `supersetConnector` compiles a resolved query into Superset query objects and runs
   them through `/api/v1/chart/data`, so a metric means the same in both and Superset's row-level security applies.
   No joins (a chart reads one dataset); share, Other and further measures are composed by the engine as usual.
+- **Time zones.** Superset cuts time into days with no time zone. A dataset whose time column holds calendar dates
+  (`DATE`, or ClickHouse's `Date` and `Date32`) needs none: the catalogue marks it `type: date`, its days, weeks and
+  months are drawn in a pack with any `timeZone`, and a window is sent as the dates it holds in that zone ("the last
+  7 days" ends today in the pack's zone). In a pack outside UTC, a series over a time column with a time of day is
+  refused, and the refusal says what works: a date column, or a pack that keeps UTC.
 - **Dashboards are boards.** `dashboardToBoard` reads a dashboard: charts become widgets, markdown becomes text,
   `position_json` becomes the grid. A chart lenspack cannot say exactly (custom SQL filters, ad hoc metrics, a
   heatmap shaded per row or column) is kept as Superset's: a text widget the model can move, resize or remove but

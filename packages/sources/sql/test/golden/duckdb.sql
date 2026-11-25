@@ -419,3 +419,28 @@ WHERE (("parts"."__t_raw" >= CAST($2 AS BIGINT)) AND ("parts"."__t_raw" < CAST($
 GROUP BY date_trunc('day', (CAST("parts"."__t" AS TIMESTAMP) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata')
 ORDER BY "bucket" DESC NULLS LAST
 LIMIT 20001;
+
+-- {"kind":"series","measure":"dispatched","grain":"day","time":{"last":"7d"}} in Asia/Kolkata
+-- params: ["2026-02-09","2026-02-16"]
+SELECT date_trunc('day', CAST("stock"."__t" AS TIMESTAMP)) AS "bucket", sum("stock"."__m_dispatched") AS "value", count(*) AS "n"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE (("stock"."__t" >= CAST($1 AS DATE)) AND ("stock"."__t" < CAST($2 AS DATE)))
+GROUP BY date_trunc('day', CAST("stock"."__t" AS TIMESTAMP))
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
+
+-- {"kind":"series","measure":"dispatched","grain":"week","time":{"period":"month","offset":-1}} in Asia/Kolkata
+-- params: ["2026-01-01","2026-02-01"]
+SELECT date_trunc('week', CAST("stock"."__t" AS TIMESTAMP)) AS "bucket", sum("stock"."__m_dispatched") AS "value", count(*) AS "n"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE (("stock"."__t" >= CAST($1 AS DATE)) AND ("stock"."__t" < CAST($2 AS DATE)))
+GROUP BY date_trunc('week', CAST("stock"."__t" AS TIMESTAMP))
+ORDER BY "bucket" DESC NULLS LAST
+LIMIT 20001;
+
+-- {"kind":"value","measure":"dispatched","compare":"previous_period","time":{"period":"month"}} in Asia/Kolkata
+-- params: ["2026-02-01","2026-02-16","2026-02-01","2026-02-16","2026-01-01","2026-01-16","2026-01-01","2026-02-16"]
+SELECT sum(CASE WHEN (("stock"."__t" >= CAST($1 AS DATE)) AND ("stock"."__t" < CAST($2 AS DATE))) THEN "stock"."__m_dispatched" END) AS "value", count(CASE WHEN (("stock"."__t" >= CAST($3 AS DATE)) AND ("stock"."__t" < CAST($4 AS DATE))) THEN 1 END) AS "n", sum(CASE WHEN (("stock"."__t" >= CAST($5 AS DATE)) AND ("stock"."__t" < CAST($6 AS DATE))) THEN "stock"."__m_dispatched" END) AS "previous"
+FROM (SELECT *, "on_day" AS "__t", "units" AS "__m_dispatched" FROM "stock") AS "stock"
+WHERE ("stock"."__t" >= CAST($7 AS DATE)) AND ("stock"."__t" < CAST($8 AS DATE))
+LIMIT 1;

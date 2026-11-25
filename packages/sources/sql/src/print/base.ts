@@ -16,7 +16,7 @@ export type SpelledOp = "ILIKE" | "LIKE" | "IS DISTINCT FROM";
 export type DialectRules = {
   dialect: Dialect;
   quote(id: string): string;
-  cast(to: "double" | "text" | "timestamp" | "int" | "bigint"): string;
+  cast(to: "double" | "text" | "timestamp" | "date" | "int" | "bigint"): string;
   json(col: string, path: string[]): string;
   /** Exact median / p90. Absent when the dialect has none: the measure is refused. */
   percentile?(fn: "median" | "p90", arg: string): string;
@@ -53,7 +53,7 @@ export const quoteString = (s: string) => `'${s.replace(/'/g, "''")}'`;
 export function print(ast: Ast, rules: DialectRules): Printed {
   const params: unknown[] = [];
   const q = rules.quote;
-  const P = (value: unknown, cast?: "timestamp" | "double" | "int" | "bigint") => {
+  const P = (value: unknown, cast?: "timestamp" | "date" | "double" | "int" | "bigint") => {
     params.push(rules.paramValue(value));
     const ph = rules.param(params.length, value);
     return cast ? `CAST(${ph} AS ${rules.cast(cast)})` : ph;

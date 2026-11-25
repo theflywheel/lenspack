@@ -218,6 +218,18 @@ describe("refusals", () => {
     expect(compile(series, { ...pack, timeZone: "Etc/UTC" }, { dialect: "pg_utc_only", ctx }).sql).toBe(compile(series, pack, { dialect: "postgres", ctx }).sql);
   });
 
+  it("buckets calendar dates as they are in any zone, even where the dialect cannot cut zoned buckets", () => {
+    registerDialect({ ...postgresRules, dialect: "pg_utc_only", zonedTrunc: undefined });
+    const dated = parsePack({ ...pack, timeZone: "America/New_York", entities: { ...pack.entities, things: { ...pack.entities.things!, time: { field: "made_on", type: "date" } } } });
+    const series = { kind: "series", measure: "things", grain: "day", time: { last: "7d" } } as const;
+    for (const dialect of ["pg_utc_only", "postgres", "mysql", "sqlite"]) {
+      const c = compile(series, dated, { dialect, ctx });
+      expect(c.sql, dialect).not.toMatch(/AT TIME ZONE|America/);
+      // 00:00 on 15 February in UTC is still the 14th in New York: today and the 6 days before.
+      expect(c.params.slice(-2), dialect).toEqual(["2026-02-08", "2026-02-15"]);
+    }
+  });
+
   it("returns resolution errors as data from run()", async () => {
     const data = await q({ kind: "breakdown", dimension: "ghost", measure: "things", limit: 10, sort: "desc" });
     expect(data.error).toContain("ghost");

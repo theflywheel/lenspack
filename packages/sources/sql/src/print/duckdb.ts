@@ -5,7 +5,7 @@ import { zoned } from "./postgres";
 export const duckdbRules: DialectRules = {
   dialect: "duckdb",
   quote,
-  cast: (to) => ({ double: "DOUBLE", text: "VARCHAR", timestamp: "TIMESTAMP", int: "INTEGER", bigint: "BIGINT" })[to],
+  cast: (to) => ({ double: "DOUBLE", text: "VARCHAR", timestamp: "TIMESTAMP", date: "DATE", int: "INTEGER", bigint: "BIGINT" })[to],
   json: (col, path) => {
     const seg = (s: string) => `."${s.replace(/"/g, '\\"')}"`;
     if (path.length === 0) return `CAST(${col} AS VARCHAR)`;

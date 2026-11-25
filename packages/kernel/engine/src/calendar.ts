@@ -36,6 +36,36 @@ export function localDate(at: Date, timeZone = "UTC"): string {
   return `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
 }
 
+/** The first local midnight in `timeZone` at or after an instant: where the first whole day from it starts. */
+export function dayStartFrom(at: Date, timeZone = "UTC"): Date {
+  const date = localDate(at, timeZone);
+  const start = startOfLocalDay(date, timeZone);
+  return start.getTime() >= at.getTime() ? start : startOfLocalDay(addDays(date, 1), timeZone);
+}
+
+/**
+ * The calendar dates a window holds, as [from, to): the dates whose day starts
+ * inside it, in `timeZone`. A column of dates is compared with these, as dates.
+ */
+export function windowDates(w: { from: Date; to: Date }, timeZone = "UTC"): { from: string; to: string } {
+  return { from: localDate(dayStartFrom(w.from, timeZone), timeZone), to: localDate(dayStartFrom(w.to, timeZone), timeZone) };
+}
+
+/**
+ * One end of an exact range ("2026-09-01T00:00:00Z") over calendar dates, as
+ * the local midnight it means. An end at local midnight in `timeZone` is that
+ * day. Any other end is read by the date written in it, so an end written in
+ * UTC still names the day it says; an end partway through a day starts the
+ * next day.
+ */
+export function writtenDayStart(end: string, timeZone = "UTC"): Date {
+  const at = new Date(end);
+  if (dayStartFrom(at, timeZone).getTime() === at.getTime()) return at;
+  const date = end.slice(0, 10);
+  const midnight = /^\d{4}-\d\d-\d\dT00:00(:00(\.0+)?)?(Z|[+-]|$)/i.test(end);
+  return startOfLocalDay(midnight ? date : addDays(date, 1), timeZone);
+}
+
 export function addDays(date: string, days: number): string {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);

@@ -1,5 +1,5 @@
-import { type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZone, localWallClock, sortGroups } from "@lenspack/engine";
-import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/pack";
+import { type BoundFilter, type BoundPlan, MAX_SERIES, ResolveError, type Row, type TimeWindow, bucketZoneOf, localWallClock, sortGroups, windowDates } from "@lenspack/engine";
+import { type Fragment, type Pack, type PackDimension, type PackMeasure, type Where, datedTime, evaluate, maybeFragmentFor, tenantOf } from "@lenspack/pack";
 
 // The query IR, compiled to one search request. Every structural decision —
 // which entity, which dimensions, tenancy, the time window — was made by the
@@ -248,11 +248,16 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
   const needsTime = !!bound.time || query.kind === "series";
   if (needsTime && !timeField) refuse(`"${root}" keeps its time in a SQL expression, which this source cannot evaluate; point time: at a field`, root);
   if (query.kind === "series" && perMs !== 1) refuse(`"${root}" keeps time in epoch seconds, which this source cannot bucket by date`, root);
+  // Calendar dates are compared with dates: the dates whose day starts in the window, in the pack's zone.
+  const dated = datedTime(entity);
+  const dates = (w: TimeWindow) => windowDates(w, pack.timeZone);
   const range = (w: TimeWindow): Json => ({
     range: {
-      [timeField!]: isDate(timeField!, env)
-        ? { gte: w.from.getTime(), lt: w.to.getTime(), format: "epoch_millis" }
-        : { gte: Math.floor(w.from.getTime() * perMs), lt: Math.floor(w.to.getTime() * perMs) },
+      [timeField!]: dated
+        ? { gte: dates(w).from, lt: dates(w).to, ...(isDate(timeField!, env) ? { format: "yyyy-MM-dd" } : {}) }
+        : isDate(timeField!, env)
+          ? { gte: w.from.getTime(), lt: w.to.getTime(), format: "epoch_millis" }
+          : { gte: Math.floor(w.from.getTime() * perMs), lt: Math.floor(w.to.getTime() * perMs) },
     },
   });
   if (bound.time && !bound.previous) must.push(range(bound.time));
@@ -301,7 +306,8 @@ export function toRequest(bound: BoundPlan, pack: Pack, env: Env): SearchRequest
       const metricAggs = measureAggs(bound, env);
       // In a zone, buckets start at local midnight and are keyed by that
       // instant; the key is read back as local time, as SQL returns it.
-      const zone = bucketZone(pack.timeZone);
+      // Calendar dates are bucketed as they are, in no zone.
+      const zone = bucketZoneOf(pack, entity);
       const local = (key: number) => (zone ? localWallClock(key, zone) : key);
       // A numeric field (epoch milliseconds) takes no time_zone in a
       // date_histogram, so in a zone it is read through a date-typed runtime

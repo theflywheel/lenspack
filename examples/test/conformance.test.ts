@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Dialect } from "../_shared/seed-util";
 import { type ExampleName, SMALL, buildBoard, contextFor, examples } from "../index";
+import { seedStock, stockCases, stockCtx, stockPack } from "./stock";
 import { seedTicks, ticksCases, ticksPack } from "./ticks";
 
 // The genericity proof, parts one, two and four. One test suite runs over
@@ -37,7 +38,7 @@ const ENGINES: Engine[] = [
   { name: "clickhouse", dialect: "clickhouse", url: process.env.LENSPACK_CLICKHOUSE_URL, seed: async () => (await import("@lenspack/sql/clickhouse")).openClickhouse(process.env.LENSPACK_CLICKHOUSE_URL!) },
 ];
 
-const duck: Partial<Record<ExampleName | "ticks", Awaited<ReturnType<typeof openDuckdb>>>> = {};
+const duck: Partial<Record<ExampleName | "ticks" | "stock", Awaited<ReturnType<typeof openDuckdb>>>> = {};
 // Engines that were reachable and seeded, each opened through its URL as a source would be.
 const live = new Map<string, { connector: Connector & { executor: Executor }; close(): Promise<void> }>();
 
@@ -49,6 +50,8 @@ beforeAll(async () => {
   }
   duck.ticks = await openDuckdb();
   await seedTicks(duck.ticks.writer, "duckdb");
+  duck.stock = await openDuckdb();
+  await seedStock(duck.stock.writer, "duckdb");
   await Promise.all(
     ENGINES.map(async (engine) => {
       if (!engine.url) return;
@@ -57,6 +60,7 @@ beforeAll(async () => {
         seeded = await engine.seed();
         for (const name of NAMES) await examples[name].seed(seeded.writer, engine.dialect, SMALL[name] as never);
         await seedTicks(seeded.writer, engine.dialect);
+        await seedStock(seeded.writer, engine.dialect);
         const { connector, connection } = await openSource(engine.url);
         live.set(engine.name, { connector, close: connection.close });
       } catch (e) {
@@ -287,6 +291,30 @@ describe("made-up ticks: every driver gives the one right answer", () => {
         expect(mine.error, `${engine.name}: ${c.label}`).toBeUndefined();
         c.check(mine);
         agrees(engine.name, c.label, mine, await run(c.query, { pack: ticksPack, connector: sqlConnector(duck.ticks!.executor) }), false);
+      }
+    });
+  }
+});
+
+// Calendar dates in a pack whose days start in New York: every driver buckets
+// the dates as they are and reads a window as the dates in New York.
+describe("made-up stock by calendar date: every driver gives the same days in any zone", () => {
+  for (const c of stockCases) {
+    it(`duckdb: ${c.label}`, async () => {
+      const data = await run(c.query, { pack: stockPack, connector: sqlConnector(duck.stock!.executor), ctx: stockCtx });
+      expect(data.error).toBeUndefined();
+      c.check(data);
+    });
+  }
+  for (const engine of ENGINES) {
+    it(`${engine.name} agrees with duckdb`, async ({ skip }) => {
+      const other = live.get(engine.name);
+      if (!other) return skip();
+      for (const c of stockCases) {
+        const mine = await run(c.query, { pack: stockPack, connector: other.connector, ctx: stockCtx });
+        expect(mine.error, `${engine.name}: ${c.label}`).toBeUndefined();
+        c.check(mine);
+        agrees(engine.name, c.label, mine, await run(c.query, { pack: stockPack, connector: sqlConnector(duck.stock!.executor), ctx: stockCtx }), false);
       }
     });
   }

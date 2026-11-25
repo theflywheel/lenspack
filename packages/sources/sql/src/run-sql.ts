@@ -24,7 +24,8 @@ export async function runSql(sql: string, executor: Executor, opts: { maxRows?: 
 // An entity's time as SQL would read it: its column, an epoch column and its unit, or its expression.
 function timeText(time: NonNullable<Pack["entities"][string]["time"]>): string {
   if (typeof time === "string") return time;
-  if ("field" in time) return `${time.field}, epoch ${time.unit === "epoch_ms" ? "milliseconds" : "seconds"}`;
+  if ("unit" in time) return `${time.field}, epoch ${time.unit === "epoch_ms" ? "milliseconds" : "seconds"}`;
+  if ("field" in time) return `${time.field}, calendar dates`;
   return maybeFragmentFor(time.sql, "default", true) ?? "a SQL expression per dialect";
 }
 
