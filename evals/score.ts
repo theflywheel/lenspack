@@ -83,14 +83,17 @@ export function numberMatches(truth: number, unit: Unit, n: Num): { ok: boolean;
     const rounded = n.sig <= 3 && Math.abs(truth) >= 1000;
     return { ok: rounded && Math.abs(n.value - truth) <= Math.abs(truth) * 0.005, coarse: rounded };
   }
-  const tol = Math.max(Math.abs(truth) * 0.005, 0.5 * 10 ** -n.decimals);
-  return { ok: Math.abs(n.value - truth) <= tol, coarse: false };
+  // Half a unit of the precision shown, plus 0.5% for arithmetic on rounded figures (3,418 / 936 = 3.7 when the
+  // exact quotient is 3.65).
+  const tol = 0.5 * 10 ** -n.decimals + Math.abs(truth) * 0.005;
+  return { ok: Math.abs(n.value - truth) <= tol + 1e-9, coarse: false };
 }
 
 // ── keys in text ─────────────────────────────────────────────────────────
 
 const loose = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
 const MONTH_ABBR = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const MONTH_FULL = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 
 /** Ways a key may be written: ward names as they are, codes with spaces for underscores, dates as "14 Oct", "Oct 14" or "Day N". */
 const SYNONYMS: Record<string, string[]> = { male: ["boys", "boy", "men"], female: ["girls", "girl", "women"] };
@@ -99,16 +102,45 @@ function spellings(key: string, ordinal?: number): string[] {
   const out = new Set([loose(key), loose(key.replace(/_/g, " ")), ...(SYNONYMS[loose(key)] ?? [])]);
   // "Health facility" is also written "Health facilities".
   if (/[^aeiou]y$/.test(loose(key))) out.add(`${loose(key).slice(0, -1)}ies`);
+  // A name ending in capitalised words may be written with their initials: "Ajegunle Primary Health Centre" as
+  // "Ajegunle PHC", "Osupa Health Centre" as "Osupa HC".
+  const words = key.split(/\s+/).filter(Boolean);
+  for (let n = 2; n <= Math.min(4, words.length - 1); n++) {
+    const tail = words.slice(-n);
+    if (tail.every((w) => /^[A-Z][a-z]+$/.test(w))) out.add(loose(words.slice(0, -n).join(" ") + tail.map((w) => w[0]).join("")));
+  }
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(key);
   if (iso) {
     const d = Number(iso[3]);
     const mon = MONTH_ABBR[Number(iso[2]) - 1]!;
     // …and as a day label without the year ("06-27"), as datasets often carry it.
-    for (const s of [`${d}${mon}`, `${mon}${d}`, `${String(d).padStart(2, "0")}${mon}`, `${iso[3]}/${iso[2]}`, key.slice(0, 10)]) out.add(loose(s));
+    const full = MONTH_FULL[Number(iso[2]) - 1]!;
+    for (const s of [`${d}${mon}`, `${mon}${d}`, `${String(d).padStart(2, "0")}${mon}`, `${d}${full}`, `${full}${d}`, `${String(d).padStart(2, "0")}${full}`, `${iso[3]}/${iso[2]}`, key.slice(0, 10)]) out.add(loose(s));
     out.add(`${iso[2]}-${iso[3]}`.replace("-", ""));
     if (ordinal !== undefined) out.add(`day${ordinal}`);
   }
   return [...out].filter(Boolean);
+}
+
+/** Does the text hold this loose form as whole words: not "Jagun" inside "Ajaguna"? A plural s or es may follow. */
+function hasWhole(text: string, form: string): boolean {
+  let l = "";
+  const starts = new Set<number>();
+  const ends = new Set<number>();
+  let prev = false;
+  for (const ch of text.toLowerCase().normalize("NFKD")) {
+    const alnum = /[a-z0-9]/.test(ch);
+    if (alnum && !prev) starts.add(l.length);
+    if (!alnum && prev) ends.add(l.length);
+    if (alnum) l += ch;
+    prev = alnum;
+  }
+  ends.add(l.length);
+  for (let i = l.indexOf(form); i >= 0; i = l.indexOf(form, i + 1)) {
+    const j = i + form.length;
+    if (starts.has(i) && (ends.has(j) || (l[j] === "s" && ends.has(j + 1)) || (l.slice(j, j + 2) === "es" && ends.has(j + 2)))) return true;
+  }
+  return false;
 }
 
 /** Lines of a reply, with markdown table rows and list items kept whole. */
@@ -126,8 +158,7 @@ function findKey(segs: string[], key: string, ordinal?: number): string[] {
   if (breaks) segs = [...segs, ...segs.slice(breaks).map((_, i) => segs.slice(i, i + breaks + 1).join(" "))];
   const words = key.includes("_") ? key.toLowerCase().split("_").filter((w) => w.length >= 3) : [];
   return segs.filter((s) => {
-    const l = loose(s);
-    if (forms.some((f) => l.includes(f))) return true;
+    if (forms.some((f) => hasWhole(s, f))) return true;
     const low = s.toLowerCase();
     return words.length > 0 && words.every((w) => new RegExp(`\\b${w}`).test(low));
   });
