@@ -58,7 +58,8 @@ describe("rates and changes the pack does not define, asked of the tools", () =>
     // A day with no dispatch counts as 0: north (10 + 20 + 0 + 10 + 15) / 5, east 30 / 5, south (0 + 5 + 10 + 10 + 5) / 5.
     expect(r.rows.map((x) => [x.group, x.value])).toEqual([["north", 11], ["east", 6], ["south", 6]]);
     // What the reply can say the burn rate is, in plain words.
-    expect(r.computed).toBe("average daily units dispatched: a day with no records counts as 0");
+    // And over which days, so the reply can say so.
+    expect(r.computed).toBe("average daily units dispatched: a day with no records counts as 0; averaged over 5 days, 2026-03-01 to 2026-03-05 (the first to the last day with units dispatched in the time range)");
     // The source was asked for the base grain, every ward by day; the average was taken after.
     expect(r.sql).toMatch(/^-- computed after the source answers: average daily units dispatched/);
     expect(r.sql).toMatch(/GROUP BY/);

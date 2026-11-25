@@ -125,6 +125,31 @@ export function rolledBackLine(findings: Finding[]) {
   return `I couldn't make a correct version, so I left the board unchanged.${why ? ` ${why}` : ""}`;
 }
 
+/** A tool result from an edit: every edit tool answers whether it was applied, whatever its name. */
+export const isEditResult = (output: unknown) => !!output && typeof output === "object" && "applied" in output;
+
+// Words a reply uses to say it changed the board, in the chat's languages: English, French, Portuguese, Spanish
+// and Hindi. Compared after NFC normalisation, as the text is, so a Hindi nukta matches however it was typed.
+const CLAIM_WORDS = [
+  "added|removed|renamed|moved|resized|replaced|deleted",
+  "ajouté|ajoutée|ajoutés|ajoutées|supprimé|supprimée|supprimés|supprimées|renommé|renommée|déplacé|déplacée|redimensionné|redimensionnée|remplacé|remplacée|retiré|retirée",
+  "adicionei|adicionado|adicionada|removi|removido|removida|renomeei|movi|redimensionei|substituí|apaguei|excluí|coloquei|inseri",
+  "añadí|agregué|eliminé|quité|renombré|moví|reemplacé|añadido|añadida|agregado|agregada|eliminado|eliminada",
+  "जोड़ा|जोड़ी|जोड़े|जोड़ दिया|जोड़ दी|जोड़ दिए|हटाया|हटाई|हटा दिया|हटा दी|हटा दिए|बदल दिया|बदल दी|नाम बदला",
+].join("|");
+const CLAIMS = new RegExp(`(?<![\\p{L}\\p{M}])(?:${CLAIM_WORDS.normalize("NFC")})(?![\\p{L}\\p{M}])`, "iu");
+
+/** Whether a reply says it changed the board (added, removed, renamed…), in any of the chat's languages. */
+export const claimsEdit = (text: string) => CLAIMS.test(text.normalize("NFC"));
+
+/**
+ * Whether a turn's edits get the reviewer: when the board gained a version, or when it did not
+ * and the reply may say otherwise, that is the model tried an edit (refused, then) or its words
+ * claim one. A question answered with no edit and no such words has nothing on the board to check.
+ */
+export const wantsReview = (gained: boolean, steps: { text?: string; toolResults?: { output?: unknown }[] }[]) =>
+  gained || steps.some((s) => (s.toolResults ?? []).some((r) => isEditResult(r.output))) || claimsEdit(steps.map((s) => s.text ?? "").join("\n"));
+
 /** The refusals in a turn's tool results, as short lines for the reviewer. */
 export function refusalsFrom(steps: { toolResults: { toolName?: string; output?: unknown }[] }[]): string[] {
   const out: string[] = [];

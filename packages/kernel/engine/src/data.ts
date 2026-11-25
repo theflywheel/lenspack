@@ -45,6 +45,8 @@ export type WidgetData = {
   label?: string;
   /** What was computed after the source answered, and how zeros and gaps were treated, in plain words. */
   computed?: string;
+  /** For steps over time: the buckets they ran over, the first and the last (named as the rows name them) and how many. */
+  window?: { from: string; to: string; buckets: number; grain: Grain };
   error?: string;
   hint?: string;
 };
