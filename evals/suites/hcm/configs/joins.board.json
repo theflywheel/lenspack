@@ -1,0 +1,301 @@
+{
+ "version": 2,
+ "pack": "hcm_clickhouse",
+ "packVersion": 1,
+ "title": "Kebbi nOPV2 campaign: national view (ClickHouse dev)",
+ "grid": {
+  "cols": 12,
+  "rowHeight": 40,
+  "density": "comfortable",
+  "fill": true
+ },
+ "layout": [
+  {
+   "i": "c17",
+   "x": 0,
+   "y": 0,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c18",
+   "x": 6,
+   "y": 0,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c19",
+   "x": 0,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c20",
+   "x": 3,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c21",
+   "x": 6,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c22",
+   "x": 9,
+   "y": 7,
+   "w": 3,
+   "h": 4
+  },
+  {
+   "i": "c23",
+   "x": 0,
+   "y": 11,
+   "w": 12,
+   "h": 7
+  },
+  {
+   "i": "c24",
+   "x": 0,
+   "y": 18,
+   "w": 12,
+   "h": 7
+  },
+  {
+   "i": "c25",
+   "x": 0,
+   "y": 25,
+   "w": 12,
+   "h": 10
+  },
+  {
+   "i": "c26",
+   "x": 0,
+   "y": 35,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c27",
+   "x": 6,
+   "y": 35,
+   "w": 6,
+   "h": 7
+  },
+  {
+   "i": "c28",
+   "x": 0,
+   "y": 42,
+   "w": 12,
+   "h": 7
+  },
+  {
+   "i": "c29",
+   "x": 0,
+   "y": 49,
+   "w": 12,
+   "h": 7
+  }
+ ],
+ "widgets": {
+  "c17": {
+   "title": "Overview: children coverage — vaccinated vs remaining (target)",
+   "kind": "chart",
+   "chart": "bar",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "status",
+    "measure": "people",
+    "limit": 10,
+    "sort": "desc",
+    "filters": [
+     {
+      "dimension": "grp",
+      "op": "eq",
+      "value": "Children"
+     }
+    ]
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c18": {
+   "title": "Overview: household coverage — registered vs remaining (target)",
+   "kind": "chart",
+   "chart": "pie",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "status",
+    "measure": "people",
+    "limit": 10,
+    "sort": "desc",
+    "filters": [
+     {
+      "dimension": "grp",
+      "op": "eq",
+      "value": "Households"
+     }
+    ]
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c19": {
+   "title": "Overview: children vaccinated",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "children_vaccinated"
+   },
+   "aggregate": "last"
+  },
+  "c20": {
+   "title": "Overview: households registered",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "households_registered"
+   },
+   "aggregate": "last"
+  },
+  "c21": {
+   "title": "Overview: vial wastage",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "vial_wastage_pct"
+   },
+   "aggregate": "last"
+  },
+  "c22": {
+   "title": "Overview: spoilt vials",
+   "kind": "kpi",
+   "query": {
+    "kind": "value",
+    "measure": "spoilt_vials_pct"
+   },
+   "aggregate": "last"
+  },
+  "c23": {
+   "title": "Overview: coverage by LGA (children and households)",
+   "kind": "chart",
+   "chart": "bar",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "lga",
+    "measure": "children_coverage_pct",
+    "limit": 50,
+    "sort": "asc",
+    "measures": [
+     "households_coverage_pct"
+    ]
+   },
+   "options": {
+    "legend": true,
+    "colorScheme": "default"
+   }
+  },
+  "c24": {
+   "title": "Overview: coverage by ward (children and households)",
+   "kind": "chart",
+   "chart": "bar",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "ward",
+    "measure": "children_coverage_pct",
+    "limit": 50,
+    "sort": "asc",
+    "measures": [
+     "households_coverage_pct"
+    ]
+   },
+   "options": {
+    "legend": true,
+    "colorScheme": "default"
+   }
+  },
+  "c25": {
+   "title": "Overview map: health facilities",
+   "kind": "text",
+   "body": "Superset chart “Overview map: health facilities” (deck_scatter), kept as it is in Superset because lenspack has no deck_scatter chart. It can be moved, resized or removed here; edit its contents in Superset."
+  },
+  "c26": {
+   "title": "Overview: vaccinated children — gender distribution",
+   "kind": "chart",
+   "chart": "pie",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "gender",
+    "measure": "vaccinated_children",
+    "limit": 10,
+    "sort": "desc"
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c27": {
+   "title": "Overview: zero-dose children — gender distribution",
+   "kind": "chart",
+   "chart": "pie",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "gender",
+    "measure": "zero_dose_children",
+    "limit": 10,
+    "sort": "desc"
+   },
+   "options": {
+    "legend": false,
+    "colorScheme": "default"
+   }
+  },
+  "c28": {
+   "title": "Overview: planned vs actual (cumulative % of target)",
+   "kind": "chart",
+   "chart": "line",
+   "query": {
+    "kind": "series",
+    "measure": "planned_children_cum_pct",
+    "grain": "day",
+    "measures": [
+     "actual_children_cum_pct",
+     "planned_households_cum_pct",
+     "actual_households_cum_pct"
+    ]
+   },
+   "options": {
+    "legend": true,
+    "colorScheme": "default"
+   }
+  },
+  "c29": {
+   "title": "Wards ranked by children coverage (furthest behind first)",
+   "kind": "table",
+   "query": {
+    "kind": "breakdown",
+    "dimension": "ward",
+    "measure": "children_coverage_pct",
+    "limit": 50,
+    "sort": "asc",
+    "measures": [
+     "children_vaccinated",
+     "children_target",
+     "households_coverage_pct"
+    ]
+   },
+   "pageSize": 10
+  }
+ },
+ "filters": []
+}

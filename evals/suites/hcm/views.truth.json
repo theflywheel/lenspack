@@ -1,0 +1,1182 @@
+{
+ "suite": "hcm-superset-ng-post",
+ "computed": "2026-11-23T02:56:17+00:00",
+ "fingerprint": {
+  "su_ni_task_rows": 50000,
+  "su_ni_cov_rows": 2275,
+  "su_ni_cov_vaccinated": 47798,
+  "su_ni_zd_facility_rows": 100,
+  "su_ni_stock_issued": 1545,
+  "task_date_max": "2026-10-18",
+  "freshness": "2026-10-18 stale=0",
+  "smc_mart_rows": 50000,
+  "household_mart_rows": 23961,
+  "referral_mart_children": 61
+ },
+ "questions": {
+  "T1.1": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 23961,
+   "sql_sha": "ce577c8fd028",
+   "dayOne": "2026-10-12",
+   "cross": 23961
+  },
+  "T1.2": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 50000,
+   "sql_sha": "c77a9c7ac968",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "excluding closed-household visits (no child seen)",
+     "value": 48250
+    }
+   ]
+  },
+  "T1.3": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 1545,
+   "sql_sha": "be235381d7e2",
+   "dayOne": "2026-10-12",
+   "cross": 1545
+  },
+  "T1.4": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 5701,
+   "sql_sha": "174cfe2f65ef",
+   "dayOne": "2026-10-12",
+   "cross": 5701
+  },
+  "T1.5": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 100,
+   "sql_sha": "fcf9d4c8adda",
+   "dayOne": "2026-10-12"
+  },
+  "T1.6": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 47798,
+   "sql_sha": "64c139794c3c",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only (no revisits)",
+     "value": 47585
+    }
+   ]
+  },
+  "T1.7": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 121720,
+   "sql_sha": "4fa5b5715914",
+   "dayOne": "2026-10-12"
+  },
+  "T1.8": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 61,
+   "sql_sha": "d81131aeeb60",
+   "dayOne": "2026-10-12"
+  },
+  "T2.1": {
+   "shape": "map",
+   "unit": "count",
+   "value": {
+    "ABSENT": 138,
+    "REFUSED": 314,
+    "REVISIT": 213,
+    "CLOSED_HOUSEHOLD": 1750,
+    "VACCINATED": 47585
+   },
+   "sql_sha": "894ca07a2f7d",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "SMC mart administration status",
+     "value": {
+      "ADMINISTRATION_SUCCESS": 47585,
+      "CLOSED_HOUSEHOLD": 1750,
+      "VISITED": 213,
+      "ADMINISTRATION_FAILED": 452
+     }
+    }
+   ]
+  },
+  "T2.2": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 11347,
+   "sql_sha": "343b26db72eb",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only",
+     "value": 11299
+    }
+   ]
+  },
+  "T2.3": {
+   "shape": "map",
+   "unit": "count",
+   "value": {
+    "MALE": 23829,
+    "FEMALE": 23969
+   },
+   "sql_sha": "e8bc4d031518",
+   "dayOne": "2026-10-12"
+  },
+  "T2.4": {
+   "shape": "map",
+   "unit": "count",
+   "value": {
+    "Kalgo": 5661,
+    "Gwandu": 8753,
+    "Birnin Kebbi": 9547
+   },
+   "sql_sha": "f5489997187a",
+   "dayOne": "2026-10-12"
+  },
+  "T2.5": {
+   "shape": "map",
+   "unit": "count",
+   "value": {
+    "0-11 months": 11612,
+    "12-23 months": 9794,
+    "24-59 months": 28594
+   },
+   "sql_sha": "27d1a8cc211c",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "excluding closed households (recorded with age 0)",
+     "value": {
+      "0-11 months": 9862,
+      "12-23 months": 9794,
+      "24-59 months": 28594
+     }
+    }
+   ]
+  },
+  "T2.6": {
+   "shape": "map",
+   "unit": "count",
+   "value": {
+    "Kalgo": 1253,
+    "Gwandu": 2106,
+    "Birnin Kebbi": 2342
+   },
+   "sql_sha": "6a22fa043722",
+   "dayOne": "2026-10-12"
+  },
+  "T2.7": {
+   "shape": "list",
+   "unit": "count",
+   "value": [
+    [
+     "Kardi",
+     3773
+    ],
+    [
+     "Gulumbe",
+     2699
+    ],
+    [
+     "GwadonGwaji",
+     2282
+    ],
+    [
+     "Gawasu Damana",
+     2046
+    ],
+    [
+     "Makera",
+     1808
+    ]
+   ],
+   "sql_sha": "3012a2e00bc7",
+   "k": 5,
+   "dayOne": "2026-10-12"
+  },
+  "T2.8": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 1750,
+   "sql_sha": "fdd26b332143",
+   "dayOne": "2026-10-12"
+  },
+  "T3.1": {
+   "shape": "series",
+   "unit": "count",
+   "value": {
+    "2026-10-12": 6277,
+    "2026-10-13": 7249,
+    "2026-10-14": 7261,
+    "2026-10-15": 7087,
+    "2026-10-16": 7161,
+    "2026-10-17": 6640,
+    "2026-10-18": 6123
+   },
+   "sql_sha": "a6a77d9c144a",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only",
+     "value": {
+      "2026-10-12": 6250,
+      "2026-10-13": 7223,
+      "2026-10-14": 7227,
+      "2026-10-15": 7060,
+      "2026-10-16": 7129,
+      "2026-10-17": 6608,
+      "2026-10-18": 6088
+     }
+    }
+   ]
+  },
+  "T3.2": {
+   "shape": "list",
+   "unit": "count",
+   "value": [
+    [
+     "2026-10-14",
+     7261
+    ]
+   ],
+   "sql_sha": "d8ceae701ef2",
+   "k": 1,
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only",
+     "value": [
+      [
+       "2026-10-14",
+       7227
+      ]
+     ]
+    }
+   ]
+  },
+  "T3.3": {
+   "shape": "series",
+   "unit": "count",
+   "value": {
+    "2026-10-12": 3117,
+    "2026-10-13": 3606,
+    "2026-10-14": 3637,
+    "2026-10-15": 3576,
+    "2026-10-16": 3614,
+    "2026-10-17": 3320,
+    "2026-10-18": 3091
+   },
+   "sql_sha": "391c920a9750",
+   "dayOne": "2026-10-12",
+   "cross": {
+    "2026-10-12": 3117,
+    "2026-10-13": 3606,
+    "2026-10-14": 3637,
+    "2026-10-15": 3576,
+    "2026-10-16": 3614,
+    "2026-10-17": 3320,
+    "2026-10-18": 3091
+   }
+  },
+  "T3.4": {
+   "shape": "series",
+   "unit": "ratio",
+   "value": {
+    "2026-10-12": 0.12313879352623835,
+    "2026-10-13": 0.2653457577243747,
+    "2026-10-14": 0.4077881314369789,
+    "2026-10-15": 0.5468170671897989,
+    "2026-10-16": 0.6872976949485041,
+    "2026-10-17": 0.8175576262873958,
+    "2026-10-18": 0.9376753310446297
+   },
+   "sql_sha": "640c6aff7d52",
+   "dayOne": "2026-10-12"
+  },
+  "T3.5": {
+   "shape": "series",
+   "unit": "count",
+   "value": {
+    "2026-10-12": 2431,
+    "2026-10-13": 2784,
+    "2026-10-14": 2779,
+    "2026-10-15": 2677,
+    "2026-10-16": 2710,
+    "2026-10-17": 2492,
+    "2026-10-18": 2319
+   },
+   "sql_sha": "7235e77303f7",
+   "dayOne": "2026-10-12"
+  },
+  "T4.1": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.9376753310446297,
+   "sql_sha": "f2362caadab8",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only",
+     "value": 0.9334968121628249
+    }
+   ]
+  },
+  "T4.2": {
+   "shape": "map",
+   "unit": "ratio",
+   "value": {
+    "Kalgo": 0.9400215392262448,
+    "Gwandu": 0.9359733132465297,
+    "Birnin Kebbi": 0.937838369918299
+   },
+   "sql_sha": "a4190ebb614a",
+   "dayOne": "2026-10-12"
+  },
+  "T4.3": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.11815544041450778,
+   "sql_sha": "0ab8995a2c86",
+   "dayOne": "2026-10-12"
+  },
+  "T4.4": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.9698846387370977,
+   "sql_sha": "ce517520e96e",
+   "dayOne": "2026-10-12"
+  },
+  "T4.5": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.1487444345503116,
+   "sql_sha": "7b8d1ccdddc1",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "doses over opened vials returned (second author)",
+     "value": 0.14417188898836164
+    },
+    {
+     "label": "spoilt vials over issued (second author's primary)",
+     "value": 0.003883495145631068
+    }
+   ]
+  },
+  "T4.6": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.003883495145631068,
+   "sql_sha": "8bf6fd7eb703",
+   "dayOne": "2026-10-12"
+  },
+  "T4.7": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.9359733132465297,
+   "sql_sha": "23103a6565fe",
+   "dayOne": "2026-10-12"
+  },
+  "T4.8": {
+   "shape": "map",
+   "unit": "ratio",
+   "value": {
+    "Kalgo": 0.9708454810495627,
+    "Gwandu": 0.9685736416952528,
+    "Birnin Kebbi": 0.9705194673172716
+   },
+   "sql_sha": "8d7ca1a0cdc5",
+   "dayOne": "2026-10-12"
+  },
+  "T5.1": {
+   "shape": "set",
+   "unit": "count",
+   "value": [
+    "Ambursa",
+    "Masama",
+    "Nassarawa I"
+   ],
+   "sql_sha": "95003041ede2",
+   "dayOne": "2026-10-12",
+   "universe": [
+    "Ambursa",
+    "Cheberu",
+    "Dalijan",
+    "Dangaladima",
+    "Dangoma/Gayi",
+    "Diggi",
+    "Dodoru",
+    "Etene",
+    "Gawasu Damana",
+    "Gulmare",
+    "Gulumbe",
+    "GwadonGwaji",
+    "Gwandu Dan Galadima",
+    "Gwandu Marafa",
+    "Hirishi/ Magarza",
+    "Kalgo",
+    "Kambaza",
+    "Kardi",
+    "Kola Tarasa",
+    "Kukah",
+    "Makera",
+    "Malisa",
+    "Marafa",
+    "Maruda",
+    "Masama",
+    "Muntubari",
+    "Nassarawa I",
+    "Nayelwa",
+    "Ujariyo",
+    "Wurogauri",
+    "Zauro",
+    "Zuguru"
+   ]
+  },
+  "T5.2": {
+   "shape": "set",
+   "unit": "count",
+   "value": [
+    "Masama"
+   ],
+   "sql_sha": "21f5ea99628f",
+   "dayOne": "2026-10-12",
+   "universe": [
+    "Cheberu",
+    "Dalijan",
+    "Dodoru",
+    "Gulmare",
+    "Gwandu Dan Galadima",
+    "Gwandu Marafa",
+    "Kambaza",
+    "Malisa",
+    "Maruda",
+    "Masama"
+   ]
+  },
+  "T5.3": {
+   "shape": "list",
+   "unit": "ratio",
+   "value": [
+    [
+     "Birnin Kebbi Godiya Hospital",
+     0.7672413793103449
+    ],
+    [
+     "Ruggad Dawa Health Post",
+     0.7857142857142857
+    ],
+    [
+     "Yole Birni Primary Health Centre",
+     0.788135593220339
+    ],
+    [
+     "Gumbai Primary Health Centre",
+     0.8457142857142858
+    ],
+    [
+     "Sandare Primary Health Centre",
+     0.8465189873417721
+    ]
+   ],
+   "sql_sha": "c6d1bf37b143",
+   "k": 5,
+   "dayOne": "2026-10-12"
+  },
+  "T5.4": {
+   "shape": "list",
+   "unit": "ratio",
+   "value": [
+    [
+     "Birnin Kebbi",
+     0.12170659460583069
+    ]
+   ],
+   "sql_sha": "d61c8753e859",
+   "k": 1,
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "zero-dose per child visit",
+     "value": [
+      [
+       "Birnin Kebbi",
+       0.11746413883037415
+      ]
+     ]
+    },
+    {
+     "label": "share of all zero-dose children",
+     "value": [
+      [
+       "Birnin Kebbi",
+       0.4108051219084371
+      ]
+     ]
+    }
+   ]
+  },
+  "T5.5": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 8,
+   "sql_sha": "7bfc45d89a5a",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only",
+     "value": 6
+    }
+   ]
+  },
+  "T5.6": {
+   "shape": "table",
+   "unit": "ratio",
+   "value": {
+    "Kalgo": {
+     "coverage": 0.9400215392262448,
+     "zero_dose_share": 0.10936545343458148
+    },
+    "Birnin Kebbi": {
+     "coverage": 0.937838369918299,
+     "zero_dose_share": 0.12170659460583069
+    }
+   },
+   "sql_sha": "f92642685e70",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "zero-dose per child visit",
+     "value": {
+      "Kalgo": {
+       "coverage": 0.9400215392262448,
+       "zero_dose_share": 0.10556023588879528
+      },
+      "Birnin Kebbi": {
+       "coverage": 0.937838369918299,
+       "zero_dose_share": 0.11746413883037415
+      }
+     }
+    },
+    {
+     "label": "share of all zero-dose children",
+     "value": {
+      "Kalgo": {
+       "coverage": 0.9400215392262448,
+       "zero_dose_share": 0.21978600245570953
+      },
+      "Birnin Kebbi": {
+       "coverage": 0.937838369918299,
+       "zero_dose_share": 0.4108051219084371
+      }
+     }
+    }
+   ]
+  },
+  "T5.7": {
+   "shape": "list",
+   "unit": "ratio",
+   "value": [
+    [
+     "Yalango",
+     0.725
+    ]
+   ],
+   "sql_sha": "80d573f049c1",
+   "k": 1,
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only",
+     "value": [
+      [
+       "Tungar Jatau",
+       0.7244897959183674
+      ]
+     ]
+    }
+   ]
+  },
+  "T5.8": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.3986568475668438,
+   "sql_sha": "9e18e330fc14",
+   "dayOne": "2026-10-12"
+  },
+  "T6.1": {
+   "shape": "table",
+   "unit": "number",
+   "value": {
+    "Kalgo": {
+     "coverage": 0.9400215392262448,
+     "zero_dose_share": 0.10936545343458148,
+     "households": 5661
+    },
+    "Gwandu": {
+     "coverage": 0.9359733132465297,
+     "zero_dose_share": 0.12,
+     "households": 8753
+    },
+    "Birnin Kebbi": {
+     "coverage": 0.937838369918299,
+     "zero_dose_share": 0.12170659460583069,
+     "households": 9547
+    }
+   },
+   "sql_sha": "3433b9b4dc80",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "zero-dose per child visit",
+     "value": {
+      "Kalgo": {
+       "coverage": 0.9400215392262448,
+       "zero_dose_share": 0.10556023588879528,
+       "households": 5661
+      },
+      "Gwandu": {
+       "coverage": 0.9359733132465297,
+       "zero_dose_share": 0.11576517150395778,
+       "households": 8753
+      },
+      "Birnin Kebbi": {
+       "coverage": 0.937838369918299,
+       "zero_dose_share": 0.11746413883037415,
+       "households": 9547
+      }
+     }
+    },
+    {
+     "label": "share of all zero-dose children",
+     "value": {
+      "Kalgo": {
+       "coverage": 0.9400215392262448,
+       "zero_dose_share": 0.21978600245570953,
+       "households": 5661
+      },
+      "Gwandu": {
+       "coverage": 0.9359733132465297,
+       "zero_dose_share": 0.36940887563585334,
+       "households": 8753
+      },
+      "Birnin Kebbi": {
+       "coverage": 0.937838369918299,
+       "zero_dose_share": 0.4108051219084371,
+       "households": 9547
+      }
+     }
+    }
+   ]
+  },
+  "T6.2": {
+   "shape": "table",
+   "unit": "count",
+   "value": {
+    "Kalgo": {
+     "referred": 20,
+     "zero_dose": 1253
+    },
+    "Gwandu": {
+     "referred": 24,
+     "zero_dose": 2106
+    },
+    "Birnin Kebbi": {
+     "referred": 17,
+     "zero_dose": 2342
+    }
+   },
+   "sql_sha": "1cc48a742932",
+   "dayOne": "2026-10-12"
+  },
+  "T6.3": {
+   "shape": "scalar",
+   "unit": "number",
+   "value": 30.937216828478963,
+   "sql_sha": "2ab30107336f",
+   "dayOne": "2026-10-12"
+  },
+  "T6.4": {
+   "shape": "table",
+   "unit": "count",
+   "value": {
+    "Biri Health Post": {
+     "households": 361,
+     "zero_dose": 73
+    },
+    "Galaru Health Clinic": {
+     "households": 228,
+     "zero_dose": 54
+    },
+    "Ubandawaki Clinic": {
+     "households": 225,
+     "zero_dose": 45
+    },
+    "Mandinka Health Post": {
+     "households": 223,
+     "zero_dose": 61
+    },
+    "Kahta Health Center": {
+     "households": 135,
+     "zero_dose": 37
+    },
+    "Wuro Gauri Health Clinic": {
+     "households": 650,
+     "zero_dose": 146
+    },
+    "Sabana East Health Post": {
+     "households": 39,
+     "zero_dose": 5
+    },
+    "Kwakware Health Post": {
+     "households": 48,
+     "zero_dose": 11
+    },
+    "Adamawa Health Post": {
+     "households": 57,
+     "zero_dose": 7
+    },
+    "Yanga Hausawa Health Post": {
+     "households": 214,
+     "zero_dose": 48
+    },
+    "Dangoma Primary Health Clinic": {
+     "households": 250,
+     "zero_dose": 63
+    },
+    "Magarza Primary Health Clinic": {
+     "households": 129,
+     "zero_dose": 24
+    },
+    "Unguwar Jeji. Kalgo Ward Primary Health Centre": {
+     "households": 161,
+     "zero_dose": 41
+    },
+    "Diggi Primary Health Centre": {
+     "households": 415,
+     "zero_dose": 85
+    },
+    "Unguwar Maiyaki Health Clinic": {
+     "households": 228,
+     "zero_dose": 45
+    },
+    "Kutukullu Primary Health Centre": {
+     "households": 289,
+     "zero_dose": 64
+    },
+    "Unguwar Kwalle Primary Health Centre": {
+     "households": 47,
+     "zero_dose": 15
+    },
+    "Unguwar Tugi Primary Health Centre": {
+     "households": 80,
+     "zero_dose": 15
+    },
+    "Zuguru Primary Health Centre": {
+     "households": 348,
+     "zero_dose": 94
+    },
+    "Etene Primary Health Centre": {
+     "households": 405,
+     "zero_dose": 84
+    },
+    "Kalgo Maternal And Child Health Clinic": {
+     "households": 346,
+     "zero_dose": 93
+    },
+    "Banganna Primary Health Centre": {
+     "households": 71,
+     "zero_dose": 12
+    },
+    "Angwa Rafi Primary Health Centre": {
+     "households": 173,
+     "zero_dose": 31
+    },
+    "Gangare Primary Health Centre": {
+     "households": 142,
+     "zero_dose": 32
+    },
+    "Sandare Primary Health Centre": {
+     "households": 269,
+     "zero_dose": 44
+    },
+    "Unguwan Jeji Primary Health Center": {
+     "households": 128,
+     "zero_dose": 24
+    }
+   },
+   "sql_sha": "64884fa7dacf",
+   "dayOne": "2026-10-12"
+  },
+  "T7.1": {
+   "shape": "list",
+   "unit": "ratio",
+   "value": [
+    [
+     "Nassarawa I",
+     0.8033898305084746
+    ],
+    [
+     "Ambursa",
+     0.8773006134969326
+    ],
+    [
+     "Masama",
+     0.8959156785243741
+    ]
+   ],
+   "sql_sha": "5866ca844777",
+   "k": 3,
+   "dayOne": "2026-10-12"
+  },
+  "T7.3": {
+   "shape": "map",
+   "unit": "count",
+   "value": {
+    "0-11 months": 2820,
+    "12-23 months": 1173,
+    "24-59 months": 1708
+   },
+   "sql_sha": "81de49afe821",
+   "dayOne": "2026-10-12"
+  },
+  "T7.8": {
+   "shape": "map",
+   "unit": "count",
+   "value": {
+    "ABSENT": 138,
+    "REFUSED": 314,
+    "REVISIT": 213,
+    "CLOSED_HOUSEHOLD": 1750,
+    "VACCINATED": 47585
+   },
+   "sql_sha": "894ca07a2f7d",
+   "dayOne": "2026-10-12"
+  },
+  "T6.5": {
+   "shape": "set",
+   "unit": "count",
+   "value": [
+    "Ambursa",
+    "Kambaza",
+    "Kukah",
+    "Muntubari",
+    "Nassarawa I",
+    "Zauro",
+    "Zuguru"
+   ],
+   "sql_sha": "498f03db603d",
+   "dayOne": "2026-10-12",
+   "universe": [
+    "Ambursa",
+    "Cheberu",
+    "Dalijan",
+    "Dangaladima",
+    "Dangoma/Gayi",
+    "Diggi",
+    "Dodoru",
+    "Etene",
+    "Gawasu Damana",
+    "Gulmare",
+    "Gulumbe",
+    "GwadonGwaji",
+    "Gwandu Dan Galadima",
+    "Gwandu Marafa",
+    "Hirishi/ Magarza",
+    "Kalgo",
+    "Kambaza",
+    "Kardi",
+    "Kola Tarasa",
+    "Kukah",
+    "Makera",
+    "Malisa",
+    "Marafa",
+    "Maruda",
+    "Masama",
+    "Muntubari",
+    "Nassarawa I",
+    "Nayelwa",
+    "Ujariyo",
+    "Wurogauri",
+    "Zauro",
+    "Zuguru"
+   ]
+  },
+  "E8": {
+   "shape": "list",
+   "unit": "count",
+   "value": [
+    [
+     "USR-318022",
+     1592
+    ]
+   ],
+   "sql_sha": "1180337a90de",
+   "k": 1,
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "outcome VACCINATED only",
+     "value": [
+      [
+       "USR-318022",
+       1588
+      ]
+     ]
+    }
+   ]
+  },
+  "E10": {
+   "shape": "list",
+   "unit": "count",
+   "value": [
+    [
+     "RELIGIOUS_CULTURAL",
+     79
+    ],
+    [
+     "NO_FELT_NEED",
+     65
+    ],
+    [
+     "CHILD_SICK",
+     39
+    ],
+    [
+     "VACCINE_NOT_SAFE",
+     37
+    ],
+    [
+     "NO_CAREGIVER_CONSENT",
+     25
+    ],
+    [
+     "TOO_MANY_ROUNDS",
+     24
+    ],
+    [
+     "NOPV_CONCERNS",
+     23
+    ],
+    [
+     "OTHERS",
+     12
+    ],
+    [
+     "COVID_RELATED",
+     10
+    ]
+   ],
+   "sql_sha": "ec6d31ebb945",
+   "k": 3,
+   "dayOne": "2026-10-12"
+  },
+  "E11": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 2908,
+   "sql_sha": "5848d0919b87",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "inaccessible plus harder to reach",
+     "value": 12564
+    }
+   ]
+  },
+  "T9.1": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 47798,
+   "sql_sha": "64c139794c3c",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "visits with outcome VACCINATED (no revisits)",
+     "value": 47585
+    }
+   ]
+  },
+  "T9.2": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.1487444345503116,
+   "sql_sha": "7b8d1ccdddc1",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "doses over opened vials returned",
+     "value": 0.14417188898836164
+    },
+    {
+     "label": "spoilt vials over issued",
+     "value": 0.003883495145631068
+    }
+   ]
+  },
+  "T9.3": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.11815544041450778,
+   "sql_sha": "0ab8995a2c86",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "zero-dose per child visit",
+     "value": 0.11402
+    }
+   ]
+  },
+  "T9.4": {
+   "shape": "set",
+   "unit": "count",
+   "value": [
+    "Ambursa",
+    "Kambaza",
+    "Muntubari",
+    "Nassarawa I"
+   ],
+   "sql_sha": "c3042b9889b9",
+   "dayOne": "2026-10-12",
+   "universe": [
+    "Ambursa",
+    "Cheberu",
+    "Dalijan",
+    "Dangaladima",
+    "Dangoma/Gayi",
+    "Diggi",
+    "Dodoru",
+    "Etene",
+    "Gawasu Damana",
+    "Gulmare",
+    "Gulumbe",
+    "GwadonGwaji",
+    "Gwandu Dan Galadima",
+    "Gwandu Marafa",
+    "Hirishi/ Magarza",
+    "Kalgo",
+    "Kambaza",
+    "Kardi",
+    "Kola Tarasa",
+    "Kukah",
+    "Makera",
+    "Malisa",
+    "Marafa",
+    "Maruda",
+    "Masama",
+    "Muntubari",
+    "Nassarawa I",
+    "Nayelwa",
+    "Ujariyo",
+    "Wurogauri",
+    "Zauro",
+    "Zuguru"
+   ],
+   "alternatives": [
+    {
+     "label": "daily average below 100",
+     "value": [
+      "Ambursa",
+      "Kambaza",
+      "Muntubari",
+      "Nassarawa I",
+      "Zuguru"
+     ]
+    },
+    {
+     "label": "below 100 on at least one day",
+     "value": [
+      "Ambursa",
+      "Kambaza",
+      "Kukah",
+      "Muntubari",
+      "Nassarawa I",
+      "Zauro",
+      "Zuguru"
+     ]
+    }
+   ]
+  },
+  "T9.5": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 45,
+   "sql_sha": "68b4a3a6430a",
+   "dayOne": "2026-10-12"
+  },
+  "T9.6": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 48251,
+   "sql_sha": "35c458d7d820",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "child visits",
+     "value": 50000
+    },
+    {
+     "label": "children vaccinated",
+     "value": 47798
+    }
+   ]
+  },
+  "T9.7": {
+   "shape": "set",
+   "unit": "count",
+   "value": [
+    "Kalgo"
+   ],
+   "sql_sha": "2e7942dbe60f",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "most children vaccinated",
+     "value": [
+      "Birnin Kebbi"
+     ]
+    }
+   ]
+  },
+  "T9.8": {
+   "shape": "scalar",
+   "unit": "count",
+   "value": 3333,
+   "sql_sha": "a8c60232a4f1",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "access class Harder to reach",
+     "value": 9656
+    },
+    {
+     "label": "access class not Accessible",
+     "value": 12564
+    }
+   ]
+  },
+  "T9.9": {
+   "shape": "scalar",
+   "unit": "ratio",
+   "value": 0.9376753310446297,
+   "sql_sha": "f2362caadab8",
+   "dayOne": "2026-10-12",
+   "alternatives": [
+    {
+     "label": "mean of settlement percentages",
+     "value": 0.9420198741731463
+    }
+   ]
+  }
+ }
+}

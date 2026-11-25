@@ -1,0 +1,61 @@
+# The Lenspack config these questions were run with, frozen (built for eGov's synthetic HCM campaign data):
+# the Superset datasets these questions ran on: eGov's ready-made views (default.su_ni_*), plus the targets and
+# referrals tables.
+# Lenspack never connects to ClickHouse: it asks Superset, which runs the SQL. "env:NAME" reads the environment
+# variable NAME. The dataset names must exist in your Superset.
+superset:
+  url: env:SUPERSET_URL
+  username: lenspack
+  passwordEnv: LENSPACK_SUPERSET_PASSWORD
+  publicUrl: env:SUPERSET_PUBLIC_URL
+
+publicPath: /lenspack
+host: 0.0.0.0
+port: 8795
+
+datasets: [default.ni_coverage, default.ni_status, default.ni_visits, default.ni_missed, default.ni_team_stock,
+  default.ni_facilities, analytics.ni_referrals]
+dashboards: []
+state: /data/superset-boards.json
+budget: { usdPerDay: 15, usdPerUserPerDay: 10 }
+
+overlay:
+  pack: hcm_clickhouse
+  entities: { ni_coverage: coverage, ni_status: coverage_status, ni_visits: visit, ni_missed: missed, ni_team_stock: stock, ni_facilities: facility, ni_referrals: referral }
+  description: >-
+    eGov's HCM campaign analytics in ClickHouse, on eGov's Superset-ready views for the ng field-test
+    vaccination campaign (nOPV2): coverage against targets, child visits, missed children, vaccine stock per
+    team, health facilities, and referrals.
+  timeZone: UTC
+  hierarchies:
+    boundary: [state, lga, ward, health_facility, settlement]
+  instructions: >-
+    The campaign lasted a few days (campaign_day 1-7): relative windows like "last 30 days" are empty, so say so
+    and use the campaign days with a daily grain. coverage (settlement x day) is the only home of children
+    vaccinated, households registered, targets, zero-dose and enumerated children, and their % measures. Its
+    targets are end-of-campaign values, so a coverage % is for the whole campaign: never filter it to one day;
+    for progress by day use the cumulative actual/planned % measures in a daily series. children_vaccinated
+    counts distinct vaccinated children including revisits; visits with outcome VACCINATED is smaller. When asked
+    how many were vaccinated, give children_vaccinated and say it includes revisits. visit (one row per child
+    visit) has outcome, refusal/absence reason, gender, age band, settlement type, access and team: count visits,
+    filtering vaccinated = Yes or zero_dose = Yes for those children by gender or age. missed (settlement x day):
+    children missed, and children outstanding at the end of each day (a level: per day or last day, never summed
+    over days). stock is per team, whole campaign, no dates; wastage assumes 50 doses per vial. coverage_status is
+    for coverage pies (filter grp to Children or Households). facility has locations and zero-dose bands; for
+    zero-dose by facility use coverage by health_facility. Every % is computed by Superset from sums for the
+    grouping asked: never add or average percentages yourself. A chart reads one dataset.
+    Layout: the board packs itself (gaps close, rows fill). Make layout changes in one batch: four tiles in a row are
+    quarter width each, three are third. Widgets kept as Superset's can be moved, resized or removed but not edited.
+  examples:
+    - question: Add children coverage % by ward, lowest first
+      query: { kind: breakdown, dimension: ward, measure: children_coverage_pct, sort: asc, limit: 40 }
+    - question: Show children vaccinated per day
+      query: { kind: series, measure: children_vaccinated, grain: day }
+    - question: Planned vs actual children vaccinated, cumulative, by day
+      query: { kind: series, measure: actual_children_cum_pct, measures: [planned_children_cum_pct], grain: day }
+    - question: Break down visits by outcome
+      query: { kind: breakdown, dimension: outcome, measure: visits, limit: 10 }
+    - question: Zero-dose share by LGA
+      query: { kind: breakdown, dimension: lga, measure: zero_dose_pct, limit: 10 }
+    - question: Which team used the most vials per child vaccinated?
+      query: { kind: breakdown, dimension: team, measure: vials_per_child, limit: 10 }
