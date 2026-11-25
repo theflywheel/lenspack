@@ -4,6 +4,7 @@ import { BESIDE_CLAIM, MOVE_CLAIM, NO_ROOM, SAYS_CANT, collateral, editMisses, g
 import type { BoardConfig } from "@lenspack/core";
 
 import { type Question, type Truth, questionSchema } from "../suite";
+import { type Raw, scoreRaw } from "../suite-run";
 
 const n = (s: string) => numbersIn(s)[0]!;
 
@@ -199,5 +200,24 @@ describe("moves", () => {
     expect(BESIDE_CLAIM.test("It now sits beside the LGA bar.")).toBe(true);
     expect(NO_ROOM.test("That row is full, so there's no room beside it.")).toBe(true);
     expect(NO_ROOM.test("ऊपर वाली पंक्ति में जगह नहीं है।")).toBe(true);
+  });
+});
+
+describe("a turn the server failed", () => {
+  const board = { title: "B", widgets: {}, layout: [], filters: [] } as unknown as Raw["before"];
+  const q: Question = questionSchema.parse({ id: "Q", tier: "T1", prompt: "How many?", expect: "answer", truth: { shape: "scalar", unit: "count", sql: "SELECT 120" } });
+  const truth: Truth = { shape: "scalar", unit: "count", value: 120 };
+  const failed = (error: string) => ({ tool: "query", input: {}, output: { ok: false, error }, ms: 1 });
+  const raw = (reply: string, error: string): Raw => ({ reply, records: [], calls: [failed(error), failed(error)] as unknown as Raw["calls"], before: board, after: board, widgetRows: {} });
+
+  it("is an error when every data call failed for the database's reasons, whatever the reply quotes", () => {
+    const disk = "Superset POST /api/v1/chart/data → 400: Received ClickHouse exception, code: 75: errno: 28, strerror: No space left on device";
+    const r = scoreRaw("m", 1, q, truth, raw("The query failed twice (errno 28): the database has no free disk. Chart c49 in row 3 will show it later.", disk));
+    expect(r.outcome).toBe("error");
+  });
+
+  it("is still scored when the calls failed for the query's own reasons", () => {
+    const r = scoreRaw("m", 1, q, truth, raw("There are 99 of them.", "unknown measure: orderz"));
+    expect(r.outcome).not.toBe("error");
   });
 });
