@@ -94,6 +94,17 @@
     ".lpo-menu label{display:flex;align-items:center;gap:8px;padding:6px;border-radius:6px;cursor:pointer}" +
     ".lpo-menu label:hover{background:#f5f7fa}" +
     "body.lpo-docked{margin-right:var(--lpo-dw," + WIDTH + "px)!important}" +
+    // Superset 6's dark theme (pageTheme): the panel, its gear menu and grip in dark colours; chat.js has the chat's.
+    ".lpo-panel[data-lp-theme=dark]{background:#1b1d21;border-color:#343842;box-shadow:0 18px 50px rgba(0,0,0,.6)}" +
+    ".lpo-panel.lpo-dock[data-lp-theme=dark]{box-shadow:-8px 0 24px rgba(0,0,0,.5)}" +
+    ".lpo-panel[data-lp-theme=dark] .lpc-x{color:#c9ced6}" +
+    ".lpo-panel[data-lp-theme=dark] .lpo-gear,.lpo-panel[data-lp-theme=dark] .lpo-grip{color:#98a2b3}" +
+    ".lpo-panel[data-lp-theme=dark] .lpo-gear:hover,.lpo-panel[data-lp-theme=dark] .lpo-gear[aria-expanded=true]{background:#262a31;color:#e6e8eb}" +
+    ".lpo-panel[data-lp-theme=dark] .lpo-grip:hover,.lpo-panel[data-lp-theme=dark] .lpo-grip.on{color:#3fb1cc;background:rgba(63,177,204,.15)}" +
+    ".lpo-panel[data-lp-theme=dark] .lpo-menu{background:#1b1d21;border-color:#343842;color:#e6e8eb;box-shadow:0 10px 30px rgba(0,0,0,.5)}" +
+    ".lpo-panel[data-lp-theme=dark] .lpo-menu b{color:#98a2b3}" +
+    ".lpo-panel[data-lp-theme=dark] .lpo-menu label:hover{background:#262a31}" +
+    ".lpo-btn[data-lp-theme=dark]{box-shadow:0 6px 20px rgba(0,0,0,.55)}" +
     "@media (max-width:800px){body.lpo-docked{margin-right:0!important}.lpo-rz,.lpo-grip{display:none}.lpo-panel.lpo-float,.lpo-panel.lpo-dock{top:0!important;left:0;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;max-width:none;max-height:none;border-radius:0}}";
   document.head.appendChild(css);
 
@@ -105,6 +116,24 @@
   panel.className = "lpo-panel";
   document.body.appendChild(btn);
   document.body.appendChild(panel);
+
+  // Light or dark, as the page is: Superset 6 has a dark theme (its theme menu, or the browser's setting), and a
+  // deployment can set its own colours, so the page's own background decides. Read again with every check below.
+  var theme = null;
+  function rgb(el) {
+    var m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?/.exec(getComputedStyle(el).backgroundColor || "");
+    if (!m || (m[4] !== undefined && parseFloat(m[4]) === 0)) return null;
+    return [+m[1], +m[2], +m[3]];
+  }
+  function pageTheme() {
+    var c = rgb(document.body) || rgb(document.documentElement);
+    var now = c && (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 < 0.5 ? "dark" : "light";
+    if (now === theme) return;
+    theme = now;
+    btn.setAttribute("data-lp-theme", now);
+    panel.setAttribute("data-lp-theme", now);
+  }
+  pageTheme();
 
   var current = null; // { key, board, title }
   var mounted = null;
@@ -515,5 +544,5 @@
   }
   btn.onclick = open;
   check();
-  setInterval(function () { check(); health(); }, 800);
+  setInterval(function () { check(); health(); pageTheme(); }, 800);
 })();

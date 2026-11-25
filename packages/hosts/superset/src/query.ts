@@ -464,8 +464,9 @@ const FIXED_RADIUS = 1000;
 /**
  * Points as Superset's deck.gl scatter map: spatial from the entity's coordinate columns,
  * colour by a column, size by a saved metric (Superset then groups per point, as Lenspack does).
- * Superset reads this through its legacy explore_json path, from the form data alone. A table of
- * points lists them instead.
+ * Superset 6 draws it through the chart-data API, from the query context saved beside it
+ * (scatterContext); Superset 5 through its legacy explore_json path, from the form data alone. A
+ * table of points lists them instead.
  */
 function pointsChart(
   widget: Exclude<Widget, { kind: "text" }>,
@@ -514,11 +515,14 @@ function pointsChart(
   };
 }
 
-/** The query context Superset keeps beside a chart's form_data (reports and the chart-data-by-id API read it). Null for a deck.gl map, which Superset reads from its form data. */
+/**
+ * The query context Superset keeps beside a chart's form_data. Reports and the chart-data-by-id API read it, and
+ * Superset 6 draws a deck.gl map from the same query.
+ */
 export function queryContextOf(spec: ChartSpec): Record<string, unknown> | null {
-  if (spec.viz_type === "deck_scatter") return null;
   const p = spec.params as Record<string, any>;
   if (spec.viz_type === "heatmap_v2") return heatmapContext(spec);
+  if (spec.viz_type === "deck_scatter") return scatterContext(spec);
   const metrics = p.metrics ?? (p.metric ? [p.metric] : []);
   const isTime = p.x_axis && p.x_axis === p.adhoc_filters?.find((f: AdhocFilter) => f.operator === "TEMPORAL_RANGE")?.subject;
   const axis = (c: string) => ({ columnType: "BASE_AXIS", sqlExpression: c, label: c, expressionType: "SQL", timeGrain: p.time_grain_sqla });
@@ -528,7 +532,8 @@ export function queryContextOf(spec: ChartSpec): Record<string, unknown> | null 
       ? p.all_columns
       : spec.viz_type === "pivot_table_v2"
         ? [...p.groupbyColumns, ...p.groupbyRows].map((c: string) => (p.temporal_columns_lookup?.[c] ? axis(c) : c))
-        : [...(p.x_axis ? [isTime ? axis(p.x_axis) : p.x_axis] : []), ...(p.groupby ?? [])];
+        : // A table over time groups by the time column at its grain, as Superset's table builds it.
+          [...(p.x_axis ? [isTime ? axis(p.x_axis) : p.x_axis] : []), ...(p.groupby ?? []).map((c: string) => (p.temporal_columns_lookup?.[c] && p.time_grain_sqla ? axis(c) : c))];
   return {
     datasource: { id: spec.datasetId, type: "table" },
     force: false,
@@ -569,6 +574,38 @@ function analyticsOf(p: Record<string, any>, metrics: Metric[]): Record<string, 
         ? { operation: "rolling", options: { rolling_type: p.rolling_type, window: p.rolling_periods, min_periods: p.min_periods, columns } }
         : { operation: "compare", options: { source_columns: labels, compare_columns: compared, compare_type: p.comparison_type, drop_original_columns: true } };
   return { ...(offset ? { time_offsets: [offset] } : {}), post_processing: [pivot, step, { operation: "flatten" }] };
+}
+
+/**
+ * A deck.gl scatter map's query, as Superset 6 builds it to draw the map: the coordinates, the colour and label
+ * columns, the size metric (grouped per point, largest first), and only the rows that have coordinates.
+ * Superset 5 draws the map from its form data instead, and reads this query for reports and the chart-data API.
+ */
+function scatterContext(spec: ChartSpec): Record<string, unknown> {
+  const p = spec.params as Record<string, any>;
+  const { latCol, lonCol } = p.spatial ?? {};
+  const metric = p.point_radius_fixed?.type === "metric" ? p.point_radius_fixed.value : null;
+  const simple = (p.adhoc_filters ?? []).filter((f: AdhocFilter) => f.expressionType === "SIMPLE").map((f: AdhocFilter) => ({ col: f.subject, op: f.operator, val: f.comparator }));
+  const where = (p.adhoc_filters ?? []).filter((f: AdhocFilter) => f.expressionType === "SQL").map((f: AdhocFilter) => `(${f.sqlExpression})`).join(" AND ");
+  return {
+    datasource: { id: spec.datasetId, type: "table" },
+    force: false,
+    queries: [
+      {
+        filters: [...simple, { col: lonCol, op: "IS NOT NULL" }, { col: latCol, op: "IS NOT NULL" }],
+        extras: { where, having: "" },
+        columns: [...new Set([lonCol, latCol, ...(p.dimension ? [p.dimension] : []), ...(p.js_columns ?? [])])],
+        metrics: metric ? [metric] : [],
+        orderby: metric ? [[metric, false]] : [],
+        row_limit: p.row_limit ?? 5000,
+        time_range: p.time_range,
+        is_timeseries: false,
+      },
+    ],
+    form_data: { ...p, viz_type: spec.viz_type },
+    result_format: "json",
+    result_type: "full",
+  };
 }
 
 /** A heatmap's query, as Superset's heatmap_v2 builds it: both axes as columns, sorted per axis, ranked for the shading. Lenspack writes only a breakdown's, so neither axis is time. */
@@ -813,6 +850,10 @@ const MEANINGFUL = [
   ...["spatial", "point_radius_fixed", "dimension", "js_columns", "rolling_type", "rolling_periods", "min_periods", "time_compare", "comparison_type"],
   ...["groupbyRows", "groupbyColumns", "aggregateFunction", "rowTotals", "colTotals", "transposePivot", "series_limit", "rowOrder"],
 ];
+// Superset 6 hands a chart's form data back with every object's keys sorted (5 kept them as saved), so two forms
+// are compared by value, whatever order their keys come in.
+const canonical = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(canonical) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Record<string, unknown>)[k])])) : v;
 function sameForm(a: Record<string, unknown>, b: Record<string, unknown>) {
-  return MEANINGFUL.every((k) => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
+  return MEANINGFUL.every((k) => JSON.stringify(canonical(a[k] ?? null)) === JSON.stringify(canonical(b[k] ?? null)));
 }

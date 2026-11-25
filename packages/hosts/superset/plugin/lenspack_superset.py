@@ -1,4 +1,4 @@
-"""Lenspack's additions to Superset 5, as one file. No fork, no custom image, no second web server.
+"""Lenspack's additions to Superset 6.1 (and 5.0), as one file. No fork, no custom image, no second web server.
 
 Load it at the end of superset_config.py (on the Helm chart: a configOverrides entry):
 
@@ -12,14 +12,19 @@ It adds:
     "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered.
     Lenspack trusts nothing else, so its port never needs to be reachable from outside.
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
-  - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log;
+  - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log. On Superset 6, whose pages
+    are all drawn by its frontend, this page has a layout of its own that follows Superset's light or dark theme;
+    on Superset 5 it sits in Superset's server-drawn layout;
   - /api/v1/lenspack/bootstrap and /api/v1/lenspack/identity-key, which Lenspack calls on start: the first
     makes Lenspack's own service account (admins only), the second hands it the signing key, derived from
     SECRET_KEY (admins and that account only);
   - /api/v1/lenspack/access?user=&datasets=, which Lenspack calls with hostPolicy: superset: whether that user
     may read each dataset and the row-level security clauses on it, as Superset's security manager decides
     them for that user, Jinja rendered (admins and Lenspack's account only);
-  - a fix for concurrent list requests in Flask-AppBuilder.
+  - /api/v1/lenspack/version: Superset's version, which Lenspack reads on start (admins and Lenspack's account);
+  - a fix for concurrent list requests in Flask-AppBuilder;
+  - on Superset 6.1, ClickHouse column aliases with a hash suffix again, as up to 6.0 (see
+    lenspack_clickhouse_label_suffix below).
 If your config already sets FLASK_APP_MUTATOR, call lenspack_app_mutator(app) from yours and set
 FLASK_APP_MUTATOR back to yours after this import.
 
@@ -28,6 +33,7 @@ Environment (all optional):
   LENSPACK_SERVICE_USER   Lenspack's Superset account (default lenspack).
   LENSPACK_TEMPLATES      a folder whose tail_js_custom_extra.html or lenspack/settings.html replace the
                           ones built in here.
+  LENSPACK_CLICKHOUSE_LABEL_SUFFIX  off keeps Superset 6.1's ClickHouse aliases without the hash suffix.
 
 Capacity: a chat turn holds one of Superset's gunicorn threads for as long as it streams (30-60 s). Stock
 Superset runs 1 worker x 20 threads (SERVER_WORKER_AMOUNT, SERVER_THREADS_AMOUNT): about 10 chats at once
@@ -52,12 +58,12 @@ except ImportError:  # the image without clickhouse-connect
     pass
 
 
-# Flask-AppBuilder 4.x (the line Superset 5 pins) keeps the filters of a list request on the API view, which is
-# one object per worker: `GET /api/v1/<thing>/?q=(filters:...)` clears and refills `self._filters` and then runs
-# the query. Superset serves with gunicorn gthread (20 threads per worker), so two list requests at the same time
-# can swap filters, and a lookup of dataset "a" answers with dataset "b" (or nothing). Build the filters per request.
-# Every release from 4.5.5 to 5.3.0 has it. A version that already builds its filters per request is left alone, so
-# the patch is safe to keep after an upgrade.
+# Flask-AppBuilder keeps the filters of a list request on the API view, which is one object per worker:
+# `GET /api/v1/<thing>/?q=(filters:...)` clears and refills `self._filters` and then runs the query. Superset serves
+# with gunicorn gthread (20 threads per worker), so two list requests at the same time can swap filters, and a lookup
+# of dataset "a" answers with dataset "b" (or nothing). Build the filters per request. Every release from 4.5.5
+# (Superset 5.0) to 5.0.2 (Superset 6.1) has it. A version that already builds its filters per request is left
+# alone, so the patch is safe to keep after an upgrade.
 def _per_request_list_filters() -> None:
     import inspect
 
@@ -79,6 +85,33 @@ def _per_request_list_filters() -> None:
 
 
 _per_request_list_filters()
+
+
+# ClickHouse resolves a SELECT's aliases inside the same SELECT. Up to Superset 6.0, Superset gave every ClickHouse
+# column and metric alias a short hash suffix (`SUM(x) AS x_9dd4e4`) and renamed the results back afterwards.
+# Superset 6.1 removed the suffix (apache/superset#38280, superset/db_engine_specs/clickhouse.py), so a saved metric
+# named like the column it sums (`SUM(x)` saved as `x`) becomes `SUM(x) AS x`, and any other metric in the same chart
+# that uses x then sums that alias: ClickHouse refuses with error 184 (ILLEGAL_AGGREGATION). Put the suffix back.
+# Results keep their names (Superset renames the columns to the labels it expected), so charts and Lenspack see no
+# change. A version that still adds the suffix is left alone. LENSPACK_CLICKHOUSE_LABEL_SUFFIX=off keeps Superset's own.
+def lenspack_clickhouse_label_suffix() -> bool:
+    """Restores the alias suffix on Superset's ClickHouse engine specs where Superset no longer adds it. True if it did."""
+    if os.environ.get("LENSPACK_CLICKHOUSE_LABEL_SUFFIX", "on").strip().lower() in ("off", "false", "0", "no"):
+        return False
+    try:
+        from superset.db_engine_specs.base import BaseEngineSpec
+        from superset.db_engine_specs.clickhouse import ClickHouseConnectEngineSpec
+    except ImportError:
+        return False
+    if ClickHouseConnectEngineSpec._mutate_label is not BaseEngineSpec._mutate_label:
+        return False  # Superset 5.0 and 6.0 add it themselves
+
+    def _mutate_label(label: str) -> str:
+        # As Superset 5.0 wrote it: the label and the first six characters of its MD5. Only a name, not a secret.
+        return f"{label}_{hashlib.md5(label.encode('utf-8'), usedforsecurity=False).hexdigest()[:6]}"
+
+    ClickHouseConnectEngineSpec._mutate_label = staticmethod(_mutate_label)
+    return True
 
 LENSPACK_PATH = "/lenspack"  # where browsers reach Lenspack: Superset's own route below
 LENSPACK_INTERNAL_URL = os.environ.get("LENSPACK_INTERNAL_URL", "http://lenspack:8795").rstrip("/")
@@ -181,6 +214,31 @@ def lenspack_dataset_access(user, ids) -> dict:
     return out
 
 
+def superset_version(app) -> str:
+    """Superset's version as it reports it (VERSION_STRING), e.g. "6.1.0"; "" when unknown."""
+    return str(app.config.get("VERSION_STRING") or "")
+
+
+def lenspack_settings_layout(app) -> str:
+    """The page the AI assistant settings extend. Superset 5 draws its menu bar on the server
+    (superset/basic.html and its appbuilder/baselayout.html), so the page sits in it. Superset 6 draws every page
+    in its frontend and ships no server-side layout: Flask-AppBuilder's stock one would show an unstyled menu of
+    its own, so the page has a plain layout of its own instead, with a way back to Superset."""
+    from jinja2 import TemplateNotFound
+
+    try:
+        app.jinja_env.get_template("superset/basic.html")
+        return "appbuilder/base.html"
+    except TemplateNotFound:
+        return "lenspack/layout.html"
+
+
+# Flash categories of the settings page's own messages: the page shows only these, not a message another part
+# of Superset left in the session (Superset 6 leaves an "Access is Denied" from signing in, which its frontend
+# never shows).
+FLASH_OK, FLASH_BAD = "lenspack-info", "lenspack-danger"
+
+
 def lenspack_app_mutator(app):
     import urllib.error
     import urllib.request
@@ -194,11 +252,13 @@ def lenspack_app_mutator(app):
 
     from superset.extensions import appbuilder, csrf, db, security_manager
 
-    # The two templates live in this file; a LENSPACK_TEMPLATES folder (if it exists) wins over them.
-    loaders = [DictLoader({"tail_js_custom_extra.html": TAIL_JS, "lenspack/settings.html": SETTINGS_HTML}), app.jinja_loader]
+    # The templates live in this file; a LENSPACK_TEMPLATES folder (if it exists) wins over them.
+    loaders = [DictLoader({"tail_js_custom_extra.html": TAIL_JS, "lenspack/settings.html": SETTINGS_HTML, "lenspack/layout.html": LAYOUT_HTML}), app.jinja_loader]
     if os.path.isdir(LENSPACK_TEMPLATES):
         loaders.insert(0, FileSystemLoader(LENSPACK_TEMPLATES))
     app.jinja_loader = ChoiceLoader(loaders)
+    settings_layout = lenspack_settings_layout(app)
+    lenspack_clickhouse_label_suffix()
 
     def is_admin(user) -> bool:
         return any(r.name == security_manager.auth_role_admin for r in getattr(user, "roles", []) or [])
@@ -358,7 +418,18 @@ def lenspack_app_mutator(app):
         ids = [int(x) for x in (request.args.get("datasets") or "").split(",") if x.strip().isdigit()][:500]
         return jsonify({"result": {"datasets": lenspack_dataset_access(target, ids)}})
 
+    # Superset's version, for what differs between 5 and 6 on Lenspack's side (the default basemap of maps).
+    # Superset 6.1 has its own /version, 5.x and 6.0 do not.
+    def version_view():
+        user = api_user()
+        if user is None:
+            return jsonify({"message": "sign in with a token"}), 401
+        if not (is_admin(user) or user.username == LENSPACK_SERVICE_USER):
+            return jsonify({"message": f"only admins and {LENSPACK_SERVICE_USER} may read this"}), 403
+        return jsonify({"result": {"superset": superset_version(app)}})
+
     app.add_url_rule("/api/v1/lenspack/identity-key", "lenspack_identity_key", identity_key_view, methods=["GET"])
+    app.add_url_rule("/api/v1/lenspack/version", "lenspack_version", version_view, methods=["GET"])
     app.add_url_rule("/api/v1/lenspack/access", "lenspack_access", access_view, methods=["GET"])
     app.add_url_rule("/api/v1/lenspack/bootstrap", "lenspack_bootstrap", bootstrap_view, methods=["POST"])
 
@@ -384,7 +455,7 @@ def lenspack_app_mutator(app):
 
     def saved(what, result):
         _data, error = result
-        flash(f"{what} saved." if error is None else f"{what} not saved: {error}", "info" if error is None else "danger")
+        flash(f"{what} saved." if error is None else f"{what} not saved: {error}", FLASH_OK if error is None else FLASH_BAD)
         return redirect("/ai-assistant/")
 
     class LenspackSettingsView(BaseView):
@@ -422,6 +493,7 @@ def lenspack_app_mutator(app):
                 audit=audit, audit_error=audit_error, turns=turns, databases=databases,
                 account_roles=[r.name for r in account.roles] if account else None,
                 internal_url=LENSPACK_INTERNAL_URL, stt_models=stt_models, stt_bench=STT_BENCH,
+                lp_layout=settings_layout, lp_flash=[FLASH_OK, FLASH_BAD],
             )
 
         # Forms on the page. Admin only, Superset's CSRF token required (Flask-WTF checks every POST).
@@ -453,7 +525,7 @@ def lenspack_app_mutator(app):
             try:
                 hold = int(request.form.get("holdMs", ""))
             except ValueError:
-                flash("Space-bar hold: enter a whole number of milliseconds.", "danger")
+                flash("Space-bar hold: enter a whole number of milliseconds.", FLASH_BAD)
                 return redirect("/ai-assistant/")
             return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": hold}))
 
@@ -476,7 +548,7 @@ def lenspack_app_mutator(app):
             current, error = call("GET", "/_superset/settings")
             ft = (current or {}).get("features")
             if not ft:
-                flash(f"Off switches not saved: {error or 'this Lenspack has no off switches'}", "danger")
+                flash(f"Off switches not saved: {error or 'this Lenspack has no off switches'}", FLASH_BAD)
                 return redirect("/ai-assistant/")
             keys = [o["key"] for o in ft["options"]]
             if request.form.get("reset"):
@@ -485,7 +557,7 @@ def lenspack_app_mutator(app):
                 # Only what changed: a switch left alone keeps its source (config, LENSPACK_FEATURES).
                 body = {k: request.form.get(k) == "on" for k in keys if (request.form.get(k) == "on") != ft["values"][k]}
                 if not body:
-                    flash("Off switches: nothing changed.", "info")
+                    flash("Off switches: nothing changed.", FLASH_OK)
                     return redirect("/ai-assistant/")
             return saved("Off switches", call("PUT", "/_superset/settings/features", body))
 
@@ -534,30 +606,36 @@ TAIL_JS = r'''{# The "Ask Lenspack" button: one small script on every page, for 
 '''
 
 # Settings → Manage → AI assistant.
-SETTINGS_HTML = r'''{# Settings → Manage → AI assistant. What Lenspack runs with and Superset's data connections. Never shows a secret. #}
-{% extends "appbuilder/base.html" %}
+SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs with and Superset's data connections. Never shows a secret.
+   lp_layout: Superset 5's own layout, or on Superset 6 lenspack/layout.html (light or dark, as Superset is). #}
+{% extends lp_layout | default("appbuilder/base.html") %}
 {% block title %}AI assistant · Settings{% endblock %}
+{# Only this page's own messages, below; not whatever else Superset left in the session. #}
+{% block messages %}{% endblock %}
 {% block content %}
 <style>
-  .lp-wrap{max-width:1040px;margin:24px auto;padding:0 16px;font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#1f2328}
+  .lp-wrap{--lp-fg:#1f2328;--lp-mute:#667085;--lp-card:#fff;--lp-line:#e4e7ec;--lp-line2:#f0f2f5;--lp-code:#f5f7fa;--lp-acc:#1a85a0;--lp-ok:#067647;--lp-bad:#b42318;--lp-okbg:#ecfdf3;--lp-badbg:#fef3f2;--lp-input:#fff;--lp-inline:#d0d5dd;
+    max-width:1040px;margin:24px auto;padding:0 16px;font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--lp-fg)}
+  [data-lp-theme=dark] .lp-wrap{--lp-fg:#e6e8eb;--lp-mute:#98a2b3;--lp-card:#1b1d21;--lp-line:#343842;--lp-line2:#2a2e35;--lp-code:#262a31;--lp-acc:#3fb1cc;--lp-ok:#47cd89;--lp-bad:#f97066;--lp-okbg:rgba(71,205,137,.12);--lp-badbg:rgba(249,112,102,.12);--lp-input:#14161a;--lp-inline:#3a3f48}
   .lp-wrap h1{font-size:22px;margin:0 0 4px}
-  .lp-wrap .lede{color:#667085;margin:0 0 20px}
-  .lp-card{background:#fff;border:1px solid #e4e7ec;border-radius:8px;padding:16px 18px;margin:0 0 16px}
+  .lp-wrap .lede{color:var(--lp-mute);margin:0 0 20px}
+  .lp-card{background:var(--lp-card);border:1px solid var(--lp-line);border-radius:8px;padding:16px 18px;margin:0 0 16px}
   .lp-card h2{font-size:15px;margin:0 0 10px}
   .lp-wrap table{border-collapse:collapse;width:100%}
-  .lp-wrap th,.lp-wrap td{text-align:left;padding:6px 8px;border-bottom:1px solid #f0f2f5;vertical-align:top}
-  .lp-wrap th{color:#667085;font-weight:500;width:220px}
-  .lp-wrap code{background:#f5f7fa;border-radius:4px;padding:1px 5px;font-size:12.5px}
-  .ok{color:#067647}.bad{color:#b42318}.mute{color:#667085}
-  .lp-wrap a{color:#1a85a0}
+  .lp-wrap th,.lp-wrap td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--lp-line2);vertical-align:top}
+  .lp-wrap th{color:var(--lp-mute);font-weight:500;width:220px}
+  .lp-wrap code{background:var(--lp-code);color:inherit;border-radius:4px;padding:1px 5px;font-size:12.5px}
+  .lp-wrap .ok{color:var(--lp-ok)}.lp-wrap .bad{color:var(--lp-bad)}.lp-wrap .mute{color:var(--lp-mute)}
+  .lp-wrap a{color:var(--lp-acc)}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   .lp-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 0}
-  .lp-form select{min-width:280px;max-width:100%;padding:6px 8px;border:1px solid #d0d5dd;border-radius:6px;background:#fff;font:inherit}
+  .lp-form select,.lp-form input[type=number]{padding:6px 8px;border:1px solid var(--lp-inline);border-radius:6px;background:var(--lp-input);color:var(--lp-fg);font:inherit}
+  .lp-form select{min-width:280px;max-width:100%}
   .lp-form button{padding:6px 14px;border-radius:6px;border:1px solid #1a85a0;background:#1a85a0;color:#fff;font:inherit;cursor:pointer}
-  .lp-form button.ghost{background:#fff;color:#1a85a0}
+  .lp-form button.ghost{background:transparent;color:var(--lp-acc);border-color:var(--lp-acc)}
   .lp-form button[disabled]{opacity:.5;cursor:not-allowed}
   .lp-flash{padding:8px 12px;border-radius:6px;margin:0 0 12px}
-  .lp-flash.info{background:#ecfdf3;color:#067647}.lp-flash.danger{background:#fef3f2;color:#b42318}
+  .lp-flash.info{background:var(--lp-okbg);color:var(--lp-ok)}.lp-flash.danger{background:var(--lp-badbg);color:var(--lp-bad)}
   .bench{font-variant-numeric:tabular-nums}
   .bench td,.bench th{padding:3px 8px!important;font-size:12.5px}
   @media (max-width:820px){.grid2{grid-template-columns:1fr}.lp-wrap th{width:auto}}
@@ -567,8 +645,8 @@ SETTINGS_HTML = r'''{# Settings → Manage → AI assistant. What Lenspack runs 
   <p class="lede">Lenspack adds a chat to Superset dashboards: the <b>Ask Lenspack</b> button on a dashboard.
     Models are chosen here; the rest comes from Lenspack's config file and environment. This page never shows a secret.</p>
 
-  {% for category, message in get_flashed_messages(with_categories=true) %}
-    <div class="lp-flash {{ 'danger' if category == 'danger' else 'info' }}">{{ message }}</div>
+  {% for category, message in get_flashed_messages(with_categories=true, category_filter=lp_flash or ["lenspack-info", "lenspack-danger"]) %}
+    <div class="lp-flash {{ 'danger' if category.endswith('danger') else 'info' }}">{{ message }}</div>
   {% endfor %}
 
   {% if settings and settings.chat %}{% set c = settings.chat %}
@@ -791,9 +869,48 @@ SETTINGS_HTML = r'''{# Settings → Manage → AI assistant. What Lenspack runs 
   </div>
 </div>
 {% endblock %}
-'''
+"""
+
+# The AI assistant page's own layout on Superset 6, which has no server-drawn one (lenspack_settings_layout).
+# Light or dark as Superset is: Superset keeps the choice in localStorage (superset-theme-mode: default, dark, or
+# system, which follows the browser), and its own page reads it the same way before its frontend starts.
+LAYOUT_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %}</title>
+  <script{% if csp_nonce is defined %} nonce="{{ csp_nonce() }}"{% endif %}>
+    try {
+      var lpMode = localStorage.getItem("superset-theme-mode");
+      if (lpMode === "dark" || (lpMode !== "default" && window.matchMedia("(prefers-color-scheme: dark)").matches)) document.documentElement.setAttribute("data-lp-theme", "dark");
+    } catch (e) {}
+  </script>
+  <style>
+    :root{--lp-page:#f5f6f8;--lp-bar:#fff;--lp-barline:#e4e7ec;--lp-text:#1f2328;--lp-dim:#667085;--lp-link:#1a85a0;color-scheme:light}
+    [data-lp-theme=dark]{--lp-page:#0f1012;--lp-bar:#16181b;--lp-barline:#2a2e35;--lp-text:#e6e8eb;--lp-dim:#98a2b3;--lp-link:#3fb1cc;color-scheme:dark}
+    body{margin:0;background:var(--lp-page);color:var(--lp-text);font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+    .lp-top{display:flex;align-items:center;gap:10px;height:56px;padding:0 24px;background:var(--lp-bar);border-bottom:1px solid var(--lp-barline);box-sizing:border-box}
+    .lp-top a{color:var(--lp-link);text-decoration:none}
+    .lp-top a:hover{text-decoration:underline}
+    .lp-top .lp-home{font-weight:600;font-size:16px;color:var(--lp-text)}
+    .lp-top .lp-sep{color:var(--lp-dim)}
+    .lp-top .lp-back{margin-left:auto}
+  </style>
+</head>
+<body>
+  <header class="lp-top">
+    <a class="lp-home" href="/superset/welcome/">Superset</a><span class="lp-sep">/</span><span class="lp-sep">Settings</span><span class="lp-sep">/</span><b>AI assistant</b>
+    <a class="lp-back" href="/superset/welcome/">← Back to Superset</a>
+  </header>
+  {% block messages %}{% endblock %}
+  {% block content %}{% endblock %}
+</body>
+</html>
+"""
 
 __all__ = [
     "LENSPACK_PATH", "LENSPACK_INTERNAL_URL", "LENSPACK_SERVICE_USER", "LENSPACK_TEMPLATES", "STT_BENCH", "FLASK_APP_MUTATOR",
     "lenspack_app_mutator", "lenspack_sign", "lenspack_identity_key", "lenspack_rls_clauses", "lenspack_dataset_access",
+    "lenspack_settings_layout", "superset_version", "lenspack_clickhouse_label_suffix",
 ]

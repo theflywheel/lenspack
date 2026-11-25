@@ -54,7 +54,7 @@ const select = (id: string, name: string, datasetId: number, column: string, mor
   ...more,
 });
 
-// The filter bar as Superset 5 saves it: every kind of filter, a section heading, and the keys around it.
+// The filter bar as Superset 5 and 6.1 save it: every kind of filter, a section heading, and the keys around it.
 const NATIVE = [
   select("lgaPick", "LGA", 3, "lga", {
     defaultDataMask: { extraFormData: { filters: [{ col: "lga", op: "IN", val: ["Alpha"] }] }, filterState: { validateStatus: false, label: "Alpha", value: ["Alpha"] }, ownState: {} },
@@ -83,6 +83,11 @@ const OTHER_KEYS = {
   filter_bar_orientation: "VERTICAL",
   chart_configuration: { "101": { id: 101, crossFilters: { scope: "global", chartsInScope: [102, 103] } } },
   global_chart_configuration: { scope: { rootPath: ["ROOT_ID"], excluded: [] }, chartsInScope: [101, 102, 103] },
+  // Superset 6.1's: the filter bar's "chart customizations" (a group-by picker here) and a display switch.
+  chart_customization_config: [
+    { id: "CHART_CUSTOMIZATION-groupBy", type: "CHART_CUSTOMIZATION", name: "Group by", targets: [{ datasetId: 3, column: { name: "lga" } }], chartsInScope: [101], scope: { rootPath: ["ROOT_ID"], excluded: [] }, defaultDataMask: { extraFormData: {}, filterState: {}, ownState: {} } },
+  ],
+  show_chart_timestamps: false,
 };
 
 const CHART = (id: number, parents: string[]) => ({ id: `CHART-${id}`, type: "CHART", children: [], parents, meta: { chartId: id, width: 6, height: 50, sliceName: `Chart ${id}` } });
