@@ -115,7 +115,8 @@ function closesAtEnd(e: string) {
 
 const formatOf = (d3?: string | null) => (!d3 ? "number" : d3.includes("%") ? "percent" : d3.includes("$") ? "currency" : d3.includes("s") ? "compact" : "number");
 const typeOf = (c: SupersetColumn) => {
-  const t = (c.type ?? "").toUpperCase();
+  // Any type Superset reports that is none of these (an array, a map, one it doesn't know) reads as text.
+  const t = String(c.type ?? "").toUpperCase();
   if (c.is_dttm) return "time" as const;
   if (/BOOL/.test(t)) return "boolean" as const;
   if (/INT|NUMERIC|DECIMAL|FLOAT|DOUBLE|REAL/.test(t)) return "number" as const;
@@ -222,19 +223,36 @@ export function geoOf(ds: SupersetDataset, configured: { lat: string; lon: strin
   return lat.length === 1 && lon.length === 1 ? { lat: lat[0]!.column_name, lon: lon[0]!.column_name } : null;
 }
 
-/** Datasets → a pack and the binding back to Superset names. */
-export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay = {}): BuiltPack & { binding: Binding } {
+const blank = (s: unknown) => typeof s !== "string" || !s.trim();
+
+/**
+ * Datasets → a pack, the binding back to Superset names, and a warning for each column or metric it left out or
+ * renamed. One odd column or metric in one dataset never stops the pack being built: the pack is what Lenspack starts
+ * with, and a dataset's admin can change Superset's catalogue at any time, without knowing Lenspack reads it.
+ */
+export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay = {}): BuiltPack & { binding: Binding; warnings: string[] } {
   const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map(), geo: new Map(), ...(overlay.mapStyle ? { mapStyle: overlay.mapStyle } : {}) };
   const entities: Record<string, unknown> = {};
   const pb = packBuilder();
   const dimensions = pb.dimensions;
   const measures: Record<string, unknown>[] = [];
   const usedMeasureKeys = new Set<string>();
+  const warnings: string[] = [];
+  // The column each dimension was made from, to label it again if it has to give its key to a metric.
+  const columnOf = new Map<string, SupersetColumn>();
+  const name = (ds: SupersetDataset) => `Superset dataset "${ds.table_name}" (${ds.id})`;
 
   for (const ds of datasets) {
     const entity = overlay.entities?.[String(ds.id)] ?? overlay.entities?.[ds.table_name] ?? slug(ds.table_name);
     const time = ds.main_dttm_col && COLUMN.test(ds.main_dttm_col) ? ds.main_dttm_col : null;
-    const countMetric = ds.metrics.find((m) => COUNT_STAR.test(m.expression))?.metric_name ?? null;
+    // A metric with no name or no expression can't be asked for: Superset would refuse it too.
+    const usable = ds.metrics.filter((m) => {
+      if (blank(m.metric_name)) warnings.push(`${name(ds)}: a metric with no name is left out`);
+      else if (blank(m.expression)) warnings.push(`${name(ds)}: metric "${m.metric_name}" has no SQL expression and is left out`);
+      else return true;
+      return false;
+    });
+    const countMetric = usable.find((m) => COUNT_STAR.test(m.expression))?.metric_name ?? null;
     if (entities[entity]) throw new Error(`Superset datasets ${binding.datasets.get(entity)?.table} and ${ds.table_name} both map to entity "${entity}"; give each its own name in overlay.entities`);
     const geo = geoOf(ds, overlay.geo?.[entity] ?? overlay.geo?.[String(ds.id)] ?? overlay.geo?.[ds.table_name]);
     if (geo) binding.geo.set(entity, geo);
@@ -249,11 +267,16 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     // Columns that group, other than the time column: conformed across datasets by name.
     for (const c of ds.columns) {
       if (c.groupby === false || c.is_dttm || c.column_name === time) continue;
+      if (blank(c.column_name)) {
+        warnings.push(`${name(ds)}: a column with no name is left out`);
+        continue;
+      }
       const key = slug(c.column_name);
       const source = COLUMN.test(c.column_name) ? { field: c.column_name } : { sql: { superset: c.column_name } };
       const existing = dimensions.get(key);
       // Two columns of one entity that come to the same key (Team and team): the first one is the dimension.
       if (existing && !pb.conform(existing, entity, source)) continue;
+      if (!existing) columnOf.set(key, c);
       if (!existing)
         dimensions.set(key, {
           key,
@@ -267,13 +290,15 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
       binding.dimensionOf.get(entity)!.set(c.column_name, key);
     }
 
-    const metricList = [...ds.metrics];
+    const metricList = [...usable];
     // Every entity gets a plain row count: filter controls list values by it.
     if (!countMetric) metricList.unshift({ metric_name: "", verbose_name: `${ds.table_name} rows`, expression: "COUNT(*)" });
     for (const m of metricList) {
       let key = slug(m.metric_name || `${entity}_rows`);
       if (key === "count") key = `${entity}_count`;
       if (usedMeasureKeys.has(key)) key = `${entity}_${key}`;
+      // Still taken (Total and total in one dataset): the first free of key_2, key_3, …
+      for (let i = 2, stem = key; usedMeasureKeys.has(key); i++) key = `${stem}_${i}`;
       usedMeasureKeys.add(key);
       const agg = formatOf(m.d3format) === "percent" && aggOf(m.expression) !== "count" ? "avg" : aggOf(m.expression);
       const hint = [overlay.hints?.[key] ?? m.description, m.warning_text].filter(Boolean).join(" ");
@@ -292,6 +317,32 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     }
   }
 
+  // A column that groups and a metric can come to the same key (a column children_reached that Superset lets you
+  // group by, and the metric children_reached that sums it), and a pack's keys are unique. The metric keeps the key:
+  // it is the number the dataset's admin chose to name. The column stays, as <key>_value, so whatever groups or
+  // filters by it still can, and its hint says where the total is.
+  for (const [key, dim] of [...dimensions]) {
+    if (!usedMeasureKeys.has(key)) continue;
+    let next = `${key}_value`;
+    for (let i = 2; usedMeasureKeys.has(next) || dimensions.has(next); i++) next = `${key}_value_${i}`;
+    const c = columnOf.get(key)!;
+    dim.key = next;
+    dim.label = cut(overlay.labels?.[next] ?? c.verbose_name ?? undefined, 80);
+    dim.hint = cut(overlay.hints?.[next] ?? c.description ?? `Each row's own ${c.column_name} value. For the total, use the measure ${key}.`, 400);
+    const cols = binding.columns.get(key)!;
+    binding.columns.delete(key);
+    binding.columns.set(next, cols);
+    for (const [entity, column] of cols) {
+      binding.dimensionOf.get(entity)!.set(column, next);
+      const ds = datasets.find((d) => d.id === binding.datasets.get(entity)?.id)!;
+      warnings.push(`${name(ds)}: column "${column}" and a metric both come to the key "${key}"; the metric keeps it, and the column is the dimension "${next}"`);
+    }
+  }
+  // Keep the order the columns came in, with the renamed ones under their new keys.
+  const ordered = [...dimensions.values()];
+  dimensions.clear();
+  for (const d of ordered) dimensions.set(d.key, d);
+
   const hierarchies = Object.fromEntries(Object.entries(overlay.hierarchies ?? {}).filter(([, levels]) => levels.every((l) => dimensions.has(l))));
   const { pack, packYaml } = emitPack({
     pack: overlay.pack ?? "superset",
@@ -305,5 +356,5 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     ...(overlay.instructions ? { instructions: overlay.instructions } : {}),
     ...(overlay.examples?.length ? { examples: examplesForPack(overlay.examples as { question?: unknown }[]) } : {}),
   });
-  return { pack, packYaml, binding };
+  return { pack, packYaml, binding, warnings };
 }

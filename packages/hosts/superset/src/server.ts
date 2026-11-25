@@ -120,7 +120,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const client = supersetClient({ url: supersetUrl, username: account.username, password: account.password });
   // Each dataset is retried inside fetchDatasets; the whole build is retried too, so a partial answer under load isn't a crash loop.
   const datasets = await retried("building the pack", () => fetchDatasets(client, config.datasets, { log }), [2000, 5000, 10_000], log);
-  const { pack, packYaml, binding } = packFromDatasets(datasets, config.overlay);
+  // A column or metric the pack can't use is left out or renamed with a warning, never a failed start.
+  const { pack, packYaml, binding, warnings } = packFromDatasets(datasets, config.overlay);
+  for (const w of warnings) log(`warning: ${w}`);
   log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
   // What differs between Superset 5 and 6 on this side: the default basemap of the maps Lenspack writes.
   const superset = await supersetVersion(client);
@@ -221,6 +223,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           datasets: datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: binding.entityOf.get(d.id) ?? null })),
           dimensions: pack.dimensions.length,
           measures: pack.measures.map((m) => ({ key: m.key, label: m.label, agg: m.agg })),
+          // What the pack left out of Superset's catalogue or renamed, and why.
+          warnings,
           superset: { url: supersetUrl, username: account.username, account: account.source },
           editPolicy,
           // Only when on, so the page reads as before while it is off.
