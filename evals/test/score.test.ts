@@ -19,6 +19,22 @@ describe("numbers in a reply", () => {
     expect(numbersIn("the only one")).toEqual([]);
   });
 
+  it("reads other ways of writing numbers: dot or Indian grouping, a typographic minus, a drop in words, a sentence-opening One", () => {
+    const vals = (t: string) => numbersIn(t).map((n) => n.value);
+    expect(vals("com 12.345 doses")).toContain(12345);
+    expect(vals("दी गईं: 1,23,456।")).toEqual([123456]);
+    expect(vals("a discrepancy of −4,321 units")).toEqual([-4321]);
+    expect(vals("about 8.4% below the calculated stock")).toContain(-8.4);
+    expect(vals("dispatches fell 12.6% from the day before")).toContain(-12.6);
+    expect(vals("up 4.5% on the day before")).toEqual([4.5]);
+    expect(vals("One store has a negative balance.")).toEqual([1]);
+    expect(vals("com 12 345 doses")).toContain(12345);
+    expect(vals("in 5 wards")).toEqual([5]);
+    expect(vals("Only one of them")).toEqual([]);
+    // Second readings are scored but never counted as numbers the reply stated.
+    expect(grounding("com 12.345 doses", [{ rows: [{ value: 12345 }] }]).total).toBe(1);
+  });
+
   it("holds ratios to ±0.1 pp, or half the precision shown, never looser than ±0.5 pp", () => {
     const truth = 0.91264; // a sum over sum (made-up figures throughout)
     expect(numberMatches(truth, "ratio", n("91.26%")).ok).toBe(true);
@@ -68,7 +84,7 @@ describe("answers against truth", () => {
   it("reads series dates written as days of the month", () => {
     const t: Truth = { shape: "series", unit: "count", value: { "2026-10-12": 5120, "2026-10-13": 5988 } };
     expect(scoreAnswer(t, "- 12 Oct: 5,120\n- 13 Oct: 5,988").correct).toBe(true);
-    expect(scoreAnswer(t, "Day 1: 5,120\nDay 2: 5,988").correct).toBe(true);
+    expect(scoreAnswer(t, "Day 1: 5,120\nDay 2: 5,988").correct).toBe(true);    expect(scoreAnswer(t, "- 10-12: 5,120\n- 10-13: 5,988").correct).toBe(true); // a day label without the year
   });
 
   it("reads a top day written as Day N when the suite names day one", () => {
