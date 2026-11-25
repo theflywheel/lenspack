@@ -8,7 +8,7 @@ import type { Question, QueryExpect, Truth, TruthValue, Unit, WidgetExpect } fro
 
 // ── numbers in text ──────────────────────────────────────────────────────
 
-export type Num = { value: number; pct: boolean; raw: string; index: number; sig: number; decimals: number; word?: boolean };
+export type Num = { value: number; pct: boolean; raw: string; index: number; sig: number; decimals: number; word?: boolean; /** A second reading of the same text (a dot as thousands separator, a drop stated as "below"): scored, never counted for grounding. */ alt?: boolean };
 
 const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
 
@@ -28,9 +28,10 @@ export function numbersIn(text: string): Num[] {
   let t = text;
   for (const re of NOT_AMOUNTS) t = t.replace(re, (m) => " ".repeat(m.length));
   const out: Num[] = [];
-  const re = /(?<![\w.])(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)(\s*(?:%|percent\b|pp\b|k\b|thousand\b|m\b|million\b))?/gi;
+  // Indian grouping ("1,23,456") first, then thousands with commas, then plain digits; a minus may be typographic (−).
+  const re = /(?<![\w.])([-−]?\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|[-−]?\d{1,3}(?:,\d{3})+(?:\.\d+)?|[-−]?\d+(?:\.\d+)?)(\s*(?:%|percent\b|pp\b|k\b|thousand\b|m\b|million\b))?/gi;
   for (const m of t.matchAll(re)) {
-    const digits = m[1]!.replace(/,/g, "");
+    const digits = m[1]!.replace(/,/g, "").replace("−", "-");
     let value = Number(digits);
     if (!Number.isFinite(value)) continue;
     const suffix = (m[2] ?? "").trim().toLowerCase();
@@ -40,12 +41,28 @@ export function numbersIn(text: string): Num[] {
     if (suffix === "k" || suffix === "thousand") value *= 1_000;
     else if (suffix === "m" || suffix === "million") value *= 1_000_000;
     else sig = Math.max(sig, decimals > 0 ? sig : 0);
-    out.push({ value, pct: suffix === "%" || suffix === "percent" || suffix === "pp", raw: m[0].trim(), index: m.index ?? 0, sig, decimals });
+    const pct = suffix === "%" || suffix === "percent" || suffix === "pp";
+    out.push({ value, pct, raw: m[0].trim(), index: m.index ?? 0, sig, decimals });
+    // "12 345" (French, Portuguese): groups of three after a space. The digits before are read on their own above, so this is a second reading.
+    const spaced = /^[ \u00a0\u202f](\d{3})(?:[ \u00a0\u202f](\d{3}))?(?![\d.,])/.exec(t.slice((m.index ?? 0) + m[0].length));
+    if (!suffix && !digits.includes(".") && /^-?\d{1,3}$/.test(digits) && spaced) {
+      const joined = digits + spaced[1] + (spaced[2] ?? "");
+      const after = t.slice((m.index ?? 0) + m[0].length + spaced[0].length).match(/^\s*(%|percent\b)/i);
+      out.push({ value: Number(joined), pct: !!after, raw: m[0] + spaced[0], index: m.index ?? 0, sig: joined.replace(/^-?0+/, "").length, decimals: 0, alt: true });
+    }
+    // "12.345" in Portuguese, French or German is 12,345: a dot before groups of exactly three digits, no other separator.
+    if (!pct && !suffix && /^-?\d{1,3}(?:\.\d{3})+$/.test(digits)) out.push({ value: Number(digits.replace(/\./g, "")), pct, raw: m[0].trim(), index: m.index ?? 0, sig: digits.replace(/\D/g, "").length, decimals: 0, alt: true });
+    // A drop stated in words ("8.4% below", "4,321 fewer"): the same number, negative.
+    const before = t.slice(Math.max(0, (m.index ?? 0) - 24), m.index ?? 0);
+    if (value > 0 && /\b(?:fell|dropped|drop of|down|decreased|declined|decline of|lower|less|fewer|short)\s+(?:by\s+)?(?:about\s+|around\s+|some\s+)?(?:\*\*)?$/i.test(before)) out.push({ value: -value, pct, raw: m[0].trim(), index: m.index ?? 0, sig, decimals, alt: true });
+    else if (value > 0 && /^\s*(?:%|percent)?\s*(?:\*\*)?\s*(?:\S+\s+){0,3}?(?:below|less|fewer|lower|down|short|under|decrease|drop|fell|declin)/i.test(t.slice((m.index ?? 0) + m[0].length - (suffix ? m[2]!.length : 0), (m.index ?? 0) + m[0].length + 40)))
+      out.push({ value: -value, pct, raw: m[0].trim(), index: m.index ?? 0, sig, decimals, alt: true });
   }
-  // Counts written as words ("Eight wards are above 95%"); "one" is too common to mean a count.
+  // Counts written as words ("Eight wards are above 95%"); "one" is too common to mean a count, except opening a sentence ("One store has…").
   for (const m of t.matchAll(new RegExp(`\\b(${WORDS.slice(2).join("|")})\\b`, "gi"))) {
     out.push({ value: WORDS.indexOf(m[1]!.toLowerCase()), pct: false, raw: m[0], index: m.index ?? 0, sig: 2, decimals: 0, word: true });
   }
+  for (const m of t.matchAll(/(?:^|[.!?:]\s+|\n\s*|\*\*)One\b(?=\s+[a-z])/g)) out.push({ value: 1, pct: false, raw: "One", index: m.index ?? 0, sig: 1, decimals: 0, word: true });
   return out.sort((a, b) => a.index - b.index);
 }
 
@@ -80,11 +97,15 @@ const SYNONYMS: Record<string, string[]> = { male: ["boys", "boy", "men"], femal
 
 function spellings(key: string, ordinal?: number): string[] {
   const out = new Set([loose(key), loose(key.replace(/_/g, " ")), ...(SYNONYMS[loose(key)] ?? [])]);
+  // "Health facility" is also written "Health facilities".
+  if (/[^aeiou]y$/.test(loose(key))) out.add(`${loose(key).slice(0, -1)}ies`);
   const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(key);
   if (iso) {
     const d = Number(iso[3]);
     const mon = MONTH_ABBR[Number(iso[2]) - 1]!;
+    // …and as a day label without the year ("06-27"), as datasets often carry it.
     for (const s of [`${d}${mon}`, `${mon}${d}`, `${String(d).padStart(2, "0")}${mon}`, `${iso[3]}/${iso[2]}`, key.slice(0, 10)]) out.add(loose(s));
+    out.add(`${iso[2]}-${iso[3]}`.replace("-", ""));
     if (ordinal !== undefined) out.add(`day${ordinal}`);
   }
   return [...out].filter(Boolean);
@@ -178,7 +199,12 @@ function scoreValue(value: TruthValue, truth: Truth, text: string): AnswerScore 
       let ordered = true;
       const flat = loose(text);
       for (const [k, v] of rows) {
-        const r = inSegs(k, v, dayOf(k));
+        let r = inSegs(k, v, dayOf(k));
+        // One row: its value may follow in the next sentence ("X holds the most. Its balance is 325,741.").
+        if (rows.length === 1 && r.key && !r.value && v !== null) {
+          const at = segs.findIndex((sg) => findKey([sg], k, dayOf(k)).length > 0);
+          if (at >= 0 && segs[at + 1] && hit(v, numbersIn(segs[at + 1]!))) r = { key: true, value: true };
+        }
         if (r.key && (r.value || v === null || rows.length > 1)) found++;
         else missing.push(`${k}=${v}`);
         const at = Math.min(...spellings(k, dayOf(k)).map((f) => flat.indexOf(f)).filter((i) => i >= 0), Infinity);
@@ -246,7 +272,7 @@ export function toolNumbers(outputs: unknown[]): number[] {
 /** Which numbers in the reply appear in no tool result (allowing rounding, percent form, sums of two). */
 export function grounding(reply: string, outputs: unknown[]): { total: number; grounded: number; ungrounded: string[] } {
   const pool = toolNumbers(outputs);
-  const nums = numbersIn(reply).filter((n) => !n.word && !(Number.isInteger(n.value) && Math.abs(n.value) <= 12 && !n.pct));
+  const nums = numbersIn(reply).filter((n) => !n.word && !n.alt && !(Number.isInteger(n.value) && Math.abs(n.value) <= 12 && !n.pct));
   const near = (a: number, b: number, n: Num) => Math.abs(a - b) <= Math.max(Math.abs(b) * 0.005, 0.5 * 10 ** -n.decimals * (n.pct ? 0.01 : 1));
   const ungrounded: string[] = [];
   for (const n of nums) {
