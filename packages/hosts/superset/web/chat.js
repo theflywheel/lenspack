@@ -93,6 +93,12 @@
 .lpc-meter{flex:none;width:64px;height:6px;border-radius:3px;background:var(--lpc-line);overflow:hidden}
 .lpc-meter i{display:block;height:100%;width:0;background:var(--lpc-bad);transition:width 60ms linear}
 @media (prefers-reduced-motion:reduce){.lpc-mic.rec{animation:none}}
+[data-lp-theme=dark] .lpc,.lpc[data-lp-theme=dark]{--lpc-fg:#e6e8eb;--lpc-mute:#98a2b3;--lpc-line:#343842;--lpc-bg:#1b1d21;--lpc-soft:#262a31;--lpc-acc:#1f8fab;--lpc-acc-soft:rgba(31,143,171,.22);--lpc-bad:#f97066;--lpc-ok:#47cd89;color-scheme:dark}
+[data-lp-theme=dark] .lpc-down{background:#3a2a0a;color:#fec84b;border-bottom-color:#5c4210}
+[data-lp-theme=dark] .lpc-bot code,[data-lp-theme=dark] .lpc-bot pre{background:rgba(255,255,255,.08)}
+[data-lp-theme=dark] .lpc-bot a,[data-lp-theme=dark] .lpc-undo,[data-lp-theme=dark] .lpc-note.sync{color:#3fb1cc}
+[data-lp-theme=dark] .lpc-note.sync{border-color:#3fb1cc}
+[data-lp-theme=dark] .lpc-menu{box-shadow:0 8px 24px rgba(0,0,0,.5)}
 `;
 
   // The panel's words, by language. "auto" shows the page's language (Superset's, else the
@@ -1315,11 +1321,33 @@
     }
 
     go.onclick = () => send(input.value);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send(input.value);
+    // Enter sends, Shift+Enter starts a new line. The key is taken on the window, before the page sees it: a
+    // listener of the host page (or a browser extension) on the document or body that stops or cancels Enter
+    // would otherwise keep it from the box, and the button would be the only way to send. The Enter that ends
+    // an input method's composition (accents, predictive text, CJK and Indic keyboards) only ends it.
+    let shift = false;
+    let sawEnter = false;
+    const composing = (e) => e.isComposing || e.keyCode === 229;
+    listen(window, "keydown", (e) => {
+      shift = e.shiftKey;
+      sawEnter = e.target === input && e.key === "Enter";
+      if (!sawEnter || e.shiftKey || composing(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      send(input.value);
+    }, true);
+    listen(window, "keyup", (e) => { shift = e.shiftKey; }, true);
+    // And if the key never reached the window's listener (another listener there stopped it first), the line
+    // break it is about to type is the sign: send instead.
+    input.addEventListener("beforeinput", (e) => {
+      if (e.inputType !== "insertLineBreak") return;
+      if (sawEnter) {
+        sawEnter = false;
+        return;
       }
+      if (shift || e.isComposing) return;
+      e.preventDefault();
+      send(input.value);
     });
     input.addEventListener("input", () => {
       input.style.height = "auto";

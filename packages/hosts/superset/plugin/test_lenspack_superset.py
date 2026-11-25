@@ -1,15 +1,24 @@
-"""Tests for lenspack_superset.py. They need Superset's own Python environment, so they run in its image:
+"""Tests for lenspack_superset.py. They need Superset's own Python environment, so they run in its image, once for
+each supported version. Superset 6.1:
 
     docker run --rm -e SUPERSET_CONFIG_PATH=/cfg/superset_config.py -e PYTHONPATH=/plugin:/cfg \\
       -v "$PWD/packages/hosts/superset/plugin:/plugin:ro" -v "$PWD/<a folder with superset_config.py>:/cfg:ro" \\
-      apache/superset:5.0.0 sh -c 'superset db upgrade && superset init && python -m unittest discover -s /plugin'
+      apache/superset:6.1.0 sh -c 'superset db upgrade && superset init && python -m unittest discover -s /plugin'
+
+Superset 5.0: the same with apache/superset:5.0.0.
+
+The ClickHouse query test runs only when LENSPACK_TEST_CLICKHOUSE is a clickhousedb:// URI of a ClickHouse the
+container can reach (it makes and drops one table), in an image with clickhouse-connect installed (0.13 or later
+for 6.1); add --network and -e LENSPACK_TEST_CLICKHOUSE to the command above.
 
 where superset_config.py sets SECRET_KEY, a SQLite SQLALCHEMY_DATABASE_URI, PREVENT_UNSAFE_DB_CONNECTIONS = False,
 FEATURE_FLAGS = {"ENABLE_TEMPLATE_PROCESSING": True} (Superset renders RLS templates only with it),
 and ends with `from lenspack_superset import *`. RlsClauses and Route need only the module. ProxyEndpoint makes
 users and dashboards and sends /lenspack/... requests through Flask's test client, with the forward to Lenspack
 caught. AccessEndpoint makes a throwaway SQLite database, a dataset, a role with access to it, users and RLS rules
-in Superset's metadata, and calls /api/v1/lenspack/access through Flask's test client.
+in Superset's metadata, and calls /api/v1/lenspack/access (and /api/v1/lenspack/version) through Flask's test
+client. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. ClickHouseLabels
+checks the ClickHouse column-name suffix, and runs a query against ClickHouse when one is given (above).
 """
 
 import os
@@ -256,6 +265,123 @@ class AccessEndpoint(unittest.TestCase):
         self.assertEqual(self.access("alice", headers=self.token("alice")).status_code, 403)
         missing = self.access("nobody-here")
         self.assertEqual((missing.status_code, missing.get_json()["message"]), (404, "no such user"))
+
+    def test_the_version_is_told_to_admins_and_the_service_account_only(self):
+        r = self.client.get("/api/v1/lenspack/version", headers=self.admin)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["result"]["superset"], self.app.config["VERSION_STRING"])
+        self.assertRegex(r.get_json()["result"]["superset"], r"^[56]\.")
+        self.assertEqual(self.client.get("/api/v1/lenspack/version").status_code, 401)
+        self.assertEqual(self.client.get("/api/v1/lenspack/version", headers=self.token("alice")).status_code, 403)
+
+
+class SettingsPage(unittest.TestCase):
+    """Settings → AI assistant, as an admin, with Lenspack unreachable (the page says so and still renders)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = superset_app()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        from superset.extensions import security_manager as sm
+
+        admin = sm.find_user(username="lp_settings_admin") or sm.add_user("lp_settings_admin", "lp", "Test", "lp_settings_admin@example.invalid", [sm.find_role("Admin")], password=PASSWORD)
+        cls.client = cls.app.test_client()
+        with cls.client.session_transaction() as s:
+            s["_user_id"] = str(admin.id)
+            s["_fresh"] = True
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def page(self, flashes=()):
+        import urllib.error
+        from unittest import mock
+
+        with self.client.session_transaction() as s:
+            s["_flashes"] = list(flashes)
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no Lenspack in the tests")):
+            return self.client.get("/ai-assistant/")
+
+    def test_uses_superset_5s_page_frame_or_its_own_on_superset_6(self):
+        # Superset 6 dropped the server-rendered page frame (superset/basic.html) that 5 had.
+        major = int(self.app.config["VERSION_STRING"].split(".")[0])
+        self.assertEqual(lp.lenspack_settings_layout(self.app), "lenspack/layout.html" if major >= 6 else "appbuilder/base.html")
+        r = self.page()
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True)[:500])
+        html = r.get_data(as_text=True)
+        self.assertIn("AI assistant", html)
+        self.assertIn("no Lenspack in the tests", html)
+        if major >= 6:
+            # Its own frame follows Superset's light or dark theme, and its script carries the page's nonce.
+            self.assertIn("superset-theme-mode", html)
+            self.assertIn("Back to Superset", html)
+
+    def test_shows_its_own_messages_and_not_superset_s_leftovers(self):
+        import re
+
+        html = self.page([("lenspack-info", "Chat language saved."), ("lenspack-danger", "Chat model not saved: nope"), ("message", "A message left from another page")]).get_data(as_text=True)
+        # Superset 5 also hands every message to its menu bar, in the page's bootstrap data; the page's own list is what counts.
+        html = re.sub(r'data-bootstrap="[^"]*"', "", html)
+        self.assertIn("Chat language saved.", html)
+        self.assertIn("Chat model not saved: nope", html)
+        self.assertNotIn("A message left from another page", html)
+
+
+class ClickHouseLabels(unittest.TestCase):
+    """A saved metric named like the column it sums (`SUM(x)` saved as x), beside a metric that uses x again. Without the
+    alias suffix, Superset 6.1 writes `SUM(x) AS x` and ClickHouse reads the second metric's x as that alias (error 184)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = superset_app()  # the app start puts the suffix back where Superset no longer adds it
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def test_aliases_carry_a_suffix_on_every_version(self):
+        from superset.db_engine_specs.clickhouse import ClickHouseConnectEngineSpec
+
+        label = str(ClickHouseConnectEngineSpec.make_label_compatible("x"))
+        self.assertRegex(label, r"^x_[0-9a-f]{6}$")
+        self.assertEqual(label, str(ClickHouseConnectEngineSpec.make_label_compatible("x")))
+        self.assertNotEqual(label, str(ClickHouseConnectEngineSpec.make_label_compatible("y")))
+        # Applying it again changes nothing.
+        self.assertFalse(lp.lenspack_clickhouse_label_suffix())
+
+    @unittest.skipUnless(os.environ.get("LENSPACK_TEST_CLICKHOUSE"), "set LENSPACK_TEST_CLICKHOUSE to a clickhousedb:// URI to run it")
+    def test_a_metric_reusing_a_summed_column_runs_and_keeps_its_names(self):
+        import sqlalchemy as sa
+        from superset.connectors.sqla.models import SqlMetric, SqlaTable, TableColumn
+        from superset.extensions import db
+        from superset.models.core import Database
+
+        uri = os.environ["LENSPACK_TEST_CLICKHOUSE"]
+        name = f"lenspack_labels_{os.getpid()}"
+        engine = sa.create_engine(uri)
+        with engine.connect() as con:
+            con.execute(sa.text(f"CREATE TABLE {name} (g String, x Int32) ENGINE = MergeTree ORDER BY g"))
+            con.execute(sa.text(f"INSERT INTO {name} SELECT if(number % 2 = 0, 'a', 'b'), toInt32(number) FROM numbers(10)"))
+        try:
+            database = Database(database_name=name, sqlalchemy_uri=uri)
+            db.session.add(database)
+            db.session.flush()
+            table = SqlaTable(table_name=name, database=database)
+            table.columns = [TableColumn(column_name="g", type="String", groupby=True), TableColumn(column_name="x", type="Int32")]
+            table.metrics = [SqlMetric(metric_name="x", expression="SUM(x)"), SqlMetric(metric_name="x_per_row", expression="SUM(x) / COUNT(*)")]
+            db.session.add(table)
+            db.session.commit()
+            result = table.query({"columns": ["g"], "metrics": ["x", "x_per_row"], "is_timeseries": False, "row_limit": 10, "filter": [], "extras": {}, "orderby": [("x", False)]})
+            self.assertIsNone(result.error_message, result.query)
+            self.assertEqual(list(result.df.columns), ["g", "x", "x_per_row"])
+            self.assertEqual(result.df.to_dict("records"), [{"g": "b", "x": 25, "x_per_row": 5.0}, {"g": "a", "x": 20, "x_per_row": 4.0}])
+        finally:
+            with engine.connect() as con:
+                con.execute(sa.text(f"DROP TABLE IF EXISTS {name}"))
 
 
 if __name__ == "__main__":

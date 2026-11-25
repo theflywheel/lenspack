@@ -25,6 +25,7 @@ import { examplesByLanguage, examplesFor } from "./examples";
 import { supersetPolicy } from "./access";
 import { editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
 import { supersetBoards } from "./store";
+import { defaultMapStyle, supersetVersion } from "./version";
 
 /**
  * superset.yaml. A string "env:NAME" anywhere reads that variable. The plumbing (superset.url, publicPath,
@@ -121,6 +122,10 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const datasets = await retried("building the pack", () => fetchDatasets(client, config.datasets, { log }), [2000, 5000, 10_000], log);
   const { pack, packYaml, binding } = packFromDatasets(datasets, config.overlay);
   log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
+  // What differs between Superset 5 and 6 on this side: the default basemap of the maps Lenspack writes.
+  const superset = await supersetVersion(client);
+  binding.mapStyle ??= defaultMapStyle(superset.major);
+  log(`Superset ${superset.version ?? "5.x (no version reported)"}${config.overlay?.mapStyle ? "" : `; maps drawn on ${binding.mapStyle}`}`);
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.

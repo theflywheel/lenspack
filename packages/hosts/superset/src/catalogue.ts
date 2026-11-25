@@ -31,7 +31,11 @@ export type Overlay = {
    * are found by name, grouped by Superset or not.
    */
   geo?: Record<string, { lat: string; lon: string } | false>;
-  /** The basemap of maps Lenspack writes to Superset: a Mapbox style URL (Superset 5 takes no other). Light by default. */
+  /**
+   * The basemap of maps Lenspack writes to Superset. Superset 6 takes a Mapbox style (mapbox://styles/...), an
+   * OpenStreetMap tile URL or tile://<tile server URL>; Superset 5 takes Mapbox styles only. By default Superset's own
+   * default for its version: OpenStreetMap streets on 6, Mapbox light on 5.
+   */
   mapStyle?: string;
   /** How the chat opens on Superset's pages by default: a floating window or a side panel. Each user can change it. */
   panel?: "float" | "dock";
@@ -53,7 +57,7 @@ export type Binding = {
   dimensionOf: Map<string, Map<string, string>>;
   /** Entity → its coordinate columns, for an entity with a location. */
   geo: Map<string, { lat: string; lon: string }>;
-  /** The Mapbox style written into maps (overlay.mapStyle). */
+  /** The basemap written into maps: overlay.mapStyle, else the default for the Superset version (set by the server). */
   mapStyle?: string;
 };
 
@@ -172,7 +176,7 @@ export async function fetchDatasets(client: SupersetClient, refs: (number | stri
     if (typeof ref === "number" || /^\d+$/.test(ref)) return Promise.resolve(Number(ref));
     const [schema, table] = ref.includes(".") ? ref.split(".", 2) : [null, ref];
     const filters = [{ col: "table_name", opr: "eq", value: table }, ...(schema ? [{ col: "schema", opr: "eq", value: schema }] : [])];
-    // Superset 5's list endpoint (Flask-AppBuilder 4) shares one filter object between the threads of a worker,
+    // Superset's list endpoint (Flask-AppBuilder 4 and 5, in Superset 5 and 6) shares one filter object between the threads of a worker,
     // so under concurrent list requests it can apply another request's filter and answer with a different
     // dataset. Ask for the name back and keep only exact matches: a swapped answer is retried, never trusted.
     return retry(`Superset dataset "${ref}"`, async () => {

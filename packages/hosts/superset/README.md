@@ -35,16 +35,19 @@ signed-in user from Superset and puts the chat inside Superset's pages. It sits 
   heading and filter is kept as it was. What a viewer has picked in their browser is not seen.
 - **Heatmaps.** A heatmap widget is Superset's `heatmap_v2`: a breakdown's dimension on `x_axis`, its split as
   `groupby`, one saved metric, rows A to Z, one scale across the grid. A heatmap over time is refused before the
-  change (capability `timeHeatmap: false`): Superset 5 sorts a time axis by the raw column while grouping by its
-  buckets, which the database refuses, so use a breakdown over a day or date label column instead.
+  change (capability `timeHeatmap: false`): Superset sorts a time axis by the raw column while grouping by its
+  weeks or months, which ClickHouse refuses (Postgres accepts it), so use a breakdown over a day or date label
+  column instead.
 - **Maps.** A dataset with one numeric `latitude`/`lat` column and one `longitude`/`lon`/`lng`/`long` column
   becomes an entity with a location (`overlay.geo` names other columns per entity, dataset id or table, or turns
   detection off with `false`). A `map` widget is Superset's `deck_scatter`: `spatial` latlong on those columns,
   `dimension` for the colour, a saved metric as `point_radius_fixed` for the size (Superset groups by location),
-  the label in `js_columns`, `row_limit`, and `mapbox_style` from `overlay.mapStyle` (default
-  `mapbox://styles/mapbox/light-v9`; Superset 5.0 takes Mapbox styles only and the basemap needs Superset's
-  `MAPBOX_API_KEY`). Lenspack reads a map's points through `/api/v1/chart/data` (`deck_scatter` itself renders
-  through `explore_json`, which refuses a token). A `deck_scatter` made in Explore reads back as a map when every
+  the label in `js_columns`, `row_limit`, and `mapbox_style` from `overlay.mapStyle`. The default is Superset's
+  own for its version: OpenStreetMap streets on Superset 6 (no key needed), `mapbox://styles/mapbox/light-v9` on
+  Superset 5, which takes Mapbox styles only and draws them only with Superset's `MAPBOX_API_KEY`. The query that
+  draws the points is saved with the chart, so Superset's reports and `GET /api/v1/chart/<id>/data` get the same
+  points as the dashboard; Lenspack reads them through `/api/v1/chart/data`. A `deck_scatter` made in Explore
+  reads back as a map when every
   setting maps: latlong on the entity's location columns, a fixed or saved-metric radius, a dimension colour, at
   most one dimension in `js_columns`, no time grain and no JavaScript; otherwise it stays Superset's. Shaded areas
   (`deck_polygon`) are not done: they need boundary shapes in a dataset column.
@@ -52,6 +55,47 @@ signed-in user from Superset and puts the chat inside Superset's pages. It sits 
 - **Superset stays the record.** `supersetBoards` wraps any `BoardStore`: reads pick up edits made in Superset,
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's
   version history is the undo Superset lacks.
+
+## Superset versions
+
+**Superset 6.1** is the version this package is built for. **Superset 5.0** still works, and is tested the same
+way. Superset 6.0 sits between the two and has not been tested.
+
+Lenspack reads Superset's version when it starts and prints it (`Superset 6.1.0; maps drawn on …`). It asks the
+plugin first (`/api/v1/lenspack/version`), then Superset 6.1's own `/version`; with neither, it assumes 5.
+
+What is different between the two, as far as Lenspack is concerned:
+
+| | Superset 6.1 | Superset 5.0 |
+|---|---|---|
+| Maps' default basemap | OpenStreetMap streets, no key needed. `overlay.mapStyle` may name a Mapbox style, a `tile://` URL or an OpenStreetMap URL | Mapbox light, which needs Superset's `MAPBOX_API_KEY`. `overlay.mapStyle` must be a Mapbox style |
+| How Superset draws a map | through the chart-data API, from the chart's settings | through its older `explore_json` path, from the chart's settings |
+| Settings → AI assistant | its own page frame, with a link back to Superset, light or dark as Superset is (Superset 6 has no server-drawn pages left to borrow) | inside Superset's server-drawn page |
+| Dark theme | the chat button, window and settings page follow it | Superset 5 has none |
+| Charts as Superset returns them | each setting's keys in alphabetical order; Lenspack compares settings by value, so this changes nothing | as saved |
+| ClickHouse | needs `clickhouse-connect` 0.13 or later. The plugin puts back the short suffix Superset 5 and 6.0 added to column names in ClickHouse queries (below) | `clickhouse-connect` 0.8 or later |
+| Filter bar | also keeps "chart customizations" and a timestamp switch beside the filters; Lenspack leaves both untouched | |
+
+Everything else Lenspack uses is the same on both: the chart-data requests and their post-processing steps,
+the chart settings for every chart type it writes, native filters, dashboard layouts, row-level security and
+dataset permissions, and the content security policy (the button's script carries the page's nonce, which
+Superset 6.1's stricter policy requires). Flask-AppBuilder's shared-filter fault (below) is still there in
+Superset 6.1, so the plugin keeps its fix.
+
+**ClickHouse column names on Superset 6.1.** Up to 6.0, Superset gave every column in a ClickHouse query a short
+suffix (`SUM(x) AS x_9dd4e4`) and renamed the results back. Superset 6.1 dropped the suffix
+([apache/superset#38280](https://github.com/apache/superset/pull/38280), in
+`superset/db_engine_specs/clickhouse.py`). ClickHouse lets one column of a query refer to another by its name, so
+a saved metric named like the column it adds up (`SUM(x)` saved as `x`) now hides that column: another metric in
+the same chart that uses `x`, such as `SUM(x) / COUNT(*)`, adds up the first metric instead, and ClickHouse
+refuses the query (error 184, an aggregate function inside another). The plugin puts the suffix back when
+Superset starts. Results keep their names, so charts and Lenspack see no change. With
+`LENSPACK_CLICKHOUSE_LABEL_SUFFIX=off`, Superset 6.1's own names stay; then rename such metrics (`x_total`, say) so
+that no metric is named like a column. One thing 6.1's change had made work goes back to how it was on 5.0: in
+Superset's own Explore, a heatmap with weeks or months on its axis fails on ClickHouse (Lenspack never writes one).
+
+What Superset 6 adds that the assistant could use next, and what each would take:
+[docs/superset-6.md](../../../docs/superset-6.md).
 
 ## Running it
 
@@ -103,7 +147,11 @@ One file, loaded by Superset's own config. It needs no fork, no custom image and
   to fetch the signing key and to make its own account (below);
 - `GET /api/v1/lenspack/access?user=&datasets=`, which this server calls with `hostPolicy: superset`: for one
   user, whether they may read each dataset and the row-level security clauses on it (below);
-- a fix for Flask-AppBuilder 4.x, whose list endpoints share filters between concurrent requests.
+- `GET /api/v1/lenspack/version`, Superset's version, which this server reads on start (admins and its own
+  account);
+- a fix for Flask-AppBuilder (4.x in Superset 5, 5.x in Superset 6.1), whose list endpoints share filters between
+  concurrent requests;
+- on Superset 6.1, the ClickHouse fix described under "Superset versions".
 
 To load it, put the file on Superset's Python path (for example, mounted into `/app/pythonpath/`) and import
 it at the end of `superset_config.py`:
@@ -122,6 +170,7 @@ On the Helm chart, a `configOverrides` entry holding that line does the same. Th
 | `LENSPACK_INTERNAL_URL` | `http://lenspack:8795` | where Superset's server reaches this one |
 | `LENSPACK_SERVICE_USER` | `lenspack` | this server's Superset account (`superset.username` here) |
 | `LENSPACK_TEMPLATES` | none | a folder whose `tail_js_custom_extra.html` or `lenspack/settings.html` replaces the built-in one |
+| `LENSPACK_CLICKHOUSE_LABEL_SUFFIX` | `on` | `off` keeps Superset 6.1's own ClickHouse column names (see "Superset versions") |
 
 On this server, set `publicPath: /lenspack` (or `LENSPACK_PUBLIC_PATH=/lenspack`) so its pages and scripts
 use the path Superset forwards. A chat turn holds one of Superset's gunicorn threads while it streams (30 to 60 s),
@@ -202,8 +251,8 @@ The roles in the header also become the user's roles in Lenspack's policy, besid
 A Superset role literally named `admin` grants nothing here; Lenspack's admin comes from the signed admin flag.
 What a Superset dashboard shows natively is unchanged: Superset applies its own security there.
 
-The plugin's tests run in Superset's image:
-[`plugin/test_lenspack_superset.py`](plugin/test_lenspack_superset.py) says how.
+The plugin's tests run in Superset's image, once for each supported version:
+[`plugin/test_lenspack_superset.py`](plugin/test_lenspack_superset.py) has the command for each.
 
 Inside Superset the chat opens as a floating window or as a side panel; the gear chooses. The window opens at
 the top right, below Superset's menu bar, with room under it: drag it by its header, and resize it with the

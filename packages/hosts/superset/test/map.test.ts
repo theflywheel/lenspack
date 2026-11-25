@@ -65,9 +65,33 @@ describe("maps in Superset", () => {
       expect(chartToWidget({ slice_name: w.title, viz_type: spec.viz_type, params: spec.params, datasource_id: spec.datasetId }, pack, binding).widget).toEqual(w);
       const { lenspack: _l, ...plain } = spec.params as Record<string, unknown>;
       expect(chartToWidget({ slice_name: w.title, viz_type: spec.viz_type, params: plain, datasource_id: spec.datasetId }, pack, binding).widget).toEqual(w);
-      // Superset reads a deck.gl chart from its form data alone.
-      expect(queryContextOf(spec)).toBeNull();
+      // Superset 6 draws the map from the query saved beside it (Superset 5 reads it for reports and the API).
+      const q = (queryContextOf(spec) as { queries: Record<string, unknown>[] }).queries[0]!;
+      expect(q.filters).toEqual(expect.arrayContaining([{ col: "longitude", op: "IS NOT NULL" }, { col: "latitude", op: "IS NOT NULL" }]));
+      expect(q.row_limit).toBe(w.query.limit);
     });
+
+  it("saves the query Superset 6.1's own scatter map sends, so the chart-data API and reports draw the same points", () => {
+    // As Superset 6.1's frontend sent it for a scatter map coloured by region, labelled by district, sized by count.
+    const sent = {
+      filters: [{ col: "longitude", op: "IS NOT NULL", val: null }, { col: "latitude", op: "IS NOT NULL", val: null }],
+      columns: ["longitude", "latitude", "band", "site"],
+      metrics: ["sites"],
+      orderby: [["sites", false]],
+      row_limit: 500,
+      is_timeseries: false,
+    };
+    const spec = widgetToChart({ ...cases[0], query: { kind: "points", entity: "site", color: "band", label: "site", size: "sites", limit: 500 } } as never, pack, binding)!;
+    const ctx = queryContextOf(spec) as { datasource: unknown; queries: Record<string, any>[]; form_data: Record<string, unknown> };
+    const q = ctx.queries[0]!;
+    expect(ctx.datasource).toEqual({ id: 9, type: "table" });
+    expect(ctx.form_data.viz_type).toBe("deck_scatter");
+    expect({ columns: q.columns, metrics: q.metrics, orderby: q.orderby, row_limit: q.row_limit, is_timeseries: q.is_timeseries }).toEqual({ columns: sent.columns, metrics: sent.metrics, orderby: sent.orderby, row_limit: sent.row_limit, is_timeseries: false });
+    expect(q.filters.map((f: { col: string; op: string }) => `${f.col} ${f.op}`)).toEqual(sent.filters.map((f) => `${f.col} ${f.op}`));
+    // Without a size: no metric, no order, the source's rows as they come.
+    const plain = (queryContextOf(widgetToChart(cases[2] as never, pack, binding)!) as { queries: Record<string, unknown>[] }).queries[0]!;
+    expect({ columns: plain.columns, metrics: plain.metrics, orderby: plain.orderby }).toEqual({ columns: ["longitude", "latitude"], metrics: [], orderby: [] });
+  });
 
   it("colours by a column and sizes by a saved metric (Superset then groups per point)", () => {
     const [byBand, bySize] = cases.map((w) => widgetToChart(w as never, pack, binding)!.params as Record<string, unknown>);

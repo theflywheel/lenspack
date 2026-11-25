@@ -72,7 +72,7 @@ describe("fetching datasets from a busy Superset", () => {
     expect((await fetchDatasets(doubled, [12], fast))[0]!.columns).toHaveLength(4);
   });
 
-  it("retries a name lookup answered with another dataset (Superset 5 list filters race between threads)", async () => {
+  it("retries a name lookup answered with another dataset (Superset 5 and 6.1 list filters race between threads)", async () => {
     const swapped = flaky({ list: () => ({ result: [{ id: 13, table_name: "team_stock", schema: "analytics" }] }) }, 2);
     const got = await fetchDatasets(swapped, ["analytics.child_visits", "analytics.team_stock"], fast);
     expect(got.map((d) => d.table_name)).toEqual(["child_visits", "team_stock"]);

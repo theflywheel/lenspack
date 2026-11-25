@@ -38,8 +38,8 @@ export async function serviceAccount(o: BootstrapOptions): Promise<ServiceAccoun
     const saved = JSON.parse(readFileSync(path, "utf8")) as { username: string; password: string };
     if (saved.username === o.username) {
       try {
-        // Signs in and makes one token-authenticated call (Superset 5's /api/v1/me/ reads only the session
-        // cookie, so it answers 401 to a token whatever the password).
+        // Signs in and makes one token-authenticated call that every version answers (Superset 5's /api/v1/me/
+        // reads only the session cookie, so it answers 401 to a token whatever the password; 6.1's takes a token).
         await make({ url: o.url, username: saved.username, password: saved.password }).get("/api/v1/security/csrf_token/");
         return { ...saved, source: "state" };
       } catch (e) {
