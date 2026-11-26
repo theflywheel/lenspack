@@ -395,7 +395,7 @@ export function accessSuite(version: string) {
         try {
           const c = await catalogue("lp_outage");
           expect(c.catalogue.measures).toEqual([]);
-          expect(c.accessNotice).toMatch(/could not check your Superset access/);
+          expect(c.accessNotice).toMatch(/Superset access could not be checked/);
           const d = (await s.lp_outage.lp("GET", `api/${PACK}/${A}/data`)).json;
           expect([d.visits_by_region.rows, d.stock_by_region.rows]).toEqual([[], []]);
           const r = await chat("lp_outage", A, "query", BREAKDOWN("visit_total"));

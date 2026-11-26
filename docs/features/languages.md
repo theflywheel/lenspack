@@ -58,6 +58,6 @@ Saved answers are kept per language: a question asked in French is not answered 
 
 ---
 
-**Next:** [Choose a host](../hosts/README.md).
+**Next:** [Naming the assistant](naming.md).
 
 **Related:** [Voice](voice.md) · [Answering questions](answering.md)

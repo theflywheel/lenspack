@@ -57,7 +57,7 @@ export function savedChunks(s: Served): UIMessageChunk[] {
 }
 
 /** Builds the turn a saved answer is refreshed in, as the person it was made for: their access, nothing wider. */
-export function prewarmTurns(o: { hosts: Host[]; providers: Provider[]; router?: string; rules?: () => unknown; sinks: UsageSink[] }): TurnFor {
+export function prewarmTurns(o: { hosts: Host[]; providers: Provider[]; router?: string; rules?: () => unknown; promptVersion?: () => string; sinks: UsageSink[] }): TurnFor {
   return async (e: Entry) => {
     const h = o.hosts.find((x) => x.name === e.pack);
     // An entry kept before access was recorded is not refreshed: its scope is not known well enough to run as it.
@@ -81,7 +81,7 @@ export function prewarmTurns(o: { hosts: Host[]; providers: Provider[]; router?:
         firstTurn: true,
         picked: e.replyLang === "auto" ? undefined : e.replyLang,
         rules: o.rules?.(),
-        promptVersion: String(PROMPT_VERSION),
+        promptVersion: o.promptVersion?.() ?? String(PROMPT_VERSION),
         readOnly: "a scheduled refresh does not change boards",
         builder,
         small: smallModel(o.providers, { router: o.router, builder, meter }),

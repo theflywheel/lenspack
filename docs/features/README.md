@@ -39,6 +39,7 @@ the [changelog](../../CHANGELOG.md). Features still in review get their pages wh
 |---|---|---|
 | [Voice](voice.md) | A mic in the chat, with transcription checked before it is sent. | Superset |
 | [Languages](languages.md) | English, French, Hindi and Portuguese for the panel; replies in any language. | Superset (panel); all (replies) |
+| [Naming the assistant](naming.md) | Call it by your deployment's own name, with its own button label, in each language. | Superset, standalone |
 
 ## Turning features off
 

@@ -34,8 +34,9 @@ carry keys and per-deployment prices; the config file describes data. See [Chat 
 
 It depends on the kind of setting.
 
-**Settings an admin can change while it runs** (feature switches, telemetry, kept recordings, voice and language,
-saved answers, the queue, and in Superset the personal-dashboard limits and the edit scope). The order is, lowest first:
+**Settings an admin can change while it runs** (feature switches, telemetry, kept recordings, voice and language, saved
+answers, the queue, the assistant's name, and in Superset the personal-dashboard limits and the edit scope). The order
+is, lowest first:
 
 1. the built-in default;
 2. the config file;

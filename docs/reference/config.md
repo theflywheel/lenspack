@@ -29,6 +29,7 @@ The standalone server's config. The blocks, in brief:
 | `explain` | `false`, or `{ sql: false }` | [How this was worked out](../features/explain.md#the-switches) |
 | `proposals` | the folder for each pack's `<name>.proposals.json` (default: the config's folder) | [Write a pack](../extending/write-a-pack.md#7-give-it-to-a-model) |
 | `features` | starting values for switches | [Feature switches](../operating/switches.md) |
+| `brand` | the assistant's name and button label: `{ name, buttonLabel, i18n, icon, poweredBy }` | [Naming the assistant](../features/naming.md) |
 | `telemetry` | usage records: `{ dir, retentionDays, groups, items }` (`questionText` is the older name of `items.question-text`) | [Telemetry](../features/telemetry.md) |
 | `context` | what a board, a dataset or `role:<name>` belongs to (campaign, campaign type, country), for telemetry | [Telemetry](../features/telemetry.md#tagging-records-with-your-own-context) |
 
@@ -191,6 +192,24 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `proposals` | string |  |  |
 | `state` | string |  |  |
 | `features` | map of boolean |  |  |
+| `brand` | object |  |  |
+| `brand.name` | string |  |  |
+| `brand.buttonLabel` | string |  |  |
+| `brand.i18n` | object |  |  |
+| `brand.i18n.en` | object |  |  |
+| `brand.i18n.en.name` | string |  |  |
+| `brand.i18n.en.buttonLabel` | string |  |  |
+| `brand.i18n.fr` | object |  |  |
+| `brand.i18n.fr.name` | string |  |  |
+| `brand.i18n.fr.buttonLabel` | string |  |  |
+| `brand.i18n.hi` | object |  |  |
+| `brand.i18n.hi.name` | string |  |  |
+| `brand.i18n.hi.buttonLabel` | string |  |  |
+| `brand.i18n.pt` | object |  |  |
+| `brand.i18n.pt.name` | string |  |  |
+| `brand.i18n.pt.buttonLabel` | string |  |  |
+| `brand.icon` | string |  |  |
+| `brand.poweredBy` | boolean |  |  |
 
 <!-- /keys:lenspack.yaml -->
 
@@ -221,7 +240,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `speech` | `model: mistralai/voxtral-mini-transcribe-3-0`, `maxSeconds: 60`, `holdMs: 2000` | voice: `{ model, baseUrl, maxSeconds, holdMs }`. See [Voice](../features/voice.md) |
 | `language` | `default: auto`, `titles: board`, `board: en` | see [Languages](../features/languages.md) |
 | `telemetry`, `context` | | as in `lenspack.yaml`; the telemetry sits in the state directory. See [Telemetry](../features/telemetry.md) |
-| `features`, `cache`, `queue`, `explain` | | as in `lenspack.yaml` |
+| `features`, `cache`, `queue`, `explain`, `brand` | | as in `lenspack.yaml`. For `brand`, see [Naming the assistant](../features/naming.md) |
 
 ## Environment variables
 
@@ -257,6 +276,7 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) | over the file; an admin's setting wins over it |
 | `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) | over the file's older `questionText`; an admin's setting wins over it |
 | `LENSPACK_SPEECH_KEEP_AUDIO`, `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE` | both | keeping recordings of spoken questions: whether (off by default), for how long (30 days), how much (1000 MB), and the notice shown | over the file; an admin's setting wins over it |
+| `LENSPACK_BRAND_NAME`, `LENSPACK_BRAND_BUTTON`, `LENSPACK_BRAND_ICON`, `LENSPACK_BRAND_POWERED_BY` | both | the assistant's name, button label, icon and "Powered by" line. See [Naming the assistant](../features/naming.md) | over the file; an admin's setting wins over it |
 | `LENSPACK_MCP_TOKEN` | mcp | the bearer token for `lenspack-mcp --http` | fallback (after `--token`) |
 | `LENSPACK_DATA_DIR` | the demo | where `pnpm demo` looks for `<name>.duckdb` | only source |
 
@@ -268,6 +288,9 @@ Read by the Superset plugin, in Superset's environment:
 | `LENSPACK_SERVICE_USER` | `lenspack` | Lenspack's Superset account |
 | `LENSPACK_TEMPLATES` | | a folder of replacement templates |
 | `LENSPACK_CLICKHOUSE_LABEL_SUFFIX` | `on` | `off` keeps Superset 6.1's own ClickHouse column names |
+
+`LENSPACK_BRAND_NAME` set in `superset_config.py` (a Superset setting, not an environment variable) renames the
+settings page's menu entry and heading; see [Naming the assistant](../features/naming.md#superset).
 
 ---
 

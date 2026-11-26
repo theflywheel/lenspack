@@ -50,6 +50,9 @@ server and per person, stops the chat before it spends past the cap. See [Costs]
 **Usage telemetry.** One record per chat turn, a thumbs up or down on answers, and a switch for each
 item recorded. See [Usage telemetry](../features/telemetry.md).
 
+**Your name on it.** Call the assistant something else and label its button your way, in each language. See
+[Naming the assistant](../features/naming.md).
+
 ## For developers
 
 **One pack, many databases.** Postgres, ClickHouse, DuckDB, SQLite, MySQL and MariaDB through read-only drivers,

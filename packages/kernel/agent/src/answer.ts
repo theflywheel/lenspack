@@ -144,6 +144,8 @@ export type AnswerContext = AnswerView & {
   pack: Pack;
   /** The source's kind, for per-dialect definitions. */
   dialect?: string;
+  /** The assistant's name in the card's words (the deployment's brand): "Lenspack" by default. */
+  assistant?: string;
 };
 
 /** One data call, explained. */
@@ -164,9 +166,9 @@ export function answerCall(e: DataCall, o: AnswerContext): AnswerCall {
   const computed = measured(query) && !!query.compute;
   const statements = e.sources.slice(0, ANSWER_LIMITS.statements).map(statementOf);
   const after = computed
-    ? "The steps that start with “Then” ran in Lenspack, on the numbers the statement returned, not in the database."
+    ? `The steps that start with “Then” ran in ${o.assistant ?? "Lenspack"}, on the numbers the statement returned, not in the database.`
     : e.sources.length > 1
-      ? "Lenspack put these statements' answers together into the rows below."
+      ? `${o.assistant ?? "Lenspack"} put these statements' answers together into the rows below.`
       : undefined;
   return {
     tool: "query",

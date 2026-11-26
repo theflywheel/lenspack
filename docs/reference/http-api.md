@@ -151,7 +151,7 @@ The panel's own data, on both hosts:
 | `<prefix>/admin/api/packs`, `…/overview` | the packs, and the Overview board |
 | `<prefix>/admin/api/definitions`, `…/questions`, `…/proposals` | definitions, open questions and the model's pack proposals. See [Definitions and open questions](../concepts/definitions.md) |
 | `<prefix>/admin/api/runs`, `…/review` | the daily review's runs and settings. See [Review](../features/open-questions.md#the-daily-review) |
-| `<prefix>/admin/api/settings` | the switches and the review settings; `POST …/settings/features` changes switches. See [Feature switches](../operating/switches.md) |
+| `<prefix>/admin/api/settings` | the switches, the review settings and the assistant's name; `POST …/settings/features` changes switches and `POST …/settings/brand` the name. See [Feature switches](../operating/switches.md) and [Naming the assistant](../features/naming.md) |
 | `<prefix>/admin/api/usage` | the usage board's data |
 
 The Superset host's settings, beside the panel:
@@ -161,6 +161,8 @@ The Superset host's settings, beside the panel:
 | `GET /_superset/info` | what the chat panel needs to know: speech, languages, switches (any signed-in person) |
 | `GET /_superset/settings` | every setting, for admins |
 | `PUT /_superset/settings/features`, `…/cache`, `…/queue`, `…/speech`, `…/language` | changes those settings. See [Feature switches](../operating/switches.md) |
+| `PUT /_superset/settings/brand` | the assistant's name, button label, per-language words, icon and "Powered by" line; `null` hands a field back. See [Naming the assistant](../features/naming.md) |
+| `PUT /_superset/settings/personal`, `…/edit-scope` | personal-dashboard limits and where the chat may edit. See [Personal dashboards](../features/personal-dashboards.md#routes) |
 | `GET /_superset/settings/speech/models` | the transcription models on offer |
 | `GET /_superset/turns`, `GET /_superset/audit` | recent turns and the audit log |
 

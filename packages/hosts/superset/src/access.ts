@@ -197,7 +197,7 @@ export async function stockAccess(client: SupersetClient, datasets: number[], ro
 /** What a refusal tells a user about data or a dashboard their Superset access keeps from them. */
 export const SUPERSET_HIDDEN_REASON = "your Superset access doesn't include it. A Superset admin can give you access.";
 /** What it tells them while Superset can't be asked: nothing is shown until it can. */
-export const SUPERSET_UNREACHABLE_REASON = "Lenspack could not check your Superset access just now, so nothing is shown. Try again in a minute.";
+export const SUPERSET_UNREACHABLE_REASON = "Your Superset access could not be checked just now, so nothing is shown. Try again in a minute.";
 
 /** The dashboards one user may open, of these ids, as Superset decides (the plugin's endpoint); none when it can't be asked. */
 export async function viewableDashboards(client: SupersetClient, user: string, ids: number[]): Promise<Set<number>> {

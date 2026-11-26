@@ -108,6 +108,7 @@ How the code is laid out and how a request moves through it.
 - [Usage telemetry](features/telemetry.md)
 - [Voice](features/voice.md)
 - [Languages](features/languages.md)
+- [Naming the assistant](features/naming.md)
 
 ### 5. Hosts
 

@@ -10,6 +10,7 @@ import { buildBoard, seedBoards } from "./app";
 import { type AuditEvent, auditFileSince, fileAudit, rotatingAudit } from "./audit";
 import { authFrom, effectiveAuth, principalOf } from "./auth";
 import { adminSettings } from "./admin";
+import { brandSettings } from "./brand";
 import { cacheRoutes } from "./reuse";
 import { fileTelemetry, staticItems } from "./telemetry";
 import { explainFrom, openConfig, readConfig, resolveSecrets } from "./config";
@@ -66,7 +67,9 @@ async function main() {
       const audit = auditFile ? fileAudit(auditFile) : monthly?.audit;
       const auditLog = audit ? { audit } : null;
       const events: ((from: Date) => AuditEvent[]) | undefined = auditFile ? auditFileSince(auditFile) : monthly ? (from) => monthly.since(from) : undefined;
-      const admin = stateDir ? adminSettings(stateDir, { features: config.features as never, cache: cacheConfig as never, queue: config.queue }) : null;
+      const admin = stateDir ? adminSettings(stateDir, { features: config.features as never, cache: cacheConfig as never, queue: config.queue, brand: config.brand }) : null;
+      // What the assistant is called: with state, the admin panel may change it; without, the config and LENSPACK_BRAND_* alone.
+      const brand = admin ? admin.brand : brandSettings({ config: config.brand, settings: null });
       const log = (m: string) => console.error(`lenspack: ${m}`);
       const review = admin && stateDir ? admin.review({ stateDir, hosts, events, audit, prefix: "/_lenspack", adminName: "admin", title: config.ui && typeof config.ui === "object" ? config.ui.title : undefined, log }) : null;
       // With state, saved answers follow the panel's switch and settings; without, the config's settings alone.
@@ -86,7 +89,7 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, reuse, queue: gate, explain: () => explainFrom(config.explain), ...(telemetry ? { telemetry } : {}), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
+        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, reuse, queue: gate, explain: () => explainFrom(config.explain), brand: brand.get, ...(telemetry ? { telemetry } : {}), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
         log,
         routes: (rt) => {
           if (!review && !cachePage) return () => {};

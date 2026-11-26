@@ -11,6 +11,9 @@ brought it.
 
 ### 26 November 2026
 
+- **Name the assistant.** A deployment can call the assistant by its own name and give its button its own label, in
+  each language, from the config, the environment or the admin panel. See
+  [Naming the assistant](docs/features/naming.md). ([#91](https://github.com/theflywheel/lenspack/pull/91))
 - **Personal dashboards and saved layouts in Superset.** Someone who can only view a dashboard can make their own
   copy and change it through the chat, or save a layout by name and apply it later. `editScope: own` limits chat
   edits to people's own dashboards. See [Personal dashboards](docs/features/personal-dashboards.md).

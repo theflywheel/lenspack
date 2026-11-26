@@ -33,11 +33,12 @@
 
   // The overlay's own words, in the chat's language: the same rule as chat.js (a pick in the chat's
   // menu, unless Superset's language changed since; else Superset's language; else the deployment's).
+  // {name} is the assistant's name and "ask" the button's label, from the deployment's brand (/_superset/info).
   var STRINGS = {
-    en: { ask: "Ask Lenspack", settings: "Chat settings", openAs: "Open as", float: "Floating window", dock: "Side panel", resize: "Drag to resize", reconnecting: "Reconnecting…", restarting: "Lenspack is restarting, reconnecting…" },
-    fr: { ask: "Demander à Lenspack", settings: "Réglages du chat", openAs: "Ouvrir en", float: "Fenêtre flottante", dock: "Panneau latéral", resize: "Faire glisser pour redimensionner", reconnecting: "Reconnexion…", restarting: "Lenspack redémarre, reconnexion…" },
-    pt: { ask: "Perguntar ao Lenspack", settings: "Opções do chat", openAs: "Abrir como", float: "Janela flutuante", dock: "Painel lateral", resize: "Arraste para redimensionar", reconnecting: "Reconexão…", restarting: "Lenspack em reinício, reconexão em curso…" },
-    hi: { ask: "Lenspack से पूछें", settings: "चैट सेटिंग्स", openAs: "ऐसे खोलें", float: "तैरती विंडो", dock: "साइड पैनल", resize: "आकार बदलने के लिए खींचें", reconnecting: "फिर से जुड़ रहे हैं…", restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…" },
+    en: { ask: "Ask {name}", settings: "Chat settings", openAs: "Open as", float: "Floating window", dock: "Side panel", resize: "Drag to resize", reconnecting: "Reconnecting…", restarting: "{name} is restarting, reconnecting…" },
+    fr: { ask: "Demander à {name}", settings: "Réglages du chat", openAs: "Ouvrir en", float: "Fenêtre flottante", dock: "Panneau latéral", resize: "Faire glisser pour redimensionner", reconnecting: "Reconnexion…", restarting: "{name} redémarre, reconnexion…" },
+    pt: { ask: "Perguntar ao {name}", settings: "Opções do chat", openAs: "Abrir como", float: "Janela flutuante", dock: "Painel lateral", resize: "Arraste para redimensionar", reconnecting: "Reconexão…", restarting: "{name} em reinício, reconexão em curso…" },
+    hi: { ask: "{name} से पूछें", settings: "चैट सेटिंग्स", openAs: "ऐसे खोलें", float: "तैरती विंडो", dock: "साइड पैनल", resize: "आकार बदलने के लिए खींचें", reconnecting: "फिर से जुड़ रहे हैं…", restarting: "{name} फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…" },
   };
   var adminLang = "auto";
   function pageLocale() {
@@ -59,7 +60,12 @@
     else l = adminLang;
     return STRINGS[l] ? l : STRINGS[page] ? page : "en";
   }
-  function t(k) { return (STRINGS[uiLang()] || STRINGS.en)[k] || STRINGS.en[k]; }
+  var brand = {};
+  function own() { return (brand.i18n && (brand.i18n[uiLang()] || brand.i18n.en)) || {}; }
+  function t(k) {
+    if (k === "ask" && own().buttonLabel) return own().buttonLabel;
+    return ((STRINGS[uiLang()] || STRINGS.en)[k] || STRINGS.en[k]).replace(/\{name\}/g, function () { return own().name || "Lenspack"; });
+  }
 
   var css = document.createElement("style");
   css.textContent =
@@ -67,6 +73,7 @@
     ".lpo-btn:hover{background:#156d84}" +
     ".lpo-btn.lpo-wait,.lpo-btn.lpo-wait:hover{background:#98a2b3;cursor:progress;box-shadow:0 4px 14px rgba(16,24,40,.14)}" +
     ".lpo-btn b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:rgba(255,255,255,.2);font-size:12px}" +
+    ".lpo-btn b img{width:100%;height:100%;object-fit:contain;border-radius:inherit;display:block}" +
     ".lpo-panel{position:fixed;z-index:1002;background:#fff;display:none;box-sizing:border-box}" +
     ".lpo-panel.lpo-dock{top:0;right:0;bottom:0;width:var(--lpo-dw," + WIDTH + "px);max-width:100vw;box-shadow:-8px 0 24px rgba(16,24,40,.14);border-left:1px solid #e4e7ec}" +
     ".lpo-panel.lpo-float{right:20px;top:" + TOP + "px;width:420px;height:min(600px,calc(100vh - " + (TOP + 160) + "px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);border:1px solid #e4e7ec;border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(16,24,40,.28)}" +
@@ -391,6 +398,14 @@
   // Every translated word: text for menu entries, a tooltip and label for buttons.
   function relabel() {
     btn.lastChild.textContent = down ? t("reconnecting") : t("ask");
+    // The deployment's icon (an image's address, never markup), else the name's letter ("L" until the brand is heard).
+    var shown = btn.firstChild.querySelector("img");
+    if (brand.icon && (!shown || shown.getAttribute("src") !== brand.icon)) {
+      var img = document.createElement("img");
+      img.alt = "";
+      img.src = brand.icon;
+      btn.firstChild.replaceChildren(img);
+    } else if (!brand.icon) btn.firstChild.textContent = own().mark || (own().name ? "?" : "L");
     btn.title = down ? t("restarting") : "";
     panel.querySelectorAll(".lpo-t").forEach(function (n) {
       var words = t(n.dataset.t);
@@ -501,7 +516,7 @@
         mounted = current.board;
         menu = null;
         chat = window.LenspackChat.mount(panel, {
-          api: origin, pack: current.pack, board: current.board, title: current.title, examples: current.examples,
+          api: origin, pack: current.pack, board: current.board, title: current.title, examples: current.examples, brand: brand,
           onClose: close,
           onChanged: refreshInPlace,
           tabs: openTabs,
@@ -552,6 +567,7 @@
       if (seen !== key) return;
       if (b.error) { if (down) setDown(false); btn.style.display = "none"; return; }
       features = info.features || {};
+      brand = info.brand || {};
       if (features.overlay === false) { if (down) setDown(false); return hideAll(); }
       var again = !!current && current.board === b.board;
       current = { key: key, board: b.board, title: b.title, pack: info.pack, examples: info.examplesByLang || info.examples };
