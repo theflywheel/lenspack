@@ -101,6 +101,42 @@
 [data-lp-theme=dark] .lpc-menu{box-shadow:0 8px 24px rgba(0,0,0,.5)}
 `;
 
+  // "How this was worked out" under an answer (docs/explain.md): its own styles and words, so the
+  // rest of the panel's are left as they are.
+  const EXPLAIN_CSS = `
+.lpc-ex{align-self:stretch;min-width:0;max-width:100%;margin:-4px 0 0;font-size:12.5px}
+.lpc-ex-btn{display:inline-flex;align-items:center;gap:5px;border:0;background:none;color:var(--lpc-acc);font:inherit;font-weight:600;cursor:pointer;padding:2px 4px;border-radius:5px}
+.lpc-ex-btn:hover,.lpc-ex-btn:focus-visible{background:var(--lpc-acc-soft);outline:none}
+.lpc-ex-btn::before{content:"";width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .12s}
+.lpc-ex-btn[aria-expanded=true]::before{transform:rotate(90deg)}
+.lpc-ex-body{margin-top:4px;border:1px solid var(--lpc-line);border-radius:8px;background:var(--lpc-bg);padding:8px 10px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.lpc-ex-call{display:flex;flex-direction:column;gap:6px;min-width:0}
+.lpc-ex-call+.lpc-ex-call{border-top:1px solid var(--lpc-line);padding-top:10px}
+.lpc-ex-desc{margin:0;line-height:1.5;color:var(--lpc-fg)}
+.lpc-ex-n{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--lpc-soft);color:var(--lpc-mute);font-size:11px;font-weight:600;margin-right:6px;vertical-align:1px}
+.lpc-ex-tag{margin:0;font-size:11.5px;color:var(--lpc-mute)}
+.lpc-ex-sql{border:1px solid var(--lpc-line);border-radius:6px;overflow:hidden;min-width:0}
+.lpc-ex-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 4px 3px 8px;background:var(--lpc-soft);font-size:11.5px;color:var(--lpc-mute)}
+.lpc-ex-copy{border:1px solid var(--lpc-line);background:var(--lpc-bg);color:var(--lpc-fg);border-radius:5px;font:inherit;font-size:11.5px;padding:1px 8px;cursor:pointer}
+.lpc-ex-copy:hover,.lpc-ex-copy:focus-visible{border-color:var(--lpc-acc);outline:none}
+.lpc-ex pre{margin:0;padding:8px;max-height:240px;overflow:auto;white-space:pre;font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--lpc-fg);background:var(--lpc-bg);tab-size:2}
+.lpc-ex-params{margin:0;padding:4px 8px 6px;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--lpc-mute);overflow-x:auto;white-space:nowrap}
+.lpc-ex-tw{overflow-x:auto;max-width:100%;border:1px solid var(--lpc-line);border-radius:6px}
+.lpc-ex table{border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;width:max-content;min-width:100%}
+.lpc-ex th,.lpc-ex td{padding:3px 8px;border-bottom:1px solid var(--lpc-line);text-align:left;white-space:nowrap}
+.lpc-ex th{font-weight:600;color:var(--lpc-mute);font-size:11.5px;background:var(--lpc-soft)}
+.lpc-ex tr:last-child td{border-bottom:0}
+.lpc-ex .lpc-num{text-align:right}
+.lpc-ex caption{caption-side:bottom;text-align:left;padding:3px 8px;font-size:11.5px;color:var(--lpc-mute)}
+[data-lp-theme=dark] .lpc-ex-btn{color:#3fb1cc}
+`;
+  const EXPLAIN_STRINGS = {
+    en: { toggle: "How this was worked out", sql: "SQL that ran", request: "Request that ran", copy: "Copy", copied: "Copied", values: "Values", rows: "Showing {0} of {1} rows", allRows: "{0} rows", oneRow: "1 row", noRows: "No rows came back.", saved: "Saved answer, data as of {0}", cached: "Answered from the source's cache, data as of {0}", more: "{0} more data calls are not shown.", call: "Data call {0}", filters: "Dashboard filters when you asked", applied: "applied", notApplied: "not applied to these numbers" },
+    fr: { toggle: "Comment ce résultat a été obtenu", sql: "SQL exécuté", request: "Requête exécutée", copy: "Copier", copied: "Copié", values: "Valeurs", rows: "{0} lignes affichées sur {1}", allRows: "{0} lignes", oneRow: "1 ligne", noRows: "Aucune ligne renvoyée.", saved: "Réponse enregistrée, données au {0}", cached: "Réponse tirée du cache de la source, données au {0}", more: "{0} autres appels de données ne sont pas affichés.", call: "Appel de données {0}", filters: "Filtres du tableau de bord au moment de la question", applied: "appliqué", notApplied: "non appliqué à ces chiffres" },
+    hi: { toggle: "यह कैसे निकाला गया", sql: "चलाया गया SQL", request: "चलाया गया अनुरोध", copy: "कॉपी करें", copied: "कॉपी हो गया", values: "मान", rows: "{1} में से {0} पंक्तियाँ दिखाई गईं", allRows: "{0} पंक्तियाँ", oneRow: "1 पंक्ति", noRows: "कोई पंक्ति नहीं मिली।", saved: "सहेजा गया जवाब, डेटा {0} तक का", cached: "स्रोत के कैश से जवाब, डेटा {0} तक का", more: "{0} और डेटा कॉल नहीं दिखाए गए।", call: "डेटा कॉल {0}", filters: "पूछते समय डैशबोर्ड के फ़िल्टर", applied: "लागू", notApplied: "इन संख्याओं पर लागू नहीं" },
+    pt: { toggle: "Como este resultado foi obtido", sql: "SQL executado", request: "Pedido executado", copy: "Copiar", copied: "Copiado", values: "Valores", rows: "{0} de {1} linhas mostradas", allRows: "{0} linhas", oneRow: "1 linha", noRows: "Nenhuma linha devolvida.", saved: "Resposta gravada, dados de {0}", cached: "Resposta da cache da fonte, dados de {0}", more: "Mais {0} chamadas de dados não são mostradas.", call: "Chamada de dados {0}", filters: "Filtros do painel no momento da pergunta", applied: "aplicado", notApplied: "não aplicado a estes números" },
+  };
+
   // The panel's words, by language. "auto" shows the page's language (Superset's, else the
   // browser's) when it is one of these, else English. Tool names stay as the model's steps.
   const STRINGS = {
@@ -421,7 +457,7 @@
     if (!document.getElementById("lpc-css")) {
       const s = el("style");
       s.id = "lpc-css";
-      s.textContent = CSS;
+      s.textContent = CSS + EXPLAIN_CSS;
       document.head.appendChild(s);
     }
     const api = (opts.api || "").replace(/\/$/, "");
@@ -662,6 +698,147 @@
       d.append(sum, el("div", "", lines.join(" · ")));
       return d;
     }
+    // ---- How this was worked out (docs/explain.md): one expander under an answer, from the turn's
+    // data-answer-card part (the answer card). Kept in this tab beside the conversation (by message id), so it is there
+    // again after a reload, and never sent back to the server.
+    const exKey = `lenspack-explain:${opts.board}`;
+    const tx = (k, ...a) => fmt((EXPLAIN_STRINGS[uiLang()] || EXPLAIN_STRINGS.en)[k] ?? EXPLAIN_STRINGS.en[k], ...a);
+    let exSeq = 0;
+    function exStore(id, ex) {
+      let all = {};
+      try {
+        all = JSON.parse(sessionStorage.getItem(exKey) || "{}") || {};
+      } catch (e) {}
+      if (ex === undefined) return all[id];
+      all[id] = ex;
+      // Only answers still in the conversation are kept.
+      const ids = new Set(history.map((m) => m.id));
+      for (const k of Object.keys(all)) if (!ids.has(k)) delete all[k];
+      try {
+        sessionStorage.setItem(exKey, JSON.stringify(all));
+      } catch (e) {}
+    }
+    const exNumber = (v, format) => {
+      if (typeof v !== "number") return v === null || v === undefined ? "—" : String(v);
+      const loc = uiLang() === "auto" ? undefined : uiLang();
+      if (format === "percent") return `${(v * 100).toLocaleString(loc, { maximumFractionDigits: 1 })}%`;
+      return v.toLocaleString(loc, { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
+    };
+    function exCopy(btn, text) {
+      const done = () => {
+        btn.textContent = tx("copied");
+        setTimeout(() => (btn.textContent = tx("copy")), 1500);
+      };
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => {});
+      else {
+        const ta = el("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;opacity:0";
+        document.body.append(ta);
+        ta.select();
+        try {
+          document.execCommand("copy");
+          done();
+        } catch (e) {}
+        ta.remove();
+      }
+    }
+    function exStatement(s) {
+      const box = el("div", "lpc-ex-sql");
+      const bar = el("div", "lpc-ex-bar");
+      const copy = el("button", "lpc-ex-copy", tx("copy"));
+      copy.type = "button";
+      const params = s.params && s.params.length ? s.params : null;
+      const full = params ? `${s.text}\n-- ${tx("values")}: ${params.map((p, i) => `${i + 1} = ${p}`).join(", ")}` : s.text;
+      copy.onclick = () => exCopy(copy, full);
+      bar.append(el("span", "", s.language === "sql" ? tx("sql") : tx("request")), copy);
+      const pre = el("pre");
+      pre.tabIndex = 0;
+      pre.append(el("code", "", s.text));
+      box.append(bar, pre);
+      if (params) box.append(el("p", "lpc-ex-params", `${tx("values")}: ${params.map((p, i) => `${i + 1} = ${p}`).join(", ")}`));
+      if (s.note) box.append(el("p", "lpc-ex-params", s.note));
+      return box;
+    }
+    function exTable(c) {
+      if (!c.rows || !c.rows.length) return el("p", "lpc-ex-tag", tx("noRows"));
+      const wrap = el("div", "lpc-ex-tw");
+      wrap.tabIndex = 0;
+      const tbl = el("table");
+      const num = c.columns.map((_, k) => c.rows.every((r) => r[k] === null || typeof r[k] === "number"));
+      const head = el("tr");
+      c.columns.forEach((col, k) => head.append(el("th", num[k] ? "lpc-num" : "", col.label)));
+      const thead = el("thead");
+      thead.append(head);
+      const tbody = el("tbody");
+      for (const r of c.rows) {
+        const tr = el("tr");
+        c.columns.forEach((col, k) => tr.append(el("td", num[k] ? "lpc-num" : "", exNumber(r[k], col.format))));
+        tbody.append(tr);
+      }
+      tbl.append(el("caption", "", c.total > c.rows.length ? tx("rows", c.rows.length, c.total) : c.rows.length === 1 ? tx("oneRow") : tx("allRows", c.rows.length)), thead, tbody);
+      wrap.append(tbl);
+      return wrap;
+    }
+    const exWhen = (iso) => {
+      const d = new Date(iso);
+      return isNaN(d) ? String(iso) : d.toLocaleString(uiLang() === "auto" ? undefined : uiLang(), { dateStyle: "medium", timeStyle: "short" });
+    };
+    /** The expander for one answer: collapsed, one level, each data call in the order made. */
+    function explainNode(ex) {
+      const box = el("div", "lpc-ex");
+      const btn = el("button", "lpc-ex-btn", tx("toggle"));
+      btn.type = "button";
+      btn.setAttribute("aria-expanded", "false");
+      const body = el("div", "lpc-ex-body");
+      body.id = `lpc-ex-${opts.board}-${++exSeq}`;
+      body.hidden = true;
+      btn.setAttribute("aria-controls", body.id);
+      btn.onclick = () => {
+        const open = btn.getAttribute("aria-expanded") !== "true";
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+        body.hidden = !open;
+      };
+      if (ex.selections && ex.selections.length) {
+        const f = el("p", "lpc-ex-tag lpc-ex-filters", `${tx("filters")}: `);
+        f.append(document.createTextNode(ex.selections.map((x) => `${x.label} = ${x.value} (${x.applied ? tx("applied") : tx("notApplied")})`).join("; ")));
+        body.append(f);
+      }
+      (ex.calls || []).forEach((c, i) => {
+        const sec = el("section", "lpc-ex-call");
+        sec.setAttribute("aria-label", tx("call", i + 1));
+        const p = el("p", "lpc-ex-desc");
+        p.append(el("span", "lpc-ex-n", String(i + 1)), document.createTextNode(c.description || ""));
+        sec.append(p);
+        if (c.saved && c.saved.asOf) sec.append(el("p", "lpc-ex-tag", tx("saved", exWhen(c.saved.asOf))));
+        const cached = (c.statements || []).find((s) => s.cachedAt);
+        if (cached && !c.saved) sec.append(el("p", "lpc-ex-tag", tx("cached", exWhen(cached.cachedAt))));
+        for (const s of c.statements || []) sec.append(exStatement(s));
+        if (c.after) sec.append(el("p", "lpc-ex-tag", c.after));
+        sec.append(exTable(c));
+        body.append(sec);
+      });
+      if (ex.more) body.append(el("p", "lpc-ex-tag", tx("more", ex.more)));
+      box.append(btn, body);
+      return box;
+    }
+    /** The viewer's dashboard filters, from the host page (opts.selections: () => {field: value}), sent as turn context. */
+    function selectionsNow() {
+      try {
+        const picked = typeof opts.selections === "function" ? opts.selections() : null;
+        return picked && typeof picked === "object" && Object.keys(picked).length ? { selections: picked } : {};
+      } catch {
+        return {};
+      }
+    }
+    /** Shows an answer's explanation under it: the one just streamed (kept for reloads), or the one kept for it. */
+    function showExplain(id, ex) {
+      if (ex) exStore(id, ex);
+      const shown = ex || exStore(id);
+      if (!shown || feat.explain === false || !shown.calls || !shown.calls.length) return;
+      log.append(explainNode(shown));
+      scroll();
+    }
     // The suggested questions in the panel's language: `examples` is a list, or lists by language
     // ({en: [...], fr: [...]}), English standing in for a language the deployment didn't write.
     function examplesNow() {
@@ -687,6 +864,7 @@
     const replay = () => {
       for (const m of history) {
         bubble(m.role, m.parts.map((p) => p.text || "").join(""));
+        if (m.role === "assistant") showExplain(m.id);
         if (m.metadata && m.metadata.cost) log.append(costLine(m.metadata.cost));
       }
     };
@@ -780,7 +958,7 @@
       };
       try {
         const spoken = clips.slice();
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}) }) });
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}), ...selectionsNow() }) });
         if (!res.ok || !res.body) {
           let msg = `${res.status}`;
           try {
@@ -791,6 +969,7 @@
         // The stream ends with a finish event and [DONE]; a stream that stops short was cut (Lenspack restarted).
         let finished = false;
         let usage = null;
+        let explained = null;
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
@@ -869,6 +1048,9 @@
                 case "data-usage":
                   if (ev.data && ev.data.summary) usage = ev.data.summary;
                   break;
+                case "data-answer-card":
+                  explained = ev.data;
+                  break;
                 case "finish":
                   finished = true;
                   break;
@@ -883,6 +1065,7 @@
         // after it, fall back to its last narration so the turn is not empty.
         const reply = answer.trim() ? answer : segments[segments.length - 1] || "";
         history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }], ...(usage ? { metadata: { cost: usage } } : {}) });
+        if (explained) showExplain(history[history.length - 1].id, explained);
         // The clips were counted in this turn (the server claims each once).
         clips.splice(0, spoken.length);
         if (usage) {
