@@ -79,5 +79,8 @@ jobs:
           docker pull -q apache/superset:5.0.0 &
           docker pull -q postgres:16-alpine &
           wait
+      # One case opens the dashboard in a headless browser, to see what a person sees after a chat edit.
+      - name: Headless Chromium
+        run: pnpm exec playwright install --with-deps --only-shell chromium
       - name: Access suite (Superset 6.1 and 5.0)
         run: pnpm test:access

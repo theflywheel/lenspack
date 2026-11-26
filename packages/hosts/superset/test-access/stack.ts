@@ -119,10 +119,32 @@ export class Session {
     return this;
   }
 
+  /** The session's cookies, for a browser signed in as the same user (openPage). */
+  cookieList() {
+    const { hostname } = new URL(this.superset);
+    return [...this.cookies].map(([name, value]) => ({ name, value, domain: hostname, path: "/" }));
+  }
+
   /** A request to Lenspack through Superset's /lenspack route. */
   lp(method: string, path: string, body?: object) {
     return this.send(method, `/lenspack/${path.replace(/^\//, "")}`, body === undefined ? {} : { body });
   }
+}
+
+/**
+ * A headless browser signed in as the session's user, on a Superset page: the overlay and the chat run as they do for a
+ * person. Playwright's Chromium (`pnpm exec playwright install --only-shell chromium`), or the one LENSPACK_CHROMIUM
+ * names.
+ */
+export async function openPage(session: Session, path: string) {
+  const { chromium } = await import("playwright");
+  const executablePath = process.env.LENSPACK_CHROMIUM || undefined;
+  const browser = await chromium.launch(executablePath ? { executablePath } : {});
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await context.addCookies(session.cookieList());
+  const page = await context.newPage();
+  await page.goto(`${session.superset}${path}`);
+  return { page, close: () => browser.close() };
 }
 
 /** reuse: set when the reply came from a saved answer (which tier, and which saved entry). */

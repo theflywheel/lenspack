@@ -162,6 +162,8 @@
       denied: "Microphone access is blocked. Allow it for this site in the browser (the icon left of the address), then try again.", noMic: "No microphone was found.", sttFailed: "Transcription failed: {0}", sttOff: "Speech to text is not set up on this server.",
       cost: "≈ ${0}", costTitle: "Estimated cost of this answer, from list prices", costTokens: "{0}: {1} tokens in, {2} out", costSpeech: "includes speech to text, ${0}", costUnpriced: "some calls have no price and are not counted", sessionCost: "This session: ≈ ${0} for {1} answers (estimate from list prices)",
       restarting: "{name} is restarting, reconnecting…", lost: "The connection to {name} was lost before the answer finished (it may be restarting).", retry: "Retry",
+      checking: "The connection dropped. Checking whether your change was made…", recoveredChange: "Your change was made: {0}. The connection dropped before the reply finished.", recoveredAnswer: "The connection dropped before the reply finished; this is the answer it was sending.", changedMeanwhile: "The dashboard changed while the connection was down: {0}. The page now shows it. If that was not your change, ask again.",
+      removedW: "removed “{0}”", addedW: "added “{0}”", changedW: "changed “{0}”", otherW: "changed the dashboard",
       busyWait: "Busy, about {0} s (number {1} in line)…", waitEdit: "Waiting for another edit on this dashboard…", busyFull: "{name} is too busy right now. Try again in a minute, or pick a common question below: those are answered at once.",
       savedAnswer: "Saved answer, data as of {0}", savedEdit: "Saved change, made as before", savedTitle: "Answered from an earlier answer to the same question, with the numbers read again. No AI model was used.", askFresh: "Ask fresh", askFreshTitle: "Have the assistant work this out again from scratch",
     },
@@ -176,6 +178,8 @@
       denied: "L'accès au micro est bloqué. Autorisez-le pour ce site dans le navigateur (l'icône à gauche de l'adresse), puis réessayez.", noMic: "Aucun micro trouvé.", sttFailed: "La transcription a échoué : {0}", sttOff: "La reconnaissance vocale n'est pas configurée sur ce serveur.",
       cost: "≈ {0} $", costTitle: "Coût estimé de cette réponse, d'après les prix publics", costTokens: "{0} : {1} jetons en entrée, {2} en sortie", costSpeech: "dont reconnaissance vocale : {0} $", costUnpriced: "certains appels n'ont pas de prix et ne sont pas comptés", sessionCost: "Cette session : ≈ {0} $ pour {1} réponses (estimation d'après les prix publics)",
       restarting: "{name} redémarre, reconnexion…", lost: "La connexion à {name} a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
+      checking: "La connexion a été coupée. Vérification de votre modification…", recoveredChange: "Votre modification a été faite : {0}. La connexion a été coupée avant la fin de la réponse.", recoveredAnswer: "La connexion a été coupée avant la fin de la réponse ; voici la réponse qui était envoyée.", changedMeanwhile: "Le tableau de bord a changé pendant la coupure : {0}. La page l'affiche maintenant. Si ce n'était pas votre modification, redemandez.",
+      removedW: "« {0} » retiré", addedW: "« {0} » ajouté", changedW: "« {0} » modifié", otherW: "tableau de bord modifié",
       busyWait: "Occupé, environ {0} s (n° {1} dans la file)…", waitEdit: "En attente d'une autre modification de ce tableau de bord…", busyFull: "{name} est très sollicité en ce moment. Réessayez dans une minute, ou choisissez une question courante ci-dessous : elles ont une réponse immédiate.",
       savedAnswer: "Réponse enregistrée, données du {0}", savedEdit: "Modification enregistrée, refaite comme avant", savedTitle: "Réponse tirée d'une réponse précédente à la même question, avec les chiffres relus. Aucun modèle d'IA n'a été utilisé.", askFresh: "Redemander", askFreshTitle: "Faire refaire la réponse par l'assistant depuis le début",
     },
@@ -192,6 +196,8 @@
       savedAnswer: "सहेजा गया जवाब, डेटा {0} तक का", savedEdit: "सहेजा गया बदलाव, पहले की तरह किया गया", savedTitle: "यह जवाब इसी सवाल के पिछले जवाब से बना है, संख्याएँ फिर से पढ़ी गईं। किसी AI मॉडल का उपयोग नहीं हुआ।", askFresh: "नए सिरे से पूछें", askFreshTitle: "सहायक से जवाब शुरू से दोबारा बनवाएँ",
       cost: "≈ ${0}", costTitle: "इस जवाब की अनुमानित लागत, सूची कीमतों के आधार पर", costTokens: "{0}: {1} टोकन इनपुट, {2} आउटपुट", costSpeech: "इसमें स्पीच-टू-टेक्स्ट ${0} शामिल है", costUnpriced: "कुछ कॉल की कीमत नहीं है, वे गिनी नहीं गईं", sessionCost: "इस सत्र में: ≈ ${0}, {1} जवाब (सूची कीमतों से अनुमान)",
       restarting: "{name} फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले {name} से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
+      checking: "कनेक्शन टूट गया। देख रहे हैं कि आपका बदलाव हुआ या नहीं…", recoveredChange: "आपका बदलाव हो गया: {0}। जवाब पूरा होने से पहले कनेक्शन टूट गया।", recoveredAnswer: "जवाब पूरा होने से पहले कनेक्शन टूट गया; यह वही जवाब है जो भेजा जा रहा था।", changedMeanwhile: "कनेक्शन टूटे रहने के दौरान डैशबोर्ड बदला: {0}। पेज अब यही दिखा रहा है। अगर यह आपका बदलाव नहीं था, तो फिर से पूछें।",
+      removedW: "“{0}” हटाया", addedW: "“{0}” जोड़ा", changedW: "“{0}” बदला", otherW: "डैशबोर्ड बदला",
     },
     // Neutral Portuguese, read in Mozambique, Angola and Portugal as well as Brazil: noun forms where the
     // two split (Em escuta, not Ouvindo / A ouvir), words both use (gravado, conexão, padrão), formal imperatives.
@@ -205,6 +211,8 @@
       listening: "Em escuta… {0}", transcribing: "Transcrição em curso…", tooShort: "Nada foi gravado. Mantenha pressionado ou clique no microfone, fale e depois pare.", heard: "Verifique o texto e depois envie.", nothingHeard: "Nenhuma fala reconhecida. Tente de novo um pouco mais perto do microfone.",
       denied: "O acesso ao microfone está bloqueado. Permita-o para este site no navegador (o ícone à esquerda do endereço) e tente de novo.", noMic: "Nenhum microfone encontrado.", sttFailed: "A transcrição falhou: {0}", sttOff: "A transcrição de voz não está configurada neste servidor.",
       restarting: "{name} em reinício, reconexão em curso…", lost: "A conexão com o {name} foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
+      checking: "A conexão caiu. Verificação da sua alteração em curso…", recoveredChange: "A sua alteração foi feita: {0}. A conexão caiu antes do fim da resposta.", recoveredAnswer: "A conexão caiu antes do fim da resposta; esta é a resposta que estava a ser enviada.", changedMeanwhile: "O painel mudou enquanto a conexão estava em baixo: {0}. A página já o mostra. Se não foi a sua alteração, peça de novo.",
+      removedW: "“{0}” removido", addedW: "“{0}” adicionado", changedW: "“{0}” alterado", otherW: "painel alterado",
       busyWait: "Ocupado, cerca de {0} s (n.º {1} na fila)…", waitEdit: "À espera de outra alteração neste painel…", busyFull: "O {name} está muito ocupado neste momento. Tente de novo dentro de um minuto, ou escolha uma pergunta frequente abaixo: essas têm resposta imediata.",
       savedAnswer: "Resposta guardada, dados de {0}", savedEdit: "Alteração guardada, refeita como antes", savedTitle: "Resposta tirada de uma resposta anterior à mesma pergunta, com os números lidos de novo. Nenhum modelo de IA foi usado.", askFresh: "Perguntar de novo", askFreshTitle: "Pedir ao assistente que refaça a resposta desde o início",
       cost: "≈ US$ {0}", costTitle: "Custo estimado desta resposta, segundo os preços de tabela", costTokens: "{0}: {1} tokens de entrada, {2} de saída", costSpeech: "inclui transcrição de voz: US$ {0}", costUnpriced: "algumas chamadas não têm preço e não foram contadas", sessionCost: "Esta sessão: ≈ US$ {0} em {1} respostas (estimativa segundo os preços de tabela)",
@@ -1239,7 +1247,93 @@
       log.append(box);
       scroll();
     }
+    // ---- A reply cut off on its way (a phone changing networks, a proxy, a restart). The turn may still have changed
+    // the dashboard, so before anything is asked again the chat finds out what happened: the server keeps each turn's
+    // outcome under the key the question was sent with (GET turn?key=), and without one (Lenspack restarted, or the
+    // question never arrived) the board's version says whether anything changed. The same key is sent again on Retry,
+    // so the server answers from the first asking rather than making the change twice.
+    const newTurnKey = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+    const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+    function changeWords(c) {
+      const out = [];
+      for (const x of (c && c.removed) || []) out.push(t("removedW", x));
+      for (const x of (c && c.added) || []) out.push(t("addedW", x));
+      for (const x of (c && c.changed) || []) out.push(t("changedW", x));
+      return out.length ? out.join(", ") : t("otherW");
+    }
+    // Widgets by title, between two saved versions (the board API's versions list).
+    function diffTitles(a, b) {
+      const was = (a && a.widgets) || {};
+      const now = (b && b.widgets) || {};
+      const title = (w) => (w && w.title) || "";
+      return {
+        removed: Object.keys(was).filter((k) => !now[k]).map((k) => title(was[k])),
+        added: Object.keys(now).filter((k) => !was[k]).map((k) => title(now[k])),
+        changed: Object.keys(now).filter((k) => was[k] && JSON.stringify(was[k]) !== JSON.stringify(now[k])).map((k) => title(now[k])),
+      };
+    }
+    /**
+     * What a cut-off turn did: { kind: "changed", changes, reply, version } when it changed the board; "answered" when it
+     * finished without a change (reply); "moved" when no record is left but the board moved past `before`; "nothing"
+     * when nothing happened and asking again is safe; "unknown" while Lenspack can't be reached.
+     */
+    async function recover(turnKey, before) {
+      const until = Date.now() + 90000;
+      let misses = 0;
+      for (;;) {
+        let r = null;
+        try {
+          const res = await fetch(`${base}/turn?key=${encodeURIComponent(turnKey)}`);
+          if (res.ok || res.status === 404) r = await res.json();
+        } catch (e) {}
+        if (!r) {
+          if (++misses > 3 || Date.now() > until) return { kind: "unknown" };
+          await pause(2000);
+          continue;
+        }
+        const turn = r.turn;
+        if (turn && turn.state === "running" && Date.now() < until) {
+          await pause(1500);
+          continue;
+        }
+        if (turn && turn.state === "done") {
+          if (typeof turn.to === "number" && turn.to > turn.from) return { kind: "changed", changes: turn.changes, reply: turn.reply, version: turn.to };
+          if (turn.reply && !turn.failed) return { kind: "answered", reply: turn.reply, version: r.version };
+          return { kind: "nothing" };
+        }
+        if (turn) return { kind: "unknown" };
+        if (typeof before !== "number" || typeof r.version !== "number" || r.version <= before) return { kind: "nothing" };
+        let changes = null;
+        try {
+          const vs = await (await fetch(`${base}/versions`)).json();
+          const at = (n) => (vs.find((v) => v.version === n) || {}).config;
+          changes = diffTitles(at(before), at(r.version));
+        } catch (e) {}
+        return { kind: "moved", changes, version: r.version };
+      }
+    }
+    /** Says what a cut-off turn did, keeps it in the conversation, and brings the page in step. True when it was shown. */
+    function showRecovered(o) {
+      if (o.kind !== "changed" && o.kind !== "answered" && o.kind !== "moved") return false;
+      const words = o.kind === "changed" ? t("recoveredChange", changeWords(o.changes)) : o.kind === "moved" ? t("changedMeanwhile", changeWords(o.changes)) : t("recoveredAnswer");
+      if (o.reply) bubble("assistant", o.reply);
+      // The next turn hears what happened, as if the reply had arrived.
+      history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: o.reply ? `${o.reply}\n\n${words}` : words }] });
+      if (typeof o.version === "number") since = o.version;
+      persist();
+      note(words, "sync");
+      if (o.kind !== "answered") {
+        if (opts.reloadsPage)
+          try {
+            sessionStorage.setItem(key, JSON.stringify({ messages: history.slice(-30), since, notice: words }));
+          } catch (e) {}
+        if (opts.onChanged) opts.onChanged();
+      }
+      return true;
+    }
+
     // fresh: "Ask fresh" on a saved answer; the full assistant answers, whatever is saved. extra.quickReply: the reading picked.
+    // extra.turnKey: the key of the question this asks again (Retry), so a turn that already ran is not run twice.
     async function send(text, fresh, extra) {
       text = (text || "").trim();
       if (!text || busy || offline) return;
@@ -1255,6 +1349,7 @@
       persist();
       const userB = bubble("user", text);
       status.textContent = t("working");
+      const turnKey = (extra && extra.turnKey) || newTurnKey();
       let before = null;
       try {
         before = await version();
@@ -1299,7 +1394,7 @@
       try {
         const spoken = clips.slice();
         // speech: the transcript ids (clip ids) of the words this question was spoken through; client: device and network classes.
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken, transcriptIds: spoken } : {}), ...selectionsNow(), ...(fresh ? { fresh: true } : {}), ...(extra && extra.quickReply && extra.quickReply.question ? { quickReply: extra.quickReply } : {}), client: tel.client() }) });
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken, transcriptIds: spoken } : {}), ...selectionsNow(), ...(fresh ? { fresh: true } : {}), ...(extra && extra.quickReply && extra.quickReply.question ? { quickReply: extra.quickReply } : {}), turnKey, client: tel.client() }) });
         const turnId = (res.headers && res.headers.get && res.headers.get("x-lenspack-turn")) || null;
         tel.started(turnId);
         // Words heard by a server that gave no transcript id: their correction is reported from here instead.
@@ -1318,6 +1413,8 @@
         let reused = null;
         let full = null;
         let explained = null;
+        // Asked again under a key the server already answered: what that first asking did (no model call).
+        let recovered = null;
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
@@ -1413,6 +1510,9 @@
                 case "data-answer-card":
                   explained = ev.data;
                   break;
+                case "data-recovered":
+                  recovered = ev.data;
+                  break;
                 case "finish":
                   finished = true;
                   break;
@@ -1459,6 +1559,20 @@
           scroll();
         }
         status.textContent = "";
+        if (recovered && typeof recovered.to === "number" && recovered.to > recovered.from) {
+          // The first asking changed the board: say so, and bring the page in step; nothing was made twice.
+          const words = t("recoveredChange", changeWords(recovered.changes));
+          answered.parts[0].text = `${reply ? `${reply}\n\n` : ""}${words}`;
+          since = recovered.to;
+          persist();
+          note(words, "sync");
+          if (opts.reloadsPage)
+            try {
+              sessionStorage.setItem(key, JSON.stringify({ messages: history.slice(-30), since, notice: words }));
+            } catch (e) {}
+          if (opts.onChanged) opts.onChanged();
+          return;
+        }
         if (saving) await saving;
         let after = null;
         try {
@@ -1489,6 +1603,17 @@
         status.textContent = "";
         // Lost: the request never reached Lenspack, or its answer was cut off (a restart, a proxy's 502–504).
         const lost = e.lost || e.name === "TypeError" || [502, 503, 504].includes(e.status);
+        if (lost) {
+          // Before anything is asked again: did the turn change the dashboard, or finish its answer?
+          status.textContent = t("checking");
+          if (opts.onUnreachable) opts.onUnreachable();
+          const outcome = await recover(turnKey, before);
+          status.textContent = "";
+          if (showRecovered(outcome)) {
+            scroll();
+            return;
+          }
+        }
         // The question leaves the history; Retry asks it again (and the overlay checks whether Lenspack is back).
         const last = history[history.length - 1];
         if (last && last.role === "user") history.pop();
@@ -1497,18 +1622,34 @@
         const again = el("button", "lpc-undo", t("retry"));
         again.type = "button";
         again.disabled = offline;
-        again.onclick = () => {
+        again.onclick = async () => {
           if (busy || offline) return;
+          // Checked again first: the turn may have finished, and changed the board, since the connection dropped.
+          busy = true;
+          again.disabled = true;
+          status.textContent = t("checking");
+          const outcome = await recover(turnKey, before);
+          status.textContent = "";
+          busy = false;
+          again.disabled = offline;
+          if (outcome.kind !== "nothing" && outcome.kind !== "unknown") {
+            retries.delete(again);
+            n.remove();
+            history.push({ id: `u${Date.now()}`, role: "user", parts: [{ type: "text", text }] });
+            showRecovered(outcome);
+            scroll();
+            return;
+          }
           retries.delete(again);
           n.remove();
           userB.remove();
-          send(text);
+          // The same key: had the turn run after all, the server answers from it instead of running it again.
+          send(text, fresh, { ...(extra || {}), turnKey });
         };
         retries.add(again);
         n.append(again);
         log.append(n);
         scroll();
-        if (lost && opts.onUnreachable) opts.onUnreachable();
       } finally {
         tel.ended();
         busy = false;

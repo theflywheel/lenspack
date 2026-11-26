@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type PersonalPort, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type PersonalPort, type Filter, type Query, type Widget, describeChanges, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
 import { type Connector, type Ctx, type SourceCall, type WidgetData, checkOps, explain, nowOf, run, tracedConnector, valuesQuery } from "@lenspack/engine";
 import { shownConfig, showsStatement, visibleCatalogue } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
@@ -373,7 +373,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     defineTool({
       name: "list_versions",
       description:
-        "The board's saved versions, newest first: number, who or what made it (chat, by hand, board file, rollback) and what changed. Call this before restore_version when the user names a point in the history rather than the original.",
+        "The board's saved versions, newest first: number, who or what made it (chat, by hand, board file, rollback), when, what changed (summary), and the widgets it added, removed or changed by title (changed). Call this before restore_version when the user names a point in the history rather than the original, and when the user names a widget that is not on the board: the version that removed it says when.",
       inputSchema: z.object({ limit: num(20, 1, 100).describe("How many versions, newest first (default 20)") }),
       async execute({ limit }) {
         const all = await afterEdits(() => store.versions(boardId));
@@ -382,7 +382,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         return {
           current: all[0]!.version,
           baseline: base?.version ?? null,
-          versions: all.slice(0, limit).map((v) => ({ version: v.version, source: v.source, summary: v.summary, at: new Date(v.createdAt).toISOString() })),
+          // changed: what the version did, read from the version before by widget title ("removed “Stock by region”"),
+          // as its own summary may name a widget by an id that is gone with it.
+          versions: all.slice(0, limit).map((v) => {
+            const prev = all.find((p) => p.version === v.version - 1);
+            const said = prev ? describeChanges(shownConfig(prev.config, ctx), shownConfig(v.config, ctx)) : [];
+            return { version: v.version, source: v.source, summary: v.summary, at: new Date(v.createdAt).toISOString(), ...(said.length ? { changed: said } : {}) };
+          }),
         };
       },
     }),

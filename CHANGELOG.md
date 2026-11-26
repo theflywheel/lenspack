@@ -16,6 +16,14 @@ brought it.
   with no new setting. At the root nothing changes. Update the plugin file and the server image together. See
   [Superset under a path](docs/hosts/superset/install.md#superset-under-a-path).
   ([#99](https://github.com/theflywheel/lenspack/pull/99))
+- **After a chat edit in Superset, the open page shows the dashboard as saved, even when the reply is cut off.** A
+  reply can be cut off after the change was made, for example when a phone changes networks. The chat panel now finds
+  out what happened before offering Retry: "Your change was made: removed …", and the page drops the chart without a
+  reload. Retry never makes a change twice. If the page still draws a chart the saved dashboard no longer has, it
+  reloads, keeping the chat open and your tab. Asked about a chart that was removed, the assistant says when it was
+  removed and that a reload shows the board as it is. Nothing changes in Superset: the panel comes from Lenspack. See
+  [Dashboard edits](docs/features/dashboard-edits.md#when-the-reply-is-cut-off).
+  ([#101](https://github.com/theflywheel/lenspack/pull/101))
 - **Who is an admin, and who may use the assistant, are Lenspack's rules.** `auth.admins` says who gets the admin
   pages and `auth.users` who may use the assistant at all. Both work the same for every sign-in, Superset included,
   where they list Superset role names. Left out, nothing changes: admins are a role named `admin` (Superset's `Admin`

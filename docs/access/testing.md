@@ -84,6 +84,10 @@ were counted.
     still works. `lp_alpha` makes, copies and deletes its own. (Stock Gamma may write dashboards, so the refusal is
     tested with a viewer role made from Gamma without that permission.)
   - The suite leaves no personal dashboards behind.
+- **The open page after a chat edit.** In a headless browser on a dashboard, the chat panel removes a chart. The page
+  stops drawing it without a reload. Then the browser drops the connection after the server has removed a second chart,
+  as a phone changing networks does: the panel says "Your change was made: removed …", the chart goes from the page all
+  the same, and the question is not sent again.
 - **Admin surfaces.** Under the default `admins` rule, settings, the admin panel, the audit log, cost per answer and
   usage are for Superset admins only. A dashboard owner gets 403, and so does Superset's own AI assistant page. So
   does `lp_lensadmin`: a role called "Lenspack admin" gives nothing until the rule names it.
@@ -134,7 +138,8 @@ The `app-root` file runs Superset 6.1 below a path of its host (`SUPERSET_APP_RO
 button script, the chat, the links to dashboards, the settings page, its redirects and the menu entry all stay below
 `/superset` (see [Superset under a path](../hosts/superset/install.md#superset-under-a-path)).
 
-It needs Linux with Docker. Superset runs in the host's network and listens on 127.0.0.1 only. The first run pulls
+It needs Linux with Docker, and Playwright's headless Chromium for the browser case
+(`pnpm exec playwright install --only-shell chromium`; or set `LENSPACK_CHROMIUM` to a Chromium to use). Superset runs in the host's network and listens on 127.0.0.1 only. The first run pulls
 `apache/superset:6.1.0`, `apache/superset:5.0.0` and `postgres:16-alpine`, and each Superset installs the Postgres
 driver for the sample data. The secret key and passwords are made fresh for each run and never printed. The containers,
 their volumes and the temporary folder are removed at the end, whether the cases pass or fail. If a run is killed,
