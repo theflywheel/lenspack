@@ -15,10 +15,11 @@ import { type LanguageModel, UI_MESSAGE_STREAM_HEADERS, wrapLanguageModel } from
  * before the turn's own stream on the same response). Busy, the response is a short stream that
  * says so, and the result is null.
  */
-export async function waitForTurn(res: ServerResponse, queue: TurnGate, o: { board: string; edit: boolean }): Promise<TurnPlace | null> {
+export async function waitForTurn(res: ServerResponse, queue: TurnGate, o: { board: string; edit: boolean; name?: string }): Promise<TurnPlace | null> {
+  const { name, ...place } = o;
   try {
     return await queue.acquire({
-      ...o,
+      ...place,
       onWait: (w) => {
         openStream(res);
         sendPart(res, { type: "data-queue", data: w, transient: true });
@@ -32,7 +33,7 @@ export async function waitForTurn(res: ServerResponse, queue: TurnGate, o: { boa
     sendPart(res, { type: "data-queue", data: { state: "full", why: e.why, retryAfterSeconds: e.retryAfterSeconds } });
     // In words too, for a client that knows no queue, and so the conversation's history has a reply here.
     sendPart(res, { type: "text-start", id: "busy" });
-    sendPart(res, { type: "text-delta", id: "busy", delta: BUSY_TEXT });
+    sendPart(res, { type: "text-delta", id: "busy", delta: busyText(name) });
     sendPart(res, { type: "text-end", id: "busy" });
     sendPart(res, { type: "finish" });
     res.end("data: [DONE]\n\n");
@@ -40,7 +41,9 @@ export async function waitForTurn(res: ServerResponse, queue: TurnGate, o: { boa
   }
 }
 
-export const BUSY_TEXT = "Lenspack is too busy right now. Try again in a minute; common questions that were answered before are answered at once.";
+/** What a busy chat says, naming the assistant (brand.name). */
+export const busyText = (name = "Lenspack") => `${name} is too busy right now. Try again in a minute; common questions that were answered before are answered at once.`;
+export const BUSY_TEXT = busyText();
 
 /** Starts a UI message stream on the response, once. */
 export function openStream(res: ServerResponse) {

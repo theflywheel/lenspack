@@ -13,6 +13,7 @@ import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 import { type AnswerCardData, ExplainBlock } from "./explain";
 import { Markdown } from "./markdown";
+import { assistantName } from "./page";
 
 // The chat panel beside the board.
 
@@ -361,7 +362,7 @@ export function ChatPanel({
             <React.Fragment key={m.id}>
             {mi > 0 && noticesAt(mi)}
             <div className="space-y-1.5">
-              <p className="font-mono text-2xs text-muted-foreground">{m.role === "user" ? "you" : "lenspack"}</p>
+              <p className="font-mono text-2xs text-muted-foreground">{m.role === "user" ? "you" : assistantName()}</p>
               {(m.parts as Part[]).filter((p) => p.type.startsWith("tool-")).map((p, i) => (
                 <StepBadge key={i} name={p.type.slice(5)} part={p} />
               ))}

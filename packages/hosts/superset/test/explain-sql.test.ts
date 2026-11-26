@@ -75,7 +75,7 @@ describe("the SQL Superset ran, for an answer's explanation", () => {
     const { data, calls } = await traced(s);
     expect(data.rows).toHaveLength(2);
     expect(calls).toHaveLength(2);
-    expect(calls[0]).toMatchObject({ language: "json", note: "Superset did not return the SQL it ran; this is the request Lenspack sent it." });
+    expect(calls[0]).toMatchObject({ language: "json", note: "Superset did not return the SQL it ran; this is the request it was sent." });
     expect(JSON.parse(calls[0]!.text)).toMatchObject({ datasource: { id: 7, type: "table" }, queries: [{ metrics: expect.anything() }] });
   });
 

@@ -1,4 +1,5 @@
 import type { Audit, AuditEvent } from "../audit";
+import type { BrandSettings } from "../brand";
 import type { Features } from "../features";
 import type { Provider } from "../llm";
 import type { Budget, UsageLedger } from "../metering";
@@ -29,7 +30,7 @@ export type ReviewMountOptions = {
  * its audit log, gives the chat `turn` (AppOptions.definitions), mounts `routes(...)` once the runtime has
  * its models, and calls `start()` when it is listening.
  */
-export function reviewMount(admin: { features: Features; settings: SettingsStore; app: { review: () => boolean; chatDefault: () => { model?: string; effort?: string } | undefined } }, o: ReviewMountOptions) {
+export function reviewMount(admin: { features: Features; settings: SettingsStore; brand?: BrandSettings; app: { review: () => boolean; chatDefault: () => { model?: string; effort?: string } | undefined } }, o: ReviewMountOptions) {
   let models: Provider[] = [];
   const system = reviewSystem({ stateDir: o.stateDir, docs: o.docs, hosts: o.hosts, features: admin.features, settings: admin.settings, providers: () => models, events: o.events, audit: o.audit, log: o.log });
   return {
@@ -43,7 +44,7 @@ export function reviewMount(admin: { features: Features; settings: SettingsStore
         o.log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
         return null;
       });
-      return panelRoutes({ prefix: o.prefix, system, features: admin.features, providers: () => rt.providers, adminName: o.adminName, title: o.title, log: o.log, usage });
+      return panelRoutes({ prefix: o.prefix, system, features: admin.features, brand: admin.brand, providers: () => rt.providers, adminName: o.adminName, title: o.title, log: o.log, usage });
     },
   };
 }

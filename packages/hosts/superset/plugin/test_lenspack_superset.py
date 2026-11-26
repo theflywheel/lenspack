@@ -312,6 +312,9 @@ class SettingsPage(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True)[:500])
         html = r.get_data(as_text=True)
         self.assertIn("AI assistant", html)
+        # Without LENSPACK_BRAND_NAME in superset_config, the heading and the button are named as before.
+        self.assertIn("<h1>AI assistant</h1>", html)
+        self.assertIn("<b>Ask Lenspack</b>", html)
         self.assertIn("no Lenspack in the tests", html)
         if major >= 6:
             # Its own frame follows Superset's light or dark theme, and its script carries the page's nonce.
@@ -327,6 +330,17 @@ class SettingsPage(unittest.TestCase):
         self.assertIn("Chat language saved.", html)
         self.assertIn("Chat model not saved: nope", html)
         self.assertNotIn("A message left from another page", html)
+
+
+class BrandLabel(unittest.TestCase):
+    """The menu entry's and settings page's name: superset_config's optional LENSPACK_BRAND_NAME, else today's."""
+
+    def test_reads_the_optional_key_and_keeps_todays_name_without_it(self):
+        self.assertEqual(lp.lenspack_brand_label({}), "AI assistant")
+        self.assertEqual(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": None}), "AI assistant")
+        self.assertEqual(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": "  "}), "AI assistant")
+        self.assertEqual(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": " Campaign assistant "}), "Campaign assistant")
+        self.assertEqual(len(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": "x" * 90})), 40)
 
 
 class ClickHouseLabels(unittest.TestCase):

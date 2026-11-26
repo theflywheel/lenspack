@@ -3,10 +3,18 @@ import type { BoardChange, BoardConfig, Catalogue } from "@lenspack/core";
 import { describeQuery, summarise } from "@lenspack/core";
 import { type Pack, datedTime, timeFieldOf } from "@lenspack/pack";
 
+import { DEFAULT_BRAND_NAME } from "./brand";
+
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 26;
+export const PROMPT_VERSION = 27;
+
+/**
+ * The prompt's version as anything that keeps answers keys on it (saved answers): PROMPT_VERSION, and the
+ * assistant's name when a deployment renamed it, since the prompt carries the name. A rename starts afresh.
+ */
+export const promptVersionFor = (name: string = DEFAULT_BRAND_NAME) => (name === DEFAULT_BRAND_NAME ? String(PROMPT_VERSION) : `${PROMPT_VERSION}:${name}`);
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -122,10 +130,10 @@ export function userChangesText(changes: BoardChange[] = []) {
  * (the catalogue, the examples, the rules), then the current board, which
  * changes with every edit, and the user's own edits since the last turn.
  * Stable first, so a provider's prompt cache keeps the long first part across
- * edits.
+ * edits. o.name is the assistant's name (brand.name), how it introduces itself.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean } = {}): [stable: string, board: string] => [
-  `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; name?: string } = {}): [stable: string, board: string] => [
+  `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
 ${catalogueText(pack, catalogue)}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}

@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 
 import { type Principal, adminRights } from "@lenspack/policy";
 
+import { type BrandSettings, DEFAULT_BRAND_NAME, brandAuditDetail } from "../brand";
 import type { Features } from "../features";
-import { BodyTooLarge, NO_STORE, TYPES, json, readJson } from "../http";
+import { BodyTooLarge, NO_STORE, TYPES, escapeHtml, json, readJson } from "../http";
 import { publicView } from "../llm";
 import type { Provider } from "../llm";
 import { SettingsSaveError } from "../settings";
@@ -34,6 +35,8 @@ export type PanelOptions = {
   prefix: string;
   system: ReviewSystem;
   features: Features;
+  /** What the assistant is called (brand.ts): the panel's title, and the Settings tab's Name card. */
+  brand?: BrandSettings;
   providers: () => Provider[];
   /** In the host's words, for the refusal: "Superset admin". Who that is, the host says by giving them the admin role; the policy decides (adminRights). */
   adminName: string;
@@ -59,7 +62,8 @@ export function panelRoutes(o: PanelOptions) {
       s.audit(who.user, `${req.method} ${url.pathname}`, `not a ${o.adminName}`, undefined, "denied");
       if (url.pathname.startsWith(`${base}/api/`)) return send(403, { error: `only ${o.adminName}s can use the admin panel` });
       res.writeHead(403, { "content-type": TYPES[".html"]!, ...NO_STORE });
-      res.end(`<!doctype html><meta charset="utf-8"><title>Lenspack admin</title><p style="font:15px system-ui;margin:40px">Only ${o.adminName}s can open the Lenspack admin panel.</p>`);
+      const name = escapeHtml(o.brand?.get().name ?? DEFAULT_BRAND_NAME);
+      res.end(`<!doctype html><meta charset="utf-8"><title>${name} admin</title><p style="font:15px system-ui;margin:40px">Only ${o.adminName}s can open the ${name} admin panel.</p>`);
       return true;
     }
     // The page's own address ends in a slash, so its relative calls (api/…, panel.js, ../cache) land under the prefix.
@@ -70,7 +74,8 @@ export function panelRoutes(o: PanelOptions) {
     }
     const rest = url.pathname.slice(base.length + 1);
     if (rest === "" || rest === "index.html") {
-      const html = readFileSync(`${dir}index.html`, "utf8").replace("__TITLE__", (o.title ?? "Lenspack").replace(/[<>&"]/g, ""));
+      const name = escapeHtml(o.brand?.get().name ?? DEFAULT_BRAND_NAME);
+      const html = readFileSync(`${dir}index.html`, "utf8").replace("__TITLE__", o.title ? o.title.replace(/[<>&"]/g, "") : name).replaceAll("__NAME__", name);
       res.writeHead(200, { "content-type": TYPES[".html"]!, ...NO_STORE });
       res.end(html);
       return true;
@@ -195,7 +200,15 @@ export function panelRoutes(o: PanelOptions) {
           break;
         }
         case "settings": {
-          if (!post) return send(200, { features: o.features.view(true), review: await s.settingsView() });
+          if (!post) return send(200, { features: o.features.view(true), review: await s.settingsView(), ...(o.brand ? { brand: o.brand.view(true) } : {}) });
+          // The assistant's name and button (the same change as PUT <prefix>/settings/brand on a host's settings routes).
+          if (id === "brand" && o.brand) {
+            const r = o.brand.update(body);
+            if (!r.ok) return send(400, { error: r.error });
+            s.audit(by, "settings brand", brandAuditDetail(body));
+            o.log?.(`brand: ${r.brand.name} ("${r.brand.buttonLabel}")`);
+            return send(200, { brand: o.brand.view(true) });
+          }
           if (id === "features") {
             const wasDaily = o.features.on("review.daily");
             const r = o.features.update(body);

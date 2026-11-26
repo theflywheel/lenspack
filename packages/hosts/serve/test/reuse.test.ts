@@ -14,7 +14,7 @@ import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { seed } from "../../../../examples/campaign/seed";
-import { type AppOptions, BUSY_TEXT, CACHE_DEFAULTS, type CacheSettings, type Host, type Provider, QUEUE_DEFAULTS, QueueBusy, type Reuse, type TurnGate, buildProvider, localTurnGate, cacheSettings, configSchema, createApp, openConfig, registerLlmAdapter, reuseLayer } from "../src";
+import { type AppOptions, BUSY_TEXT, CACHE_DEFAULTS, DEFAULT_BRAND, resolveBrand, type CacheSettings, type Host, type Provider, QUEUE_DEFAULTS, QueueBusy, type Reuse, type TurnGate, buildProvider, localTurnGate, cacheSettings, configSchema, createApp, openConfig, registerLlmAdapter, reuseLayer } from "../src";
 import { anthropicAdapter, anthropicTokens } from "../src/adapters/anthropic";
 import { costOf } from "../src/metering";
 import { cacheRoutes } from "../src/reuse";
@@ -337,6 +337,26 @@ describe("answer and plan reuse", () => {
     clock.now = new Date(clock.now.getTime() + 2 * 3_600_000);
     answers();
     expect((await ask(b, "How many households were delivered?")).model).toBe(2);
+  });
+
+  it("a renamed assistant starts afresh: saved answers never replay across a name change, and the prompt names it", async () => {
+    let brand = DEFAULT_BRAND;
+    const named = await serverWith({ brand: () => brand });
+    const b = await newBoard();
+    const systems: string[] = [];
+    const seeing = () => script.steps.push((prompt) => (systems.push((prompt as { role: string; content: unknown }[]).filter((m) => m.role === "system").map((m) => String(m.content)).join("")), toolStep("query", { query_kind: "value", measure: "households_delivered" })), (prompt) => sayStep(`${lastValue(prompt).toLocaleString("en-US")} households were delivered.`));
+    seeing();
+    expect((await ask(b, "How many households were delivered?", { base: named })).model).toBe(2);
+    expect(systems.pop()).toContain("You are Lenspack, a dashboard assistant.");
+    expect((await ask(b, "How many households were delivered?", { base: named })).saved).toMatchObject({ tier: "t1" });
+    // Renamed on the settings page: read on the next turn, no restart; the answer saved under the old name is not served.
+    brand = resolveBrand({ name: "Campaign assistant" });
+    seeing();
+    const renamed = await ask(b, "How many households were delivered?", { base: named });
+    expect(renamed.model).toBe(2);
+    expect(renamed.saved).toBeUndefined();
+    expect(systems.pop()).toContain("You are Campaign assistant, a dashboard assistant.");
+    expect((await ask(b, "How many households were delivered?", { base: named })).saved).toMatchObject({ tier: "t1" });
   });
 
   it("a follow-up that leans on the turn before is neither served nor kept", async () => {

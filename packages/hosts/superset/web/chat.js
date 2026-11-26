@@ -11,6 +11,10 @@
 .lpc [hidden]{display:none!important}
 .lpc-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--lpc-line)}
 .lpc-mark{width:26px;height:26px;border-radius:7px;background:var(--lpc-acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
+.lpc-mark.lpc-icon{background:none}
+.lpc-mark img{width:100%;height:100%;object-fit:contain;border-radius:inherit;display:block}
+.lpc-by{display:block;padding:0 14px 8px;font-size:11px;color:var(--lpc-mute);text-decoration:none;text-align:right}
+.lpc-by:hover{text-decoration:underline}
 .lpc-ttl{flex:1;min-width:0}
 .lpc-ttl b{display:block;font-size:14px}
 .lpc-ttl span{display:block;color:var(--lpc-mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -145,62 +149,63 @@
 
   // The panel's words, by language. "auto" shows the page's language (Superset's, else the
   // browser's) when it is one of these, else English. Tool names stay as the model's steps.
+  // {name} is the assistant's name, and the title is the button's label: both from the deployment's brand.
   const STRINGS = {
     en: {
-      title: "Ask Lenspack", sub: "Superset dashboard", close: "Close", placeholder: "Ask for a chart, a change, or a number…", send: "Send",
+      title: "Ask {name}", sub: "Superset dashboard", close: "Close", placeholder: "Ask for a chart, a change, or a number…", send: "Send",
       intro: "Changes you ask for are saved to this Superset dashboard. The numbers come from Superset's own metrics.",
-      working: "Working…", reviewing: "Reviewing the result…", noAnswer: "(no answer)", wrong: "Something went wrong", unreachable: "Could not reach Lenspack: {0}",
+      working: "Working…", reviewing: "Reviewing the result…", noAnswer: "(no answer)", wrong: "Something went wrong", unreachable: "Could not reach {name}: {0}",
       saved: "Saved to Superset.", savedRefreshing: "Saved to Superset. Refreshing the dashboard…", savedLater: "Saved to Superset. The dashboard refreshes when the reviewer finishes.",
       language: "Language", auto: "Auto", autoHelp: "Speak or type in any language; replies follow it.", pickedHelp: "Speech is transcribed as {0}, and replies are in {0}.", space: "Hold Space to talk", spaceHelp: "Hold Space for {0} s, even while typing; a quick press types a space. Or hold the mic button.", holdFor: "Hold for", holdDefault: "{0} s (default)", keepHolding: "Keep holding to talk…", newChat: "New chat", newChatHelp: "New chat: clear this conversation (the dashboard stays as it is)", cleared: "Chat cleared.", undo: "Undo", followSuperset: "Following Superset's language: {0}. Pick one here to use another.", adminDefault: "This deployment's default: {0}. Pick one here to use another.", unsureLang: "Couldn't tell which language that was: pick one in the language menu and try again.", missedIn: "Didn't catch that in {0}: try again.",
       mic: "Speak (click to start and stop, or hold)", micNeedsHttps: "The microphone needs a secure (https) page", micUnsupported: "This browser cannot record audio",
       listening: "Listening… {0}", transcribing: "Transcribing…", tooShort: "Nothing was recorded. Hold the mic or click it, speak, then stop.", heard: "Check the text, then send.", nothingHeard: "No speech was recognised. Try again a little closer to the microphone.",
       denied: "Microphone access is blocked. Allow it for this site in the browser (the icon left of the address), then try again.", noMic: "No microphone was found.", sttFailed: "Transcription failed: {0}", sttOff: "Speech to text is not set up on this server.",
       cost: "≈ ${0}", costTitle: "Estimated cost of this answer, from list prices", costTokens: "{0}: {1} tokens in, {2} out", costSpeech: "includes speech to text, ${0}", costUnpriced: "some calls have no price and are not counted", sessionCost: "This session: ≈ ${0} for {1} answers (estimate from list prices)",
-      restarting: "Lenspack is restarting, reconnecting…", lost: "The connection to Lenspack was lost before the answer finished (it may be restarting).", retry: "Retry",
-      busyWait: "Busy, about {0} s (number {1} in line)…", waitEdit: "Waiting for another edit on this dashboard…", busyFull: "Lenspack is too busy right now. Try again in a minute, or pick a common question below: those are answered at once.",
+      restarting: "{name} is restarting, reconnecting…", lost: "The connection to {name} was lost before the answer finished (it may be restarting).", retry: "Retry",
+      busyWait: "Busy, about {0} s (number {1} in line)…", waitEdit: "Waiting for another edit on this dashboard…", busyFull: "{name} is too busy right now. Try again in a minute, or pick a common question below: those are answered at once.",
       savedAnswer: "Saved answer, data as of {0}", savedEdit: "Saved change, made as before", savedTitle: "Answered from an earlier answer to the same question, with the numbers read again. No AI model was used.", askFresh: "Ask fresh", askFreshTitle: "Have the assistant work this out again from scratch",
     },
     fr: {
-      title: "Demander à Lenspack", sub: "Tableau de bord Superset", close: "Fermer", placeholder: "Demandez un graphique, une modification ou un chiffre…", send: "Envoyer",
+      title: "Demander à {name}", sub: "Tableau de bord Superset", close: "Fermer", placeholder: "Demandez un graphique, une modification ou un chiffre…", send: "Envoyer",
       intro: "Les modifications demandées sont enregistrées dans ce tableau de bord Superset. Les chiffres viennent des métriques de Superset.",
-      working: "En cours…", reviewing: "Vérification du résultat…", noAnswer: "(pas de réponse)", wrong: "Un problème est survenu", unreachable: "Impossible de joindre Lenspack : {0}",
+      working: "En cours…", reviewing: "Vérification du résultat…", noAnswer: "(pas de réponse)", wrong: "Un problème est survenu", unreachable: "Impossible de joindre {name} : {0}",
       saved: "Enregistré dans Superset.", savedRefreshing: "Enregistré dans Superset. Actualisation du tableau de bord…", savedLater: "Enregistré dans Superset. Le tableau de bord s'actualise à la fin de la vérification.",
       language: "Langue", auto: "Auto", autoHelp: "Parlez ou écrivez dans n'importe quelle langue ; les réponses suivent.", pickedHelp: "La voix est transcrite en {0} et les réponses sont en {0}.", space: "Maintenir Espace pour parler", spaceHelp: "Maintenez Espace {0} s, même en écrivant ; un appui bref tape une espace. Ou maintenez le bouton micro.", holdFor: "Durée", holdDefault: "{0} s (par défaut)", keepHolding: "Maintenez pour parler…", newChat: "Nouvelle discussion", newChatHelp: "Nouvelle discussion : effacer cette conversation (le tableau de bord reste tel quel)", cleared: "Discussion effacée.", undo: "Annuler", followSuperset: "Suit la langue de Superset : {0}. Choisissez-en une ici pour en changer.", adminDefault: "Langue par défaut de ce déploiement : {0}. Choisissez-en une ici pour en changer.", unsureLang: "Impossible de savoir quelle langue c'était : choisissez-en une dans le menu des langues et réessayez.", missedIn: "Pas compris en {0} : réessayez.",
       mic: "Parler (cliquer pour démarrer et arrêter, ou maintenir)", micNeedsHttps: "Le micro nécessite une page sécurisée (https)", micUnsupported: "Ce navigateur ne peut pas enregistrer le son",
       listening: "À l'écoute… {0}", transcribing: "Transcription…", tooShort: "Rien n'a été enregistré. Maintenez ou cliquez le micro, parlez, puis arrêtez.", heard: "Vérifiez le texte, puis envoyez.", nothingHeard: "Aucune parole reconnue. Réessayez un peu plus près du micro.",
       denied: "L'accès au micro est bloqué. Autorisez-le pour ce site dans le navigateur (l'icône à gauche de l'adresse), puis réessayez.", noMic: "Aucun micro trouvé.", sttFailed: "La transcription a échoué : {0}", sttOff: "La reconnaissance vocale n'est pas configurée sur ce serveur.",
       cost: "≈ {0} $", costTitle: "Coût estimé de cette réponse, d'après les prix publics", costTokens: "{0} : {1} jetons en entrée, {2} en sortie", costSpeech: "dont reconnaissance vocale : {0} $", costUnpriced: "certains appels n'ont pas de prix et ne sont pas comptés", sessionCost: "Cette session : ≈ {0} $ pour {1} réponses (estimation d'après les prix publics)",
-      restarting: "Lenspack redémarre, reconnexion…", lost: "La connexion à Lenspack a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
-      busyWait: "Occupé, environ {0} s (n° {1} dans la file)…", waitEdit: "En attente d'une autre modification de ce tableau de bord…", busyFull: "Lenspack est très sollicité en ce moment. Réessayez dans une minute, ou choisissez une question courante ci-dessous : elles ont une réponse immédiate.",
+      restarting: "{name} redémarre, reconnexion…", lost: "La connexion à {name} a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
+      busyWait: "Occupé, environ {0} s (n° {1} dans la file)…", waitEdit: "En attente d'une autre modification de ce tableau de bord…", busyFull: "{name} est très sollicité en ce moment. Réessayez dans une minute, ou choisissez une question courante ci-dessous : elles ont une réponse immédiate.",
       savedAnswer: "Réponse enregistrée, données du {0}", savedEdit: "Modification enregistrée, refaite comme avant", savedTitle: "Réponse tirée d'une réponse précédente à la même question, avec les chiffres relus. Aucun modèle d'IA n'a été utilisé.", askFresh: "Redemander", askFreshTitle: "Faire refaire la réponse par l'assistant depuis le début",
     },
     hi: {
-      title: "Lenspack से पूछें", sub: "Superset डैशबोर्ड", close: "बंद करें", placeholder: "चार्ट, बदलाव या कोई संख्या पूछें…", send: "भेजें",
+      title: "{name} से पूछें", sub: "Superset डैशबोर्ड", close: "बंद करें", placeholder: "चार्ट, बदलाव या कोई संख्या पूछें…", send: "भेजें",
       intro: "आप जो बदलाव कहेंगे, वे इसी Superset डैशबोर्ड में सेव होंगे। संख्याएँ Superset के अपने मेट्रिक्स से आती हैं।",
-      working: "काम चल रहा है…", reviewing: "नतीजे की जाँच हो रही है…", noAnswer: "(कोई जवाब नहीं)", wrong: "कुछ गड़बड़ हो गई", unreachable: "Lenspack तक नहीं पहुँच सके: {0}",
+      working: "काम चल रहा है…", reviewing: "नतीजे की जाँच हो रही है…", noAnswer: "(कोई जवाब नहीं)", wrong: "कुछ गड़बड़ हो गई", unreachable: "{name} तक नहीं पहुँच सके: {0}",
       saved: "Superset में सेव हो गया।", savedRefreshing: "Superset में सेव हो गया। डैशबोर्ड रीफ़्रेश हो रहा है…", savedLater: "Superset में सेव हो गया। जाँच पूरी होने पर डैशबोर्ड रीफ़्रेश होगा।",
       language: "भाषा", auto: "ऑटो", autoHelp: "किसी भी भाषा में बोलें या लिखें; जवाब उसी भाषा में आएगा।", pickedHelp: "आवाज़ {0} में लिखी जाएगी और जवाब {0} में आएँगे।", space: "बोलने के लिए Space दबाकर रखें", spaceHelp: "टाइप करते हुए भी Space को {0} सेकंड दबाकर रखें; जल्दी दबाने से स्पेस टाइप होता है। या माइक बटन दबाकर रखें।", holdFor: "कितनी देर", holdDefault: "{0} सेकंड (डिफ़ॉल्ट)", keepHolding: "बोलने के लिए दबाए रखें…", newChat: "नई बातचीत", newChatHelp: "नई बातचीत: यह बातचीत मिटाएँ (डैशबोर्ड जैसा है वैसा रहेगा)", cleared: "बातचीत मिटा दी गई।", undo: "वापस लाएँ", followSuperset: "Superset की भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", adminDefault: "इस डिप्लॉयमेंट की डिफ़ॉल्ट भाषा: {0}। कोई और भाषा चाहिए तो यहाँ चुनें।", unsureLang: "पता नहीं चला कि यह कौन सी भाषा थी: भाषा मेनू में एक चुनें और फिर से कोशिश करें।", missedIn: "{0} में समझ नहीं आया: फिर से कोशिश करें।",
       mic: "बोलें (शुरू और बंद करने के लिए क्लिक करें, या दबाकर रखें)", micNeedsHttps: "माइक के लिए सुरक्षित (https) पेज चाहिए", micUnsupported: "यह ब्राउज़र आवाज़ रिकॉर्ड नहीं कर सकता",
       listening: "सुन रहे हैं… {0}", transcribing: "लिखा जा रहा है…", tooShort: "कुछ रिकॉर्ड नहीं हुआ। माइक दबाकर रखें या क्लिक करें, बोलें, फिर रोकें।", heard: "टेक्स्ट जाँचें, फिर भेजें।", nothingHeard: "कोई आवाज़ पहचानी नहीं गई। माइक के थोड़ा पास से फिर कोशिश करें।",
       denied: "माइक की अनुमति बंद है। ब्राउज़र में इस साइट के लिए अनुमति दें (पते के बाईं ओर का आइकन), फिर कोशिश करें।", noMic: "कोई माइक नहीं मिला।", sttFailed: "लिखना नहीं हो सका: {0}", sttOff: "इस सर्वर पर स्पीच-टू-टेक्स्ट सेट नहीं है।",
-      busyWait: "व्यस्त, लगभग {0} सेकंड (कतार में {1}वें)…", waitEdit: "इस डैशबोर्ड पर दूसरे बदलाव के पूरा होने का इंतज़ार…", busyFull: "Lenspack अभी बहुत व्यस्त है। एक मिनट बाद फिर कोशिश करें, या नीचे कोई आम सवाल चुनें: उनका जवाब तुरंत मिलता है।",
+      busyWait: "व्यस्त, लगभग {0} सेकंड (कतार में {1}वें)…", waitEdit: "इस डैशबोर्ड पर दूसरे बदलाव के पूरा होने का इंतज़ार…", busyFull: "{name} अभी बहुत व्यस्त है। एक मिनट बाद फिर कोशिश करें, या नीचे कोई आम सवाल चुनें: उनका जवाब तुरंत मिलता है।",
       savedAnswer: "सहेजा गया जवाब, डेटा {0} तक का", savedEdit: "सहेजा गया बदलाव, पहले की तरह किया गया", savedTitle: "यह जवाब इसी सवाल के पिछले जवाब से बना है, संख्याएँ फिर से पढ़ी गईं। किसी AI मॉडल का उपयोग नहीं हुआ।", askFresh: "नए सिरे से पूछें", askFreshTitle: "सहायक से जवाब शुरू से दोबारा बनवाएँ",
       cost: "≈ ${0}", costTitle: "इस जवाब की अनुमानित लागत, सूची कीमतों के आधार पर", costTokens: "{0}: {1} टोकन इनपुट, {2} आउटपुट", costSpeech: "इसमें स्पीच-टू-टेक्स्ट ${0} शामिल है", costUnpriced: "कुछ कॉल की कीमत नहीं है, वे गिनी नहीं गईं", sessionCost: "इस सत्र में: ≈ ${0}, {1} जवाब (सूची कीमतों से अनुमान)",
-      restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले Lenspack से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
+      restarting: "{name} फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले {name} से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
     },
     // Neutral Portuguese, read in Mozambique, Angola and Portugal as well as Brazil: noun forms where the
     // two split (Em escuta, not Ouvindo / A ouvir), words both use (gravado, conexão, padrão), formal imperatives.
     pt: {
-      title: "Perguntar ao Lenspack", sub: "Painel do Superset", close: "Fechar", placeholder: "Peça um gráfico, uma alteração ou um número…", send: "Enviar",
+      title: "Perguntar ao {name}", sub: "Painel do Superset", close: "Fechar", placeholder: "Peça um gráfico, uma alteração ou um número…", send: "Enviar",
       intro: "As alterações que pedir ficam gravadas neste painel do Superset. Os números vêm das métricas do próprio Superset.",
-      working: "Em curso…", reviewing: "Verificação do resultado…", noAnswer: "(sem resposta)", wrong: "Ocorreu um problema", unreachable: "Sem acesso ao Lenspack: {0}",
+      working: "Em curso…", reviewing: "Verificação do resultado…", noAnswer: "(sem resposta)", wrong: "Ocorreu um problema", unreachable: "Sem acesso ao {name}: {0}",
       saved: "Gravado no Superset.", savedRefreshing: "Gravado no Superset. Atualização do painel…", savedLater: "Gravado no Superset. O painel é atualizado quando a verificação terminar.",
       language: "Idioma", auto: "Auto", autoHelp: "Fale ou escreva em qualquer idioma; as respostas seguem esse idioma.", pickedHelp: "A voz é transcrita em {0} e as respostas são em {0}.", space: "Manter Espaço para falar", spaceHelp: "Mantenha a tecla Espaço pressionada {0} s, mesmo ao escrever; um toque curto escreve um espaço. Ou mantenha pressionado o botão do microfone.", holdFor: "Duração", holdDefault: "{0} s (padrão)", keepHolding: "Mantenha pressionado para falar…", newChat: "Nova conversa", newChatHelp: "Nova conversa: apagar esta conversa (o painel fica como está)", cleared: "Conversa apagada.", undo: "Desfazer", followSuperset: "Segue o idioma do Superset: {0}. Escolha outro aqui para mudar.", adminDefault: "Idioma padrão desta instalação: {0}. Escolha outro aqui para mudar.", unsureLang: "Não foi possível identificar o idioma: escolha um no menu de idiomas e tente de novo.", missedIn: "Não foi possível entender em {0}: tente de novo.",
       mic: "Falar (clique para iniciar e parar, ou mantenha pressionado)", micNeedsHttps: "O microfone precisa de uma página segura (https)", micUnsupported: "Este navegador não consegue gravar áudio",
       listening: "Em escuta… {0}", transcribing: "Transcrição em curso…", tooShort: "Nada foi gravado. Mantenha pressionado ou clique no microfone, fale e depois pare.", heard: "Verifique o texto e depois envie.", nothingHeard: "Nenhuma fala reconhecida. Tente de novo um pouco mais perto do microfone.",
       denied: "O acesso ao microfone está bloqueado. Permita-o para este site no navegador (o ícone à esquerda do endereço) e tente de novo.", noMic: "Nenhum microfone encontrado.", sttFailed: "A transcrição falhou: {0}", sttOff: "A transcrição de voz não está configurada neste servidor.",
-      restarting: "Lenspack em reinício, reconexão em curso…", lost: "A conexão com o Lenspack foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
-      busyWait: "Ocupado, cerca de {0} s (n.º {1} na fila)…", waitEdit: "À espera de outra alteração neste painel…", busyFull: "O Lenspack está muito ocupado neste momento. Tente de novo dentro de um minuto, ou escolha uma pergunta frequente abaixo: essas têm resposta imediata.",
+      restarting: "{name} em reinício, reconexão em curso…", lost: "A conexão com o {name} foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
+      busyWait: "Ocupado, cerca de {0} s (n.º {1} na fila)…", waitEdit: "À espera de outra alteração neste painel…", busyFull: "O {name} está muito ocupado neste momento. Tente de novo dentro de um minuto, ou escolha uma pergunta frequente abaixo: essas têm resposta imediata.",
       savedAnswer: "Resposta guardada, dados de {0}", savedEdit: "Alteração guardada, refeita como antes", savedTitle: "Resposta tirada de uma resposta anterior à mesma pergunta, com os números lidos de novo. Nenhum modelo de IA foi usado.", askFresh: "Perguntar de novo", askFreshTitle: "Pedir ao assistente que refaça a resposta desde o início",
       cost: "≈ US$ {0}", costTitle: "Custo estimado desta resposta, segundo os preços de tabela", costTokens: "{0}: {1} tokens de entrada, {2} de saída", costSpeech: "inclui transcrição de voz: US$ {0}", costUnpriced: "algumas chamadas não têm preço e não foram contadas", sessionCost: "Esta sessão: ≈ US$ {0} em {1} respostas (estimativa segundo os preços de tabela)",
     },
@@ -521,7 +526,10 @@
       const l = pickedLang();
       return l !== "auto" && STRINGS[l] ? l : STRINGS[page] ? page : "en";
     };
-    const t = (k, ...a) => fmt((STRINGS[uiLang()] || STRINGS.en)[k] ?? STRINGS.en[k] ?? k, ...a);
+    // What the assistant is called (/_superset/info brand), each language's words already worked out by the server.
+    let brand = (opts.brand && typeof opts.brand === "object") ? opts.brand : {};
+    const own = () => (brand.i18n && (brand.i18n[uiLang()] || brand.i18n.en)) || {};
+    const t = (k, ...a) => (k === "title" && own().buttonLabel) || fmt(String((STRINGS[uiLang()] || STRINGS.en)[k] ?? STRINGS.en[k] ?? k).replace(/\{name\}/g, () => own().name || "Lenspack"), ...a);
     // A dollar amount with the precision a chat turn needs: $0.0042, $0.031, $1.20 (a comma in French).
     const usdText = (usd) => {
       const v = Number(usd) || 0;
@@ -541,7 +549,8 @@
     root.innerHTML = "";
     const wrap = el("div", "lpc");
     const head = el("div", "lpc-head");
-    head.append(el("div", "lpc-mark", "L"));
+    const mark = el("div", "lpc-mark", "L");
+    head.append(mark);
     const ttl = el("div", "lpc-ttl");
     const ttlB = el("b", "", t("title"));
     const ttlS = el("span", "", opts.title || t("sub"));
@@ -675,7 +684,13 @@
     // Declared before the first render: the suggested questions read it (disabled while offline).
     let offline = false;
     const retries = new Set();
-    wrap.append(head, downBar, log, status, foot);
+    // "Powered by Lenspack", when the assistant has another name and the deployment keeps the line (brand.poweredBy).
+    const by = el("a", "lpc-by");
+    by.href = "https://github.com/theflywheel/lenspack";
+    by.target = "_blank";
+    by.rel = "noopener noreferrer";
+    by.hidden = true;
+    wrap.append(head, downBar, log, status, foot, by);
     root.append(wrap);
 
     const scroll = () => (log.scrollTop = log.scrollHeight);
@@ -1314,6 +1329,17 @@
     // Words that change with the language pick.
     function relabel() {
       ttlB.textContent = t("title");
+      by.textContent = own().poweredBy || "";
+      by.hidden = !brand.poweredBy || !own().poweredBy;
+      // The deployment's icon in place of the "L" (an image's address, never markup).
+      const shownIcon = mark.querySelector("img");
+      if (brand.icon && (!shownIcon || shownIcon.getAttribute("src") !== brand.icon)) {
+        const img = el("img");
+        img.alt = "";
+        img.src = brand.icon;
+        mark.replaceChildren(img);
+      } else if (!brand.icon && shownIcon) mark.replaceChildren("L");
+      mark.classList.toggle("lpc-icon", !!brand.icon);
       if (!opts.title) ttlS.textContent = t("sub");
       input.placeholder = t("placeholder");
       go.textContent = t("send");
@@ -1617,6 +1643,7 @@
     // What the server offers: speech on or off, and the deployment's default language.
     function applyInfo(info) {
       if (info && info.features && typeof info.features === "object") feat = info.features;
+      if (info && info.brand && typeof info.brand === "object") brand = info.brand;
       if (info && info.language && info.language.default) adminLang = info.language.default;
       micState.enabled = !!(info && info.speech && info.speech.enabled) && feat.voice !== false;
       lang.hidden = feat.languageMenu === false;
@@ -1634,7 +1661,7 @@
         .then((info) => info && applyInfo(info))
         .catch(() => {});
     }
-    if (opts.speech || opts.language) applyInfo({ speech: opts.speech, language: opts.language, features: opts.features });
+    if (opts.speech || opts.language) applyInfo({ speech: opts.speech, language: opts.language, features: opts.features, brand: opts.brand });
     else {
       relabel();
       loadInfo();

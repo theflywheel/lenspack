@@ -120,6 +120,12 @@ Most questions on a dashboard are asked again and again, and a dashboard stops c
 
 People ask questions the pack never thought of, and some have two sane readings. The admin panel keeps a log of those open questions with each reading's figures side by side, and lets admins add definitions on top of the pack without a release. An optional daily review has a strong model read the day's questions and propose fixes, which wait for an admin. The panel's Overview is itself a Lenspack board about how the server is used. How it all works, what it costs and what keeps it safe: [review.md](review.md).
 
+## Naming the assistant
+
+A deployment can call the assistant something else ("Campaign assistant") and give its dashboard button its own
+label ("Ask the data"), in each of the chat's languages, with Lenspack as the default. Set it in the config, the
+environment or the admin panel: [brand.md](brand.md).
+
 ## The demo app
 
 `pnpm demo` serves the example packs in the board app (`examples/demo`). You can build boards with the chat, drag widgets and restore versions. Its look carries one idea: colour is provenance. A key that the pack declares is always mono and blue, whether in prose, in the metrics reference or in a board title. Something the compiler refuses is always ochre.

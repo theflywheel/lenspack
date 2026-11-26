@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import type { BoardFile, Host } from "./app";
 import { authSchema, hiddenKeys, packRuleSchema } from "./auth";
+import { brandSchema } from "./brand";
 
 // lenspack.yaml: which sources exist, which pack reads which source, and where
 // boards are kept. Secrets are never written here — only `env:NAME`, read from
@@ -124,6 +125,8 @@ export const configSchema = z.object({
   state: z.string().optional(),
   /** Switches (see features.ts): on or off by name; the admin panel can change them while the server runs. */
   features: z.record(z.boolean()).optional(),
+  /** What the assistant is called and its button says (brand.ts, docs/brand.md); LENSPACK_BRAND_* and the admin panel override it. */
+  brand: brandSchema.optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 

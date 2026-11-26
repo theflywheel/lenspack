@@ -16,7 +16,7 @@ export const FEATURE_DEFAULTS: FeatureValues = { "review.daily": false };
 
 /** What each switch does, for the settings page. */
 export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
-  overlay: { label: "Ask Lenspack button", help: "The button and chat panel on dashboards. Off hides the assistant from every dashboard." },
+  overlay: { label: "Assistant button", help: "The button and chat panel on dashboards. Off hides the assistant from every dashboard." },
   voice: { label: "Voice input", help: "The mic in the chat (also needs a speech-to-text key). Off hides the mic and refuses transcriptions." },
   spaceHold: { label: "Hold Space to talk", help: "Holding Space starts the mic. Off leaves only the mic button." },
   languageMenu: { label: "Language menu", help: "The chat's language picker. Off uses the deployment's default language." },

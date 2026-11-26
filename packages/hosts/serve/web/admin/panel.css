@@ -176,3 +176,10 @@ pre { background: var(--code); border-radius: 8px; padding: 10px 12px; overflow:
   .ck-group h2 { break-after: avoid; }
 }
 .tl-switches .switch { flex-wrap: wrap; align-items: center; }
+/* The Settings tab's Name card: the button as dashboards show it. */
+.brand-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 99px; background: #1a85a0; color: #fff; font-weight: 600; font-size: 13.5px; padding: 8px 14px; max-width: 100%; }
+.brand-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-btn b { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: rgba(255,255,255,.2); font-size: 12px; flex: none; overflow: hidden; }
+.brand-btn b img { width: 100%; height: 100%; object-fit: contain; }
+.brand-langs { margin-top: 10px; }
+.brand-langs summary { cursor: pointer; color: var(--mute); font-size: 13px; margin-bottom: 8px; }

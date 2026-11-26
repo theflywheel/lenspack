@@ -14,10 +14,11 @@ export * from "./speech";
 export * from "./audit";
 export * from "./settings";
 export * from "./features";
+export * from "./brand";
 export * from "./admin";
 export * from "./runtime";
 export * from "./review/index";
 // Answer reuse and the turn gate live in @lenspack/agent (no host); these are the serve host's sides of them.
 export { cacheRoutes, prewarmTurns, savedChunks, smallModel } from "./reuse";
-export { BUSY_TEXT, retrying, waitForTurn, withRetryWindow } from "./queue";
+export { BUSY_TEXT, busyText, retrying, waitForTurn, withRetryWindow } from "./queue";
 export { type CacheSettings, type PrewarmRun, type QueueSettings, type QueueWait, type Reuse, type ReuseOptions, type ReuseTurn, type Served, type TurnPlace, type TurnGate, type TurnOutcome, CACHE_DEFAULTS, PREWARM_DEFAULTS, QUEUE_DEFAULTS, QueueBusy, boardHash, cacheSettings, cacheSettingsFrom, fileAnswerStore, localTurnGate, looksLikeEdit, queueSettings, queueSettingsFrom, reuseLayer } from "@lenspack/agent";

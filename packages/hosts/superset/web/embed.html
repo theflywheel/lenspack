@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lenspack + Superset</title>
+<title>__NAME__ + Superset</title>
 <script>/*__VARS__*/</script>
 <style>
   :root{--fg:#1f2328;--mute:#667085;--line:#e4e7ec;--bg:#f5f7fa;--acc:#1a85a0}
@@ -43,13 +43,13 @@
   fetch(`${v.base}/_superset/bind?dashboard=${v.dashboard}`).then((r) => r.json()).then((b) => {
     if (b.error) throw new Error(b.error);
     document.getElementById("title").textContent = b.title;
-    document.title = `${b.title} · Lenspack`;
+    document.title = `${b.title} · ${(v.brand && v.brand.name) || "Lenspack"}`;
     if (b.notes && b.notes.length) {
       const k = document.getElementById("kept");
-      k.textContent = `Kept as Superset has them (Lenspack can move or remove these, not edit them): ${b.notes.join("; ")}`;
+      k.textContent = `Kept as Superset has them (${(v.brand && v.brand.name) || "Lenspack"} can move or remove these, not edit them): ${b.notes.join("; ")}`;
       k.style.display = "block";
     }
-    LenspackChat.mount(document.getElementById("chat"), { api: v.base, pack: v.pack, board: b.board, title: b.title, examples: v.examples, onChanged: () => { frame.src = `${url}?standalone=1&t=${Date.now()}`; } });
+    LenspackChat.mount(document.getElementById("chat"), { api: v.base, pack: v.pack, board: b.board, title: b.title, examples: v.examples, brand: v.brand, onChanged: () => { frame.src = `${url}?standalone=1&t=${Date.now()}`; } });
   }).catch((e) => { document.getElementById("chat").textContent = `Could not open this dashboard: ${e.message}`; });
 </script>
 </body>

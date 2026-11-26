@@ -14,10 +14,11 @@ import { type Access, type AuthAdapter, NO_RIGHTS, type PackRule, type Rights, w
 import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson, serveStatic } from "./http";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
-import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
+import { type Brand, DEFAULT_BRAND_NAME } from "./brand";
+import { type LanguagePolicy, catalogueText, promptVersionFor, systemParts } from "./prompt";
 import { waitForTurn, withRetryWindow } from "./queue";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
-import { PROMPT_VERSION, prewarmTurns, savedChunks, smallModel } from "./reuse";
+import { prewarmTurns, savedChunks, smallModel } from "./reuse";
 import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
@@ -116,6 +117,11 @@ export type AppOptions = {
    * unless `on` is false; the statements shown unless `sql` is false. Policy only narrows it.
    */
   explain?: () => { on?: boolean; sql?: boolean } | undefined;
+  /**
+   * What the assistant is called (brand.ts), read per turn and per page: the name the prompt introduces it by, the
+   * answer card's and busy reply's words, and the bundled UI's page. Absent: Lenspack.
+   */
+  brand?: () => Brand;
 };
 
 /**
@@ -304,7 +310,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const providers = opts.providers ?? [];
   const queue = opts.queue ?? localTurnGate();
   // Saved answers refreshed on a schedule or when data changes run as their askers, from these hosts (reuse/index.ts).
-  opts.reuse?.attach(prewarmTurns({ hosts, providers, router: opts.roles?.router, rules: () => opts.language?.(), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
+  opts.reuse?.attach(prewarmTurns({ hosts, providers, router: opts.roles?.router, rules: () => opts.language?.(), promptVersion: () => promptVersionFor(opts.brand?.().name), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
   // Transcriptions waiting for the turn they were spoken for: POST /_stt answers with a clip id, and
   // the chat request that sends the text names it, so the turn's cost includes the clip. The cost is
   // the server's own record, never a figure from the browser; a clip is claimed once, by its speaker.
@@ -355,7 +361,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           res.writeHead(302, { location: opts.auth.signInPath(url), "cache-control": "no-store" });
           return res.end();
         }
-        const page = opts.page;
+        // The assistant's name goes in only when the deployment renamed it, so a page reads as before otherwise.
+        const named = opts.brand?.();
+        const page = named && named.name !== DEFAULT_BRAND_NAME ? { ...opts.page, assistant: named.name } : opts.page;
         // The page reads window.__lenspackUi before anything else runs.
         return serveStatic(opts.ui, url.pathname, res, page && ((html) => {
           html = html.replace("<head>", `<head><script>window.__lenspackUi=${scriptJson(page)}</script>`);
@@ -644,7 +652,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const queries = emptyQueryMeter();
     // The answer card (kernel/agent answer.ts), from the data calls the tools make; policy decides what it shows.
     const shown = answerView(h.ctx, opts.explain?.());
-    const card = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
+    const name = opts.brand?.().name;
+    const card = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections), assistant: name });
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
@@ -658,7 +667,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
-    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying });
+    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, name });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
@@ -668,9 +677,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // saved plan without the agent (reuse/, docs/caching.md). "Ask fresh" (fresh: true) always runs the agent.
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
     const selections = { ...selectionsOf(url), ...selectionsFrom(body.selections) };
-    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, promptVersion: String(PROMPT_VERSION), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
+    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, promptVersion: promptVersionFor(name), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
-    const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
+    const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections), assistant: name });
     const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) });
     if (reused) {
       const cost = turnCost(calls, queries);
@@ -687,7 +696,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
 
     // A model turn waits for a place (and an edit for the edit before it on this board), told its place meanwhile (queue.ts).
-    const place = await waitForTurn(res, queue, { board: boardId, edit: !readOnly && looksLikeEdit(instruction) });
+    const place = await waitForTurn(res, queue, { board: boardId, edit: !readOnly && looksLikeEdit(instruction), name });
     if (!place) return audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: "busy" });
     if (place.boardWaited) {
       // The edit before this one may have changed the board: read it as that edit left it.
@@ -695,7 +704,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       if (now && now.version !== startVersion) {
         config = view(now.config);
         startVersion = now.version;
-        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying });
+        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, name });
         before = summarise(config);
         reuseTurn.config = config;
       }

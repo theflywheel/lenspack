@@ -6,6 +6,7 @@ import { mayAdminister } from "@lenspack/policy";
 
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
 import { type AuditLog, turnsReport } from "./audit";
+import { type BrandConfig, brandAuditDetail, brandSettings } from "./brand";
 import type { Principal } from "./auth";
 import { type ExplainConfig, explainFrom } from "./config";
 import { type FeatureValues, features as featureSwitches } from "./features";
@@ -46,6 +47,8 @@ export type AdminConfig = {
   queue?: Partial<QueueSettings>;
   /** "How this was worked out" under each answer: false turns it off; `sql: false` keeps the words and rows but not the SQL. */
   explain?: ExplainConfig;
+  /** What the assistant is called and its button says (brand.ts); LENSPACK_BRAND_* and the settings page override it. */
+  brand?: BrandConfig;
 };
 
 /** Where the LLM key came from, for the settings page. */
@@ -55,6 +58,7 @@ export const llmKeySource = (env: NodeJS.ProcessEnv = process.env) =>
 export function adminSettings(stateDir: string, config: AdminConfig = {}, env: NodeJS.ProcessEnv = process.env) {
   const settings = settingsStore(stateDir);
   const features = featureSwitches({ config: config.features, env: env.LENSPACK_FEATURES, settings });
+  const brand = brandSettings({ config: config.brand, env, settings });
   const saved = <T>(section: string) => settings.get<T>(section);
   const defaultSpeechModel = config.speech?.model ?? DEFAULT_SPEECH_MODEL;
   const defaultHoldMs = Math.min(HOLD_MS.max, Math.max(HOLD_MS.min, config.speech?.holdMs ?? 2000));
@@ -83,6 +87,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   return {
     settings,
     features,
+    brand,
     cache,
     /** The answer store's effective settings: the section, and the cache feature switch. */
     cacheNow,
@@ -102,10 +107,11 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       queue: gate,
       // The explain switch (settings page, env, config) and the config's explain.sql.
       explain: () => ({ ...explainFrom(config.explain), ...(features.on("explain") ? {} : { on: false }) }),
+      brand: brand.get,
     } satisfies Partial<AppOptions>,
     /** The review system and admin panel over these settings (review/mount.ts), so a host wires it with no more imports. */
     review(o: ReviewMountOptions) {
-      return reviewMount({ features, settings, app: { review: () => features.on("reviewer"), chatDefault: () => saved<ChatSetting>("chat") } }, o);
+      return reviewMount({ features, settings, brand, app: { review: () => features.on("reviewer"), chatDefault: () => saved<ChatSetting>("chat") } }, o);
     },
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
     speechView: (writable: boolean) => ({
@@ -171,11 +177,11 @@ export function adminRoutes(o: AdminRouteOptions) {
 
     if (path === "/info") {
       const speech = s.speech.apiKey ? { enabled: true, maxSeconds: s.speech.maxSeconds, holdMs: s.holdMs() } : { enabled: false };
-      return send(200, { ...o.info?.(url), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values() });
+      return send(200, { ...o.info?.(url), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values(), brand: s.brand.get() });
     }
     if (path === "/settings/speech/models") return send(200, (await speechModels({ baseUrl: s.speech.baseUrl })).models);
     const put = req.method === "PUT";
-    if (!["/settings", "/turns", "/audit"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue"].includes(path))) return;
+    if (!["/settings", "/turns", "/audit"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/brand"].includes(path))) return;
     if (!mayAdminister(who)) {
       audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
       return send(403, { error: `only ${o.adminName}s can do this` });
@@ -192,6 +198,7 @@ export function adminRoutes(o: AdminRouteOptions) {
         speech: s.speechView(writable),
         language: s.languageView(writable),
         features: s.features.view(writable),
+        brand: s.brand.view(writable),
         cache: s.cache.view(writable),
         queue: s.queue.view(writable),
       });
@@ -216,7 +223,8 @@ export function adminRoutes(o: AdminRouteOptions) {
     // Every change is a small JSON object.
     let b: Record<string, unknown>;
     try {
-      b = (await readJson(req, 10_000)) as Record<string, unknown>;
+      // A brand change may carry a small icon as a data URI.
+      b = (await readJson(req, path === "/settings/brand" ? 50_000 : 10_000)) as Record<string, unknown>;
       if (!b || typeof b !== "object" || Array.isArray(b)) throw new Error("body must be a JSON object");
     } catch (e) {
       return send(400, { error: e instanceof Error ? e.message : String(e) });
@@ -228,6 +236,14 @@ export function adminRoutes(o: AdminRouteOptions) {
       o.log(s.featuresLine());
       audit("settings features", JSON.stringify(r.changed));
       return send(200, s.features.view(writable));
+    }
+    // The assistant's name, button label, icon and attribution line: any of them, null puts one back. Pages pick it up on their next load.
+    if (path === "/settings/brand") {
+      const r = s.brand.update(b);
+      if (!r.ok) return send(400, { error: r.error });
+      o.log(`brand: ${r.brand.name} ("${r.brand.buttonLabel}")`);
+      audit("settings brand", brandAuditDetail(b));
+      return send(200, s.brand.view(writable));
     }
     // Saved answers: any of enabled, ttlHours, router, maxEntries, freshMinutes; null puts a field back to the default.
     if (path === "/settings/cache") {
