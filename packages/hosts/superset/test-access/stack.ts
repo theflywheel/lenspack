@@ -377,7 +377,8 @@ export async function startStack(
           HOME: dir,
           SUPERSET_ADMIN_USERNAME: "lp_admin",
           SUPERSET_ADMIN_PASSWORD: secrets.LP_USER_PASSWORD,
-          LENSPACK_LLM_PROVIDERS: JSON.stringify([{ name: "stub", model: "stub", baseUrl: `http://127.0.0.1:${stubPort}/v1`, apiKey: "stub" }]),
+          // Priced (per million tokens, high enough to show in cents), so spend and the budget can be checked.
+          LENSPACK_LLM_PROVIDERS: JSON.stringify([{ name: "stub", model: "stub", baseUrl: `http://127.0.0.1:${stubPort}/v1`, apiKey: "stub", pricing: { input: 1000, output: 1000 } }]),
           ...o.lenspackEnv,
         },
       });
