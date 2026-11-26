@@ -899,7 +899,7 @@
     wrap.append(head, downBar, log, status, foot, by);
     root.append(wrap);
     // "My dashboards" and "Saved layouts" (mine.js), when it is loaded.
-    const mine = window.LenspackMine ? window.LenspackMine.attach({ head, before: newBtn, api, pack: opts.pack, board: opts.board, lang: () => uiLang(), send: (q) => send(q), note: (x, c) => note(x, c), log, scroll: () => scroll(), features: () => feat, openDashboard: opts.openDashboard, onChanged: opts.onChanged, name: () => own().name }) : null;
+    const mine = window.LenspackMine ? window.LenspackMine.attach({ head, before: newBtn, api, pack: opts.pack, board: opts.board, lang: () => uiLang(), send: (q) => send(q), note: (x, c) => note(x, c), log, scroll: () => scroll(), features: () => feat, openDashboard: opts.openDashboard, onChanged: opts.onChanged, name: () => own().name, supersetRoot: opts.supersetRoot || "" }) : null;
 
     const scroll = () => (log.scrollTop = log.scrollHeight);
     // A reply as formatted text, or as plain text when formatting is switched off.

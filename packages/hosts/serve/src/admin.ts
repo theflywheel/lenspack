@@ -232,7 +232,7 @@ export type AdminRouteOptions = {
   /** Whether settings can be changed now, for the page. */
   writable: () => boolean;
   /** The host's own fields in <prefix>/info (any signed-in user) and <prefix>/settings (admins). */
-  info?: (url: URL) => Record<string, unknown>;
+  info?: (url: URL, req: IncomingMessage) => Record<string, unknown>;
   details?: () => Record<string, unknown>;
   /** The host's view of Superset's action log for the telemetry checklist: exports and shares on Lenspack's dashboards since a date. */
   supersetLogs?: (since: Date) => Promise<ChecklistInput["supersetLogs"]>;
@@ -293,7 +293,7 @@ export function adminRoutes(o: AdminRouteOptions) {
     if (path === "/info") {
       // consent: the notice this user must acknowledge before the mic records, while recordings are kept; else null.
       const speech = s.speech.apiKey ? { enabled: true, maxSeconds: s.speech.maxSeconds, holdMs: s.holdMs(), consent: await s.audio.consentNeeded(who.user) } : { enabled: false };
-      return send(200, { ...o.info?.(url), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values(), brand: s.brand.get() });
+      return send(200, { ...o.info?.(url, req), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values(), brand: s.brand.get() });
     }
     if (path === "/settings/speech/models") return send(200, (await speechModels({ baseUrl: s.speech.baseUrl })).models);
     const put = req.method === "PUT";

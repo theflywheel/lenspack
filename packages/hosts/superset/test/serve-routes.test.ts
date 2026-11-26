@@ -181,8 +181,8 @@ describe("Superset mode's server", () => {
     const r = await call("/_superset/info?lang=fr", { as: VIEWER });
     expect(r.status).toBe(200);
     expect(r.headers.get("cache-control")).toBe("no-store");
-    expect(Object.keys(r.body).sort()).toEqual(["brand", "examples", "examplesByLang", "features", "language", "pack", "panel", "speech"]);
-    expect(r.body).toMatchObject({ pack: "visits_pack", panel: "float", speech: { enabled: false }, language: { default: "auto" } });
+    expect(Object.keys(r.body).sort()).toEqual(["brand", "examples", "examplesByLang", "features", "language", "pack", "panel", "speech", "supersetRoot"]);
+    expect(r.body).toMatchObject({ pack: "visits_pack", panel: "float", speech: { enabled: false }, language: { default: "auto" }, supersetRoot: "" });
     expect(r.body.examples).toEqual(["Visites par région"]);
     expect(r.body.examplesByLang).toMatchObject({ en: ["Visits by region"], fr: ["Visites par région"] });
     expect(r.body.language.options).toEqual(expect.arrayContaining(["auto", "en", "fr", "hi"]));
@@ -427,6 +427,26 @@ describe("Superset mode's server", () => {
     const embed = await call("/superset/7", { as: VIEWER, headers: { "x-forwarded-host": "bi.example.org", "x-forwarded-proto": "https" } });
     expect(vars(embed.body)).toMatchObject({ dashboard: 7, supersetUrl: "https://bi.example.org", examples: { en: ["Visits by region"] } });
     expect(embed.body).not.toContain("__BASE__");
+  });
+
+  it("follows Superset's root when Superset runs below a path of its host", async () => {
+    const vars = (html: string) => JSON.parse(/window\.__lp=(.*?);<\/script>/.exec(html)![1]!);
+    // What the plugin forwards when Superset runs under /superset (SUPERSET_APP_ROOT).
+    const under = { "x-forwarded-host": "bi.example.org", "x-forwarded-proto": "https", "x-forwarded-prefix": "/superset/lenspack", "x-lenspack-superset-root": "/superset" };
+    const index = await call("/", { as: VIEWER, headers: under });
+    expect(vars(index.body)).toMatchObject({ base: "/superset/lenspack", supersetRoot: "/superset", supersetUrl: "https://bi.example.org/superset" });
+    const embed = await call("/superset/7", { as: VIEWER, headers: under });
+    expect(embed.body).toContain('<script src="/superset/lenspack/chat.js">');
+    expect(embed.body).toContain('href="/superset/lenspack/"');
+    expect((await call("/_superset/info", { as: VIEWER, headers: under })).body.supersetRoot).toBe("/superset");
+    // At the root, as an older plugin sends it: the same pages as before.
+    const atRoot = await call("/superset/7", { as: VIEWER, headers: { "x-forwarded-host": "bi.example.org", "x-forwarded-proto": "https", "x-forwarded-prefix": "/lenspack" } });
+    expect(vars(atRoot.body)).toMatchObject({ base: "/lenspack", supersetRoot: "", supersetUrl: "https://bi.example.org" });
+    expect(atRoot.body).toContain('<script src="/lenspack/chat.js">');
+    // Headers that aren't plain paths are not written into a page.
+    const odd = await call("/superset/7", { as: VIEWER, headers: { "x-forwarded-prefix": '/x"><script>alert(1)</script>', "x-lenspack-superset-root": "/a/../b" } });
+    expect(odd.body).not.toContain("alert(1)");
+    expect(vars(odd.body)).toMatchObject({ base: "", supersetRoot: "" });
   });
 
   it("records the Superset role names telemetry reads from the signed identity, and none when none are signed", async () => {

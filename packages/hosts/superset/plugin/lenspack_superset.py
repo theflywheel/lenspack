@@ -13,6 +13,8 @@ It adds:
     serves (its admin panel) get the request's Content-Security-Policy nonce on their scripts, which Superset's
     default policy needs before a browser runs them.
     Lenspack trusts nothing else, so its port never needs to be reachable from outside.
+    Superset under a path of its host (SUPERSET_APP_ROOT=/superset, Superset 6.1) works the same: every address this
+    file gives a browser starts from request.script_root, and the route tells Lenspack both paths (lenspack_root).
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
   - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log, and a link to Lenspack's own
     admin panel (/lenspack/_superset/admin/: a board of how the assistant is used, the daily review, open questions, definitions). On Superset 6, whose pages
@@ -118,7 +120,7 @@ def lenspack_clickhouse_label_suffix() -> bool:
     ClickHouseConnectEngineSpec._mutate_label = staticmethod(_mutate_label)
     return True
 
-LENSPACK_PATH = "/lenspack"  # where browsers reach Lenspack: Superset's own route below
+LENSPACK_PATH = "/lenspack"  # where browsers reach Lenspack, below Superset's own root: Superset's own route below
 LENSPACK_INTERNAL_URL = os.environ.get("LENSPACK_INTERNAL_URL", "http://lenspack:8795").rstrip("/")
 LENSPACK_SERVICE_USER = os.environ.get("LENSPACK_SERVICE_USER", "lenspack")
 LENSPACK_TEMPLATES = os.environ.get("LENSPACK_TEMPLATES") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
@@ -333,6 +335,29 @@ def lenspack_brand_label(config) -> str:
     return str(config.get("LENSPACK_BRAND_NAME") or "").strip()[:40] or "AI assistant"
 
 
+# Superset can run below a path of its host (SUPERSET_APP_ROOT=/superset, Superset 6.1 and later; or a proxy's
+# X-Forwarded-Prefix with ENABLE_PROXY_FIX). Superset then answers only under that path, so every address a browser
+# is given must start with it: the page script, the forms and redirects of the settings page, its links, and what
+# Lenspack builds behind the /lenspack route. Flask knows the path for each request as request.script_root
+# ("" at the root), so addresses are built from it per request and never written down with a leading "/" alone.
+_SAFE_ROOT = re.compile(r"(?:/[A-Za-z0-9._~-]+)*")
+
+
+def lenspack_root(script_root) -> str:
+    """The path Superset runs under, as browsers reach it: "" at the root, else "/superset" (no trailing slash).
+    Anything that isn't a plain path (a quote, a space, a "." or ".." segment) counts as the root, so it can't
+    break out of an attribute or a script where it is written."""
+    root = str(script_root or "").rstrip("/")
+    if not _SAFE_ROOT.fullmatch(root) or any(p in _DOT_SEGMENTS for p in root.split("/")):
+        return ""
+    return root
+
+
+def lenspack_url(script_root, path: str) -> str:
+    """A browser-facing address on Superset's host: Superset's root, then the path ("/ai-assistant/")."""
+    return lenspack_root(script_root) + "/" + path.lstrip("/")
+
+
 # Flash categories of the settings page's own messages: the page shows only these, not a message another part
 # of Superset left in the session (Superset 6 leaves an "Access is Denied" from signing in, which its frontend
 # never shows).
@@ -360,6 +385,15 @@ def lenspack_app_mutator(app):
     settings_layout = lenspack_settings_layout(app)
     brand_label = lenspack_brand_label(app.config)
     lenspack_clickhouse_label_suffix()
+
+    # Every page's templates (the page script, the settings page) get Superset's root and Lenspack's address below
+    # it for the request being drawn: lenspack_root ("" or "/superset") and lenspack_base ("/superset/lenspack").
+    @app.context_processor
+    def lenspack_paths():
+        from flask import has_request_context
+
+        root = lenspack_root(request.script_root) if has_request_context() else ""
+        return {"lenspack_root": root, "lenspack_base": root + LENSPACK_PATH}
 
     def is_admin(user) -> bool:
         return any(r.name == security_manager.auth_role_admin for r in getattr(user, "roles", []) or [])
@@ -417,7 +451,10 @@ def lenspack_app_mutator(app):
             "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"], user_id=getattr(user, "id", None)) if rights else lenspack_sign(user.username, admin, roles=roles, user_id=getattr(user, "id", None)),
             "x-forwarded-proto": request.scheme,
             "x-forwarded-host": request.host,
-            "x-forwarded-prefix": LENSPACK_PATH,
+            # Where the browser reached this route, Superset's root included (/superset/lenspack), and Superset's
+            # root alone: Lenspack builds the addresses on its pages and in its answers from these.
+            "x-forwarded-prefix": lenspack_root(request.script_root) + LENSPACK_PATH,
+            "x-lenspack-superset-root": lenspack_root(request.script_root),
         }
         for h in ("content-type", "accept", "accept-language"):
             if request.headers.get(h):
@@ -583,10 +620,14 @@ def lenspack_app_mutator(app):
         except Exception as e:  # unreachable, not JSON: say so on the page
             return None, f"{type(e).__name__}: {str(e)[:160]}"
 
+    def back():
+        """Back to the settings page, below Superset's root."""
+        return redirect(lenspack_url(request.script_root, "/ai-assistant/"))
+
     def saved(what, result):
         _data, error = result
         flash(f"{what} saved." if error is None else f"{what} not saved: {error}", FLASH_OK if error is None else FLASH_BAD)
-        return redirect("/ai-assistant/")
+        return back()
 
     class LenspackSettingsView(BaseView):
         route_base = "/ai-assistant"
@@ -622,7 +663,7 @@ def lenspack_app_mutator(app):
                 settings=settings, settings_error=settings_error, info=info, usage=usage, usage_error=usage_error,
                 audit=audit, audit_error=audit_error, turns=turns, databases=databases,
                 account_roles=[r.name for r in account.roles] if account else None,
-                internal_url=LENSPACK_INTERNAL_URL, lenspack_path=LENSPACK_PATH, stt_models=stt_models, stt_bench=STT_BENCH,
+                internal_url=LENSPACK_INTERNAL_URL, lenspack_path=lenspack_root(request.script_root) + LENSPACK_PATH, stt_models=stt_models, stt_bench=STT_BENCH,
                 lp_layout=settings_layout, lp_flash=[FLASH_OK, FLASH_BAD], lp_brand=brand_label,
             )
 
@@ -656,7 +697,7 @@ def lenspack_app_mutator(app):
                 hold = int(request.form.get("holdMs", ""))
             except ValueError:
                 flash("Space-bar hold: enter a whole number of milliseconds.", FLASH_BAD)
-                return redirect("/ai-assistant/")
+                return back()
             return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": hold}))
 
         # Kept recordings of spoken questions: how long, how much, and the consent notice. Whether they are kept at all is
@@ -675,7 +716,7 @@ def lenspack_app_mutator(app):
                     body["maxStoredMb"] = int(request.form.get("maxStoredMb", ""))
                 except ValueError:
                     flash("Kept recordings: enter whole numbers of days and MB.", FLASH_BAD)
-                    return redirect("/ai-assistant/")
+                    return back()
             return saved("Kept recordings", call("PUT", "/_superset/settings/speech", body))
 
         @expose("/audio-delete", methods=["POST"])
@@ -691,7 +732,7 @@ def lenspack_app_mutator(app):
                 flash(f"Deleted {done.get('deleted', 0)} kept recording(s){' of ' + user if user else ''}.", FLASH_OK)
             else:
                 flash(f"Recordings not deleted: {error}", FLASH_BAD)
-            return redirect("/ai-assistant/")
+            return back()
 
         @expose("/audio-export", methods=["POST"])
         @has_access
@@ -703,7 +744,7 @@ def lenspack_app_mutator(app):
                 flash(f"Manifest written: {done.get('clips', 0)} clip(s) in {done.get('file')}, {done.get('flagged', 0)} set aside in {done.get('flaggedFile')}.", FLASH_OK)
             else:
                 flash(f"Manifest not written: {error}", FLASH_BAD)
-            return redirect("/ai-assistant/")
+            return back()
 
         @expose("/telemetry", methods=["POST"])
         @has_access
@@ -716,7 +757,7 @@ def lenspack_app_mutator(app):
                 days = int(request.form.get("retentionDays", ""))
             except ValueError:
                 flash("Usage telemetry: enter a whole number of days.", FLASH_BAD)
-                return redirect("/ai-assistant/")
+                return back()
             return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": days}))
 
         @expose("/language", methods=["POST"])
@@ -739,7 +780,7 @@ def lenspack_app_mutator(app):
             ft = (current or {}).get("features")
             if not ft:
                 flash(f"Off switches not saved: {error or 'this Lenspack has no off switches'}", FLASH_BAD)
-                return redirect("/ai-assistant/")
+                return back()
             keys = [o["key"] for o in ft["options"]]
             if request.form.get("reset"):
                 body = {k: None for k in keys}
@@ -748,11 +789,14 @@ def lenspack_app_mutator(app):
                 body = {k: request.form.get(k) == "on" for k in keys if (request.form.get(k) == "on") != ft["values"][k]}
                 if not body:
                     flash("Off switches: nothing changed.", FLASH_OK)
-                    return redirect("/ai-assistant/")
+                    return back()
             return saved("Off switches", call("PUT", "/_superset/settings/features", body))
 
     appbuilder.add_view_no_menu(LenspackSettingsView)
-    appbuilder.add_link("AI assistant", label=brand_label, href="/ai-assistant/", icon="fa-comments", category="Manage", cond=lambda: security_manager.is_admin())
+    # A menu entry's address is fixed when Superset starts, so it takes Superset's root from its config, as Superset's
+    # own entries do (APPLICATION_ROOT, which SUPERSET_APP_ROOT sets).
+    menu_href = lenspack_url("" if app.config.get("APPLICATION_ROOT") in (None, "", "/") else app.config["APPLICATION_ROOT"], "/ai-assistant/")
+    appbuilder.add_link("AI assistant", label=brand_label, href=menu_href, icon="fa-comments", category="Manage", cond=lambda: security_manager.is_admin())
 
 
 FLASK_APP_MUTATOR = lenspack_app_mutator
@@ -760,18 +804,20 @@ FLASK_APP_MUTATOR = lenspack_app_mutator
 
 # Superset includes this at the end of every page and documents it as overridable.
 TAIL_JS = r'''{# The "Ask Lenspack" button: one small script on every page, for signed-in users. With Talisman on it carries the page's CSP nonce.
-   It loads /lenspack/overlay.js; while Lenspack is restarting (a 5xx or no answer) it tries again after 1, 2, 4… s, at most 30 s apart,
+   It loads overlay.js from Lenspack's route below Superset's root (lenspack_base: /lenspack, or /superset/lenspack when Superset
+   runs under /superset); while Lenspack is restarting (a 5xx or no answer) it tries again after 1, 2, 4… s, at most 30 s apart,
    while the tab is visible. Signed out or refused (another 4xx): it stops. Once loaded, the overlay handles restarts itself. #}
 {% if current_user.is_authenticated %}{% set lp_nonce = csp_nonce() if csp_nonce is defined else "" %}
 <script{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}>
 (function () {
+  var base = {{ lenspack_base | tojson }};
   var wait = 1000;
   function load() {
     var s = document.createElement("script");
-    s.src = "/lenspack/overlay.js";
+    s.src = base + "/overlay.js";
     s.onerror = function () {
       s.remove();
-      fetch("/lenspack/healthz", { cache: "no-store" })
+      fetch(base + "/healthz", { cache: "no-store" })
         .then(function (r) { return r.status; }, function () { return 0; })
         .then(function (status) {
           if (status >= 400 && status < 500 && status !== 429) return;
@@ -850,7 +896,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
   <div class="lp-card">
     <h2>Chat model</h2>
     <p class="mute" style="margin:0 0 8px">The model that answers in the chat and edits dashboards, for everyone. Applies to the next question; no restart.</p>
-    <form class="lp-form" method="post" action="/ai-assistant/chat">
+    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/chat">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <select name="choice" aria-label="Chat model" {% if not c.writable %}disabled{% endif %}>
         {% for p in c.options %}
@@ -880,7 +926,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
     {% if settings.speech %}{% set sp = settings.speech %}
       <p class="mute" style="margin:0 0 8px">Turns the chat's microphone recordings into text.
         {% if sp.enabled %}Key from <code>{{ sp.keyFrom }}</code> (value never shown).{% else %}<span class="bad">No key set (<code>OPENROUTER_API_KEY</code>): the microphone is hidden.</span>{% endif %}</p>
-      <form class="lp-form" method="post" action="/ai-assistant/speech">
+      <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/speech">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <select name="model" aria-label="Speech-to-text model" {% if not sp.writable %}disabled{% endif %}>
           {% set ids = (stt_models or [])|map(attribute='id')|list %}
@@ -895,7 +941,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
       {% if sp.defaultHoldMs is defined %}
         {% set rng = sp.holdMsRange if sp.holdMsRange is defined and sp.holdMsRange else [500, 3000] %}
         {% set lo = rng.min if rng is mapping else rng[0] %}{% set hi = rng.max if rng is mapping else rng[1] %}
-        <form class="lp-form" method="post" action="/ai-assistant/speech-hold" style="margin-top:8px">
+        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/speech-hold" style="margin-top:8px">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="mute" for="lp-hold">Hold the space bar for</label>
           <input id="lp-hold" type="number" name="holdMs" min="{{ lo }}" max="{{ hi }}" step="100" value="{{ sp.holdMs or sp.defaultHoldMs }}" style="width:90px" {% if not sp.writable %}disabled{% endif %}>
@@ -908,7 +954,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
         <h3 style="font-size:13.5px;margin:14px 0 6px">Kept recordings</h3>
         <p class="mute" style="margin:0 0 6px">{% if sp.keepAudio %}<b>On.</b>{% else %}<b>Off.</b>{% endif %} Turned on or off as "Kept recordings" on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>, which shows what it means first. On, each spoken question's recording is kept in Lenspack's state folder for checking speech to text, deleted after the days below or, oldest first, when over the size cap. Only Superset admins can play one, and each play is in the audit log. The speech provider receives the recording either way.
           {% if sp.stored %}Kept now: {{ sp.stored.files }} recording(s), {{ (sp.stored.bytes / 1048576)|round(1) }} MB.{% endif %}</p>
-        <form class="lp-form" method="post" action="/ai-assistant/speech-audio">
+        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/speech-audio">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="mute">Keep for <input type="number" name="audioRetentionDays" min="1" max="3650" value="{{ sp.audioRetentionDays }}" style="width:70px" {% if not sp.writable %}disabled{% endif %}> days</label>
           <label class="mute">at most <input type="number" name="maxStoredMb" min="1" max="100000" value="{{ sp.maxStoredMb }}" style="width:90px" {% if not sp.writable %}disabled{% endif %}> MB</label>
@@ -916,12 +962,12 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
           <button type="submit" {% if not sp.writable %}disabled{% endif %}>Save</button>
           <button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to defaults</button>
         </form>
-        <form class="lp-form" method="post" action="/ai-assistant/audio-delete" style="margin-top:8px">
+        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/audio-delete" style="margin-top:8px">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="text" name="user" placeholder="Superset username (empty: everyone's)" aria-label="Superset username" style="width:240px" {% if not sp.writable %}disabled{% endif %}>
           <button class="ghost" type="submit" {% if not sp.writable %}disabled{% endif %}>Delete stored audio</button>
         </form>
-        <form class="lp-form" method="post" action="/ai-assistant/audio-export" style="margin-top:8px">
+        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/audio-export" style="margin-top:8px">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="ghost" type="submit" {% if not sp.writable or not sp.stored or not sp.stored.files %}disabled{% endif %}>Export for evaluation</button>
           <span class="mute">writes manifest.jsonl beside the recordings, in the speech benchmark's format (evals/speech)</span>
@@ -941,7 +987,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
   {% set opts = lg.options if lg.options is mapping else {} %}
   <div class="lp-card">
     <h2>Chat language</h2>
-    <form class="lp-form" method="post" action="/ai-assistant/language">
+    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/language">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>Replies in <select name="default" {% if not lg.writable %}disabled{% endif %}>{% for o in (opts.default or ['auto', 'en', 'fr', 'hi', 'pt']) %}<option value="{{ o }}" {% if o == lg.default %}selected{% endif %}>{{ names.get(o, o) }}</option>{% endfor %}</select></label>
       <label>Chart titles in <select name="titles" {% if not lg.writable %}disabled{% endif %}>{% for o in (opts.titles or ['board', 'speaker']) %}<option value="{{ o }}" {% if o == lg.titles %}selected{% endif %}>{{ names.get(o, o) }}</option>{% endfor %}</select></label>
@@ -956,9 +1002,9 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
   <div class="lp-card">
     <h2>Usage telemetry</h2>
     <p class="mute" style="margin:0 0 8px">One record per question (who asked, the kind of question, how it went, time and cost) and the thumbs under each answer, in <code>{{ tl.file }}</code>.
-      {% if not tl.enabled %}<span class="bad">Off (Off switches).</span>{% endif %} Read it as an admin at <code>/lenspack/_superset/telemetry</code>.
+      {% if not tl.enabled %}<span class="bad">Off (Off switches).</span>{% endif %} Read it as an admin at <code>{{ lenspack_path }}/_superset/telemetry</code>.
       What is recorded, item by item, is switched on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>.</p>
-    <form class="lp-form" method="post" action="/ai-assistant/telemetry">
+    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/telemetry">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="mute">Keep for <input type="number" name="retentionDays" min="1" max="3650" value="{{ tl.retentionDays }}" style="width:80px" {% if not tl.writable %}disabled{% endif %}> days</label>
       <button type="submit" {% if not tl.writable %}disabled{% endif %}>Save</button>
@@ -972,7 +1018,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
   <div class="lp-card">
     <h2>Off switches</h2>
     <p class="mute">Turn parts of the assistant off for everyone. A change applies to the next dashboard each person opens.</p>
-    <form class="lp-form" method="post" action="/ai-assistant/features">
+    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/features">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <table>
       {% for o in ft.options %}{% set src = ft.source[o.key] %}
@@ -1056,7 +1102,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
     <details open><summary class="mute">Recent answers (newest first, last {{ turns.recent|length }})</summary>
       <table class="lp-turns">
         <tr><th>Time (UTC)</th><th>User</th><th>Dashboard</th><th>Model</th><th>Tokens in / out</th><th>Cost</th></tr>
-        {% for r in turns.recent %}<tr><td>{{ r.at[:19]|replace('T', ' ') }}</td><td>{{ r.user }}</td><td>{% if r.board and r.board.startswith('superset-') %}<a href="/superset/dashboard/{{ r.board[9:] }}/">{{ r.board[9:] }}</a>{% else %}{{ r.board or '' }}{% endif %}</td><td><code>{{ r.models|join(', ') }}</code></td><td>{{ '{:,}'.format(r.tokens['in']) }} / {{ '{:,}'.format(r.tokens.out) }}</td><td>≈ ${{ '%.4f'|format(r.costUsd) }}{% if r.sttUsd %} <span class="mute">(speech ${{ '%.4f'|format(r.sttUsd) }})</span>{% endif %}</td></tr>
+        {% for r in turns.recent %}<tr><td>{{ r.at[:19]|replace('T', ' ') }}</td><td>{{ r.user }}</td><td>{% if r.board and r.board.startswith('superset-') %}<a href="{{ lenspack_root }}/superset/dashboard/{{ r.board[9:] }}/">{{ r.board[9:] }}</a>{% else %}{{ r.board or '' }}{% endif %}</td><td><code>{{ r.models|join(', ') }}</code></td><td>{{ '{:,}'.format(r.tokens['in']) }} / {{ '{:,}'.format(r.tokens.out) }}</td><td>≈ ${{ '%.4f'|format(r.costUsd) }}{% if r.sttUsd %} <span class="mute">(speech ${{ '%.4f'|format(r.sttUsd) }})</span>{% endif %}</td></tr>
         {% endfor %}
       </table>
     </details>
@@ -1097,7 +1143,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
       <tr><th>Chat and speech models</th><td>On this page (saved in Lenspack's state, kept across restarts)</td></tr>
       <tr><th>LLM and speech keys</th><td><code>ANTHROPIC_API_KEY</code>, <code>LENSPACK_LLM_PROVIDERS</code>, <code>OPENROUTER_API_KEY</code> in Lenspack's environment</td></tr>
       <tr><th>Datasets, guidance, budget</th><td>Lenspack's config file (<code>lenspack superset --config &lt;file&gt;</code>)</td></tr>
-      <tr><th>Who may use the chat</th><td>Anyone signed in to Superset who can view the dashboard. Superset's <code>/lenspack/</code> route checks the session and signs who is asking for every Lenspack request.</td></tr>
+      <tr><th>Who may use the chat</th><td>Anyone signed in to Superset who can view the dashboard. Superset's <code>{{ lenspack_path }}/</code> route checks the session and signs who is asking for every Lenspack request.</td></tr>
       <tr><th>Whose data access applies</th><td><code>LENSPACK_HOST_POLICY</code> on the Lenspack container: off (default), the answers use what Lenspack's own account may read; <code>superset</code>, each user's own dataset access and row-level security.</td></tr>
       <tr><th>Who may edit through it</th><td><code>LENSPACK_EDIT_POLICY</code> on the Lenspack container: <code>superset</code> (default) or <code>signed-in</code>. The Dashboard edits switch above turns edits off for everyone.</td></tr>
       <tr><th>Off switches</th><td>On this page, or <code>features:</code> in Lenspack's config file and <code>LENSPACK_FEATURES</code> on the Lenspack container (this page wins)</td></tr>
@@ -1136,8 +1182,8 @@ LAYOUT_HTML = r"""<!DOCTYPE html>
 </head>
 <body>
   <header class="lp-top">
-    <a class="lp-home" href="/superset/welcome/">Superset</a><span class="lp-sep">/</span><span class="lp-sep">Settings</span><span class="lp-sep">/</span><b>{{ lp_brand | default("AI assistant") }}</b>
-    <a class="lp-back" href="/superset/welcome/">← Back to Superset</a>
+    <a class="lp-home" href="{{ lenspack_root }}/superset/welcome/">Superset</a><span class="lp-sep">/</span><span class="lp-sep">Settings</span><span class="lp-sep">/</span><b>{{ lp_brand | default("AI assistant") }}</b>
+    <a class="lp-back" href="{{ lenspack_root }}/superset/welcome/">← Back to Superset</a>
   </header>
   {% block messages %}{% endblock %}
   {% block content %}{% endblock %}
@@ -1149,4 +1195,5 @@ __all__ = [
     "LENSPACK_PATH", "LENSPACK_INTERNAL_URL", "LENSPACK_SERVICE_USER", "LENSPACK_TEMPLATES", "STT_BENCH", "FLASK_APP_MUTATOR",
     "lenspack_app_mutator", "lenspack_sign", "lenspack_identity_key", "lenspack_rls_clauses", "lenspack_dataset_access",
     "lenspack_settings_layout", "superset_version", "lenspack_clickhouse_label_suffix", "lenspack_reads_dashboard_arg",
+    "lenspack_root", "lenspack_url",
 ]
