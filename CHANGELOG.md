@@ -23,6 +23,11 @@ brought it.
   `telemetry.groups` values keep their meaning; scripts that switched items through the route need the new names. See
   [Telemetry](docs/features/telemetry.md) and [Upgrading](docs/operating/upgrading.md#telemetry-switches-by-field).
   ([#100](https://github.com/theflywheel/lenspack/pull/100))
+- **Superset under a path.** Superset 6.1 running below a path of its host (`SUPERSET_APP_ROOT=/superset`) now
+  gets the button, the chat, the settings page and its menu entry, and links to dashboards, all below that path,
+  with no new setting. At the root nothing changes. Update the plugin file and the server image together. See
+  [Superset under a path](docs/hosts/superset/install.md#superset-under-a-path).
+  ([#99](https://github.com/theflywheel/lenspack/pull/99))
 - **Who is an admin, and who may use the assistant, are Lenspack's rules.** `auth.admins` says who gets the admin
   pages and `auth.users` who may use the assistant at all. Both work the same for every sign-in, Superset included,
   where they list Superset role names. Left out, nothing changes: admins are a role named `admin` (Superset's `Admin`

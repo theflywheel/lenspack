@@ -115,9 +115,14 @@ see the North rows instead of no `visits` at all.
 
 ```sh
 pnpm install
-pnpm test:access                 # Superset 6.1 and 5.0, side by side, about 4 minutes after the images are pulled
-pnpm test:access superset-6.1    # one version
+pnpm test:access                 # Superset 6.1 and 5.0, and 6.1 under /superset, side by side
+pnpm test:access superset-5.0    # one version
+pnpm test:access app-root        # only Superset 6.1 under /superset
 ```
+
+The `app-root` file runs Superset 6.1 below a path of its host (`SUPERSET_APP_ROOT=/superset`). It checks that the
+button script, the chat, the links to dashboards, the settings page, its redirects and the menu entry all stay below
+`/superset` (see [Superset under a path](../hosts/superset/install.md#superset-under-a-path)).
 
 It needs Linux with Docker. Superset runs in the host's network and listens on 127.0.0.1 only. The first run pulls
 `apache/superset:6.1.0`, `apache/superset:5.0.0` and `postgres:16-alpine`, and each Superset installs the Postgres
@@ -127,7 +132,8 @@ their volumes and the temporary folder are removed at the end, whether the cases
 
 CI runs it on every pull request, in its own job beside the unit tests. The suite is in
 [packages/hosts/superset/test-access](../../packages/hosts/superset/test-access): `stack.ts` starts everything,
-`fixtures.py` makes the users, roles, rules and dashboards, and `cases.ts` holds the cases.
+`fixtures.py` makes the users, roles, rules and dashboards, `cases.ts` holds the cases, and
+`superset-6.1-app-root.access.test.ts` holds the cases under a path.
 
 ## The other tests
 

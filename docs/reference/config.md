@@ -245,7 +245,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `overlay` | | what Superset has no field for: `pack`, `description`, `instructions`, `timeZone`, `entities`, `hints`, `labels`, `hierarchies`, `examples`, `geo`, `mapStyle`, `panel` (`float` or `dock`). See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-overlay) |
 | `host` | `LENSPACK_HOST`, else `127.0.0.1` | where it listens |
 | `port` | `LENSPACK_PORT`, else `8795` | |
-| `publicPath` | `LENSPACK_PUBLIC_PATH`, else `""` | the path Superset forwards (`/lenspack`) |
+| `publicPath` | `LENSPACK_PUBLIC_PATH`, else `""` | the path Superset forwards (`/lenspack`). A request through Superset's route says its own path, which wins, so Superset under a path (`/superset/lenspack`) needs no change. See [Superset under a path](../hosts/superset/install.md#superset-under-a-path) |
 | `state` | `superset-boards.json` in `LENSPACK_STATE_DIR`, else `state/` | the board bookkeeping file; its folder holds the rest of the state |
 | `budget` | `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | daily caps |
 | `speech` | `model: mistralai/voxtral-mini-transcribe-3-0`, `maxSeconds: 60`, `holdMs: 2000` | voice: `{ model, baseUrl, maxSeconds, holdMs }`. See [Voice](../features/voice.md) |

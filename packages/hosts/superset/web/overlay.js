@@ -516,7 +516,7 @@
         mounted = current.board;
         menu = null;
         chat = window.LenspackChat.mount(panel, {
-          api: origin, pack: current.pack, board: current.board, title: current.title, examples: current.examples, brand: brand,
+          api: origin, pack: current.pack, board: current.board, title: current.title, examples: current.examples, brand: brand, supersetRoot: current.supersetRoot,
           onClose: close,
           onChanged: refreshInPlace,
           tabs: openTabs,
@@ -570,7 +570,8 @@
       brand = info.brand || {};
       if (features.overlay === false) { if (down) setDown(false); return hideAll(); }
       var again = !!current && current.board === b.board;
-      current = { key: key, board: b.board, title: b.title, pack: info.pack, examples: info.examplesByLang || info.examples };
+      // supersetRoot: where Superset runs on its host ("" or "/superset"), for links to Superset's own pages.
+      current = { key: key, board: b.board, title: b.title, pack: info.pack, examples: info.examplesByLang || info.examples, supersetRoot: info.supersetRoot || "" };
       lastHealth = Date.now();
       if (down) setDown(false);
       // Back after a restart with the chat already showing: nothing more to do.
