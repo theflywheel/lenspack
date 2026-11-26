@@ -115,3 +115,29 @@ export function changesSince(versions: BoardVersion[], since: number): BoardChan
 
 /** "a", "a and b", "a, b and c". */
 export const listInWords = (xs: string[]) => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+
+/** A widget a version took off the board: its title, that version, when, and what made the change (chat, by hand, …). */
+export type Removal = { title: string; version: number; at: Date; source: string };
+
+/**
+ * The widgets taken off the board in its recent history, newest first: each from the version before it, so a widget
+ * removed and later put back is not listed. A page opened before the removal can still show the widget until it
+ * reloads, so the chat needs these to answer someone who points at one. `limit` caps the list; `since` drops older ones.
+ */
+export function recentRemovals(versions: BoardVersion[], o: { limit?: number; since?: Date } = {}): Removal[] {
+  const byVersion = new Map(versions.map((v) => [v.version, v]));
+  const latest = versions.reduce<BoardVersion | undefined>((a, v) => (!a || v.version > a.version ? v : a), undefined);
+  const out: Removal[] = [];
+  for (const v of [...versions].sort((a, b) => b.version - a.version)) {
+    if (o.since && new Date(v.createdAt) < o.since) break;
+    const prev = byVersion.get(v.version - 1);
+    if (!prev) continue;
+    for (const [id, w] of Object.entries(prev.config.widgets)) {
+      if (v.config.widgets[id] || latest?.config.widgets[id]) continue;
+      if (out.some((r) => r.title === w.title)) continue;
+      out.push({ title: w.title, version: v.version, at: new Date(v.createdAt), source: v.source });
+    }
+    if (out.length >= (o.limit ?? 5)) break;
+  }
+  return out.slice(0, o.limit ?? 5);
+}

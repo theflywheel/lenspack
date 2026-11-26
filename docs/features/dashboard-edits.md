@@ -79,6 +79,27 @@ database, so undo survives a restart. See [Stores](../architecture/stores.md).
 Two requests to change the same board do not run at the same time: the second waits for the first, then starts
 from the board as the first left it. See [Busy hours](busy-hours.md).
 
+## When the reply is cut off
+
+A reply can be cut off on its way to the browser after the change was already made: a phone moving between networks
+drops the connection, a proxy gives up, Lenspack restarts. The chat panel then finds out what happened before it offers
+to ask again:
+
+- Each question goes with a key the panel makes. Lenspack keeps what the turn did under that key for 15 minutes: the
+  board's version before and after, the widgets it added, removed or changed by title, and its reply.
+- On a cut-off reply the panel asks Lenspack about the key. If the turn changed the dashboard, the panel says so,
+  for example "Your change was made: removed “Stock by product”. The connection dropped before the reply finished.",
+  shows the reply, and brings the page in step. If the turn answered without a change, the panel shows the answer.
+- If Lenspack has no record (it restarted, or the question never arrived), the panel compares the board's version
+  with the one it last knew. If the board moved on, it says what changed and does not ask again.
+- Otherwise it offers **Retry**. Retry checks again first, then sends the question with the same key. If the turn ran
+  after all, Lenspack answers from what it did and makes no change twice.
+
+When someone asks about a widget that is no longer on the board, the assistant can say what happened to it. Each turn
+is told which widgets were removed in the last week, in which version, when and by whom, and `list_versions` names the
+widgets each version added or removed by title. So it answers "That chart was removed at 10:15 (v3) in this chat. If
+you still see it, reload the page." rather than "There is no such chart."
+
 ## Superset specifics
 
 Inside Superset, every change is sent to Superset before it counts, and a change Superset refuses is undone. A
@@ -86,6 +107,12 @@ chart Lenspack cannot express exactly is kept as Superset's: the assistant can m
 rewrite it. On a dashboard with tabs or columns, charts inside tabs are read, the assistant is told which tab the
 viewer has open, and widgets are added, resized, removed and restored in place inside their tab. Moving a widget on
 such a dashboard is refused: move it in Superset.
+
+After every change the chat makes, the open page is brought in step with the saved dashboard without a reload: the
+dashboard is redrawn in place, and a removed chart goes, a new one appears. The panel then compares the charts the page
+draws with the dashboard Superset saved. If the page still draws a chart the saved dashboard no longer has, it reloads
+the page instead, keeping the chat open and the tab the viewer had open. Superset's own "Refresh dashboard" doesn't do
+this: it asks each chart for its data again, and a removed chart still answers, so it stays on the page until a reload.
 
 See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md).
 

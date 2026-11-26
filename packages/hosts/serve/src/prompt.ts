@@ -1,5 +1,5 @@
 import { CLARIFY_RULE } from "@lenspack/agent";
-import type { BoardChange, BoardConfig, Catalogue } from "@lenspack/core";
+import type { BoardChange, BoardConfig, Catalogue, Removal } from "@lenspack/core";
 import { describeQuery, summarise } from "@lenspack/core";
 import { type Pack, datedTime, timeFieldOf } from "@lenspack/pack";
 
@@ -127,6 +127,27 @@ export function userChangesText(changes: BoardChange[] = []) {
   return `\n\nCHANGES MADE BY THE USER SINCE YOUR LAST TURN (the current board above already includes them):\n${lines.join("\n")}`;
 }
 
+const MADE_BY: Record<string, string> = { chat: "by the chat", layout: "by hand", ops: "by hand", revert: "by a rollback", file: "by the board file", superset: "in Superset" };
+
+/**
+ * The widgets taken off the board recently (core recentRemovals), as a board-part section. A page opened before a
+ * removal can still show the widget until it reloads, and the chat's own earlier replies may not be in the
+ * conversation (a reply cut off on its way): this is how the model can still say what happened to it. Times are in
+ * the pack's time zone. Empty when nothing was removed.
+ */
+export function removedText(removals: Removal[] = [], timeZone = "UTC") {
+  if (removals.length === 0) return "";
+  const when = (d: Date) => {
+    try {
+      return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d).replace(",", "");
+    } catch {
+      return d.toISOString().slice(0, 16).replace("T", " ");
+    }
+  };
+  const lines = removals.map((r) => `- “${r.title}”: removed in v${r.version}, ${when(r.at)}, ${MADE_BY[r.source] ?? r.source}`);
+  return `\n\nRECENTLY REMOVED FROM THIS BOARD (not on it now; a page opened earlier can still show one until it is reloaded). If the user mentions one of these, say plainly that it was removed, when and in which version, and that reloading the page shows the board as it is; never say it does not exist:\n${lines.join("\n")}`;
+}
+
 /**
  * The system prompt in two parts: what holds for every turn on this pack
  * (the catalogue, the examples, the rules), then the current board, which
@@ -134,7 +155,7 @@ export function userChangesText(changes: BoardChange[] = []) {
  * Stable first, so a provider's prompt cache keeps the long first part across
  * edits. o.name is the assistant's name (brand.name), how it introduces itself.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; layout?: string; name?: string } = {}): [stable: string, board: string] => [
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; layout?: string; name?: string; removed?: Removal[] } = {}): [stable: string, board: string] => [
   `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
@@ -167,5 +188,5 @@ Rules:
 - Never address the user by name.${o.clarify ? `\n${CLARIFY_RULE}` : ""}
 - After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
 - An informational answer (what the data holds) may use a short bullet list and **bold** for names; keep it brief. Several numbers side by side for a few groups may be one compact markdown table (at most 6 rows and 4 columns, figures formatted as on the board); anything larger belongs on the board as a table widget. Never use markdown headings.`,
-  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}${o.layout ?? ""}` : ""}${userChangesText(changes)}${languageText(language)}`,
+  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}${o.layout ?? ""}` : ""}${userChangesText(changes)}${removedText(o.removed, pack.timeZone)}${languageText(language)}`,
 ];

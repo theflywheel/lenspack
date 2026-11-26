@@ -2,7 +2,8 @@
 // tail_js_custom_extra.html (a template Superset documents as overridable).
 // On a dashboard it adds an "Ask Lenspack" button; the chat edits that
 // dashboard through the Lenspack server, and the dashboard is re-read in
-// place to show it (no page reload; see refreshInPlace).
+// place to show it (no page reload; see refreshInPlace). If the page still
+// draws a chart the saved dashboard no longer has, it reloads (checkInStep).
 // The chat floats over the dashboard (drag it by its header, resize it by the
 // grip in its bottom-left corner or from its left and top edges), or opens as a side panel that narrows Superset's page. Which one
 // is a setting (the gear in the chat's header), defaulting to the deployment's
@@ -470,6 +471,7 @@
     var old = document.querySelector(DASH);
     if (!/\/superset\/dashboard\//.test(location.pathname) || !old) return reloadWhenIdle();
     refreshing = true;
+    var key = current && current.key;
     var y = window.scrollY;
     var state = window.history.state;
     function go(path) {
@@ -485,7 +487,7 @@
         if (now && now !== old && document.contains(now)) {
           refreshing = false;
           setTimeout(function () { window.scrollTo(0, y); }, 400);
-          return;
+          return checkInStep(key);
         }
         if (Date.now() - t0 > 12000) {
           refreshing = false;
@@ -494,6 +496,49 @@
         setTimeout(wait, 150);
       })();
     }, 80);
+  }
+  // The charts the page draws, by their layout ids: each chart's title holds Superset's anchor link,
+  // <span class="anchor-link-container" id="CHART-…">, as each tab's does (openTabs), in Superset 5 and 6 alike.
+  function chartsOnPage() {
+    var out = [];
+    var root = document.querySelector(DASH);
+    if (root) root.querySelectorAll(".anchor-link-container[id^='CHART-']").forEach(function (n) { if (out.indexOf(n.id) < 0) out.push(n.id); });
+    return out;
+  }
+  // The charts the saved dashboard draws: those reached from its root in Superset's own layout (position_json),
+  // read as the viewer through Superset's API.
+  function savedCharts(key) {
+    return fetch("/api/v1/dashboard/" + encodeURIComponent(key), { credentials: "same-origin", headers: { accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.result) return null;
+        var pos = JSON.parse(j.result.position_json || "{}");
+        var seen = {};
+        (function walk(id) {
+          var c = pos[id];
+          if (!c || seen[id]) return;
+          seen[id] = c.type;
+          (c.children || []).forEach(walk);
+        })("ROOT_ID");
+        return Object.keys(seen).filter(function (id) { return seen[id] === "CHART"; });
+      })
+      .catch(function () { return null; });
+  }
+  // After an in-place refresh, the page must match the saved dashboard. A chart it still draws that the saved layout no
+  // longer has (removed by the chat) means the refresh did not take: reload the page instead, the chat kept open and
+  // the open tab asked back. Checked twice, as Superset draws charts a moment after the grid.
+  function checkInStep(key) {
+    if (!key) return;
+    [1500, 4500].forEach(function (ms) {
+      setTimeout(function () {
+        if (refreshing || !current || current.key !== key) return;
+        savedCharts(key).then(function (saved) {
+          if (!saved || refreshing || !current || current.key !== key) return;
+          var stale = chartsOnPage().filter(function (id) { return saved.indexOf(id) < 0; });
+          if (stale.length) reloadWhenIdle();
+        });
+      }, ms);
+    });
   }
   function reloadWhenIdle() {
     var goBtn = panel.querySelector(".lpc-go");
