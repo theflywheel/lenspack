@@ -12,7 +12,7 @@ import { authFrom, effectiveAuth, principalOf } from "./auth";
 import { adminSettings } from "./admin";
 import { brandSettings } from "./brand";
 import { cacheRoutes } from "./reuse";
-import { fileTelemetry, staticItems } from "./telemetry";
+import { fileTelemetry, staticFields } from "./telemetry";
 import { explainFrom, openConfig, openSources, readConfig, readSourcesConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
@@ -79,7 +79,7 @@ async function main() {
       const cachePage = reuse ? cacheRoutes({ prefix: "/_lenspack", reuse, queue: gate, audit: auditLog ?? null, adminName: "admin" }) : null;
       // Usage telemetry, when the config has a telemetry: section (docs/features/telemetry.md).
       const tc = config.telemetry;
-      const telemetry = tc ? fileTelemetry(resolve(dir, tc.dir), { retentionDays: () => tc.retentionDays, items: staticItems(tc), context: () => config.context ?? {} }).telemetry : undefined;
+      const telemetry = tc ? fileTelemetry(resolve(dir, tc.dir), { retentionDays: () => tc.retentionDays, fields: staticFields(tc), context: () => config.context ?? {} }).telemetry : undefined;
       const open = principalOf({ user: "local", roles: ["admin"], edit: true, maintain: true, usage: true });
       startRuntime({
         hosts,

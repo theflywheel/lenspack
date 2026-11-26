@@ -9,16 +9,18 @@ it answers, how fast and at what cost.
 
 In short:
 
-- **One record per chat turn**, written when the turn ends.
-- **One record per transcription**, when a question is spoken.
-- **One record per event a client reports**: a thumbs up or down, an answer left before it finished, a chart exported,
-  and so on.
-- **Every item has a switch.** What a deployment records is a list of items (daily active users, cost per question,
-  thumbs down and their reasons, and so on), each with its own switch, one switch per section, and one for telemetry as
-  a whole. See [The switchboard](#the-switchboard).
-- **On by default**, except the privacy-sensitive items: question text, transcript text, kept recordings, and device and
+- **What is recorded is simple facts.** One record per chat turn, written when the turn ends, with fields such as who
+  asked, how it ended, what it cost and how long it took. One record per transcription, when a question is spoken.
+  One record per event a client reports: a thumbs up or down, an answer left before it finished, a chart exported, and
+  so on.
+- **Metrics are worked out, not stored.** Active users, cost per question, answer rate and the rest are worked out from
+  the records of the last 7 days when someone opens the Telemetry tab. See [What it tells you](#what-it-tells-you).
+- **Every field has a switch.** The switches are on the facts themselves (the user name, the cost, the answer time, the
+  words of a question), grouped in plain categories. There is one switch for telemetry as a whole. See
+  [The switchboard](#the-switchboard).
+- **On by default**, except the privacy-sensitive fields: question words, transcript words, recordings, and device and
   network detail. Those start off, and turning one on asks an admin to confirm.
-- **An item that is off leaves its fields out** of the records, rather than writing them empty.
+- **A field that is off is left out** of the records, rather than written empty.
 - **Kept for 90 days**, by month. `retentionDays` changes this.
 - **Never stored:** the browser's user agent, keys, passwords or connection strings.
 
@@ -46,24 +48,33 @@ Where it runs:
 telemetry:
   dir: ./state          # relative to the config file
   retentionDays: 90     # 1 to 3650
-  items:
+  fields:
     question-text: true # keep the words of each question (off by default: a keyed hash only)
 ```
 
 ## The switchboard
 
-The Telemetry tab of the admin panel lists every item Lenspack can record, as a table: one row per item, grouped in
-sections, each with its switch, its status, how many it saw in the last 7 days and when it last saw one. The same
-list is the configuration:
+The Telemetry tab of the admin panel has two views. **What's recorded** lists the fields a record can carry, as a
+table: one row per field, grouped in categories, each row with its switch, its status, how many records from the
+last 7 days carry it, and which metrics use it. That count is of records, not the value of a metric. The same list
+is the configuration:
 
 - **Telemetry as a whole** is the `telemetry` feature switch (`features:` in the config, `LENSPACK_FEATURES`, the
   settings page). Off, nothing is recorded.
-- **Each section** (`telemetry.groups.<section>`) and **each item** (`telemetry.items.<item>`) has a switch of its own.
-  An item records only when its own switch, its section's and telemetry's are all on.
+- **Each field** (`telemetry.fields.<field>`) has a switch of its own. A field is recorded when its switch and
+  telemetry's are both on, and nothing locks it.
+- **Each category** (who and where, what was asked, what happened, cost and speed, feedback, voice, texts) has a switch
+  that sets the switches inside it. It keeps no value of its own:
+  - switching it **off** turns every field in it off;
+  - switching it **on** turns on every field in it that is not privacy-sensitive. A privacy-sensitive field is only
+    ever turned on by its own switch, after a confirm step. This is the safer of the two choices: one click on a
+    category can never start keeping texts, recordings or device detail;
+  - it shows **on** when every field it can turn on is on, **off** when every field is off, and **mixed** otherwise.
+    The Texts category holds only privacy-sensitive fields, so its switch can turn them off but never on.
 - **The deployment's config sets the starting values.** Admins change them from the Telemetry tab, or with `PUT
   <prefix>/settings/telemetry`.
 - **A change applies to the next record**, without a restart. Each change is in the audit log, and the tab shows who
-  turned an item off and when.
+  turned a field off and when.
 - **Turning something off stops new records only.** What was already recorded stays until its month ages out, or until
   it is deleted per user. To remove kept recordings, use the delete actions under [Kept
   recordings](../operating/privacy.md#kept-recordings).
@@ -72,90 +83,104 @@ Every key and its default:
 
 ```yaml
 telemetry:
-  groups:
-    users: true
-    volume-cost: true
-    quality: true
-    asks: true
-    speed: true
-    voice: true
+  fields:
+    # Who and where
+    user: true
+    roles: true
+    context: true
     conversation: true
-    trust-reuse: true
-    device-network: true
-  items:
-    # Users
-    users-active: true
-    users-by-role: true
-    users-by-country: true
-    users-return: true
-    # Volume and cost
-    volume-per-user: true
-    cost-per-question: true
-    cost-per-user: true
-    cost-voice: true
-    # Quality
-    quality-answer-rate: true
-    quality-unanswered: true
-    quality-thumbs-down: true
-    quality-clarify: true
-    # What people ask
-    asks-top-by-role: true
-    asks-repeated-direct: true
-    asks-repeated-derived: true
-    asks-mix: true
-    question-text: false   # privacy-sensitive: confirm to turn on
-    # Speed
-    speed-p95: true
-    speed-abandoned: true
-    speed-queue: true
-    # Voice and language
-    voice-share: true
-    voice-edit-rate: true
-    voice-reask: true
-    voice-not-sent: true
-    language-mix: true
-    voice-wer-proxy: true
-    transcript-text: false   # privacy-sensitive: confirm to turn on
-    voice-audio: false   # privacy-sensitive: confirm to turn on
-    # Conversation
-    conv-rephrase: true
-    conv-follow-ups: true
-    # Trust and reuse
-    trust-explain: true
-    trust-export-share: true
-    personal-dashboards: true
-    trust-superset-actions: true
-    reuse-hit-rate: true
-    reuse-saved: true
-    # Device and network
+    selections: true
     device-class: false   # privacy-sensitive: confirm to turn on
     device-network: false   # privacy-sensitive: confirm to turn on
+    # What was asked
+    question-hash: true
+    language: true
+    repeats: true
+    # What happened
+    outcome: true
+    work: true
+    review: true
+    reuse: true
+    superset-actions: true
+    # Cost and speed
+    cost: true
+    timing: true
+    queue: true
+    abandoned: true
+    # Feedback
+    feedback: true
+    quick-replies: true
+    explain: true
+    export-share: true
+    personal-dashboards: true
+    # Voice
+    input: true
+    transcript-links: true
+    transcript-edits: true
+    speech-cost: true
+    voice-not-sent: true
+    # Texts
+    question-text: false   # privacy-sensitive: confirm to turn on
+    transcript-text: false   # privacy-sensitive: confirm to turn on
+    voice-audio: false   # privacy-sensitive: confirm to turn on
 ```
 
-Some items have no switch of their own:
+Some fields are locked: their switch can't be changed on the tab, and the row says why, with a button to the switch or
+setting that owns it.
 
-- **Not telemetry**: time saved against the old way, and the true word error rate. Records cannot measure them: time
-  saved needs a baseline study, and the true error rate needs hand-made transcripts.
 - **Kept by another feature**: the daily review's runs and proposals, and open questions. Their own feature's switch
   turns them on and off.
-- **Owned by a feature that is off**: saved answers follow the `cache` switch, clarifying questions the `clarify`
-  switch, and the voice items the `voice` switch. While that feature is off, the item's switch is disabled and the tab
-  points to the feature's switch.
-- **Waiting for configuration**: for example, users by country until `context:` maps a country.
+- **Owned by a feature that is off**: saved answers follow the `cache` switch, quick replies the `clarify` switch, own
+  dashboards the `personalDashboards` switch, and the voice fields the `voice` switch (and a speech key).
+- **Waiting for configuration**: the campaign and country tags until `context:` maps one of them, and exports and
+  shares in Superset outside Superset.
 
-### Privacy-sensitive items
+### Privacy-sensitive fields
 
-Five items start off: `question-text`, `transcript-text`, `voice-audio`, `device-class` and `device-network`. Turning
-one on needs an admin and a confirm step that shows what it records. For kept recordings, that step also shows the
-consent notice users will see. Through the route, the request must carry `"confirm": true`; without it the answer is
-`409` with what to confirm, and nothing changes.
+Five fields start off: `question-text`, `transcript-text`, `voice-audio`, `device-class` and `device-network`. Turning
+one on needs an admin and a confirm step that shows what it records. For recordings, that step also shows the consent
+notice users will see. Through the route, the request must carry `"confirm": true`; without it the answer is `409`
+with what to confirm, and nothing changes. A category switch never turns one of them on.
 
 Off, each of them still leaves something useful:
 
-- **Question text off**: a keyed hash of each question, so repeats can be counted; the same for feedback comments and
+- **Question words off**: a keyed hash of each question, so repeats can be counted; the same for feedback comments and
   dashboard filter values.
-- **Transcript text off**: a keyed hash of the transcript, so edits before sending can be counted.
-- **Kept recordings off**: the clip lives only as long as its transcription takes.
+- **Transcript words off**: a keyed hash of the transcript, so edits before sending can be counted.
+- **Recordings off**: the clip lives only as long as its transcription takes.
+
+The user name has a switch too. Its row says that names are visible to admins with the usage right. With it off, the
+records name nobody, and metrics that count people say they are unavailable.
+
+## What it tells you
+
+The tab's second view lists the metrics a deployment is judged on, grouped as before (users, volume and cost,
+quality, what people ask, speed, voice and language, conversation, trust and reuse, device and network). Each one is
+worked out when the tab opens, from the records of the last 7 days, and shows its value, for example "14 users",
+"$0.0045" per question or "84%" of questions answered, with a short breakdown. Nothing here is stored, and no metric
+shows a user name or the words of a question.
+
+Each metric lists the fields it uses. When it can't be worked out, it says why and offers a way to fix it:
+
+- **Unavailable: needs a field (switched off)**, with a button to that field's switch;
+- **Unavailable** because a field it needs is locked (a feature that is off, voice not set up), with a button to
+  Settings;
+- **Needs configuration**, for example "map dashboards, datasets or roles to a country", in the `context:` section of
+  the config;
+- **Not measured from records**: time saved against the old way needs a baseline study, and the true word error rate
+  needs hand-made transcripts.
+
+A metric reads only the records that carry the fields it needs. So a field switched off part of the week narrows the
+reading to the records that have it.
+
+### The older switch names
+
+Before these field switches, telemetry was switched by metric (`telemetry.items.<metric>`) and by section of metrics
+(`telemetry.groups.<section>`). A config or saved setting that uses those names still works: a field is on when some
+metric that is on, in a section that is on, used it. That is the rule the older switches followed, so what is recorded
+does not change. A field switch set in the same place wins over an older name. The five privacy-sensitive items kept
+their names, so `items.question-text` is now `fields.question-text`. See
+[Upgrading](../operating/upgrading.md#telemetry-switches-by-field).
 
 ## Tagging records with your own context
 
@@ -185,8 +210,8 @@ usage right. Other readers see a stable stand-in (`u_…`) for each name.
 | route | what it gives |
 |---|---|
 | `GET /_superset/telemetry?from=&to=&type=&offset=&limit=` | records newest first, a page at a time (at most 5000; default the last 7 days) |
-| `GET /_superset/telemetry/checklist` | the switchboard as data; its fields are in [Telemetry records](../reference/telemetry-records.md#the-checklist) |
-| `PUT /_superset/settings/telemetry` | admins: `{"telemetry": bool, "groups.<section>": bool, "items.<item>": bool, "retentionDays": n}`, any of them; `null` puts a switch back to the deployment's value; `"confirm": true` to turn on a privacy-sensitive item. Answers with the checklist. |
+| `GET /_superset/telemetry/checklist` | both views of the tab as data: the fields with their switches, and the metrics with their values; see [Telemetry records](../reference/telemetry-records.md#the-checklist) |
+| `PUT /_superset/settings/telemetry` | admins: `{"telemetry": bool, "fields.<field>": bool, "categories.<category>": bool, "retentionDays": n}`, any of them; `null` puts a field back to the deployment's value; `"confirm": true` to turn on a privacy-sensitive field. Answers with the checklist. |
 | `GET /_superset/telemetry/superset-actions?from=&to=` | exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (`/api/v1/log/`) |
 
 Two limits on the Superset action log:

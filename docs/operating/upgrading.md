@@ -36,6 +36,34 @@ where the field never did anything. A summary read this way obeys the [compute s
 rules](../features/compute.md#how-zeros-and-gaps-are-treated): a percentage or an average is not added up, so such a
 `sum` is refused on the widget, with a way forward, instead of showing a wrong number.
 
+## Telemetry switches by field
+
+Telemetry used to be switched by metric (`telemetry.items.<metric>`) and by section of metrics
+(`telemetry.groups.<section>`). It is now switched by field: the facts a record carries, such as the user name, the
+cost or the answer time (`telemetry.fields.<field>`). Metrics are worked out from the records and have no switches.
+
+**Nothing needs doing by hand.** Older names in the config and in the settings an admin saved are still read, with
+the rule they always followed: a field is recorded when some metric that is on, in a section that is on, used it. So
+the same fields are recorded after the upgrade as before. For example, a deployment that switched the speed section
+off now has the answer time, wait for a free slot and answers left early fields off. The five privacy-sensitive items
+kept their names: `items.question-text` is `fields.question-text`, and the same for `transcript-text`, `voice-audio`,
+`device-class` and `device-network`.
+
+To move to the new names, list the fields you want off under `telemetry.fields:` (every key and its default is in
+[Telemetry](../features/telemetry.md#the-switchboard)) and remove `items` and `groups`. A field set under `fields:`
+wins over an older name.
+
+What changes for scripts:
+
+- `PUT <prefix>/settings/telemetry` takes `fields.<field>` and `categories.<category>`. It refuses `items.<metric>`
+  and `groups.<section>` with `400`, and the message names the fields to switch instead. `items.<field>` for the five
+  privacy-sensitive fields, `questionText` and `keepAudio` still work.
+- `GET <prefix>/telemetry/checklist` answers with `categories` (the fields) and `metrics` (each with its value),
+  instead of `groups`. See [the checklist](../reference/telemetry-records.md#the-checklist).
+- `GET <prefix>/telemetry` lists the fields that are on as `fields`, instead of `items`.
+- In `@lenspack/agent`, the switchboard exports `FIELD_GROUPS`, `FIELD_CATEGORIES` and `METRICS` instead of
+  `TELEMETRY_ITEMS` and `TELEMETRY_GROUPS`, and `turnTelemetry` takes `fields` instead of `items`.
+
 ## Code using the packages
 
 **Unreleased** (see the [changelog](../../CHANGELOG.md)): the pack loader `@lenspack/spec` is now `@lenspack/pack`

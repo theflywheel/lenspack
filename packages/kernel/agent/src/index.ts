@@ -4,6 +4,7 @@ export * from "./proposals";
 export * from "./telemetry";
 export * from "./checklist";
 export * from "./switchboard";
+export * from "./metrics";
 export * from "./reuse";
 export * from "./gate";
 export * from "./answer";

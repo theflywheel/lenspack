@@ -8,8 +8,8 @@ switches, are in [Telemetry](../features/telemetry.md).
 
 One line per chat turn, written after the reply ends, even when the reader left before it did. Every turn record
 has `type`, `v`, `turnId`, `at` (when the question arrived), `tenant`, `pack`, `board` and `datasets`. Every other
-field belongs to an item, and is left out while that item is off. The Fields read line of each row on the Telemetry
-tab says which.
+field belongs to a field switch, and is left out while that switch is off. The details of each row under What's
+recorded on the Telemetry tab list the record fields it switches.
 
 | group | fields |
 |---|---|
@@ -68,9 +68,9 @@ is hidden while an answer is still coming. There is no stop button yet, so "pres
 
 ## Transcripts
 
-Each transcription is recorded when the speech endpoint returns it, when an item that reads transcripts is on:
+Each transcription is recorded when the speech endpoint returns it, when a field that reads transcripts is on:
 
-- `transcriptId`, `at`, `pack` always; `user` and `roles` with the user items;
+- `transcriptId`, `at`, `pack` always; `user` and `roles` with the user name and role names fields;
 - `model`, `languageRequested`, `languageDetected`;
 - `seconds`, `usd`, `ms`, `retried`;
 - `transcript` (with `transcript-text` on), `transcriptHash`, `words`;
@@ -92,7 +92,7 @@ Clients post events to `<api>/_telemetry`. Inside Superset that is `/lenspack/ap
 - The caller must be signed in.
 - An event about a turn names its `turnId`, and only the user whose turn it was may report on it. The kernel's policy
   decides this (`reportsOn` in `@lenspack/policy`).
-- The answer is `202` when the event is accepted, with `recorded: false` when the item it belongs to is off.
+- The answer is `202` when the event is accepted, with `recorded: false` when the field it belongs to is off.
 - Otherwise:
   - `401`: not signed in;
   - `403`: someone else's turn;
@@ -106,7 +106,7 @@ Clients post events to `<api>/_telemetry`. Inside Superset that is `/lenspack/ap
 | `transcript` | `turnId`, `transcript` (what speech to text returned), `sent` (what was sent): the edit distance is computed on the server |
 | `abandoned` | `how` (for example `page-hidden`), `stage` |
 | `explain-opened`, `quick-reply`, `chart-exported`, `board-shared` | optional `how`, `stage`, `choice` and `data` |
-| `personal-dashboard`, `saved-layout` | sent by the Superset host itself, not the browser: `how` (`create`, `copy`, `delete`; `save`, `apply`, `rename`, `delete`) and `data` with ids and counts only: the dashboard's id (for a copy, also the original's id and how many charts were copied), or the layout's id (for an apply, how many widgets were left out). Kept by the `personal-dashboards` item, which is off whenever the `personalDashboards` switch is (see [Personal dashboards](../features/personal-dashboards.md#usage-telemetry)) |
+| `personal-dashboard`, `saved-layout` | sent by the Superset host itself, not the browser: `how` (`create`, `copy`, `delete`; `save`, `apply`, `rename`, `delete`) and `data` with ids and counts only: the dashboard's id (for a copy, also the original's id and how many charts were copied), or the layout's id (for an apply, how many widgets were left out). Kept by the `personal-dashboards` field, which is off whenever the `personalDashboards` switch is (see [Personal dashboards](../features/personal-dashboards.md#usage-telemetry)) |
 
 `data` is a flat map of up to 20 keys with short values. Keys that look like secrets (key, token, password and the
 like) are dropped.
@@ -124,62 +124,92 @@ and translated into English, French, Portuguese and Hindi.
   - a `data-reuse` part (`{ tier, savedUsd }`) fills `reuse` and `reuseSavedUsd`;
   - a `data-clarify` or `data-quick-replies` part marks the turn `clarify`.
 - **Review:** the review feature counts its own runs, proposals and open questions; the checklist reads them from it.
-- **A new item** goes in the catalogue (`switchboard.ts` in `@lenspack/agent`) with the fields it keeps, its section and
-  its default. A new event type needs an item there too, or the server answers `400`. The catalogue's test checks that
-  each item's switch stops its capture.
+- **A new field** goes in the catalogue (`switchboard.ts` in `@lenspack/agent`) with the record fields it keeps, its
+  category and its default. A new event type needs a field there too, or the server answers `400`. The catalogue's
+  test checks that each field's switch stops its capture.
+- **A new metric** goes in the same catalogue with the fields it needs, and how to work it out from records goes in
+  `metrics.ts` next to it. A metric is never stored.
 
 ## The checklist
 
-`GET /_superset/telemetry/checklist` lists every item, which is also the switchboard. It is grouped in sections: users;
-volume and cost; quality; what people ask; speed; voice and language; conversation; trust and reuse; device and network.
-Each section has `on` and `changed` (who changed its switch, and when), and the answer has `telemetry` (the master
-switch) and `settings` (retention and the consent notice).
+`GET /_superset/telemetry/checklist` is both views of the Telemetry tab as data. Besides `generatedAt`, it has
+`telemetry` (the switch for telemetry as a whole, and who changed it last), `settings` (retention and the consent
+notice), `categories` (what's recorded) and `metrics` (what it tells you).
 
-Each item has:
+### What's recorded: `categories`
 
-- `label` and the `decision` it helps make;
-- `source`: `turn-record`, `client-event`, `transcript`, `audio`, `superset-logs` or `config`;
-- the record `fields` it reads;
-- `count7d` and `lastSeen`;
-- what it means for `privacy`;
+Seven categories: who and where; what was asked; what happened; cost and speed; feedback; voice; texts. Each has a
+`title`, its `rows`, and:
+
+- `state`: `on`, `off` or `mixed`, worked out from the switches inside it. It keeps no value of its own.
+- `next`: what clicking its switch does, `true` (turn on every field in it that is not privacy-sensitive), `false`
+  (turn every field off), or `null` when there is nothing to do.
+- `note`: `sensitive-apart` when some fields in it are privacy-sensitive and so left out of turning the category on,
+  `sensitive-only` when every field is.
+
+Each row is one field, and has:
+
+- `label`, and `about` saying what it records;
+- `source`: `turn-record`, `client-event`, `transcript`, `audio`, `superset-logs` or `feature`;
+- the record `fields` it switches, such as `turn.user` or `event:feedback`;
+- `count7d` and `lastSeen`: records from the last 7 days that carry it. Records, not the value of a metric;
+- `privacy`, what it means for privacy (for example, that user names are visible to admins with the usage right);
+- `usedBy`: the metrics that read it;
 - a `status`, and `howToEnable` when the status is not `recording`;
-- its `switch`: `key` (`items.<item>`, or `null` with no switch of its own), `on`, `default`, `editable`, and when not
-  editable the `reason` and `blockedBy` (`not-telemetry`, `needs-config` or `feature`, with the `feature` to change
-  instead); `sensitive` and `consent` for the confirm step; `changed`;
-- `offSince` and `offBy`, when someone switched it off (its own switch, its section's or telemetry's).
-
-`count7d` and `lastSeen` count only records that carry the item's fields, so an item switched off stops counting.
+- its `switch`: `key` (`fields.<field>`), `on`, `default`, `editable`, `sensitive` and `consent` for the confirm step,
+  and `changed`. When it can't be changed here: `lock` (`owned`, `feature`, `voice`, `needs-config` or `superset`),
+  `reason` in words, and `fix`, where to change it instead (`{"kind": "settings", "feature": …}` or
+  `{"kind": "config", "key": "context"}`);
+- `offSince` and `offBy`, when someone switched it off (its own switch, its category's or telemetry's).
 
 | status | meaning |
 |---|---|
 | `recording` | on, and seen in the last 7 days |
 | `enabled-no-data` | on, but nothing seen yet |
-| `off` | its switch is off, its section's or telemetry's, or the feature that owns it is not present or not on |
-| `needs-config` | something is missing. Examples: a country or campaign nobody mapped in `context:`; role names that an older plugin does not sign; Superset's action log outside Superset, or unreadable. |
-| `not-telemetry` | records cannot measure it. Examples: time saved against the old way, which needs a baseline study; true word error rate, which needs hand-made transcripts. |
+| `off` | its switch is off, telemetry's is, or the feature that owns it is not present or not on |
+| `needs-config` | something is missing. Examples: a country or campaign nobody mapped in `context:`; role names that an older plugin does not sign; Superset's action log outside Superset. |
 
-Saved-answer measures belong to the reuse feature, and review measures to the review feature. Until that feature is
-present and switched on, their items show `off`.
+### What it tells you: `metrics`
+
+Grouped as users; volume and cost; quality; what people ask; speed; voice and language; conversation; trust and reuse;
+device and network. Each metric has a `label`, the `decision` it helps make, `needs` and `by` (the fields it reads,
+and the fields its breakdown reads, each with `on`), and a `status`:
+
+| status | meaning |
+|---|---|
+| `ready` | worked out: `reading` has the `value`, its `parts` (a breakdown, for example by role or by kind of question), and how many `records` it read |
+| `no-data` | it could be worked out, but no record from the last 7 days carries what it needs |
+| `unavailable` | it can't be: `unavailable` says why (`kind`: `telemetry-off`, `fields-off`, `locked`, `needs-config` or `not-telemetry`), in words (`text`), with the `fields` that are off and a `fix` (`{"kind": "field", "id": …}` points at a field's switch) |
+
+Each value is a figure: `kind` (`count`, `usd`, `percent` as a share from 0 to 1, `ms` or `number`), `value`, and a
+`unit` or `label` for the words. For example, `{"kind": "count", "value": 14, "unit": "users"}`. No reading carries a
+user name or the words of a question. Readings of the daily review and open questions come from the review feature,
+not from records.
+
+`not-telemetry` metrics are ones records cannot measure: time saved against the old way, which needs a baseline study;
+true word error rate, which needs hand-made transcripts.
 
 ## Older settings
 
-These still work, as the starting value of an item:
+These still work, as the starting value of a field:
 
 | setting | now |
 |---|---|
-| `telemetry.questionText`, `LENSPACK_TELEMETRY_QUESTION_TEXT` | `telemetry.items.question-text` |
-| `speech.keepAudio`, `LENSPACK_SPEECH_KEEP_AUDIO` | `telemetry.items.voice-audio` |
+| `telemetry.questionText`, `LENSPACK_TELEMETRY_QUESTION_TEXT` | `telemetry.fields.question-text` |
+| `speech.keepAudio`, `LENSPACK_SPEECH_KEEP_AUDIO` | `telemetry.fields.voice-audio` |
+| `telemetry.items.<metric>`, `telemetry.groups.<section>` | `telemetry.fields.<field>`: a field is on when a metric that is on, in a section that is on, used it ([more](../features/telemetry.md#the-older-switch-names)) |
 
-`PUT <prefix>/settings/telemetry` also takes `questionText` and `keepAudio` as names for those two items. Changing
-`keepAudio` through `PUT <prefix>/settings/speech` is refused, with a pointer to the item.
+`PUT <prefix>/settings/telemetry` also takes `questionText`, `keepAudio` and `items.<field>` as names for the five
+privacy-sensitive fields. It refuses `items.<metric>` and `groups.<section>` with `400`, naming the fields to switch
+instead. Changing `keepAudio` through `PUT <prefix>/settings/speech` is refused, with a pointer to the field.
 
 `telemetry.retentionDays` (default 90; also `LENSPACK_TELEMETRY_RETENTION_DAYS` and the Telemetry tab) sets how long
 records are kept.
 
 ## JSON schema
 
-The three record types share `type` and `v` (the schema version, now 2). Version 2 leaves out the fields of items
-that are off, so only each type's core fields are required. New fields may be added; existing ones do not change
+The three record types share `type` and `v` (the schema version, now 2). Version 2 leaves out the fields whose switches
+are off, so only each type's core fields are required. New fields may be added; existing ones do not change
 meaning.
 
 ```json

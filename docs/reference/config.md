@@ -30,7 +30,7 @@ The standalone server's config. The blocks, in brief:
 | `proposals` | the folder for each pack's `<name>.proposals.json` (default: the config's folder) | [Write a pack](../extending/write-a-pack.md#7-give-it-to-a-model) |
 | `features` | starting values for switches | [Feature switches](../operating/switches.md) |
 | `brand` | the assistant's name and button label: `{ name, buttonLabel, i18n, icon, poweredBy }` | [Naming the assistant](../features/naming.md) |
-| `telemetry` | usage records: `{ dir, retentionDays, groups, items }` (`questionText` is the older name of `items.question-text`) | [Telemetry](../features/telemetry.md) |
+| `telemetry` | usage records: `{ dir, retentionDays, fields }` (`groups` and `items` are the older switches, still read; `questionText` is the older name of `fields.question-text`) | [Telemetry](../features/telemetry.md) |
 | `context` | your own labels for a board, a dataset or `role:<name>` (the fields are named `campaign`, `campaignType` and `country`), for telemetry | [Telemetry](../features/telemetry.md#tagging-records-with-your-own-context) |
 
 ### Packs
@@ -163,6 +163,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `telemetry` | object |  |  |
 | `telemetry.dir` | string | yes |  |
 | `telemetry.retentionDays` | number |  | `90` |
+| `telemetry.fields` | map of boolean |  |  |
 | `telemetry.groups` | map of boolean |  |  |
 | `telemetry.items` | map of boolean |  |  |
 | `telemetry.questionText` | boolean |  |  |

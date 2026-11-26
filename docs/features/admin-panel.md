@@ -96,31 +96,41 @@ so the review never reviews itself.
 
 ## What is recorded
 
-The **Telemetry** tab is the deployment's telemetry switchboard: a compact table of every item Lenspack can record,
-one row per item, grouped by section. Each row shows:
+The **Telemetry** tab has two views.
 
-- its switch. An item that cannot be switched here has a disabled switch with the reason: it is not telemetry, it
-  needs configuring first, or a feature that is off owns it (with a link to that feature's switch on the Settings
-  tab);
-- a status: ✓ recording, ◐ on but no data yet, ○ off (since when, and by whom), ⚠ needs configuration, — not
-  telemetry (kept for another reason, such as the audit log);
-- how many it saw in the last seven days, and when it last saw one;
-- the decision the item feeds ("whether voice is worth its cost"), cut short with the full text on hover or focus;
-- a lock for the privacy-sensitive items, with the note on hover or focus.
+**What's recorded** is the switchboard: a compact table of the facts a record can carry, one row per field, grouped
+in plain categories (who and where, what was asked, what happened, cost and speed, feedback, voice, texts). Each row
+shows:
 
-Each row opens a detail with the longer text: the fields it reads, where it comes from, its default and config key,
-how to turn it on, and its privacy note. Each section's header row has the section's switch and folds the section
-away. Above the table are a summary line (for example "28 of 42 recording · 4 on but no data · 1 need configuration
-· 7 off · 2 not telemetry"), the switch for telemetry as a whole, and how long records are kept. On a phone the table
-keeps the switch, the name and the status, and the rest moves into the detail.
+- its switch. A field that can't be switched here has a disabled switch, and the row itself says why, with a button
+  to the switch that owns it (for example "Owned by the daily review switch", with Open Settings);
+- the field's plain name, with the record fields it switches on hover or focus and in the detail;
+- a status: ✓ recording, ◐ on but nothing yet, ○ off (since when, and by whom), ⚠ needs configuration;
+- how many records from the last seven days carry it. This counts records, not the value of a metric;
+- the metrics that use it;
+- an eye for the fields that say something about people, such as user names (visible to admins with the usage
+  right) and the texts, with the privacy note on the row and on hover or focus.
+
+Each row opens a detail with the longer text: what it records, where it comes from, its default and config key, when
+it was last seen, and its privacy note. Each category's header row folds the category away and has the category's
+switch: off turns every field in it off; on turns on every field in it except the privacy-sensitive ones, which are
+only turned on one at a time with their confirm step. When some fields are on and some off, the category's switch
+shows a middle position. Above the table are a summary line (for example "23 of 34 fields recording · 3 on, nothing
+yet · 1 need configuration · 7 off"), the switch for telemetry as a whole, and how long records are kept. On a phone
+the table keeps the switch, the name and the status, and the rest moves into the detail.
+
+**What it tells you** shows each metric worked out from the last seven days of records, with its value (for example
+"14 users" or "84%") and a short breakdown, and the fields it uses. A metric that can't be worked out says why, such
+as "Unavailable: needs Device and screen width (switched off)", with a button to that field or to Settings. This view
+has no switches; to change what a metric can use, switch its fields under What's recorded.
 
 A change applies to the next question. Turning something off keeps what was already recorded until it ages out; the
-tab says so. Turning on a privacy-sensitive item (question text, transcript text, kept recordings, device and network
-detail) shows what it records, and for kept recordings the consent notice, and asks to confirm. Only admins can
-change switches, and every change is in the audit log.
+tab says so. Turning on a privacy-sensitive field (question words, transcript words, recordings, device and network
+detail) shows what it records, and for recordings the consent notice, and asks to confirm. Only admins can change
+switches, and every change is in the audit log.
 
-The page prints cleanly for a usage report, and **Copy as Markdown** copies the same table as text, with each switch
-as it stands. Both follow the panel's language (English or French) and its light or dark theme.
+The page prints cleanly for a usage report, and **Copy as Markdown** copies both views as text, with each switch as
+it stands and each metric's value. Both follow the panel's language (English or French) and its light or dark theme.
 
 The table comes from the server (`<prefix>/telemetry/checklist`, changed with `PUT <prefix>/settings/telemetry`; see
 [Telemetry](telemetry.md#the-switchboard)). A server that does not report its telemetry shows "Telemetry is not

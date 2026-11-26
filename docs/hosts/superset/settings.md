@@ -34,7 +34,7 @@ Reads and writes need a Superset admin's signed identity (see [Who is asking](id
 | `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes, prewarm}` for [saved answers](../../features/saved-answers.md); `null` resets a field |
 | `PUT /_superset/settings/queue` | any of `{maxConcurrent, maxWaiting, maxWaitSeconds}` for [busy hours](../../features/busy-hours.md) |
 | `PUT /_superset/settings/chat` | `{model, effort}`: the chat model used when the panel asks for none, and its reasoning effort; `{model: null}` goes back to the default |
-| `PUT /_superset/settings/telemetry` | any of `{"telemetry", "groups.<section>", "items.<item>": true \| false \| null, "retentionDays": n}`; turning on a privacy-sensitive item also needs `"confirm": true`, or the answer is `409` and nothing changes. See [Telemetry](../../features/telemetry.md#privacy-sensitive-items) |
+| `PUT /_superset/settings/telemetry` | any of `{"telemetry", "fields.<field>": true \| false \| null, "categories.<category>": true \| false, "retentionDays": n}`; turning on a privacy-sensitive field also needs `"confirm": true`, or the answer is `409` and nothing changes. See [Telemetry](../../features/telemetry.md#privacy-sensitive-fields) |
 | `GET /_superset/cache` and below | saved answers: stats, queue, last refresh, entries, pin, unpin, evict, suggestions, chart candidates, settled boards |
 | `POST /_superset/cache/prewarm`, `POST /_superset/cache/data-changed` | refresh the most-asked saved answers now, or a few seconds after a data load |
 | `PUT /_superset/settings/brand` | any of `{name, buttonLabel, i18n, icon, poweredBy}` ([naming the assistant](../../features/naming.md)); `null` hands a field back to the deployment |
@@ -72,9 +72,9 @@ context:
   "role:Sales-North": { country: Country A }
 ```
 
-Admins read the records at `/_superset/telemetry`. What is recorded is switched item by item on the admin panel's
-Telemetry tab (`/lenspack/_superset/admin/#telemetry`), which is also the checklist at
-`/_superset/telemetry/checklist`. Question text, transcript text, kept recordings and device detail start off. The AI
+Admins read the records at `/_superset/telemetry`. What is recorded is switched field by field on the admin panel's
+Telemetry tab (`/lenspack/_superset/admin/#telemetry`), which also shows the metrics worked out from the records; both
+come from `/_superset/telemetry/checklist`. Question words, transcript words, recordings and device detail start off. The AI
 assistant settings page keeps how long records and recordings are kept, and the consent notice. See
 [Telemetry](../../features/telemetry.md).
 

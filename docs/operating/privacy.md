@@ -39,8 +39,8 @@ out" beside the conversation in the tab; it is never sent back to the server.
 
 ## Telemetry
 
-Telemetry keeps one record per turn, per transcription and per client event, each item switched on its own. Question
-text, transcript text, kept recordings and device detail start off and ask an admin to confirm. Records are kept 90
+Telemetry keeps one record per turn, per transcription and per client event, each field switched on its own. Question
+words, transcript words, recordings and device detail start off and ask an admin to confirm. Records are kept 90
 days. What is recorded, and the switches, are in [Telemetry](../features/telemetry.md).
 
 ### Privacy notes
@@ -62,7 +62,7 @@ days. What is recorded, and the switches, are in [Telemetry](../features/telemet
 
 ### Kept recordings
 
-**Off by default.** Kept recordings are the `voice-audio` item on the Telemetry tab; turning it on shows the
+**Off by default.** Kept recordings are the `voice-audio` field on the Telemetry tab; turning it on shows the
 consent notice and asks the admin to confirm. Off:
 
 - nothing is written;
@@ -79,7 +79,7 @@ When it is on:
 | retention | `speech.audioRetentionDays` (default 30) and `speech.maxStoredMb` (default 1000; the oldest are deleted first when over). Checked at start, daily, and after each saved clip. |
 | access | admins only, through `GET /_superset/audio/<transcriptId>`. Each play is written to the audit log. No other route serves audio. |
 | consent | with `speech.consentNotice` set, each user sees the notice once and must acknowledge it before the mic records. Changing the notice asks again. |
-| deletion | `DELETE /_superset/audio/<transcriptId>`, `DELETE /_superset/audio?user=<name>`, `DELETE /_superset/audio?all=1`. Each deletion is audited. Turning the item off keeps what is stored; the settings page has a "delete stored audio" action. |
+| deletion | `DELETE /_superset/audio/<transcriptId>`, `DELETE /_superset/audio?user=<name>`, `DELETE /_superset/audio?all=1`. Each deletion is audited. Turning the field off keeps what is stored; the settings page has a "delete stored audio" action. |
 | export | `POST /_superset/audio/export` writes `audio/manifest.jsonl` in the speech benchmark's format (`id`, `set`, `lang`, `speaker`, `audio`, `ref`, `seconds`). The reference is the question as sent: the transcript itself when unchanged, the user's correction when edited. These go to `manifest-flagged.jsonl` instead: edits that changed most of the words (more than 40%, or the length by half), clips never sent, questions spoken in several clips, and clips whose text is not kept. Speakers are keyed hashes, not names. |
 
 How long, how much and the consent notice can be changed in four places:

@@ -11,6 +11,14 @@ brought it.
 
 ### 26 November 2026
 
+- **The Telemetry tab shows what is recorded, and what it tells you, apart.** What's recorded lists the facts a
+  record carries (who asked, how it ended, what it cost, how long it took, and so on) in plain categories, each with
+  its switch, how many records from the last 7 days carry it, which metrics use it, and its privacy note. What it
+  tells you shows each metric worked out from the last 7 days, with its value, or why it can't be worked out and a
+  button to the fix. Switches are now on fields (`telemetry.fields.<field>`); a category's switch turns all its fields
+  off, or all but the privacy-sensitive ones on. A locked switch says why on its row. Older `telemetry.items` and
+  `telemetry.groups` values keep their meaning; scripts that switched items through the route need the new names. See
+  [Telemetry](docs/features/telemetry.md) and [Upgrading](docs/operating/upgrading.md#telemetry-switches-by-field).
 - **Saved layouts in Superset behave as expected.** Applying a layout fits it to the dashboard as it is now, so a
   chart removed in Superset is not brought back, and Undo after an apply goes back to the right version. Charts made
   in Superset that Lenspack can't redraw stay with their own dashboard: the panel says so when saving, the reply says
