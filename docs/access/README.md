@@ -35,9 +35,9 @@ goes through it: `lenspack serve` with any sign-in, the Superset host, and the i
 [Importers](../extending/importers.md)). `lenspack-mcp` has one caller
 and does not.
 
-1. **The host says who the caller is and what it already allows.** The sign-in (or Superset, or an importer's API) gives an
-   identity: user, roles, tenant, and whatever the host limits itself: a row scope, keys or tables it keeps from them,
-   boards they may not open, capabilities it grants.
+1. **The host says who the caller is and what it already allows.** The sign-in (or Superset, or an importer's API) gives
+   an identity: user, roles, tenant, and whatever the host limits itself: a row scope, keys or tables it keeps from
+   them, boards they may not open, capabilities it grants.
 2. **Lenspack's rules only narrow it.** The rights by user and role add edit, maintain and usage rights. A pack's
    access rule adds its `scope` to the host's and the caller's, and its `hide` or `only` keys to the host's hidden
    keys.
@@ -75,7 +75,8 @@ Every change, refused change and denied request goes to the audit log with the u
 
 Policy becomes a document of its own, versioned like a pack or a board: rules, rights and per-role feature grants,
 loaded by every host and edited from the admin panel. Inside Superset, queries run as the person asking. See
-[Policy](../concepts/policy.md#where-it-lives) and [Access inside Superset](superset.md#planned-superset-runs-each-query-as-the-person).
+[Policy](../concepts/policy.md#where-it-lives) and [Access inside
+Superset](superset.md#planned-superset-runs-each-query-as-the-person).
 
 ---
 

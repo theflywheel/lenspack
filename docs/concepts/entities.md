@@ -21,7 +21,8 @@ An entity can also say:
 
 - **`time`**: the column series, windows and comparisons use by default. It can be a timestamp, a number of
   seconds or milliseconds since 1970, or a column of calendar dates.
-- **`tenant`**: a column that every query must be narrowed by. See [Row scope and tenancy](../access/scope-and-tenancy.md).
+- **`tenant`**: a column that every query must be narrowed by. See [Row scope and
+  tenancy](../access/scope-and-tenancy.md).
 - **`filter`** or **`where`**: a condition every query on the entity carries, such as leaving out soft-deleted
   rows. No query can forget it.
 - **`geo`**: latitude and longitude columns, so its rows can be drawn on a map.
@@ -63,4 +64,5 @@ dimensions it can group by, unless the pack declares the same dimension on both 
 
 **Next:** [Dimensions](dimensions.md).
 
-**Related:** [Pack file reference](../reference/pack.md#entities) · [The life of a query](../architecture/life-of-a-query.md)
+**Related:** [Pack file reference](../reference/pack.md#entities) · [The life of a
+query](../architecture/life-of-a-query.md)

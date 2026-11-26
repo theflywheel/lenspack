@@ -150,8 +150,11 @@ def lenspack_identity_key() -> str:
     return hmac.new(secret.encode() if isinstance(secret, str) else secret, b"lenspack-identity-v1", hashlib.sha256).hexdigest()
 
 
-def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None, pack=None) -> str:
+def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None, pack=None, user_id=None) -> str:
     claims = {"u": user, "a": bool(admin), "t": int(time.time())}
+    if isinstance(user_id, int) and not isinstance(user_id, bool) and user_id > 0:
+        # i: the user's Superset id, so a dashboard Lenspack makes for them can be theirs in Superset.
+        claims["i"] = user_id
     if roles is not None:
         claims["r"] = sorted(roles)
     if dashboard is not None:
@@ -167,6 +170,12 @@ _DOT_SEGMENTS = {".", ".."}
 # Left after Flask decoded the path once, these were encoded twice: an encoded dot, slash or backslash.
 _ENCODED = re.compile(r"%(?:2e|2f|5c)", re.IGNORECASE)
 _DASHBOARD_BOARD = re.compile(r"superset-(\d+)")
+
+
+def lenspack_reads_dashboard_arg(path: str) -> bool:
+    """Paths whose dashboard is ?dashboard=<id> instead of a board in the path: binding a dashboard, and the
+    routes for a person's own dashboards and saved layouts (copy this one, save its layout, apply one here)."""
+    return path == "_superset/bind" or path == "_superset/my" or path.startswith("_superset/my/")
 
 
 def lenspack_route(path: str):
@@ -390,14 +399,14 @@ def lenspack_app_mutator(app):
         if route["dashboard"] is not None:
             wanted = str(route["dashboard"])
         else:
-            wanted = request.args.get("dashboard") if path == "_superset/bind" else None
+            wanted = request.args.get("dashboard") if lenspack_reads_dashboard_arg(path) else None
         rights = dashboard_rights(wanted) if wanted else None
         if rights and not rights["view"]:
             return jsonify({"error": "You don't have access to this dashboard in Superset."}), 403
         admin = is_admin(user)
         roles = role_names(user)
         headers = {
-            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"]) if rights else lenspack_sign(user.username, admin, roles=roles),
+            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"], user_id=getattr(user, "id", None)) if rights else lenspack_sign(user.username, admin, roles=roles, user_id=getattr(user, "id", None)),
             "x-forwarded-proto": request.scheme,
             "x-forwarded-host": request.host,
             "x-forwarded-prefix": LENSPACK_PATH,
@@ -1130,5 +1139,5 @@ LAYOUT_HTML = r"""<!DOCTYPE html>
 __all__ = [
     "LENSPACK_PATH", "LENSPACK_INTERNAL_URL", "LENSPACK_SERVICE_USER", "LENSPACK_TEMPLATES", "STT_BENCH", "FLASK_APP_MUTATOR",
     "lenspack_app_mutator", "lenspack_sign", "lenspack_identity_key", "lenspack_rls_clauses", "lenspack_dataset_access",
-    "lenspack_settings_layout", "superset_version", "lenspack_clickhouse_label_suffix",
+    "lenspack_settings_layout", "superset_version", "lenspack_clickhouse_label_suffix", "lenspack_reads_dashboard_arg",
 ]

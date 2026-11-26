@@ -47,5 +47,5 @@ Ask for something the pack cannot answer and the compiler declines with a code, 
 
 **Next:** [Filters](filters.md).
 
-**Related:** [Query format reference](../reference/query.md) · [The life of a query](../architecture/life-of-a-query.md) ·
-[Refusal codes](../reference/errors.md)
+**Related:** [Query format reference](../reference/query.md) · [The life of a query](../architecture/life-of-a-query.md)
+· [Refusal codes](../reference/errors.md)

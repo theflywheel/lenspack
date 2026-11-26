@@ -27,7 +27,11 @@ const mine: LlmAdapter = {
 registerLlmAdapter(mine);
 ```
 
-`prepare` receives the system prompt in parts, stable first and the part that changes most last, with the messages and tools, and returns what `generateText` / `streamText` take. Callers go through `shapeCall(provider, call)`, which joins the parts into one string when an adapter has no `prepare`, so the adapters that need no shaping receive exactly what they always did. A call's `effort` arrives in `prepare` as `call.effort`. Only an adapter that declares `efforts` is given one.
+`prepare` receives the system prompt in parts, stable first and the part that changes most last, with the messages and
+tools, and returns what `generateText` / `streamText` take. Callers go through `shapeCall(provider, call)`, which joins
+the parts into one string when an adapter has no `prepare`, so the adapters that need no shaping receive exactly what
+they always did. A call's `effort` arrives in `prepare` as `call.effort`. Only an adapter that declares `efforts` is
+given one.
 
 ## Metering comes free
 

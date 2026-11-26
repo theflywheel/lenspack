@@ -35,7 +35,7 @@ carry keys and per-deployment prices; the config file describes data. See [Chat 
 It depends on the kind of setting.
 
 **Settings an admin can change while it runs** (feature switches, telemetry, kept recordings, voice and language,
-saved answers and the queue). The order is, lowest first:
+saved answers, the queue, and in Superset the personal-dashboard limits and the edit scope). The order is, lowest first:
 
 1. the built-in default;
 2. the config file;
@@ -76,8 +76,8 @@ lenspack check --config lenspack.yaml     # loads every pack, draws every board;
 lenspack sources --config lenspack.yaml   # what each source holds
 ```
 
-A config with a value of the wrong kind, a pack with a mistake, or an access rule naming a key the pack lacks stops the server at
-start, with every problem listed. (Most blocks ignore a key they do not know, so check spelling against the
+A config with a value of the wrong kind, a pack with a mistake, or an access rule naming a key the pack lacks stops the
+server at start, with every problem listed. (Most blocks ignore a key they do not know, so check spelling against the
 [reference](../reference/config.md); `budget`, `cache`, `queue` and `explain` refuse one.)
 
 ---

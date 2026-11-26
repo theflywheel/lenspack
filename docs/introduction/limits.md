@@ -23,10 +23,10 @@ is written to a file as unverified and does not enter the pack until a person ad
 says who is asking. Lenspack's own rules can only take things away from what that app allows. See
 [Who sees what](../access/README.md).
 
-**A number it cannot get right is refused, not guessed.** Asking for an order-level measure split by something
-that has many rows per order would count orders twice; the compiler refuses it and suggests a measure that works.
-A percentile on a database without one is refused rather than estimated another way. A rate is never added up.
-See [Entities and joins](../concepts/entities.md#fan-out) and [the compute step](../features/compute.md#how-zeros-and-gaps-are-treated).
+**A number it cannot get right is refused, not guessed.** Asking for an order-level measure split by something that has
+many rows per order would count orders twice; the compiler refuses it and suggests a measure that works. A percentile on
+a database without one is refused rather than estimated another way. A rate is never added up. See [Entities and
+joins](../concepts/entities.md#fan-out) and [the compute step](../features/compute.md#how-zeros-and-gaps-are-treated).
 
 **A board holds no code.** No URLs, no markup and no colour values. Text widgets are drawn as plain text, and a
 colour scheme is a name the renderer maps to its own palette. See [Boards and widgets](../concepts/boards.md).
@@ -49,11 +49,12 @@ These are known gaps. Each is a candidate for later work, not a promise.
 - **Access rules inside the pack file.** They live in the deployment's config, because role names belong to a
   deployment and one pack serves several.
 - **Filters on a group's value** ("countries with a refund rate above 5%"), counting groups ("how many countries are
-  above 5%"), and periods tied to a calendar of your own ("this sale against the last one"). See [the compute step](../features/compute.md).
+  above 5%"), and periods tied to a calendar of your own ("this sale against the last one"). See [the compute
+  step](../features/compute.md).
 
 ---
 
-**Next:** [Quick start](../getting-started/quickstart.md), or [Concepts](../concepts/README.md) if you would
-rather read first.
+**Next:** [Getting started](../getting-started/README.md), or [Concepts](../concepts/README.md) if you would rather read
+first.
 
 **Related:** [What you get](offerings.md) · [Safety model](../architecture/safety.md)

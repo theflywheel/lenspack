@@ -41,7 +41,8 @@ saying it found no join.
 
 ## 3. Dimensions
 
-Anything you would `GROUP BY`: a column (`field`), an expression (`sql`), or a JSON path (`json`). Exactly one of the three.
+Anything you would `GROUP BY`: a column (`field`), an expression (`sql`), or a JSON path (`json`). Exactly one of the
+three.
 
 ```yaml
 dimensions:

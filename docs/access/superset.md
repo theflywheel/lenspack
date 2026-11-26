@@ -31,9 +31,10 @@ may read is scope on that entity, and a dashboard they may not open is a kept bo
 - **Fails closed.** Anything else (`LIKE`, `!=`, functions, subqueries, a column the pack doesn't have, a
   template that wasn't rendered) keeps the whole dataset from that user, and the log says which clause and why.
   If Superset can't be asked, every dataset and dashboard is kept from that user until the next try.
-- **Dashboards.** The dashboards list (`/_superset/dashboards`) and the boards list (`GET /api/<pack>`) show
-  only the dashboards the user may open in Superset (owners, admins, dashboard roles with `DASHBOARD_RBAC`, or
-  access to one of its datasets). The dashboard a request is about is still checked on every request (see [Who is asking](../hosts/superset/identity.md)).
+- **Dashboards.** The dashboards list (`/_superset/dashboards`) and the boards list (`GET /api/<pack>`) show only the
+  dashboards the user may open in Superset (owners, admins, dashboard roles with `DASHBOARD_RBAC`, or access to one of
+  its datasets). The dashboard a request is about is still checked on every request (see [Who is
+  asking](../hosts/superset/identity.md)).
 - **Dashboard roles.** With `DASHBOARD_RBAC` on, a user who opens a dashboard through its dashboard roles can ask
   about the data of that dashboard's charts there, with their RLS, as Superset shows it to them, and nowhere else.
   See [Dashboard roles](#dashboard-roles-dashboard_rbac) below.
@@ -53,16 +54,28 @@ may read is scope on that entity, and a dashboard they may not open is a kept bo
 
 ## Dashboard roles (DASHBOARD_RBAC)
 
-Superset can give a dashboard its own roles (the `DASHBOARD_RBAC` feature flag). A user in one of those roles can open the dashboard and see its charts, even without access to the datasets behind them. Lenspack follows the same rule, as Superset decides it:
+Superset can give a dashboard its own roles (the `DASHBOARD_RBAC` feature flag). A user in one of those roles can open
+the dashboard and see its charts, even without access to the datasets behind them. Lenspack follows the same rule, as
+Superset decides it:
 
-- **On that dashboard**, the user can ask about the data of the dashboard's charts: the chat, the board's own data and its filter menus read those datasets for them. Row-level security still applies, as it does in Superset, so they get the same rows the dashboard's charts show them.
-- **Only the datasets behind the dashboard's charts.** A dataset that only a dashboard filter reads is not opened: Superset lets that filter list its values, and nothing more.
-- **Nowhere else.** On another dashboard, in the list of everything they can ask about, and in compiled queries outside a dashboard, those datasets stay closed to them, with the usual "your Superset access doesn't include it".
-- **Who counts.** Superset's own check decides: dashboard roles must be on and the dashboard must have roles; the user must be in one of them and the dashboard published, or be its owner, or an admin.
-- **Saved answers** made on a dashboard this way are kept apart: they are never used on another dashboard, or for a user who reads the dashboard's data some other way.
-- **When Lenspack can't tell**, nothing opens. If Superset can't be asked, or its plugin is older than this change, a dashboard role opens the dashboard but none of its data in the chat. With `DASHBOARD_RBAC` off, Superset grants nothing through a dashboard, and neither does Lenspack.
+- **On that dashboard**, the user can ask about the data of the dashboard's charts: the chat, the board's own data and
+  its filter menus read those datasets for them. Row-level security still applies, as it does in Superset, so they get
+  the same rows the dashboard's charts show them.
+- **Only the datasets behind the dashboard's charts.** A dataset that only a dashboard filter reads is not opened:
+  Superset lets that filter list its values, and nothing more.
+- **Nowhere else.** On another dashboard, in the list of everything they can ask about, and in compiled queries outside
+  a dashboard, those datasets stay closed to them, with the usual "your Superset access doesn't include it".
+- **Who counts.** Superset's own check decides: dashboard roles must be on and the dashboard must have roles; the user
+  must be in one of them and the dashboard published, or be its owner, or an admin.
+- **Saved answers** made on a dashboard this way are kept apart: they are never used on another dashboard, or for a user
+  who reads the dashboard's data some other way.
+- **When Lenspack can't tell**, nothing opens. If Superset can't be asked, or its plugin is older than this change, a
+  dashboard role opens the dashboard but none of its data in the chat. With `DASHBOARD_RBAC` off, Superset grants
+  nothing through a dashboard, and neither does Lenspack.
 
-Superset 5.0 and 6.1 grant the same here. 6.1 also lets a dashboard's users drill into its data (drill to detail, drill by); that reads the same datasets, so it adds nothing to the list. The plugin asks Superset's own check (`raise_for_access`, for one of the dashboard's charts) as the user, so a Superset change to the rule follows by itself.
+Superset 5.0 and 6.1 grant the same here. 6.1 also lets a dashboard's users drill into its data (drill to detail, drill
+by); that reads the same datasets, so it adds nothing to the list. The plugin asks Superset's own check
+(`raise_for_access`, for one of the dashboard's charts) as the user, so a Superset change to the rule follows by itself.
 
 ## Admins and roles
 
@@ -89,7 +102,7 @@ apply that rule itself.
 
 ---
 
-**Next:** [How access is tested](testing.md).
+**Next:** [Operating Lenspack](../operating/README.md).
 
 **Related:** [Who is asking](../hosts/superset/identity.md) · [Row scope and tenancy](scope-and-tenancy.md) ·
 [Saved answers](../features/saved-answers.md)

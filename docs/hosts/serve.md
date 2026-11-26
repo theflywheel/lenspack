@@ -22,9 +22,10 @@ lenspack serve --config lenspack.yaml          # or: lenspack --config lenspack.
 lenspack serve --config lenspack.yaml --port 9000 --ui ./examples/demo/dist --host 0.0.0.0
 ```
 
-The port is `--port`, else `port:` in the config, else `PORT`, else 8787. It listens on `--host`, else `host:`,
-else on every address (`0.0.0.0`) when a sign-in is set and on this machine only (`127.0.0.1`) with `auth: { kind: none }`.
-The Docker image includes the board app. The whole command line is in [CLI](../reference/cli.md); deployment is in [Deploying](../operating/deploying.md).
+The port is `--port`, else `port:` in the config, else `PORT`, else 8787. It listens on `--host`, else `host:`, else on
+every address (`0.0.0.0`) when a sign-in is set and on this machine only (`127.0.0.1`) with `auth: { kind: none }`. The
+Docker image includes the board app. The whole command line is in [CLI](../reference/cli.md); deployment is in
+[Deploying](../operating/deploying.md).
 
 ## A config
 

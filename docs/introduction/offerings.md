@@ -14,8 +14,8 @@ for each question. See [Answering questions](../features/answering.md) and [the 
 change is a new version, any version can be restored, and a second model checks each change before it is saved.
 See [Dashboard edits](../features/dashboard-edits.md).
 
-**"How this was worked out", under every answer.** Each figure names the approved measure it came from, the
-filters and dates it used, the SQL that ran and the rows behind it. See [How this was worked out](../features/explain.md).
+**"How this was worked out", under every answer.** Each figure names the approved measure it came from, the filters and
+dates it used, the SQL that ran and the rows behind it. See [How this was worked out](../features/explain.md).
 
 **Voice and languages.** A microphone in the chat panel, and replies in English, French, Hindi or Portuguese.
 See [Voice](../features/voice.md) and [Languages](../features/languages.md).
@@ -23,6 +23,9 @@ See [Voice](../features/voice.md) and [Languages](../features/languages.md).
 **Asking which reading was meant.** When a question can be read two ways that give different numbers, the
 assistant asks, with buttons, or says which reading it used. See [Open questions and
 definitions](../features/open-questions.md#clarify).
+
+**Your own copy of a shared dashboard.** Inside Superset, someone who can only view a dashboard can copy it and
+change the copy, or keep a layout they like under a name. See [Personal dashboards](../features/personal-dashboards.md).
 
 ## For the people running it
 

@@ -45,7 +45,7 @@ links to the page that explains the behaviour.
 
 | you see | cause | do this |
 |---|---|---|
-| "you can view this dashboard but not edit it in Superset" | the person may not edit that dashboard in Superset | give them edit rights in Superset |
+| "you can view this dashboard but not edit it in Superset" | the person may not edit that dashboard in Superset | give them edit rights in Superset, or they can [make their own copy](../features/personal-dashboards.md) |
 | edits are refused for everyone, admins included | the `boardEdits` switch is off | turn it on. See [Feature switches](switches.md) |
 | undo history is gone after a restart, inside Superset | Lenspack's version history is kept in memory today | Superset's dashboard is unaffected. See [What survives a restart](state.md#what-survives-a-restart) |
 | a chart is kept as "Superset's" and the assistant will not rewrite it | Lenspack cannot express it exactly (custom SQL, ad hoc metrics) | change it in Superset; the assistant can still move, resize or remove it |

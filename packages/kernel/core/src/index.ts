@@ -7,3 +7,4 @@ export { checkQuery, nearest } from "./check";
 export * from "./summarise";
 export * from "./store";
 export * from "./changes";
+export * from "./records";

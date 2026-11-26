@@ -91,4 +91,5 @@ Property tests check these, and golden files pin what each database is sent.
 
 **Next:** [The life of a turn](life-of-a-turn.md).
 
-**Related:** [Query format](../reference/query.md) · [Refusal codes](../reference/errors.md) · [Entities and joins](../concepts/entities.md)
+**Related:** [Query format](../reference/query.md) · [Refusal codes](../reference/errors.md) · [Entities and
+joins](../concepts/entities.md)

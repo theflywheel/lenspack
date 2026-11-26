@@ -16,10 +16,10 @@ The `lenspack` command comes from `@lenspack/serve` (and is the image's entry po
 | `lenspack hash-password` | a scrypt hash of the password read from standard input, for `LENSPACK_ADMIN_PASSWORD_HASH`. The password must be at least 12 characters; reading it from standard input keeps it out of the process list and shell history |
 | `lenspack dss ChartApiConfig.json [--dashboards MasterDashboardConfig.json] [--placeholders PVAR,…] [--pack name] --out dir` | turns another system's chart configs into a pack, boards and a report. See [Importers](../extending/importers.md) |
 
-`serve` reads the port from `--port`, then `port:` in the config, then `PORT`, then 8787. It listens on `--host`,
-then `host:`, then `0.0.0.0` when a sign-in is set and `127.0.0.1` when `auth: { kind: none }`. With `auth: { kind: none }` set by
-`LENSPACK_AUTH` over a config's own sign-in, only `--host` moves it off this machine, and it warns at start that anyone
-who reaches it may read and edit every board.
+`serve` reads the port from `--port`, then `port:` in the config, then `PORT`, then 8787. It listens on `--host`, then
+`host:`, then `0.0.0.0` when a sign-in is set and `127.0.0.1` when `auth: { kind: none }`. With `auth: { kind: none }`
+set by `LENSPACK_AUTH` over a config's own sign-in, only `--host` moves it off this machine, and it warns at start that
+anyone who reaches it may read and edit every board.
 
 ## <a id="lenspack-mcp"></a>`lenspack-mcp`
 

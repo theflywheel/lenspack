@@ -193,9 +193,9 @@ replay, slots and router.
   when the store is full.
 - `GET <prefix>/cache/suggestions?board=<id>`: the most-asked questions on a board, across every scope:
   `{ "board": "<id>", "suggestions": ["…"] }`. Optional `lang` and `limit` (8 by default).
-- `GET <prefix>/cache/chart-candidates`: questions asked often that no chart on their board answers:
-  `{ "candidates": [{ "id", "board", "question", "variants", "asks", "lastHit", "query": { "kind": "value", "measure": "…" } }] }`,
-  most asked first. Optional `minAsks` (3) and `days` (14).
+- `GET <prefix>/cache/chart-candidates`: questions asked often that no chart on their board answers: `{ "candidates": [{
+  "id", "board", "question", "variants", "asks", "lastHit", "query": { "kind": "value", "measure": "…" } }] }`, most
+  asked first. Optional `minAsks` (3) and `days` (14).
 - `GET <prefix>/cache/boards`: how often each board changed, for settled boards:
   `{ "boards": [{ "board", "edits7d", "edits30d", "edits90d", "lastEdit", "settled" }] }`.
 - `POST <prefix>/cache/prewarm`: refreshes now, and answers when done: `{ "ok": true, "run": { … } }` (`run` is
@@ -204,9 +204,9 @@ replay, slots and router.
   a load. Answers `202 { "ok": true, "scheduled": true }` at once; the refresh runs a few seconds later, and several
   calls close together make one refresh.
 
-Inside Superset, the settings are read and changed with the other settings: `GET /_superset/settings` includes
-`cache` (with `prewarm`) and `queue`; `PUT …/settings/cache` and `PUT …/settings/queue` take any of their settings
-(`prewarm` as a partial object). See [Saved answers](../features/saved-answers.md) and [Busy hours](../features/busy-hours.md).
+Inside Superset, the settings are read and changed with the other settings: `GET /_superset/settings` includes `cache`
+(with `prewarm`) and `queue`; `PUT …/settings/cache` and `PUT …/settings/queue` take any of their settings (`prewarm` as
+a partial object). See [Saved answers](../features/saved-answers.md) and [Busy hours](../features/busy-hours.md).
 
 ## Superset routes
 
@@ -225,8 +225,9 @@ Inside Superset, the plugin adds routes to Superset itself, and the Lenspack ser
 
 **On the Lenspack server**, below `publicPath`: the board API above (a dashboard is the board `superset-<id>`), the
 admin API under `/_superset`, `/_superset/bind?dashboard=<id>` (ties the chat to a dashboard Superset checked) and
-`/_superset/dashboards` (the dashboards this person may open). How identity is signed and checked is in
-[Who is asking](../hosts/superset/identity.md).
+`/_superset/dashboards` (the dashboards this person may open), and the personal-dashboard and saved-layout routes
+under `/_superset/my` (listed in [Personal dashboards](../features/personal-dashboards.md#routes)). How identity is
+signed and checked is in [Who is asking](../hosts/superset/identity.md).
 
 ## MCP over HTTP
 

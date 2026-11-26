@@ -25,12 +25,26 @@ export type SupersetBoardsOptions = {
   dashboards: Record<string, number>;
   /** Where widget ↔ chart ids are kept between restarts. */
   stateFile: string;
+  /** The Superset user ids a board's new charts belong to: its owner's, on a person's own dashboard. Else Lenspack's account. */
+  ownersOf?: (boardId: string) => number[] | undefined | Promise<number[] | undefined>;
   /** How often a read checks Superset for edits made there. Default 3s. */
   checkEveryMs?: number;
   log?: (line: string) => void;
 };
 
-export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull(id: string, force?: boolean): Promise<void>; seed(): Promise<void>; notes: Map<string, string[]> } {
+export type SupersetBoards = BoardStore & {
+  pull(id: string, force?: boolean): Promise<void>;
+  seed(): Promise<void>;
+  notes: Map<string, string[]>;
+  /** The board's widgets that stand for Superset charts Lenspack can't redraw. */
+  lockedOf(id: string): string[];
+  /** The charts Lenspack made on the board's dashboard. */
+  createdOf(id: string): number[];
+  /** Drops a board whose dashboard is gone (deleted): its links and its versions here. */
+  forget(id: string): Promise<void>;
+};
+
+export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
   const { inner, client, pack, binding } = opts;
   const log = opts.log ?? (() => {});
   const { states, save } = savedStates(opts.stateFile, log);
@@ -96,7 +110,8 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
       if (!result) return result;
       try {
         const waiting = hintsFor(id);
-        states[id] = await pushBoard(client, before.config, result.config, pack, binding, states[id]!, { hints: Object.fromEntries(waiting), moves: o.moves, written: (p) => positions.set(id, p), log: (s) => log(`${id}: ${s}`) });
+        const owners = await opts.ownersOf?.(id);
+        states[id] = await pushBoard(client, before.config, result.config, pack, binding, states[id]!, { hints: Object.fromEntries(waiting), moves: o.moves, written: (p) => positions.set(id, p), log: (s) => log(`${id}: ${s}`), ...(owners ? { owners } : {}) });
         for (const w of Object.keys(result.config.widgets)) if (!before.config.widgets[w]) waiting.delete(w);
         save();
         lastCheck.set(id, Date.now());
@@ -121,6 +136,19 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
 
   return {
     notes,
+    lockedOf: (id) => [...(states[id]?.locked ?? [])],
+    createdOf: (id) => [...(states[id]?.created ?? [])],
+    async forget(id) {
+      await serial(id, async () => {
+        delete opts.dashboards[id];
+        delete states[id];
+        notes.delete(id);
+        lastCheck.delete(id);
+        positions.delete(id);
+        save();
+        await inner.delete(id);
+      });
+    },
     admit,
     async tabs(id): Promise<BoardTab[]> {
       if (!bound(id)) return [];

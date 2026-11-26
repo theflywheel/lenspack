@@ -7,9 +7,10 @@ You need Superset 6.1 or 5.0, a way to run one more container (or a Node.js 22 p
 
 ## 1. Add the plugin to Superset
 
-Superset's side is one Python file, [`lenspack_superset.py`](../../../packages/hosts/superset/plugin/lenspack_superset.py).
-It needs no fork, no custom image and no second web server. Put it on Superset's Python path (for example,
-mounted into `/app/pythonpath/`) and import it at the end of `superset_config.py`:
+Superset's side is one Python file,
+[`lenspack_superset.py`](../../../packages/hosts/superset/plugin/lenspack_superset.py). It needs no fork, no custom
+image and no second web server. Put it on Superset's Python path (for example, mounted into `/app/pythonpath/`) and
+import it at the end of `superset_config.py`:
 
 ```python
 # superset_config.py

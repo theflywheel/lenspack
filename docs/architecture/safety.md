@@ -26,8 +26,9 @@ Anything else is refused before it reaches a database.
 
 ## The compiler's guarantees
 
-Every identifier comes from the pack; every value is a bound parameter; a declared tenant is present or the query
-does not compile; a `LIMIT` is always there; fan-out is refused. See [The life of a query](life-of-a-query.md#the-invariants).
+Every identifier comes from the pack; every value is a bound parameter; a declared tenant is present or the query does
+not compile; a `LIMIT` is always there; fan-out is refused. See [The life of a
+query](life-of-a-query.md#the-invariants).
 
 ## The driver's guarantees
 
@@ -35,8 +36,9 @@ Every SQL source is opened through a driver, and the driver, not the SQL, enforc
 read-only, exactly one statement, a time limit, and a row cap (a result over it is an error, not a shorter
 answer). How each database does it is in [SQL databases](../sources/sql.md#the-guards-belong-to-the-driver).
 
-Use a read-only database role in production as well. The role is a second guard: if the driver's guards ever missed something, the database would still refuse to write.
-Seeding and the board store use a separate writer that is never handed to a tool or a model.
+Use a read-only database role in production as well. The role is a second guard: if the driver's guards ever missed
+something, the database would still refuse to write. Seeding and the board store use a separate writer that is never
+handed to a tool or a model.
 
 ## `run_sql`
 
@@ -58,8 +60,8 @@ never offer it.
 
 ## Tenancy
 
-An entity that declares a `tenant` cannot be queried without one; the condition is pushed into that entity's
-subquery. The tenant comes from the host, never from the model. See [Row scope and tenancy](../access/scope-and-tenancy.md).
+An entity that declares a `tenant` cannot be queried without one; the condition is pushed into that entity's subquery.
+The tenant comes from the host, never from the model. See [Row scope and tenancy](../access/scope-and-tenancy.md).
 
 ## Pack fragments are code
 
@@ -80,6 +82,6 @@ Please report vulnerabilities privately to contact@theflywheel.in.
 
 ---
 
-**Next:** [Features](../features/README.md).
+**Next:** [Claims the build checks](claims.md).
 
 **Related:** [Who sees what](../access/README.md) · [Privacy and data handling](../operating/privacy.md)

@@ -4,7 +4,10 @@ This page covers SQL databases as Lenspack sources: connection URLs, the drivers
 queries read-only, what each database can compute, and the differences worth knowing. It is for whoever connects
 Lenspack to a database.
 
-A SQL source is a connection URL. Its scheme picks a **driver**, and the driver is the only thing in Lenspack that talks to the database. Everything it is ever sent is SQL text and bound parameters: no client-side query builder, no ORM, no second path for "special" queries. The same idea Metabase uses, for the same reason: one place per database to get right, and one test that says whether it is right.
+A SQL source is a connection URL. Its scheme picks a **driver**, and the driver is the only thing in Lenspack that talks
+to the database. Everything it is ever sent is SQL text and bound parameters: no client-side query builder, no ORM, no
+second path for "special" queries. The same idea Metabase uses, for the same reason: one place per database to get
+right, and one test that says whether it is right.
 
 ```yaml
 # lenspack.yaml
@@ -15,13 +18,15 @@ sources:
   search:  { kind: elasticsearch, url: env:ES_URL }  # not a driver; see Elasticsearch
 ```
 
-Each SQL source also takes `timeoutMs` (the time limit for one query, 15 seconds by default), `maxRows` (the row cap; see
-[below](#the-guards-belong-to-the-driver)) and `cacheTtlMs` (keep each distinct query's rows this long and answer a
+Each SQL source also takes `timeoutMs` (the time limit for one query, 15 seconds by default), `maxRows` (the row cap;
+see [below](#the-guards-belong-to-the-driver)) and `cacheTtlMs` (keep each distinct query's rows this long and answer a
 repeat from memory; off by default).
 
-`kind:` may still be written next to a URL and must then agree with it. The older `{ kind: duckdb, path: … }` form still works.
+`kind:` may still be written next to a URL and must then agree with it. The older `{ kind: duckdb, path: … }` form still
+works.
 
-A DuckDB or SQLite source with `optional: true` whose file is not there is skipped with a warning, and so is every pack on it. Without it, a missing file stops the server.
+A DuckDB or SQLite source with `optional: true` whose file is not there is skipped with a warning, and so is every pack
+on it. Without it, a missing file stops the server.
 
 ## The drivers Lenspack ships
 
@@ -37,7 +42,8 @@ A driver loads its client only when a URL asks for it, so an install needs only 
 
 ## The dialect
 
-`DialectRules` is the whole of what differs between databases. The printer never branches on a dialect name; it asks the rules.
+`DialectRules` is the whole of what differs between databases. The printer never branches on a dialect name; it asks the
+rules.
 
 | rule | what it answers |
 |---|---|
@@ -55,7 +61,8 @@ A driver loads its client only when a URL asks for it, so an install needs only 
 | `orderBy(x, dir)` | one ORDER BY term with NULLs last |
 | `capabilities` | what resolution refuses up front, e.g. `{ percentiles: false }` |
 
-Time windows (`last: "30d"`, previous periods) are resolved in JavaScript and bound as parameters, so no dialect needs `now()` or interval arithmetic. `LIMIT n` is the same everywhere.
+Time windows (`last: "30d"`, previous periods) are resolved in JavaScript and bound as parameters, so no dialect needs
+`now()` or interval arithmetic. `LIMIT n` is the same everywhere.
 
 ## The guards belong to the driver
 
@@ -69,7 +76,9 @@ The caller (the engine, `run_sql`, a tool) never sets them and cannot remove the
 | MySQL / MariaDB | `SET SESSION TRANSACTION READ ONLY`, then `START TRANSACTION READ ONLY` per query (DDL is refused too) | prepared statements hold one statement | `max_execution_time` (MySQL) or `max_statement_time` (MariaDB), and a client timer | refused over `maxRows` |
 | ClickHouse | `readonly=2` on every request | the HTTP interface takes one | `max_execution_time`, and a client timer | `max_result_rows` with `result_overflow_mode=throw` |
 
-A result over the cap is an error, never a shorter answer: a cut-off list reads as a whole one. The default cap is 100,000 rows, above anything a compiled query asks for; `maxRows` on a source changes it. `run_sql` keeps its own rules on top (one `SELECT` or `WITH`, wrapped in `LIMIT n`).
+A result over the cap is an error, never a shorter answer: a cut-off list reads as a whole one. The default cap is
+100,000 rows, above anything a compiled query asks for; `maxRows` on a source changes it. `run_sql` keeps its own rules
+on top (one `SELECT` or `WITH`, wrapped in `LIMIT n`).
 
 These are belts. The braces are a database role that can only read what Lenspack should see; give every source one.
 
@@ -90,18 +99,30 @@ These are belts. The braces are a database role that can only read what Lenspack
 | `contains` | `ILIKE` | `ILIKE … ESCAPE` | `LOWER() LIKE LOWER() ESCAPE` | `LOWER() LIKE LOWER()` | `ILIKE` |
 | `lenspack sources` row counts | planner estimate (`reltuples`) | `estimated_size` | `count(*)` | `information_schema.tables` estimate | `system.tables.total_rows` |
 
-A refused percentile is refused when the board is edited (`checkOps`) and when it is drawn, with the measure's name. It is never replaced by something that would print a different number under the same label.
+A refused percentile is refused when the board is edited (`checkOps`) and when it is drawn, with the measure's name. It
+is never replaced by something that would print a different number under the same label.
 
 ### Differences you should know about
 
-- **MySQL and MariaDB compare and group text by the column's collation.** Under the default case-insensitive collations `Red` and `red` are one group and an `eq` filter matches both, tenant columns included; Postgres, DuckDB, SQLite and ClickHouse keep them apart. Give such columns a binary collation (`utf8mb4_bin`) when the difference matters. The conformance data has no such pairs; the driver suite seeds `utf8mb4_bin` columns and shows the folding separately.
-- **MySQL's `AVG` of an exact value is a DECIMAL** rounded to four more places than its input, so a rate would come back as 0.0713. The dialect averages a double instead. A fragment that divides by a decimal literal (`/ 3600.0`) is a DECIMAL too; divide by a float literal (`/ 3.6e9`) when the digits matter.
-- **SQLite keeps time as ISO text.** Buckets are text in the same form and compare in the same order the instants do. Its `LIKE` and `lower()` fold ASCII case only.
-- **ClickHouse** is sent the settings that make it answer as the others do: an outer join's missing side is NULL (`join_use_nulls`), an aggregate over no rows is NULL (`aggregate_functions_null_for_empty`), a cast keeps NULL (`cast_keep_nullable`), and times are UTC. Columns should be `Nullable` where the data has gaps. It has no correlated subqueries, so a fragment that uses one needs a `clickhouse:` entry.
+- **MySQL and MariaDB compare and group text by the column's collation.** Under the default case-insensitive collations
+  `Red` and `red` are one group and an `eq` filter matches both, tenant columns included; Postgres, DuckDB, SQLite and
+  ClickHouse keep them apart. Give such columns a binary collation (`utf8mb4_bin`) when the difference matters. The
+  conformance data has no such pairs; the driver suite seeds `utf8mb4_bin` columns and shows the folding separately.
+- **MySQL's `AVG` of an exact value is a DECIMAL** rounded to four more places than its input, so a rate would come back
+  as 0.0713. The dialect averages a double instead. A fragment that divides by a decimal literal (`/ 3600.0`) is a
+  DECIMAL too; divide by a float literal (`/ 3.6e9`) when the digits matter.
+- **SQLite keeps time as ISO text.** Buckets are text in the same form and compare in the same order the instants do.
+  Its `LIKE` and `lower()` fold ASCII case only.
+- **ClickHouse** is sent the settings that make it answer as the others do: an outer join's missing side is NULL
+  (`join_use_nulls`), an aggregate over no rows is NULL (`aggregate_functions_null_for_empty`), a cast keeps NULL
+  (`cast_keep_nullable`), and times are UTC. Columns should be `Nullable` where the data has gaps. It has no correlated
+  subqueries, so a fragment that uses one needs a `clickhouse:` entry.
 
 ## Pack fragments
 
-A `sql:` or `filter:` fragment is inlined verbatim, so it must be **portable or per-dialect**. Prefer the portable form: `CASE WHEN status = 'refunded' THEN 1 ELSE 0 END` runs everywhere, where `(status = 'refunded')::int` runs on Postgres and DuckDB only. When databases genuinely differ, give each its own entry; `default` serves the rest:
+A `sql:` or `filter:` fragment is inlined verbatim, so it must be **portable or per-dialect**. Prefer the portable form:
+`CASE WHEN status = 'refunded' THEN 1 ELSE 0 END` runs everywhere, where `(status = 'refunded')::int` runs on Postgres
+and DuckDB only. When databases genuinely differ, give each its own entry; `default` serves the rest:
 
 ```yaml
 sql: { default: "EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0",
@@ -110,7 +131,9 @@ sql: { default: "EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0",
        clickhouse: "dateDiff('millisecond', created_at, resolved_at) / 3600000.0" }
 ```
 
-A YAML anchor writes one such map once and reuses it (`examples/hcm/pack.yaml` does this for its epoch times). A pack with no entry for a dialect refuses the query on that source with `NOT_SUPPORTED`, naming the fragment. Dimensions and measures written with `field:` and `where:` need no fragment at all and run on every driver and on Elasticsearch.
+A YAML anchor writes one such map once and reuses it (`examples/hcm/pack.yaml` does this for its epoch times). A pack
+with no entry for a dialect refuses the query on that source with `NOT_SUPPORTED`, naming the fragment. Dimensions and
+measures written with `field:` and `where:` need no fragment at all and run on every driver and on Elasticsearch.
 
 ## ClickHouse
 
@@ -119,10 +142,11 @@ A few more things to know when the source is ClickHouse:
 - It is reached over its HTTP interface (port 8123, or 8443 with `?secure=true`); no client library is needed.
 - Columns should be `Nullable` where the data has gaps, so a missing value is NULL as on other databases.
 - It has no correlated subqueries, so a pack fragment that uses one needs a `clickhouse:` entry.
-- **Through Superset 6.1**, a saved metric named like the column it adds up can break other metrics in the same
-  chart. The Superset plugin fixes this; see [Superset versions](../hosts/superset/versions.md#clickhouse-column-names-on-superset-61).
-  Through Superset, a heatmap over weeks or months is refused on ClickHouse; see
-  [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#heatmaps).
+- **Through Superset 6.1**, a saved metric named like the column it adds up can break other metrics in the same chart.
+  The Superset plugin fixes this; see [Superset
+  versions](../hosts/superset/versions.md#clickhouse-column-names-on-superset-61). Through Superset, a heatmap over
+  weeks or months is refused on ClickHouse; see [Datasets and
+  dashboards](../hosts/superset/datasets-and-dashboards.md#heatmaps).
 
 ## Adding a database
 

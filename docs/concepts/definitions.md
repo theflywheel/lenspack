@@ -43,4 +43,5 @@ for an admin. It never asks when the pack's rules or a definition already settle
 
 **Next:** [Saved answers](saved-answers.md).
 
-**Related:** [Open questions and definitions](../features/open-questions.md) · [The admin panel](../features/admin-panel.md)
+**Related:** [Open questions and definitions](../features/open-questions.md) · [The admin
+panel](../features/admin-panel.md)

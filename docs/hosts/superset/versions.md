@@ -61,4 +61,5 @@ each. The access suite runs Lenspack against real Superset 6.1 and 5.0; see
 
 **Next:** [Upgrading](upgrading.md).
 
-**Related:** [What Superset 6 could add](../../design/2026-11-25-superset-6-roadmap.md) · [SQL databases: ClickHouse](../../sources/sql.md#clickhouse)
+**Related:** [What Superset 6 could add](../../design/2026-11-25-superset-6-roadmap.md) · [SQL databases:
+ClickHouse](../../sources/sql.md#clickhouse)

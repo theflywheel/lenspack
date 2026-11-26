@@ -78,9 +78,10 @@ lenspack serve --config lenspack.yaml       # the board API on :8787
 The board app is a folder of built files that the server serves when you name it: `--ui <dir>`, `LENSPACK_UI`, or
 `ui:` in the config. The Docker image below includes it.
 
-With no `auth:` block, sign-in is one built-in user, `admin`, with a password. Set `LENSPACK_ADMIN_PASSWORD`
-(at least 12 characters), or read the one Lenspack makes at first start from `.lenspack/admin-password.txt` next to
-`lenspack.yaml`, then delete that file. For named people, use your sign-in provider: see [Sign-in](../access/sign-in.md).
+With no `auth:` block, sign-in is one built-in user, `admin`, with a password. Set `LENSPACK_ADMIN_PASSWORD` (at least
+12 characters), or read the one Lenspack makes at first start from `.lenspack/admin-password.txt` next to
+`lenspack.yaml`, then delete that file. For named people, use your sign-in provider: see
+[Sign-in](../access/sign-in.md).
 
 Give the chat a model the same way as in the [quick start](quickstart.md#2-turn-on-the-chat), and set a daily
 budget before anyone else uses it:

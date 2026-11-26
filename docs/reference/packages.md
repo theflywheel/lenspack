@@ -64,7 +64,7 @@ are unchanged; change the import path and the dependency name. The packages now 
 
 ---
 
-**Next:** [Evals](evals.md).
+**Next:** [Glossary](glossary.md).
 
 **Related:** [Architecture overview](../architecture/README.md) · [React components](../hosts/react.md) ·
 [Write a host](../extending/write-a-host.md)

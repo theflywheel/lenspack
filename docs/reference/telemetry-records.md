@@ -53,8 +53,10 @@ tab says which.
 
 ### Conversations and repeats
 
-- **A conversation** (`sessionId`) continues until 30 minutes pass without a question, the user moves to another board, or they start a new chat.
-- **`rephraseOf`** names the user's own earlier turn, within 2 minutes, that asked much the same thing. "Much the same" means at least 0.6 on the larger of two measures: word overlap, or overlap of three-letter pieces.
+- **A conversation** (`sessionId`) continues until 30 minutes pass without a question, the user moves to another board,
+  or they start a new chat.
+- **`rephraseOf`** names the user's own earlier turn, within 2 minutes, that asked much the same thing. "Much the same"
+  means at least 0.6 on the larger of two measures: word overlap, or overlap of three-letter pieces.
 - **`reAskAfterVoice`** is set when that earlier turn was spoken.
 - **When question text is off**, the comparison uses hashed words, so only word overlap counts.
 
@@ -76,7 +78,8 @@ Each transcription is recorded when the speech endpoint returns it, when an item
 
 How a transcript links to its question:
 
-- The endpoint answers with the `transcriptId`. The chat request sends it back, and the turn record links the two, with the word edits between them.
+- The endpoint answers with the `transcriptId`. The chat request sends it back, and the turn record links the two, with
+  the word edits between them.
 - A transcript can be claimed once, and only by the user who spoke it.
 - A transcript no question claims within an hour becomes an `abandoned` event with `stage: "after-transcription"`.
 - For a client that cannot send the id, the panel can send a `transcript` event with both texts instead.
@@ -87,7 +90,8 @@ Clients post events to `<api>/_telemetry`. Inside Superset that is `/lenspack/ap
 
 - The body is a JSON object of at most 8 KB.
 - The caller must be signed in.
-- An event about a turn names its `turnId`, and only the user whose turn it was may report on it. The kernel's policy decides this (`reportsOn` in `@lenspack/policy`).
+- An event about a turn names its `turnId`, and only the user whose turn it was may report on it. The kernel's policy
+  decides this (`reportsOn` in `@lenspack/policy`).
 - The answer is `202` when the event is accepted, with `recorded: false` when the item it belongs to is off.
 - Otherwise:
   - `401`: not signed in;
@@ -102,6 +106,7 @@ Clients post events to `<api>/_telemetry`. Inside Superset that is `/lenspack/ap
 | `transcript` | `turnId`, `transcript` (what speech to text returned), `sent` (what was sent): the edit distance is computed on the server |
 | `abandoned` | `how` (for example `page-hidden`), `stage` |
 | `explain-opened`, `quick-reply`, `chart-exported`, `board-shared` | optional `how`, `stage`, `choice` and `data` |
+| `personal-dashboard`, `saved-layout` | sent by the Superset host itself, not the browser: `how` (`create`, `copy`, `delete`; `save`, `apply`, `rename`, `delete`) and `data` with ids and counts only (see [Personal dashboards](../features/personal-dashboards.md#usage-telemetry)) |
 
 `data` is a flat map of up to 20 keys with short values. Keys that look like secrets (key, token, password and the
 like) are dropped.
@@ -111,19 +116,24 @@ and translated into English, French, Portuguese and Hindi.
 
 ### For other features: how to add to the record
 
-- **From the page:** `window.lenspackTelemetry.event(type, data)` posts an event about the latest answer. Examples are `explain-opened` and `quick-reply`. It does nothing while telemetry is off.
-- **From the turn's code:** the turn's hooks (`TurnCapture.mark`) take `{ reuse: tier, reuseSavedUsd }`, `{ clarify: true }` and `{ queueMs }`.
+- **From the page:** `window.lenspackTelemetry.event(type, data)` posts an event about the latest answer. Examples are
+  `explain-opened` and `quick-reply`. It does nothing while telemetry is off.
+- **From the turn's code:** the turn's hooks (`TurnCapture.mark`) take `{ reuse: tier, reuseSavedUsd }`, `{ clarify:
+  true }` and `{ queueMs }`.
 - **From the reply stream:**
   - a `data-reuse` part (`{ tier, savedUsd }`) fills `reuse` and `reuseSavedUsd`;
   - a `data-clarify` or `data-quick-replies` part marks the turn `clarify`.
 - **Review:** the review feature counts its own runs, proposals and open questions; the checklist reads them from it.
-- **A new item** goes in the catalogue (`switchboard.ts` in `@lenspack/agent`) with the fields it keeps, its section and its default. A new event type needs an item there too, or the server answers `400`. The catalogue's test checks that each item's switch stops its capture.
+- **A new item** goes in the catalogue (`switchboard.ts` in `@lenspack/agent`) with the fields it keeps, its section and
+  its default. A new event type needs an item there too, or the server answers `400`. The catalogue's test checks that
+  each item's switch stops its capture.
 
 ## The checklist
 
-`GET /_superset/telemetry/checklist` lists every item, which is also the switchboard. It is grouped in sections: users; volume and cost; quality; what people ask; speed; voice and language; conversation; trust and
-reuse; device and network. Each section has `on` and `changed` (who changed its switch, and when), and the answer
-has `telemetry` (the master switch) and `settings` (retention and the consent notice).
+`GET /_superset/telemetry/checklist` lists every item, which is also the switchboard. It is grouped in sections: users;
+volume and cost; quality; what people ask; speed; voice and language; conversation; trust and reuse; device and network.
+Each section has `on` and `changed` (who changed its switch, and when), and the answer has `telemetry` (the master
+switch) and `settings` (retention and the consent notice).
 
 Each item has:
 
@@ -133,7 +143,9 @@ Each item has:
 - `count7d` and `lastSeen`;
 - what it means for `privacy`;
 - a `status`, and `howToEnable` when the status is not `recording`;
-- its `switch`: `key` (`items.<item>`, or `null` with no switch of its own), `on`, `default`, `editable`, and when not editable the `reason` and `blockedBy` (`not-telemetry`, `needs-config` or `feature`, with the `feature` to change instead); `sensitive` and `consent` for the confirm step; `changed`;
+- its `switch`: `key` (`items.<item>`, or `null` with no switch of its own), `on`, `default`, `editable`, and when not
+  editable the `reason` and `blockedBy` (`not-telemetry`, `needs-config` or `feature`, with the `feature` to change
+  instead); `sensitive` and `consent` for the confirm step; `changed`;
 - `offSince` and `offBy`, when someone switched it off (its own switch, its section's or telemetry's).
 
 `count7d` and `lastSeen` count only records that carry the item's fields, so an item switched off stops counting.
@@ -312,7 +324,7 @@ meaning.
 
 ---
 
-**Next:** [Packages](packages.md).
+**Next:** [Refusal codes](errors.md).
 
 **Related:** [Telemetry](../features/telemetry.md) · [Privacy and data handling](../operating/privacy.md#telemetry) ·
 [Stream parts](stream-parts.md)

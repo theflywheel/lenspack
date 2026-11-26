@@ -83,4 +83,5 @@ calls one function per turn instead of reusing the standalone server. See
 
 **Next:** [Add a model provider](model-adapter.md).
 
-**Related:** [How a host plugs in](../architecture/hosts.md) · [Policy](../concepts/policy.md) · [React](../hosts/react.md)
+**Related:** [How a host plugs in](../architecture/hosts.md) · [Policy](../concepts/policy.md) ·
+[React](../hosts/react.md)

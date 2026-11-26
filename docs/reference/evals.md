@@ -64,7 +64,7 @@ Every eval that calls a model costs money. The repository's tests never call one
 
 ---
 
-**Next:** [Glossary](glossary.md).
+**Next:** [Design notes](../design/README.md).
 
 **Related:** [Chat models](../operating/models.md) · [Review](../features/open-questions.md) ·
 [Languages](../features/languages.md)

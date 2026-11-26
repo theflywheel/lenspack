@@ -1,13 +1,17 @@
 # Chat models
 
-This page covers how to give Lenspack models: providers, the roles a model can play in a turn, and the two adapters
-that ship. It is for operators. To add an adapter for another API, see [Add a model provider](../extending/model-adapter.md).
+This page covers how to give Lenspack models: providers, the roles a model can play in a turn, and the two adapters that
+ship. It is for operators. To add an adapter for another API, see [Add a model provider](../extending/model-adapter.md).
 
-The chat that builds boards, its reviewer and the eval suite all talk to a model through a **provider**: a name, a model and the endpoint that serves it. A provider's `kind` picks its **adapter**, the way a source URL's scheme picks a SQL driver. The adapter turns the config into a model and shapes calls for that provider's API. Nothing else in Lenspack knows which API a model speaks.
+The chat that builds boards, its reviewer and the eval suite all talk to a model through a **provider**: a name, a model
+and the endpoint that serves it. A provider's `kind` picks its **adapter**, the way a source URL's scheme picks a SQL
+driver. The adapter turns the config into a model and shapes calls for that provider's API. Nothing else in Lenspack
+knows which API a model speaks.
 
 ## Configuring providers
 
-Providers come from the environment, as a JSON array in order of preference. The first one that answers its startup probe is the default; the others can be picked in the chat's model menu or by role.
+Providers come from the environment, as a JSON array in order of preference. The first one that answers its startup
+probe is the default; the others can be picked in the chat's model menu or by role.
 
 ```bash
 LENSPACK_LLM_PROVIDERS='[
@@ -17,9 +21,11 @@ LENSPACK_LLM_PROVIDERS='[
 LENSPACK_LLM_ROLES='{"reviewer": "claude-sonnet-5-5", "escalate": "claude-sonnet-5-5"}'   # optional
 ```
 
-A single OpenAI-compatible provider can still be given as `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`, `LENSPACK_LLM_MODEL` (and `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING`).
+A single OpenAI-compatible provider can still be given as `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`,
+`LENSPACK_LLM_MODEL` (and `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING`).
 
-Providers live in the environment rather than in `lenspack.yaml` because they carry keys and per-deployment prices; the config file describes data.
+Providers live in the environment rather than in `lenspack.yaml` because they carry keys and per-deployment prices; the
+config file describes data.
 
 | field | |
 |---|---|
@@ -34,7 +40,8 @@ Providers live in the environment rather than in `lenspack.yaml` because they ca
 | `extraBody` | `openai-compatible` only: merged into every request body (e.g. OpenRouter's `reasoning`) |
 | `anthropic` | `anthropic` only: see below |
 
-A setting that belongs to another kind (`extraBody` on an Anthropic provider, `anthropic` on an OpenAI-compatible one) is refused at startup, so it is never silently ignored.
+A setting that belongs to another kind (`extraBody` on an Anthropic provider, `anthropic` on an OpenAI-compatible one)
+is refused at startup, so it is never silently ignored.
 
 ## Roles
 
@@ -56,7 +63,8 @@ definitions](../features/open-questions.md).
 
 ### `openai-compatible`
 
-Any endpoint that speaks the OpenAI chat-completions API: OpenRouter, vLLM, a model vendor's own gateway. A config written before `kind` existed is this kind and behaves exactly as it did.
+Any endpoint that speaks the OpenAI chat-completions API: OpenRouter, vLLM, a model vendor's own gateway. A config
+written before `kind` existed is this kind and behaves exactly as it did.
 
 ### `anthropic`
 
@@ -64,11 +72,37 @@ Claude through Anthropic's Messages API (`@ai-sdk/anthropic`).
 
 - **Key:** `apiKey`, then `apiKeyFile`, then the `ANTHROPIC_API_KEY` environment variable.
 - **Endpoint:** `https://api.anthropic.com/v1` unless `baseUrl` names a proxy.
-- **Prompt caching** is on by default. The chat re-sends the same tools, the same long system prompt (the pack's catalogue, examples and rules) and a growing conversation on every step of every turn. The adapter puts cache breakpoints on the last tool definition, at the end of the stable part of the system prompt, and on the conversation's tail in a tool loop, so later steps read those tokens from the cache at a tenth of the input price or less. The tools and the stable system prompt are kept for an hour, so a question asked a while after the last one still reads them from the cache; the tool loop's tail, which nothing reads after the turn, is kept for five minutes. Saved answers, which skip the model altogether for repeated questions, are described in [Saved answers](../features/saved-answers.md). The current board is the last part of the system prompt and sits after the stable breakpoint, so an edit that changes the board leaves the catalogue cached. The reviewer caches its fixed instructions but not the per-turn tail, which no later call would read. No other adapter sees any of this.
-- **Thinking and effort.** On models that have it, thinking is adaptive and effort defaults to `medium` (Anthropic's suggested start for multi-step tool use; the API's own default is higher). Thinking counts toward the output cap, so a call that sets its own cap (the reviewer's 4000, the probe's few tokens) gets `thinkingAllowance` tokens on top. A call with no cap gets 16,000.
-- **Effort per turn.** The chat takes `?effort=` (for example `POST /api/<pack>/<board>/chat?model=claude-sonnet-5-5&effort=high`). It applies to the chosen model for that turn, and to the fix round when that round uses the same model. A level the model does not take is refused with a 400 that lists the levels it does take. A model with no effort setting ignores the parameter. The reviewer always uses its own configuration. `GET /api` lists each model's `efforts` (`{ "levels": [...], "default": "medium" }`) so a client can offer only those levels. Models without an effort setting have no `efforts` field. The demo's chat panel shows an effort menu beside the model menu for such models and keeps the choice in the URL. Most Claude 5-generation models take `low` to `max`; Sonnet 4.6 has no `xhigh`; `between_tools` thinking goes up to `high`. The effort a call ran at is recorded with it (`effort` in the usage file and in the turn's cost lines) and in the `chat-turn` audit line.
-- **Edited history.** On Claude 5.5-generation models a thinking block is valid only in the conversation that produced it, and Lenspack's history is edited every turn: the board in the system prompt changes, and older turns fall out of the `historyTurns` window. The adapter asks the API to drop a stale block rather than refuse the request (`block_binding: drop_block`). With `thinking: "between_tools"`, which cannot do that, it leaves earlier thinking out of the history instead.
-- **Refusals.** On models that offer it, a turn Claude's safety checks decline is retried server-side on Anthropic's chosen fallback model (`fallbacks: "default"`). A turn that is still declined ends with a line saying so, not in silence.
+- **Prompt caching** is on by default. The chat re-sends the same tools, the same long system prompt (the pack's
+  catalogue, examples and rules) and a growing conversation on every step of every turn. The adapter puts cache
+  breakpoints on the last tool definition, at the end of the stable part of the system prompt, and on the conversation's
+  tail in a tool loop, so later steps read those tokens from the cache at a tenth of the input price or less. The tools
+  and the stable system prompt are kept for an hour, so a question asked a while after the last one still reads them
+  from the cache; the tool loop's tail, which nothing reads after the turn, is kept for five minutes. Saved answers,
+  which skip the model altogether for repeated questions, are described in [Saved
+  answers](../features/saved-answers.md). The current board is the last part of the system prompt and sits after the
+  stable breakpoint, so an edit that changes the board leaves the catalogue cached. The reviewer caches its fixed
+  instructions but not the per-turn tail, which no later call would read. No other adapter sees any of this.
+- **Thinking and effort.** On models that have it, thinking is adaptive and effort defaults to `medium` (Anthropic's
+  suggested start for multi-step tool use; the API's own default is higher). Thinking counts toward the output cap, so a
+  call that sets its own cap (the reviewer's 4000, the probe's few tokens) gets `thinkingAllowance` tokens on top. A
+  call with no cap gets 16,000.
+- **Effort per turn.** The chat takes `?effort=` (for example `POST
+  /api/<pack>/<board>/chat?model=claude-sonnet-5-5&effort=high`). It applies to the chosen model for that turn, and to
+  the fix round when that round uses the same model. A level the model does not take is refused with a 400 that lists
+  the levels it does take. A model with no effort setting ignores the parameter. The reviewer always uses its own
+  configuration. `GET /api` lists each model's `efforts` (`{ "levels": [...], "default": "medium" }`) so a client can
+  offer only those levels. Models without an effort setting have no `efforts` field. The demo's chat panel shows an
+  effort menu beside the model menu for such models and keeps the choice in the URL. Most Claude 5-generation models
+  take `low` to `max`; Sonnet 4.6 has no `xhigh`; `between_tools` thinking goes up to `high`. The effort a call ran at
+  is recorded with it (`effort` in the usage file and in the turn's cost lines) and in the `chat-turn` audit line.
+- **Edited history.** On Claude 5.5-generation models a thinking block is valid only in the conversation that produced
+  it, and Lenspack's history is edited every turn: the board in the system prompt changes, and older turns fall out of
+  the `historyTurns` window. The adapter asks the API to drop a stale block rather than refuse the request
+  (`block_binding: drop_block`). With `thinking: "between_tools"`, which cannot do that, it leaves earlier thinking out
+  of the history instead.
+- **Refusals.** On models that offer it, a turn Claude's safety checks decline is retried server-side on Anthropic's
+  chosen fallback model (`fallbacks: "default"`). A turn that is still declined ends with a line saying so, not in
+  silence.
 
 ```jsonc
 "anthropic": {
@@ -90,7 +124,9 @@ All of it is optional.
 LENSPACK_LLM_PROVIDERS='[{"name":"claude-sonnet-5-5","kind":"anthropic","model":"claude-sonnet-5-5","apiKeyFile":"/path/to/anthropic.key","pricing":{"input":2,"output":10,"cachedInput":0.2,"cacheWrite":2.5,"cacheWrite1h":4}}]'
 ```
 
-The `pricing` here is Sonnet 5.5's published rate (US$2 input, $10 output, $0.20 cache read, $2.50 five-minute cache write, $4 one-hour cache write, per million tokens) and could be left out: the adapter knows it. The startup probe shows in `GET /api` under `models`: `available: true` means the key and model work.
+The `pricing` here is Sonnet 5.5's published rate (US$2 input, $10 output, $0.20 cache read, $2.50 five-minute cache
+write, $4 one-hour cache write, per million tokens) and could be left out: the adapter knows it. The startup probe shows
+in `GET /api` under `models`: `available: true` means the key and model work.
 
 ## Keys at a glance
 

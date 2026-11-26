@@ -11,9 +11,13 @@ In short:
 
 - **One record per chat turn**, written when the turn ends.
 - **One record per transcription**, when a question is spoken.
-- **One record per event a client reports**: a thumbs up or down, an answer left before it finished, a chart exported, and so on.
-- **Every item has a switch.** What a deployment records is a list of items (daily active users, cost per question, thumbs down and their reasons, and so on), each with its own switch, one switch per section, and one for telemetry as a whole. See [The switchboard](#the-switchboard).
-- **On by default**, except the privacy-sensitive items: question text, transcript text, kept recordings, and device and network detail. Those start off, and turning one on asks an admin to confirm.
+- **One record per event a client reports**: a thumbs up or down, an answer left before it finished, a chart exported,
+  and so on.
+- **Every item has a switch.** What a deployment records is a list of items (daily active users, cost per question,
+  thumbs down and their reasons, and so on), each with its own switch, one switch per section, and one for telemetry as
+  a whole. See [The switchboard](#the-switchboard).
+- **On by default**, except the privacy-sensitive items: question text, transcript text, kept recordings, and device and
+  network detail. Those start off, and turning one on asks an admin to confirm.
 - **An item that is off leaves its fields out** of the records, rather than writing them empty.
 - **Kept for 90 days**, by month. `retentionDays` changes this.
 - **Never stored:** the browser's user agent, keys, passwords or connection strings.
@@ -25,7 +29,8 @@ month moves to `telemetry-YYYY-MM.jsonl`, and a month is deleted once its last d
 
 Beside the log there are two more files:
 
-- `telemetry-state.json`: a few short-lived values the next turn reads, such as a user's current conversation, their last questions, and transcripts waiting for their question. It is what lets a restart carry on where it left off.
+- `telemetry-state.json`: a few short-lived values the next turn reads, such as a user's current conversation, their
+  last questions, and transcripts waiting for their question. It is what lets a restart carry on where it left off.
 - `telemetry.key` (mode 600): the key questions are hashed with. It is never written into the log.
 
 The log and the state sit behind a small storage interface (`TelemetryStore` in `@lenspack/agent`). The files serve
@@ -51,11 +56,17 @@ The Telemetry tab of the admin panel lists every item Lenspack can record, as a 
 sections, each with its switch, its status, how many it saw in the last 7 days and when it last saw one. The same
 list is the configuration:
 
-- **Telemetry as a whole** is the `telemetry` feature switch (`features:` in the config, `LENSPACK_FEATURES`, the settings page). Off, nothing is recorded.
-- **Each section** (`telemetry.groups.<section>`) and **each item** (`telemetry.items.<item>`) has a switch of its own. An item records only when its own switch, its section's and telemetry's are all on.
-- **The deployment's config sets the starting values.** Admins change them from the Telemetry tab, or with `PUT <prefix>/settings/telemetry`.
-- **A change applies to the next record**, without a restart. Each change is in the audit log, and the tab shows who turned an item off and when.
-- **Turning something off stops new records only.** What was already recorded stays until its month ages out, or until it is deleted per user. To remove kept recordings, use the delete actions under [Kept recordings](../operating/privacy.md#kept-recordings).
+- **Telemetry as a whole** is the `telemetry` feature switch (`features:` in the config, `LENSPACK_FEATURES`, the
+  settings page). Off, nothing is recorded.
+- **Each section** (`telemetry.groups.<section>`) and **each item** (`telemetry.items.<item>`) has a switch of its own.
+  An item records only when its own switch, its section's and telemetry's are all on.
+- **The deployment's config sets the starting values.** Admins change them from the Telemetry tab, or with `PUT
+  <prefix>/settings/telemetry`.
+- **A change applies to the next record**, without a restart. Each change is in the audit log, and the tab shows who
+  turned an item off and when.
+- **Turning something off stops new records only.** What was already recorded stays until its month ages out, or until
+  it is deleted per user. To remove kept recordings, use the delete actions under [Kept
+  recordings](../operating/privacy.md#kept-recordings).
 
 Every key and its default:
 
@@ -112,6 +123,7 @@ telemetry:
     # Trust and reuse
     trust-explain: true
     trust-export-share: true
+    personal-dashboards: true
     trust-superset-actions: true
     reuse-hit-rate: true
     reuse-saved: true
@@ -122,9 +134,13 @@ telemetry:
 
 Some items have no switch of their own:
 
-- **Not telemetry**: time saved against the old way, and the true word error rate. Records cannot measure them: time saved needs a baseline study, and the true error rate needs hand-made transcripts.
-- **Kept by another feature**: the daily review's runs and proposals, and open questions. Their own feature's switch turns them on and off.
-- **Owned by a feature that is off**: saved answers follow the `cache` switch, clarifying questions the `clarify` switch, and the voice items the `voice` switch. While that feature is off, the item's switch is disabled and the tab points to the feature's switch.
+- **Not telemetry**: time saved against the old way, and the true word error rate. Records cannot measure them: time
+  saved needs a baseline study, and the true error rate needs hand-made transcripts.
+- **Kept by another feature**: the daily review's runs and proposals, and open questions. Their own feature's switch
+  turns them on and off.
+- **Owned by a feature that is off**: saved answers follow the `cache` switch, clarifying questions the `clarify`
+  switch, and the voice items the `voice` switch. While that feature is off, the item's switch is disabled and the tab
+  points to the feature's switch.
 - **Waiting for configuration**: for example, users by country until `context:` maps a country.
 
 ### Privacy-sensitive items
@@ -136,7 +152,8 @@ consent notice users will see. Through the route, the request must carry `"confi
 
 Off, each of them still leaves something useful:
 
-- **Question text off**: a keyed hash of each question, so repeats can be counted; the same for feedback comments and dashboard filter values.
+- **Question text off**: a keyed hash of each question, so repeats can be counted; the same for feedback comments and
+  dashboard filter values.
 - **Transcript text off**: a keyed hash of the transcript, so edits before sending can be counted.
 - **Kept recordings off**: the clip lives only as long as its transcription takes.
 
@@ -175,7 +192,8 @@ usage right. Other readers see a stable stand-in (`u_…`) for each name.
 Two limits on the Superset action log:
 
 - It reads at most ten pages of 100 rows per call.
-- It recognises Superset's own event names for downloads, exports, permalinks and email shares. A new name in a later Superset version would be missed until it is added.
+- It recognises Superset's own event names for downloads, exports, permalinks and email shares. A new name in a later
+  Superset version would be missed until it is added.
 
 Every field of every record, the events a client can send and the JSON schema are in
 [Telemetry records](../reference/telemetry-records.md).

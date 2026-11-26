@@ -42,8 +42,8 @@ All are on by default except the daily review, which costs money.
 | `clarify` | Clarify intent | the assistant never asks which reading is meant and logs no open questions | the server |
 | `review.daily` | Daily review | (off by default) no daily review of the day's questions | the server |
 | `review.compare` | Compare readings | open questions' readings are not run on the data after a review | the server |
-
 | `telemetry` | Telemetry | no usage records, no thumbs under answers; `/api/_telemetry` answers 404 (see [Telemetry](../features/telemetry.md)) | the server |
+| `personalDashboards` | My dashboards and saved layouts | no My dashboards or Saved layouts menus; the chat can't make, copy or delete dashboards or save or apply layouts (dashboards already made stay). Superset only; see [Personal dashboards](../features/personal-dashboards.md) | the server |
 
 ## Reading them
 

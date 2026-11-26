@@ -22,8 +22,7 @@ nothing under `packages/`. [Write a pack](../extending/write-a-pack.md) holds it
 
 ---
 
-**Next:** [Concepts in one page](../concepts/README.md) is where the ideas start; from here the contents go on to
-[Features](../features/README.md).
+**Next:** [Features](../features/README.md).
 
 **Related:** [Why the model cannot break things](safety.md) · [The example packs](../getting-started/examples.md) ·
 [Evals](../reference/evals.md)

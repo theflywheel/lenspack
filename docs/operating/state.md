@@ -18,7 +18,8 @@ files in `auth.dir` (default `LENSPACK_STATE_DIR`, else `.lenspack` next to `len
 |---|---|---|
 | `superset-boards.json` | the links between Lenspack's boards and Superset's dashboards and charts | Superset |
 | `superset-account.json` | Lenspack's own Superset account password (mode 600) | Superset |
-| `settings.json` | switches, voice, language, saved-answer and queue settings, and the review's settings, as set by an admin | both |
+| `personal-dashboards.json`, `saved-layouts.json` | which dashboards are someone's own, and people's saved layouts (see [Personal dashboards](../features/personal-dashboards.md#where-it-is-kept)) | Superset |
+| `settings.json` | switches, voice, language, saved-answer and queue settings, personal-dashboard limits, the edit scope, and the review's settings, as set by an admin | both |
 | `definitions-<pack>.json` | the admins' definitions and their history | both |
 | `open-questions-<pack>.json` | the open-questions log | both |
 | `review-proposals.json` | the daily review's proposals and what became of them | both |

@@ -4,7 +4,7 @@ This page lists everything Lenspack does for the people who use it, one page per
 and whether it is released. It is for anyone deciding whether Lenspack fits, and for admins turning features on
 and off.
 
-Every feature listed here is on the main branch. No version has been tagged since 0.1.0, so what changed lately is in
+Every feature listed here is on the main branch. No version has been released since 0.1.0, so what changed lately is in
 the [changelog](../../CHANGELOG.md). Features still in review get their pages when they merge.
 
 ## Answering
@@ -23,6 +23,7 @@ the [changelog](../../CHANGELOG.md). Features still in review get their pages wh
 |---|---|---|
 | [Dashboard edits, versions and undo](dashboard-edits.md) | Change a board by asking; a reviewer checks each change; every change is a version you can restore. | all |
 | [Charts, maps and heatmaps](charts.md) | KPIs, bar, line, area and pie charts, tables, text, heatmaps and point maps. | all |
+| [Personal dashboards and saved layouts](personal-dashboards.md) | Your own copy of a dashboard to change, and layouts kept by name. | Superset |
 
 ## Keeping answers right
 

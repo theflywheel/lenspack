@@ -7,10 +7,18 @@ admins.
 
 The panel is served by Lenspack itself, so it looks the same in every host.
 
-- **In Superset**, it is at `/lenspack/_superset/admin/`, linked from the Lenspack settings page (`/ai-assistant/`). Only Superset admins can open it.
-- **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Anyone with a sign-in role named `admin` can open it. It needs a `state:` directory in `lenspack.yaml`.
+- **In Superset**, it is at `/lenspack/_superset/admin/`, linked from the Lenspack settings page (`/ai-assistant/`).
+  Only Superset admins can open it.
+- **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Anyone with a sign-in
+  role named `admin` can open it. It needs a `state:` directory in `lenspack.yaml`.
 
-Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the policy layer, from what the host says about the caller: the admin role, never a dashboard's edit right. In Superset that is a Superset admin, from the signed admin flag (a Superset role that happens to be named `admin` does not count). In the standalone server it is any sign-in role or group named `admin`: the built-in password user, a role from OpenID Connect, a login proxy or a token, or the one local user when sign-in is off. The settings page and the saved answers' routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
+Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the
+policy layer, from what the host says about the caller: the admin role, never a dashboard's edit right. In Superset that
+is a Superset admin, from the signed admin flag (a Superset role that happens to be named `admin` does not count). In
+the standalone server it is any sign-in role or group named `admin`: the built-in password user, a role from OpenID
+Connect, a login proxy or a token, or the one local user when sign-in is off. The settings page and the saved answers'
+routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also
+read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
 
 It has eight tabs, in English and French, in light and dark, and it works at phone width:
 
@@ -27,46 +35,63 @@ It has eight tabs, in English and French, in light and dark, and it works at pho
 
 ## Usage is a board
 
-The Overview tab is not a set of hand-drawn charts. It is a Lenspack board, drawn by the same engine and the same chart renderer as every other board, over a built-in pack about the server itself.
+The Overview tab is not a set of hand-drawn charts. It is a Lenspack board, drawn by the same engine and the same chart
+renderer as every other board, over a built-in pack about the server itself.
 
 ### Why
 
-- **Admins learn the tool by using it.** The board they read every day works like the boards their users have. Its widgets, filters, edits and version history behave the same way. An admin can add a chart, change one or undo a change, just as on any board.
-- **The tool explains itself.** The chat beside the board answers questions about usage, such as "which board cost most this week?" or "how many questions were answered from saved answers yesterday?". It uses the same agent and the same rules as every answer: plain counts in the pack, and rates and averages worked out by the compute step.
+- **Admins learn the tool by using it.** The board they read every day works like the boards their users have. Its
+  widgets, filters, edits and version history behave the same way. An admin can add a chart, change one or undo a
+  change, just as on any board.
+- **The tool explains itself.** The chat beside the board answers questions about usage, such as "which board cost most
+  this week?" or "how many questions were answered from saved answers yesterday?". It uses the same agent and the same
+  rules as every answer: plain counts in the pack, and rates and averages worked out by the compute step.
 - **Nothing to maintain twice.** A new chart type or a fix to the renderer reaches the usage board for free.
 
 ### How it is built
 
-The usage pack is an ordinary pack (`packs/usage/pack.yaml` in the server package, with its default board in `packs/usage/boards/overview.json`). It reads from a small adapter, the usage source, the way other packs read from a database. The adapter turns the server's own records into tables.
+The usage pack is an ordinary pack (`packs/usage/pack.yaml` in the server package, with its default board in
+`packs/usage/boards/overview.json`). It reads from a small adapter, the usage source, the way other packs read from a
+database. The adapter turns the server's own records into tables.
 
 ### The data
 
 One row per chat turn, read into an in-process DuckDB table:
 
 - from the turn telemetry (`telemetry*.jsonl` in the state directory) when the server writes it;
-- otherwise from the audit log's chat-turn lines, which carry less (no sessions, roles, countries, feedback or reply times from older servers).
+- otherwise from the audit log's chat-turn lines, which carry less (no sessions, roles, countries, feedback or reply
+  times from older servers).
 
 The table is read again when the board is opened, at most every 30 seconds.
 
 ### What it measures
 
-- **Measures**: turns, questions and edits, active users, cost (model, reviewer and speech), tokens in and out, answers from saved answers and the money they saved, failures, refusals, declines, reviewer checks and material findings, fix rounds, clarifying questions, open questions logged, rephrased questions, median and 95th-percentile reply time, time to first words, speech seconds, thumbs up and down.
-- **Dimensions**: day and hour, user, role, session, board, pack, campaign and country (when the telemetry has them), model, language, typed or spoken, answer or edit, kind of answer (direct, derived, chart, meta), outcome, saved-answer tier, feature used, device, and feedback reason.
+- **Measures**: turns, questions and edits, active users, cost (model, reviewer and speech), tokens in and out, answers
+  from saved answers and the money they saved, failures, refusals, declines, reviewer checks and material findings, fix
+  rounds, clarifying questions, open questions logged, rephrased questions, median and 95th-percentile reply time, time
+  to first words, speech seconds, thumbs up and down.
+- **Dimensions**: day and hour, user, role, session, board, pack, campaign and country (when the telemetry has them),
+  model, language, typed or spoken, answer or edit, kind of answer (direct, derived, chart, meta), outcome, saved-answer
+  tier, feature used, device, and feedback reason.
 
 ### The default board
 
-- Figures: turns today, cost today, saved-answer rate, failure rate, answer rate, spoken share, active users and the 95th-percentile reply time.
+- Figures: turns today, cost today, saved-answer rate, failure rate, answer rate, spoken share, active users and the
+  95th-percentile reply time.
 - Lines: turns per day, cost per day by model, daily active users by country, and the spoken share.
-- Bars: weekly active users by role, top users, top boards by cost, outcomes and answer rate by language, the 95th-percentile reply time by kind of answer, and thumbs-down reasons.
+- Bars: weekly active users by role, top users, top boards by cost, outcomes and answer rate by language, the
+  95th-percentile reply time by kind of answer, and thumbs-down reasons.
 - A pie of direct, derived and chart answers.
 - A table of the most-asked questions with their outcomes.
 - Reply time over time.
 
 ### Who sees it
 
-The usage board is for admins only. It names users as they sign in, so it is never listed beside the deployment's own packs, and an admin who may not read usage sees it with the user, question and session hidden.
+The usage board is for admins only. It names users as they sign in, so it is never listed beside the deployment's own
+packs, and an admin who may not read usage sees it with the user, question and session hidden.
 
-The usage chat's turns are logged and costed like any other. They are marked internal, and left out of the daily review, so the review never reviews itself. 
+The usage chat's turns are logged and costed like any other. They are marked internal, and left out of the daily review,
+so the review never reviews itself.
 
 ## What is recorded
 

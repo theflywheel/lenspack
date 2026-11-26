@@ -7,11 +7,12 @@ What each person may *see* is in [Access inside Superset](../../access/superset.
 ## The signed identity
 
 Browsers never reach the Lenspack server directly. Superset forwards `/lenspack/...` to it for signed-in users and
-adds a header, `x-lenspack-identity`: base64url JSON `{u, a, r, d, b, p, e, v, t}` and an HMAC-SHA256 of it.
+adds a header, `x-lenspack-identity`: base64url JSON `{u, i, a, r, d, b, p, e, v, t}` and an HMAC-SHA256 of it.
 
 | field | meaning |
 |---|---|
 | `u` | the Superset user |
+| `i` | their Superset user id (needed to make or copy [personal dashboards](../../features/personal-dashboards.md); an older plugin that does not sign it gets a refusal saying to update) |
 | `a` | whether they are a Superset admin |
 | `r` | their Superset role names |
 | `d` | the dashboard the request is about |
@@ -21,8 +22,8 @@ adds a header, `x-lenspack-identity`: base64url JSON `{u, a, r, d, b, p, e, v, t
 
 The key is derived from Superset's `SECRET_KEY` on the Superset side; the Lenspack server fetches it on start
 (`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid signature
-less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `chat.css` and `/healthz` are
-public.
+less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `mine.js`, `chat.css` and
+`/healthz` are public.
 
 ## One dashboard per request
 
@@ -32,7 +33,8 @@ checks the user's rights on that dashboard. The server reads the board from its 
 a `superset-<id>` board Superset signed nothing for.
 
 Both sides refuse a path with a `.` or `..` segment or an encoded slash (`%2e`, `%2f`, `%5c`; 400). Binding a
-dashboard (`/_superset/bind`) works only for the dashboard Superset checked. A plugin from before `b` and `p` signs
+dashboard (`/_superset/bind`), and the personal-dashboard and saved-layout routes (`/_superset/my...?dashboard=<id>`),
+work only for the dashboard Superset checked. A plugin from before `b` and `p` signs
 only `d`, and the server then checks `superset-<d>` against its route.
 
 ## Who may edit
@@ -46,6 +48,11 @@ Edits follow `editPolicy` in the config (or `LENSPACK_EDIT_POLICY`):
 - **`signed-in`**: anyone signed in may edit (the behaviour of early releases).
 
 The `boardEdits` switch comes first: off, nobody edits through the chat, admins included.
+
+Someone who can only view a dashboard can make their own copy and change that. `editScope: own` (or
+`LENSPACK_EDIT_SCOPE=own`) narrows chat edits further, to each person's own dashboards, so shared ones stay as they
+are; admins are exempt unless `adminsExempt: false`. See [Personal dashboards and saved
+layouts](../../features/personal-dashboards.md#where-the-chat-may-edit-editscope).
 
 ## Who may administer
 
@@ -63,7 +70,8 @@ It is made on first start through the plugin's bootstrap route; see
 what the person asking may see; see [Access inside Superset](../../access/superset.md).
 
 **Planned:** queries run as the person asking, through Superset's own security, and edits attributed to them in
-Superset's history rather than to `lenspack`. See [Access inside Superset](../../access/superset.md#planned-superset-runs-each-query-as-the-person).
+Superset's history rather than to `lenspack`. See [Access inside
+Superset](../../access/superset.md#planned-superset-runs-each-query-as-the-person).
 
 ## The audit log
 

@@ -24,10 +24,10 @@ Each change is one warning line in the log and in the settings API (`warnings`).
 
 ## The overlay
 
-What Superset has no field for comes from `overlay:` in `superset.yaml`: the pack's `description` and
-`instructions`, a `timeZone`, entity names and `entities` settings, `hints` and `labels` for keys, `hierarchies`,
-`examples` (written per language if you like; see [Languages](../../features/languages.md#suggested-questions-in-several-languages)),
-`geo` for maps, `mapStyle`, and `panel` (`float` or `dock`, the chat's starting form).
+What Superset has no field for comes from `overlay:` in `superset.yaml`: the pack's `description` and `instructions`, a
+`timeZone`, entity names and `entities` settings, `hints` and `labels` for keys, `hierarchies`, `examples` (written per
+language if you like; see [Languages](../../features/languages.md#suggested-questions-in-several-languages)), `geo` for
+maps, `mapStyle`, and `panel` (`float` or `dock`, the chat's starting form).
 
 ```yaml
 overlay:

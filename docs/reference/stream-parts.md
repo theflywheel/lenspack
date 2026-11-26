@@ -25,7 +25,7 @@ Telemetry reads some of these parts in the browser to fill one record per turn. 
 
 ---
 
-**Next:** [Refusal codes](errors.md).
+**Next:** [Telemetry records](telemetry-records.md).
 
 **Related:** [HTTP API](http-api.md#the-board-api) · [Turns](../concepts/turns.md) ·
 [The life of a turn](../architecture/life-of-a-turn.md)

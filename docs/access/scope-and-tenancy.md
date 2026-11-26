@@ -48,7 +48,8 @@ rather than answered for all rows. Nothing the person does can remove a scope: a
 further, never widen.
 
 Cached results are keyed by the compiled statement and its parameters, and saved answers by the access they were made
-under, so one caller's rows are never served to another. See [Saved answers](../concepts/saved-answers.md#the-safety-rule).
+under, so one caller's rows are never served to another. See [Saved
+answers](../concepts/saved-answers.md#the-safety-rule).
 
 ## Imported systems
 

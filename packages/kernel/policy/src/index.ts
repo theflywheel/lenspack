@@ -2,6 +2,8 @@ import { type Catalogue, type Ownership, type ScopeClause, filterClauseSchema, q
 import { type Pack, operands, parseExpr } from "@lenspack/pack";
 import { z } from "zod";
 
+import { type EditScopeFacts, inEditScope } from "./personal";
+
 // Who may see and change what, as one pure function of the caller, the pack
 // and the deployment's rules. The host that knows the user (a sign-in, a
 // login proxy, Superset, CCRS) says who they are and what it already allows:
@@ -32,6 +34,12 @@ export type Identity = {
    * boardGrant().
    */
   boardEntities?: Record<string, BoardEntities>;
+  /**
+   * The deployment keeps edits to the caller's own boards (Superset's editScope: own): `own` lists the boards that
+   * are theirs, admins edit as before while `adminsExempt`, and `why` is the refusal anywhere else. It narrows
+   * boardRights' edit, never widens it. See editScopeFacts().
+   */
+  editScope?: EditScopeFacts;
   /**
    * Why the host keeps keys, entities or boards from this caller, in words for them ("your Superset access doesn't
    * include it. A Superset admin can give you access."). A refusal of something the host keeps says it
@@ -74,7 +82,7 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
   const maintain = !!id.maintain || among(rights.maintainers);
   // Open question, not applied: the usage page for admins only would be `const usage = roles.includes("admin");`
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
-  const { user, tenant, scope, hidden, hiddenEntities, hiddenBoards, boardEntities, hiddenReason, packs, grants, readOnly } = id;
+  const { user, tenant, scope, hidden, hiddenEntities, hiddenBoards, boardEntities, hiddenReason, packs, grants, readOnly, editScope } = id;
   // Only what is set, so a principal compares equal to the one it was built from.
   return {
     user,
@@ -89,6 +97,7 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
     ...(hiddenBoards ? { hiddenBoards } : {}),
     ...(boardEntities ? { boardEntities } : {}),
     ...(hiddenReason ? { hiddenReason } : {}),
+    ...(editScope ? { editScope } : {}),
     packs,
     grants,
     readOnly: readOnly || undefined,
@@ -368,13 +377,17 @@ export const mayAdminister = (who: { roles?: readonly string[] }) => adminRights
 // to change. A board someone made is theirs to change, and everyone's to read
 // once they share it: everyone in their tenant, as one user name may sign in
 // under two tenants. A board the host keeps from the caller (a dashboard they
-// may not view in Superset) is neither read nor changed, whatever else holds.
-export function boardRights(who: Principal, b: Ownership & { id?: string }): { view: boolean; edit: boolean } {
+// may not view in Superset) is neither read nor changed, whatever else holds. Where the deployment keeps edits to
+// people's own boards (editScope), any other board is read-only to them, and `readOnly` says why.
+export function boardRights(who: Principal, b: Ownership & { id?: string }): { view: boolean; edit: boolean; readOnly?: string } {
   if (b.id !== undefined && who.hiddenBoards?.includes(b.id)) return { view: false, edit: false };
   const sameTenant = (b.tenant ?? "") === (who.tenant ?? "");
+  const edit = b.owner ? b.owner === who.user && sameTenant && who.edit : !!who.maintain;
+  const outOfScope = edit && !inEditScope(who, b.id);
   return {
     view: !b.owner || (sameTenant && (!!b.shared || b.owner === who.user)),
-    edit: b.owner ? b.owner === who.user && sameTenant && who.edit : !!who.maintain,
+    edit: edit && !outOfScope,
+    ...(outOfScope ? { readOnly: who.editScope!.why } : {}),
   };
 }
 
@@ -432,3 +445,5 @@ export function contextFor(map: DeploymentContext, at: { board?: string | null; 
   for (const field of CONTEXT_FIELDS) out[field] = keys.map((k) => map[k]?.[field]).find((v): v is string => typeof v === "string") ?? null;
   return out;
 }
+
+export * from "./personal";

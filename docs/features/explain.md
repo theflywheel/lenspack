@@ -62,7 +62,8 @@ of the whole) shows each statement.
 
 **The rows** are the ones behind the answer: what the caller was already allowed to see, nothing more.
 
-**A saved answer** ([Saved answers](saved-answers.md)) shows the stored description, statement and rows, with "saved answer, data as of …".
+**A saved answer** ([Saved answers](saved-answers.md)) shows the stored description, statement and rows, with "saved
+answer, data as of …".
 
 **The dashboard filters** are the ones the viewer had picked on the board when they asked, named by the pack's
 labels. Each says whether the answer used it: "applied" when every data call in the answer was filtered on that

@@ -46,6 +46,8 @@ export function accessSuite(version: string) {
     const signed = (over: Partial<Identity>, key = stack.identityKey) => signIdentity({ u: "lp_viewer", a: false, r: ["Gamma", "lp_stock", "lp_visits"], t: Math.floor(Date.now() / 1000), ...over }, key);
     const direct = (method: string, path: string, header?: string, body?: object) => http(stack.lenspack, method, path, { headers: header ? { "x-lenspack-identity": header } : {}, ...(body ? { body } : {}) });
     const dashboardTitle = async (id: number) => (await s.lp_admin.send("GET", `/api/v1/dashboard/${id}`)).json.result.dashboard_title as string;
+    /** The personal dashboards a user has (the panel's list). */
+    const mine = async (who: User) => ((await s[who].lp("GET", "_superset/my")).json.dashboards as { dashboard: number }[]).map((d) => d.dashboard);
     const widgetOps = (widgets: [string, string, string][]) => ({
       ops: widgets.map(([id, title, measure]) => ({ op: "add_widget", id, widget: { title, kind: "chart", chart: "bar", query: { kind: "breakdown", dimension: "region", measure } }, placement: { place: "bottom", width: "half" } })),
     });
@@ -608,16 +610,171 @@ export function accessSuite(version: string) {
         }
       });
 
-      // TODO(personal dashboards PR #89): turn into a case once personal dashboards land.
-      it.todo("a personal copy of B does not carry B's dashboard-role access: stock is refused on it");
+      it("a personal copy of B does not carry B's dashboard-role access: stock is refused on it", async () => {
+        const made = await s.lp_rbac.lp("POST", `_superset/my/dashboards?dashboard=${stack.fixtures.dashboards.b}`, { copy: true });
+        expect(made.status, made.text).toBe(200);
+        const copy = made.json.dashboard as number;
+        const board = `superset-${copy}`;
+        try {
+          // A private draft of theirs: no dashboard roles, not published.
+          const meta = (await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}`)).json.result;
+          expect([meta.roles, meta.published]).toEqual([[], false]);
+          // It is theirs, but nothing on it reads stock for them, in Superset or in Lenspack.
+          expect(await mine("lp_rbac")).toContain(copy);
+          // Superset refuses the copy's stock chart to them, as the copy asks for it.
+          const copyChart = (await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}/charts`)).json.result[0].id as number;
+          const bChart = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.b}/charts`)).json.result[0].id as number;
+          const savedQc = async (chart: number) => (await s.lp_admin.send("GET", `/api/v1/chart/${chart}`)).json.result.query_context as string | null;
+          const qc = JSON.parse((await savedQc(copyChart)) ?? (await savedQc(bChart))!);
+          expect(chartRows(await s.lp_rbac.send("POST", "/api/v1/chart/data", { body: { ...qc, form_data: { ...qc.form_data, dashboardId: copy, slice_id: copyChart } } }))).toEqual({ refused: 403 });
+          // Opened, it shows no stock (or, with nothing at all to show, it is refused up front); asked, stock is refused.
+          const opened = await s.lp_rbac.lp("GET", `api/${PACK}/${board}`);
+          if (opened.status === 200) expect(opened.json.catalogue.measures.map((m: { key: string }) => m.key)).not.toContain("stock_total");
+          else expect([opened.status, opened.json.error]).toEqual([403, expect.stringMatching(NO_ACCESS)]);
+          const asked = await chat("lp_rbac", board, "query", BREAKDOWN("stock_total"));
+          expect(asked.status === 200 ? toolOutput(asked).error : asked.error).toMatch(NO_ACCESS);
+          // B itself still reads for them.
+          expect(byGroup(toolOutput(await chat("lp_rbac", B, "query", BREAKDOWN("stock_total"))).rows)).toEqual(B_STOCK);
+        } finally {
+          expect((await s.lp_rbac.lp("POST", "_superset/my/dashboards/delete", { dashboard: copy })).status).toBe(200);
+        }
+      });
     });
 
-    describe("personal dashboards and saved configurations (pending: built in a parallel PR)", () => {
-      // TODO(personal dashboards PR): turn each into a case once personal dashboards and saved configurations land.
-      it.todo("a viewer may create a personal dashboard (and copy one they can open)");
-      it.todo("a user may delete only their own personal dashboard");
-      it.todo("a saved configuration applies only to dashboards the user controls");
-      it.todo("another user's personal dashboard is neither listed nor opened nor edited");
+    describe("personal dashboards and saved configurations", () => {
+      const NOT_OWN = /only dashboards of your own/;
+      const NOBODY = /only dashboards of one.s own, and those are turned off/;
+      const make = async (who: User, title: string) => {
+        const r = await s[who].lp("POST", "_superset/my/dashboards", { title });
+        expect(r.status, r.text).toBe(200);
+        return r.json.dashboard as number;
+      };
+      const copyOf = async (who: User, dashboard: number) => s[who].lp("POST", `_superset/my/dashboards?dashboard=${dashboard}`, { copy: true });
+      const rename = (title: string) => ({ ops: [{ op: "set_title", title }] });
+      /** lp_viewer's copy of A, made in the first case and used by the rest. */
+      let viewerCopy = 0;
+
+      it("a viewer may create a personal dashboard (and copy one they can open)", async () => {
+        const blank = await make("lp_viewer", "Viewer blank");
+        const me = (await s.lp_viewer.send("GET", "/api/v1/me/")).json.result.id as number;
+        const meta = (await s.lp_admin.send("GET", `/api/v1/dashboard/${blank}`)).json.result;
+        expect([meta.owners.map((o: { id: number }) => o.id), meta.published, meta.roles]).toEqual([[me], false, []]);
+        const copied = await copyOf("lp_viewer", stack.fixtures.dashboards.a);
+        expect(copied.status, copied.text).toBe(200);
+        viewerCopy = copied.json.dashboard;
+        expect(copied.json.from).toBe(stack.fixtures.dashboards.a);
+        expect(sorted((await mine("lp_viewer")).map(String))).toEqual(sorted([String(blank), String(viewerCopy)]));
+        // The copy is theirs: it opens, with A's charts, and they may change it (A they may only view).
+        const onCopy = (await s.lp_viewer.lp("GET", `api/${PACK}/superset-${viewerCopy}`)).json;
+        expect(Object.keys(onCopy.board.config.widgets)).toHaveLength(Object.keys((await s.lp_admin.lp("GET", `api/${PACK}/${A}`)).json.board.config.widgets).length);
+        const r = await s.lp_viewer.lp("POST", `api/${PACK}/superset-${viewerCopy}/ops`, rename("Viewer copy"));
+        expect(r.status, r.text).toBe(200);
+        expect(await dashboardTitle(viewerCopy)).toBe("Viewer copy");
+        // B they can't open, so they can't copy it.
+        expect((await copyOf("lp_viewer", stack.fixtures.dashboards.b)).status).toBe(403);
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: blank })).status).toBe(200);
+      });
+
+      it("a user may delete only their own personal dashboard", async () => {
+        const one = await make("lp_viewer", "Viewer one");
+        const two = await make("lp_viewer", "Viewer two");
+        // Not someone else's, even for a user who may edit shared dashboards.
+        const refused = await s.lp_owner.lp("POST", "_superset/my/dashboards/delete", { dashboard: one });
+        expect([refused.status, refused.json.code]).toEqual([403, "not-yours"]);
+        // Nor a shared dashboard they don't own in Superset (A is lp_owner's).
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: stack.fixtures.dashboards.a })).status).toBe(403);
+        expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.a}`)).status).toBe(200);
+        expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${one}`)).status).toBe(200);
+        // Their owner may; so may an admin.
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: one })).status).toBe(200);
+        expect((await s.lp_admin.lp("POST", "_superset/my/dashboards/delete", { dashboard: two })).status).toBe(200);
+        for (const d of [one, two]) expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${d}`)).status).toBe(404);
+        expect(await mine("lp_viewer")).toEqual([viewerCopy]);
+      });
+
+      it("a saved configuration applies only to dashboards the user controls", async () => {
+        const saved = await s.lp_viewer.lp("POST", `_superset/my/layouts?dashboard=${stack.fixtures.dashboards.a}`, { name: "Viewer layout" });
+        expect(saved.status, saved.text).toBe(200);
+        const layout = saved.json.id as string;
+        const apply = (who: User, dashboard: number) => s[who].lp("POST", `_superset/my/layouts/${layout}/apply?dashboard=${dashboard}`, {});
+        try {
+          // Not on A, which they may only view.
+          const onA = await apply("lp_viewer", stack.fixtures.dashboards.a);
+          expect([onA.status, onA.json.code]).toEqual([403, "no-edit"]);
+          // On their own copy, yes.
+          const onCopy = await apply("lp_viewer", viewerCopy);
+          expect(onCopy.status, onCopy.text).toBe(200);
+          // Another user can't use it at all, even where they may edit.
+          expect((await apply("lp_owner", stack.fixtures.dashboards.a)).status).toBe(404);
+        } finally {
+          expect((await s.lp_viewer.lp("POST", `_superset/my/layouts/${layout}/delete`, {})).status).toBe(200);
+        }
+      });
+
+      it("another user's personal dashboard is neither listed nor opened nor edited", async () => {
+        const board = `superset-${viewerCopy}`;
+        expect(await mine("lp_owner")).not.toContain(viewerCopy);
+        expect(((await s.lp_owner.lp("GET", `api/${PACK}`)).json.boards as { id: string }[]).map((b) => b.id)).not.toContain(board);
+        expect(((await s.lp_owner.lp("GET", "_superset/dashboards")).json as { id: number }[]).map((d) => d.id)).not.toContain(viewerCopy);
+        // Not found, as for any board they may not open (its existence isn't confirmed).
+        expect((await s.lp_owner.lp("GET", `api/${PACK}/${board}`)).status).toBe(404);
+        expect([403, 404]).toContain((await s.lp_owner.lp("POST", `api/${PACK}/${board}/ops`, rename("Not yours"))).status);
+        // Superset lets anyone open a draft with no roles by its address; Lenspack keeps it to its owner, so it isn't copied either.
+        expect((await copyOf("lp_owner", viewerCopy)).status).toBe(403);
+        expect(await dashboardTitle(viewerCopy)).toBe("Viewer copy");
+        // Everyone's list is the admins' only.
+        expect((await s.lp_owner.lp("GET", "_superset/personal")).status).toBe(403);
+        const all = (await s.lp_admin.lp("GET", "_superset/personal")).json;
+        expect(JSON.stringify(all)).toContain(String(viewerCopy));
+      });
+
+      it("with editScope own, the chat changes only people's own dashboards; admins are exempt unless told otherwise", async () => {
+        const scope = (body: object) => s.lp_admin.lp("PUT", "_superset/settings/edit-scope", body);
+        // A user who isn't an admin may not change it.
+        expect((await s.lp_owner.lp("PUT", "_superset/settings/edit-scope", { scope: "own" })).status).toBe(403);
+        expect((await scope({ scope: "own" })).status).toBe(200);
+        const copied = await copyOf("lp_owner", stack.fixtures.dashboards.a);
+        expect(copied.status, copied.text).toBe(200);
+        const ownerCopy = `superset-${copied.json.dashboard}`;
+        try {
+          // lp_owner owns A in Superset, yet the chat and the board API leave it alone, and the chat offers a copy.
+          const r = await s.lp_owner.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A (owner, own scope)"));
+          expect([r.status, r.json.error]).toEqual([403, expect.stringMatching(NOT_OWN)]);
+          const out = JSON.stringify(toolOutput(await chat("lp_owner", A, "rename_board", { title: "own scope chat" })));
+          expect(out).toMatch(NOT_OWN);
+          expect(out).toMatch(/copy/i);
+          expect(await dashboardTitle(stack.fixtures.dashboards.a)).toBe("Access A");
+          // Their own copy they may change, through both.
+          expect((await s.lp_owner.lp("POST", `api/${PACK}/${ownerCopy}/ops`, rename("Owner copy"))).status).toBe(200);
+          expect(toolOutput(await chat("lp_owner", ownerCopy, "rename_board", { title: "Owner copy (chat)" }))).toMatchObject({ applied: true });
+          // An admin is exempt, and not once adminsExempt is false (from the next request, no restart).
+          expect((await s.lp_admin.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A"))).status).toBe(200);
+          expect((await scope({ adminsExempt: false })).status).toBe(200);
+          const admin = await s.lp_admin.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A (admin, not exempt)"));
+          expect([admin.status, admin.json.error]).toEqual([403, expect.stringMatching(NOT_OWN)]);
+          expect(await dashboardTitle(stack.fixtures.dashboards.a)).toBe("Access A");
+          // With personal dashboards off, nobody edits (not even on their own copy), and admins are warned.
+          expect((await scope({ adminsExempt: null })).status).toBe(200);
+          expect((await s.lp_admin.lp("PUT", "_superset/settings/features", { personalDashboards: false })).status).toBe(200);
+          try {
+            expect((await s.lp_admin.lp("GET", "_superset/settings")).json.editScope.warning).toMatch(/nobody but admins/);
+            const off = await s.lp_owner.lp("POST", `api/${PACK}/${ownerCopy}/ops`, rename("Owner copy (off)"));
+            expect([off.status, off.json.error]).toEqual([403, expect.stringMatching(NOBODY)]);
+          } finally {
+            expect((await s.lp_admin.lp("PUT", "_superset/settings/features", { personalDashboards: null })).status).toBe(200);
+          }
+        } finally {
+          expect((await scope({ scope: null, adminsExempt: null })).status).toBe(200);
+          await s.lp_owner.lp("POST", "_superset/my/dashboards/delete", { dashboard: copied.json.dashboard });
+        }
+        // Back to the default: lp_owner edits A again.
+        expect((await s.lp_owner.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A"))).status).toBe(200);
+      });
+
+      it("leaves no personal dashboards behind", async () => {
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: viewerCopy })).status).toBe(200);
+        expect(await mine("lp_viewer")).toEqual([]);
+      });
     });
   });
 }

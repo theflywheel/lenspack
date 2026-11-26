@@ -32,9 +32,9 @@ Lenspack keeps three things apart:
    or a colour value, so any charting library can draw it: the board never changes, only the renderer does.
 3. **A compiler** that turns a request naming pack keys into a safe query, or refuses it.
 
-The model sits on top. It asks for numbers by naming keys, such as `revenue` by `country` for the last 30 days, and
-it changes a board through ten checked edit operations. It never writes SQL, and never writes to your data. How the pieces connect is drawn in
-[Architecture](../architecture/README.md#three-layers).
+The model sits on top. It asks for numbers by naming keys, such as `revenue` by `country` for the last 30 days, and it
+changes a board through ten checked edit operations. It never writes SQL, and never writes to your data. How the pieces
+connect is drawn in [Architecture](../architecture/README.md#three-layers).
 
 ## The refusal
 

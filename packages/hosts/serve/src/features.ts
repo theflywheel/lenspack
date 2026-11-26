@@ -7,7 +7,7 @@
 
 import type { SettingsStore } from "./settings";
 
-export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "cache", "explain", "clarify", "review.daily", "review.compare", "telemetry"] as const;
+export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "cache", "explain", "clarify", "review.daily", "review.compare", "telemetry", "personalDashboards"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type FeatureValues = Partial<Record<Feature, boolean>>;
 
@@ -30,6 +30,10 @@ export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
   explain: {
     label: "How this was worked out",
     help: "A drill-down under each answer: each data call in plain words, the SQL it ran, and the rows behind it. Off hides it and keeps it out of the audit log; explain.sql: false in the config keeps it but leaves out the SQL.",
+  },
+  personalDashboards: {
+    label: "Own dashboards and saved layouts",
+    help: "Anyone may make dashboards of their own (blank, or a copy of one they can view) and save layouts to apply to dashboards they control. Off hides the menus and refuses these requests; dashboards already made stay in Superset.",
   },
   turnCost: { label: "Cost per answer", help: "A line under each reply with what the turn cost (an estimate from list prices), and a running total in the chat menu. Off hides them; the audit log still records each turn's cost." },
   telemetry: { label: "Usage telemetry", help: "One record per question in telemetry.jsonl (who asked, what kind of question, how it went, how long it took, what it cost) and the thumbs under each answer. Off stops recording and hides the thumbs; the audit log is unaffected." },

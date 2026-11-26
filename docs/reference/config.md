@@ -30,7 +30,7 @@ The standalone server's config. The blocks, in brief:
 | `proposals` | the folder for each pack's `<name>.proposals.json` (default: the config's folder) | [Write a pack](../extending/write-a-pack.md#7-give-it-to-a-model) |
 | `features` | starting values for switches | [Feature switches](../operating/switches.md) |
 | `telemetry` | usage records: `{ dir, retentionDays, groups, items }` (`questionText` is the older name of `items.question-text`) | [Telemetry](../features/telemetry.md) |
-| `context` | what a board, a dataset or `role:<name>` belongs to (campaign, campaign type, country), for telemetry | [Telemetry](../features/telemetry.md#the-deployments-context-campaign-campaign-type-and-country) |
+| `context` | what a board, a dataset or `role:<name>` belongs to (campaign, campaign type, country), for telemetry | [Telemetry](../features/telemetry.md#tagging-records-with-your-own-context) |
 
 ### Packs
 
@@ -209,6 +209,8 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `superset.passwordEnv`, `superset.password` | `LENSPACK_SUPERSET_PASSWORD` | an account you manage instead: its password's variable, or the password |
 | `editPolicy` | `superset` (`LENSPACK_EDIT_POLICY` wins) | who may change dashboards through the chat: `superset` or `signed-in` |
 | `hostPolicy` | `superset` (`LENSPACK_HOST_POLICY` wins) | whose access narrows what each user sees: `superset` or `off` |
+| `editScope` | `superset` (`LENSPACK_EDIT_SCOPE` wins) | where the chat may edit: `superset` (any dashboard Superset lets the person edit) or `own` (their own dashboards only); or `{ scope, adminsExempt }` (admins exempt by default). See [Personal dashboards](../features/personal-dashboards.md#where-the-chat-may-edit-editscope) |
+| `personal` | `maxDashboardsPerUser: 20`, `maxSavedConfigsPerUser: 50` | limits for [personal dashboards and saved layouts](../features/personal-dashboards.md) |
 | `audit` | on, 90 days | `false`, or `{ retentionDays }` (`LENSPACK_AUDIT_RETENTION_DAYS`) |
 | `overlay` | | what Superset has no field for: `pack`, `description`, `instructions`, `timeZone`, `entities`, `hints`, `labels`, `hierarchies`, `examples`, `geo`, `mapStyle`, `panel` (`float` or `dock`). See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-overlay) |
 | `host` | `LENSPACK_HOST`, else `127.0.0.1` | where it listens |
@@ -249,6 +251,8 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback |
 | `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
+| `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |
+| `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it |
 | `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file |
 | `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) | over the file; an admin's setting wins over it |
 | `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) | over the file's older `questionText`; an admin's setting wins over it |

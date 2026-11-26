@@ -54,4 +54,5 @@ caller's grants; with none returned (a trusted deployment), every tile is visibl
 
 **Next:** [Access and policy](../access/README.md).
 
-**Related:** [Packs](../concepts/packs.md#where-a-pack-comes-from) · [Write a pack](write-a-pack.md) · [CLI](../reference/cli.md)
+**Related:** [Packs](../concepts/packs.md#where-a-pack-comes-from) · [Write a pack](write-a-pack.md) ·
+[CLI](../reference/cli.md)

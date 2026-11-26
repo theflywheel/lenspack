@@ -45,15 +45,20 @@ days. What is recorded, and the switches, are in [Telemetry](../features/telemet
 
 ### Privacy notes
 
-- **User names** are recorded while the user items are on, because each deployment wants to know who uses its tool. Only readers the policy allows see them as written. With them off, records carry no name, and feedback on a finished answer still works for the hour the turn stays open.
+- **User names** are recorded while the user items are on, because each deployment wants to know who uses its tool. Only
+  readers the policy allows see them as written. With them off, records carry no name, and feedback on a finished answer
+  still works for the hour the turn stays open.
 - **Question text** is off by default. Then each question is kept only as a keyed hash:
   - equal questions share a hash, so repeats can still be counted;
   - nobody without the key can test a guess against it;
   - working state keeps only hashed words.
-- **The browser** reports only classes, and only with the device items on: phone, tablet or desktop; a network type; narrow, medium or wide. Never its user agent.
-- **Secrets never reach a record.** Event data whose key looks like a secret is dropped, and no record holds a connection string or key.
+- **The browser** reports only classes, and only with the device items on: phone, tablet or desktop; a network type;
+  narrow, medium or wide. Never its user agent.
+- **Secrets never reach a record.** Event data whose key looks like a secret is dropped, and no record holds a
+  connection string or key.
 - **Audio** is not kept unless switched on (below).
-- **Switching off deletes nothing.** Records age out with their month; kept recordings can be deleted per user or all at once.
+- **Switching off deletes nothing.** Records age out with their month; kept recordings can be deleted per user or all at
+  once.
 
 ### Kept recordings
 
@@ -81,7 +86,8 @@ How long, how much and the consent notice can be changed in four places:
 
 - the settings page;
 - the config: `speech.audioRetentionDays`, `speech.maxStoredMb`, `speech.consentNotice`;
-- the environment: `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE`;
+- the environment: `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`,
+  `LENSPACK_SPEECH_CONSENT_NOTICE`;
 - the admin route `PUT /_superset/settings/speech`.
 
 Recordings sit behind their own storage interface (`AudioStore`). Object storage could serve several copies of

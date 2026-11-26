@@ -237,13 +237,14 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "queue", "speech", "superset", "telemetry", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "speech", "superset", "telemetry", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
       measures: [expect.objectContaining({ key: expect.any(String), agg: "count" })],
       providers: [],
       llmFrom: null,
+      personal: { on: true, maxDashboardsPerUser: 20, maxSavedLayoutsPerUser: 50 },
       budget: { usdPerDay: 5 },
       superset: { url: supersetUrl, username: "lenspack", account: "env" },
       editPolicy: "superset",
@@ -344,6 +345,42 @@ describe("Superset mode's server", () => {
     expect((await call("/api/visits_pack/superset-7", { as: { ...VIEWER, d: 7, b: "superset-7", p: "visits_pack", e: false, v: true } })).status).toBe(200);
     // Superset signs every request about a dashboard board; one it did not sign for is refused.
     expect((await call("/api/visits_pack/superset-7", { as: VIEWER })).status).toBe(403);
+  });
+
+  it("keeps chat edits to people's own dashboards when an admin says so, from the next request, and audits it", async () => {
+    const on7 = (who: Partial<Identity>) => ({ ...who, d: 7, b: "superset-7", p: "visits_pack", e: true, v: true });
+    const editor = on7({ u: "owner", a: false });
+    const boss = on7(ADMIN);
+    expect((await call("/_superset/bind?dashboard=7", { as: editor })).status).toBe(200);
+    const writable = async (who: Partial<Identity>) => (await call("/api/visits_pack/superset-7", { as: who })).body.writable;
+    const refusal = async (who: Partial<Identity>) => (await call("/api/visits_pack/superset-7/ops", { method: "POST", as: who, body: JSON.stringify({ ops: [] }) })).body.error;
+    expect(await writable(editor)).toBe(true);
+    expect((await call("/_superset/settings", { as: ADMIN })).body.editScope).toMatchObject({ scope: "superset", adminsExempt: true, warning: null });
+
+    // "own": Superset lets them edit dashboard 7, but it isn't one of theirs. Admins are exempt.
+    expect((await put("/_superset/settings/edit-scope", { scope: "own" }, VIEWER)).status).toBe(403);
+    expect(await put("/_superset/settings/edit-scope", { scope: "own" })).toMatchObject({ status: 200, body: { editScope: { scope: "own", adminsExempt: true } } });
+    expect(await writable(editor)).toBe(false);
+    expect(await refusal(editor)).toMatch(/only dashboards of your own/);
+    expect(await writable(boss)).toBe(true);
+    await put("/_superset/settings/edit-scope", { adminsExempt: false });
+    expect(await writable(boss)).toBe(false);
+
+    // With personal dashboards off too, nobody can: the settings say so.
+    await put("/_superset/settings/features", { personalDashboards: false });
+    expect((await call("/_superset/settings", { as: ADMIN })).body.editScope.warning).toMatch(/nobody can change dashboards/);
+    expect(await refusal(editor)).toMatch(/those are turned off/);
+    // Edits switched off comes first, whatever the scope.
+    await put("/_superset/settings/features", { boardEdits: false });
+    expect(await refusal(editor)).toMatch(/turned off on this deployment/);
+
+    // Back to the deployment's values: Superset decides again.
+    await put("/_superset/settings/features", { personalDashboards: null, boardEdits: null });
+    await put("/_superset/settings/edit-scope", { scope: null, adminsExempt: null });
+    expect(await writable(editor)).toBe(true);
+    const audit = await call("/_superset/audit", { as: ADMIN });
+    expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "boss", action: "PUT /_superset/settings/edit-scope", outcome: "ok", detail: '{"scope":"own"}' }));
+    expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "viewer", action: "PUT /_superset/settings/edit-scope", outcome: "denied" }));
   });
 
   it("refuses a dot segment or an encoded slash in the path before reading it", async () => {
