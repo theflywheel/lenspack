@@ -10,11 +10,14 @@ Users (all with the password in LP_USER_PASSWORD):
   lp_inlist    Gamma + both datasets; RLS region IN ('North', 'East') on visits
   lp_complex   Gamma + both datasets; RLS region LIKE 'N%' on visits (Lenspack can't translate it)
   lp_templ     Gamma + both datasets; RLS team = '{{ current_username() }}' on visits
-  lp_rbac      Gamma + the dashboard role of dashboard B, and no dataset
+  lp_rbac      Gamma + the dashboard roles of dashboards B and C, and no dataset; RLS region IN ('North', 'South') on
+               stock through B's role
+  lp_rbac_off  the same roles as lp_rbac (asked about only while dashboard roles are turned off)
   lp_noroles   no roles at all
   lp_outage    Gamma + both datasets (asked about only while Superset is cut off)
-Dashboards: A (owner lp_owner, no dashboard roles) and B (owner lp_admin, dashboard role lp_board_b).
-Both start empty; the suite adds their charts through Lenspack as lp_admin.
+Dashboards: A (owner lp_owner, no dashboard roles), B (owner lp_admin, dashboard role lp_board_b) and C (owner
+lp_admin, dashboard role lp_board_c). All start empty; the suite adds their charts through Lenspack as lp_admin: one
+of each dataset on A, stock on B, visits on C.
 Dashboard T (owner lp_admin) has top-level tabs, laid out as Superset leaves them: "Overview" (with tabs "By region"
 and "Trend" inside it) and "Stock", all empty, and GRID_ID left behind, empty and off ROOT_ID.
 """
@@ -64,7 +67,7 @@ with app.app_context():
 
     gamma, admin = sm.find_role("Gamma"), sm.find_role("Admin")
     r_visits, r_stock = role("lp_visits", [visits]), role("lp_stock", [stock])
-    r_north, r_inlist, r_like, r_templ, r_board_b = (role(n) for n in ["lp_rls_north", "lp_rls_inlist", "lp_rls_like", "lp_rls_templ", "lp_board_b"])
+    r_north, r_inlist, r_like, r_templ, r_board_b, r_board_c = (role(n) for n in ["lp_rls_north", "lp_rls_inlist", "lp_rls_like", "lp_rls_templ", "lp_board_b", "lp_board_c"])
 
     def rule(name, clause, roles, tables):
         f = RowLevelSecurityFilter(name=name, filter_type=RowLevelSecurityFilterType.REGULAR, clause=clause)
@@ -76,6 +79,7 @@ with app.app_context():
     rule("north and east", "region IN ('North', 'East')", [r_inlist], [visits])
     rule("regions starting with N", "region LIKE 'N%'", [r_like], [visits])
     rule("own team", "team = '{{ current_username() }}'", [r_templ], [visits])
+    rule("north and south, dashboard B's role", "region IN ('North', 'South')", [r_board_b], [stock])
 
     both = [gamma, r_visits, r_stock]
     users = {
@@ -87,7 +91,8 @@ with app.app_context():
         "lp_inlist": [*both, r_inlist],
         "lp_complex": [*both, r_like],
         "lp_templ": [*both, r_templ],
-        "lp_rbac": [gamma, r_board_b],
+        "lp_rbac": [gamma, r_board_b, r_board_c],
+        "lp_rbac_off": [gamma, r_board_b, r_board_c],
         "lp_noroles": [],
         "lp_outage": both,
     }
@@ -107,6 +112,9 @@ with app.app_context():
     b = Dashboard(dashboard_title="Access B (dashboard role)", slug="access-b", published=True)
     b.owners = [made["lp_admin"]]
     b.roles = [r_board_b]
+    c = Dashboard(dashboard_title="Access C (dashboard role)", slug="access-c", published=True)
+    c.owners = [made["lp_admin"]]
+    c.roles = [r_board_c]
     def comp(cid, kind, children, parents, **meta):
         return {"id": cid, "type": kind, "children": children, "parents": parents, "meta": meta}
 
@@ -125,7 +133,7 @@ with app.app_context():
     }
     t = Dashboard(dashboard_title="Access tabs", slug="access-tabs", published=True, position_json=json.dumps(tabbed), json_metadata=json.dumps({"positions": tabbed}))
     t.owners = [made["lp_admin"]]
-    db.session.add_all([a, b, t])
+    db.session.add_all([a, b, c, t])
     db.session.commit()
 
-    print(json.dumps({"datasets": {"visits": visits.id, "stock": stock.id}, "dashboards": {"a": a.id, "b": b.id, "t": t.id}, "noroles": [r.name for r in made["lp_noroles"].roles]}))
+    print(json.dumps({"datasets": {"visits": visits.id, "stock": stock.id}, "dashboards": {"a": a.id, "b": b.id, "c": c.id, "t": t.id}, "noroles": [r.name for r in made["lp_noroles"].roles]}))

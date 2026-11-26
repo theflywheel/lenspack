@@ -77,6 +77,9 @@ function fakeSuperset() {
     fail: false,
     access: {} as Record<string, Record<string, DatasetAccess>>,
     dashboards: {} as Record<string, Record<string, boolean>>,
+    // Dashboard roles: undefined answers as a plugin from before them (neither field).
+    rbac: undefined as boolean | undefined,
+    onDashboards: {} as Record<string, Record<string, number[]>>,
     rules: [] as unknown[],
     asked: [] as string[],
     charts: [] as { dataset: number; filters: unknown[] }[],
@@ -96,7 +99,8 @@ function fakeSuperset() {
       const datasets = (url.searchParams.get("datasets") ?? "").split(",").filter(Boolean);
       const dashboards = (url.searchParams.get("dashboards") ?? "").split(",").filter(Boolean);
       expect(datasets.length === 0 || datasets.join(",") === "1,2").toBe(true);
-      return send({ result: { datasets: datasets.length ? (state.access[user] ?? {}) : {}, dashboards: Object.fromEntries(dashboards.map((d) => [d, state.dashboards[user]?.[d] === true])) } });
+      const rbac = state.rbac === undefined ? {} : { dashboardRbac: state.rbac, dashboardDatasets: Object.fromEntries(dashboards.map((d) => [d, state.rbac ? (state.onDashboards[user]?.[d] ?? []) : []])) };
+      return send({ result: { datasets: datasets.length ? (state.access[user] ?? {}) : {}, dashboards: Object.fromEntries(dashboards.map((d) => [d, state.dashboards[user]?.[d] === true])), ...rbac } });
     }
     if (url.pathname === "/api/v1/rowlevelsecurity/") return send({ result: state.rules, count: state.rules.length });
     if (url.pathname === "/api/v1/chart/data") {
@@ -269,6 +273,44 @@ describe("supersetPolicy on its own", () => {
     expect(await viewableDashboards(client, "fay", [7, 8])).toEqual(new Set());
     superset.state.fail = false;
     expect(await viewableDashboards(client, "fay", [7, 8, 9])).toEqual(new Set([7]));
+  });
+
+  it("passes on the datasets Superset opens on a dashboard through its dashboard roles, by board, with their RLS", async () => {
+    const logs: string[] = [];
+    const policy = supersetPolicy({ client, binding, log: (s) => logs.push(s), dashboards: () => [7, 8], ttlMs: 0 });
+    // hal reads targets everywhere; visits only on dashboard 7, through its dashboard role, under an RLS rule.
+    superset.state.access.hal = { 1: { access: false, rls: ["region = 'north'"] }, 2: { access: true, rls: [] } };
+    superset.state.dashboards.hal = { 7: true, 8: true };
+    superset.state.onDashboards.hal = { 7: [1] };
+    superset.state.rbac = true;
+    try {
+      expect(await policy("hal", ["Gamma"])).toEqual({
+        hiddenEntities: ["visits"],
+        boardEntities: { "superset-7": { entities: ["visits"], scope: [{ entity: "visits", dimension: "region", op: "eq", value: "north" }] } },
+        hiddenReason: HIDDEN,
+      });
+      expect(logs.at(-1)).toMatch(/dashboard roles \(DASHBOARD_RBAC\) are on/);
+      // A clause Lenspack can't read as a filter keeps the dataset from them on the dashboard too, and says why.
+      superset.state.access.hal[1] = { access: false, rls: ["region LIKE 'n%'"] };
+      expect((await policy("hal", ["Gamma"])).boardEntities).toBeUndefined();
+      expect(logs.at(-1)).toMatch(/visits is kept from hal on dashboard 7 too/);
+      superset.state.access.hal[1] = { access: false, rls: [] };
+      // Dashboard roles off: nothing opens through a dashboard.
+      superset.state.rbac = false;
+      expect(await policy("hal", ["Gamma"])).toEqual({ hiddenEntities: ["visits"], hiddenReason: HIDDEN });
+      expect(logs.at(-1)).toMatch(/dashboard roles \(DASHBOARD_RBAC\) are off/);
+      // A plugin from before dashboard roles: nothing opens, and the log says to update it.
+      superset.state.rbac = undefined;
+      expect(await policy("hal", ["Gamma"])).toEqual({ hiddenEntities: ["visits"], hiddenReason: HIDDEN });
+      expect(logs.at(-1)).toMatch(/update it for dashboard roles/);
+      // Superset can't be asked: nothing opens anywhere.
+      superset.state.rbac = true;
+      superset.state.fail = true;
+      expect((await policy("hal", ["Gamma"])).boardEntities).toBeUndefined();
+    } finally {
+      superset.state.fail = false;
+      superset.state.rbac = undefined;
+    }
   });
 
   it("without the plugin's endpoint, reads Superset's RLS rules by role, and fails a template or missing roles closed", async () => {
