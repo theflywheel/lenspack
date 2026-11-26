@@ -245,3 +245,14 @@ describe("names and rounding in a reply", () => {
     expect(numberMatches(415.37, "number", n("415")).ok).toBe(true);
   });
 });
+
+describe("an answer whose right set is empty", () => {
+  const t: Truth = { shape: "set", unit: "count", value: [], universe: ["Bakor", "Lino", "Tama"] };
+  it("is right when the reply names none of them", () => {
+    expect(scoreAnswer(t, "No LGA is short of its target: every one has reached more children than planned.").correct).toBe(true);
+  });
+  it("is wrong when the reply names one", () => {
+    expect(scoreAnswer(t, "Tama accounts for most of the gap.").correct).toBe(false);
+  });
+});
+
