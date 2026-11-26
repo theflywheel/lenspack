@@ -26,6 +26,13 @@ export type Identity = {
   /** Boards the host does not let this caller open (a host dashboard they may not view): not listed, and opened as if absent. */
   hiddenBoards?: string[];
   /**
+   * Entities the host lets this caller read on one board only, by board id, with the row scope on each (Superset's
+   * dashboard roles: a dashboard opened through one reads its charts' datasets, there and nowhere else). They stay
+   * among hiddenEntities everywhere else; decide() for that board, which the caller may open, reads them. See
+   * boardGrant().
+   */
+  boardEntities?: Record<string, BoardEntities>;
+  /**
    * Why the host keeps keys, entities or boards from this caller, in words for them ("your Superset access doesn't
    * include it. A Superset admin can give you access."). A refusal of something the host keeps says it
    * (ACCESS_HIDDEN), so the caller learns it is their access, not that the data does not exist.
@@ -49,6 +56,9 @@ export type Identity = {
   readOnly?: string;
 };
 
+/** What a host lets a caller read on one board only: the entities, and the row scope on them (each clause names its entity). */
+export type BoardEntities = { entities: string[]; scope?: ScopeClause[] };
+
 /** An identity with its rights settled: maintain implies edit, usage follows maintain unless set. Absent maintain is no. */
 export type Principal = Identity & { roles: string[]; edit: boolean; usage: boolean };
 
@@ -64,7 +74,7 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
   const maintain = !!id.maintain || among(rights.maintainers);
   // Open question, not applied: the usage page for admins only would be `const usage = roles.includes("admin");`
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
-  const { user, tenant, scope, hidden, hiddenEntities, hiddenBoards, hiddenReason, packs, grants, readOnly } = id;
+  const { user, tenant, scope, hidden, hiddenEntities, hiddenBoards, boardEntities, hiddenReason, packs, grants, readOnly } = id;
   // Only what is set, so a principal compares equal to the one it was built from.
   return {
     user,
@@ -77,6 +87,7 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
     hidden,
     hiddenEntities,
     ...(hiddenBoards ? { hiddenBoards } : {}),
+    ...(boardEntities ? { boardEntities } : {}),
     ...(hiddenReason ? { hiddenReason } : {}),
     packs,
     grants,
@@ -182,6 +193,11 @@ export type Scoped = {
   hidden?: ReadonlySet<string>;
   hiddenEntities?: ReadonlySet<string>;
   accessHidden?: { keys: ReadonlySet<string>; reason: string };
+  /**
+   * The entities this context reads only because it is on this board (boardGrant). Part of the access a saved answer
+   * is kept under, so one made here never serves another board or a caller without the same grant.
+   */
+  onBoard?: { board: string; entities: readonly string[] };
 };
 
 /** What a refusal says when the host keeps something from a caller and does not say why. */
@@ -267,6 +283,21 @@ export type Decision<C extends Scoped = Scoped> = {
   notice: string | null;
 };
 
+/**
+ * What the host lets a caller read on one board beyond what they read everywhere: the entities kept from them in
+ * general that the host opens on this board, and the row scope on those. Nothing when no board is named, when the
+ * caller may not open the board (boardRights), or when the host grants nothing there. A grant can't open an entity
+ * the host doesn't keep from the caller in the first place, and its scope only ever covers the entities it opens.
+ */
+export function boardGrant(who: Pick<Identity, "hiddenEntities" | "hiddenBoards" | "boardEntities">, board?: string): { entities: string[]; scope: ScopeClause[] } | null {
+  if (board === undefined || who.hiddenBoards?.includes(board)) return null;
+  const grant = Object.hasOwn(who.boardEntities ?? {}, board) ? who.boardEntities![board] : undefined;
+  const kept = new Set(who.hiddenEntities ?? []);
+  const entities = [...new Set(grant?.entities ?? [])].filter((e) => kept.has(e)).sort();
+  if (!entities.length) return null;
+  return { entities, scope: (grant!.scope ?? []).filter((c) => c.entity !== undefined && entities.includes(c.entity)) };
+}
+
 const ruleHidden = new WeakMap<PackRule, ReadonlySet<string>>();
 const NONE: ReadonlySet<string> = new Set();
 
@@ -275,9 +306,10 @@ const NONE: ReadonlySet<string> = new Set();
  * pack their identity or the pack's rules keep from them, or one pinned to
  * another tenant (otherTenant). `rules` are the pack's access rules (absent:
  * open to everyone signed in); `host` is the pack's own context (a pinned
- * tenant, a scope every caller gets).
+ * tenant, a scope every caller gets). `board`: the board the request is on; the entities the host lets the caller read
+ * there only (boardGrant) are read on it, with their row scope, and nowhere else. The pack's rules narrow them as any.
  */
-export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?: string; rules?: PackRule[]; host?: C } = {}): Decision<C> | null {
+export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?: string; rules?: PackRule[]; host?: C; board?: string } = {}): Decision<C> | null {
   if (who.packs && !who.packs.includes(o.name ?? pack.pack)) return null;
   if (otherTenant(who, o.host)) return null;
   let rule: PackRule | undefined;
@@ -289,15 +321,17 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
   if (rule && !fromRule) ruleHidden.set(rule, (fromRule = hiddenKeys(pack, rule)));
   // The host's hidden keys and the rule's together: either may only add. An entity kept from the
   // caller takes its measures along, and the dimensions it alone has.
-  const off = new Set(who.hiddenEntities ?? []);
+  const onBoard = boardGrant(who, o.board);
+  const off = new Set((who.hiddenEntities ?? []).filter((e) => !onBoard?.entities.includes(e)));
   const fromHost = [...(who.hidden ?? []), ...pack.measures.filter((m) => off.has(m.entity)).map((m) => m.key), ...pack.dimensions.filter((d) => [d.entity, ...Object.keys(d.also ?? {})].every((e) => off.has(e))).map((d) => d.key)];
   const byHost = fromHost.length ? hiddenKeys(pack, { hide: fromHost }) : NONE;
   const hidden = byHost.size ? new Set([...byHost, ...(fromRule ?? [])]) : (fromRule ?? NONE);
   // What the host keeps, and its words for why: a refusal of one of these says it is the caller's access.
   const accessHidden = byHost.size || off.size ? { keys: new Set([...byHost, ...off]), reason: who.hiddenReason ?? DEFAULT_HIDDEN_REASON } : undefined;
   const host = o.host ?? ({} as C);
-  const scope = [...(host.scope ?? []), ...(who.scope ?? []), ...(rule?.scope ?? [])];
-  const ctx = { ...host, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(hidden.size ? { hidden } : {}), ...(off.size ? { hiddenEntities: off } : {}), ...(accessHidden ? { accessHidden } : {}) } as C;
+  const scope = [...(host.scope ?? []), ...(who.scope ?? []), ...(onBoard?.scope ?? []), ...(rule?.scope ?? [])];
+  const granted = onBoard ? { onBoard: { board: o.board!, entities: onBoard.entities } } : {};
+  const ctx = { ...host, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(hidden.size ? { hidden } : {}), ...(off.size ? { hiddenEntities: off } : {}), ...(accessHidden ? { accessHidden } : {}), ...granted } as C;
   const uses = (q: Pack["examples"][number]["query"]) => {
     const k = queryKeys(q);
     return [...k.dimensions, ...k.measures].some((x) => hidden.has(x));

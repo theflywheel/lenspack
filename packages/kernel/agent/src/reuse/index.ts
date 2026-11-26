@@ -20,7 +20,7 @@
 // docs/caching.md.
 
 import { type BoardConfig, type BoardStore, type Query, stagedStore } from "@lenspack/core";
-import type { Connector, Ctx } from "@lenspack/engine";
+import type { Connector } from "@lenspack/engine";
 import type { Pack } from "@lenspack/pack";
 
 import type { ProposalStore } from "../proposals";
@@ -30,11 +30,11 @@ import { PHRASE_PROMPT, REWRITE_PROMPT, ROUTER_PROMPT, parseRoute, phraseMessage
 import { dueTimes } from "./schedule";
 import type { CacheSettings } from "./settings";
 import { type Call, type Slot, fill, slotInto, slotsOf, timePhrase } from "./slots";
-import { type AnswerStore, type Entry, type Tier, accessOf, emptyTiers, fileAnswerStore } from "./store";
+import { type AnswerStore, type Entry, type KeptCtx, type Tier, accessOf, emptyTiers, fileAnswerStore } from "./store";
 import { canonical, guessLanguage, normalise, shortHash, similarity, standalone } from "./text";
 
 export { CACHE_DEFAULTS, type CacheSettings, type CacheSettingsStore, PREWARM_DEFAULTS, type PrewarmSettings, type SettingsLike, cacheSettings, cacheSettingsFrom, prewarmFrom } from "./settings";
-export { type Access, type AnswerStore, type BoardInfo, type Entry, type Stats, type Tier, accessOf, ctxOf, emptyTiers, fileAnswerStore } from "./store";
+export { type Access, type AnswerStore, type BoardInfo, type Entry, type KeptCtx, type Stats, type Tier, accessOf, ctxOf, emptyTiers, fileAnswerStore } from "./store";
 export { numbersIn, retemplate, shapeOf } from "./numbers";
 export { guessLanguage, normalise, similarity, standalone } from "./text";
 export { type Call, type Slot, fill, slotInto, slotsOf, timePhrase } from "./slots";
@@ -60,8 +60,8 @@ export type ReuseTurn = {
   board: string;
   /** The board as the asker is shown it, at the start of the turn. */
   config: BoardConfig;
-  /** The asker's engine context: tenant, row scope, hidden keys and datasets. */
-  ctx: Ctx;
+  /** The asker's engine context: tenant, row scope, hidden keys and datasets, and a board grant if one opened any. */
+  ctx: KeptCtx;
   /** The pack's source, metered for this turn by the host if it meters. */
   connector: Connector;
   store: BoardStore;
@@ -134,7 +134,11 @@ export type ReuseOptions = {
 
 export type Reuse = ReturnType<typeof reuseLayer>;
 
-const scopeOf = (ctx: Ctx) => shortHash(canonical({ tenant: ctx.tenant ?? null, scope: ctx.scope ?? [], hidden: [...(ctx.hidden ?? [])].sort(), entities: [...(ctx.hiddenEntities ?? [])].sort() }));
+// The access an entry is kept under. A board grant (entities read on one board only) is part of it, so an answer or
+// edit made under one is never served on another board, or to a caller without the same grant. Without a grant the
+// key is as it always was.
+const scopeOf = (ctx: KeptCtx) =>
+  shortHash(canonical({ tenant: ctx.tenant ?? null, scope: ctx.scope ?? [], hidden: [...(ctx.hidden ?? [])].sort(), entities: [...(ctx.hiddenEntities ?? [])].sort(), ...(ctx.onBoard ? { onBoard: { board: ctx.onBoard.board, entities: [...ctx.onBoard.entities].sort() } } : {}) }));
 const packHashes = new WeakMap<Pack, string>();
 const packHash = (p: Pack) => {
   let h = packHashes.get(p);
@@ -643,7 +647,7 @@ export function reuseLayer(o: ReuseOptions) {
     },
 
     /** The most-asked questions on a board, for the chat's suggestion chips; scope null: every scope (admins). */
-    async suggestions(q: { board: string; pack?: string; scope?: Ctx | null; lang?: string | null; limit?: number }): Promise<string[]> {
+    async suggestions(q: { board: string; pack?: string; scope?: KeptCtx | null; lang?: string | null; limit?: number }): Promise<string[]> {
       const scope = q.scope ? scopeOf(q.scope) : null;
       const since = now().getTime() - 30 * 86_400_000;
       const lang = q.lang && q.lang !== "auto" ? q.lang.slice(0, 2) : null;

@@ -30,7 +30,7 @@ const root = fileURLToPath(new URL("../../../../", import.meta.url));
 export const LABEL = "lenspack-access-suite";
 export const PACK = "access";
 
-export type Fixtures = { datasets: { visits: number; stock: number }; dashboards: { a: number; b: number } };
+export type Fixtures = { datasets: { visits: number; stock: number }; dashboards: { a: number; b: number; c: number } };
 export type Reply = { status: number; headers: IncomingMessage["headers"]; text: string; json: any };
 
 async function freePort(): Promise<number> {
@@ -213,6 +213,8 @@ export type Stack = {
   modelCalls: () => number;
   /** Cuts (true) or restores (false) Lenspack's way to Superset. */
   cut: (on: boolean) => void;
+  /** Turns Superset's dashboard roles (DASHBOARD_RBAC) on or off, without a restart (superset_config.py). */
+  dashboardRbac: (on: boolean) => void;
   /** A session signed in to Superset as this fixture user. */
   as: (user: string) => Promise<Session>;
   stop: () => Promise<void>;
@@ -293,7 +295,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
       [
         `superset: { url: "http://127.0.0.1:${wayPort}" }`,
         "datasets: [visits, stock]",
-        `dashboards: [${fixtures.dashboards.a}, ${fixtures.dashboards.b}]`,
+        `dashboards: [${fixtures.dashboards.a}, ${fixtures.dashboards.b}, ${fixtures.dashboards.c}]`,
         `overlay: { pack: ${PACK} }`,
         "host: 127.0.0.1",
         `port: ${lpPort}`,
@@ -333,6 +335,10 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
       log,
       modelCalls: stub.calls,
       cut: way.cut,
+      dashboardRbac: (on) => {
+        const r = docker(["exec", containers[1]!, "sh", "-c", on ? "rm -f /tmp/lp-dashboard-rbac-off" : "touch /tmp/lp-dashboard-rbac-off"]);
+        if (r.status) throw new Error(`could not turn dashboard roles ${on ? "on" : "off"}: ${r.stderr.trim()}`);
+      },
       as: (user) => new Session(superset, user).signIn(secrets.LP_USER_PASSWORD),
       stop,
     };
