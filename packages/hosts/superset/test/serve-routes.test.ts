@@ -181,7 +181,7 @@ describe("Superset mode's server", () => {
     const r = await call("/_superset/info?lang=fr", { as: VIEWER });
     expect(r.status).toBe(200);
     expect(r.headers.get("cache-control")).toBe("no-store");
-    expect(Object.keys(r.body).sort()).toEqual(["examples", "examplesByLang", "features", "language", "pack", "panel", "speech"]);
+    expect(Object.keys(r.body).sort()).toEqual(["brand", "examples", "examplesByLang", "features", "language", "pack", "panel", "speech"]);
     expect(r.body).toMatchObject({ pack: "visits_pack", panel: "float", speech: { enabled: false }, language: { default: "auto" } });
     expect(r.body.examples).toEqual(["Visites par région"]);
     expect(r.body.examplesByLang).toMatchObject({ en: ["Visits by region"], fr: ["Visites par région"] });
@@ -215,7 +215,7 @@ describe("Superset mode's server", () => {
   });
 
   it("keeps the settings to Superset admins, and audits a refusal", async () => {
-    for (const [method, path] of [["GET", "/_superset/settings"], ["GET", "/_superset/audit"], ["GET", "/_superset/turns"], ["PUT", "/_superset/settings/features"], ["PUT", "/_superset/settings/speech"], ["PUT", "/_superset/settings/language"], ["PUT", "/_superset/settings/chat"], ["PUT", "/_superset/settings/cache"], ["GET", "/_superset/cache"], ["POST", "/_superset/cache/abc/pin"]] as const) {
+    for (const [method, path] of [["GET", "/_superset/settings"], ["GET", "/_superset/audit"], ["GET", "/_superset/turns"], ["PUT", "/_superset/settings/features"], ["PUT", "/_superset/settings/speech"], ["PUT", "/_superset/settings/language"], ["PUT", "/_superset/settings/chat"], ["PUT", "/_superset/settings/cache"], ["GET", "/_superset/cache"], ["POST", "/_superset/cache/abc/pin"], ["PUT", "/_superset/settings/brand"]] as const) {
       const r = await call(path, { method, as: VIEWER, ...(method === "PUT" ? { body: "{}" } : {}) });
       expect(r).toMatchObject({ status: 403, body: { error: "only Superset admins can do this" } });
     }
@@ -237,7 +237,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "speech", "superset", "telemetry", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "speech", "superset", "telemetry", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -260,6 +260,26 @@ describe("Superset mode's server", () => {
     });
     expect(Object.keys(r.body.features).sort()).toEqual(["defaults", "options", "source", "values", "writable"]);
     expect(JSON.stringify(r.body)).not.toContain("service-password");
+  });
+
+  it("names the assistant for everyone when an admin says so, with no restart", async () => {
+    expect((await call("/_superset/info", { as: VIEWER })).body.brand).toMatchObject({ name: "Lenspack", buttonLabel: "Ask Lenspack", poweredBy: false, icon: null });
+    expect((await put("/_superset/settings/brand", { name: "Campaign assistant" }, VIEWER)).status).toBe(403);
+    const r = await put("/_superset/settings/brand", { name: "Campaign assistant", buttonLabel: "Ask the data", i18n: { fr: { buttonLabel: "Interroger les données" } } });
+    expect(r).toMatchObject({ status: 200, body: { values: { name: "Campaign assistant" }, defaults: { name: "Lenspack" }, source: { name: "settings", buttonLabel: "settings" }, writable: true } });
+    // What every chat and button reads on its next load.
+    const info = (await call("/_superset/info", { as: VIEWER })).body;
+    expect(info.brand).toMatchObject({ name: "Campaign assistant", buttonLabel: "Ask the data", poweredBy: true, i18n: { en: { buttonLabel: "Ask the data", poweredBy: "Powered by Lenspack" }, fr: { buttonLabel: "Interroger les données" } } });
+    expect((await call("/_superset/settings", { as: ADMIN })).body.brand.values.name).toBe("Campaign assistant");
+    // The pages beside Superset are named the same, as text.
+    const embed = await call("/superset/7", { as: VIEWER });
+    expect(embed.body).toContain("<title>Campaign assistant + Superset</title>");
+    expect((await call("/", { as: VIEWER })).body).toContain("<h1>Campaign assistant on Superset</h1>");
+    const audit = await call("/_superset/audit", { as: ADMIN });
+    expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "boss", action: "settings brand", outcome: "ok" }));
+    expect(await put("/_superset/settings/brand", { buttonLabel: "<b>Ask</b>" })).toMatchObject({ status: 400, body: { error: "brand.buttonLabel: buttonLabel is plain text: no < or >" } });
+    expect((await put("/_superset/settings/brand", { name: null, buttonLabel: null, i18n: null })).body).toMatchObject({ values: { name: "Lenspack", buttonLabel: "Ask Lenspack" }, source: { name: "default" } });
+    expect((await call("/superset/7", { as: VIEWER })).body).toContain("<title>Lenspack + Superset</title>");
   });
 
   it("turns a feature off and back on for everyone", async () => {

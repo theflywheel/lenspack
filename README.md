@@ -280,6 +280,7 @@ More in [docs/security.md](docs/security.md).
 - [Security model](docs/security.md)
 - [Review, open questions and the admin panel](docs/review.md): settling questions with two readings, the daily review, and usage as a board
 - [Your own dashboards and saved layouts](docs/my-dashboards.md) in Superset: a copy to change when you can only view, and layouts kept by name
+- [Naming the assistant](docs/brand.md): another name and button label for a deployment, in each language
 
 ## Status
 

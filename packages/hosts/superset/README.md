@@ -379,6 +379,19 @@ becomes "The data source is unreachable (connection refused | host not found | n
 dropped | sign-in refused | Superset is unavailable)", a slow one "did not answer in time", and any other error
 keeps its wording with URLs, hosts, ports and IP addresses taken out. The raw error goes to the server log.
 
+## Naming the assistant
+
+The button says "Ask Lenspack" unless the deployment names the assistant itself:
+
+```yaml
+brand: { name: Campaign assistant, buttonLabel: Ask the data }   # in superset.yaml
+```
+
+The button, the chat panel and its messages follow it in every language, and admins can change it on a running
+server in the admin panel's Settings tab. To rename the settings page's menu entry too, set
+`LENSPACK_BRAND_NAME = "Campaign assistant"` in `superset_config.py`. Works the same on Superset 6.1 and 5.0.
+Everything else, per-language words and the icon: [docs/brand.md](../../../docs/brand.md).
+
 ## Off switches
 
 Each part of the assistant can be turned off; all are on by default except the daily review, which costs money.

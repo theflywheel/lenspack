@@ -12,7 +12,7 @@ import { Separator } from "./components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 
 import type { ModelInfo } from "./chat";
-import { page } from "./page";
+import { assistantName, page } from "./page";
 import { ProfileMenu } from "./profile";
 import { SplitView } from "./split";
 
@@ -338,7 +338,7 @@ export function App() {
     history.replaceState(null, "", `${location.pathname}?example=${example}&board=${boardId}${model ? `&model=${encodeURIComponent(model)}` : ""}${effortWanted ? `&effort=${encodeURIComponent(effortWanted)}` : ""}${view !== "board" ? `&view=${view}` : ""}`);
   }, [example, boardId, model, effortWanted, view]);
   React.useEffect(() => {
-    if (state) document.title = `${state.board.config.title} · ${page.title ?? "lenspack"}`;
+    if (state) document.title = `${state.board.config.title} · ${page.title ?? assistantName()}`;
   }, [state]);
 
   const writable = state?.writable ?? false;
@@ -470,7 +470,7 @@ export function App() {
         <div className="mx-auto flex max-w-[2400px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 lg:px-5">
           <div className="flex shrink-0 items-center gap-2">
             <a href="/" className="font-mono text-base font-semibold tracking-tight text-foreground">
-              {page.title ?? "lenspack"}
+              {page.title ?? assistantName()}
             </a>
           </div>
           {/* Each control says what it picks. One pack needs no pack menu. */}

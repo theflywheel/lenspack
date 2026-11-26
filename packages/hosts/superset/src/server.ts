@@ -280,7 +280,12 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     res.end(body);
   };
   const base = (config.publicPath ?? env.LENSPACK_PUBLIC_PATH ?? "").replace(/\/+$/, "");
-  const page = (name: string, vars: Record<string, unknown>) => readFileSync(join(web, name), "utf8").replaceAll("__BASE__", base).replace("/*__VARS__*/", `window.__lp=${scriptJson(vars)};`);
+  // The assistant's name in the page's own words (brand), as text: escaped, never markup.
+  const text = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const page = (name: string, vars: Record<string, unknown>) => {
+    const brand = admin.brand.get();
+    return readFileSync(join(web, name), "utf8").replaceAll("__BASE__", base).replaceAll("__NAME__", text(brand.name)).replaceAll("__BUTTON__", text(brand.buttonLabel)).replace("/*__VARS__*/", `window.__lp=${scriptJson({ ...vars, brand })};`);
+  };
   const supersetPort = config.superset?.publicPort ?? Number(new URL(supersetUrl).port);
   const panel = config.overlay?.panel === "dock" ? "dock" : "float";
   const examples = examplesByLanguage(config.overlay?.examples);

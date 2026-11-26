@@ -5,13 +5,13 @@
 
   const STRINGS = {
     en: {
-      title: "Lenspack admin", pack: "Pack", loading: "Loading…", failed: "Could not load: {0}", saved: "Saved.", done: "Done.",
+      title: "{name} admin", pack: "Pack", loading: "Loading…", failed: "Could not load: {0}", saved: "Saved.", done: "Done.",
       tabOverview: "Overview", tabReview: "Review", tabQuestions: "Open questions", tabProposals: "Proposals", tabDefinitions: "Definitions", tabCache: "Cache", tabSettings: "Settings",
       themeAuto: "Theme: system", themeLight: "Theme: light", themeDark: "Theme: dark",
       // Overview
       lastDays: "Last {0} days", turns: "Questions", people: "People", cost: "Cost", errors: "Errors", refusals: "Refusals", findings: "Reviewer findings", openQ: "Open questions", pending: "Proposals waiting", saved$: "Saved by cache",
       day: "Day", asked: "Asked back", assumed: "Answered with a reading", picked: "Quick replies", byDay: "By day", estimateNote: "Costs are estimates from list prices.",
-      usageLede: "How people use this server: a Lenspack board over the server's own record of its chat turns, drawn by the same engine as every other board. Change it like any board.", usageFrom: "From {0}.", src_telemetry: "the turn telemetry", src_audit: "the audit log", src_none: "nothing yet",
+      usageLede: "How people use this server: a {name} board over the server's own record of its chat turns, drawn by the same engine as every other board. Change it like any board.", usageFrom: "From {0}.", src_telemetry: "the turn telemetry", src_audit: "the audit log", src_none: "nothing yet",
       askUsage: "Ask about usage", askUsageLede: "Questions about this board's data, answered by the assistant. Only admins see this; these questions are logged and costed, but left out of the daily review.", askPlaceholder: "Which board cost most this week?", send: "Ask", thinking: "Working…", noAnswer: "No answer.",
       usageEx1: "Which board cost most this week?", usageEx2: "How many questions were answered from saved answers yesterday?", usageEx3: "Who asked the most questions in the last 30 days?",
       waiting: "Waiting for you", boardOff: "The usage board is off on this server: {0}",
@@ -44,10 +44,12 @@
       pwr_schedule: "scheduled", pwr_data: "data changed", pwr_admin: "by an admin", asks7d: "Asked, 7 days", dataAsOf: "Data as of", kindEdit: "board change", noEntries: "No saved answers yet.",
       suggestionsLede: "The most-asked questions on each board: the chat offers them as suggestions.", candidatesLede: "Asked often, and no chart on their board answers them.", askedN: "asked {0}×", settledH: "Settled boards", settledLede: "No change in a week.", lastEdit: "last changed {0}",
       // Settings
+      bTitle: "Name", bLede: "What the assistant is called on dashboards and in this panel: its name, the dashboard button's label, and words for one language only. Saved for everyone; open pages show it after a reload. Leave a box empty for the deployment's value.",
+      bName: "Name", bButton: "Button label", bButtonHelp: "{0} in the label stands for the name.", bIcon: "Icon: an https:// address, a path on this site, or a small data:image file", bPowered: "Show “Powered by Lenspack” in the chat when the name is not Lenspack", bIn: "In {0}", bSave: "Save name", bPreview: "Preview",
       sLede: "Switches for this server. A change applies to the next question. Where a value comes from: default, the config file, the environment, or this page.",
       source_default: "default", source_config: "config", source_env: "environment", source_settings: "set here", reset: "Reset to the deployment's value",
       // Telemetry
-      tabTelemetry: "Telemetry", tlTitle: "What this deployment records", tlLede: "Every item Lenspack can record for this deployment, each with its switch. A change applies to the next question. Print it or copy it into a pilot report.",
+      tabTelemetry: "Telemetry", tlTitle: "What this deployment records", tlLede: "Every item {name} can record for this deployment, each with its switch. A change applies to the next question. Print it or copy it into a pilot report.",
       tlGenerated: "Checked {0}.", tlSumRecording: "{0} of {1} recording", tlSumNoData: "{0} on but no data", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumNot: "{0} not telemetry",
       tlMaster: "Record telemetry", tlRetention: "Keep records for (days)", tlNote: "Switching something off stops new records. What was already recorded stays until it ages out (the days set here) or is deleted per user.", tlOn: "on", tlOff: "off", tlNoSwitch: "no switch",
       tlColOn: "On", tlItem: "Item", tlStatus: "Status", tl7d: "7 days", tlLastSeen: "Last seen", tlDecision: "Drives", tlPrivacyCol: "Privacy", tlDetailsCol: "Details", tlNotes: "Notes",
@@ -61,12 +63,12 @@
       tlAbsent: "Telemetry is not available on this server.", tlAbsentHelp: "This server does not report its telemetry yet. The checklist appears here once it does.", tlSwitchAbsent: "This server cannot change that setting from here.",
     },
     fr: {
-      title: "Administration Lenspack", pack: "Pack", loading: "Chargement…", failed: "Chargement impossible : {0}", saved: "Enregistré.", done: "Fait.",
+      title: "Administration {name}", pack: "Pack", loading: "Chargement…", failed: "Chargement impossible : {0}", saved: "Enregistré.", done: "Fait.",
       tabOverview: "Vue d'ensemble", tabReview: "Revue", tabQuestions: "Questions ouvertes", tabProposals: "Propositions", tabDefinitions: "Définitions", tabCache: "Cache", tabSettings: "Réglages",
       themeAuto: "Thème : système", themeLight: "Thème : clair", themeDark: "Thème : sombre",
       lastDays: "{0} derniers jours", turns: "Questions", people: "Personnes", cost: "Coût", errors: "Erreurs", refusals: "Refus", findings: "Remarques du vérificateur", openQ: "Questions ouvertes", pending: "Propositions en attente", saved$: "Économisé par le cache",
       day: "Jour", asked: "Questions en retour", assumed: "Réponses avec une lecture", picked: "Réponses rapides", byDay: "Par jour", estimateNote: "Coûts estimés d'après les prix publics.",
-      usageLede: "L'usage de ce serveur : un tableau Lenspack sur le propre relevé des échanges du serveur, dessiné par le même moteur que tous les tableaux. Modifiable comme n'importe quel tableau.", usageFrom: "Source : {0}.", src_telemetry: "la télémétrie des échanges", src_audit: "le journal d'audit", src_none: "rien pour l'instant",
+      usageLede: "L'usage de ce serveur : un tableau {name} sur le propre relevé des échanges du serveur, dessiné par le même moteur que tous les tableaux. Modifiable comme n'importe quel tableau.", usageFrom: "Source : {0}.", src_telemetry: "la télémétrie des échanges", src_audit: "le journal d'audit", src_none: "rien pour l'instant",
       askUsage: "Questions sur l'usage", askUsageLede: "Des questions sur les données de ce tableau, auxquelles répond l'assistant. Réservé aux administrateurs ; ces questions sont journalisées et comptées, mais exclues de la revue quotidienne.", askPlaceholder: "Quel tableau a coûté le plus cette semaine ?", send: "Demander", thinking: "En cours…", noAnswer: "Pas de réponse.",
       usageEx1: "Quel tableau a coûté le plus cette semaine ?", usageEx2: "Combien de questions ont reçu une réponse enregistrée hier ?", usageEx3: "Qui a posé le plus de questions ces 30 derniers jours ?",
       waiting: "En attente de vous", boardOff: "Le tableau d'usage est désactivé sur ce serveur : {0}",
@@ -93,9 +95,11 @@
       prewarmH: "Rafraîchir les réponses gardées", prewarmLast: "Dernier rafraîchissement {0} ({1}) : {2} sur {3} rafraîchies, {4} réécrites, {5}.", prewarmNever: "Pas encore de rafraîchissement. Ils ont lieu aux heures réglées, quand le chargement des données le signale, ou maintenant.", prewarmNow: "Rafraîchir maintenant",
       pwr_schedule: "planifié", pwr_data: "données modifiées", pwr_admin: "par un administrateur", asks7d: "Posées, 7 jours", dataAsOf: "Données du", kindEdit: "modification du tableau", noEntries: "Aucune réponse gardée pour l'instant.",
       suggestionsLede: "Les questions les plus posées sur chaque tableau : le chat les propose en suggestions.", candidatesLede: "Posées souvent, sans graphique qui y réponde sur leur tableau.", askedN: "posée {0} fois", settledH: "Tableaux stables", settledLede: "Aucun changement depuis une semaine.", lastEdit: "dernier changement {0}",
+      bTitle: "Nom", bLede: "Comment l'assistant s'appelle sur les tableaux de bord et dans ce panneau : son nom, le libellé du bouton, et des mots pour une seule langue. Enregistré pour tout le monde ; les pages ouvertes l'affichent après rechargement. Laissez une case vide pour la valeur du déploiement.",
+      bName: "Nom", bButton: "Libellé du bouton", bButtonHelp: "{0} dans le libellé représente le nom.", bIcon: "Icône : une adresse https://, un chemin sur ce site, ou un petit fichier data:image", bPowered: "Afficher « Propulsé par Lenspack » dans la discussion quand le nom n'est pas Lenspack", bIn: "En {0}", bSave: "Enregistrer le nom", bPreview: "Aperçu",
       sLede: "Les interrupteurs de ce serveur. Un changement s'applique à la question suivante. Origine de chaque valeur : défaut, fichier de configuration, environnement ou cette page.",
       source_default: "défaut", source_config: "configuration", source_env: "environnement", source_settings: "réglé ici", reset: "Revenir à la valeur du déploiement",
-      tabTelemetry: "Télémétrie", tlTitle: "Ce que ce déploiement enregistre", tlLede: "Chaque élément que Lenspack peut enregistrer pour ce déploiement, avec son interrupteur. Un changement s'applique à la question suivante. À imprimer ou à copier dans un rapport de pilote.",
+      tabTelemetry: "Télémétrie", tlTitle: "Ce que ce déploiement enregistre", tlLede: "Chaque élément que {name} peut enregistrer pour ce déploiement, avec son interrupteur. Un changement s'applique à la question suivante. À imprimer ou à copier dans un rapport de pilote.",
       tlGenerated: "Vérifié le {0}.", tlSumRecording: "{0} sur {1} enregistrés", tlSumNoData: "{0} activés sans données", tlSumConfig: "{0} à configurer", tlSumOff: "{0} désactivés", tlSumNot: "{0} hors télémétrie",
       tlMaster: "Enregistrer la télémétrie", tlRetention: "Conserver (jours)", tlNote: "Désactiver un élément arrête les nouveaux enregistrements. Ce qui a déjà été enregistré reste jusqu'à expiration (les jours réglés ici) ou suppression par utilisateur.", tlOn: "activé", tlOff: "désactivé", tlNoSwitch: "sans interrupteur",
       tlColOn: "Actif", tlItem: "Élément", tlStatus: "État", tl7d: "7 jours", tlLastSeen: "Dernier", tlDecision: "Sert à", tlPrivacyCol: "Confidentialité", tlDetailsCol: "Détails", tlNotes: "Remarques",
@@ -111,7 +115,7 @@
   };
   // The switches' names and help in French; English comes from the server.
   const FEATURES_FR = {
-    overlay: ["Bouton Demander à Lenspack", "Le bouton et la discussion sur les tableaux de bord."],
+    overlay: ["Bouton de l'assistant", "Le bouton et la discussion sur les tableaux de bord."],
     voice: ["Saisie vocale", "Le micro dans la discussion (il faut aussi une clé de reconnaissance vocale)."],
     spaceHold: ["Maintenir Espace pour parler", "Maintenir Espace lance le micro."],
     languageMenu: ["Menu des langues", "Le choix de la langue dans la discussion."],
@@ -202,7 +206,10 @@
   let mounted = null;
   let openRun = null;
 
-  const t = (k, ...a) => String((STRINGS[lang] && STRINGS[lang][k]) ?? STRINGS.en[k] ?? k).replace(/\{(\d)\}/g, (_, i) => (a[i] === undefined ? "" : a[i]));
+  // {name} is the assistant's name (the deployment's brand), which the server writes into the page.
+  const named = document.documentElement.dataset.name;
+  const assistant = named && named !== "__NAME__" ? named : "Lenspack";
+  const t = (k, ...a) => String((STRINGS[lang] && STRINGS[lang][k]) ?? STRINGS.en[k] ?? k).replace(/\{name\}/g, () => assistant).replace(/\{(\d)\}/g, (_, i) => (a[i] === undefined ? "" : a[i]));
   const nf = (v, d = 0) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? "—" : Number(v).toLocaleString(lang, { maximumFractionDigits: d }));
   const usd = (v) => (v === null || v === undefined ? "—" : Number(v) < 0.01 && Number(v) > 0 ? `$${Number(v).toFixed(4)}` : `$${Number(v).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
   const when = (iso) => (iso ? new Date(iso).toLocaleString(lang, { dateStyle: "medium", timeStyle: "short" }) : "—");
@@ -727,8 +734,51 @@
     ];
   }
 
+  // What the assistant is called (PUT api/settings/brand, the same change as <prefix>/settings/brand): the name, the
+  // button's label, a language's own words, an icon and the attribution line. Every box is text, shown as text.
+  const LANG_NAMES = { en: "English", fr: "Français", hi: "हिन्दी", pt: "Português" };
+  function brandCard(b) {
+    const v = b.values, d = b.defaults, s = b.saved || {}, lim = b.limits, off = !b.writable;
+    const box = (label, value, placeholder, max) => h("input", { type: "text", value: value || "", placeholder: placeholder || "", maxlength: max ? String(max) : null, "aria-label": label, disabled: off });
+    const fld = (label, input, extra) => h("label", { class: "field" }, h("span", {}, label, extra ? h("small", { class: "mute" }, ` ${extra}`) : null), input);
+    const name = box(t("bName"), s.name, d.name, lim.name);
+    const label = box(t("bButton"), s.buttonLabel, d.buttonLabel, lim.buttonLabel);
+    const icon = box(t("bIcon"), s.icon, d.icon || "", null);
+    const powered = h("input", { type: "checkbox", checked: b.poweredBySwitch.value, disabled: off });
+    const own = {};
+    for (const l of b.languages) own[l] = { name: box(`${t("bName")} (${l})`, s.i18n && s.i18n[l] && s.i18n[l].name, d.i18n[l].name, lim.name), buttonLabel: box(`${t("bButton")} (${l})`, s.i18n && s.i18n[l] && s.i18n[l].buttonLabel, b.templates[l], lim.buttonLabel) };
+    // The button as a dashboard shows it, in this panel's language, as the boxes read now.
+    const preview = h("span", { class: "brand-btn" }, h("b", {}, "L"), h("span", {}));
+    const show = () => {
+      const w = own[lang] || own.en;
+      const n = w.name.value.trim() || name.value.trim() || (d.i18n[lang] || d).name;
+      const l = w.buttonLabel.value.trim() || label.value.trim() || b.templates[lang] || b.templates.en;
+      preview.lastChild.textContent = l.replace(/\{name\}/g, () => n);
+      const src = icon.value.trim() || d.icon;
+      const letter = Array.from(Array.from(n.trim())[0]?.toLocaleUpperCase() || "?")[0] || "?";
+      preview.firstChild.replaceChildren(src ? h("img", { src, alt: "" }) : letter);
+    };
+    [name, label, icon, ...Object.values(own).flatMap((w) => [w.name, w.buttonLabel])].forEach((i) => i.addEventListener("input", show));
+    show();
+    const orNull = (i) => i.value.trim() || null;
+    const save = act(() => api("settings/brand", { body: {
+      name: orNull(name), buttonLabel: orNull(label), icon: orNull(icon),
+      poweredBy: powered.checked === b.poweredBySwitch.deployment ? null : powered.checked,
+      i18n: Object.fromEntries(Object.entries(own).map(([l, w]) => [l, { name: orNull(w.name), buttonLabel: orNull(w.buttonLabel) }])),
+    } }), t("saved"));
+    const changed = Object.values(b.source).some((x) => x === "settings");
+    const reset = act(() => api("settings/brand", { body: { name: null, buttonLabel: null, icon: null, poweredBy: null, i18n: null } }), t("saved"));
+    return card(t("bTitle"), t("bLede"),
+      h("div", { class: "row", style: "margin:0 0 10px;flex-wrap:wrap" }, h("span", { class: "mute" }, `${t("bPreview")}:`), preview, pill(t(`source_${b.source.name}`), b.source.name === "settings" ? "acc" : "")),
+      h("div", { class: "form" }, fld(t("bName"), name), fld(t("bButton"), label, t("bButtonHelp", "{name}")), h("div", { class: "wide" }, fld(t("bIcon"), icon))),
+      h("details", { class: "brand-langs" }, h("summary", {}, b.languages.map((l) => LANG_NAMES[l] || l).join(" · ")),
+        h("div", { class: "form" }, b.languages.flatMap((l) => [fld(`${t("bName")} · ${t("bIn", LANG_NAMES[l] || l)}`, own[l].name), fld(`${t("bButton")} · ${t("bIn", LANG_NAMES[l] || l)}`, own[l].buttonLabel)]))),
+      h("label", { class: "switch", style: "margin-top:10px" }, powered, h("div", {}, h("div", { class: "lbl" }, t("bPowered")))),
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: save, disabled: off }, t("bSave")), changed ? h("button", { class: "btn sm quiet", type: "button", onclick: reset, disabled: off }, t("reset")) : null));
+  }
+
   async function settings() {
-    const { features } = await api("settings");
+    const { features, brand } = await api("settings");
     const rows = features.options.map((o) => {
       const fr = lang === "fr" ? FEATURES_FR[o.key] : null;
       const input = h("input", { type: "checkbox", checked: features.values[o.key], "aria-label": fr ? fr[0] : o.label, onchange: act(() => api("settings/features", { body: { [o.key]: input.checked } }), t("saved")) });
@@ -737,7 +787,7 @@
         h("div", { class: "help" }, fr ? fr[1] : o.help)));
     });
     const changed = Object.values(features.source).some((s) => s === "settings");
-    return [card(t("tabSettings"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null)];
+    return [brand ? brandCard(brand) : null, card(t("tabSettings"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null)];
   }
 
   /** The telemetry checklist (GET <prefix>/telemetry/checklist), if the server has it: null when it does not (404). */

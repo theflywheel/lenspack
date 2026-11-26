@@ -326,6 +326,13 @@ def lenspack_settings_layout(app) -> str:
         return "lenspack/layout.html"
 
 
+def lenspack_brand_label(config) -> str:
+    """What the menu entry and the settings page are called: superset_config's LENSPACK_BRAND_NAME when set (the
+    assistant's name, as in Lenspack's own brand.name), else "AI assistant", as before. The page's address stays
+    /ai-assistant/, and the name is shown as text."""
+    return str(config.get("LENSPACK_BRAND_NAME") or "").strip()[:40] or "AI assistant"
+
+
 # Flash categories of the settings page's own messages: the page shows only these, not a message another part
 # of Superset left in the session (Superset 6 leaves an "Access is Denied" from signing in, which its frontend
 # never shows).
@@ -351,6 +358,7 @@ def lenspack_app_mutator(app):
         loaders.insert(0, FileSystemLoader(LENSPACK_TEMPLATES))
     app.jinja_loader = ChoiceLoader(loaders)
     settings_layout = lenspack_settings_layout(app)
+    brand_label = lenspack_brand_label(app.config)
     lenspack_clickhouse_label_suffix()
 
     def is_admin(user) -> bool:
@@ -615,7 +623,7 @@ def lenspack_app_mutator(app):
                 audit=audit, audit_error=audit_error, turns=turns, databases=databases,
                 account_roles=[r.name for r in account.roles] if account else None,
                 internal_url=LENSPACK_INTERNAL_URL, lenspack_path=LENSPACK_PATH, stt_models=stt_models, stt_bench=STT_BENCH,
-                lp_layout=settings_layout, lp_flash=[FLASH_OK, FLASH_BAD],
+                lp_layout=settings_layout, lp_flash=[FLASH_OK, FLASH_BAD], lp_brand=brand_label,
             )
 
         # Forms on the page. Admin only, Superset's CSRF token required (Flask-WTF checks every POST).
@@ -744,7 +752,7 @@ def lenspack_app_mutator(app):
             return saved("Off switches", call("PUT", "/_superset/settings/features", body))
 
     appbuilder.add_view_no_menu(LenspackSettingsView)
-    appbuilder.add_link("AI assistant", label="AI assistant", href="/ai-assistant/", icon="fa-comments", category="Manage", cond=lambda: security_manager.is_admin())
+    appbuilder.add_link("AI assistant", label=brand_label, href="/ai-assistant/", icon="fa-comments", category="Manage", cond=lambda: security_manager.is_admin())
 
 
 FLASK_APP_MUTATOR = lenspack_app_mutator
@@ -791,7 +799,7 @@ TAIL_JS = r'''{# The "Ask Lenspack" button: one small script on every page, for 
 SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs with and Superset's data connections. Never shows a secret.
    lp_layout: Superset 5's own layout, or on Superset 6 lenspack/layout.html (light or dark, as Superset is). #}
 {% extends lp_layout | default("appbuilder/base.html") %}
-{% block title %}AI assistant · Settings{% endblock %}
+{% block title %}{{ lp_brand | default("AI assistant") }} · Settings{% endblock %}
 {# Only this page's own messages, below; not whatever else Superset left in the session. #}
 {% block messages %}{% endblock %}
 {% block content %}
@@ -823,12 +831,13 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
   @media (max-width:820px){.grid2{grid-template-columns:1fr}.lp-wrap th{width:auto}}
 </style>
 <div class="lp-wrap">
-  <h1>AI assistant</h1>
-  <p class="lede">Lenspack adds a chat to Superset dashboards: the <b>Ask Lenspack</b> button on a dashboard.
+  {% set lp_named = (settings or {}).get('brand', {}).get('values') or {} %}
+  <h1>{{ lp_brand | default("AI assistant") }}</h1>
+  <p class="lede">Lenspack adds a chat to Superset dashboards: the <b>{{ lp_named.get('buttonLabel') or 'Ask Lenspack' }}</b> button on a dashboard.
     Models are chosen here; the rest comes from Lenspack's config file and environment. This page never shows a secret.</p>
 
   <div class="lp-card">
-    <h2>Lenspack admin panel</h2>
+    <h2>{{ lp_named.get('name') or 'Lenspack' }} admin panel</h2>
     <p class="mute" style="margin:0 0 8px">How people use the assistant each day, the daily review and its proposed fixes, open questions about definitions, the definitions you have added, and every switch. Served by Lenspack itself, for Superset admins.</p>
     <p style="margin:0"><a href="{{ lenspack_path }}/_superset/admin/" target="_blank" rel="noopener">Open the admin panel</a></p>
   </div>
@@ -1127,7 +1136,7 @@ LAYOUT_HTML = r"""<!DOCTYPE html>
 </head>
 <body>
   <header class="lp-top">
-    <a class="lp-home" href="/superset/welcome/">Superset</a><span class="lp-sep">/</span><span class="lp-sep">Settings</span><span class="lp-sep">/</span><b>AI assistant</b>
+    <a class="lp-home" href="/superset/welcome/">Superset</a><span class="lp-sep">/</span><span class="lp-sep">Settings</span><span class="lp-sep">/</span><b>{{ lp_brand | default("AI assistant") }}</b>
     <a class="lp-back" href="/superset/welcome/">← Back to Superset</a>
   </header>
   {% block messages %}{% endblock %}

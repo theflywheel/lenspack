@@ -58,7 +58,7 @@ async function reportSql(client: SupersetClient, body: Record<string, unknown>, 
     const cached = r?.is_cached && r.cached_dttm ? { cachedAt: utc(r.cached_dttm) } : {};
     const said: SourceStatement = sql[i]
       ? { language: "sql", text: sql[i]!, ...cached }
-      : { language: "json", text: JSON.stringify({ datasource: body.datasource, queries: [q] }, null, 2), note: "Superset did not return the SQL it ran; this is the request Lenspack sent it.", ...cached };
+      : { language: "json", text: JSON.stringify({ datasource: body.datasource, queries: [q] }, null, 2), note: "Superset did not return the SQL it ran; this is the request it was sent.", ...cached };
     ran(said);
   });
 }

@@ -126,6 +126,12 @@ People ask questions the pack never thought of, and some have two sane readings.
 Every chat turn leaves one record: who asked, on which board, what kind of question it was, how it ended, how long it took and what it cost. People can rate answers with a thumbs up or down. Admins read the records from the settings routes. Each item recorded has its own switch on the admin panel's Telemetry tab; the privacy-sensitive ones (question text, recordings, device detail) start off. What is kept, for how long, and who may read it: [telemetry.md](telemetry.md).
 
 
+## Naming the assistant
+
+A deployment can call the assistant something else ("Campaign assistant") and give its dashboard button its own
+label ("Ask the data"), in each of the chat's languages, with Lenspack as the default. Set it in the config, the
+environment or the admin panel: [brand.md](brand.md).
+
 ## The demo app
 
 `pnpm demo` serves the example packs in the board app (`examples/demo`). You can build boards with the chat, drag widgets and restore versions. Its look carries one idea: colour is provenance. A key that the pack declares is always mono and blue, whether in prose, in the metrics reference or in a board title. Something the compiler refuses is always ochre.

@@ -82,7 +82,7 @@ describe("the admin panel", () => {
     const providers: Provider[] = [{ ...buildProvider({ name: "m", kind: "panel-mock", model: "m" }), available: true }];
     const review = reviewSystem({ stateDir: dir, hosts: [{ name: "shop", pack: PACK, connector: sqlConnector(db.executor), ctx: {} }], features: admin.features, settings: admin.settings, providers: () => providers, events: () => lines, audit: (e) => lines.push(e) });
     usage = await usageBoard({ stateDir: dir, events: () => lines, providers: () => providers, audit: (e) => lines.push(e), review: () => false, now: () => NOW });
-    const panel = panelRoutes({ prefix: "/_x", system: review, features: admin.features, providers: () => providers, adminName: "maintainer", title: "Shop <b>", usage });
+    const panel = panelRoutes({ prefix: "/_x", system: review, features: admin.features, brand: admin.brand, providers: () => providers, adminName: "maintainer", title: "Shop <b>", usage });
     server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", "http://x");
       const who: Principal = principalOf({ user: String(req.headers["x-test-user"] ?? "anon"), edit: true, maintain: true, roles: req.headers["x-test-admin"] === "1" ? ["admin"] : [], ...(req.headers["x-test-usage"] === "0" ? { usage: false } : {}) });
@@ -108,6 +108,31 @@ describe("the admin panel", () => {
     const post = await fetch(`${base}/api/review/run`, { method: "POST", body: JSON.stringify({ confirm: true }), headers: as("viv", false) });
     expect(post.status).toBe(403);
     expect(lines.some((l) => l.user === "viv" && l.outcome === "denied")).toBe(true);
+  });
+
+  it("names the assistant as an admin sets it: admins only, audited, and on the next page load", async () => {
+    const put = (body: unknown, admin = true) => fetch(`${base}/api/settings/brand`, { method: "PUT", headers: { ...as(admin ? "ana" : "viv", admin), "content-type": "application/json" }, body: JSON.stringify(body) });
+    expect((await put({ name: "Campaign assistant" }, false)).status).toBe(403);
+    expect(lines.some((l) => l.user === "viv" && l.action === "PUT /_x/admin/api/settings/brand" && l.outcome === "denied")).toBe(true);
+    expect((await (await fetch(`${base}/`, { headers: as("ana", true) })).text())).toContain("<h1 data-t=\"title\">Lenspack admin</h1>");
+    const r = await put({ name: "Campaign assistant", buttonLabel: "Ask the data", i18n: { fr: { buttonLabel: "Interroger les données" } } });
+    expect(r.status).toBe(200);
+    expect((await r.json()).brand).toMatchObject({ values: { name: "Campaign assistant", buttonLabel: "Ask the data", i18n: { fr: { buttonLabel: "Interroger les données" } } }, source: { name: "settings" }, writable: true });
+    expect(lines).toContainEqual(expect.objectContaining({ user: "ana", action: "settings brand", outcome: "ok", detail: expect.stringContaining("Campaign assistant") }));
+    const html = await (await fetch(`${base}/`, { headers: as("ana", true) })).text();
+    expect(html).toContain("<title>Shop b · Campaign assistant admin</title>");
+    expect(html).toContain('data-name="Campaign assistant"');
+    expect((await (await fetch(`${base}/api/settings`, { headers: as("ana", true) })).json()).brand.values.name).toBe("Campaign assistant");
+    // An icon replaces the header's mark.
+    expect((await put({ icon: "/static/mark.png" })).status).toBe(200);
+    expect(await (await fetch(`${base}/`, { headers: as("ana", true) })).text()).toContain('<span class="mark icon" aria-hidden="true"><img src="/static/mark.png" alt=""></span>');
+    // Markup is refused, and changes nothing.
+    const bad = await put({ name: "<img src=x onerror=alert(1)>" });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe("brand.name: name is plain text: no < or >");
+    // Back to the deployment's value.
+    expect((await put({ name: null, buttonLabel: null, i18n: null, icon: null })).status).toBe(200);
+    expect(await (await fetch(`${base}/`, { headers: as("ana", true) })).text()).toContain("Shop b · Lenspack admin");
   });
 
   it("serves the page, its script and the board renderer's files to an admin", async () => {

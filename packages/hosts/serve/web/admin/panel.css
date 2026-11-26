@@ -33,6 +33,8 @@ code { background: var(--code); border-radius: 4px; padding: 1px 5px; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 20px 10px; max-width: 1180px; margin: 0 auto; }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--acc), #6fc3a8); flex: none; }
+.mark.icon { background: none; overflow: hidden; }
+.mark.icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .top h1 { font-size: 17px; margin: 0; letter-spacing: -.01em; }
 .sub { margin: 0; color: var(--mute); font-size: 12.5px; }
 .tools { display: flex; align-items: center; gap: 8px; }
@@ -227,3 +229,10 @@ table.tl { table-layout: fixed; font-size: 13px; }
   .tl tr { break-inside: avoid; }
 }
 .print-on { display: none; }
+/* The Settings tab's Name card: the button as dashboards show it. */
+.brand-btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 99px; background: #1a85a0; color: #fff; font-weight: 600; font-size: 13.5px; padding: 8px 14px; max-width: 100%; }
+.brand-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-btn b { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: rgba(255,255,255,.2); font-size: 12px; flex: none; overflow: hidden; }
+.brand-btn b img { width: 100%; height: 100%; object-fit: contain; }
+.brand-langs { margin-top: 10px; }
+.brand-langs summary { cursor: pointer; color: var(--mute); font-size: 13px; margin-bottom: 8px; }
