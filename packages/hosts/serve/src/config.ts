@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { type BoardStore, memoryStore } from "@lenspack/core";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
-import { type Connector, check } from "@lenspack/engine";
+import { type Connector, check, zonedSeriesWarnings } from "@lenspack/engine";
 import { fileProposals } from "@lenspack/agent";
 import { parsePackText } from "@lenspack/pack";
 import { type Executor, type Writer, driverFor, filePath, openSource, sqlStore } from "@lenspack/sql";
@@ -258,6 +258,8 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
     // A rule naming a key the pack does not have stops the server here, not at the first request.
     for (const rule of p.access ?? []) hiddenKeys(pack, rule);
     const name = p.name ?? pack.pack;
+    // A source that cuts days in UTC only (MySQL, SQLite), under a pack outside UTC: said now, by entity and column.
+    for (const w of zonedSeriesWarnings(pack, connector.capabilities)) console.warn(`lenspack: pack ${name}: ${w}`);
     hosts.push({
       name,
       pack,

@@ -2,7 +2,7 @@ import { type Query } from "@lenspack/core";
 import { datedTime, parsePack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { bucketZoneOf, localDate, resolve, timeWindowOf, windowDates, writtenDayStart } from "../src";
+import { bucketZoneOf, localDate, resolve, timeWindowOf, windowDates, writtenDayStart, zonedSeriesGaps, zonedSeriesWarnings } from "../src";
 
 // A time column of calendar dates: a window is whole days in the pack's zone,
 // and the dates are bucketed as they are. New York's clocks went back on
@@ -27,6 +27,21 @@ const dates = (time: Query["time"], measure = "dispatched") => {
   const w = timeWindowOf({ kind: "value", measure, time } as Query, pack, ctx)!;
   return windowDates(w, pack.timeZone);
 };
+
+describe("series a source cannot draw in the pack's zone", () => {
+  it("are the entities with a time of day, on a source that cuts days in UTC only", () => {
+    expect(zonedSeriesGaps(pack, { zonedBuckets: false })).toEqual([{ entity: "visits", column: "at", zone: "America/New_York" }]);
+    expect(zonedSeriesGaps(pack, { zonedBuckets: true })).toEqual([]);
+    expect(zonedSeriesGaps(pack, {})).toEqual([]);
+    expect(zonedSeriesGaps({ ...pack, timeZone: "UTC" }, { zonedBuckets: false })).toEqual([]);
+  });
+
+  it("are warned about with the column and what to do", () => {
+    expect(zonedSeriesWarnings(pack, { zonedBuckets: false }, (e) => `the ${e} table`)).toEqual([
+      'the visits table: its time column "at" has a time of day, and the pack\'s timeZone is America/New_York, which this source cannot cut days in, so every series over it (by hour, day, week or month) is refused. Use a date column for its time, or keep the pack in UTC.',
+    ]);
+  });
+});
 
 describe("a pack's calendar-date time", () => {
   it("is declared with type: date, and only then", () => {

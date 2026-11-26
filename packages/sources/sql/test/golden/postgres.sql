@@ -260,6 +260,15 @@ LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "
 WHERE ("things"."__d_colour" = $4) AND ("things"."__d_colour" <> $5) AND ("things"."__d_size" >= $6) AND ("things"."__d_size" <= $7) AND ("things"."__d_colour" IN ($8, $9)) AND (("things"."__d_size" >= $10) AND ("things"."__d_size" <= $11)) AND EXISTS (SELECT 1 FROM unnest(string_to_array(CAST("things"."__d_path" AS TEXT), '|')) AS seg WHERE seg IN ($12, $13)) AND ((("things"."__d_path" = $14) OR ("things"."__d_path" LIKE $15))) AND (CAST("things"."__d_colour" AS TEXT) ILIKE $16) AND ("owners"."__d_tier" = $17)
 LIMIT 1;
 
+-- {"kind":"breakdown","dimension":"colour","measure":"things","limit":10,"sort":"desc","filters":[{"dimension":"colour","op":"not_in","value":["blue","green"]}]}
+-- params: ["ke_1","ke\\_1.%","test","blue","green"]
+SELECT "things"."__d_colour" AS "group", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour" FROM "app"."things" WHERE ((("tenant_id" = $1) OR ("tenant_id" LIKE $2))) AND (deleted = false) AND ("kind" IS DISTINCT FROM $3)) AS "things"
+WHERE ("things"."__d_colour" NOT IN ($4, $5))
+GROUP BY "things"."__d_colour"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
 -- {"kind":"rows","entity":"things","columns":["colour","size","origin"],"limit":4,"orderBy":{"key":"size","dir":"desc"}}
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT "things"."__d_colour" AS "colour", "things"."__d_size" AS "size", "things"."__d_origin" AS "origin"
