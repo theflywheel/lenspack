@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, loadPack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { BUSY_TEXT, DEFAULT_BRAND, PROMPT_VERSION, brandFromEnv, brandSettings, busyText, configSchema, parseBrand, promptVersionFor, resolveBrand, settingsStore, systemParts } from "../src";
+import { BUSY_TEXT, DEFAULT_BRAND, markOf, PROMPT_VERSION, brandFromEnv, brandSettings, busyText, configSchema, parseBrand, promptVersionFor, resolveBrand, settingsStore, systemParts } from "../src";
 
 const tickets = fileURLToPath(new URL("../../../../examples/tickets/pack.yaml", import.meta.url));
 const state = () => settingsStore(join(mkdtempSync(join(tmpdir(), "lp-brand-")), "state"));
@@ -23,10 +23,10 @@ describe("the brand's defaults", () => {
       icon: null,
       poweredBy: false,
       i18n: {
-        en: { name: "Lenspack", buttonLabel: "Ask Lenspack" },
-        fr: { name: "Lenspack", buttonLabel: "Demander à Lenspack" },
-        hi: { name: "Lenspack", buttonLabel: "Lenspack से पूछें" },
-        pt: { name: "Lenspack", buttonLabel: "Perguntar ao Lenspack" },
+        en: { name: "Lenspack", buttonLabel: "Ask Lenspack", mark: "L" },
+        fr: { name: "Lenspack", buttonLabel: "Demander à Lenspack", mark: "L" },
+        hi: { name: "Lenspack", buttonLabel: "Lenspack से पूछें", mark: "L" },
+        pt: { name: "Lenspack", buttonLabel: "Perguntar ao Lenspack", mark: "L" },
       },
     });
     expect(brandSettings({ env: {}, settings: null }).get()).toEqual(DEFAULT_BRAND);
@@ -46,6 +46,14 @@ describe("a deployment's name and button label", () => {
       pt: "Perguntar ao Campaign assistant",
     });
     expect(b.i18n.fr.poweredBy).toBe("Propulsé par Lenspack");
+  });
+
+  it("marks the button and panel with the name's first letter, uppercased, per language", () => {
+    const b = resolveBrand({ name: "campaign assistant", i18n: { fr: { name: "Assistant de campagne" }, hi: { name: "डेटा सहायक" } } });
+    expect(Object.fromEntries(Object.entries(b.i18n).map(([l, w]) => [l, w.mark]))).toEqual({ en: "C", fr: "A", hi: "ड", pt: "C" });
+    expect(markOf("élan")).toBe("É");
+    expect(markOf("   ")).toBe("?");
+    expect(markOf("")).toBe("?");
   });
 
   it("a label of the deployment's own is used in every language, {name} filled in", () => {

@@ -123,12 +123,15 @@ describe("the admin panel", () => {
     expect(html).toContain("<title>Shop b · Campaign assistant admin</title>");
     expect(html).toContain('data-name="Campaign assistant"');
     expect((await (await fetch(`${base}/api/settings`, { headers: as("ana", true) })).json()).brand.values.name).toBe("Campaign assistant");
+    // An icon replaces the header's mark.
+    expect((await put({ icon: "/static/mark.png" })).status).toBe(200);
+    expect(await (await fetch(`${base}/`, { headers: as("ana", true) })).text()).toContain('<span class="mark icon" aria-hidden="true"><img src="/static/mark.png" alt=""></span>');
     // Markup is refused, and changes nothing.
     const bad = await put({ name: "<img src=x onerror=alert(1)>" });
     expect(bad.status).toBe(400);
     expect((await bad.json()).error).toBe("brand.name: name is plain text: no < or >");
     // Back to the deployment's value.
-    expect((await put({ name: null, buttonLabel: null, i18n: null })).status).toBe(200);
+    expect((await put({ name: null, buttonLabel: null, i18n: null, icon: null })).status).toBe(200);
     expect(await (await fetch(`${base}/`, { headers: as("ana", true) })).text()).toContain("Shop b · Lenspack admin");
   });
 

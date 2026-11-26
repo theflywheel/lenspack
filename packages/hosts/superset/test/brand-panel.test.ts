@@ -70,6 +70,7 @@ describe("the chat panel's name", () => {
   it.each(LANGS)("takes the deployment's name and translated label (%s)", (lang, locale) => {
     supersetLocale(locale);
     const { root, chat } = mountChat(resolveBrand({ name: "Campaign assistant" }));
+    expect(root.querySelector(".lpc-mark")!.textContent).toBe("C");
     expect(title(root)).toBe({ en: "Ask Campaign assistant", fr: "Demander à Campaign assistant", hi: "Campaign assistant से पूछें", pt: "Perguntar ao Campaign assistant" }[lang]);
     chat.setOffline(true);
     const down = root.querySelector(".lpc-down")!.textContent!;
@@ -95,6 +96,7 @@ describe("the chat panel's name", () => {
     pt.checked = true;
     pt.dispatchEvent(new Event("change"));
     expect(title(root)).toBe("Perguntar ao Assistente da campanha");
+    expect(root.querySelector(".lpc-mark")!.textContent).toBe("A");
   });
 
   it("can leave out the attribution line, and shows the deployment's icon", () => {
@@ -160,6 +162,7 @@ describe("the dashboard button's name", () => {
     const btn = await overlay(brand);
     expect(btn.lastChild!.textContent).toBe("Ask the data");
     expect(btn.querySelector("b img")!.getAttribute("src")).toBe(ICON);
+    expect((await overlay(resolveBrand({ name: "Field desk", buttonLabel: "Ask the data" }))).textContent).toBe("FAsk the data");
     expect((await overlay(brand, "hi")).lastChild!.textContent).toBe("डेटा से पूछें");
     expect((await overlay(resolveBrand({ name: "Campaign assistant" }), "pt_BR")).lastChild!.textContent).toBe("Perguntar ao Campaign assistant");
   });

@@ -1333,14 +1333,14 @@
       ttlB.textContent = t("title");
       by.textContent = own().poweredBy || "";
       by.hidden = !brand.poweredBy || !own().poweredBy;
-      // The deployment's icon in place of the "L" (an image's address, never markup).
+      // The deployment's icon (an image's address, never markup), else the name's letter ("L" until the brand is heard).
       const shownIcon = mark.querySelector("img");
       if (brand.icon && (!shownIcon || shownIcon.getAttribute("src") !== brand.icon)) {
         const img = el("img");
         img.alt = "";
         img.src = brand.icon;
         mark.replaceChildren(img);
-      } else if (!brand.icon && shownIcon) mark.replaceChildren("L");
+      } else if (!brand.icon) mark.textContent = own().mark || (own().name ? "?" : "L");
       mark.classList.toggle("lpc-icon", !!brand.icon);
       if (!opts.title) ttlS.textContent = t("sub");
       input.placeholder = t("placeholder");

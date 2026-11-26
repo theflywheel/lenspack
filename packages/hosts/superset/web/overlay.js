@@ -392,14 +392,14 @@
   // Every translated word: text for menu entries, a tooltip and label for buttons.
   function relabel() {
     btn.lastChild.textContent = down ? t("reconnecting") : t("ask");
-    // The deployment's icon in place of the "L" (an image's address, never markup).
+    // The deployment's icon (an image's address, never markup), else the name's letter ("L" until the brand is heard).
     var shown = btn.firstChild.querySelector("img");
     if (brand.icon && (!shown || shown.getAttribute("src") !== brand.icon)) {
       var img = document.createElement("img");
       img.alt = "";
       img.src = brand.icon;
       btn.firstChild.replaceChildren(img);
-    } else if (!brand.icon && shown) btn.firstChild.replaceChildren("L");
+    } else if (!brand.icon) btn.firstChild.textContent = own().mark || (own().name ? "?" : "L");
     btn.title = down ? t("restarting") : "";
     panel.querySelectorAll(".lpo-t").forEach(function (n) {
       var words = t(n.dataset.t);

@@ -691,7 +691,8 @@
       const l = w.buttonLabel.value.trim() || label.value.trim() || b.templates[lang] || b.templates.en;
       preview.lastChild.textContent = l.replace(/\{name\}/g, () => n);
       const src = icon.value.trim() || d.icon;
-      preview.firstChild.replaceChildren(src ? h("img", { src, alt: "" }) : "L");
+      const letter = Array.from(Array.from(n.trim())[0]?.toLocaleUpperCase() || "?")[0] || "?";
+      preview.firstChild.replaceChildren(src ? h("img", { src, alt: "" }) : letter);
     };
     [name, label, icon, ...Object.values(own).flatMap((w) => [w.name, w.buttonLabel])].forEach((i) => i.addEventListener("input", show));
     show();

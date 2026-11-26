@@ -74,8 +74,11 @@ export function panelRoutes(o: PanelOptions) {
     }
     const rest = url.pathname.slice(base.length + 1);
     if (rest === "" || rest === "index.html") {
-      const name = escapeHtml(o.brand?.get().name ?? DEFAULT_BRAND_NAME);
-      const html = readFileSync(`${dir}index.html`, "utf8").replace("__TITLE__", o.title ? o.title.replace(/[<>&"]/g, "") : name).replaceAll("__NAME__", name);
+      const brand = o.brand?.get();
+      const name = escapeHtml(brand?.name ?? DEFAULT_BRAND_NAME);
+      let html = readFileSync(`${dir}index.html`, "utf8").replace("__TITLE__", o.title ? o.title.replace(/[<>&"]/g, "") : name).replaceAll("__NAME__", name);
+      // The deployment's icon in the header's mark, as an image's address (checked in brand.ts, escaped here).
+      if (brand?.icon) html = html.replace('<span class="mark" aria-hidden="true"></span>', `<span class="mark icon" aria-hidden="true"><img src="${escapeHtml(brand.icon)}" alt=""></span>`);
       res.writeHead(200, { "content-type": TYPES[".html"]!, ...NO_STORE });
       res.end(html);
       return true;

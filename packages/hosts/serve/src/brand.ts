@@ -68,7 +68,11 @@ export const brandSchema = z
   .strict();
 export type BrandConfig = z.infer<typeof brandSchema>;
 
-export type BrandWords = { name: string; buttonLabel: string; poweredBy?: string };
+/** mark: the letter on the button and in the panel's header when there is no icon (the name's first, uppercased). */
+export type BrandWords = { name: string; buttonLabel: string; mark: string; poweredBy?: string };
+
+/** The name's first letter, uppercased ("L" for Lenspack); "?" for a name with none. */
+export const markOf = (name: string) => Array.from(Array.from(name.trim())[0]?.toLocaleUpperCase() ?? "?")[0] ?? "?";
 /** The brand as the hosts show it: every language's words worked out, nothing left to substitute. */
 export type Brand = {
   name: string;
@@ -139,7 +143,7 @@ export function resolveBrand(...layers: (BrandConfig | undefined)[]): Brand {
   const own = Object.fromEntries(
     BRAND_LANGUAGES.map((l) => {
       const n = pick((b) => b.i18n?.[l]?.name) ?? name;
-      return [l, { name: n, buttonLabel: fill(templates[l], n) }];
+      return [l, { name: n, buttonLabel: fill(templates[l], n), mark: markOf(n) }];
     }),
   ) as Record<BrandLanguage, BrandWords>;
   const renamed = name !== DEFAULT_BRAND_NAME || BRAND_LANGUAGES.some((l) => own[l].name !== DEFAULT_BRAND_NAME);
