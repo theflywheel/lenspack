@@ -1,290 +1,54 @@
-# lenspack
+# Lenspack
 
-**A dashboard is data, not code.** A language model edits a validated document; the server compiles it against a declared metric catalogue; the renderer is the only code.
+Lenspack is an open-source assistant for dashboards. People ask questions and change dashboards in plain words,
+inside Apache Superset or Lenspack's own app, and every number comes from definitions your team reviewed, never from
+SQL a model wrote.
 
-**Live demo:** https://lenspack.proto.theflywheel.in — four synthetic packs, a chat that builds the board, drag-and-drop editing, version history.
+*A dashboard is data, not code.*
 
-lenspack is that idea as a library. You describe your data once in a *pack* — entities, dimensions, measures, joins — and any model, any chat, any MCP client can build and edit boards over it without ever writing SQL, JSX or a colour value. What the model cannot express, it cannot break.
+**[Documentation](docs/README.md)** · **[Live demo](https://lenspack.proto.theflywheel.in)** · Apache-2.0
 
-```
-pack.yaml  ──►  catalogue  ──►  the model names keys  ──►  ops  ──►  board config (JSON)
-                    │                                                     │
-                    └──────────►  compiler (resolve → plan → print)  ◄────┘
-                                          │
-         Postgres · DuckDB · SQLite · MySQL · ClickHouse · Elasticsearch
-```
+You describe your data once, in a file your team reviews like code: its tables, what can be counted, what it can be
+grouped by. The assistant can only name what that file declares. Ask for something it does not declare, or
+something that would count rows twice, and you get a refusal with the reason and the nearest thing that would
+work, never a wrong number. The model never writes to your data.
 
-## Sixty seconds, zero infrastructure
+## Try it in a minute
+
+You need Node.js 22 or later and pnpm 9.
 
 ```bash
 git clone https://github.com/theflywheel/lenspack && cd lenspack && pnpm install
-pnpm seed commerce ./commerce.duckdb          # 5,000 synthetic orders into a DuckDB file
-pnpm demo                                     # http://localhost:5173 — a board you can edit
-                                              # (seed more packs; the demo serves every <name>.duckdb it finds)
+pnpm seed commerce ./commerce.duckdb      # 5,000 made-up orders in a DuckDB file
+pnpm demo                                 # http://localhost:5173: a board you can edit
 ```
 
-To get the chat panel locally, give the demo any OpenAI-compatible endpoint (the library itself never touches a model key):
+![The shop overview board from the quick start: three KPIs, weekly revenue, revenue by country and line revenue by
+category, on made-up data](docs/images/quickstart-board.png)
 
-```bash
-LENSPACK_LLM_BASE_URL=https://openrouter.ai/api/v1 LENSPACK_LLM_API_KEY=… LENSPACK_LLM_MODEL=z-ai/glm-4.5 pnpm demo
-```
+The chat needs a model key; the [Quick start](docs/getting-started/quickstart.md) shows how to give it one, and what
+to ask.
 
-or Claude, through Anthropic's API (prompt caching, thinking and effort handled by its adapter):
+## Where it runs
 
-```bash
-LENSPACK_LLM_PROVIDERS='[{"name":"claude-sonnet-5-5","kind":"anthropic","model":"claude-sonnet-5-5","apiKeyFile":"/path/to/anthropic.key"}]' pnpm demo
-```
+- **[Inside Apache Superset](docs/hosts/superset/README.md)** 6.1 or 5.0, following Superset's own roles and
+  row-level security.
+- **[On its own](docs/hosts/serve.md)**, with `lenspack serve`: the board app, the chat and an admin panel over your
+  databases, with sign-in.
+- **[In your React app](docs/hosts/react.md)**, as board components.
+- **[In any MCP client](docs/hosts/mcp.md)**, as tools a model can call.
 
-[docs/llm.md](docs/llm.md) covers providers, the adapters and adding one, and what each chat turn costs (`GET /api/_usage`).
+It reads Postgres, ClickHouse, DuckDB, SQLite, MySQL, MariaDB and Elasticsearch. See [Sources](docs/sources/README.md).
 
-Or point an MCP client at it and let the model build the board:
+## Documentation
 
-```bash
-npx lenspack-mcp --pack examples/commerce/pack.yaml --db ./commerce.duckdb
-```
+- [What Lenspack is](docs/introduction/README.md): the problem, how it works, and who it is for.
+- [Quick start](docs/getting-started/quickstart.md), then [Tutorial: build a pack](docs/getting-started/tutorial.md).
+- [The documentation home](docs/README.md): everything, from aims to reference.
+- [Changelog](CHANGELOG.md): what changed, newest first.
 
-```json
-{ "mcpServers": { "commerce": { "command": "npx", "args": ["lenspack-mcp", "--pack", "examples/commerce/pack.yaml", "--db", "./commerce.duckdb"] } } }
-```
-
-Then: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue below it, and a pie of line revenue by category."* Every step is a validated op; every refusal names the nearest real key.
-
-## What is in the box
-
-| package | what it is | depends on |
-|---|---|---|
-| `@lenspack/core` | board config schema, the query IR, the eight ops, packing, validation, `nearest()`, in-memory store | zod |
-| `@lenspack/pack` | pack loader: YAML/JSON → validated catalogue | core |
-| `@lenspack/policy` | who may see and change what: `principalOf()`, `decide()` (row scope, hidden keys, the pack and catalogue as one caller sees them), `boardRights()`. Pure; the engine enforces what it decides | core, pack |
-| `@lenspack/engine` | the backend-neutral half: resolve (keys, join paths, fan-out refusal, tenancy, time, capability refusals), the `Connector` interface, `run` / `explain` / `checkOps`, cross-entity ratios | core, pack |
-| `@lenspack/sql` | `sqlConnector()` and the driver registry: compiler (plan → print) and read-only drivers for **Postgres, DuckDB, SQLite, MySQL/MariaDB and ClickHouse**, chosen by connection URL; cache, SQL board store | engine |
-| `@lenspack/elasticsearch` | `elasticsearchConnector()`: the IR as aggregations over plain HTTP — **Elasticsearch 6.x–8.x and OpenSearch**; text→keyword from the mapping; approximate aggregations flagged ≈ | engine |
-| `@lenspack/react` | `<BoardProvider>`, `<Board>`, `<FilterBar>`, `<VersionHistory>`, `useBoardOps()`; a chart adapter seam with a zero-dependency SVG adapter (the default) and **recharts**; any other library is one component | core, react-grid-layout (recharts is an optional peer) |
-| `@lenspack/agent` | `boardTools()` — provider-agnostic tool definitions over any `Connector`, edits queued and checked before they land — plus `toVercelAI()` | core, pack, engine, policy |
-| `@lenspack/mcp` | `createMcpServer()` and the `lenspack-mcp` CLI (stdio or streamable HTTP); re-exports `@lenspack/agent` | agent, sql |
-| `@lenspack/serve` | the `lenspack` CLI: `serve` (board API + chat with review, from a `lenspack.yaml`), `check`, `sources`, `dss` | all of the above |
-| `@lenspack/dss` | compiles DIGIT DSS `ChartApiConfig.json` into a pack and boards, with a report of what did not translate | core, pack, engine |
-
-## Installing from GitHub Packages
-
-Releases are published to GitHub Packages under the `theflywheel` org as `@theflywheel/lenspack-<name>`: `core`, `pack`, `policy`, `engine`, `sql`, `elasticsearch`, `react`, `agent`, `mcp`, `serve`, `dss` and `ccrs`. Point the scope at the registry in your project's `.npmrc`:
-
-```ini
-@theflywheel:registry=https://npm.pkg.github.com
-```
-
-Installing needs a GitHub token with the `read:packages` scope, even for public packages (`//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}` in `~/.npmrc`, or `NODE_AUTH_TOKEN` in CI). Install under the names the code and these docs use, as npm aliases:
-
-```json
-"dependencies": {
-  "@lenspack/core": "npm:@theflywheel/lenspack-core@^0.1.0",
-  "@lenspack/react": "npm:@theflywheel/lenspack-react@^0.1.0"
-}
-```
-
-Every import shown here, subpaths included (`@lenspack/react/adapters/recharts`, `@lenspack/react/styles.css`, `@lenspack/sql/pg`), then works unchanged. The packages depend on each other through the same aliases, so you only list the ones you import.
-
-**Upgrading from 0.1.0:** the pack loader `@lenspack/spec` is now `@lenspack/pack` (published as `@theflywheel/lenspack-pack`). Its exports are unchanged; change the import path and the dependency name. The packages now sit in folders by job (`packages/kernel`, `sources`, `packs`, `hosts`; see [docs/overview.md](docs/overview.md#how-the-code-is-laid-out)), which changes no package name.
-
-## Sources
-
-A pack says what the numbers mean; a **connector** says where they live. The
-same pack runs on any connector when it names data with `field:` and `where:`
-rather than SQL fragments, and CI holds that to account: the `campaign`
-example (DIGIT DSS's index shapes, synthetic data) returns identical numbers
-from DuckDB and a real Elasticsearch on 77 queries.
-
-A SQL source is a **connection URL**, and its scheme picks the driver:
-`postgres://`, `duckdb:`, `sqlite:`, `mysql://` (MariaDB too) or
-`clickhouse://`. lenspack sends a driver SQL text and bound parameters,
-nothing else; the driver runs it read-only, one statement at a time, under a
-timeout and a row cap. Adding a database is `registerDriver()` and a test
-suite, with no change to the core. See [docs/drivers.md](docs/drivers.md).
-
-```yaml
-# lenspack.yaml — secrets are env: references, never values
-sources:
-  search: { kind: elasticsearch, url: env:ES_URL, apiKey: env:ES_API_KEY }
-  shop:   { url: env:DATABASE_URL }                # postgres://, mysql://, clickhouse://, sqlite:…
-  local:  { url: "duckdb:./data/shop.duckdb" }
-packs:
-  - { pack: ./packs/campaign/pack.yaml, source: search, boards: ./packs/campaign/boards }
-store: { kind: duckdb, path: ./data/boards.duckdb }   # boards never live in a source
-```
-
-```sh
-lenspack sources --config lenspack.yaml     # what each source holds: tables, columns, types, rows
-lenspack check   --config lenspack.yaml     # draw every board; exit 1 on any error
-lenspack serve   --config lenspack.yaml     # the board API on :8787
-```
-
-A search index cannot join, so a dimension on another entity is refused with
-the dimensions it *can* group by, unless the pack declares it on both with
-`also:`. A ratio across entities (delivered / target) is two aggregates joined
-on the group, never a row-level join; a target with no time divides every
-period.
-
-### Coming from DIGIT DSS
-
-```sh
-lenspack dss ChartApiConfig.json --dashboards MasterDashboardConfig.json --out packs/dss
-```
-
-On the 140-chart health config: 124 charts translate (48 exactly, the rest
-with notes), 343 drawn numbers become 118 measures, and `report.md` lists
-what did not translate (painless scripts, date_range, differences of
-measures) and the 13 target/stock numbers DSS stores once per hierarchy level.
-
-## A pack
-
-```yaml
-pack: commerce
-version: 1
-entities:
-  orders:
-    source: orders
-    grain: one row per order
-    time: placed_at
-    joins:
-      - { to: customers, on: orders.customer_id = customers.id, type: many_to_one }
-  customers: { source: customers, grain: one row per customer }
-dimensions:
-  - { key: country, entity: customers, sql: country, synonyms: [market, region] }
-  - { key: status,  entity: orders,    sql: status, type: enum }
-measures:
-  - { key: orders,      entity: orders, agg: count }
-  - { key: revenue,     entity: orders, agg: sum, sql: total_cents / 100.0, format: currency }
-  - { key: aov,         entity: orders, derived: revenue / orders, format: currency }
-  - { key: refund_rate, entity: orders, agg: avg, sql: "CASE WHEN status = 'refunded' THEN 1 ELSE 0 END", format: percent }
-```
-
-Humans write the `sql:` fragments and review them in git, portable or per dialect. The model only ever names keys. See [docs/pack-spec.md](docs/pack-spec.md) and [docs/writing-a-pack.md](docs/writing-a-pack.md).
-
-## A query
-
-Five shapes, closed. Every string is a key the pack must know.
-
-```ts
-{ kind: "breakdown", dimension: "country", measure: "revenue", limit: 10 }
-{ kind: "series",    measure: "orders", grain: "week", by: "channel", time: { last: "12w" } }
-{ kind: "value",     measure: "refund_rate", compare: "previous_period", time: { last: "30d" } }
-{ kind: "rows",      entity: "orders", columns: ["status", "channel"], limit: 20 }
-{ kind: "points",    entity: "stores", color: "format", size: "revenue" }   // the entity declares geo: { lat, lon }
-```
-
-The compiler guarantees, and property tests check, that every identifier in the SQL came from the pack, every value is a bound parameter, the tenant predicate is present whenever an entity declares one, `LIMIT` is always emitted, and **a fan-out is refused rather than computed** — asking for an order-level measure by a dimension that lives across a one-to-many join is a compile error with a hint, not a silently inflated number. See [docs/query-ir.md](docs/query-ir.md).
-
-## What "generic" means here, and how CI proves it
-
-lenspack was extracted from a public-consultation moderation tool where the dashboard logic was hard-wired to one schema. To make sure the abstraction is real rather than claimed, the repository ships five example packs that stress different axes, and CI runs five checks against them:
-
-| pack | what it stresses |
-|---|---|
-| [`commerce`](examples/commerce) | star schema, money, ratios, percentiles, the fan-out trap |
-| [`events`](examples/events) | one wide table, every time grain, `count_distinct`, high cardinality, a per-dialect fragment |
-| [`consultation`](examples/consultation) | JSON paths, multilingual text, multi-tenancy, LLM-derived themes and signals as *ordinary* joined dimensions |
-| [`tickets`](examples/tickets) | state history, durations, SLA breach as a filtered rate, a funnel |
-| [`hcm`](examples/hcm) | a real-world awkward schema (DIGIT HCM shape): epoch-millisecond `BIGINT` times, `isdeleted` on every table, dual keys, JSON in text columns, dotted hierarchies, fan-out on every side |
-
-1. **Every engine, same answer.** Every example board, and every dimension × measure × shape of every pack, runs on Postgres, MySQL, MariaDB, SQLite and ClickHouse and must return DuckDB's numbers. A percentile on a database with no percentile function (MySQL, SQLite) must come back as the documented refusal and nothing else may. Golden files pin the SQL each dialect prints.
-2. **One ops suite, four packs.** The core's tests run parametrised over every catalogue.
-3. **Zero-domain grep.** CI fails if a package under `packages/` contains a word from any example domain.
-4. **Pack conformance.** Every dimension × measure × query shape compiles, or fails with a documented `ResolveError`; every declared fan-out is refused; tenant injection is present.
-5. **The fifth pack.** [docs/writing-a-pack.md](docs/writing-a-pack.md) walks through a new dataset; the target is under an hour with no change under `packages/`.
-
-## Using it in your own app
-
-```ts
-import { loadPack, catalogueFrom } from "@lenspack/pack";
-import { resolveBoard, sqlStore } from "@lenspack/sql";
-import { openPostgres } from "@lenspack/sql/pg";
-import { boardTools, toVercelAI } from "@lenspack/mcp";
-
-const pack = await loadPack("./packs/commerce.yaml");
-const db = await openPostgres(process.env.DATABASE_URL!);
-const store = sqlStore(db); await store.migrate();
-
-// Data for a board (one scan per distinct query):
-const data = await resolveBoard(board.config, { pack, executor: db.executor, ctx: { tenant } }, selections);
-
-// Tools for your own agent loop (Vercel AI SDK shown; createMcpServer() for MCP):
-const tools = toVercelAI(boardTools({ pack, executor: db.executor, store, boardId, ctx: { tenant } }));
-```
-
-```tsx
-import { BoardProvider, Board, FilterBar, VersionHistory } from "@lenspack/react";
-import "@lenspack/react/styles.css";
-
-<BoardProvider board={board} catalogue={catalogue} host={{ loadBoardData, applyOps, saveLayout, loadFilterOptions, loadVersions, revertTo }}>
-  <FilterBar /> <VersionHistory /> <Board />
-</BoardProvider>
-```
-
-The renderer never touches a database or a model: everything arrives through the `host` callbacks, so it sits in front of a Next.js route, an Express server or anything else.
-
-### Charting libraries are adapters
-
-A chart widget builds a `ChartSpec` — pivoted rows, series keys, a formatter, a palette of CSS variables — and hands it to whichever adapter the provider holds. The board config never changes; only the library does, and the provider can swap it at runtime.
-
-```tsx
-import { svgAdapter } from "@lenspack/react/adapters/svg";             // no dependencies; the default
-import { rechartsAdapter } from "@lenspack/react/adapters/recharts";   // recharts ≥ 3
-
-<BoardProvider charts={rechartsAdapter} …>
-```
-
-Any other library (ECharts, Chart.js, Vega, your design system's chart component) is an adapter you write, and it is one component: `{ name, Chart: ({ spec }: { spec: ChartSpec }) => … }`. Adapters get the spec, never the board config, so "no colours in the config" still holds — a scheme name maps to CSS variables in core, and canvas libraries resolve them with `resolveCssVar()`. Add yours to the conformance test in `packages/hosts/react/test/adapters.test.tsx`, which runs every adapter through every chart kind.
-
-A map (a `points` query: one dot per location, coloured by a dimension, its area by a measure) is lenspack's own `MapChart`, also the same under every adapter: points in Web Mercator fitted to their extent, a legend, tooltips, the series colours, on a plain latitude and longitude grid. A basemap is off by default. `<BoardProvider mapTiles={{ url: "https://tiles.example.org/{z}/{x}/{y}.png", attribution: "© …" }}>` puts XYZ raster tiles under the points; use a tile service whose terms allow it (not tile.openstreetmap.org for anything beyond light personal use).
-
-A heatmap (one measure over two dimensions: a breakdown's dimension as columns and its split as rows, or a series' time buckets as columns) is drawn by lenspack's own `HeatmapChart`, the same under every adapter, on eight steps of `--lp-heat-1..8` (by default the sequential scale, faintest to `--lp-sequential-1`). `--lp-sequential-1` is the colour with the most ink against the page in either theme, so a host's dark theme flips the sequential scale, as the default stylesheet does.
-
-## Security model
-
-- The model's only outputs are ops and IR, both closed unions validated before anything touches a database.
-- No URLs, HTML or colours in any config; text widgets render as text nodes.
-- Tenancy is structural: if an entity declares `tenant`, a query without one does not compile.
-- Every query runs read-only, one statement at a time, under a statement timeout and a row cap, enforced by the database's driver rather than trusted from the SQL; boards are stored apart from the data.
-- **Who is asking** is the deployment's answer, not lenspack's: an `access(request)` hook (or `auth:` in `lenspack.yaml`: by default the built-in `admin` with a password, or OpenID Connect sign-in, a login proxy's headers, or tokens) names the caller, their roles, tenant, row scope and whether they may edit. Unknown callers get 401; viewers cannot change boards.
-- **Packs are access rules too.** By role, a pack's `access:` says who may open it, which keys they may use (a phone or free-text key hidden from partners) and which rows. Enforced in resolution on every path, and left out of the catalogue and the chat's prompt. See [docs/access.md](docs/access.md).
-- **Boards have owners.** A board someone makes is theirs, hidden until they share it and read-only to others after (they save a copy). The pack's own boards, from its board files, are everyone's to read and a `maintain`er's to change.
-- **Row scope** (`ctx.scope`) narrows every query, filter menus included, on every connector. A number the scope cannot reach is refused (`OUT_OF_SCOPE`), never shown unnarrowed.
-- Every change, refused change and denied request is passed to an `audit` hook with the user (`audit: file.jsonl` in the config).
-- Every model call is metered (`usage: file.jsonl` keeps one line per call), and `budget:` caps a day's spend for the server and per user: over a cap, chat answers 429 before calling a model. See [docs/llm.md](docs/llm.md#metering).
-- `run_sql` is off by default; when on, it is one SELECT/WITH, read-only, timeboxed, row-capped, and its results can never become a widget. It bypasses the pack, so on a tenant-scoped pack it is refused unless enabled as `role-scoped`, meaning the database role is the fence.
-- Pack `sql` fragments are trusted code. Review them like code.
-
-```yaml
-# lenspack.yaml. No auth block: the built-in admin and a password (LENSPACK_ADMIN_PASSWORD,
-# or one made at first start and written once to .lenspack/admin-password.txt).
-# `auth: { kind: none }` is open, for a local demo, on 127.0.0.1.
-auth:
-  kind: tokens                     # or: password (default), oidc (lenspack signs people in), proxy (a login proxy's headers, trusted only with its shared secret)
-  users:
-    - { user: ops,  token: env:OPS_TOKEN, edit: true, maintain: true }
-    - { user: kenya, token: env:KE_TOKEN, tenant: ke, scope: [{ dimension: province, op: in, value: [Nairobi] }] }
-audit: ./audit.jsonl
-usage: ./usage.jsonl
-state: ./state                     # switches, admin definitions, open questions, the daily review; the admin panel at /_lenspack/admin/
-budget: { usdPerDay: 20, usdPerUserPerDay: 2 }
-```
-
-More in [docs/security.md](docs/security.md).
-
-## Docs
-
-- [Overview](docs/overview.md): the idea, the refusal, the three steps, the example packs and the claims CI holds
-- [Pack spec](docs/pack-spec.md) and [writing a pack](docs/writing-a-pack.md)
-- [Compute](docs/compute.md): rates, changes and averages over the pack's measures, worked out after the source answers
-- [Query IR](docs/query-ir.md), [SQL drivers](docs/drivers.md), [chat models](docs/llm.md)
-- [Security model](docs/security.md)
-- [Review, open questions and the admin panel](docs/review.md): settling questions with two readings, the daily review, and usage as a board
-- [Your own dashboards and saved layouts](docs/my-dashboards.md) in Superset: a copy to change when you can only view, and layouts kept by name
-- [Naming the assistant](docs/brand.md): another name and button label for a deployment, in each language
-
-## Status
-
-`0.1.0`. The design spec is in [docs/superpowers/specs](docs/superpowers/specs/2026-09-22-lenspack-design.md). Not yet built: rollups/pre-aggregation, catalogue retrieval by embedding (packs with hundreds of metrics should scope `list_metrics` with `q`), warehouse drivers (BigQuery, Snowflake). Contributions, drivers and fifth packs welcome.
+Packages are published to GitHub Packages; see [Packages](docs/reference/packages.md). Contributions, new sources and
+new example packs are welcome.
 
 ## License
 

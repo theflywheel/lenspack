@@ -81,8 +81,8 @@ describe("the switchboard's defaults", () => {
     const yaml = switchesYaml();
     for (const g of TELEMETRY_GROUPS) expect(yaml).toContain(`    ${g.id}: true`);
     for (const s of TELEMETRY_ITEMS.filter(switchable)) expect(yaml).toContain(`    ${s.id}: ${s.default}`);
-    // docs/telemetry.md shows this block as it is, so the docs and the catalogue cannot drift apart.
-    expect(readFileSync(fileURLToPath(new URL("../../../../docs/telemetry.md", import.meta.url)), "utf8")).toContain("```yaml\n" + yaml + "\n```");
+    // docs/features/telemetry.md shows this block as it is, so the docs and the catalogue cannot drift apart.
+    expect(readFileSync(fileURLToPath(new URL("../../../../docs/features/telemetry.md", import.meta.url)), "utf8")).toContain("```yaml\n" + yaml + "\n```");
   });
 
   it("record no texts, recordings or device detail out of the box", async () => {

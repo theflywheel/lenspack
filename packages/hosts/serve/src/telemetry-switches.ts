@@ -28,7 +28,7 @@ function checkedSwitches(where: string, v: unknown, known: (k: string) => boolea
   if (v === undefined) return {};
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`${where} must be a map of names to true or false`);
   for (const [k, x] of Object.entries(v)) {
-    if (!known(k)) throw new Error(`${where}.${k} is not a telemetry ${where.endsWith("groups") ? "section" : "item with a switch"}; see docs/telemetry.md`);
+    if (!known(k)) throw new Error(`${where}.${k} is not a telemetry ${where.endsWith("groups") ? "section" : "item with a switch"}; see docs/features/telemetry.md`);
     if (typeof x !== "boolean") throw new Error(`${where}.${k} must be true or false`);
   }
   return v as Record<string, boolean>;

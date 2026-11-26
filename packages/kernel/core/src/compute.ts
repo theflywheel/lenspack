@@ -56,7 +56,7 @@ export function computeProblem(query: Query, measure?: Pick<CatalogueMeasure, "f
 }
 
 /**
- * The never-add-up rule (docs/compute.md): a sum over time, a rolling sum or a
+ * The never-add-up rule (docs/features/compute.md): a sum over time, a rolling sum or a
  * running total only of numbers that add up. A count or a sum does, and so does
  * a plain change of one; a percentage, an average, a distinct count, a ratio, a
  * % change, a rolling window or a running total does not.

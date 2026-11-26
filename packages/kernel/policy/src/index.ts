@@ -430,7 +430,7 @@ export function boardRights(who: Principal, b: Ownership & { id?: string }): { v
 export type RecordRights = {
   /** The settings page and its changes. */
   settings: boolean;
-  /** The usage telemetry log (docs/telemetry.md). */
+  /** The usage telemetry log (docs/features/telemetry.md). */
   telemetry: boolean;
   /** User names in that log, as written; without this right a reader sees a stable stand-in for each name. */
   usernames: boolean;

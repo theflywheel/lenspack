@@ -3,7 +3,7 @@ import * as React from "react";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 
 // Thumbs up or down under each answer, and on down a short list of what was wrong, posted to /api/_telemetry with
-// the turn's id (docs/telemetry.md). The words follow the browser's language when it is one Lenspack's chat
+// the turn's id (docs/features/telemetry.md). The words follow the browser's language when it is one Lenspack's chat
 // speaks (en, fr, hi, pt).
 
 const WORDS = {

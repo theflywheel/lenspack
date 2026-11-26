@@ -221,7 +221,7 @@ export type TelemetryLine = {
   rephraseOf?: string | null;
   reAskAfterVoice?: boolean | string | null;
   client?: { device?: string; network?: string; viewport?: string };
-  // The turn record as @lenspack/agent writes it (docs/telemetry.md): flat fields.
+  // The turn record as @lenspack/agent writes it (docs/features/telemetry.md): flat fields.
   questionLanguage?: string | null;
   replyLanguage?: string | null;
   device?: string | null;

@@ -61,7 +61,7 @@ for (const name of Object.keys(examples) as ExampleName[]) {
 }
 
 const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
-// Saved answers (docs/caching.md), kept beside the data; LENSPACK_CACHE=off turns them off.
+// Saved answers (docs/features/saved-answers.md), kept beside the data; LENSPACK_CACHE=off turns them off.
 const reuse = process.env.LENSPACK_CACHE === "off" ? undefined : reuseLayer({ store: join(dataDir, "reuse.json"), settings: () => ({ ...CACHE_DEFAULTS, on: true }), log: (m) => console.log(`lenspack: ${m}`) });
 createServer(createApp(hosts, { providers, roles, reuse })).listen(port, () =>
   console.log(`lenspack demo api: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ") || `(no examples seeded: no <example>.duckdb in ${dataDir})`} on http://localhost:${port}/api`),

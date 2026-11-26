@@ -6,7 +6,7 @@
 //   GET  <prefix>/cache/boards              how often each board changes; settled boards
 //   POST <prefix>/cache/prewarm             refresh the most-asked answers now
 //   POST <prefix>/cache/data-changed        a dataset's data changed: refresh them shortly ({ "pack"?: name })
-// The contract is in docs/caching.md.
+// The contract is in docs/reference/http-api.md.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 

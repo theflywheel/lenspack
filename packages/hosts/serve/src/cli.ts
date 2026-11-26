@@ -56,7 +56,7 @@ async function main() {
       const openedByEnv = !adapter && config.auth?.kind !== "none";
       const host = flag("host") ?? (openedByEnv ? "127.0.0.1" : (config.host ?? (adapter ? "0.0.0.0" : "127.0.0.1")));
       if (!adapter) console.warn(`lenspack: auth is \`none\`: anyone who reaches ${host}:${port} may read and edit every board`);
-      // Saved answers, when the config asks for them (docs/caching.md).
+      // Saved answers, when the config asks for them (docs/features/saved-answers.md).
       const { file: cacheFile, ...cacheConfig } = typeof config.cache === "object" ? config.cache : {};
       // With state: the server's switches, the admins' definitions, open questions and the daily review, and the admin
       // panel at /_lenspack/admin/ for admins (with the saved answers' routes at /_lenspack/cache). The audit log goes
@@ -77,7 +77,7 @@ async function main() {
       const reuse = config.cache ? (admin ? admin.reuse : reuseLayer({ store: resolve(dir, cacheFile ?? "reuse.json"), settings: () => ({ ...cache.get(), on: true }), log })) : undefined;
       const gate = admin ? admin.gate : localTurnGate(queueSettings(null, config.queue).get);
       const cachePage = reuse ? cacheRoutes({ prefix: "/_lenspack", reuse, queue: gate, audit: auditLog ?? null, adminName: "admin" }) : null;
-      // Usage telemetry, when the config has a telemetry: section (docs/telemetry.md).
+      // Usage telemetry, when the config has a telemetry: section (docs/features/telemetry.md).
       const tc = config.telemetry;
       const telemetry = tc ? fileTelemetry(resolve(dir, tc.dir), { retentionDays: () => tc.retentionDays, items: staticItems(tc), context: () => config.context ?? {} }).telemetry : undefined;
       const open = principalOf({ user: "local", roles: ["admin"], edit: true, maintain: true, usage: true });

@@ -147,7 +147,7 @@ describe("the admin panel", () => {
     expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };");
     expect(js).toContain('fr: {');
     expect((await fetch(`${base}/panel.css`, { headers: as("ana", true) })).status).toBe(200);
-    // The Cache tab reads the saved answers' own admin routes (docs/caching.md).
+    // The Cache tab reads the saved answers' own admin routes (docs/features/saved-answers.md).
     for (const route of ["../cache${path}", "/chart-candidates", "/boards", "/suggestions?board=", "/prewarm", '"unpin" : "pin"', "/evict"]) expect(js).toContain(route);
     const packs = await (await fetch(`${base}/api/packs`, { headers: as("ana", true) })).json();
     expect(packs.usage).toEqual({ board: "overview", source: "telemetry" });

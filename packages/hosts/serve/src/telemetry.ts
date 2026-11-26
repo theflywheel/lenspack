@@ -117,8 +117,8 @@ export function fileTelemetry(dir: string, opts: Omit<TelemetryOptions, "store" 
  */
 export function staticItems(c: { groups?: Record<string, boolean>; items?: Record<string, boolean>; questionText?: boolean }): () => ReadonlySet<string> {
   const d = switchDefaults();
-  for (const k of Object.keys(c.groups ?? {})) if (!(k in d.groups)) throw new Error(`telemetry.groups.${k} is not a telemetry section; see docs/telemetry.md`);
-  for (const k of Object.keys(c.items ?? {})) if (!(k in d.items)) throw new Error(`telemetry.items.${k} is not a telemetry item with a switch; see docs/telemetry.md`);
+  for (const k of Object.keys(c.groups ?? {})) if (!(k in d.groups)) throw new Error(`telemetry.groups.${k} is not a telemetry section; see docs/features/telemetry.md`);
+  for (const k of Object.keys(c.items ?? {})) if (!(k in d.items)) throw new Error(`telemetry.items.${k} is not a telemetry item with a switch; see docs/features/telemetry.md`);
   const on = itemsOn({ telemetry: true, groups: { ...d.groups, ...c.groups }, items: { ...d.items, ...(c.questionText !== undefined ? { "question-text": c.questionText } : {}), ...c.items } }, { voice: true, cache: true, clarify: true });
   return () => on;
 }

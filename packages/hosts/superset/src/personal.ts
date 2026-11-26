@@ -36,7 +36,7 @@ type Position = Record<string, any>;
 export type PersonalAuditEvent = { at: string; user: string; pack?: string; board?: string; action: string; outcome: "ok" | "refused" | "denied"; detail?: string };
 
 /**
- * One action, as usage telemetry records it (docs/telemetry.md, item personal-dashboards): event
+ * One action, as usage telemetry records it (docs/features/telemetry.md, item personal-dashboards): event
  * "personal-dashboard" (how: create, copy, delete) or "saved-layout" (how: save, apply, rename, delete), with ids
  * and counts only, never titles or names. The audit log has every one either way.
  */

@@ -96,8 +96,8 @@ export const configSchema = z.object({
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
   /**
-   * Usage telemetry (docs/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. groups and
-   * items switch sections and items on or off (every key and its default are in docs/telemetry.md); questionText is
+   * Usage telemetry (docs/features/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. groups and
+   * items switch sections and items on or off (every key and its default are in docs/features/telemetry.md); questionText is
    * the older name of items.question-text.
    */
   telemetry: z
@@ -118,7 +118,7 @@ export const configSchema = z.object({
   /** How many of the latest user turns the chat model is sent (default 8). */
   historyTurns: z.number().int().positive().optional(),
   /**
-   * Saved answers (docs/caching.md): `true`, or the store's file (default reuse.json beside this file) and its
+   * Saved answers (docs/features/saved-answers.md): `true`, or the store's file (default reuse.json beside this file) and its
    * settings. Absent, every question runs the full assistant.
    */
   cache: z
@@ -127,7 +127,7 @@ export const configSchema = z.object({
       z.object({ file: z.string().optional(), enabled: z.boolean().optional(), ttlHours: z.number().optional(), router: z.enum(["on", "off"]).optional(), maxEntries: z.number().int().optional(), freshMinutes: z.number().optional(), prewarm: z.record(z.unknown()).optional() }).strict(),
     ])
     .optional(),
-  /** The turn queue (docs/caching.md): { maxConcurrent, maxWaiting, maxWaitSeconds }. Absent: 8 at a time, 50 waiting, 60 s. */
+  /** The turn queue (docs/features/busy-hours.md): { maxConcurrent, maxWaiting, maxWaitSeconds }. Absent: 8 at a time, 50 waiting, 60 s. */
   queue: z.object({ maxConcurrent: z.number().int().optional(), maxWaiting: z.number().int().optional(), maxWaitSeconds: z.number().int().optional() }).strict().optional(),
   /** "How this was worked out" under each answer: false turns it off; `{ sql: false }` keeps the words and rows but not the SQL. */
   explain: explainSchema.optional(),
@@ -141,7 +141,7 @@ export const configSchema = z.object({
   state: z.string().optional(),
   /** Switches (see features.ts): on or off by name; the admin panel can change them while the server runs. */
   features: z.record(z.boolean()).optional(),
-  /** What the assistant is called and its button says (brand.ts, docs/brand.md); LENSPACK_BRAND_* and the admin panel override it. */
+  /** What the assistant is called and its button says (brand.ts, docs/features/naming.md); LENSPACK_BRAND_* and the admin panel override it. */
   brand: brandSchema.optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;

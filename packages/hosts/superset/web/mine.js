@@ -1,7 +1,7 @@
 // "My dashboards" and "Saved layouts": two menus in the chat panel's header, and the chat's offer of an own
 // copy when someone who can only view a dashboard asks to change it. Self-contained: chat.js calls attach()
 // once per panel and passes tool results to onTool(); everything else is here. Talks to Lenspack's
-// /_superset/my routes (docs/my-dashboards.md); every right is checked there, never here.
+// /_superset/my routes (docs/features/personal-dashboards.md); every right is checked there, never here.
 (function () {
   if (window.LenspackMine) return;
 
