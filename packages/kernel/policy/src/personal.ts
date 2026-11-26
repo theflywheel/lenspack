@@ -33,7 +33,7 @@ const OFF = no("off", "Personal dashboards and saved layouts are turned off on t
 /** The host doesn't let them write dashboards at all; an admin role in Lenspack doesn't change that. */
 export const NO_WRITE_MESSAGE = "Your role lets you view dashboards but not make or change them, so nothing was made or changed. Whoever manages your access can give you a role that may.";
 const NO_WRITE = no("no-write", NO_WRITE_MESSAGE);
-const NO_ID = no("no-user-id", "Superset did not say who you are in a way Lenspack can give a dashboard to you (update lenspack_superset.py in Superset), so nothing was made.");
+const NO_ID = no("no-user-id", "Superset did not say who you are in a way the assistant can give a dashboard to you (update lenspack_superset.py in Superset), so nothing was made.");
 
 function room(limits: PersonalLimits, owned: number): Verdict {
   return owned < limits.maxDashboardsPerUser ? OK : no("limit", `You already have ${owned} dashboards of your own, the most this deployment allows (${limits.maxDashboardsPerUser}). Delete one first.`);

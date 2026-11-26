@@ -952,7 +952,7 @@ export function accessSuite(version: string) {
       it("refuses a Superset Admin without the role the panel, the settings, the audit log and every admin route", async () => {
         for (const path of ADMIN_GETS) expect([path, (await s.lp_admin.lp("GET", path)).status]).toEqual([path, 403]);
         const refused = await s.lp_admin.lp("GET", "_superset/settings");
-        expect(refused.json.error).toMatch(/only Lenspack admins/);
+        expect(refused.json.error).toMatch(/only assistant admins/);
         for (const [path, body] of [["_superset/settings/features", { boardEdits: false }], ["_superset/settings/edit-scope", { scope: "own" }], ["_superset/settings/personal", { maxDashboardsPerUser: 1 }]] as const)
           expect([path, (await s.lp_admin.lp("PUT", path, body)).status]).toEqual([path, 403]);
         // Superset's own Settings → AI assistant page follows Lenspack's answer.

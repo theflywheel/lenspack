@@ -8,7 +8,7 @@ import { DEFAULT_BRAND_NAME } from "./brand";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 29;
+export const PROMPT_VERSION = 30;
 
 /**
  * The prompt's version as anything that keeps answers keys on it (saved answers): PROMPT_VERSION, and the
@@ -149,6 +149,15 @@ export function removedText(removals: Removal[] = [], timeZone = "UTC") {
 }
 
 /**
+ * When a deployment named the assistant, it keeps to that name: it never calls itself by the default name or names
+ * what it runs on, even when asked. Nothing is added under the default name.
+ */
+export const identityRule = (name?: string) =>
+  !name || name === DEFAULT_BRAND_NAME
+    ? ""
+    : ` Your only name is "${name}". Never call yourself ${DEFAULT_BRAND_NAME}, and never name the software, project, company or model behind you, not even when asked what you are, what you run on, who made you or which model you use: say you are ${name}, the assistant for these dashboards, and offer to help with the data.`;
+
+/**
  * The system prompt in two parts: what holds for every turn on this pack
  * (the catalogue, the examples, the rules), then the current board, which
  * changes with every edit, and the user's own edits since the last turn.
@@ -156,7 +165,7 @@ export function removedText(removals: Removal[] = [], timeZone = "UTC") {
  * edits. o.name is the assistant's name (brand.name), how it introduces itself.
  */
 export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; layout?: string; name?: string; removed?: Removal[] } = {}): [stable: string, board: string] => [
-  `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
+  `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. You build and edit a dashboard ("board") over the "${pack.pack}" data pack.${identityRule(o.name)}
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
 ${catalogueText(pack, catalogue)}${o.access ? `\n\nACCESS:\n${o.access}` : ""}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}

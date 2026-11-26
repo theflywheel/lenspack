@@ -145,7 +145,7 @@ function itemFor(s: TelemetryItem, group: { id: string; title: string }, i: Chec
     return done("needs-config", why);
   }
   if (s.source === "superset-logs" && !i.supersetLogs) {
-    block("needs-config", "Only when Lenspack runs inside Superset, which keeps the action log.");
+    block("needs-config", "Only when the assistant runs inside Superset, which keeps the action log.");
     return done("needs-config", sw.reason);
   }
   if (s.roles) {
@@ -179,7 +179,7 @@ function itemFor(s: TelemetryItem, group: { id: string; title: string }, i: Chec
   }
   if (s.source === "superset-logs") {
     const l = i.supersetLogs!;
-    if (!l.available) return done("needs-config", l.reason ?? "Lenspack's Superset account cannot read the action log (/api/v1/log/); it needs the can read on Log permission.");
+    if (!l.available) return done("needs-config", l.reason ?? "The assistant's Superset account cannot read the action log (/api/v1/log/); it needs the can read on Log permission.");
     return done(l.count ? "recording" : "enabled-no-data", l.count ? null : "Nothing exported or shared in the last 7 days.", l.count, l.lastSeen);
   }
   return seenLines.length ? done("recording", null, seenLines.length, last) : done("enabled-no-data", "On; nothing recorded in the last 7 days.", 0, null);
