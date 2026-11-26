@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 // The audit log: one JSON line per board change, refused change, denied
@@ -14,7 +14,8 @@ export type Audit = (event: AuditEvent) => void;
 
 /** Appends one JSON line per event. */
 export function fileAudit(path: string): Audit {
-  return (event) => appendFileSync(path, `${JSON.stringify(event)}\n`);
+  if (existsSync(path)) chmodSync(path, 0o600);
+  return (event) => appendFileSync(path, `${JSON.stringify(event)}\n`, { mode: 0o600 });
 }
 
 /** The events at or after a time in one audit file (fileAudit's), newest first; an unreadable line is skipped. */

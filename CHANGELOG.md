@@ -11,6 +11,9 @@ brought it.
 
 ### 26 November 2026
 
+- **The spend file and a single-file audit log are private.** `usage.jsonl` (which names who asked) and an audit log
+  written to one file are now created readable by the server's own user only, and an existing file is made so at
+  start, like the saved-answers, telemetry and monthly audit files.
 - **The Telemetry tab shows what is recorded, and what it tells you, apart.** What's recorded lists the facts a
   record carries (who asked, how it ended, what it cost, how long it took, and so on) in plain categories, each with
   its switch, how many records from the last 7 days carry it, which figures on the board read it, and its privacy
