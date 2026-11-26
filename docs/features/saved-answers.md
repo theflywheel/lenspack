@@ -72,6 +72,9 @@ From the questions people ask, Lenspack also suggests:
 A saved answer is used only for the same:
 
 - **access scope.** The places, records and fields a person may see. See below.
+- **edit rights.** Whether the person may change the board, and whether they are offered their own copy of it to
+  change. The assistant is told differently in each case, so a reply given to someone who can edit (which may offer or
+  describe a change) is never given to someone who can only read, nor the other way round.
 - **pack and its definitions.** A change to the pack file (a measure, a dimension, a definition, a correctness filter)
   changes its fingerprint, and every answer saved under the old one stops being served.
 - **the assistant's instructions.** When a release changes the instructions the assistant is given, old answers stop

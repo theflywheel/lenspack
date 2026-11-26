@@ -24,8 +24,8 @@ entitled to different answers. So every saved answer carries a fingerprint of th
 tenant, the row filters, the keys and tables hidden), and its queries run again under the asking person's own
 access. Someone who may see one country is never given a number counted over all of them.
 
-A saved answer is also tied to the pack and its definitions, the assistant's instructions, the board's filters, the
-reader's filter picks and their language. Change any of these and the question is answered afresh.
+A saved answer is also tied to whether the person may edit the board, the pack and its definitions, the assistant's
+instructions, the board's filters, the reader's filter picks and their language. Change any of these and the question is answered afresh.
 
 ## What the person sees
 

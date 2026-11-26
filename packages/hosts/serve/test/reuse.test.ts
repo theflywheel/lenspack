@@ -119,6 +119,7 @@ describe("answer and plan reuse", () => {
       const user = String(req.headers["x-user"] ?? "a");
       const kept = user === "kept" || user === "granted" ? { hiddenEntities: ["project"] } : {};
       const granted = user === "granted" ? { boardEntities: { [grantedOn.board]: { entities: ["project"] } } } : {};
+      if (user === "reader") return { user, edit: false, readOnly: "You may only view this dashboard." };
       return { user, edit: true, maintain: true, ...(user === "north" ? { scope: [{ dimension: "province", op: "eq" as const, value: "Northern" }] } : {}), ...kept, ...granted };
     };
     appOptions = { providers, roles: { router: "router" }, reuse, access: access as never };
@@ -319,6 +320,28 @@ describe("answer and plan reuse", () => {
     const sug = async (user: string) => (await (await fetch(`${base}/${b}/suggestions`, { headers: { "x-user": user } })).json()).suggestions;
     expect(await sug("a")).toEqual(["How many households were delivered?"]);
     expect(await sug("north")).toEqual([]);
+  });
+
+  it("keys saved answers on edit rights: an editor's reply never reaches a reader, nor a reader's an editor", async () => {
+    const b = await newBoard();
+    answers("", {}, (n) => `${n.toLocaleString("en-US")} households were delivered. I can add this as a KPI.`);
+    const editor = await ask(b, "How many households were delivered?", { user: "a" });
+    expect(editor.model).toBe(2);
+    // A reader with the same data access: not the editor's saved reply; the assistant answers, told they cannot edit.
+    answers();
+    const reader = await ask(b, "How many households were delivered?", { user: "reader" });
+    expect(reader.saved).toBeUndefined();
+    expect(reader.model).toBe(2);
+    expect(reader.reply).not.toContain("KPI");
+    // Each gets their own from then on.
+    expect(await ask(b, "How many households were delivered?", { user: "reader" })).toMatchObject({ model: 0, reply: reader.reply, saved: { tier: "t1" } });
+    expect(await ask(b, "How many households were delivered?", { user: "a" })).toMatchObject({ model: 0, reply: editor.reply, saved: { tier: "t1" } });
+    // A reader who is offered a personal copy of the board is told so: not the same answer either.
+    const copying = await serverWith({ personal: () => ({ offersCopy: true }) as never });
+    answers();
+    const offered = await ask(b, "How many households were delivered?", { user: "reader", base: copying });
+    expect(offered.saved).toBeUndefined();
+    expect(offered.model).toBe(2);
   });
 
   it("keys saved answers on a board grant: never served on another board, or to a caller without the same grant", async () => {

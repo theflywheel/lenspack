@@ -14,8 +14,9 @@
 //       Only answers: a board change is never made on a small model's say-so (the full assistant and
 //       the reviewer make it).
 // Only turns that ended well are kept (an answer from at least one query that worked, or edits the
-// reviewer accepted), only for the same access scope, pack, definitions, prompt version, board
-// filters, the viewer's filter selections and language rules.
+// reviewer accepted), only for the same access scope, edit rights on the board (and personal-copy
+// offer), pack, definitions, prompt version, board filters, the viewer's filter selections and
+// language rules.
 //
 // The `cache` switch governs all of it: off, nothing is served or kept, no suggestion chip comes
 // from a saved question, the admin lists are empty, no edit is counted and nothing is refreshed.
@@ -87,7 +88,10 @@ export type ReuseTurn = {
   view?: TurnView;
   /** The host's assistant prompt version: a new one makes every saved answer stale. */
   promptVersion?: string;
+  /** Why the asker may not change this board; absent, they may. Part of an entry's key, as is copy. */
   readOnly?: string;
+  /** The asker is offered a personal copy of the board to change (personal dashboards). */
+  copy?: boolean;
   /** "Ask fresh": the full assistant answers, whatever is saved. */
   fresh?: boolean;
   /** The model the full assistant would have used: what a saved answer is said to save. */
@@ -219,7 +223,9 @@ export function reuseLayer(o: ReuseOptions) {
   const keys = (t: ReuseTurn, kind: "answer" | "edit") => ({
     scope: scopeOf(t.ctx),
     // The board's filters and the viewer's selections are part of an answer's version; an edit's board is its content hash.
-    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : t.view?.tabs?.length ? { view: t.view.tabs } : {}) })),
+    // Whether the asker may change the board (and is offered a copy of it) is too: the assistant is told differently, so an
+    // editor's reply, which may offer or describe a change, is never served to a reader, nor a reader's to an editor.
+    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, rights: { edit: !t.readOnly, copy: !!t.copy }, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : t.view?.tabs?.length ? { view: t.view.tabs } : {}) })),
     replyLang: t.picked ?? "auto",
   });
   const expired = (e: Entry) => !e.pinned && now().getTime() - Date.parse(e.createdAt) > o.settings().ttlHours * 3_600_000;
