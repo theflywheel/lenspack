@@ -9,8 +9,17 @@
 export type PersonalLimits = { on: boolean; maxDashboardsPerUser: number; maxSavedLayoutsPerUser: number };
 export const PERSONAL_DEFAULTS: PersonalLimits = { on: true, maxDashboardsPerUser: 20, maxSavedLayoutsPerUser: 50 };
 
-/** Who is asking, as the host signed it. `userId` is the host's own id for them, needed to make a dashboard theirs there. */
-export type PersonalActor = { user: string; userId?: number | null; admin: boolean };
+import { adminRights } from "./index";
+
+/**
+ * Who is asking, as the host signed it: their name, their roles (an admin is whoever adminRights() says) and
+ * `userId`, the host's own id for them, needed to make a dashboard theirs there. `hostRoles` are the host's own
+ * role names, which only telemetry records (they grant nothing here).
+ */
+export type PersonalActor = { user: string; userId?: number | null; roles?: readonly string[]; hostRoles?: readonly string[] };
+
+/** Admins as the rest of policy knows them (adminRights), so these rules and the settings pages agree. */
+const isAdmin = (who: Pick<PersonalActor, "roles">) => adminRights(who).administer;
 
 export type PersonalRefusal = "off" | "limit" | "no-user-id" | "no-view" | "no-edit" | "not-yours" | "not-own";
 export type Verdict = { ok: true } | { ok: false; code: PersonalRefusal; why: string };
@@ -46,7 +55,7 @@ export function mayCopyDashboard(who: PersonalActor, limits: PersonalLimits, own
  */
 export function mayDeleteDashboard(who: PersonalActor, limits: PersonalLimits, dashboard: { owners: number[] }): Verdict {
   if (!limits.on) return OFF;
-  if (who.admin) return OK;
+  if (isAdmin(who)) return OK;
   if (who.userId && dashboard.owners.includes(who.userId)) return OK;
   return no("not-yours", "That dashboard isn't yours, so it was not deleted. Only its owners and admins can delete it.");
 }
@@ -62,7 +71,7 @@ export function maySaveLayout(who: PersonalActor, limits: PersonalLimits, owned:
 /** A saved layout is its owner's to see, apply, rename and delete; admins see and manage everyone's. */
 export function mayManageLayout(who: PersonalActor, limits: PersonalLimits, layout: { owner: string }): Verdict {
   if (!limits.on) return OFF;
-  return layout.owner === who.user || who.admin ? OK : no("not-yours", "That saved layout isn't yours.");
+  return layout.owner === who.user || isAdmin(who) ? OK : no("not-yours", "That saved layout isn't yours.");
 }
 
 /**
@@ -77,10 +86,10 @@ export function mayApplyLayout(who: PersonalActor, limits: PersonalLimits, layou
 }
 
 /** The admin view of everyone's personal dashboards and saved layouts. */
-export const mayViewAllPersonal = (who: PersonalActor): Verdict => (who.admin ? OK : no("not-yours", "Only admins can see everyone's dashboards and layouts."));
+export const mayViewAllPersonal = (who: PersonalActor): Verdict => (isAdmin(who) ? OK : no("not-yours", "Only admins can see everyone's dashboards and layouts."));
 
 /** The saved layouts a person is shown: their own; an admin, everyone's. */
-export const layoutsShownTo = <L extends { owner: string }>(who: PersonalActor, all: L[]): L[] => (who.admin ? all : all.filter((l) => l.owner === who.user));
+export const layoutsShownTo = <L extends { owner: string }>(who: PersonalActor, all: L[]): L[] => (isAdmin(who) ? all : all.filter((l) => l.owner === who.user));
 
 /** Limits from config and environment, checked; anything missing takes the default. */
 export function personalLimitsFrom(config: { on?: unknown; maxDashboardsPerUser?: unknown; maxSavedConfigsPerUser?: unknown } | undefined, env: Record<string, string | undefined> = {}): PersonalLimits {
@@ -110,17 +119,24 @@ export const NOT_OWN_MESSAGE = "On this deployment, the chat changes only dashbo
 export const NOBODY_EDITS_MESSAGE =
   "On this deployment, the chat changes only dashboards of one's own, and those are turned off, so nothing was changed. Make the change in Superset, or ask a question about the data instead.";
 
+/** What boardRights() needs to apply an "own" edit scope to one caller (Identity.editScope). */
+export type EditScopeFacts = { own: string[]; adminsExempt: boolean; why: string };
+
 /**
- * Whether the edit scope lets this person change this dashboard through the chat. `hostEdit` is what the host
- * (and the edit policy and switch) already decided; `own` is whether the dashboard is one of the person's own.
- * With personal dashboards off, "own" leaves nobody but exempt admins able to edit.
+ * The edit scope as facts about one caller, for boardRights(): none under "superset"; under "own", the boards that
+ * are theirs (none while personal dashboards are off, so nobody but exempt admins edits) and the refusal elsewhere.
  */
-export function mayEditInScope(who: PersonalActor, scope: EditScope, limits: PersonalLimits, dashboard: { hostEdit: boolean; own: boolean }): Verdict {
-  if (!dashboard.hostEdit) return no("no-edit", "You can't edit this dashboard.");
-  if (scope.scope === "superset") return OK;
-  if (who.admin && scope.adminsExempt) return OK;
-  if (!limits.on) return no("not-own", NOBODY_EDITS_MESSAGE);
-  return dashboard.own ? OK : no("not-own", NOT_OWN_MESSAGE);
+export function editScopeFacts(scope: EditScope, s: { own: string[]; personalOn: boolean }): EditScopeFacts | undefined {
+  if (scope.scope === "superset") return undefined;
+  return s.personalOn ? { own: s.own, adminsExempt: scope.adminsExempt, why: NOT_OWN_MESSAGE } : { own: [], adminsExempt: scope.adminsExempt, why: NOBODY_EDITS_MESSAGE };
+}
+
+/** Whether the edit scope (if any) lets this caller change this board: theirs, or they are an exempt admin. */
+export function inEditScope(who: { roles?: readonly string[]; editScope?: EditScopeFacts }, board?: string): boolean {
+  const s = who.editScope;
+  if (!s) return true;
+  if (s.adminsExempt && isAdmin(who)) return true;
+  return board !== undefined && s.own.includes(board);
 }
 
 /** A warning for an admin when the settings together leave the chat unable to change anything; null when they don't. */

@@ -32,10 +32,19 @@ import type { SupersetBoards } from "./store";
 export type PersonalAuditEvent = { at: string; user: string; pack?: string; board?: string; action: string; outcome: "ok" | "refused" | "denied"; detail?: string };
 
 /**
- * A personal-dashboard event for a telemetry sink. Lenspack's telemetry records are not in this version, so
- * this is a hook: give `telemetry` to receive them (and the audit log has every one either way).
+ * One action, as usage telemetry records it (docs/telemetry.md, item personal-dashboards): event
+ * "personal-dashboard" (how: create, copy, delete) or "saved-layout" (how: save, apply, rename, delete), with ids
+ * and counts only, never titles or names. The audit log has every one either way.
  */
-export type PersonalEvent = { type: "dashboard.create" | "dashboard.copy" | "dashboard.delete" | "layout.save" | "layout.apply" | "layout.rename" | "layout.delete"; user: string; dashboard?: number; layout?: string; skipped?: number; at: string };
+export type PersonalEvent = {
+  event: "personal-dashboard" | "saved-layout";
+  how: "create" | "copy" | "delete" | "save" | "apply" | "rename";
+  user: string;
+  roles: string[];
+  board: string | null;
+  data: Record<string, string | number>;
+  at: string;
+};
 
 export type PersonalOptions = {
   client: SupersetClient;
@@ -76,9 +85,9 @@ export function personalDashboards(o: PersonalOptions) {
       log(`audit failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
-  const emit = (e: Omit<PersonalEvent, "at">) => {
+  const emit = (who: PersonalActor, event: PersonalEvent["event"], how: PersonalEvent["how"], board: string | null, data: PersonalEvent["data"] = {}) => {
     try {
-      o.telemetry?.({ ...e, at: now() } as PersonalEvent);
+      o.telemetry?.({ event, how, user: who.user, roles: [...(who.hostRoles ?? [])], board, data, at: now() });
     } catch {
       /* a sink must never fail a request */
     }
@@ -114,15 +123,21 @@ export function personalDashboards(o: PersonalOptions) {
     return link;
   }
 
+  /**
+   * A dashboard of someone's own starts as a draft with no dashboard roles: a copy of B carries none of the roles
+   * that open B (Superset's DASHBOARD_RBAC), so only its owner (and admins) open it until they share it in Superset.
+   */
+  const PRIVATE_DRAFT = { published: false, roles: [] as number[] };
+
   /** A new, empty dashboard of the person's own. */
   async function create(who: PersonalActor, title: string, base = ""): Promise<PersonalResult<PersonalDashboardRef>> {
     const v = mayCreateDashboard(who, o.limits(), (await mineOf(who)).length);
     if (!v.ok) return denied(who, "dashboard-create", v);
     const name = title.trim().slice(0, 160) || "My dashboard";
-    const made = await client.post<{ id: number }>("/api/v1/dashboard/", { dashboard_title: name, owners: [who.userId] });
+    const made = await client.post<{ id: number }>("/api/v1/dashboard/", { dashboard_title: name, owners: [who.userId], ...PRIVATE_DRAFT });
     const link = await record(who, made.id, name, null, []);
     audit(who, "dashboard-create", "ok", link.board, `dashboard ${made.id} “${name}”`);
-    emit({ type: "dashboard.create", user: who.user, dashboard: made.id });
+    emit(who, "personal-dashboard", "create", `superset-${made.id}`, { dashboard: made.id });
     return { ok: true, dashboard: made.id, board: link.board, title: name, url: urlOf(base, made.id) };
   }
 
@@ -151,7 +166,7 @@ export function personalDashboards(o: PersonalOptions) {
       map = chartIdMap(positions, copied.position_json ? JSON.parse(copied.position_json) : {});
       // The copy's filter bar still names the original's charts: point it at the copies.
       const copiedMeta = remapChartIds(parseMeta(copied.json_metadata), map);
-      await client.put(`/api/v1/dashboard/${id}`, { owners: [who.userId], json_metadata: JSON.stringify(copiedMeta) });
+      await client.put(`/api/v1/dashboard/${id}`, { owners: [who.userId], json_metadata: JSON.stringify(copiedMeta), ...PRIVATE_DRAFT });
     } catch (e) {
       // Superset made the copy as Lenspack's account: never leave it there, unowned by the person and unlisted.
       await client.delete(`/api/v1/dashboard/${id}`).catch(() => {});
@@ -163,7 +178,7 @@ export function personalDashboards(o: PersonalOptions) {
     for (const c of newCharts) await client.put(`/api/v1/chart/${c}`, { owners: [who.userId] }).catch((e) => log(`chart ${c}: could not make it ${who.user}'s: ${e.message}`));
     const link = await record(who, id, name, source.dashboard, newCharts);
     audit(who, "dashboard-copy", "ok", link.board, `dashboard ${id} “${name}” from ${source.dashboard} (${newCharts.length} charts copied)`);
-    emit({ type: "dashboard.copy", user: who.user, dashboard: id });
+    emit(who, "personal-dashboard", "copy", `superset-${id}`, { dashboard: id, from: source.dashboard, charts: newCharts.length });
     return { ok: true, dashboard: id, board: link.board, title: name, url: urlOf(base, id), from: source.dashboard };
   }
 
@@ -196,7 +211,7 @@ export function personalDashboards(o: PersonalOptions) {
     await o.links.delete(String(dashboard));
     await store.forget(board).catch(() => {});
     audit(who, "dashboard-delete", "ok", board, `dashboard ${dashboard} “${dash.dashboard_title}”${removed ? ` and ${removed} of its charts` : ""}${link ? "" : " (not made through Lenspack)"}`);
-    emit({ type: "dashboard.delete", user: who.user, dashboard });
+    emit(who, "personal-dashboard", "delete", `superset-${dashboard}`, { dashboard });
     return { ok: true, dashboard, title: dash.dashboard_title };
   }
 
@@ -243,7 +258,7 @@ export function personalDashboards(o: PersonalOptions) {
     };
     await o.layouts.put(layout.id, layout);
     audit(who, "layout-save", "ok", source.board, `“${clean}”${same ? " (replaced)" : ""}, ${Object.keys(config.widgets).length} widgets`);
-    emit({ type: "layout.save", user: who.user, layout: layout.id, ...(source.dashboard ? { dashboard: source.dashboard } : {}) });
+    emit(who, "saved-layout", "save", source.dashboard ? `superset-${source.dashboard}` : null, { layout: layout.id });
     return { ok: true, id: layout.id, name: clean, replaced: !!same };
   }
 
@@ -269,7 +284,7 @@ export function personalDashboards(o: PersonalOptions) {
 
   function applied(who: PersonalActor, layout: SavedLayout, board: string, r: { version?: number; skipped: number; held?: boolean }) {
     audit(who, "layout-apply", "ok", board, `“${layout.name}”${layout.owner !== who.user ? ` (${layout.owner}'s)` : ""}${r.version !== undefined ? ` → ${r.held ? "draft " : ""}v${r.version}` : ""}${r.skipped ? `, ${r.skipped} widget(s) left out` : ""}`);
-    emit({ type: "layout.apply", user: who.user, layout: layout.id, skipped: r.skipped });
+    emit(who, "saved-layout", "apply", board, { layout: layout.id, skipped: r.skipped });
   }
 
   async function renameLayout(who: PersonalActor, which: string, name: string): Promise<PersonalResult<{ id: string; name: string }>> {
@@ -283,7 +298,7 @@ export function personalDashboards(o: PersonalOptions) {
     if (clash) return { ok: false, error: `There is already a saved layout called “${clash.name}”.`, code: "invalid" };
     await o.layouts.put(found.id, { ...found, name: clean, renamedAt: now() });
     audit(who, "layout-rename", "ok", undefined, `“${found.name}” → “${clean}”${found.owner !== who.user ? ` (${found.owner}'s)` : ""}`);
-    emit({ type: "layout.rename", user: who.user, layout: found.id });
+    emit(who, "saved-layout", "rename", null, { layout: found.id });
     return { ok: true, id: found.id, name: clean };
   }
 
@@ -294,7 +309,7 @@ export function personalDashboards(o: PersonalOptions) {
     if (!v.ok) return denied(who, "layout-delete", v);
     await o.layouts.delete(found.id);
     audit(who, "layout-delete", "ok", undefined, `“${found.name}”${found.owner !== who.user ? ` (${found.owner}'s)` : ""}`);
-    emit({ type: "layout.delete", user: who.user, layout: found.id });
+    emit(who, "saved-layout", "delete", null, { layout: found.id });
     return { ok: true, id: found.id, name: found.name };
   }
 
@@ -404,6 +419,7 @@ export function completePositions(given: Position, chartIds: number[]): Position
   pos.GRID_ID ??= { id: "GRID_ID", type: "GRID", children: [], parents: ["ROOT_ID"] };
   const placed = new Set(Object.values(pos).flatMap((c: any) => (c && typeof c === "object" && c.type === "CHART" ? [c.meta?.chartId] : [])));
   const missing = chartIds.filter((id) => !placed.has(id));
+  // TODO(#94): place these with the shared tab-aware placement helper, so a copy of a dashboard with tabs puts them in a tab rather than in a row under the tabs.
   for (let i = 0; i < missing.length; i += 3) {
     const rowId = `ROW-lp-copy-${i / 3 + 1}`;
     const row = { id: rowId, type: "ROW", children: [] as string[], parents: ["ROOT_ID", "GRID_ID"], meta: { background: "BACKGROUND_TRANSPARENT" } };

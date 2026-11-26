@@ -3,3 +3,4 @@ export * from "./load";
 export * from "./catalogue";
 export * from "./expr";
 export * from "./build";
+export * from "./definitions";

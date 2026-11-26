@@ -11,7 +11,7 @@ export const duckdbRules: DialectRules = {
     if (path.length === 0) return `CAST(${col} AS VARCHAR)`;
     return `json_extract_string(${col}, '$${path.map(seg).join("")}')`;
   },
-  percentile: (fn, arg) => `quantile_cont(${arg}, ${fn === "median" ? 0.5 : 0.9})`,
+  percentile: (fn, arg) => `quantile_cont(${arg}, ${fn === "median" ? 0.5 : fn === "p90" ? 0.9 : 0.95})`,
   trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
   // AT TIME ZONE as Postgres spells it; DuckDB reads it with its bundled ICU.
   zonedTrunc: (grain, arg, zone) => `date_trunc('${grain}', ${zoned(arg, zone)})`,

@@ -5,7 +5,7 @@ import type { Principal } from "@lenspack/policy";
 import { type AppOptions, type Host, accessOf, createApp } from "./app";
 import { NO_STORE, json } from "./http";
 import { type Provider, type ProviderConfig, buildProvider, probe, providersFromEnv } from "./llm";
-import { type Budget, addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";
+import { type Budget, type UsageLedger, addUsageSink, jsonlUsageSink, readUsageFile, usageLedger } from "./metering";
 import { SettingsSaveError } from "./settings";
 
 // The one server every host of lenspack runs (`lenspack serve`, `lenspack
@@ -15,7 +15,7 @@ import { SettingsSaveError } from "./settings";
 
 /** A host's routes: they answer by responding, or leave the request to the rest. */
 export type Route = (req: IncomingMessage, res: ServerResponse, url: URL, who: () => Promise<Principal | null>) => void | Promise<void>;
-export type Runtime = { providers: Provider[]; budget?: Budget };
+export type Runtime = { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } };
 
 /** LENSPACK_LLM_PROVIDERS (or LENSPACK_LLM_*); else, with ANTHROPIC_API_KEY, Claude Sonnet, Opus and Haiku 5.5. */
 export function serverProviders(env: NodeJS.ProcessEnv = process.env): ProviderConfig[] {
@@ -69,7 +69,7 @@ export function startRuntime(o: {
   const roles = env.LENSPACK_LLM_ROLES ? JSON.parse(env.LENSPACK_LLM_ROLES) : undefined;
   const api = createApp(o.hosts, { ...o.app, providers, roles, ledger, budget, log: o.log });
   const access = accessOf(o.app ?? {});
-  const rt: Runtime = { providers, budget };
+  const rt: Runtime = { providers, budget, ledger, roles };
   const routes = o.routes?.(rt);
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");

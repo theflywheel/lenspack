@@ -10,5 +10,6 @@ export * from "./bootstrap";
 export * from "./examples";
 export * from "./source-errors";
 export * from "./version";
+export * from "./actions";
 export * from "./personal";
 export * from "./records";

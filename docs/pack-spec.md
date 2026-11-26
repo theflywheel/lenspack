@@ -42,7 +42,7 @@ dimensions:
 measures:
   - key: <slug>
     entity: <entity_key>
-    agg: count | count_distinct | sum | avg | min | max | median | p90
+    agg: count | count_distinct | sum | avg | min | max | median | p90 | p95
     sql: <fragment>         # required unless agg is count
     filter: <predicate>     # optional; rows outside it are ignored by the aggregate
     format: number | percent | currency | compact | duration

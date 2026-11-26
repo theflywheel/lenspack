@@ -17,7 +17,7 @@ import { type SupersetClient, SupersetError } from "../src/client";
 import { supersetConnector } from "../src/connector";
 import { READ_ONLY_MESSAGE } from "../src/identity";
 import { type SupersetDataset, packFromDatasets, widgetToChart } from "../src/index";
-import { chartIdMap, completePositions, personalDashboards, remapChartIds } from "../src/personal";
+import { type PersonalEvent, chartIdMap, completePositions, personalDashboards, remapChartIds } from "../src/personal";
 import { fileRecords } from "../src/records";
 import { supersetBoards } from "../src/store";
 
@@ -29,9 +29,9 @@ const DATASETS: SupersetDataset[] = [
 const { pack, packYaml, binding } = packFromDatasets(DATASETS, { pack: "stock", entities: { "3": "move", "4": "visit" } });
 
 const LENSPACK_ID = 99;
-const OWNER = { user: "olu", userId: 5, admin: false };
-const VIEWER = { user: "vee", userId: 6, admin: false };
-const ADMIN = { user: "ada", userId: 1, admin: true };
+const OWNER = { user: "olu", userId: 5, roles: [] };
+const VIEWER = { user: "vee", userId: 6, roles: [] };
+const ADMIN = { user: "ada", userId: 1, roles: ["admin"] };
 
 const KPI = { kind: "kpi", title: "Stock moved", query: { kind: "value", measure: "quantity" } } as const;
 const VISITS = { kind: "kpi", title: "Visits", query: { kind: "value", measure: "visit_total" } } as const;
@@ -186,8 +186,9 @@ function setup(limits: Partial<PersonalLimits> = {}) {
   };
   const audit: { user: string; action: string; outcome: string; detail?: string }[] = [];
   let n = 0;
-  const personal = personalDashboards({ client: superset.client, store, pack, bindBoard, links, layouts, limits: () => ({ ...PERSONAL_DEFAULTS, ...limits }), audit: (e) => audit.push(e), newId: () => `l_${++n}` });
-  return { superset, store, dashboards, links, layouts, personal, audit, bindBoard };
+  const events: PersonalEvent[] = [];
+  const personal = personalDashboards({ client: superset.client, store, pack, bindBoard, links, layouts, limits: () => ({ ...PERSONAL_DEFAULTS, ...limits }), audit: (e) => audit.push(e), newId: () => `l_${++n}`, telemetry: (e) => events.push(e) });
+  return { superset, store, dashboards, links, layouts, personal, audit, bindBoard, events };
 }
 
 const edit = (board: string) => ({ board, edit: true, ctx: {} });
@@ -203,6 +204,10 @@ describe("a dashboard of one's own", () => {
     expect(await t.store.get(r.board)).toBeTruthy();
     expect((await t.links.get(String(r.dashboard)))!.owner).toBe("olu");
     expect(t.audit.at(-1)).toMatchObject({ user: "olu", action: "dashboard-create", outcome: "ok" });
+    // A private draft: not published, no dashboard roles.
+    expect(t.superset.writes.find((w) => w.method === "POST")!.body).toMatchObject({ published: false, roles: [] });
+    // Telemetry: one event, ids only (no title).
+    expect(t.events).toEqual([{ event: "personal-dashboard", how: "create", user: "olu", roles: [], board: r.board, data: { dashboard: r.dashboard }, at: expect.any(String) }]);
   });
 
   it("is copied with copies of the charts, owned by the person, with the filter bar pointed at the copies", async () => {
@@ -211,6 +216,9 @@ describe("a dashboard of one's own", () => {
     const r = await t.personal.copy(VIEWER, { dashboard: src.id, view: true, edit: false });
     if (!r.ok) throw new Error(r.error);
     expect(r.title).toBe("Campaign (my copy)");
+    // The copy carries none of the original's dashboard roles, and starts as a draft.
+    expect(t.superset.writes.find((w) => w.method === "PUT" && w.path === `/api/v1/dashboard/${r.dashboard}`)!.body).toMatchObject({ published: false, roles: [] });
+    expect(t.events.at(-1)).toMatchObject({ event: "personal-dashboard", how: "copy", data: { dashboard: r.dashboard, from: src.id, charts: 2 } });
     const copy = t.superset.dashes.get(r.dashboard)!;
     expect(copy.owners).toEqual([VIEWER.userId]);
     const copied = [...t.superset.charts.values()].filter((c) => c.dashboards.includes(r.dashboard));
@@ -263,7 +271,7 @@ describe("a dashboard of one's own", () => {
 
   it("is not made without the person's Superset id (an older plugin)", async () => {
     const t = setup();
-    expect(await t.personal.create({ user: "olu", admin: false }, "x")).toMatchObject({ ok: false, code: "no-user-id" });
+    expect(await t.personal.create({ user: "olu", roles: [] }, "x")).toMatchObject({ ok: false, code: "no-user-id" });
   });
 
   it("is deleted by its owner with the charts made for it; another person's is refused; an admin may", async () => {

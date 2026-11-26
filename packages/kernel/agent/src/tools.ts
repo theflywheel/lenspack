@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type PersonalPort, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
 import { type Connector, type Ctx, type SourceCall, type WidgetData, checkOps, explain, nowOf, run, tracedConnector, valuesQuery } from "@lenspack/engine";
-import { shownConfig, showsStatement, withoutKeys } from "@lenspack/policy";
+import { shownConfig, showsStatement, visibleCatalogue } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 
 import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, parseClear, patchQuery, str } from "./args";
@@ -104,6 +104,30 @@ function chartWidget(chart: (typeof CHART_KINDS)[number], title: string, query: 
  * alone, the records behind a top 3 look like a fact about the whole data (how many records carry
  * the dimension at all); said this way, they cannot.
  */
+/** The query tool's result for rows the engine returned: what the model, a saved answer and a chip all read. */
+export function queryResult(query: Query, data: Awaited<ReturnType<typeof run>>) {
+  return {
+    ok: true as const,
+    query,
+    // What the numbers are when they were computed after the source answered, and how zeros and gaps were treated.
+    ...(data.computed ? { computed: data.computed } : {}),
+    rows: data.records ?? data.rows,
+    // Records behind the rows shown, not the measure's total: named so a model cannot read it as one.
+    records: data.total,
+    ...(query.kind === "breakdown" ? { counts: countsNote(query, data.rows.filter((r) => !r.other).length, data.total) } : {}),
+    format: data.format,
+    compare: data.compare,
+    ...(data.approximate ? { approximate: true } : {}),
+    ...(data.notes ? { notes: data.notes } : {}),
+  };
+}
+
+/** A query already checked (a suggested question's), run under a caller's context: the query tool's result, or its error. */
+export async function checkedQuery(query: Query, o: { pack: Pack; connector: Connector; ctx?: Ctx; timeoutMs?: number }) {
+  const data = await run(query, { pack: o.pack, connector: o.connector, ctx: o.ctx ?? {}, timeoutMs: o.timeoutMs });
+  return data.error ? { ok: false as const, error: data.error } : queryResult(query, data);
+}
+
 function countsNote(query: Extract<Query, { kind: "breakdown" }>, shown: number, records: number) {
   const cut = shown >= query.limit;
   return `${shown} group${shown === 1 ? "" : "s"} shown${cut ? `, the top ${query.limit}: other groups may exist` : ", every group with records"}. records (${records}) counts only the records behind the groups shown, not the data's total; for a total, run a value query.`;
@@ -181,7 +205,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // The board as this caller is shown it: the same view the board API sends them, so the model never reads a value they may not see.
   const shown = (config: BoardConfig) => summarise(shownConfig(config, ctx));
   // What the model may name: verified keys this caller may use.
-  const catalogue = withoutKeys(verifiedOnly(catalogueFrom(pack)), ctx.hidden);
+  const catalogue = visibleCatalogue(verifiedOnly(catalogueFrom(pack)), ctx);
   const proposals = opts.proposals ?? memoryProposals();
   const observed = (e: DataCall) => {
     try {
@@ -305,22 +329,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         observed({ tool: "query", query, data, sources, now });
         const { text } = await explain(query, { pack, connector, ctx });
         const closest = data.total === 0 ? await closestValues(query) : "";
-        return {
-          ok: true,
-          query,
-          ...(closest ? { didYouMean: closest } : {}),
-          // What the numbers are when they were computed after the source answered, and how zeros and gaps were treated.
-          ...(data.computed ? { computed: data.computed } : {}),
-          rows: data.records ?? data.rows,
-          // Records behind the rows shown, not the measure's total: named so a model cannot read it as one.
-          records: data.total,
-          ...(query.kind === "breakdown" ? { counts: countsNote(query, data.rows.filter((r) => !r.other).length, data.total) } : {}),
-          format: data.format,
-          compare: data.compare,
-          ...(data.approximate ? { approximate: true } : {}),
-          ...(data.notes ? { notes: data.notes } : {}),
-          ...statement(text),
-        };
+        return { ...queryResult(query, data), ...(closest ? { didYouMean: closest } : {}), ...statement(text) };
       },
     }),
     defineTool({

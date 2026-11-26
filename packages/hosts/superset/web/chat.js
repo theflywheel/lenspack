@@ -29,6 +29,8 @@
 .lpc-chips{display:flex;flex-direction:column;gap:6px}
 .lpc-chip{text-align:left;border:1px solid var(--lpc-line);background:var(--lpc-bg);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;color:var(--lpc-fg);cursor:pointer}
 .lpc-chip:hover{border-color:var(--lpc-acc);background:var(--lpc-acc-soft)}
+.lpc-quick{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px}
+.lpc-quick .lpc-chip{padding:6px 10px;border-color:var(--lpc-acc);color:var(--lpc-acc);font-weight:500}
 .lpc-msg{max-width:92%;padding:8px 11px;border-radius:10px;white-space:pre-wrap;word-wrap:break-word}
 .lpc-user{align-self:flex-end;background:var(--lpc-acc);color:#fff;border-bottom-right-radius:3px}
 .lpc-bot{align-self:flex-start;background:var(--lpc-soft);border-bottom-left-radius:3px;white-space:normal}
@@ -63,6 +65,9 @@
 .lpc-note{align-self:stretch;font-size:12px;color:var(--lpc-mute);border-left:3px solid var(--lpc-line);padding:2px 8px}
 .lpc-note.sync{border-color:var(--lpc-acc);color:var(--lpc-acc)}
 .lpc-note.bad{border-color:var(--lpc-bad);color:var(--lpc-bad)}
+.lpc-saved{align-self:flex-start;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:11.5px;color:var(--lpc-mute);margin:-4px 0 0 2px}
+.lpc-saved svg{width:12px;height:12px;flex:none}
+.lpc-saved .lpc-undo{margin-left:0;font-size:11.5px}
 .lpc-foot{border-top:1px solid var(--lpc-line);padding:10px;display:flex;gap:8px;align-items:flex-end}
 .lpc-in{flex:1;resize:none;border:1px solid var(--lpc-line);border-radius:8px;padding:8px 10px;font:inherit;min-height:40px;max-height:140px;outline:none;color:var(--lpc-fg);background:var(--lpc-bg)}
 .lpc-in::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -98,6 +103,7 @@
 [data-lp-theme=dark] .lpc-bot code,[data-lp-theme=dark] .lpc-bot pre{background:rgba(255,255,255,.08)}
 [data-lp-theme=dark] .lpc-bot a,[data-lp-theme=dark] .lpc-undo,[data-lp-theme=dark] .lpc-note.sync{color:#3fb1cc}
 [data-lp-theme=dark] .lpc-note.sync{border-color:#3fb1cc}
+[data-lp-theme=dark] .lpc-saved .lpc-undo{color:#3fb1cc}
 [data-lp-theme=dark] .lpc-menu{box-shadow:0 8px 24px rgba(0,0,0,.5)}
 `;
 
@@ -151,6 +157,8 @@
       denied: "Microphone access is blocked. Allow it for this site in the browser (the icon left of the address), then try again.", noMic: "No microphone was found.", sttFailed: "Transcription failed: {0}", sttOff: "Speech to text is not set up on this server.",
       cost: "≈ ${0}", costTitle: "Estimated cost of this answer, from list prices", costTokens: "{0}: {1} tokens in, {2} out", costSpeech: "includes speech to text, ${0}", costUnpriced: "some calls have no price and are not counted", sessionCost: "This session: ≈ ${0} for {1} answers (estimate from list prices)",
       restarting: "Lenspack is restarting, reconnecting…", lost: "The connection to Lenspack was lost before the answer finished (it may be restarting).", retry: "Retry",
+      busyWait: "Busy, about {0} s (number {1} in line)…", waitEdit: "Waiting for another edit on this dashboard…", busyFull: "Lenspack is too busy right now. Try again in a minute, or pick a common question below: those are answered at once.",
+      savedAnswer: "Saved answer, data as of {0}", savedEdit: "Saved change, made as before", savedTitle: "Answered from an earlier answer to the same question, with the numbers read again. No AI model was used.", askFresh: "Ask fresh", askFreshTitle: "Have the assistant work this out again from scratch",
     },
     fr: {
       title: "Demander à Lenspack", sub: "Tableau de bord Superset", close: "Fermer", placeholder: "Demandez un graphique, une modification ou un chiffre…", send: "Envoyer",
@@ -163,6 +171,8 @@
       denied: "L'accès au micro est bloqué. Autorisez-le pour ce site dans le navigateur (l'icône à gauche de l'adresse), puis réessayez.", noMic: "Aucun micro trouvé.", sttFailed: "La transcription a échoué : {0}", sttOff: "La reconnaissance vocale n'est pas configurée sur ce serveur.",
       cost: "≈ {0} $", costTitle: "Coût estimé de cette réponse, d'après les prix publics", costTokens: "{0} : {1} jetons en entrée, {2} en sortie", costSpeech: "dont reconnaissance vocale : {0} $", costUnpriced: "certains appels n'ont pas de prix et ne sont pas comptés", sessionCost: "Cette session : ≈ {0} $ pour {1} réponses (estimation d'après les prix publics)",
       restarting: "Lenspack redémarre, reconnexion…", lost: "La connexion à Lenspack a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
+      busyWait: "Occupé, environ {0} s (n° {1} dans la file)…", waitEdit: "En attente d'une autre modification de ce tableau de bord…", busyFull: "Lenspack est très sollicité en ce moment. Réessayez dans une minute, ou choisissez une question courante ci-dessous : elles ont une réponse immédiate.",
+      savedAnswer: "Réponse enregistrée, données du {0}", savedEdit: "Modification enregistrée, refaite comme avant", savedTitle: "Réponse tirée d'une réponse précédente à la même question, avec les chiffres relus. Aucun modèle d'IA n'a été utilisé.", askFresh: "Redemander", askFreshTitle: "Faire refaire la réponse par l'assistant depuis le début",
     },
     hi: {
       title: "Lenspack से पूछें", sub: "Superset डैशबोर्ड", close: "बंद करें", placeholder: "चार्ट, बदलाव या कोई संख्या पूछें…", send: "भेजें",
@@ -173,6 +183,8 @@
       mic: "बोलें (शुरू और बंद करने के लिए क्लिक करें, या दबाकर रखें)", micNeedsHttps: "माइक के लिए सुरक्षित (https) पेज चाहिए", micUnsupported: "यह ब्राउज़र आवाज़ रिकॉर्ड नहीं कर सकता",
       listening: "सुन रहे हैं… {0}", transcribing: "लिखा जा रहा है…", tooShort: "कुछ रिकॉर्ड नहीं हुआ। माइक दबाकर रखें या क्लिक करें, बोलें, फिर रोकें।", heard: "टेक्स्ट जाँचें, फिर भेजें।", nothingHeard: "कोई आवाज़ पहचानी नहीं गई। माइक के थोड़ा पास से फिर कोशिश करें।",
       denied: "माइक की अनुमति बंद है। ब्राउज़र में इस साइट के लिए अनुमति दें (पते के बाईं ओर का आइकन), फिर कोशिश करें।", noMic: "कोई माइक नहीं मिला।", sttFailed: "लिखना नहीं हो सका: {0}", sttOff: "इस सर्वर पर स्पीच-टू-टेक्स्ट सेट नहीं है।",
+      busyWait: "व्यस्त, लगभग {0} सेकंड (कतार में {1}वें)…", waitEdit: "इस डैशबोर्ड पर दूसरे बदलाव के पूरा होने का इंतज़ार…", busyFull: "Lenspack अभी बहुत व्यस्त है। एक मिनट बाद फिर कोशिश करें, या नीचे कोई आम सवाल चुनें: उनका जवाब तुरंत मिलता है।",
+      savedAnswer: "सहेजा गया जवाब, डेटा {0} तक का", savedEdit: "सहेजा गया बदलाव, पहले की तरह किया गया", savedTitle: "यह जवाब इसी सवाल के पिछले जवाब से बना है, संख्याएँ फिर से पढ़ी गईं। किसी AI मॉडल का उपयोग नहीं हुआ।", askFresh: "नए सिरे से पूछें", askFreshTitle: "सहायक से जवाब शुरू से दोबारा बनवाएँ",
       cost: "≈ ${0}", costTitle: "इस जवाब की अनुमानित लागत, सूची कीमतों के आधार पर", costTokens: "{0}: {1} टोकन इनपुट, {2} आउटपुट", costSpeech: "इसमें स्पीच-टू-टेक्स्ट ${0} शामिल है", costUnpriced: "कुछ कॉल की कीमत नहीं है, वे गिनी नहीं गईं", sessionCost: "इस सत्र में: ≈ ${0}, {1} जवाब (सूची कीमतों से अनुमान)",
       restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले Lenspack से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
     },
@@ -188,6 +200,8 @@
       listening: "Em escuta… {0}", transcribing: "Transcrição em curso…", tooShort: "Nada foi gravado. Mantenha pressionado ou clique no microfone, fale e depois pare.", heard: "Verifique o texto e depois envie.", nothingHeard: "Nenhuma fala reconhecida. Tente de novo um pouco mais perto do microfone.",
       denied: "O acesso ao microfone está bloqueado. Permita-o para este site no navegador (o ícone à esquerda do endereço) e tente de novo.", noMic: "Nenhum microfone encontrado.", sttFailed: "A transcrição falhou: {0}", sttOff: "A transcrição de voz não está configurada neste servidor.",
       restarting: "Lenspack em reinício, reconexão em curso…", lost: "A conexão com o Lenspack foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
+      busyWait: "Ocupado, cerca de {0} s (n.º {1} na fila)…", waitEdit: "À espera de outra alteração neste painel…", busyFull: "O Lenspack está muito ocupado neste momento. Tente de novo dentro de um minuto, ou escolha uma pergunta frequente abaixo: essas têm resposta imediata.",
+      savedAnswer: "Resposta guardada, dados de {0}", savedEdit: "Alteração guardada, refeita como antes", savedTitle: "Resposta tirada de uma resposta anterior à mesma pergunta, com os números lidos de novo. Nenhum modelo de IA foi usado.", askFresh: "Perguntar de novo", askFreshTitle: "Pedir ao assistente que refaça a resposta desde o início",
       cost: "≈ US$ {0}", costTitle: "Custo estimado desta resposta, segundo os preços de tabela", costTokens: "{0}: {1} tokens de entrada, {2} de saída", costSpeech: "inclui transcrição de voz: US$ {0}", costUnpriced: "algumas chamadas não têm preço e não foram contadas", sessionCost: "Esta sessão: ≈ US$ {0} em {1} respostas (estimativa segundo os preços de tabela)",
     },
   };
@@ -453,6 +467,203 @@
     return what;
   }
 
+  // ---- Usage telemetry (docs/telemetry.md), kept in one place so other parts of the panel can change freely. The
+  // panel calls lpTelemetry(...) once per mount; it gives the thumbs under each answer, the device and network the
+  // chat request carries, events posted to <api>/api/_telemetry, and the consent notice for kept recordings.
+  // window.lenspackTelemetry.event(type, data) lets any part of the page report an event about the latest answer
+  // (or the turn named in data.turnId): explain-opened, quick-reply, chart-exported, …
+  const TEL_CSS = `
+.lpc-fb{align-self:flex-start;display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:-4px 0 0 2px;font-size:12px;color:var(--lpc-mute)}
+.lpc-fb>button{border:1px solid transparent;background:none;color:var(--lpc-mute);border-radius:6px;padding:2px 5px;cursor:pointer;display:grid;place-items:center}
+.lpc-fb>button:hover,.lpc-fb>button:focus-visible{border-color:var(--lpc-line);color:var(--lpc-fg)}
+.lpc-fb>button[aria-pressed=true]{color:var(--lpc-acc);border-color:var(--lpc-acc)}
+.lpc-fb svg{width:15px;height:15px}
+.lpc-fbform{flex-basis:100%;border:1px solid var(--lpc-line);border-radius:8px;padding:8px 10px;margin:4px 0 0;background:var(--lpc-bg);color:var(--lpc-fg);max-width:320px}
+.lpc-fbform legend{font-weight:600;font-size:12.5px;padding:0 2px}
+.lpc-fbform label{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12.5px;cursor:pointer}
+.lpc-fbform textarea{width:100%;margin:4px 0;border:1px solid var(--lpc-line);border-radius:6px;padding:4px 6px;font:inherit;font-size:12.5px;resize:vertical;min-height:34px;background:var(--lpc-bg);color:var(--lpc-fg)}
+.lpc-fbform button{border:0;background:var(--lpc-acc);color:#fff;border-radius:6px;padding:4px 10px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.lpc-consent{align-self:stretch;border:1px solid var(--lpc-acc);border-radius:8px;padding:8px 10px;font-size:12.5px}
+.lpc-consent p{margin:0 0 6px;white-space:pre-wrap}
+.lpc-consent button{border:0;background:var(--lpc-acc);color:#fff;border-radius:6px;padding:4px 10px;font:inherit;font-weight:600;cursor:pointer;margin-right:6px}
+.lpc-notel .lpc-fb{display:none}
+.lpc-consent button+button{background:none;color:var(--lpc-mute);border:1px solid var(--lpc-line)}
+`;
+  const TEL_STRINGS = {
+    en: { helpful: "Helpful", notHelpful: "Not helpful", whatWrong: "What was wrong?", "wrong-number": "Wrong number", "wrong-place": "Wrong place or item", misunderstood: "Misunderstood my question", "too-slow": "Too slow", other: "Other", comment: "Anything else? (optional)", send: "Send", thanks: "Thanks for the feedback.", consentTitle: "Before you record", agree: "I agree", cancel: "Not now" },
+    fr: { helpful: "Utile", notHelpful: "Pas utile", whatWrong: "Qu'est-ce qui n'allait pas ?", "wrong-number": "Chiffre faux", "wrong-place": "Mauvais lieu ou élément", misunderstood: "Question mal comprise", "too-slow": "Trop lent", other: "Autre", comment: "Autre chose ? (facultatif)", send: "Envoyer", thanks: "Merci pour votre retour.", consentTitle: "Avant d'enregistrer", agree: "J'accepte", cancel: "Pas maintenant" },
+    hi: { helpful: "मददगार", notHelpful: "मददगार नहीं", whatWrong: "क्या गलत था?", "wrong-number": "गलत संख्या", "wrong-place": "गलत जगह या चीज़", misunderstood: "मेरा सवाल गलत समझा", "too-slow": "बहुत धीमा", other: "कुछ और", comment: "कुछ और कहना है? (वैकल्पिक)", send: "भेजें", thanks: "आपकी राय के लिए धन्यवाद।", consentTitle: "रिकॉर्ड करने से पहले", agree: "मैं सहमत हूँ", cancel: "अभी नहीं" },
+    pt: { helpful: "Útil", notHelpful: "Não foi útil", whatWrong: "O que estava errado?", "wrong-number": "Número errado", "wrong-place": "Local ou item errado", misunderstood: "Pergunta mal compreendida", "too-slow": "Muito lento", other: "Outro", comment: "Mais alguma coisa? (opcional)", send: "Enviar", thanks: "Agradecemos a sua opinião.", consentTitle: "Antes de gravar", agree: "Concordo", cancel: "Agora não" },
+  };
+  const TEL_REASONS = ["wrong-number", "wrong-place", "misunderstood", "too-slow", "other"];
+  const UP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v11H4V10zM7 10l4-8a3 3 0 0 1 3 3v4h5.5a2 2 0 0 1 2 2.3l-1.4 8A2 2 0 0 1 18.1 21H7"/></svg>';
+  const DOWN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V3h3v11zM17 14l-4 8a3 3 0 0 1-3-3v-4H4.5a2 2 0 0 1-2-2.3l1.4-8A2 2 0 0 1 5.9 3H17"/></svg>';
+
+  /** The device class, network and viewport width, as classes: never the user agent itself. */
+  function lpClientInfo() {
+    const ua = navigator.userAgent || "";
+    const uad = navigator.userAgentData;
+    const tablet = /iPad|Tablet|PlayBook|Silk|Android(?!.*Mobile)/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+    const device = uad && uad.mobile === true ? "mobile" : tablet ? "tablet" : /Mobi|iPhone|iPod|Windows Phone/i.test(ua) ? "mobile" : "desktop";
+    const c = navigator.connection || {};
+    const w = window.innerWidth || 0;
+    return { device, ...(c.effectiveType ? { network: c.effectiveType } : {}), ...(typeof c.saveData === "boolean" ? { saveData: c.saveData } : {}), viewport: w < 600 ? "narrow" : w < 1024 ? "medium" : "wide" };
+  }
+
+  function lpTelemetry(o) {
+    if (!document.getElementById("lpc-tel-css")) {
+      const s = el("style");
+      s.id = "lpc-tel-css";
+      s.textContent = TEL_CSS;
+      document.head.appendChild(s);
+    }
+    const url = `${o.api}/api/_telemetry`;
+    const tt = (k) => (TEL_STRINGS[o.lang()] || TEL_STRINGS.en)[k] || TEL_STRINGS.en[k] || k;
+    const state = { turnId: null, firstToken: false, busy: false };
+    const post = (body, beacon) => {
+      if (!o.on()) return Promise.resolve(false);
+      const text = JSON.stringify(body);
+      // Leaving the page: a beacon outlives it (text/plain, so no preflight on another origin).
+      if (beacon && navigator.sendBeacon) return Promise.resolve(navigator.sendBeacon(url, new Blob([text], { type: "text/plain" })));
+      return fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: text, keepalive: true }).then((r) => r.ok, () => false);
+    };
+    const api = {
+      client: lpClientInfo,
+      /** The chat request has started; turnId comes from its x-lenspack-turn header. */
+      started(turnId) {
+        state.turnId = turnId || null;
+        state.firstToken = false;
+        state.busy = true;
+      },
+      firstToken() {
+        state.firstToken = true;
+      },
+      ended() {
+        state.busy = false;
+      },
+      /** An event about a turn (the latest answer's unless data.turnId names one). */
+      event(type, data) {
+        const d = data && typeof data === "object" ? { ...data } : {};
+        const turnId = d.turnId || state.turnId || undefined;
+        const beacon = d.beacon === true;
+        delete d.turnId;
+        delete d.beacon;
+        const top = {};
+        for (const k of ["how", "stage", "choice", "rating", "reason", "comment", "transcript", "sent"]) if (k in d) (top[k] = d[k]), delete d[k];
+        return post({ type, ...(turnId ? { turnId } : {}), ...top, ...(Object.keys(d).length ? { data: d } : {}) }, beacon);
+      },
+      /** Thumbs up or down under an answer, and on down a short list of what was wrong. rated(r) keeps the choice. */
+      thumbs(turnId, initial, rated) {
+        const row = el("div", "lpc-fb");
+        row.setAttribute("role", "group");
+        row.setAttribute("aria-label", `${tt("helpful")} / ${tt("notHelpful")}`);
+        const up = el("button");
+        const down = el("button");
+        const said = el("span");
+        said.setAttribute("role", "status");
+        up.type = down.type = "button";
+        up.innerHTML = UP_SVG;
+        down.innerHTML = DOWN_SVG;
+        let form = null;
+        const mark = (r) => {
+          up.setAttribute("aria-pressed", r === "up" ? "true" : "false");
+          down.setAttribute("aria-pressed", r === "down" ? "true" : "false");
+        };
+        const label = () => {
+          up.title = tt("helpful");
+          down.title = tt("notHelpful");
+          up.setAttribute("aria-label", tt("helpful"));
+          down.setAttribute("aria-label", tt("notHelpful"));
+        };
+        label();
+        mark(initial);
+        const thank = () => (said.textContent = tt("thanks"));
+        up.onclick = () => {
+          mark("up");
+          if (form) form.remove(), (form = null);
+          rated && rated("up");
+          post({ type: "feedback", turnId, rating: "up" }).then(thank);
+        };
+        down.onclick = () => {
+          mark("down");
+          rated && rated("down");
+          post({ type: "feedback", turnId, rating: "down" });
+          if (form) return;
+          form = el("form", "lpc-fbform");
+          const fs = el("fieldset");
+          fs.style.cssText = "border:0;margin:0;padding:0";
+          fs.append(el("legend", "", tt("whatWrong")));
+          const name = `lpc-fb-${turnId}`;
+          for (const r of TEL_REASONS) {
+            const l = el("label");
+            const i = el("input");
+            i.type = "radio";
+            i.name = name;
+            i.value = r;
+            l.append(i, document.createTextNode(tt(r)));
+            fs.append(l);
+          }
+          const note = el("textarea");
+          note.setAttribute("aria-label", tt("comment"));
+          note.placeholder = tt("comment");
+          note.maxLength = 1000;
+          const go = el("button", "", tt("send"));
+          go.type = "submit";
+          fs.append(note, go);
+          form.append(fs);
+          form.onsubmit = (e) => {
+            e.preventDefault();
+            const picked = form.querySelector("input:checked");
+            post({ type: "feedback", turnId, rating: "down", ...(picked ? { reason: picked.value } : {}), ...(note.value.trim() ? { comment: note.value.trim() } : {}) }).then(thank);
+            form.remove();
+            form = null;
+            down.focus();
+          };
+          form.onkeydown = (e) => {
+            if (e.key === "Escape") form.remove(), (form = null), down.focus();
+          };
+          row.append(form);
+          const first = form.querySelector("input");
+          if (first) first.focus();
+        };
+        row.append(up, down, said);
+        row.relabel = label;
+        return row;
+      },
+      /** The notice to acknowledge before recording while recordings are kept: shown in the log, answered once. */
+      consent(log, notice, onAgreed) {
+        if (log.querySelector(".lpc-consent")) return;
+        const box = el("div", "lpc-consent");
+        box.setAttribute("role", "dialog");
+        box.setAttribute("aria-label", tt("consentTitle"));
+        box.append(el("b", "", tt("consentTitle")), el("p", "", notice));
+        const yes = el("button", "", tt("agree"));
+        const no = el("button", "", tt("cancel"));
+        yes.type = no.type = "button";
+        yes.onclick = () =>
+          fetch(`${o.api}/api/_stt/consent`, { method: "POST" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((j) => {
+              if (j && !j.notice) {
+                box.remove();
+                onAgreed();
+              }
+            }, () => {});
+        no.onclick = () => box.remove();
+        box.append(yes, no);
+        log.append(box);
+        yes.focus();
+      },
+    };
+    // Closing or leaving the page before the answer arrived.
+    const leave = () => {
+      if (state.busy && state.turnId) api.event("abandoned", { how: "closed", stage: state.firstToken ? "streaming" : "before-first-token", beacon: true });
+    };
+    o.listen(window, "pagehide", leave);
+    window.lenspackTelemetry = { event: (type, data) => api.event(type, data) };
+    return api;
+  }
+
   function mount(root, opts) {
     if (!document.getElementById("lpc-css")) {
       const s = el("style");
@@ -473,6 +684,8 @@
     const spent = saved.spent && typeof saved.spent.usd === "number" ? saved.spent : { usd: 0, turns: 0 };
     // Clip ids from speech to text since the last question: the next question names them, so its cost includes them.
     const clips = [];
+    // Transcripts from a server too old to give an id, waiting for the question they go with.
+    const unlinked = [];
     const persist = () => {
       try {
         sessionStorage.setItem(key, JSON.stringify({ messages: history.slice(-30), since, spent }));
@@ -523,6 +736,13 @@
       target.addEventListener(type, fn, capture);
       cleanups.push(() => target.removeEventListener(type, fn, capture));
     };
+    const tel = lpTelemetry({ api, lang: uiLang, on: () => feat.telemetry !== false, listen });
+    // Thumbs under an answer; the choice is kept with the answer, so a reload shows it.
+    const thumbsFor = (m) =>
+      tel.thumbs(m.metadata.turnId, m.metadata.rating, (r) => {
+        m.metadata.rating = r;
+        persist();
+      });
 
     root.innerHTML = "";
     const wrap = el("div", "lpc");
@@ -650,7 +870,7 @@
     mic.hidden = true;
     foot.append(input, mic, go);
     // The mic, shown when the server has speech to text (its /_superset/info says so).
-    const micState = { enabled: false, maxSeconds: 60, holdMs: 2000 };
+    const micState = { enabled: false, maxSeconds: 60, holdMs: 2000, consent: null };
     // How long Space must be held to talk: this browser's pick, else the deployment's.
     const secs = (ms) => (uiLang() === "fr" ? String(ms / 1000).replace(".", ",") : String(ms / 1000));
     const holdMs = () => (prefsNow.holdMs >= 500 && prefsNow.holdMs <= 3000 ? prefsNow.holdMs : micState.holdMs);
@@ -787,7 +1007,7 @@
       return isNaN(d) ? String(iso) : d.toLocaleString(uiLang() === "auto" ? undefined : uiLang(), { dateStyle: "medium", timeStyle: "short" });
     };
     /** The expander for one answer: collapsed, one level, each data call in the order made. */
-    function explainNode(ex) {
+    function explainNode(ex, turnId) {
       const box = el("div", "lpc-ex");
       const btn = el("button", "lpc-ex-btn", tx("toggle"));
       btn.type = "button";
@@ -800,6 +1020,8 @@
         const open = btn.getAttribute("aria-expanded") !== "true";
         btn.setAttribute("aria-expanded", open ? "true" : "false");
         body.hidden = !open;
+        // Usage telemetry: someone checked how this answer was worked out.
+        if (open && turnId) tel.event("explain-opened", { turnId });
       };
       if (ex.selections && ex.selections.length) {
         const f = el("p", "lpc-ex-tag lpc-ex-filters", `${tx("filters")}: `);
@@ -838,7 +1060,8 @@
       if (ex) exStore(id, ex);
       const shown = ex || exStore(id);
       if (!shown || feat.explain === false || !shown.calls || !shown.calls.length) return;
-      log.append(explainNode(shown));
+      const m = history.find((x) => x.id === id);
+      log.append(explainNode(shown, (m && m.metadata && m.metadata.turnId) || null));
       scroll();
     }
     // The suggested questions in the panel's language: `examples` is a list, or lists by language
@@ -849,26 +1072,98 @@
       if (!ex || typeof ex !== "object") return [];
       return ex[uiLang()] || ex.en || Object.values(ex)[0] || [];
     }
+    // A reply served from a saved answer says so, with when its data was read, and offers to ask afresh.
+    function savedLine(r, question) {
+      const d = el("div", "lpc-saved");
+      d.title = t("savedTitle");
+      d.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+      const when = new Date(r.dataAsOf);
+      const lang = uiLang() === "auto" ? undefined : uiLang();
+      const today = when.toDateString() === new Date().toDateString();
+      const at = isNaN(when) ? "" : today ? when.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) : when.toLocaleString(lang, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      d.append(el("span", "", r.kind === "edit" ? t("savedEdit") : t("savedAnswer", at)));
+      if (question) {
+        const b = el("button", "lpc-undo", t("askFresh"));
+        b.type = "button";
+        b.title = t("askFreshTitle");
+        b.onclick = () => {
+          if (busy || offline) return;
+          b.disabled = true;
+          send(question, true);
+        };
+        d.append(b);
+      }
+      return d;
+    }
+    // The queue was full: a friendly line, Try again, and the suggestion chips, which saved answers answer at once.
+    function busyLine(question, userB) {
+      const d = el("div", "lpc-note");
+      d.append(el("span", "", t("busyFull") + " "));
+      const again = el("button", "lpc-undo", t("retry"));
+      again.type = "button";
+      again.onclick = () => {
+        if (busy || offline) return;
+        d.remove();
+        userB.remove();
+        send(question);
+      };
+      d.append(again);
+      const chips = el("div", "lpc-chips");
+      fetch(`${base}/suggestions?lang=${encodeURIComponent(uiLang())}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => {
+          for (const q of ((r && r.suggestions) || []).slice(0, 4)) {
+            const c = el("button", "lpc-chip", q);
+            c.onclick = () => {
+              if (busy || offline) return;
+              d.remove();
+              userB.remove();
+              send(q);
+            };
+            chips.append(c);
+          }
+          if (chips.children.length) d.append(chips);
+        })
+        .catch(() => {});
+      return d;
+    }
     function empty() {
       if (history.length) return;
       const e = el("div", "lpc-empty");
       e.append(el("p", "", t("intro")));
       const chips = el("div", "lpc-chips");
-      for (const q of examplesNow()) {
+      const chip = (q, first) => {
         const c = el("button", "lpc-chip", q);
         c.disabled = offline;
         c.onclick = () => send(q);
-        chips.append(c);
-      }
+        if (first) chips.prepend(c);
+        else chips.append(c);
+      };
+      const shown = examplesNow();
+      for (const q of shown) chip(q);
       e.append(chips);
       log.append(e);
+      // The questions asked most on this board (by people with your access) come first: one click answers from the saved answer.
+      fetch(`${base}/suggestions?lang=${encodeURIComponent(uiLang())}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => {
+          const seen = new Set(shown.map((q) => q.trim().toLowerCase()));
+          const top = ((r && r.suggestions) || []).filter((q) => typeof q === "string" && !seen.has(q.trim().toLowerCase())).slice(0, 4);
+          if (!top.length || !chips.isConnected) return;
+          for (const q of top.reverse()) chip(q, true);
+          while (chips.children.length > 6) chips.lastChild.remove();
+        })
+        .catch(() => {});
     }
     const replay = () => {
-      for (const m of history) {
+      history.forEach((m, i) => {
         bubble(m.role, m.parts.map((p) => p.text || "").join(""));
         if (m.role === "assistant") showExplain(m.id);
         if (m.metadata && m.metadata.cost) log.append(costLine(m.metadata.cost));
-      }
+        if (m.metadata && m.metadata.turnId) log.append(thumbsFor(m));
+        const asked = history[i - 1];
+        if (m.metadata && m.metadata.reuse) log.append(savedLine(m.metadata.reuse, asked && asked.role === "user" ? asked.parts.map((p) => p.text || "").join("") : ""));
+      });
     };
     replay();
     if (saved.notice) note(saved.notice, "sync");
@@ -885,6 +1180,8 @@
     }
 
     let busy = false;
+    // The server's notice when no data of this dashboard is open to this user; the input stays off while it holds.
+    let noAccess = null;
     // ---- Lenspack restarting: the overlay notices (its health check fails) and calls setOffline(true); the
     // banner shows, input waits, and everything comes back by itself when Lenspack answers again.
     function setOffline(on) {
@@ -893,8 +1190,8 @@
       offline = on;
       downBar.textContent = t("restarting");
       downBar.hidden = !on;
-      input.disabled = on;
-      go.disabled = on || busy;
+      input.disabled = on || !!noAccess;
+      go.disabled = on || busy || !!noAccess;
       for (const b of retries) b.disabled = on;
       log.querySelectorAll(".lpc-chip").forEach((c) => (c.disabled = on));
       if (on) mic.disabled = true;
@@ -903,7 +1200,29 @@
         loadInfo();
       }
     }
-    async function send(text) {
+    // A clarifying question's readings, as buttons under the reply: one tap sends that reading as the next message,
+    // naming the question it answers so the server counts the choice.
+    function quickReplies(q) {
+      if (!q || !Array.isArray(q.options) || !q.options.length) return;
+      const box = el("div", "lpc-quick");
+      box.setAttribute("role", "group");
+      for (const o of q.options) {
+        const b = el("button", "lpc-chip", o.label);
+        b.type = "button";
+        b.title = o.text;
+        b.disabled = offline;
+        b.onclick = () => {
+          if (busy || offline) return;
+          box.remove();
+          send(o.text, false, { quickReply: { question: q.question || "", option: o.label } });
+        };
+        box.append(b);
+      }
+      log.append(box);
+      scroll();
+    }
+    // fresh: "Ask fresh" on a saved answer; the full assistant answers, whatever is saved. extra.quickReply: the reading picked.
+    async function send(text, fresh, extra) {
       text = (text || "").trim();
       if (!text || busy || offline) return;
       if (mine) mine.turn(text);
@@ -913,6 +1232,7 @@
       input.value = "";
       const emptyEl = log.querySelector(".lpc-empty");
       if (emptyEl) emptyEl.remove();
+      log.querySelectorAll(".lpc-quick").forEach((q) => q.remove());
       history.push({ id: `u${Date.now()}`, role: "user", parts: [{ type: "text", text }] });
       persist();
       const userB = bubble("user", text);
@@ -960,7 +1280,12 @@
       };
       try {
         const spoken = clips.slice();
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}), ...selectionsNow() }) });
+        // speech: the transcript ids (clip ids) of the words this question was spoken through; client: device and network classes.
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken, transcriptIds: spoken } : {}), ...selectionsNow(), ...(fresh ? { fresh: true } : {}), ...(extra && extra.quickReply && extra.quickReply.question ? { quickReply: extra.quickReply } : {}), client: tel.client() }) });
+        const turnId = (res.headers && res.headers.get && res.headers.get("x-lenspack-turn")) || null;
+        tel.started(turnId);
+        // Words heard by a server that gave no transcript id: their correction is reported from here instead.
+        const heardNoId = unlinked.splice(0);
         if (!res.ok || !res.body) {
           let msg = `${res.status}`;
           try {
@@ -971,6 +1296,9 @@
         // The stream ends with a finish event and [DONE]; a stream that stops short was cut (Lenspack restarted).
         let finished = false;
         let usage = null;
+        let clarify = null;
+        let reused = null;
+        let full = null;
         let explained = null;
         const reader = res.body.getReader();
         const dec = new TextDecoder();
@@ -1001,6 +1329,7 @@
                   if (bot && ev.id && textId && ev.id !== textId && answer.trim()) answer += "\n\n";
                   textId = ev.id || textId;
                   if (!bot) bot = bubble("assistant", "");
+                  tel.firstToken();
                   answer += ev.delta;
                   if (!frame) frame = requestAnimationFrame(paint);
                   break;
@@ -1052,6 +1381,17 @@
                 case "data-usage":
                   if (ev.data && ev.data.summary) usage = ev.data.summary;
                   break;
+                case "data-clarify":
+                  clarify = ev.data;
+                  break;
+                case "data-queue":
+                  // Waiting for a place: the place and about how long; the queue full: said below, with the suggestions.
+                  if (ev.data && ev.data.state === "waiting") status.textContent = ev.data.reason === "edit" ? t("waitEdit") : t("busyWait", ev.data.etaSeconds, ev.data.position);
+                  else if (ev.data && ev.data.state === "full") full = ev.data;
+                  break;
+                case "data-reuse":
+                  if (ev.data && ev.data.tier) reused = { tier: ev.data.tier, kind: ev.data.kind, dataAsOf: ev.data.dataAsOf };
+                  break;
                 case "data-answer-card":
                   explained = ev.data;
                   break;
@@ -1065,18 +1405,39 @@
         if (frame) cancelAnimationFrame(frame);
         paint();
         if (!finished) throw Object.assign(new Error("stream cut"), { lost: true });
+        if (full) {
+          // Too busy: the question leaves the history, and the suggestions (answered at once, from saved answers) stay clickable.
+          history.pop();
+          persist();
+          status.textContent = "";
+          log.append(busyLine(text, userB));
+          scroll();
+          return;
+        }
         // The reply is the text after the last tool call; when the model wrote nothing
         // after it, fall back to its last narration so the turn is not empty.
         const reply = answer.trim() ? answer : segments[segments.length - 1] || "";
-        history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }], ...(usage ? { metadata: { cost: usage } } : {}) });
+        const meta = { ...(usage ? { cost: usage } : {}), ...(reused ? { reuse: reused } : {}), ...(turnId ? { turnId } : {}) };
+        const answered = { id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }], ...(Object.keys(meta).length ? { metadata: meta } : {}) };
+        history.push(answered);
+        if (turnId && heardNoId.length) tel.event("transcript", { turnId, transcript: heardNoId.join(" "), sent: text });
         if (explained) showExplain(history[history.length - 1].id, explained);
         // The clips were counted in this turn (the server claims each once).
         clips.splice(0, spoken.length);
+        quickReplies(clarify);
         if (usage) {
           log.append(costLine(usage));
           spent.usd = Math.round((spent.usd + (usage.costUsd || 0)) * 1e6) / 1e6;
           spent.turns += 1;
           renderMenu();
+          scroll();
+        }
+        if (reused) {
+          log.append(savedLine(reused, text));
+          scroll();
+        }
+        if (turnId) {
+          log.append(thumbsFor(answered));
           scroll();
         }
         status.textContent = "";
@@ -1131,9 +1492,10 @@
         scroll();
         if (lost && opts.onUnreachable) opts.onUnreachable();
       } finally {
+        tel.ended();
         busy = false;
         syncNew();
-        go.disabled = offline;
+        go.disabled = offline || !!noAccess;
         if (!offline) input.focus();
       }
     }
@@ -1196,6 +1558,7 @@
       for (const b of retries) b.textContent = t("retry");
       newBtn.title = t("newChatHelp");
       newBtn.setAttribute("aria-label", t("newChat"));
+      log.querySelectorAll(".lpc-fb").forEach((f) => f.relabel && f.relabel());
       renderMenu();
       if (mine) mine.relabel();
     }
@@ -1242,6 +1605,8 @@
     async function startRec() {
       if (rec.state !== "idle" || busy || !micState.enabled) return;
       if (!window.isSecureContext || !canRecord) return note(mic.title, "bad");
+      // While recordings are kept, the deployment's notice is acknowledged once before the first one.
+      if (micState.consent) return tel.consent(log, micState.consent, () => (micState.consent = null));
       rec.state = "starting";
       rec.cancelled = false;
       // Where the words go: the input's caret now (the end of a selection), so typed text is kept.
@@ -1344,6 +1709,12 @@
         }
         const r = await fetch(`${api}/api/_stt?${q}`, { method: "POST", headers: { "content-type": type.split(";")[0] }, body: blob });
         const j = await r.json().catch(() => ({}));
+        // Recordings are kept here and the notice was not acknowledged yet (another tab, a changed notice).
+        if (r.status === 403 && j.error === "consent_required") {
+          setStatus("");
+          micState.consent = j.notice || null;
+          return micState.consent && tel.consent(log, micState.consent, () => (micState.consent = null));
+        }
         if (r.status === 422) {
           setStatus("");
           return note(j.error === "wrong_script" ? t("missedIn", (NAMES_IN[uiLang()] || NAMES_IN.en)[j.language] || j.language) : t("unsureLang"), "bad");
@@ -1351,6 +1722,7 @@
         if (!r.ok) throw new Error(r.status === 503 ? t("sttOff") : j.error || String(r.status));
         const text = (j.text || "").trim();
         if (text && typeof j.clip === "string") clips.push(j.clip);
+        else if (text) unlinked.push(text);
         if (!text) setStatus(t("nothingHeard"));
         else {
           insertAt(text, rec.caret);
@@ -1493,6 +1865,8 @@
       newBtn.hidden = feat.newChat === false;
       wrap.classList.toggle("lpc-nocost", feat.turnCost === false);
       if (info && info.speech && info.speech.maxSeconds) micState.maxSeconds = info.speech.maxSeconds;
+      if (info && info.speech) micState.consent = typeof info.speech.consent === "string" && info.speech.consent ? info.speech.consent : null;
+      wrap.classList.toggle("lpc-notel", feat.telemetry === false);
       if (info && info.speech && info.speech.holdMs >= 500 && info.speech.holdMs <= 3000) micState.holdMs = info.speech.holdMs;
       mic.hidden = !micState.enabled;
       mic.disabled = !window.isSecureContext || !canRecord;
@@ -1509,6 +1883,20 @@
       relabel();
       loadInfo();
     }
+    // Nothing of this dashboard's data is open to this user in Superset: say so now, before anything is asked,
+    // and keep the input off (the server refuses the chat as well).
+    fetch(base)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => {
+        if (!b || !b.accessNotice) return;
+        noAccess = b.accessNotice;
+        log.querySelectorAll(".lpc-empty").forEach((e) => e.remove());
+        note(noAccess, "lpc-access");
+        input.disabled = true;
+        go.disabled = true;
+        mic.disabled = true;
+      })
+      .catch(() => {});
 
     go.onclick = () => send(input.value);
     // Enter sends, Shift+Enter starts a new line. The key is taken on the window, before the page sees it: a

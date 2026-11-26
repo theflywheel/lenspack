@@ -6,7 +6,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { Capabilities, Ctx } from "@lenspack/engine";
-import type { PersonalActor, PersonalLimits } from "@lenspack/policy";
+import { type PersonalActor, type PersonalLimits, adminRights } from "@lenspack/policy";
 
 import type { Identity } from "./identity";
 import type { PersonalDashboards, SignedRights } from "./personal";
@@ -16,12 +16,12 @@ export type PersonalRoutesOptions = {
   /** The signed identity of a request, or null. */
   identity: (req: IncomingMessage) => Identity | null;
   /**
-   * Whether that identity may edit the dashboard it was signed for (the edit policy, the edits switch and the
-   * edit scope); `byScope` when Superset would let them but the deployment's edit scope does not.
+   * What policy (boardRights) says that identity may do on the dashboard it was signed for: Superset's rights, the
+   * edit policy and switch, narrowed by the edit scope; `byScope` when only the edit scope refuses the edit.
    */
-  canEdit: (id: Identity) => Promise<{ edit: boolean; byScope?: boolean }>;
-  /** The engine context and capabilities the person's queries run with (their hidden keys and datasets). */
-  scope: (req: IncomingMessage) => Promise<{ ctx: Ctx; capabilities?: Capabilities } | null>;
+  rightsOn: (id: Identity) => Promise<{ view: boolean; edit: boolean; byScope?: boolean }>;
+  /** The engine context and capabilities the person's queries run with on that board (their hidden keys and datasets). */
+  scope: (req: IncomingMessage, board: string) => Promise<{ ctx: Ctx; capabilities?: Capabilities } | null>;
   /** Binds a dashboard the person is on, so the board exists before a save or an apply. */
   bind: (dashboard: number) => Promise<string>;
   /** The board as this person is shown it, for a save. */
@@ -56,7 +56,7 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 /** Superset says who this is; with the plugin's user id when it signs one. */
-export const actorOf = (id: Identity): PersonalActor => ({ user: id.u, userId: typeof id.i === "number" && Number.isSafeInteger(id.i) && id.i > 0 ? id.i : null, admin: id.a === true });
+export const actorOf = (id: Identity): PersonalActor => ({ user: id.u, userId: typeof id.i === "number" && Number.isSafeInteger(id.i) && id.i > 0 ? id.i : null, roles: id.a === true ? ["admin"] : [], hostRoles: id.r ?? [] });
 
 export function personalRoutes(o: PersonalRoutesOptions) {
   const { personal } = o;
@@ -64,8 +64,8 @@ export function personalRoutes(o: PersonalRoutesOptions) {
   const signedFor = async (id: Identity, url: URL): Promise<(SignedRights & { dashboard: number; byScope?: boolean }) | null> => {
     const want = Number(url.searchParams.get("dashboard"));
     if (!Number.isSafeInteger(want) || want <= 0 || id.d !== want) return null;
-    const rights = id.v === true ? await o.canEdit(id) : { edit: false };
-    return { dashboard: want, view: id.v === true, edit: rights.edit, ...(rights.byScope ? { byScope: true } : {}) };
+    const rights = await o.rightsOn(id);
+    return { dashboard: want, view: rights.view, edit: rights.view && rights.edit, ...(rights.byScope ? { byScope: true } : {}) };
   };
   const audited = (who: PersonalActor, action: string, outcome: "ok" | "refused" | "denied", detail: string) => o.audit?.({ at: new Date().toISOString(), user: who.user, action, outcome, detail: detail.slice(0, 300) });
   const unsigned = { error: "Superset did not check your access to this dashboard. Reload the page; if it keeps happening, lenspack_superset.py in Superset needs updating.", code: "unsigned" };
@@ -87,7 +87,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
       }
       if ((path === "/_superset/settings/personal" || path === "/_superset/settings/edit-scope") && req.method === "PUT") {
         const action = `PUT ${path}`;
-        if (!who.admin) return audited(who, action, "denied", "not a Superset admin"), o.reply(res, 403, { error: "only Superset admins can change this" }), true;
+        if (!adminRights(who).administer) return audited(who, action, "denied", "not a Superset admin"), o.reply(res, 403, { error: "only Superset admins can change this" }), true;
         const b = await body(req);
         const r = path === "/_superset/settings/personal" ? o.setLimits(b) : o.setEditScope(b);
         audited(who, action, r.ok ? "ok" : "refused", r.ok ? JSON.stringify(b) : r.error);
@@ -117,8 +117,8 @@ export function personalRoutes(o: PersonalRoutesOptions) {
       if (path === "/_superset/my/layouts") {
         const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
-        const scope = await o.scope(req);
         const board = await o.bind(here.dashboard);
+        const scope = await o.scope(req, board);
         const shown = scope && (await o.shownBoard(board, scope.ctx));
         if (!shown) return o.reply(res, 404, { error: "This dashboard is not open in Lenspack.", code: "missing" }), true;
         return send(await personal.saveLayout(who, { ...here, board }, str("name"), shown.config, shown.title)), true;
@@ -130,9 +130,9 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         if (action === "delete") return send(await personal.deleteLayout(who, layoutId)), true;
         const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
-        const scope = await o.scope(req);
-        if (!scope) return o.reply(res, 403, unsigned), true;
         const board = await o.bind(here.dashboard);
+        const scope = await o.scope(req, board);
+        if (!scope) return o.reply(res, 403, unsigned), true;
         return send(await personal.applyLayout(who, layoutId, { board, edit: here.edit, ...scope })), true;
       }
       return o.reply(res, 404, { error: "not found" }), true;

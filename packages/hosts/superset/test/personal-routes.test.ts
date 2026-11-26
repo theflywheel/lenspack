@@ -24,7 +24,7 @@ describe("/_superset/my", () => {
     const handle = personalRoutes({
       personal: fake,
       identity: (req) => identityOf(req, () => KEY),
-      canEdit: async (id) => (!canEdit(id, "superset") ? { edit: false } : scopeOwn && !id.a ? { edit: false, byScope: true } : { edit: true }),
+      rightsOn: async (id) => ({ view: id.v === true, ...(!canEdit(id, "superset") ? { edit: false } : scopeOwn && !id.a ? { edit: false, byScope: true } : { edit: true }) }),
       scope: async () => ({ ctx: {} }),
       bind: async (d) => `superset-${d}`,
       shownBoard: async () => ({ config: emptyBoard({ pack: "p", version: 1 }, "T"), title: "T" }),
@@ -66,7 +66,7 @@ describe("/_superset/my", () => {
     expect((await post("/_superset/my/dashboards?dashboard=3", {}, { copy: true })).status).toBe(403);
     expect(calls).toEqual([]);
     await post("/_superset/my/dashboards?dashboard=3", { d: 3, v: true, e: false }, { copy: true, title: "Mine" });
-    expect(calls.at(-1)).toMatchObject({ fn: "copy", who: { user: "vee", userId: 6, admin: false }, args: [{ dashboard: 3, view: true, edit: false }, "Mine", ""] });
+    expect(calls.at(-1)).toMatchObject({ fn: "copy", who: { user: "vee", userId: 6, roles: [] }, args: [{ dashboard: 3, view: true, edit: false }, "Mine", ""] });
     await post("/_superset/my/layouts/l_1/apply?dashboard=3", { d: 3, v: true, e: false });
     expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { board: "superset-3", edit: false }] });
     await post("/_superset/my/layouts/l_1/apply?dashboard=3", { d: 3, v: true, e: true });
@@ -82,9 +82,9 @@ describe("/_superset/my", () => {
     expect(calls.map((c) => [c.fn, c.args[0]])).toEqual([["create", "New"], ["remove", 12], ["renameLayout", "l_2"], ["deleteLayout", "l_2"]]);
     // personal.everyone asks policy (mayViewAllPersonal) with the signed admin flag.
     await fetch(`${base}/_superset/personal`, { headers: as({}) });
-    expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { admin: false } });
+    expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { roles: [] } });
     await fetch(`${base}/_superset/personal`, { headers: as({ a: true }) });
-    expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { admin: true } });
+    expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { roles: ["admin"] } });
     expect((await fetch(`${base}/_superset/settings/personal`, { method: "PUT", headers: as({}), body: "{}" })).status).toBe(403);
   });
 

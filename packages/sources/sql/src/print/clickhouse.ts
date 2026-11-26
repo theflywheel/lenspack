@@ -28,7 +28,7 @@ export const clickhouseRules: DialectRules = {
     return `JSONExtract(${col}, ${path.map(lit).join(", ")}, 'Nullable(String)')`;
   },
   // quantileExactInclusive interpolates as percentile_cont does (R-7).
-  percentile: (fn, arg) => `quantileExactInclusive(${fn === "median" ? 0.5 : 0.9})(${arg})`,
+  percentile: (fn, arg) => `quantileExactInclusive(${fn === "median" ? 0.5 : fn === "p90" ? 0.9 : 0.95})(${arg})`,
   trunc: (grain, arg) => `toDateTime(${START[grain]}(${arg}), 'UTC')`,
   // The start is computed and printed in the zone: a DateTime carrying the
   // zone comes back as local wall-clock text.

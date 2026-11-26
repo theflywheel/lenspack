@@ -2,18 +2,18 @@
 // the host says, never from the rights of the account Lenspack acts through.
 import { describe, expect, it } from "vitest";
 
-import { EDIT_SCOPE_DEFAULT, NOBODY_EDITS_MESSAGE, NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, editScopeFrom, editScopeWarning, mayEditInScope, layoutsShownTo, mayApplyLayout, mayCopyDashboard, mayCreateDashboard, mayDeleteDashboard, mayManageLayout, maySaveLayout, mayViewAllPersonal, personalLimitsFrom } from "../src";
+import { type EditScope, EDIT_SCOPE_DEFAULT, boardRights, editScopeFacts, inEditScope, principalOf, NOBODY_EDITS_MESSAGE, NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, editScopeFrom, editScopeWarning, layoutsShownTo, mayApplyLayout, mayCopyDashboard, mayCreateDashboard, mayDeleteDashboard, mayManageLayout, maySaveLayout, mayViewAllPersonal, personalLimitsFrom } from "../src";
 
 const on = PERSONAL_DEFAULTS;
 const off = { ...on, on: false };
-const olu = { user: "olu", userId: 5, admin: false };
-const ada = { user: "ada", userId: 1, admin: true };
+const olu = { user: "olu", userId: 5, roles: [] };
+const ada = { user: "ada", userId: 1, roles: ["admin"] };
 
 describe("own dashboards", () => {
   it("anyone with a host id may make one, up to the limit", () => {
     expect(mayCreateDashboard(olu, on, 0)).toEqual({ ok: true });
     expect(mayCreateDashboard(olu, on, 20)).toMatchObject({ ok: false, code: "limit" });
-    expect(mayCreateDashboard({ user: "olu", admin: false }, on, 0)).toMatchObject({ ok: false, code: "no-user-id" });
+    expect(mayCreateDashboard({ user: "olu" }, on, 0)).toMatchObject({ ok: false, code: "no-user-id" });
     expect(mayCreateDashboard(ada, off, 0)).toMatchObject({ ok: false, code: "off" });
   });
 
@@ -26,7 +26,7 @@ describe("own dashboards", () => {
   it("deleted by an owner or an admin, never anyone else", () => {
     expect(mayDeleteDashboard(olu, on, { owners: [5, 9] })).toEqual({ ok: true });
     expect(mayDeleteDashboard(olu, on, { owners: [9] })).toMatchObject({ ok: false, code: "not-yours" });
-    expect(mayDeleteDashboard({ user: "olu", admin: false }, on, { owners: [5] })).toMatchObject({ ok: false, code: "not-yours" });
+    expect(mayDeleteDashboard({ user: "olu" }, on, { owners: [5] })).toMatchObject({ ok: false, code: "not-yours" });
     expect(mayDeleteDashboard(ada, on, { owners: [9] })).toEqual({ ok: true });
   });
 });
@@ -61,27 +61,40 @@ describe("limits", () => {
   });
 });
 
-describe("where the chat may edit", () => {
+describe("where the chat may edit (boardRights with the edit scope)", () => {
   const own = { scope: "own" as const, adminsExempt: true };
   const strict = { scope: "own" as const, adminsExempt: false };
+  // A Superset editor (or admin) on the shared board superset-1, whose own copy is superset-9.
+  const editor = (roles: string[], scope: EditScope, personalOn = true) => {
+    const facts = editScopeFacts(scope, { own: ["superset-9"], personalOn });
+    return principalOf({ user: roles.length ? "ada" : "olu", roles, edit: true, maintain: true, ...(facts ? { editScope: facts } : {}) });
+  };
+  const shared = { id: "superset-1" };
+  const mine = { id: "superset-9" };
 
   it("superset: wherever the host lets the person edit, never more", () => {
-    expect(mayEditInScope(olu, EDIT_SCOPE_DEFAULT, on, { hostEdit: true, own: false })).toEqual({ ok: true });
-    expect(mayEditInScope(olu, EDIT_SCOPE_DEFAULT, on, { hostEdit: false, own: true })).toMatchObject({ ok: false, code: "no-edit" });
+    expect(editScopeFacts(EDIT_SCOPE_DEFAULT, { own: [], personalOn: true })).toBeUndefined();
+    expect(boardRights(editor([], EDIT_SCOPE_DEFAULT), shared)).toEqual({ view: true, edit: true });
+    expect(boardRights(principalOf({ user: "olu", readOnly: "read only" }), mine).edit).toBe(false);
   });
 
   it("own: only their own dashboards, even where the host would let them edit; admins exempt unless told otherwise", () => {
-    expect(mayEditInScope(olu, own, on, { hostEdit: true, own: true })).toEqual({ ok: true });
-    expect(mayEditInScope(olu, own, on, { hostEdit: true, own: false })).toEqual({ ok: false, code: "not-own", why: NOT_OWN_MESSAGE });
-    expect(mayEditInScope(olu, own, on, { hostEdit: false, own: true })).toMatchObject({ code: "no-edit" });
-    expect(mayEditInScope(ada, own, on, { hostEdit: true, own: false })).toEqual({ ok: true });
-    expect(mayEditInScope(ada, strict, on, { hostEdit: true, own: false })).toMatchObject({ code: "not-own" });
+    expect(boardRights(editor([], own), mine)).toEqual({ view: true, edit: true });
+    expect(boardRights(editor([], own), shared)).toEqual({ view: true, edit: false, readOnly: NOT_OWN_MESSAGE });
+    expect(boardRights(editor(["admin"], own), shared)).toEqual({ view: true, edit: true });
+    expect(boardRights(editor(["admin"], strict), shared)).toMatchObject({ edit: false, readOnly: NOT_OWN_MESSAGE });
+    // The scope narrows, never widens: a viewer stays read-only on their own board's neighbours and gains nothing.
+    const viewer = principalOf({ user: "olu", editScope: editScopeFacts(own, { own: ["superset-9"], personalOn: true }) });
+    expect(boardRights(viewer, shared)).toEqual({ view: true, edit: false });
+    // A hidden board stays hidden, own or not.
+    expect(boardRights({ ...editor([], own), hiddenBoards: ["superset-9"] }, mine)).toEqual({ view: false, edit: false });
   });
 
   it("own with personal dashboards off: nobody but exempt admins, and the admin is warned", () => {
-    expect(mayEditInScope(olu, own, off, { hostEdit: true, own: true })).toEqual({ ok: false, code: "not-own", why: NOBODY_EDITS_MESSAGE });
-    expect(mayEditInScope(ada, own, off, { hostEdit: true, own: false })).toEqual({ ok: true });
-    expect(mayEditInScope(ada, strict, off, { hostEdit: true, own: false })).toMatchObject({ code: "not-own" });
+    expect(boardRights(editor([], own, false), mine)).toEqual({ view: true, edit: false, readOnly: NOBODY_EDITS_MESSAGE });
+    expect(boardRights(editor(["admin"], own, false), shared).edit).toBe(true);
+    expect(boardRights(editor(["admin"], strict, false), shared)).toMatchObject({ edit: false, readOnly: NOBODY_EDITS_MESSAGE });
+    expect(inEditScope({ roles: [] }, "superset-1")).toBe(true);
     expect(editScopeWarning(own, { personalOn: false, editsOn: true })).toMatch(/nobody but admins/);
     expect(editScopeWarning(strict, { personalOn: false, editsOn: true })).toMatch(/nobody can/);
     expect(editScopeWarning(own, { personalOn: true, editsOn: true })).toBeNull();

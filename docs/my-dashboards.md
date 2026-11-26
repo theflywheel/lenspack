@@ -21,8 +21,11 @@ makes it, and makes the change there. The shared dashboard stays as it was.
 
 Lenspack talks to Superset through its own admin account, so the rules below are Lenspack's, checked on every
 request before anything is written to Superset. They never allow more than Superset does. They live in
-`packages/kernel/policy/src/personal.ts`, as plain functions that the chat tools and the panel's routes both
-call.
+`@lenspack/policy`, as plain functions that the chat tools and the panel's routes both call, on the same
+footing as the rest of Lenspack's access rules: who counts as an admin is `adminRights()`, what a person may do on
+a dashboard is `boardRights()` (which also applies the edit scope below), and the data a person reads on a
+dashboard is `decide()` with that dashboard, so dashboard roles count there and only there. The rules for making,
+copying, deleting, saving and applying are in `packages/kernel/policy/src/personal.ts`.
 
 | | who may | |
 |---|---|---|
@@ -46,6 +49,10 @@ Some details:
   uses something they can't see (a dataset or field hidden from them under `hostPolicy: superset`) is left out,
   and the reply names it. Filters the target can't have are left out the same way. The dashboard keeps its own
   title.
+- **A copy starts private.** A new dashboard or a copy is a draft (not published) with no dashboard roles. A copy
+  of a dashboard that some people open through its dashboard roles (Superset's `DASHBOARD_RBAC`) does not carry
+  those roles, so it does not give them, or its owner, the access the original's roles gave. The owner reads on it
+  only what their own Superset access allows.
 - **The Superset plugin** must be the version that signs the user's Superset id (claim `i`). With an older
   plugin, making or copying a dashboard is refused with a message saying to update it.
 
@@ -124,6 +131,10 @@ other switches:
 
 A dashboard someone made directly in Superset, not through Lenspack, counts as shared under `own`.
 
+How it is decided: when `own` is on, the Superset host tells policy which dashboards are the person's own (from
+the list of dashboards made or copied through Lenspack), and `boardRights()` narrows the edit on every other one,
+with the reason the chat gives. The board API and the chat both ask `boardRights()`, so they always agree.
+
 ## Settings
 
 | | default | set by |
@@ -175,7 +186,18 @@ the next time its owner opens the menu.
 ## Audit and telemetry
 
 Each create, copy, delete, save, apply, rename and delete of a layout, and each change to the limits or the edit
-scope, is written to the audit log with the
-Superset user and the outcome (`ok`, `refused` or `denied`). For a telemetry sink, `personalDashboards()` takes
-a `telemetry` callback that receives one event per action (`dashboard.create`, `layout.apply` and so on).
-Nothing is connected to it yet.
+scope, is written to the audit log with the Superset user and the outcome (`ok`, `refused` or `denied`).
+
+### Usage telemetry
+
+With [usage telemetry](telemetry.md) on, each action that succeeds is also one telemetry event, kept by the item
+`personal-dashboards` ("Own dashboards made, copied and deleted; saved layouts used", in the Trust and reuse
+section, on by default, and off whenever `personalDashboards` is off):
+
+| event | `how` | `data` |
+|---|---|---|
+| `personal-dashboard` | `create`, `copy`, `delete` | the dashboard's id; for a copy, also the original's id and how many charts were copied |
+| `saved-layout` | `save`, `apply`, `rename`, `delete` | the layout's id; for an apply, how many widgets were left out |
+
+Events carry ids and counts only, never titles or layout names. Like other events, each records the user and
+their Superset role names (shown to admins with the usage right) and the dashboard it was on.

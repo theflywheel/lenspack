@@ -15,7 +15,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-import { type Identity as Caller, NO_RIGHTS } from "@lenspack/policy";
+import { type Identity as Caller, type EditScopeFacts, NO_RIGHTS } from "@lenspack/policy";
 import { type AuthAdapter, NO_STORE, apiRoute, json, withRights } from "@lenspack/serve";
 
 import type { HostPolicy } from "./access";
@@ -120,8 +120,8 @@ export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Call
   return { user: id.u, roles, usage, readOnly: READ_ONLY_MESSAGE };
 }
 
-/** The deployment's edit scope for one identity Superset lets edit: null to allow, else the refusal the chat gives. */
-export type EditScopeCheck = (id: Identity) => Promise<string | null>;
+/** The deployment's edit scope for one identity Superset lets edit, as facts for policy (none: no narrowing). */
+export type EditScopeOf = (id: Identity) => Promise<EditScopeFacts | undefined>;
 
 /** Lenspack's name for a Superset dashboard's board. */
 const DASHBOARD_BOARD = /^superset-\d+$/;
@@ -177,7 +177,7 @@ const decodePart = (s: string | undefined) => {
  * With a host policy (hostPolicy: superset), the user's own Superset roles, dataset access and row-level security
  * come with them, and policy narrows every query by those rather than by the service account's.
  */
-export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, scoped?: EditScopeCheck): AuthAdapter {
+export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, editScope?: EditScopeOf): AuthAdapter {
   return {
     kind: "superset",
     handle: async (req, res) => {
@@ -193,21 +193,29 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
       const check = boardCheck(id, req.url);
       if (check.refused) return null;
       let caller = callerOf(check.onBoard ? id : { ...id, e: false }, policy, editsOn());
-      // The deployment's edit scope can narrow an edit Superset allows (never widen one): read per request.
-      const outOfScope = caller.edit && scoped ? await scoped(id) : null;
-      if (outOfScope) caller = { user: caller.user, roles: caller.roles, usage: caller.usage, readOnly: outOfScope };
+      // The deployment's edit scope, as facts for policy (boardRights narrows edits by them, never widens): read per request.
+      const facts = caller.edit && editScope ? await editScope(id) : undefined;
+      if (facts) caller = { ...caller, editScope: facts };
       if (!host) return caller;
+      const access = await host(id.u, id.r);
+      // The dashboard Superset just checked this user may view opens, whatever an older answer said.
+      const signed = check.onBoard ? signedBoard(id) : null;
+      const hiddenBoards = access.hiddenBoards?.filter((b) => b !== signed);
       // "admin" stays the signed admin flag's: a Superset role of that name grants nothing here.
-      return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...(await host(id.u, id.r)) };
+      return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...access, ...(hiddenBoards ? { hiddenBoards } : {}) };
     },
   };
 }
 
-/** "superset": each user's Superset roles, dataset access and RLS narrow what they see. "off" (the default for now): the service account's. */
+/**
+ * "superset" (the default): each user's Superset roles, dataset access and RLS narrow what they see, failing closed.
+ * "off", only when chosen: every answer uses Lenspack's service account (an Admin), so anyone signed in reads every
+ * configured dataset in full.
+ */
 export function hostPolicyFrom(value: string | undefined): "superset" | "off" {
   const v = (value ?? "").trim().toLowerCase();
-  if (v === "" || v === "off") return "off";
-  if (v === "superset") return "superset";
+  if (v === "" || v === "superset") return "superset";
+  if (v === "off") return "off";
   throw new Error(`LENSPACK_HOST_POLICY (hostPolicy) must be "superset" or "off", not "${value}"`);
 }
 
