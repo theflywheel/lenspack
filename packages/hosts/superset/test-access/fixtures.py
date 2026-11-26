@@ -18,6 +18,9 @@ Users (all with the password in LP_USER_PASSWORD):
 Dashboards: A (owner lp_owner, no dashboard roles), B (owner lp_admin, dashboard role lp_board_b) and C (owner
 lp_admin, dashboard role lp_board_c). All start empty; the suite adds their charts through Lenspack as lp_admin: one
 of each dataset on A, stock on B, visits on C.
+Dashboard T (owner lp_admin; dashboard role lp_board_t, which no user holds) has top-level tabs, laid out as Superset
+leaves them: "Overview" (with tabs "By region" and "Trend" inside it) and "Stock", all empty, and GRID_ID left behind,
+empty and off ROOT_ID.
 """
 
 import json
@@ -113,7 +116,26 @@ with app.app_context():
     c = Dashboard(dashboard_title="Access C (dashboard role)", slug="access-c", published=True)
     c.owners = [made["lp_admin"]]
     c.roles = [r_board_c]
-    db.session.add_all([a, b, c])
+    def comp(cid, kind, children, parents, **meta):
+        return {"id": cid, "type": kind, "children": children, "parents": parents, "meta": meta}
+
+    top = ["ROOT_ID", "TABS-top"]
+    tabbed = {
+        "DASHBOARD_VERSION_KEY": "v2",
+        "ROOT_ID": {"id": "ROOT_ID", "type": "ROOT", "children": ["TABS-top"]},
+        "GRID_ID": comp("GRID_ID", "GRID", [], ["ROOT_ID"]),
+        "HEADER_ID": {"id": "HEADER_ID", "type": "HEADER", "meta": {"text": "Access tabs"}},
+        "TABS-top": comp("TABS-top", "TABS", ["TAB-overview", "TAB-stock"], ["ROOT_ID"]),
+        "TAB-overview": comp("TAB-overview", "TAB", ["TABS-inner"], top, text="Overview", defaultText="Tab title"),
+        "TABS-inner": comp("TABS-inner", "TABS", ["TAB-region", "TAB-trend"], [*top, "TAB-overview"]),
+        "TAB-region": comp("TAB-region", "TAB", [], [*top, "TAB-overview", "TABS-inner"], text="By region", defaultText="Tab title"),
+        "TAB-trend": comp("TAB-trend", "TAB", [], [*top, "TAB-overview", "TABS-inner"], text="Trend", defaultText="Tab title"),
+        "TAB-stock": comp("TAB-stock", "TAB", [], top, text="Stock", defaultText="Tab title"),
+    }
+    t = Dashboard(dashboard_title="Access tabs", slug="access-tabs", published=True, position_json=json.dumps(tabbed), json_metadata=json.dumps({"positions": tabbed}))
+    t.owners = [made["lp_admin"]]
+    t.roles = [role("lp_board_t")]
+    db.session.add_all([a, b, c, t])
     db.session.commit()
 
-    print(json.dumps({"datasets": {"visits": visits.id, "stock": stock.id}, "dashboards": {"a": a.id, "b": b.id, "c": c.id}, "noroles": [r.name for r in made["lp_noroles"].roles]}))
+    print(json.dumps({"datasets": {"visits": visits.id, "stock": stock.id}, "dashboards": {"a": a.id, "b": b.id, "c": c.id, "t": t.id}, "noroles": [r.name for r in made["lp_noroles"].roles]}))

@@ -9,3 +9,4 @@ export * from "./gate";
 export * from "./answer";
 export * from "./clarify";
 export * from "./definitions";
+export * from "./view";

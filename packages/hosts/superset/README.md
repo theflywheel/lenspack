@@ -55,6 +55,25 @@ signed-in user from Superset and puts the chat inside Superset's pages. It sits 
   most one dimension in `js_columns`, no time grain and no JavaScript; otherwise it stays Superset's. Shaded areas
   (`deck_polygon`) are not done: they need boundary shapes in a dataset column.
   `pushBoard` sends only what changed: `POST`/`PUT /api/v1/chart`, then the dashboard's layout, title and filters.
+- **Tabs.** A dashboard's layout is read from the top down, through tabs (top-level, inside the grid, or inside
+  other tabs) and columns, so the board lists every chart Superset draws, tab after tab. The chat is told what is
+  on each tab and which tab the viewer has open (the overlay sends it with each message). On a dashboard with tabs
+  or columns Lenspack keeps the layout and changes it in place (`layout.ts`):
+  - a new chart goes on the tab of the widget its placement names (`after:` or `below:`), else at the top or
+    bottom of the viewer's tab, else where Superset puts charts that have no place: the first top-level tab, or the
+    grid when the tabs sit inside it. Never under the grid that top-level tabs leave behind, where Superset draws
+    nothing;
+  - a resize changes the chart where it is (a row then wider than 12 columns wraps onto a new row in place);
+  - a removal takes out that one placement (a chart placed in two tabs keeps the other) and any row it empties;
+  - a restore puts a removed chart back where it was: the same chart, unless Lenspack made it, in its tab and row;
+  - **a move is refused**, with a message saying to move the chart in Superset. Moving charts between rows and tabs
+    needs a board that knows tabs, which is not built yet. Tabs themselves are made, renamed and removed in Superset.
+
+  Before every save the whole layout is checked (`layoutProblems`): each component listed by one parent, every
+  child present and allowed in its parent, `parents` matching the tree, `ROOT_ID` holding one grid or tabs, every
+  chart reachable. A layout that fails a check it passed before is not saved, and the chat says so. Problems the
+  dashboard already had are logged and left as they are. `placeCharts` puts charts a layout doesn't draw where
+  Superset draws them; use it whenever a layout gains charts outside Lenspack's edits (a copy of a dashboard).
 - **Superset stays the record.** `supersetBoards` wraps any `BoardStore`: reads pick up edits made in Superset,
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's
   version history is the undo Superset lacks.
