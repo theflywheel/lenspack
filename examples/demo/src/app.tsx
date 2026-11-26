@@ -299,6 +299,8 @@ export function App() {
   // The first paint needs the board, its data and its filter options: one
   // request brings all three, and the host serves them from this primer.
   const primer = React.useRef<{ config: string; data: Record<string, WidgetData>; options: Record<string, FilterOption[]> } | null>(null);
+  // The board's filter selections as last loaded: the chat sends them with each question.
+  const picked = React.useRef<Record<string, string>>({});
   const reloadBoard = React.useCallback(
     (withData = false) => {
       const fetchBoard = () => api(`${base}${withData ? "?include=data,options" : ""}`);
@@ -331,6 +333,7 @@ export function App() {
   const host = React.useMemo<BoardHost>(
     () => ({
       loadBoardData: (config, selections) => {
+        picked.current = selections;
         const p = primer.current;
         if (p && Object.keys(selections).length === 0 && JSON.stringify(config) === p.config) {
           // Used once: a refresh or a new selection asks the server.
@@ -395,18 +398,32 @@ export function App() {
   const current = catalog.find((c) => c.example === example);
   // The deployment's own line under the title, if it has one.
   const intro = page.intro;
+  // The questions asked most on this board, from the server's saved answers: shown first, one click answers from them.
+  const [asked, setAsked] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    setAsked([]);
+    if (!boardId) return;
+    let live = true;
+    void api(`${base}/suggestions`)
+      .then((r: { suggestions?: string[] }) => live && setAsked(Array.isArray(r.suggestions) ? r.suggestions.slice(0, 4) : []))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [base, boardId]);
   const suggestions = React.useMemo(() => {
-    if (!state) return [];
+    if (!state) return asked;
     const m = state.catalogue.measures;
     const d = state.catalogue.dimensions.filter((x) => x.type !== "time");
     const timed = m.find((x) => state.catalogue.entities.find((e) => e.key === x.entity)?.hasTime) ?? m[0];
-    return [
+    const ideas = [
       `Add a KPI for ${m[0]?.label.toLowerCase()} across the top`,
       d[0] && m[1] ? `Show ${m[1].label.toLowerCase()} by ${d[0].label.toLowerCase()} as a bar chart` : "",
       timed ? `Plot ${timed.label.toLowerCase()} per week for the last 12 weeks` : "",
       "Make the first chart full width",
-    ].filter(Boolean);
-  }, [state]);
+    ].filter((q) => q && !asked.includes(q));
+    return [...asked, ...ideas].slice(0, 6);
+  }, [state, asked]);
 
   const undoRemove = async () => {
     if (!removed || !host.revertTo) return;
@@ -576,6 +593,7 @@ export function App() {
                   onModelChange={setModel}
                   effort={effort}
                   onEffortChange={setEffort}
+                  selections={() => picked.current}
                 />
               </React.Suspense>
             ) : (

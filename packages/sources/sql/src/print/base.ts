@@ -18,8 +18,8 @@ export type DialectRules = {
   quote(id: string): string;
   cast(to: "double" | "text" | "timestamp" | "date" | "int" | "bigint"): string;
   json(col: string, path: string[]): string;
-  /** Exact median / p90. Absent when the dialect has none: the measure is refused. */
-  percentile?(fn: "median" | "p90", arg: string): string;
+  /** Exact median / p90 / p95. Absent when the dialect has none: the measure is refused. */
+  percentile?(fn: "median" | "p90" | "p95", arg: string): string;
   /** The start of the bucket a timestamp falls in; weeks start on Monday. */
   trunc(grain: Grain, arg: string): string;
   /**
@@ -80,7 +80,7 @@ export function print(ast: Ast, rules: DialectRules): Printed {
         return rules.json(q(e.col), e.path);
       case "agg": {
         if (e.fn === "count_distinct") return `count(DISTINCT ${expr(e.arg)})`;
-        if (e.fn === "median" || e.fn === "p90") {
+        if (e.fn === "median" || e.fn === "p90" || e.fn === "p95") {
           if (!rules.percentile) throw new ResolveError("NOT_SUPPORTED", `${rules.dialect} has no percentile function, so a ${e.fn} is not computed here`);
           return rules.percentile(e.fn, expr(e.arg));
         }

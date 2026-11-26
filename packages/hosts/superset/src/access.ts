@@ -10,9 +10,17 @@
 // readable there, and a templated clause cannot be rendered, so such a clause keeps its dataset from
 // the user. Only simple clauses translate (col = v, col IN (...), AND, and OR over one column);
 // anything else fails closed: the dataset is kept from the user, and the log says why.
+//
+// The same answer says which bound dashboards the user may open (Superset's dashboard access check, dashboard
+// roles included): the others are kept from them, so their titles are not listed to them either.
+//
+// With dashboard roles on (Superset's DASHBOARD_RBAC), it also says which datasets the user may read only on a
+// dashboard: Superset lets a user who opens a dashboard through its dashboard roles read the datasets behind its
+// charts there, without access to those datasets. They are passed on as they are, per board, with their RLS
+// (boardEntities); policy reads them on that board only (boardGrant in @lenspack/policy).
 
 import type { ScopeClause } from "@lenspack/core";
-import type { Identity } from "@lenspack/policy";
+import type { BoardEntities, Identity } from "@lenspack/policy";
 
 import type { Binding } from "./catalogue";
 import { type SupersetClient, SupersetError, rison } from "./client";
@@ -134,6 +142,34 @@ export function identityFrom(answer: Record<string, DatasetAccess | undefined>, 
   return { ...(hiddenEntities.length ? { hiddenEntities } : {}), ...(scope.length ? { scope } : {}) };
 }
 
+/**
+ * The datasets Superset lets one user read only on a dashboard, as policy's boardEntities: by board, each dataset's
+ * entity and its RLS as scope. A dataset whose RLS can't be read as scope is left out (it stays kept from them there
+ * too), and the log says why. Nothing at all unless Superset says dashboard roles are on.
+ */
+export function boardEntitiesFrom(answer: Record<string, DatasetAccess | undefined>, onDashboards: Record<string, number[]> | undefined, rbac: boolean, binding: Binding, log: (s: string) => void, user: string): Record<string, BoardEntities> {
+  const out: Record<string, BoardEntities> = {};
+  if (!rbac || !onDashboards) return out;
+  for (const [dashboard, ids] of Object.entries(onDashboards)) {
+    if (!/^\d+$/.test(dashboard) || !Array.isArray(ids)) continue;
+    const entities: string[] = [];
+    const scope: ScopeClause[] = [];
+    for (const id of ids) {
+      const entity = binding.entityOf.get(Number(id));
+      if (!entity || entities.includes(entity)) continue;
+      const s = rlsScope(answer[String(id)]?.rls ?? [], entity, binding);
+      if ("reason" in s) {
+        log(`access: ${entity} is kept from ${user} on dashboard ${dashboard} too: ${s.reason}`);
+        continue;
+      }
+      entities.push(entity);
+      scope.push(...s);
+    }
+    if (entities.length) out[`superset-${dashboard}`] = { entities, ...(scope.length ? { scope } : {}) };
+  }
+  return out;
+}
+
 type RlsRule = { filter_type: string; tables: { id: number }[]; roles: { name: string }[]; group_key?: string | null; clause: string };
 
 /** Without the plugin's endpoint: the RLS rules from Superset's REST API that apply to these roles, ORed by group key as Superset does. */
@@ -158,24 +194,71 @@ export async function stockAccess(client: SupersetClient, datasets: number[], ro
   );
 }
 
-/**
- * Each user's Superset access as policy, kept for ttlMs (60 s) per user. A failure to ask Superset
- * keeps every dataset from that user until the next try, rather than showing them the service account's.
- */
-export type HostPolicy = (user: string, roles: string[] | undefined) => Promise<Pick<Identity, "scope" | "hiddenEntities">>;
+/** What a refusal tells a user about data or a dashboard their Superset access keeps from them. */
+export const SUPERSET_HIDDEN_REASON = "your Superset access doesn't include it. A Superset admin can give you access.";
+/** What it tells them while Superset can't be asked: nothing is shown until it can. */
+export const SUPERSET_UNREACHABLE_REASON = "Lenspack could not check your Superset access just now, so nothing is shown. Try again in a minute.";
 
-export function supersetPolicy(o: { client: SupersetClient; binding: Binding; log: (s: string) => void; ttlMs?: number; now?: () => number }): HostPolicy {
+/** The dashboards one user may open, of these ids, as Superset decides (the plugin's endpoint); none when it can't be asked. */
+export async function viewableDashboards(client: SupersetClient, user: string, ids: number[]): Promise<Set<number>> {
+  if (!ids.length) return new Set();
+  try {
+    const r = await client.get<{ result: { dashboards?: Record<string, boolean> } }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=&dashboards=${ids.join(",")}`);
+    return new Set(ids.filter((id) => r.result.dashboards?.[String(id)] === true));
+  } catch {
+    return new Set();
+  }
+}
+
+type HostAnswer = Pick<Identity, "scope" | "hiddenEntities" | "hiddenBoards" | "boardEntities" | "hiddenReason">;
+
+/** What the plugin's /api/v1/lenspack/access answers; an older plugin leaves out the dashboard parts. */
+type PluginAnswer = { datasets: Record<string, DatasetAccess>; dashboards?: Record<string, boolean>; dashboardRbac?: boolean; dashboardDatasets?: Record<string, number[]> };
+
+/**
+ * Each user's Superset access as policy, kept for ttlMs (60 s) per user: the datasets and bound dashboards kept from
+ * them, RLS as scope, and with dashboard roles on, the datasets they may read only on a dashboard. A failure to ask
+ * Superset keeps every dataset and dashboard from that user until the next try (and grants nothing on any dashboard),
+ * rather than showing them the service account's. A dashboard bound after the answer was read counts as kept
+ * until the next one (the request Superset signs for it still opens it).
+ */
+export type HostPolicy = (user: string, roles: string[] | undefined) => Promise<HostAnswer>;
+
+export function supersetPolicy(o: { client: SupersetClient; binding: Binding; log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number }): HostPolicy {
   const ttl = o.ttlMs ?? 60_000;
   const now = o.now ?? Date.now;
   const datasets = [...o.binding.entityOf.keys()];
-  const cache = new Map<string, { at: number; value: Promise<Pick<Identity, "scope" | "hiddenEntities">> }>();
+  const cache = new Map<string, { at: number; value: Promise<HostAnswer> }>();
   let plugin = true;
-  const ask = async (user: string, roles: string[] | undefined) => {
+  let rbacSaid: string | undefined;
+  const boardsOf = (ids: number[], open: (id: number) => boolean) => {
+    const hiddenBoards = ids.filter((id) => !open(id)).map((id) => `superset-${id}`);
+    return hiddenBoards.length ? { hiddenBoards } : {};
+  };
+  const ask = async (user: string, roles: string[] | undefined): Promise<HostAnswer> => {
+    const dashboards = o.dashboards?.() ?? [];
     try {
       if (plugin) {
         try {
-          const r = await o.client.get<{ result: { datasets: Record<string, DatasetAccess> } }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=${datasets.join(",")}`);
-          return identityFrom(r.result.datasets, o.binding, o.log, user);
+          const r = await o.client.get<{ result: PluginAnswer }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=${datasets.join(",")}${dashboards.length ? `&dashboards=${dashboards.join(",")}` : ""}`);
+          const rbac = r.result.dashboardRbac === true;
+          // Said once, and again when it changes.
+          if (String(r.result.dashboardRbac) !== rbacSaid) {
+            rbacSaid = String(r.result.dashboardRbac);
+            o.log(
+              r.result.dashboardRbac === undefined
+                ? "access: lenspack_superset.py does not say whether dashboard roles (DASHBOARD_RBAC) are on; update it for dashboard roles to open their dashboards' data in the chat"
+                : `access: Superset's dashboard roles (DASHBOARD_RBAC) are ${rbac ? "on: a dashboard opened through one reads its charts' datasets there" : "off"}`,
+            );
+          }
+          const onBoards = boardEntitiesFrom(r.result.datasets, r.result.dashboardDatasets, rbac, o.binding, o.log, user);
+          // A plugin from before dashboards were asked about answers none: each counts as kept.
+          return {
+            ...identityFrom(r.result.datasets, o.binding, o.log, user),
+            ...boardsOf(dashboards, (id) => r.result.dashboards?.[String(id)] === true),
+            ...(Object.keys(onBoards).length ? { boardEntities: onBoards } : {}),
+            hiddenReason: SUPERSET_HIDDEN_REASON,
+          };
         } catch (e) {
           // Superset's own 404 (no such route), not the endpoint's (no such user).
           if (!(e instanceof SupersetError && e.status === 404 && (e.body as { message?: string } | undefined)?.message !== "no such user")) throw e;
@@ -185,11 +268,12 @@ export function supersetPolicy(o: { client: SupersetClient; binding: Binding; lo
       }
       // A regular rule is matched by role: without the signed roles (an older plugin), it cannot be.
       if (!roles) throw new Error("the identity carries no Superset roles; update lenspack_superset.py");
-      return identityFrom(await stockAccess(o.client, datasets, roles), o.binding, o.log, user);
+      // Superset's REST API can't say who may open a dashboard: each counts as kept, but for the one a request is signed for.
+      return { ...identityFrom(await stockAccess(o.client, datasets, roles), o.binding, o.log, user), ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_HIDDEN_REASON };
     } catch (e) {
-      o.log(`access: could not ask Superset about ${user} (${e instanceof Error ? e.message : String(e)}); every dataset is kept from them for now`);
+      o.log(`access: could not ask Superset about ${user} (${e instanceof Error ? e.message : String(e)}); every dataset and dashboard is kept from them for now`);
       cache.delete(user);
-      return { hiddenEntities: [...o.binding.entityOf.values()] };
+      return { hiddenEntities: [...o.binding.entityOf.values()], ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_UNREACHABLE_REASON };
     }
   };
   return (user, roles) => {

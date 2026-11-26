@@ -11,6 +11,8 @@ import YAML from "yaml";
 import { z } from "zod";
 
 import type { BoardFile, Host } from "./app";
+import { deploymentContextSchema } from "@lenspack/policy";
+
 import { authSchema, hiddenKeys, packRuleSchema } from "./auth";
 
 // lenspack.yaml: which sources exist, which pack reads which source, and where
@@ -40,6 +42,13 @@ const sourceSchema = z.union([
   // The form before URLs: a DuckDB or SQLite file by path.
   z.object({ kind: z.enum(["duckdb", "sqlite"]), path: z.string().min(1), ...limits }),
 ]);
+
+/** `explain:` in lenspack.yaml or superset.yaml. */
+export const explainSchema = z.union([z.boolean(), z.object({ sql: z.boolean().optional() }).strict()]);
+export type ExplainConfig = z.infer<typeof explainSchema>;
+
+/** The config's explain setting as the board API reads it: on unless false, the SQL shown unless sql is false. */
+export const explainFrom = (c: ExplainConfig | undefined): { on: boolean; sql: boolean } => ({ on: c !== false, sql: !(typeof c === "object" && c.sql === false) });
 
 export const configSchema = z.object({
   sources: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), sourceSchema),
@@ -87,14 +96,52 @@ export const configSchema = z.object({
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
+  /**
+   * Usage telemetry (docs/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. groups and
+   * items switch sections and items on or off (every key and its default are in docs/telemetry.md); questionText is
+   * the older name of items.question-text.
+   */
+  telemetry: z
+    .object({
+      dir: z.string().min(1),
+      retentionDays: z.number().int().min(1).max(3650).default(90),
+      groups: z.record(z.string(), z.boolean()).optional(),
+      items: z.record(z.string(), z.boolean()).optional(),
+      questionText: z.boolean().optional(),
+    })
+    .optional(),
+  /** The deployment's context (@lenspack/policy): what a board, dataset or role:<name> belongs to (campaign, campaignType, country). */
+  context: deploymentContextSchema.optional(),
   /** Append a JSON line per model call (tokens, US$, who, what for) to this file; today's totals are read back at startup. */
   usage: z.string().optional(),
   /** Daily caps (UTC) on priced model spend, in US$. Over one, chat answers 429 until midnight UTC. */
   budget: z.object({ usdPerDay: z.number().positive().optional(), usdPerUserPerDay: z.number().positive().optional() }).strict().optional(),
   /** How many of the latest user turns the chat model is sent (default 8). */
   historyTurns: z.number().int().positive().optional(),
+  /**
+   * Saved answers (docs/caching.md): `true`, or the store's file (default reuse.json beside this file) and its
+   * settings. Absent, every question runs the full assistant.
+   */
+  cache: z
+    .union([
+      z.boolean(),
+      z.object({ file: z.string().optional(), enabled: z.boolean().optional(), ttlHours: z.number().optional(), router: z.enum(["on", "off"]).optional(), maxEntries: z.number().int().optional(), freshMinutes: z.number().optional(), prewarm: z.record(z.unknown()).optional() }).strict(),
+    ])
+    .optional(),
+  /** The turn queue (docs/caching.md): { maxConcurrent, maxWaiting, maxWaitSeconds }. Absent: 8 at a time, 50 waiting, 60 s. */
+  queue: z.object({ maxConcurrent: z.number().int().optional(), maxWaiting: z.number().int().optional(), maxWaitSeconds: z.number().int().optional() }).strict().optional(),
+  /** "How this was worked out" under each answer: false turns it off; `{ sql: false }` keeps the words and rows but not the SQL. */
+  explain: explainSchema.optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
   proposals: z.string().optional(),
+  /**
+   * A writable directory for the server's own state: its switches, the admins' definitions overlay, open questions and
+   * the daily review. With it, the admin panel is served at /_lenspack/admin/ (maintainers only), and the audit log is kept there
+   * by month unless audit: names a file.
+   */
+  state: z.string().optional(),
+  /** Switches (see features.ts): on or off by name; the admin panel can change them while the server runs. */
+  features: z.record(z.boolean()).optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 

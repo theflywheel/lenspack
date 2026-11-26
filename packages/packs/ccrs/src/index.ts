@@ -194,7 +194,7 @@ export function compileCcrs(kpiRecords: unknown[], packRecords: unknown[], opts:
 
   const simple = (entity: string, spec: { agg: string; column?: string; p?: number }, where: Where[], kpi: string): string | null => {
     const agg =
-      spec.agg === "count" ? "count" : spec.agg === "count_distinct" ? "count_distinct" : ["sum", "avg", "min", "max"].includes(spec.agg) ? spec.agg : spec.agg === "percentile" ? (spec.p === 50 ? "median" : spec.p === 90 ? "p90" : null) : null;
+      spec.agg === "count" ? "count" : spec.agg === "count_distinct" ? "count_distinct" : ["sum", "avg", "min", "max"].includes(spec.agg) ? spec.agg : spec.agg === "percentile" ? (spec.p === 50 ? "median" : spec.p === 90 ? "p90" : spec.p === 95 ? "p95" : null) : null;
     if (!agg) {
       notes.push({ kpi, note: `aggregate ${spec.agg}${spec.p ? ` p${spec.p}` : ""} not translated` });
       return null;

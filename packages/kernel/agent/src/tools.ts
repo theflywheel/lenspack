@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
-import { type Connector, type Ctx, checkOps, explain, run, valuesQuery } from "@lenspack/engine";
-import { shownConfig, showsStatement, withoutKeys } from "@lenspack/policy";
+import { type Connector, type Ctx, type SourceCall, type WidgetData, checkOps, explain, nowOf, run, tracedConnector, valuesQuery } from "@lenspack/engine";
+import { shownConfig, showsStatement, visibleCatalogue } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 
 import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, parseClear, patchQuery, str } from "./args";
@@ -56,9 +56,26 @@ export type BoardToolsOptions = {
    * message instead of changing the board, so the model can say why (reading tools still work).
    */
   readOnly?: string;
+  /**
+   * The store holds edits back until the turn ends (a staged store, while a reviewer checks them),
+   * so an applied edit is a draft: its result and onEdit say `held`, and its version is the number
+   * it will have if it is saved, not one the board already has.
+   */
+  held?: boolean;
   /** Told of every edit a tool applied or refused (an audit log). Never throws into the tool. */
-  onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; error?: string }) => void;
+  onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; held?: boolean; error?: string }) => void;
+  /**
+   * Told of every data call that answered (query, run_sql): what was asked, what the source ran
+   * and what came back, so the answer can show how it was worked out. Set, each query is traced
+   * as it runs; nothing is run again for it. Never throws into the tool.
+   */
+  onData?: (e: DataCall) => void;
 };
+
+/** One data call a tool made, as onData hears it. */
+export type DataCall =
+  | { tool: "query"; query: Query; data: WidgetData; sources: SourceCall[]; now: Date }
+  | { tool: "run_sql"; sql: string; rows: Record<string, unknown>[]; rowCount: number; truncated: boolean };
 
 /** The shape the Vercel AI SDK's `tool()` accepts, keyed by name: spread it into `tools:`. */
 export const toVercelAI = (tools: Tool[]) =>
@@ -81,6 +98,30 @@ function chartWidget(chart: (typeof CHART_KINDS)[number], title: string, query: 
  * alone, the records behind a top 3 look like a fact about the whole data (how many records carry
  * the dimension at all); said this way, they cannot.
  */
+/** The query tool's result for rows the engine returned: what the model, a saved answer and a chip all read. */
+export function queryResult(query: Query, data: Awaited<ReturnType<typeof run>>) {
+  return {
+    ok: true as const,
+    query,
+    // What the numbers are when they were computed after the source answered, and how zeros and gaps were treated.
+    ...(data.computed ? { computed: data.computed } : {}),
+    rows: data.records ?? data.rows,
+    // Records behind the rows shown, not the measure's total: named so a model cannot read it as one.
+    records: data.total,
+    ...(query.kind === "breakdown" ? { counts: countsNote(query, data.rows.filter((r) => !r.other).length, data.total) } : {}),
+    format: data.format,
+    compare: data.compare,
+    ...(data.approximate ? { approximate: true } : {}),
+    ...(data.notes ? { notes: data.notes } : {}),
+  };
+}
+
+/** A query already checked (a suggested question's), run under a caller's context: the query tool's result, or its error. */
+export async function checkedQuery(query: Query, o: { pack: Pack; connector: Connector; ctx?: Ctx; timeoutMs?: number }) {
+  const data = await run(query, { pack: o.pack, connector: o.connector, ctx: o.ctx ?? {}, timeoutMs: o.timeoutMs });
+  return data.error ? { ok: false as const, error: data.error } : queryResult(query, data);
+}
+
 function countsNote(query: Extract<Query, { kind: "breakdown" }>, shown: number, records: number) {
   const cut = shown >= query.limit;
   return `${shown} group${shown === 1 ? "" : "s"} shown${cut ? `, the top ${query.limit}: other groups may exist` : ", every group with records"}. records (${records}) counts only the records behind the groups shown, not the data's total; for a total, run a value query.`;
@@ -158,8 +199,15 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // The board as this caller is shown it: the same view the board API sends them, so the model never reads a value they may not see.
   const shown = (config: BoardConfig) => summarise(shownConfig(config, ctx));
   // What the model may name: verified keys this caller may use.
-  const catalogue = withoutKeys(verifiedOnly(catalogueFrom(pack)), ctx.hidden);
+  const catalogue = visibleCatalogue(verifiedOnly(catalogueFrom(pack)), ctx);
   const proposals = opts.proposals ?? memoryProposals();
+  const observed = (e: DataCall) => {
+    try {
+      opts.onData?.(e);
+    } catch {
+      /* an explanation must not break an answer */
+    }
+  };
 
   // Models call several edit tools in one step and the SDK runs them in
   // parallel; each patch reads the board, so unserialised they would race and
@@ -195,10 +243,11 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         told({ outcome: "refused", ops: names, error: result.error });
         return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
       }
-      told({ outcome: "ok", ops: names, version: result.board.version });
+      const held = opts.held ? { held: true as const } : {};
+      told({ outcome: "ok", ops: names, version: result.board.version, ...held });
       // What the edit did besides what was asked (room made, a widget widened), so the model can say so.
       const layout = before ? layoutChanges(before, result.board.config, ops) : [];
-      return { applied: true, version: result.board.version, ...(layout.length ? { layout: layout.join("; ") } : {}), board: shown(result.board.config) };
+      return { applied: true, version: result.board.version, ...held, ...(layout.length ? { layout: layout.join("; ") } : {}), board: shown(result.board.config) };
     };
     const next = queue.then(work, work);
     queue = next.catch(() => undefined);
@@ -263,26 +312,16 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       inputSchema: QUERY,
       async execute(a) {
         const query = assembleQuery(a, pack);
-        const data = await run(query, { pack, connector, ctx, timeoutMs: opts.timeoutMs });
+        // Traced only when someone listens: what the source ran, from the run itself.
+        const sources: SourceCall[] = [];
+        // One clock for the run and its description, so "the last 30 days" is named as the dates it read.
+        const now = nowOf(ctx);
+        const data = await run(query, { pack, connector: opts.onData ? tracedConnector(connector, sources) : connector, ctx: { ...ctx, now }, timeoutMs: opts.timeoutMs });
         if (data.error) return { ok: false, error: data.error, ...(data.hint ? { didYouMean: data.hint } : {}) };
+        observed({ tool: "query", query, data, sources, now });
         const { text } = await explain(query, { pack, connector, ctx });
         const closest = data.total === 0 ? await closestValues(query) : "";
-        return {
-          ok: true,
-          query,
-          ...(closest ? { didYouMean: closest } : {}),
-          // What the numbers are when they were computed after the source answered, and how zeros and gaps were treated.
-          ...(data.computed ? { computed: data.computed } : {}),
-          rows: data.records ?? data.rows,
-          // Records behind the rows shown, not the measure's total: named so a model cannot read it as one.
-          records: data.total,
-          ...(query.kind === "breakdown" ? { counts: countsNote(query, data.rows.filter((r) => !r.other).length, data.total) } : {}),
-          format: data.format,
-          compare: data.compare,
-          ...(data.approximate ? { approximate: true } : {}),
-          ...(data.notes ? { notes: data.notes } : {}),
-          ...statement(text),
-        };
+        return { ...queryResult(query, data), ...(closest ? { didYouMean: closest } : {}), ...statement(text) };
       },
     }),
     defineTool({
@@ -544,7 +583,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         name: "run_sql",
         description: `Read-only SQL for a question the pack cannot express. One SELECT or WITH statement, capped rows, timeboxed. Results are for answering, never for widgets: if the answer is worth keeping, propose_measure it. Tables:\n${raw.describe}`,
         inputSchema: z.object({ sql: z.string() }),
-        execute: async ({ sql }) => ({ ok: true, ...(await raw.run(sql, { timeoutMs: opts.timeoutMs })) }),
+        execute: async ({ sql }) => {
+          const result = (await raw.run(sql, { timeoutMs: opts.timeoutMs })) as { rows?: Record<string, unknown>[]; rowCount?: number; truncated?: boolean; sql?: string };
+          const rows = Array.isArray(result.rows) ? result.rows : [];
+          observed({ tool: "run_sql", sql: typeof result.sql === "string" ? result.sql : sql, rows, rowCount: result.rowCount ?? rows.length, truncated: !!result.truncated });
+          return { ok: true, ...result };
+        },
       }),
     );
 

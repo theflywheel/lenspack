@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
 import { fileProposals } from "@lenspack/agent";
-import { type Host, buildProvider, createApp, probe, providersFromEnv, seedBoards } from "@lenspack/serve";
+import { CACHE_DEFAULTS, type Host, buildProvider, createApp, probe, providersFromEnv, reuseLayer, seedBoards } from "@lenspack/serve";
 import { sqlConnector, sqlStore } from "@lenspack/sql";
 
 import { type ExampleName, contextFor, examples } from "../index";
@@ -60,6 +60,8 @@ for (const name of Object.keys(examples) as ExampleName[]) {
 }
 
 const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_LLM_ROLES) : undefined;
-createServer(createApp(hosts, { providers, roles })).listen(port, () =>
+// Saved answers (docs/caching.md), kept beside the data; LENSPACK_CACHE=off turns them off.
+const reuse = process.env.LENSPACK_CACHE === "off" ? undefined : reuseLayer({ store: join(dataDir, "reuse.json"), settings: () => ({ ...CACHE_DEFAULTS, on: true }), log: (m) => console.log(`lenspack: ${m}`) });
+createServer(createApp(hosts, { providers, roles, reuse })).listen(port, () =>
   console.log(`lenspack demo api: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ") || "(no examples seeded)"} on http://localhost:${port}/api`),
 );

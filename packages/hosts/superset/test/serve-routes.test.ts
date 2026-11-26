@@ -28,8 +28,14 @@ const DATASET = {
   columns: [
     { column_name: "created_at", is_dttm: true, type: "TIMESTAMP" },
     { column_name: "region", groupby: true, type: "TEXT" },
+    // Groups, and has the same name as the saved metric: the metric keeps the key, the column becomes visit_count_value.
+    { column_name: "visit_count", groupby: true, type: "BIGINT" },
   ],
-  metrics: [{ metric_name: "visit_count", expression: "COUNT(*)", verbose_name: "Visits" }],
+  // A metric with no expression is left out, with a warning.
+  metrics: [
+    { metric_name: "visit_count", expression: "COUNT(*)", verbose_name: "Visits" },
+    { metric_name: "half_made", expression: "" },
+  ],
 };
 
 /** Just enough of Superset's API for Lenspack to start, bind a dashboard and list them; and a model list for speech. */
@@ -44,9 +50,25 @@ function fakeSuperset(): Server {
     if (path === "/api/v1/security/csrf_token/") return send({ result: "csrf" });
     if (path === "/api/v1/dataset/1") return send({ result: DATASET });
     if (path === "/api/v1/lenspack/identity-key") return send({ result: { key: KEY } });
+    // Each user's Superset access (hostPolicy: superset, the default): everyone reads the dataset and opens dashboard 7.
+    if (path === "/api/v1/lenspack/access") {
+      const q = new URL(req.url ?? "", "http://x").searchParams;
+      const ids = (name: string) => (q.get(name) ?? "").split(",").filter(Boolean);
+      return send({ result: { datasets: Object.fromEntries(ids("datasets").map((d) => [d, { access: true, rls: [] }])), dashboards: Object.fromEntries(ids("dashboards").map((d) => [d, d === "7"])) } });
+    }
     if (path === "/api/v1/dashboard/7" || path === "/api/v1/dashboard/ops") return send({ result: { id: 7, dashboard_title: "Ops", position_json: null, json_metadata: null, changed_on: "2026-01-01T00:00:00" } });
     if (path === "/api/v1/dashboard/7/charts") return send({ result: [] });
     if (path === "/api/v1/dashboard/") return send({ result: [{ id: 7, dashboard_title: "Ops", changed_on_delta_humanized: "a day ago" }] });
+    // Superset's action log: an export and a permalink on dashboard 7, a chart view there, and an export elsewhere.
+    if (path === "/api/v1/log/")
+      return send({
+        result: [
+          { action: "log", dttm: "2026-11-20T10:00:00", dashboard_id: 7, slice_id: 3, json: JSON.stringify({ event_name: "export_csv_dashboard_chart" }), user: { username: "ana" } },
+          { action: "log", dttm: "2026-11-20T09:00:00", dashboard_id: null, json: JSON.stringify({ event_name: "copy_permalink", dashboard_id: 7 }), user: { username: "ben" } },
+          { action: "log", dttm: "2026-11-20T08:00:00", dashboard_id: 7, json: JSON.stringify({ event_name: "mount_dashboard" }), user: { username: "ana" } },
+          { action: "log", dttm: "2026-11-20T07:00:00", dashboard_id: 99, json: JSON.stringify({ event_name: "dashboard_download_as_pdf" }), user: { username: "cleo" } },
+        ],
+      });
     if (path === "/models") return send({ data: [{ id: "vendor/listen-1", name: "Listen 1", pricing: { prompt: "0.0001", completion: "0" } }] });
     res.writeHead(404, { "content-type": "application/json" });
     res.end(JSON.stringify({ message: "not here" }));
@@ -164,7 +186,22 @@ describe("Superset mode's server", () => {
     expect(r.body.examples).toEqual(["Visites par région"]);
     expect(r.body.examplesByLang).toMatchObject({ en: ["Visits by region"], fr: ["Visites par région"] });
     expect(r.body.language.options).toEqual(expect.arrayContaining(["auto", "en", "fr", "hi"]));
-    expect(Object.values(r.body.features).every((v) => v === true)).toBe(true);
+    // Every switch is on by default but the daily review, which costs money.
+    const { "review.daily": daily, ...rest } = r.body.features;
+    expect(daily).toBe(false);
+    expect(Object.values(rest).every((v) => v === true)).toBe(true);
+  });
+
+  it("serves the admin panel to Superset admins only, under its own prefix", async () => {
+    for (const path of ["/_superset/admin/", "/_superset/admin/api/packs", "/_superset/admin/api/usage/overview"]) expect((await call(path, { as: VIEWER })).status).toBe(403);
+    const page = await call("/_superset/admin/", { as: ADMIN });
+    expect(page.status).toBe(200);
+    const packs = await call("/_superset/admin/api/packs", { as: ADMIN });
+    expect(packs.status).toBe(200);
+    expect(packs.body.packs.map((p: { name: string }) => p.name)).toEqual(["visits_pack"]);
+    expect(packs.body.usage).toMatchObject({ board: "overview" });
+    const audit = await call("/_superset/audit", { as: ADMIN });
+    expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "viewer", action: "GET /_superset/admin/api/packs", outcome: "denied" }));
   });
 
   it("names the signed user on the board API", async () => {
@@ -178,7 +215,7 @@ describe("Superset mode's server", () => {
   });
 
   it("keeps the settings to Superset admins, and audits a refusal", async () => {
-    for (const [method, path] of [["GET", "/_superset/settings"], ["GET", "/_superset/audit"], ["GET", "/_superset/turns"], ["PUT", "/_superset/settings/features"], ["PUT", "/_superset/settings/speech"], ["PUT", "/_superset/settings/language"], ["PUT", "/_superset/settings/chat"]] as const) {
+    for (const [method, path] of [["GET", "/_superset/settings"], ["GET", "/_superset/audit"], ["GET", "/_superset/turns"], ["PUT", "/_superset/settings/features"], ["PUT", "/_superset/settings/speech"], ["PUT", "/_superset/settings/language"], ["PUT", "/_superset/settings/chat"], ["PUT", "/_superset/settings/cache"], ["GET", "/_superset/cache"], ["POST", "/_superset/cache/abc/pin"]] as const) {
       const r = await call(path, { method, as: VIEWER, ...(method === "PUT" ? { body: "{}" } : {}) });
       expect(r).toMatchObject({ status: 403, body: { error: "only Superset admins can do this" } });
     }
@@ -186,10 +223,21 @@ describe("Superset mode's server", () => {
     expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "viewer", action: "GET /_superset/settings", outcome: "denied", detail: "not a Superset admin" }));
   });
 
+  it("starts when a column and a metric come to one key, and says what it changed", async () => {
+    const r = await call("/_superset/settings", { as: ADMIN });
+    expect(r.body.measures).toEqual([expect.objectContaining({ key: "visit_count", agg: "count" })]);
+    expect(r.body.dimensions).toBe(2);
+    expect(r.body.warnings).toEqual([
+      'Superset dataset "visits" (1): metric "half_made" has no SQL expression and is left out',
+      'Superset dataset "visits" (1): column "visit_count" and a metric both come to the key "visit_count"; the metric keeps it, and the column is the dimension "visit_count_value"',
+    ]);
+    for (const w of r.body.warnings) expect(output).toContain(`lenspack-superset: warning: ${w}`);
+  });
+
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "speech", "superset"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "queue", "speech", "superset", "telemetry", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -206,6 +254,8 @@ describe("Superset mode's server", () => {
       speech: { enabled: false, keyFrom: null, provider: "openrouter", source: "default", holdMs: 2000, defaultHoldMs: 2000, holdMsRange: { min: 500, max: 3000 }, writable: true },
       language: { default: "auto", titles: "board", board: "en", defaults: { default: "auto", titles: "board", board: "en" }, source: "default", writable: true },
       features: { writable: true },
+      cache: { enabled: true, ttlHours: 168, router: "on", maxEntries: 500, freshMinutes: 10, prewarm: { enabled: false, times: ["06:30", "16:30"], timeZone: null, topN: 10, maxUsd: 0.05 }, source: "default", writable: true },
+      queue: { maxConcurrent: 8, maxWaiting: 50, maxWaitSeconds: 60, source: "default", writable: true },
     });
     expect(Object.keys(r.body.features).sort()).toEqual(["defaults", "options", "source", "values", "writable"]);
     expect(JSON.stringify(r.body)).not.toContain("service-password");
@@ -221,6 +271,29 @@ describe("Superset mode's server", () => {
     expect(await put("/_superset/settings/features", { voice: "off" })).toMatchObject({ status: 400, body: { error: "voice must be true, false or null" } });
     expect((await put("/_superset/settings/features", "{not json")).status).toBe(400);
     expect(await put("/_superset/settings/features", "[1]")).toMatchObject({ status: 400, body: { error: "body must be a JSON object" } });
+  });
+
+  it("changes the saved-answer settings, and shows the saved answers to admins", async () => {
+    const r = await put("/_superset/settings/cache", { router: "off", ttlHours: 24 });
+    expect(r).toMatchObject({ status: 200, body: { router: "off", ttlHours: 24, source: "settings", defaults: { router: "on", ttlHours: 168 } } });
+    expect(await put("/_superset/settings/cache", { ttlHours: 0 })).toMatchObject({ status: 400, body: { error: expect.stringContaining("ttlHours") } });
+    expect((await put("/_superset/settings/cache", { router: null, ttlHours: null })).body).toMatchObject({ router: "on", ttlHours: 168, source: "default" });
+    const list = await call("/_superset/cache", { as: ADMIN });
+    expect(list).toMatchObject({ status: 200, body: { stats: { hits: { t1: 0, t2: 0, t3: 0, t4: 0 }, misses: expect.any(Number) }, entries: expect.any(Array) } });
+    expect((await call("/_superset/cache/nothing/evict", { method: "POST", as: ADMIN })).status).toBe(404);
+    expect((await call("/_superset/cache/suggestions", { as: ADMIN })).status).toBe(400);
+    expect(list.body.queue).toMatchObject({ running: 0, waiting: 0 });
+    // The refresh schedule merges: a change to one field keeps the others.
+    expect((await put("/_superset/settings/cache", { prewarm: { enabled: true, times: ["07:00"] } })).body.prewarm).toMatchObject({ enabled: true, times: ["07:00"], topN: 10 });
+    expect((await put("/_superset/settings/cache", { prewarm: { topN: 3 } })).body.prewarm).toMatchObject({ enabled: true, times: ["07:00"], topN: 3 });
+    expect((await put("/_superset/settings/cache", { prewarm: { times: ["7am"] } })).status).toBe(400);
+    expect((await put("/_superset/settings/cache", { prewarm: null })).body.prewarm).toMatchObject({ enabled: false, times: ["06:30", "16:30"] });
+    expect((await call("/_superset/cache/prewarm", { method: "POST", as: ADMIN })).body).toMatchObject({ ok: true });
+    expect((await call("/_superset/cache/data-changed", { method: "POST", as: ADMIN, body: "{}" })).status).toBe(202);
+    // The queue's limits.
+    expect((await put("/_superset/settings/queue", { maxConcurrent: 2 })).body).toMatchObject({ maxConcurrent: 2, maxWaiting: 50, source: "settings" });
+    expect((await put("/_superset/settings/queue", { maxConcurrent: 0 })).status).toBe(400);
+    expect((await put("/_superset/settings/queue", { maxConcurrent: null })).body).toMatchObject({ maxConcurrent: 8, source: "default" });
   });
 
   it("sets the speech model and the hold, and lists the models", async () => {
@@ -297,6 +370,30 @@ describe("Superset mode's server", () => {
     const embed = await call("/superset/7", { as: VIEWER, headers: { "x-forwarded-host": "bi.example.org", "x-forwarded-proto": "https" } });
     expect(vars(embed.body)).toMatchObject({ dashboard: 7, supersetUrl: "https://bi.example.org", examples: { en: ["Visits by region"] } });
     expect(embed.body).not.toContain("__BASE__");
+  });
+
+  it("records the Superset role names telemetry reads from the signed identity, and none when none are signed", async () => {
+    const event = (as: Partial<Identity>) => call("/api/_telemetry", { method: "POST", body: JSON.stringify({ type: "chart-exported", choice: "png" }), as });
+    expect((await event({ u: "field-1", a: false, r: ["Gamma", "Supervisor-A"] })).status).toBe(202);
+    expect((await event({ u: "older-plugin", a: false })).status).toBe(202);
+    expect((await call("/_superset/telemetry?type=event", { as: VIEWER })).status).toBe(403);
+    const page = await call("/_superset/telemetry?type=event", { as: ADMIN });
+    expect(page.status).toBe(200);
+    const roles = Object.fromEntries(page.body.records.map((r: { user: string; roles: string[] }) => [r.user, r.roles]));
+    expect(roles).toMatchObject({ "field-1": ["Gamma", "Supervisor-A"], "older-plugin": [] });
+    expect(existsSync(join(dir, "state", "telemetry.jsonl"))).toBe(true);
+  });
+
+  it("reads exports and shares done in Superset on the dashboards Lenspack works on, for admins", async () => {
+    expect((await call("/_superset/telemetry/superset-actions", { as: VIEWER })).status).toBe(403);
+    const r = await call("/_superset/telemetry/superset-actions?from=2026-11-19&to=2026-11-21", { as: ADMIN });
+    expect(r.status).toBe(200);
+    // Dashboard 7 is bound (above); 99 is not Lenspack's, and a plain view is neither an export nor a share.
+    expect(r.body).toMatchObject({ available: true, actions: [
+      { dashboard: 7, chart: 3, event: "export_csv_dashboard_chart", user: "ana" },
+      { dashboard: 7, chart: null, event: "copy_permalink", user: "ben" },
+    ] });
+    expect(r.body.actions).toHaveLength(2);
   });
 
   it("answers 404 for a signed request to nowhere", async () => {

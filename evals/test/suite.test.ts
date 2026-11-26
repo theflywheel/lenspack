@@ -63,3 +63,54 @@ describe("the commerce suite, played by the stub", () => {
     });
   }
 });
+
+// The rig's user (hostPolicy: superset, --as-user) narrows every turn the way the Superset host does.
+function asViewer(base: Rig, hiddenEntities: string[]): Rig {
+  return { ...base, user: { name: "viewer", identity: async () => ({ user: "viewer", edit: true, maintain: true, hiddenEntities }) } };
+}
+
+describe("a run as a user whose access hides the data a question needs", () => {
+  let rig: Rig;
+  let srv: Awaited<ReturnType<typeof serve>>;
+  beforeAll(async () => {
+    rig = asViewer(await exampleRig("commerce", { board: "overview" }), ["orders"]);
+    srv = await serve(rig, [stubProvider(suite)]);
+  });
+  afterAll(async () => {
+    await srv.close();
+    await rig.close();
+  });
+
+  it("can't answer what the service account answers", async () => {
+    const q = suite.questions.find((x) => x.id === "C1")!;
+    const r = await runQuestion(rig, srv, srv.providers[0]!, q, undefined, { judge: null, rep: 1 });
+    expect(r.outcome).not.toBe("correct");
+    // The stub asks for the same figure; the engine refuses the hidden measure, and the stub's scripted
+    // reply has nothing to fill in.
+    expect(r.toolErrors).toBeGreaterThan(0);
+    expect(r.calls.find((c) => c.tool === "query")?.ok).toBe(false);
+  });
+});
+
+describe("a run as a user who may read none of the datasets", () => {
+  let rig: Rig;
+  let srv: Awaited<ReturnType<typeof serve>>;
+  beforeAll(async () => {
+    const base = await exampleRig("commerce", { board: "overview" });
+    rig = asViewer(base, Object.keys(base.host.pack.entities));
+    srv = await serve(rig, [stubProvider(suite)]);
+  });
+  afterAll(async () => {
+    await srv.close();
+    await rig.close();
+  });
+
+  it("is refused before any model call, and told it is their access", async () => {
+    const q = suite.questions.find((x) => x.id === "C1")!;
+    const r = await runQuestion(rig, srv, srv.providers[0]!, q, undefined, { judge: null, rep: 1 });
+    expect(r.outcome).not.toBe("correct");
+    expect(r.calls).toEqual([]);
+    expect(r.usd).toBe(0);
+    expect(r.error).toContain("None of this assistant's data is available to you");
+  });
+});

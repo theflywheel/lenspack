@@ -2,12 +2,15 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { type ModelMessage, type ToolSet, wrapLanguageModel } from "ai";
 
 import type { AnthropicSettings, LlmAdapter, PreparedCall, ProviderConfig, ProviderOptions } from "../llm";
-import type { Pricing } from "../metering";
+import { type Pricing, type ProviderUsage, type Tokens, tokensOf } from "../metering";
 
 // Claude through Anthropic's Messages API. Three things differ from an
 // OpenAI-compatible endpoint and are handled here, so nothing else changes:
 // - the prompt cache is opt-in per block: the tools, the stable system prompt
-//   and a tool loop's tail get breakpoints, as the chat repeats all three;
+//   and a tool loop's tail get breakpoints, as the chat repeats all three. The
+//   first two are kept for an hour by default (questions on a dashboard come
+//   minutes apart, and the saved-answer store makes model calls rarer still);
+//   the tail, read again only within the turn, for five minutes;
 // - thinking counts toward the output cap and is tied to the conversation that
 //   produced it, and lenspack's history is edited every turn (the board in the
 //   system prompt changes, old turns fall out of the window), so stale thinking
@@ -75,8 +78,24 @@ export function anthropicDefaults(cfg: ProviderConfig): JSONObject {
   });
 }
 
-function cacheMark(s: AnthropicSettings): ProviderOptions {
-  return { anthropic: { cacheControl: { type: "ephemeral", ...(s.cacheTtl === "1h" ? { ttl: "1h" } : {}) } } };
+/** The stable prefix's lifetime: an hour unless the provider says 5m. */
+const stableTtl = (s: AnthropicSettings) => (s.cacheTtl === "5m" ? "5m" : "1h");
+
+/** A breakpoint; "1h" asks for the hour-long lifetime (a write costs 2x input instead of 1.25x). */
+function cacheMark(ttl: "5m" | "1h"): ProviderOptions {
+  return { anthropic: { cacheControl: { type: "ephemeral", ...(ttl === "1h" ? { ttl: "1h" } : {}) } } };
+}
+
+/**
+ * Anthropic reports cache writes by lifetime (usage.cache_creation): the hour-long ones are priced apart.
+ * A response without that breakdown (an older proxy) is taken to have written at the stable prefix's lifetime.
+ */
+export function anthropicTokens(u: ProviderUsage, cfg?: ProviderConfig): Tokens {
+  const t = tokensOf(u);
+  const raw = (u.raw ?? {}) as { cache_creation?: { ephemeral_1h_input_tokens?: number } };
+  const hour = raw.cache_creation?.ephemeral_1h_input_tokens;
+  if (typeof hour === "number") return { ...t, cacheWrite1hTokens: Math.min(hour, t.cacheWriteTokens) };
+  return cfg && stableTtl(cfg.anthropic ?? {}) === "1h" && t.cacheWriteTokens ? { ...t, cacheWrite1hTokens: t.cacheWriteTokens } : t;
 }
 
 /** Between-tools thinking cannot ask the API to drop stale blocks, so edited history goes without them. */
@@ -94,6 +113,7 @@ export const anthropicAdapter: LlmAdapter = {
   ownKeys: ["anthropic"],
   // Thinking may come before the word; the probe only needs the call to succeed.
   probeTokens: 64,
+  tokens: anthropicTokens,
   build(cfg, { apiKey, fetch }) {
     const defaults = anthropicDefaults(cfg);
     const allowance = defaults.thinking ? (cfg.anthropic?.thinkingAllowance ?? DEFAULT_THINKING_ALLOWANCE) : 0;
@@ -124,8 +144,9 @@ export const anthropicAdapter: LlmAdapter = {
     const m = MODELS[cfg.model];
     if (!m) return undefined;
     const [input, output, cachedInput] = m.price;
-    // A cache write costs 1.25× input for the 5-minute TTL, 2× for one hour.
-    return { input, output, cachedInput, cacheWrite: input * (cfg.anthropic?.cacheTtl === "1h" ? 2 : 1.25) } satisfies Pricing;
+    // A cache write costs 1.25× input for the 5-minute TTL, 2× for one hour. Usage says which
+    // lifetime each write had (anthropicTokens).
+    return { input, output, cachedInput, cacheWrite: input * 1.25, cacheWrite1h: input * 2 } satisfies Pricing;
   },
   prepare(call, cfg): PreparedCall {
     const s = cfg.anthropic ?? {};
@@ -137,11 +158,14 @@ export const anthropicAdapter: LlmAdapter = {
     // everything before it. Three of the four allowed: the last tool; the
     // system part just before the one that changes most (the board); and, in a
     // tool loop, the conversation's tail, which each step re-sends and grows.
-    const mark = cacheMark(s);
+    // A longer lifetime must come before a shorter one, so the hour-long marks
+    // are the first two and the tail's five minutes the last.
+    const mark = cacheMark(stableTtl(s));
+    const tail = cacheMark("5m");
     const parts = call.system.filter((p) => p.trim());
     const at = Math.max(0, parts.length - 2);
     const system = parts.map((content, i) => ({ role: "system" as const, content, ...(i === at ? { providerOptions: mark } : {}) }));
-    const providerOptions = call.loop || effort ? { anthropic: { ...(call.loop ? mark.anthropic : {}), ...effort?.anthropic } } : undefined;
+    const providerOptions = call.loop || effort ? { anthropic: { ...(call.loop ? tail.anthropic : {}), ...effort?.anthropic } } : undefined;
     return { system, messages, ...(call.tools ? { tools: markLastTool(call.tools, mark) } : {}), ...(providerOptions ? { providerOptions } : {}) };
   },
 };

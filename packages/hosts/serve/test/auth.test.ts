@@ -19,6 +19,7 @@ const campaign = fileURLToPath(new URL("../../../../examples/campaign/", import.
 describe("serve with sign-in", () => {
   const dir = mkdtempSync(join(tmpdir(), "lenspack-auth-"));
   const events: AuditEvent[] = [];
+  const shared: string[] = [];
   let server: Server;
   let api: string;
   let close: () => Promise<void>;
@@ -58,7 +59,9 @@ describe("serve with sign-in", () => {
     const opened = await openConfig(config, base);
     for (const h of opened.hosts) await seedBoards(h);
     close = opened.close;
-    server = createServer(createApp(opened.hosts, { access, audit: (e) => events.push(e) }));
+    // Telemetry that keeps only the client events' types; every other call does nothing.
+    const telemetry = new Proxy({}, { get: (_t, k) => (k === "event" ? async (_a: unknown, e: { type: string }) => void shared.push(e.type) : async () => undefined) });
+    server = createServer(createApp(opened.hosts, { access, audit: (e) => events.push(e), telemetry: telemetry as never }));
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     api = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
     const options = await call("editor", "/campaign/overview/options?field=province");
@@ -150,9 +153,11 @@ describe("serve with sign-in", () => {
     const made = await call("alice_a", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "For bob" }) });
     const id = made.body.id as string;
     await call("carol_a", "/campaign");
+    const before = shared.length;
     const named = await share("alice_a", id, { everyone: false, people: [" bob ", "bob", "alice", ""] });
     expect(named.body).toMatchObject({ owner: "alice", shared: true, everyone: false, people: ["bob"] });
     expect(events.at(-1)).toMatchObject({ user: "alice", board: id, action: "share", outcome: "ok", detail: "everyone no, 1 by name" });
+    expect(shared.slice(before)).toEqual(["board-shared"]);
 
     expect((await call("bob_a", `/campaign/${id}`)).body).toMatchObject({ writable: false, board: { owner: "alice", shared: true, everyone: false } });
     expect((await call("bob_a", `/campaign/${id}`)).body.board).not.toHaveProperty("people");
@@ -176,6 +181,7 @@ describe("serve with sign-in", () => {
     expect((await call("bob_b", `/campaign/${id}`)).status).toBe(404);
     expect((await share("alice_a", id, { everyone: false, people: [] })).body).toMatchObject({ shared: false });
     expect(events.at(-1)).toMatchObject({ action: "unshare", detail: "everyone no, 0 by name" });
+    expect(shared.slice(before)).toEqual(["board-shared", "board-shared"]);
     expect((await call("bob_a", `/campaign/${id}`)).status).toBe(404);
   });
 

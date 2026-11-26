@@ -135,8 +135,11 @@ describe("staged store", () => {
     expect((await staged.get("x"))!.config.title).toBe("New");
     expect((await staged.versions("x")).map((v) => `${v.version} ${v.summary}`)).toEqual(["4 renamed to “New”", "3 restored v1", "2 added a", "1 created"]);
     expect((await inner.get("x"))!.version).toBe(1);
-    await staged.commit();
+    // commit says what it saved, numbered as the store underneath numbered it.
+    expect(await staged.commit()).toEqual([{ version: 2, summary: "added a" }, { version: 3, summary: "restored v1" }, { version: 4, summary: "renamed to “New”" }]);
     expect((await inner.versions("x")).map((v) => `${v.version} ${v.source} ${v.summary}`)).toEqual(["4 chat renamed to “New”", "3 revert restored v1", "2 chat added a", "1 create created"]);
+    // Nothing held: nothing saved.
+    expect(await staged.commit()).toEqual([]);
     // After a commit it reads through again.
     expect((await staged.get("x"))!.version).toBe(4);
   });
@@ -146,13 +149,15 @@ describe("staged store", () => {
     await inner.create({ id: "x", pack: packRef, title: "T" });
     const staged = stagedStore(inner, "x");
     await staged.patch({ id: "x", catalogue, ops: [kpi] });
-    staged.discard();
+    await staged.patch({ id: "x", catalogue, ops: [{ op: "set_title", title: "Held" }] });
+    // discard says which held versions it dropped.
+    expect(staged.discard()).toEqual([2, 3]);
     expect((await staged.get("x"))!.version).toBe(1);
     expect(await inner.versions("x")).toHaveLength(1);
 
     await staged.patch({ id: "x", catalogue, ops: [kpi] });
     await inner.patch({ id: "x", catalogue, ops: [{ op: "set_title", title: "By hand" }] });
-    await staged.commit();
+    expect(await staged.commit()).toEqual([{ version: 3, summary: "added “K”" }]);
     const now = (await inner.get("x"))!;
     expect(now.config.title).toBe("By hand");
     expect(Object.keys(now.config.widgets)).toEqual(["a"]);
@@ -197,7 +202,7 @@ describe("staged store", () => {
     const staged = stagedStore(inner, "x");
     await staged.patch({ id: "x", catalogue, ops: [kpi], source: "chat" });
     await staged.patch({ id: "x", catalogue, ops: [{ op: "remove_widget", id: "a" }, { ...kpi, id: "b" }], source: "chat" });
-    await staged.commit({ asOne: true });
+    expect(await staged.commit({ asOne: true })).toEqual([{ version: 2, summary: "added “K”" }]);
     expect((await inner.versions("x")).map((v) => `${v.version} ${v.source} ${v.summary}`)).toEqual(["2 chat added “K”", "1 create created"]);
     expect(Object.keys((await inner.get("x"))!.config.widgets)).toEqual(["b"]);
   });
