@@ -48,7 +48,7 @@ export type PanelOptions = {
 };
 
 // board.js and board.css are the board renderer (@lenspack/react) bundled for a page with no build: its build writes them here.
-const ASSETS: Record<string, string> = { "panel.js": "panel.js", "checklist.js": "checklist.js", "panel.css": "panel.css", "board.js": "board.js", "board.css": "board.css" };
+const ASSETS: Record<string, string> = { "panel.js": "panel.js", "checklist.js": "checklist.js", "telemetry.js": "telemetry.js", "panel.css": "panel.css", "telemetry.css": "telemetry.css", "board.js": "board.js", "board.css": "board.css" };
 
 export function panelRoutes(o: PanelOptions) {
   const dir = webDir();

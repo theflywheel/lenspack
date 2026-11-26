@@ -165,6 +165,18 @@ describe("the admin panel", () => {
     expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };");
     expect(js).toContain('fr: {');
     expect((await fetch(`${base}/panel.css`, { headers: as("ana", true) })).status).toBe(200);
+    // The Telemetry tab is its own module and stylesheet, which the page loads before the panel mounts it.
+    expect(html.indexOf("telemetry.js")).toBeGreaterThan(-1);
+    expect(html.indexOf("telemetry.js")).toBeLessThan(html.indexOf("panel.js"));
+    expect(html).toContain("telemetry.css");
+    const tjs = await (await fetch(`${base}/telemetry.js`, { headers: as("ana", true) })).text();
+    const tbox: { window: { LenspackTelemetry?: { strings: Record<string, Record<string, string>>; create: Function } } } = { window: {} };
+    runInNewContext(tjs, { ...tbox, document: { addEventListener: () => {} } });
+    expect(Object.keys(tbox.window.LenspackTelemetry!.strings)).toEqual(["en", "fr"]);
+    // Every word in one language is in the other.
+    expect(Object.keys(tbox.window.LenspackTelemetry!.strings.fr!).sort()).toEqual(Object.keys(tbox.window.LenspackTelemetry!.strings.en!).sort());
+    expect(js).toContain("window.LenspackTelemetry.create(");
+    expect((await fetch(`${base}/telemetry.css`, { headers: as("ana", true) })).status).toBe(200);
     // The Cache tab reads the saved answers' own admin routes (docs/features/saved-answers.md).
     for (const route of ["../cache${path}", "/chart-candidates", "/boards", "/suggestions?board=", "/prewarm", '"unpin" : "pin"', "/evict"]) expect(js).toContain(route);
     const packs = await (await fetch(`${base}/api/packs`, { headers: as("ana", true) })).json();

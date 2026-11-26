@@ -7,12 +7,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "Users",
-        "body": "Is the pilot reaching people, and is use growing? Which roles and countries use it?"
+        "body": ""
       }
     },
     {
@@ -177,12 +177,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "Volume and cost",
-        "body": "What each question and each person costs, and whether voice and the review step pay for themselves."
+        "body": ""
       }
     },
     {
@@ -339,12 +339,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "Quality",
-        "body": "Where the pack or the model falls short, which answers people do not trust, and whether asking back helps."
+        "body": ""
       }
     },
     {
@@ -592,12 +592,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "What people ask",
-        "body": "What to put on dashboards, which numbers deserve a chart, and which rates to add to the pack."
+        "body": ""
       }
     },
     {
@@ -774,12 +774,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "Speed",
-        "body": "Whether answers are fast enough on field networks, where waiting loses people, and when to add capacity."
+        "body": ""
       }
     },
     {
@@ -931,12 +931,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "Voice and language",
-        "body": "Whether voice is worth keeping and improving, which languages to support, and which speech model to use."
+        "body": ""
       }
     },
     {
@@ -1156,12 +1156,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "Trust and reuse",
-        "body": "Whether people check where numbers come from, whether answers travel, and whether reuse pays."
+        "body": ""
       }
     },
     {
@@ -1323,12 +1323,12 @@
       "placement": {
         "place": "bottom",
         "width": "full",
-        "height": 2
+        "height": 1
       },
       "widget": {
         "kind": "text",
         "title": "Device and network",
-        "body": "Which screens to design for first, and how light answers must be for field networks."
+        "body": ""
       }
     },
     {
