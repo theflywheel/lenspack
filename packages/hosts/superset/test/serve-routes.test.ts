@@ -149,7 +149,9 @@ describe("Superset mode's server", () => {
 
   it("answers /healthz and the public scripts without a signature", async () => {
     const health = await call("/healthz");
-    expect(health).toMatchObject({ status: 200, body: { ok: true, identity: true } });
+    expect(health).toMatchObject({ status: 200, body: { ok: true, ready: true, identity: true } });
+    // Ready: Superset gave the identity key (a readiness probe reads this; /healthz is for liveness).
+    expect(await call("/readyz")).toEqual({ status: 200, headers: expect.anything(), body: { ready: true } });
     for (const f of ["chat.js", "overlay.js"]) {
       const r = await call(`/${f}`);
       expect(r.status).toBe(200);

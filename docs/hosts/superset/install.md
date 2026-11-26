@@ -145,7 +145,9 @@ From the source tree, `npx tsx --tsconfig tsconfig.base.json packages/hosts/supe
 does the same.
 
 It is the same server runtime as `lenspack serve` (models, metering, budget, audit, `/healthz`, a clean exit on
-SIGTERM), with Superset as its host.
+SIGTERM), with Superset as its host. On Kubernetes, point the readiness probe at `/readyz` and the liveness probe at
+`/healthz`: the server is not ready until Superset gives it the identity key, which it keeps asking for (see
+[Health and shutdown](../../operating/deploying.md#health-and-shutdown)).
 
 **Its own Superset account.** On first start the server signs in once as a Superset admin
 (`SUPERSET_ADMIN_USERNAME`, default `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls the plugin's bootstrap route,

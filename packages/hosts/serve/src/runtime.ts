@@ -11,7 +11,7 @@ import { SettingsSaveError } from "./settings";
 // The one server every host of lenspack runs (`lenspack serve`, `lenspack
 // superset`): model providers, the usage ledger and budget, the board and chat
 // API, /healthz, and a clean exit on SIGTERM. A request goes to the host's
-// routes first, then /healthz, then the board API (sign-in routes, /api, UI).
+// routes first, then /healthz and /readyz, then the board API (sign-in routes, /api, UI).
 
 /** A host's routes: they answer by responding, or leave the request to the rest. */
 export type Route = (req: IncomingMessage, res: ServerResponse, url: URL, who: () => Promise<Principal | null>) => void | Promise<void>;
@@ -49,6 +49,11 @@ export function startRuntime(o: {
   routes?: (rt: Runtime) => Route;
   /** Fields beside ok in GET /healthz. */
   health?: () => Record<string, unknown>;
+  /**
+   * Whether the server can answer requests yet, for GET /readyz (a readiness probe): 200 when ready, else 503 with
+   * why. GET /healthz stays 200 while the process runs (a liveness probe), with ready beside ok.
+   */
+  ready?: () => { ready: true } | { ready: false; reason: string };
   env?: NodeJS.ProcessEnv;
 }) {
   const env = o.env ?? process.env;
@@ -76,7 +81,11 @@ export function startRuntime(o: {
     try {
       await routes?.(req, res, url, async () => (access ? access(req) : null));
       if (res.headersSent) return;
-      if (url.pathname === "/healthz") return json(res, 200, { ok: true, ...o.health?.() }, NO_STORE);
+      if (url.pathname === "/healthz") return json(res, 200, { ok: true, ...(o.ready ? { ready: o.ready().ready } : {}), ...o.health?.() }, NO_STORE);
+      if (url.pathname === "/readyz") {
+        const r = o.ready?.() ?? { ready: true as const };
+        return json(res, r.ready ? 200 : 503, r, NO_STORE);
+      }
       await api(req, res);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

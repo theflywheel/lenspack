@@ -737,6 +737,9 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
   };
   const dimKey = (c: unknown): string | null => (typeof c === "string" ? (binding.dimensionOf.get(entity)?.get(c) ?? null) : null);
   const ds = binding.datasets.get(entity)!;
+  // A column the overlay excludes is never named in a reason (the model reads them): it is "a field this assistant does not use".
+  const hidden = (c: unknown) => typeof c === "string" && !!binding.excluded?.has(c.trim().toLowerCase());
+  const named = (c: unknown) => (hidden(c) ? "a field this assistant does not use" : `"${String(c)}"`);
 
   // Filters and window.
   const filters: FilterClause[] = [];
@@ -750,7 +753,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
       continue;
     }
     const key = dimKey(f.subject);
-    if (!key) return { widget: null, reason: `it filters on "${f.subject}", which is not a pack dimension` };
+    if (!key) return { widget: null, reason: `it filters on ${named(f.subject)}, which is not a pack dimension` };
     const op = ({ "==": "eq", "!=": "neq", IN: "in", "NOT IN": "not_in", ">=": "gte", "<=": "lte" } as Record<string, FilterClause["op"]>)[f.operator ?? ""];
     if (!op) return { widget: null, reason: `its filter operator ${f.operator} has no form the assistant can write` };
     filters.push({ dimension: key, op, value: f.comparator as never });
@@ -797,7 +800,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
       }
       if (p.rolling_type || p.time_compare?.length) return { widget: null, reason: "it applies a rolling window or time comparison across groups rather than over time" };
       const d = dimKey(p.x_axis);
-      if (!d) return { widget: null, reason: `its x-axis "${p.x_axis}" is not a pack dimension` };
+      if (!d) return { widget: null, reason: `its x-axis ${named(p.x_axis)} is not a pack dimension` };
       return { widget: { title, kind: "chart", chart: kind, options, query: { kind: "breakdown", dimension: d, measure: measure!, limit: Math.max(2, Math.min(500, by ? Math.ceil((p.row_limit ?? 600) / 50) : (p.row_limit ?? 12))), sort: p.x_axis_sort_asc ? "asc" : "desc", ...(by ? { by } : {}), ...(rest.length ? { measures: rest } : {}), ...common } } as Widget };
     }
     case "table": {
@@ -821,7 +824,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
       const rowsCol = [p.groupby].flat().filter((g: unknown) => g != null && g !== "");
       if (rowsCol.length !== 1) return { widget: null, reason: "its rows are not one column" };
       const by = dimKey(rowsCol[0]);
-      if (!by) return { widget: null, reason: `its rows "${rowsCol[0]}" are not a pack dimension` };
+      if (!by) return { widget: null, reason: `its rows ${named(rowsCol[0])} are not a pack dimension` };
       // Lenspack shades every cell on one scale, by value, with rows A to Z.
       if ((p.normalize_across ?? "heatmap") !== "heatmap") return { widget: null, reason: `it shades each ${p.normalize_across === "x" ? "column" : "row"} on its own scale` };
       if (p.normalized) return { widget: null, reason: "it shades cells by rank, not value" };
@@ -830,7 +833,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
       // A time axis Superset cannot keep in order (see widgetToChart), so lenspack would not draw what Superset does.
       if (p.x_axis === ds.time) return { widget: null, reason: "its columns are time, which Superset's heatmap cannot keep in order" };
       const d = dimKey(p.x_axis);
-      if (!d) return { widget: null, reason: `its columns "${p.x_axis}" are not a pack dimension` };
+      if (!d) return { widget: null, reason: `its columns ${named(p.x_axis)} are not a pack dimension` };
       if (d === by) return { widget: null, reason: "its rows and columns are the same column" };
       const sortX = ({ alpha_asc: ["group", "asc"], alpha_desc: ["group", "desc"] } as Record<string, [string, string]>)[p.sort_x_axis ?? ""];
       if (!sortX) return { widget: null, reason: p.sort_x_axis ? "its columns are sorted by the metric, cell by cell" : "its columns have no order" };
@@ -865,16 +868,18 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
     case "deck_scatter": {
       const geo = binding.geo.get(entity);
       const sp = p.spatial ?? {};
-      if (!geo) return { widget: null, reason: "its dataset has no latitude and longitude the assistant knows of" };
+      // Coordinates the overlay excludes: said without naming them, or what they are.
+      if (hidden(sp.latCol) || hidden(sp.lonCol) || hidden(sp.lonlatCol) || hidden(sp.geohashCol)) return { widget: null, reason: "its points are read from fields this assistant does not use" };
+      if (!geo) return { widget: null, reason: "its dataset has no coordinates the assistant knows of" };
       if (sp.type !== "latlong" || sp.reverseCheckbox) return { widget: null, reason: "its points are not read from a latitude and a longitude column" };
-      if (sp.latCol !== geo.lat || sp.lonCol !== geo.lon) return { widget: null, reason: `its points are read from "${sp.latCol}" and "${sp.lonCol}", not the dataset's coordinates` };
+      if (sp.latCol !== geo.lat || sp.lonCol !== geo.lon) return { widget: null, reason: `its points are read from ${named(sp.latCol)} and ${named(sp.lonCol)}, not the dataset's coordinates` };
       if (p.time_grain_sqla) return { widget: null, reason: "it animates its points over time" };
       if (p.js_data_mutator || p.js_tooltip || p.js_onclick_href) return { widget: null, reason: "it runs custom JavaScript" };
       const radius = p.point_radius_fixed ?? { type: "fix" };
       const size = radius.type === "metric" ? measureKey(radius.value) : undefined;
       if (size === null) return { widget: null, reason: "its points are sized by something other than a saved metric of the dataset" };
       const color = p.dimension ? dimKey(p.dimension) : undefined;
-      if (color === null) return { widget: null, reason: `its points are coloured by "${p.dimension}", which is not a pack dimension` };
+      if (color === null) return { widget: null, reason: `its points are coloured by ${named(p.dimension)}, which is not a pack dimension` };
       const extra = (p.js_columns ?? []) as unknown[];
       const label = extra.length === 1 ? dimKey(extra[0]) : extra.length === 0 ? undefined : null;
       if (label === null) return { widget: null, reason: "it carries extra columns on its points that are not one pack dimension" };
