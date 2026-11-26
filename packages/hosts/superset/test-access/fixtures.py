@@ -18,8 +18,9 @@ Users (all with the password in LP_USER_PASSWORD):
 Dashboards: A (owner lp_owner, no dashboard roles), B (owner lp_admin, dashboard role lp_board_b) and C (owner
 lp_admin, dashboard role lp_board_c). All start empty; the suite adds their charts through Lenspack as lp_admin: one
 of each dataset on A, stock on B, visits on C.
-Dashboard T (owner lp_admin) has top-level tabs, laid out as Superset leaves them: "Overview" (with tabs "By region"
-and "Trend" inside it) and "Stock", all empty, and GRID_ID left behind, empty and off ROOT_ID.
+Dashboard T (owner lp_admin; dashboard role lp_board_t, which no user holds) has top-level tabs, laid out as Superset
+leaves them: "Overview" (with tabs "By region" and "Trend" inside it) and "Stock", all empty, and GRID_ID left behind,
+empty and off ROOT_ID.
 """
 
 import json
@@ -133,6 +134,7 @@ with app.app_context():
     }
     t = Dashboard(dashboard_title="Access tabs", slug="access-tabs", published=True, position_json=json.dumps(tabbed), json_metadata=json.dumps({"positions": tabbed}))
     t.owners = [made["lp_admin"]]
+    t.roles = [role("lp_board_t")]
     db.session.add_all([a, b, c, t])
     db.session.commit()
 

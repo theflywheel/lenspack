@@ -106,7 +106,7 @@ export function accessSuite(version: string) {
         expect(await boards("lp_viewer")).toEqual([A]);
         expect(await boards("lp_rbac")).toEqual(sorted([B, C]));
         expect(await boards("lp_noroles")).toEqual([]);
-        // The dashboard with tabs is not bound to a board yet (its cases bind it), and has no charts a viewer could read.
+        // The dashboard with tabs opens for its owner (an admin) only, and is not bound to a board yet (its cases bind it).
         expect(await dashboards("lp_admin")).toEqual(sorted([A, B, C, `superset-${stack.fixtures.dashboards.t}`]));
         expect(await dashboards("lp_viewer")).toEqual([A]);
         expect(await dashboards("lp_rbac")).toEqual(sorted([B, C]));
