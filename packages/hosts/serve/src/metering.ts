@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { type LanguageModel, wrapLanguageModel } from "ai";
@@ -389,7 +389,9 @@ export type UsageLedger = ReturnType<typeof usageLedger>;
 /** One JSON line per call, appended as it ends, so usage outlives the process. */
 export function jsonlUsageSink(path: string): UsageSink {
   mkdirSync(dirname(path), { recursive: true });
-  return { record: (r) => appendFileSync(path, `${JSON.stringify(r)}\n`) };
+  // It names who asked (user names), so only the server's own user may read it, like the audit and telemetry files.
+  if (existsSync(path)) chmodSync(path, 0o600);
+  return { record: (r) => appendFileSync(path, `${JSON.stringify(r)}\n`, { mode: 0o600 }) };
 }
 
 /** How far back from the end of the file a restore reads: a day of calls, many times over. */
