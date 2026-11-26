@@ -26,8 +26,11 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 const plugin = fileURLToPath(new URL("../plugin/", import.meta.url));
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 
-/** Every container the suite makes carries this label: `docker rm -f -v $(docker ps -aq --filter label=lenspack-access-suite)` clears leftovers. */
-export const LABEL = "lenspack-access-suite";
+/**
+ * Every container the suite makes carries this label: `docker rm -f -v $(docker ps -aq --filter label=lenspack-access-suite)`
+ * clears leftovers. LENSPACK_ACCESS_LABEL gives a run a label of its own, so clearing it leaves other runs on the machine alone.
+ */
+export const LABEL = process.env.LENSPACK_ACCESS_LABEL?.trim() || "lenspack-access-suite";
 export const PACK = "access";
 
 export type Fixtures = { datasets: { visits: number; stock: number }; dashboards: { a: number; b: number; c: number; t: number } };

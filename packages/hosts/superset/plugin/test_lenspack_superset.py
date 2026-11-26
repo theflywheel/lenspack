@@ -313,6 +313,79 @@ class ProxyEndpoint(unittest.TestCase):
         self.assertNotIn("d", claims)
 
 
+class AdminSignInProxy(unittest.TestCase):
+    """/lenspack/_admin/...: Lenspack's own admin sign-in (admin access "password"), forwarded without a Superset session."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = superset_app()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        cls.client = cls.app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def send(self, method, path, cookies=None, set_cookies=(), **kw):
+        from unittest import mock
+
+        forwarded = []
+
+        def fake(method_, url, **kwargs):
+            forwarded.append((url, kwargs["headers"]))
+            raw = mock.Mock()
+            raw.headers.getlist = lambda name: list(set_cookies)
+            return mock.Mock(status_code=200, headers={"content-type": "text/plain"}, raw=raw, iter_content=lambda chunk_size=None: iter([b"ok"]), close=lambda: None)
+
+        for k, v in (cookies or {}).items():
+            self.client.set_cookie(k, v)
+        try:
+            with mock.patch("requests.request", side_effect=fake):
+                r = self.client.open(path, method=method, **kw)
+                r.get_data()
+        finally:
+            for k in cookies or {}:
+                self.client.delete_cookie(k)
+        return r, (forwarded[0] if forwarded else None)
+
+    def test_forwards_without_a_session_and_without_an_identity(self):
+        r, (url, headers) = self.send("GET", "/lenspack/_admin/auth/login")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(url.endswith("/_admin/auth/login"), url)
+        self.assertNotIn("x-lenspack-identity", headers)
+
+    def test_the_rest_still_needs_a_session(self):
+        r, forwarded = self.send("GET", "/lenspack/_superset/admin/")
+        self.assertEqual((r.status_code, forwarded), (401, None))
+
+    def test_forwards_only_lenspacks_admin_cookies(self):
+        _, (_, headers) = self.send("GET", "/lenspack/_admin/", cookies={"lenspack_admin": "s1", "session": "superset-session", "lenspack_admin_device": "d1"})
+        self.assertEqual(sorted(headers["cookie"].split("; ")), ["lenspack_admin=s1", "lenspack_admin_device=d1"])
+
+    def test_signs_the_callers_address_with_the_identity_key(self):
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        _, (_, headers) = self.send("GET", "/lenspack/_admin/auth/login", environ_base={"REMOTE_ADDR": "198.51.100.7"})
+        body, sig = headers["x-lenspack-client"].rsplit(".", 1)
+        self.assertEqual(json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))["c"], "198.51.100.7")
+        self.assertEqual(sig, hmac.new(lp.lenspack_identity_key().encode(), ("client:" + body).encode(), hashlib.sha256).hexdigest())
+
+    def test_refuses_a_sign_in_from_another_site_and_dot_segments(self):
+        r, forwarded = self.send("POST", "/lenspack/_admin/auth/login", headers={"Origin": "https://elsewhere.example"}, data="password=x")
+        self.assertEqual((r.status_code, forwarded), (403, None))
+        r, forwarded = self.send("GET", "/lenspack/_admin/../_superset/admin/")
+        self.assertIn(r.status_code, (400, 401, 404))
+        self.assertIsNone(forwarded)
+
+    def test_passes_each_cookie_lenspack_sets_on_its_own_line(self):
+        r, _ = self.send("POST", "/lenspack/_admin/auth/login", data="password=x", set_cookies=["lenspack_admin=a; Path=/; HttpOnly", "lenspack_admin_device=b; Path=/x; HttpOnly"])
+        self.assertEqual(r.headers.getlist("Set-Cookie"), ["lenspack_admin=a; Path=/; HttpOnly", "lenspack_admin_device=b; Path=/x; HttpOnly"])
+
+
 class AccessEndpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

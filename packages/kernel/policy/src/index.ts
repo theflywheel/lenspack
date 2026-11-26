@@ -2,6 +2,7 @@ import { type Catalogue, type Ownership, type ScopeClause, filterClauseSchema, q
 import { type Pack, operands, parseExpr } from "@lenspack/pack";
 import { z } from "zod";
 
+import { type AdminAccess, PASSWORD_ADMIN } from "./access";
 import { type EditScopeFacts, inEditScope } from "./personal";
 
 // Who may see and change what, as one pure function of the caller, the pack
@@ -17,6 +18,8 @@ export type Identity = {
   user: string;
   /** Roles and groups from the identity provider: what rights by role and a pack's access rules match. */
   roles?: string[];
+  /** The host's stable id for the user (Superset's user id), when it has one: rules may name it as "id:<n>". */
+  userId?: string | number;
   /** Narrows every query to this tenant. Must agree with a tenant the pack is pinned to. */
   tenant?: string;
   /** Row scope: filters every query carries, whatever the board asks; one with an entity, every query reading it. */
@@ -93,7 +96,7 @@ export const DEFAULT_ADMINS: readonly string[] = [`role:${ADMIN_ROLE}`];
 export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal {
   const given = id.roles ?? [];
   // A role: entry matches roles only, so a user named like one gets nothing from it.
-  const among = (list: readonly string[]) => list.some((e) => e === "*" || (e.startsWith("role:") ? given.includes(e.slice(5)) : e === id.user));
+  const among = (list: readonly string[]) => list.some((e) => e === "*" || matchesEntry(id, e, given));
   // The one place a host's roles become Lenspack's admin role.
   const admin = among(rights.admins ?? DEFAULT_ADMINS);
   const roles = admin ? (given.includes(ADMIN_ROLE) ? given : [...given, ADMIN_ROLE]) : given.filter((r) => r !== ADMIN_ROLE);
@@ -101,10 +104,11 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
   // The users rule switches the assistant on per person; admins always pass. Once settled "no", it stays no.
   const uses = id.uses !== false && (admin || !rights.users || among(rights.users));
-  const { user, tenant, scope, hidden, hiddenEntities, hiddenBoards, boardEntities, hiddenReason, packs, grants, readOnly, editScope } = id;
+  const { user, userId, tenant, scope, hidden, hiddenEntities, hiddenBoards, boardEntities, hiddenReason, packs, grants, readOnly, editScope } = id;
   // Only what is set, so a principal compares equal to the one it was built from.
   return {
     user,
+    ...(userId !== undefined ? { userId } : {}),
     roles,
     edit: maintain || !!id.edit || among(rights.editors),
     maintain: maintain || undefined,
@@ -394,10 +398,37 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
  * also see who asked what (usernames on the usage board and in review reports), which needs the usage right as well.
  * Neither widens what anyone may read of the data.
  */
-export type AdminRights = { administer: boolean; users: boolean };
-export function adminRights(who: { roles?: readonly string[]; usage?: boolean }): AdminRights {
-  const administer = !!who.roles?.includes(ADMIN_ROLE);
-  return { administer, users: administer && !!who.usage };
+export type AdminRights = { administer: boolean; users: boolean; owner: boolean };
+/**
+ * With `access` (access.ts), the deployment's way of deciding admins is applied here too: under named users, only the
+ * owners and the users they granted administer, and only owners may grant (owner); under the password, only the
+ * password admin. Without it, the admin role principalOf() settled decides, as for every caller already settled under
+ * rightsUnder(access, …), which gives the same answer.
+ */
+export function adminRights(who: { user?: string; userId?: string | number | null; roles?: readonly string[]; usage?: boolean }, access?: AdminAccess): AdminRights {
+  const role = !!who.roles?.includes(ADMIN_ROLE);
+  let administer = role;
+  let owner = false;
+  if (access?.mode === "superset-users") {
+    const named = (list: readonly string[]) => !!who.user && list.some((e) => matchesEntry({ user: who.user!, userId: who.userId ?? undefined }, e));
+    // No owners: nobody administers, whatever was granted before (fail closed).
+    owner = access.owners.length > 0 && named(access.owners);
+    administer = owner || (access.owners.length > 0 && named(access.granted));
+  } else if (access?.mode === "password") {
+    administer = role && who.user === PASSWORD_ADMIN;
+    owner = administer;
+  }
+  return { administer, users: administer && !!who.usage, owner };
+}
+
+/**
+ * Whether one entry of a rule names this identity: "role:<name>" a role it holds, "id:<n>" its host id (userId), else
+ * its user name exactly.
+ */
+export function matchesEntry(id: { user: string; userId?: string | number }, entry: string, roles: readonly string[] = []): boolean {
+  if (entry.startsWith("role:")) return roles.includes(entry.slice(5));
+  if (entry.startsWith("id:")) return id.userId !== undefined && id.userId !== null && String(id.userId) === entry.slice(3);
+  return entry === id.user;
 }
 
 /** May use the admin pages at all (adminRights().administer). */
@@ -477,3 +508,4 @@ export function contextFor(map: DeploymentContext, at: { board?: string | null; 
 }
 
 export * from "./personal";
+export * from "./access";

@@ -11,6 +11,18 @@ brought it.
 
 ### 26 November 2026
 
+- **Choose who is an admin and who may use the assistant.** In Superset, admins can now be Superset roles (the
+  default, as before), named Superset users (`superset-users`: owners from `LENSPACK_ADMIN_USERS`, who add other
+  admins on the admin panel's new **Access** tab; Superset's own Admin role then grants nothing), or one shared
+  password on a sign-in page of its own (`password`, `LENSPACK_ADMIN_PASSWORD`, reached at `/lenspack/_admin/`).
+  Users can be Superset roles (the default), people admins add one by one (`granted`), everyone signed in, or a
+  role and a grant together (`superset-role,granted`). Set with `auth.adminAccess` / `LENSPACK_ADMIN_ACCESS` and
+  `auth.userAccess` / `LENSPACK_USER_ACCESS`; the start-up log and the Access tab say which modes are in force.
+  Misconfigured modes let nobody in and say why; an unknown mode stops the server. Nothing changes until you set
+  them. Update the plugin file with the server for the password sign-in. See
+  [Who can use and administer the assistant](docs/access/admin-access.md).
+- **Name boxes show the deployment's name.** On the admin panel's Name card, an empty box now shows what applies
+  without it, from the boxes above it and the deployment's own name and button label, never the default name.
 - **One name everywhere.** Once the assistant has its own name (`brand.name`), the word Lenspack shows nowhere
   people look: the admin panel, Superset's settings page and menu entry, messages and refusals, and the assistant's
   own replies (asked what it is or what it runs on, it gives only its name). The only exception is the "Powered by

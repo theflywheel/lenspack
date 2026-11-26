@@ -60,6 +60,13 @@
       tlSavedOn: "Saved. Applies to the next question.", tlSavedOff: "Saved. What was already recorded is kept until it ages out.",
       st_recording: "recording", "st_enabled-no-data": "on, no data yet", st_off: "off", "st_needs-config": "needs configuration", "st_not-telemetry": "not telemetry",
       tlLegend: "✓ recording · ◐ on but no data · ○ off · ⚠ needs configuration · — not telemetry", tlPrint: "Print", tlCopy: "Copy as Markdown", tlCopied: "Copied.",
+      // Access
+      tabAccess: "Access", acWho: "Who has access", acAdmins: "Admins", acUsers: "Users", acFrom: "set by {0}", acFromDefault: "default",
+      acOwners: "Owners", acOwnerNote: "Change owners in the deployment, then restart.", acGranted: "Granted admins", acNoGranted: "No granted admins.",
+      acUser: "User", acBy: "Granted by", acAt: "When", acRemove: "Remove", acAdd: "Add", acAddPh: "Superset user name or id:12",
+      acOwnersOnly: "Only owners can add or remove admins.", acRemoveQ: "Remove {0}?", acSeeded: "From the deployment", acPeople: "People granted",
+      acNoPeople: "Nobody granted yet.", acSearch: "Search", acRange: "{0}–{1} of {2}", acPrev: "Previous", acNext: "Next", acRoles: "Roles: {0}",
+      acEveryone: "Everyone signed in", acSignOut: "Sign out", acNoneSet: "Not available on this server.",
       tlAbsent: "Telemetry is not available on this server.", tlAbsentHelp: "This server does not report its telemetry yet. The checklist appears here once it does.", tlSwitchAbsent: "This server cannot change that setting from here.",
     },
     fr: {
@@ -110,6 +117,13 @@
       tlSavedOn: "Enregistré. S'applique à la question suivante.", tlSavedOff: "Enregistré. Ce qui a déjà été enregistré est gardé jusqu'à expiration.",
       st_recording: "enregistré", "st_enabled-no-data": "activé, sans données", st_off: "désactivé", "st_needs-config": "à configurer", "st_not-telemetry": "hors télémétrie",
       tlLegend: "✓ enregistré · ◐ activé sans données · ○ désactivé · ⚠ à configurer · — hors télémétrie", tlPrint: "Imprimer", tlCopy: "Copier en Markdown", tlCopied: "Copié.",
+      // Accès
+      tabAccess: "Accès", acWho: "Qui a accès", acAdmins: "Administrateurs", acUsers: "Utilisateurs", acFrom: "défini par {0}", acFromDefault: "par défaut",
+      acOwners: "Propriétaires", acOwnerNote: "Les propriétaires se changent dans le déploiement, puis redémarrage.", acGranted: "Administrateurs ajoutés", acNoGranted: "Aucun administrateur ajouté.",
+      acUser: "Utilisateur", acBy: "Ajouté par", acAt: "Quand", acRemove: "Retirer", acAdd: "Ajouter", acAddPh: "Nom d'utilisateur Superset ou id:12",
+      acOwnersOnly: "Seuls les propriétaires ajoutent ou retirent des administrateurs.", acRemoveQ: "Retirer {0} ?", acSeeded: "Du déploiement", acPeople: "Personnes ajoutées",
+      acNoPeople: "Personne n'est encore ajouté.", acSearch: "Rechercher", acRange: "{0}–{1} sur {2}", acPrev: "Précédent", acNext: "Suivant", acRoles: "Rôles : {0}",
+      acEveryone: "Toute personne connectée", acSignOut: "Se déconnecter", acNoneSet: "Indisponible sur ce serveur.",
       tlAbsent: "La télémétrie n'est pas disponible sur ce serveur.", tlAbsentHelp: "Ce serveur ne communique pas encore sa télémétrie. La liste apparaîtra ici dès qu'il le fera.", tlSwitchAbsent: "Ce réglage ne peut pas être modifié d'ici sur ce serveur.",
     },
   };
@@ -189,6 +203,10 @@
   };
 
   // ---- State and helpers ------------------------------------------------------------------------
+  // What the host wrote into the page: where its own routes are from here ("../" under <prefix>/admin/, "" when the
+  // panel shares their prefix), and a sign-out address when the admin pages have a sign-in of their own.
+  const shell = window.__lpAdmin || {};
+  const HOST = typeof shell.host === "string" ? shell.host : "../";
   const store = {
     get(k) { try { return localStorage.getItem(`lp-admin-${k}`); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(`lp-admin-${k}`, v); } catch (e) { /* private window */ } },
@@ -252,7 +270,7 @@
   }
   /** A cache route, if the server has one: null when it does not (404). */
   async function cacheApi(path, opts = {}) {
-    const res = await fetch(`../cache${path}`, { method: opts.method || "GET", credentials: "same-origin" });
+    const res = await fetch(`${HOST}cache${path}`, { method: opts.method || "GET", credentials: "same-origin" });
     if (res.status === 404) return null;
     let data = null;
     try { data = await res.json(); } catch (e) { return null; }
@@ -703,7 +721,7 @@
     const boards = [...new Set(entries.map((e) => e.board).filter(Boolean))].slice(0, 4);
     const sugg = await Promise.all(boards.map((b) => cacheApi(`/suggestions?board=${encodeURIComponent(b)}`).catch(() => null)));
     const post = (path) => act(async () => {
-      const res = await fetch(`../cache${path}`, { method: "POST", credentials: "same-origin" });
+      const res = await fetch(`${HOST}cache${path}`, { method: "POST", credentials: "same-origin" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     });
     const tierLine = ["t1", "t2", "t3", "t4"].map((k) => `${t(`tier_${k}`)} ${nf(hits[k] || 0)}`).join(" · ");
@@ -758,7 +776,21 @@
       const letter = Array.from(Array.from(n.trim())[0]?.toLocaleUpperCase() || "?")[0] || "?";
       preview.firstChild.replaceChildren(src ? h("img", { src, alt: "" }) : letter);
     };
-    [name, label, icon, ...Object.values(own).flatMap((w) => [w.name, w.buttonLabel])].forEach((i) => i.addEventListener("input", show));
+    // An empty box shows what applies without it, from the boxes above it and the deployment's own words (its config
+    // and environment): a renamed deployment never shows the default name there.
+    const fill = (tpl, n) => String(tpl).replace(/\{name\}/g, () => n);
+    const hints = () => {
+      const n = name.value.trim() || d.name;
+      label.placeholder = fill(label.value.trim() ? label.value.trim() : b.templates.en, n);
+      for (const l of b.languages) {
+        const ownName = d.i18n[l] && d.i18n[l].name !== d.name ? d.i18n[l].name : null;
+        const ln = own[l].name.value.trim() || ownName || n;
+        own[l].name.placeholder = ownName || n;
+        own[l].buttonLabel.placeholder = fill(label.value.trim() || b.templates[l], ln);
+      }
+    };
+    [name, label, icon, ...Object.values(own).flatMap((w) => [w.name, w.buttonLabel])].forEach((i) => i.addEventListener("input", () => { hints(); show(); }));
+    hints();
     show();
     const orNull = (i) => i.value.trim() || null;
     const save = act(() => api("settings/brand", { body: {
@@ -792,7 +824,7 @@
 
   /** The telemetry checklist (GET <prefix>/telemetry/checklist), if the server has it: null when it does not (404). */
   async function telemetryApi() {
-    const res = await fetch("../telemetry/checklist", { credentials: "same-origin" });
+    const res = await fetch(`${HOST}telemetry/checklist`, { credentials: "same-origin" });
     if (res.status === 404) return null;
     let data = null;
     try { data = await res.json(); } catch (e) { return null; }
@@ -804,7 +836,7 @@
    * A privacy-sensitive item the server wants confirmed (409 with confirm) opens the confirm step, then goes again.
    */
   async function setTelemetrySwitch(body) {
-    const put = (b) => fetch("../settings/telemetry", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
+    const put = (b) => fetch(`${HOST}settings/telemetry`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
     let res = await put(body);
     if (res.status === 404) throw new Error(t("tlSwitchAbsent"));
     let data = null;
@@ -996,7 +1028,88 @@
     ];
   }
 
-  const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };
+  /** A host route (<prefix>/settings/…): null when the server has none (404). */
+  async function hostApi(path, opts = {}) {
+    const res = await fetch(`${HOST}${path}`, {
+      method: opts.method || (opts.body ? "PUT" : "GET"),
+      headers: opts.body ? { "content-type": "application/json" } : {},
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      credentials: "same-origin",
+    });
+    if (res.status === 404 && !opts.body) return null;
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON */ }
+    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    return data;
+  }
+
+  /** Prev and next under a list, with the range it shows: "21–40 of 75". */
+  function pager(page, go) {
+    if (!page || page.total <= page.limit) return null;
+    const from = page.total ? page.offset + 1 : 0, to = Math.min(page.offset + page.limit, page.total);
+    return h("nav", { class: "pager", "aria-label": t("acRange", from, to, page.total) },
+      h("span", { class: "mute num" }, t("acRange", nf(from), nf(to), nf(page.total))),
+      h("button", { class: "btn sm quiet", type: "button", disabled: !page.prev, onclick: () => go(page.prev) }, t("acPrev")),
+      h("button", { class: "btn sm quiet", type: "button", disabled: !page.next, onclick: () => go(page.next) }, t("acNext")));
+  }
+
+  const fromText = (f) => (f === "default" ? t("acFromDefault") : f);
+  /** A small form with one text box and a button: add a person. */
+  function addForm(label, send) {
+    const input = h("input", { type: "text", placeholder: t("acAddPh"), "aria-label": label, maxlength: "150", autocomplete: "off" });
+    const go = act(async () => { const v = input.value.trim(); if (!v) return; await send(v); input.value = ""; }, t("saved"));
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(e); } });
+    return h("div", { class: "row add-row" }, input, h("button", { class: "btn sm", type: "button", onclick: go }, t("acAdd")));
+  }
+  let usersQuery = "", usersCursor = null;
+
+  // Access: who administers and who may use the assistant, as the deployment set them; the people admins added.
+  async function access() {
+    const [adm, usr] = await Promise.all([
+      hostApi("settings/admins").catch(() => null),
+      hostApi(`settings/users?limit=20${usersQuery ? `&q=${encodeURIComponent(usersQuery)}` : ""}${usersCursor ? `&cursor=${encodeURIComponent(usersCursor)}` : ""}`).catch(() => null),
+    ]);
+    if ((!adm || !adm.mode) && (!usr || !usr.modes)) return card(t("tabAccess"), t("acNoneSet"));
+    const warn = (list) => (list || []).map((w) => h("p", { class: "warn-line" }, w));
+    const line = (label, mode, from, extra) => h("div", { class: "kv" }, h("dt", {}, label), h("dd", {}, h("b", {}, mode), " ", h("span", { class: "mute" }, t("acFrom", fromText(from))), extra ? h("div", { class: "mute" }, extra) : null));
+    const out = [card(t("acWho"), null,
+      h("dl", { class: "kvs" },
+        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, adm.roles ? t("acRoles", adm.roles.join(", ")) : null) : null,
+        usr && usr.modes ? line(t("acUsers"), usr.label, usr.from, usr.everyone ? t("acEveryone") : usr.roles && usr.roles.length ? t("acRoles", usr.roles.join(", ")) : null) : null),
+      warn(adm && adm.warnings), warn(usr && usr.warnings),
+      shell.signOut ? h("div", { class: "actions" }, h("a", { class: "btn sm quiet", href: shell.signOut }, t("acSignOut"))) : null)];
+
+    if (adm && adm.mode === "superset-users") {
+      const remove = (u) => (ev) => (confirm(t("acRemoveQ", u)) ? act(() => hostApi("settings/admins", { body: { remove: u } }), t("saved"))(ev) : null);
+      out.push(card(t("acAdmins"), null,
+        h("h3", { class: "sub-h" }, t("acOwners")),
+        h("ul", { class: "people" }, adm.owners.map((o) => h("li", {}, h("b", {}, o)))),
+        h("p", { class: "mute small" }, adm.ownersFrom ? `${t("acOwnerNote")} (${adm.ownersFrom})` : t("acOwnerNote")),
+        h("h3", { class: "sub-h" }, t("acGranted")),
+        adm.granted.length ? peopleTable(adm.granted, adm.canGrant ? remove : null) : h("p", { class: "mute" }, t("acNoGranted")),
+        adm.canGrant ? addForm(t("acAdmins"), (u) => hostApi("settings/admins", { body: { add: u } })) : h("p", { class: "mute small" }, t("acOwnersOnly"))));
+    }
+    if (usr && usr.modes && usr.modes.includes("granted")) {
+      const remove = (u) => (ev) => (confirm(t("acRemoveQ", u)) ? act(() => hostApi("settings/users", { body: { remove: u } }), t("saved"))(ev) : null);
+      const search = h("input", { type: "search", value: usersQuery, placeholder: t("acSearch"), "aria-label": t("acSearch") });
+      search.addEventListener("change", () => { usersQuery = search.value.trim(); usersCursor = null; render(); });
+      out.push(card(t("acUsers"), null,
+        usr.seeded && usr.seeded.length ? [h("h3", { class: "sub-h" }, t("acSeeded")), h("ul", { class: "people" }, usr.seeded.map((u) => h("li", {}, h("b", {}, u)))), usr.seededFrom ? h("p", { class: "mute small" }, usr.seededFrom) : null] : null,
+        h("div", { class: "row between" }, h("h3", { class: "sub-h" }, t("acPeople")), search),
+        usr.users.length ? peopleTable(usr.users, remove) : h("p", { class: "mute" }, t("acNoPeople")),
+        pager(usr.page, (c) => { usersCursor = c; render(); }),
+        addForm(t("acUsers"), (u) => hostApi("settings/users", { body: { add: u } }))));
+    }
+    return out;
+  }
+  function peopleTable(rows, remove) {
+    return h("div", { class: "table-wrap" }, h("table", { class: "people-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, t("acUser")), h("th", {}, t("acBy")), h("th", {}, t("acAt")), remove ? h("th", {}, h("span", { class: "sr" }, t("acRemove"))) : null)),
+      h("tbody", {}, rows.map((g) => h("tr", {}, h("td", {}, h("b", {}, g.user)), h("td", {}, g.by), h("td", { class: "num" }, when(g.at)),
+        remove ? h("td", { class: "end" }, h("button", { class: "btn sm quiet", type: "button", onclick: remove(g.user), "aria-label": `${t("acRemove")} ${g.user}` }, t("acRemove"))) : null)))));
+  }
+
+  const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, access, settings };
   let rendering = 0;
   async function render() {
     const mine = ++rendering;

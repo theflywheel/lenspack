@@ -12,6 +12,9 @@ The panel is served by Lenspack itself, so it looks the same in every host.
 - **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Admins by the
   `auth.admins` rule can open it; without a rule, anyone with a sign-in role named `admin`. It needs a `state:` directory in `lenspack.yaml`.
 
+A deployment can also name its admins one by one, or give them one shared password on a sign-in page of their own:
+see [Who can use and administer the assistant](../access/admin-access.md).
+
 Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the
 policy layer, from the roles the host says the caller holds and the deployment's `admins` rule, never a dashboard's
 edit right. In Superset, the rule lists Superset role names and defaults to `["Admin"]`; Superset's signed admin flag
@@ -21,7 +24,7 @@ admins. Being an admin opens these pages and gives no more data. See [Rights](..
 routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also
 read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
 
-It has eight tabs, in English and French, in light and dark, and it works at phone width:
+It has nine tabs, in English and French, in light and dark, and it works at phone width:
 
 | Tab | What it shows |
 | --- | --- |
@@ -32,6 +35,7 @@ It has eight tabs, in English and French, in light and dark, and it works at pho
 | **Definitions** | What admins have added to the pack: the entries, how much of their size budget they use, undo, and the full history with restore. The pack's own instructions are shown read-only beside them. |
 | **Telemetry** | A checklist of every signal Lenspack can record for this deployment (see [What is recorded](#what-is-recorded)). |
 | **Cache** | [Saved answers](saved-answers.md): how many questions they answered and what they saved, each entry with pin, unpin and evict, the last refresh with a **Refresh now** button, the most-asked questions per board, chart candidates and settled boards. A server that keeps none says caching is not enabled. |
+| **Access** | Who is an admin and who may use the assistant, as the deployment set them; the admins owners added and the people admins added, with who added each and when. See [Who can use and administer the assistant](../access/admin-access.md). |
 | **Settings** | Every switch, with where its value comes from (default, config file, environment, or set here). |
 
 ## Usage is a board

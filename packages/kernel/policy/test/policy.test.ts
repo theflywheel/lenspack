@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { ADMIN_ROLE, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -276,13 +276,13 @@ describe("admin rights", () => {
     expect(mayAdminister({ roles: ["admin"] })).toBe(true);
     expect(mayAdminister({ roles: ["Alpha", "editor"] })).toBe(false);
     expect(mayAdminister({})).toBe(false);
-    expect(adminRights(principalOf({ user: "ana" }))).toEqual({ administer: false, users: false });
-    expect(adminRights(principalOf({ user: "ana", maintain: true, edit: true }))).toEqual({ administer: false, users: false });
-    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true }))).toEqual({ administer: true, users: true });
-    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: false }))).toEqual({ administer: true, users: false });
+    expect(adminRights(principalOf({ user: "ana" }))).toMatchObject({ administer: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", maintain: true, edit: true }))).toMatchObject({ administer: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true }))).toMatchObject({ administer: true, users: true });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: false }))).toMatchObject({ administer: true, users: false });
     // A read-only admin (edits switched off) still runs the deployment.
-    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true, readOnly: "edits are off" }))).toEqual({ administer: true, users: true });
-    expect(adminRights(principalOf({ user: "ana", usage: true }))).toEqual({ administer: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true, readOnly: "edits are off" }))).toMatchObject({ administer: true, users: true });
+    expect(adminRights(principalOf({ user: "ana", usage: true }))).toMatchObject({ administer: false, users: false });
   });
 
   it("follow the deployment's admins rule, which alone gives the admin role; absent, a role named admin, as before", () => {
@@ -337,5 +337,137 @@ describe("answerView", () => {
     expect(answerView(open, { on: false })).toBeNull();
     expect(answerView(hiding)).toEqual({ sql: false, definitions: false });
     expect(answerView(hiding, { on: true, sql: true })).toEqual({ sql: false, definitions: false });
+  });
+});
+
+describe("who is an admin: the three access modes", () => {
+  // Superset's rights as the host gives them: Superset's Admin role holds Lenspack's admin role (the default rule).
+  const host = { editors: [], maintainers: [], admins: ["role:Admin"], usage: ["role:Admin"] };
+  const supersetAdmin = { user: "ana", userId: 1, roles: ["Admin"] };
+  const gamma = { user: "bea", userId: 7, roles: ["Gamma"] };
+  const settle = (who: { user: string; userId?: number; roles: string[] }, access: Parameters<typeof rightsUnder>[0]) => principalOf(who, rightsUnder(access, host));
+
+  it("reads the mode, the environment winning, superset-role by default; an unknown one is an error", () => {
+    expect(adminAccessModeFrom(undefined)).toBe("superset-role");
+    expect(adminAccessModeFrom("superset-users")).toBe("superset-users");
+    expect(adminAccessModeFrom("superset-role", " Password ")).toBe("password");
+    expect(adminAccessModeFrom("password", "  ")).toBe("password");
+    expect(() => adminAccessModeFrom("anyone")).toThrow(/superset-role, superset-users or password/);
+  });
+
+  it("reads user lists: names and id:<n>, trimmed, no repeats; roles and bad ids refused", () => {
+    expect(adminUsersFrom("alice, bob ,,id:12,alice")).toEqual(["alice", "bob", "id:12"]);
+    expect(adminUsersFrom(["alice", 12])).toEqual(["alice", "12"]);
+    expect(adminUsersFrom(undefined)).toEqual([]);
+    expect(() => adminUsersFrom("role:Admin")).toThrow(/roles grant nothing/);
+    expect(() => adminUsersFrom("id:twelve")).toThrow(/not a user id/);
+  });
+
+  it("matches a name exactly, an id by the host's user id, a role by roles", () => {
+    expect(matchesEntry({ user: "alice" }, "alice")).toBe(true);
+    expect(matchesEntry({ user: "Alice" }, "alice")).toBe(false);
+    expect(matchesEntry({ user: "renamed", userId: 12 }, "id:12")).toBe(true);
+    expect(matchesEntry({ user: "id:12" }, "id:12")).toBe(false);
+    expect(matchesEntry({ user: "x" }, "role:Admin", ["Admin"])).toBe(true);
+  });
+
+  it("superset-role: Superset roles grant admin, as before", () => {
+    const access = { mode: "superset-role" } as const;
+    expect(adminRights(settle(supersetAdmin, access), access)).toEqual({ administer: true, users: true, owner: false });
+    expect(adminRights(settle(gamma, access), access).administer).toBe(false);
+    // The same answer without the mode, from the role principalOf settled.
+    expect(adminRights(settle(supersetAdmin, access)).administer).toBe(true);
+  });
+
+  it("superset-users: a Superset Admin who is not named is refused", () => {
+    const access = { mode: "superset-users", owners: ["olga"], granted: [] } as const;
+    const ana = settle(supersetAdmin, access);
+    expect(ana.roles).not.toContain(ADMIN_ROLE);
+    expect(adminRights(ana, access)).toEqual({ administer: false, users: false, owner: false });
+    expect(adminRights(ana).administer).toBe(false);
+    // Using the assistant is a separate rule, and unchanged.
+    expect(mayUse(ana)).toBe(true);
+  });
+
+  it("superset-users: owners administer and may grant; granted users administer and may not", () => {
+    const access = { mode: "superset-users", owners: ["olga", "id:42"], granted: ["bea"] } as const;
+    const olga = settle({ user: "olga", roles: ["Gamma"] }, access);
+    expect(adminRights(olga, access)).toEqual({ administer: true, users: true, owner: true });
+    const byId = settle({ user: "renamed-later", userId: 42, roles: [] }, access);
+    expect(adminRights(byId, access).owner).toBe(true);
+    const bea = settle(gamma, access);
+    expect(adminRights(bea, access)).toEqual({ administer: true, users: true, owner: false });
+    expect(adminRights(bea).administer).toBe(true);
+  });
+
+  it("superset-users with no owners: nobody is an admin, grants included (fails closed)", () => {
+    const access = { mode: "superset-users", owners: [], granted: ["bea"] } as const;
+    expect(adminRights(settle(gamma, access), access).administer).toBe(false);
+    expect(adminRights(settle(gamma, access)).administer).toBe(false);
+    expect(adminRights(settle(supersetAdmin, access), access).administer).toBe(false);
+  });
+
+  it("password: no Superset user is an admin; the password admin is, and sees user names", () => {
+    const access = { mode: "password" } as const;
+    expect(adminRights(settle(supersetAdmin, access), access).administer).toBe(false);
+    expect(adminRights(settle(supersetAdmin, access)).administer).toBe(false);
+    // A Superset user who happens to be called like the password admin gets nothing from the name.
+    expect(adminRights(settle({ user: PASSWORD_ADMIN, roles: ["Admin"] }, access), access).administer).toBe(false);
+    expect(adminRights(passwordAdmin(), access)).toEqual({ administer: true, users: true, owner: true });
+    expect(passwordAdmin()).toMatchObject({ user: PASSWORD_ADMIN, edit: false });
+    expect(principalOf({ user: PASSWORD_ADMIN, roles: [] }, PASSWORD_ADMIN_RIGHTS).roles).toEqual([ADMIN_ROLE]);
+  });
+});
+
+describe("who may use the assistant: the user-access modes", () => {
+  const roles = ["role:Field"];
+  const gamma = { user: "bea", userId: 7, roles: ["Gamma"] };
+  const field = { user: "fola", roles: ["Field"] };
+  const access = (modes: string, granted: string[] = [], seeded: string[] = []) => ({ modes: userAccessModesFrom(modes), granted, seeded });
+
+  it("reads one mode or a combination, the environment winning; superset-role by default; unknown ones refused", () => {
+    expect(userAccessModesFrom(undefined)).toEqual(["superset-role"]);
+    expect(userAccessModesFrom("superset-role, granted")).toEqual(["superset-role", "granted"]);
+    expect(userAccessModesFrom("superset-role+granted")).toEqual(["superset-role", "granted"]);
+    expect(userAccessModesFrom(["granted"])).toEqual(["granted"]);
+    expect(userAccessModesFrom("granted", "everyone")).toEqual(["everyone"]);
+    expect(() => userAccessModesFrom("friends")).toThrow(/superset-role, granted and everyone/);
+    expect(() => userAccessModesFrom(",")).toThrow(/names no mode/);
+  });
+
+  it("superset-role: the roles named, or everyone when none is (as before)", () => {
+    expect(mayUseUnder(gamma, access("superset-role"), undefined)).toBe(true);
+    expect(mayUseUnder(gamma, access("superset-role"), roles)).toBe(false);
+    expect(mayUseUnder(field, access("superset-role"), roles)).toBe(true);
+  });
+
+  it("granted: only people granted or seeded, by name or id; none means nobody but admins", () => {
+    expect(mayUseUnder(gamma, access("granted"), roles)).toBe(false);
+    expect(mayUseUnder(gamma, access("granted", ["bea"]), roles)).toBe(true);
+    expect(mayUseUnder(gamma, access("granted", [], ["id:7"]), roles)).toBe(true);
+    expect(mayUseUnder(field, access("granted", ["bea"]), roles)).toBe(false);
+    expect(mayUseUnder(gamma, access("granted"), undefined, true)).toBe(true);
+    expect(usersUnder(access("granted"), undefined)).toEqual([]);
+  });
+
+  it("superset-role,granted: either one lets a person in; no role named adds nobody", () => {
+    const both = access("superset-role,granted", ["bea"]);
+    expect(mayUseUnder(gamma, both, roles)).toBe(true);
+    expect(mayUseUnder(field, both, roles)).toBe(true);
+    expect(mayUseUnder({ user: "cid", roles: ["Gamma"] }, both, roles)).toBe(false);
+    expect(mayUseUnder({ user: "cid", roles: ["Gamma"] }, both, undefined)).toBe(false);
+  });
+
+  it("everyone: everyone signed in, whatever else is named", () => {
+    expect(mayUseUnder(gamma, access("everyone,granted"), roles)).toBe(true);
+    expect(usersUnder(access("everyone"), roles)).toBeUndefined();
+  });
+
+  it("settles the same answer through principalOf, admins always in", () => {
+    const a = access("granted", ["bea"]);
+    const rights = (users: string[] | undefined) => ({ editors: [], maintainers: [], admins: ["role:Admin"], ...(users ? { users } : {}) });
+    expect(mayUse(principalOf(gamma, rights(usersUnder(a, roles))))).toBe(true);
+    expect(mayUse(principalOf(field, rights(usersUnder(a, roles))))).toBe(false);
+    expect(mayUse(principalOf({ user: "ana", roles: ["Admin"] }, rights(usersUnder(a, roles))))).toBe(true);
   });
 });

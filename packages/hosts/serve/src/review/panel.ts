@@ -6,7 +6,7 @@ import { type Principal, adminRights } from "@lenspack/policy";
 
 import { type BrandSettings, DEFAULT_BRAND_NAME, brandAuditDetail } from "../brand";
 import type { Features } from "../features";
-import { BodyTooLarge, NO_STORE, TYPES, escapeHtml, json, readJson } from "../http";
+import { BodyTooLarge, NO_STORE, TYPES, escapeHtml, json, readJson, scriptJson } from "../http";
 import { publicView } from "../llm";
 import type { Provider } from "../llm";
 import { SettingsSaveError } from "../settings";
@@ -45,6 +45,12 @@ export type PanelOptions = {
   log?: (line: string) => void;
   /** The usage pack and its board (review/usage.ts): the Overview tab, and the chat about usage. Absent, the tab shows plain counts. */
   usage?: UsageBoard | null | Promise<UsageBoard | null>;
+  /** Where the page itself is: <prefix>/admin by default. A host whose admin pages have a prefix of their own (/_admin) puts them there. */
+  base?: string;
+  /** What the page's script needs from the host for this request (the sign-out address): written into the page as window.__lpAdmin. */
+  shell?: (req: IncomingMessage) => Record<string, unknown>;
+  /** Where a page request goes instead of the page (the admin pages are elsewhere for this deployment). Null: the page. */
+  pageRedirect?: (req: IncomingMessage) => string | null;
 };
 
 // board.js and board.css are the board renderer (@lenspack/react) bundled for a page with no build: its build writes them here.
@@ -52,11 +58,22 @@ const ASSETS: Record<string, string> = { "panel.js": "panel.js", "checklist.js":
 
 export function panelRoutes(o: PanelOptions) {
   const dir = webDir();
-  const base = `${o.prefix}/admin`;
+  const base = o.base ?? `${o.prefix}/admin`;
+  // Sharing the host's prefix (base === prefix), the panel answers only its own paths and leaves the rest to the host's routes.
+  const own = (rest: string) => rest === "" || rest === "index.html" || !!ASSETS[rest] || rest === "api" || rest.startsWith("api/");
   const s = o.system;
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {
     if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) return false;
+    if (base === o.prefix && url.pathname !== base && !own(url.pathname.slice(base.length + 1))) return false;
     const send = (status: number, body: unknown) => (json(res, status, body, NO_STORE), true);
+    // The admin pages are elsewhere for this deployment (its own sign-in): a page request goes there, whoever asks.
+    const page = url.pathname === base || url.pathname === `${base}/` || url.pathname === `${base}/index.html`;
+    const elsewhere = page ? o.pageRedirect?.(req) : null;
+    if (elsewhere) {
+      res.writeHead(302, { location: elsewhere, ...NO_STORE });
+      res.end();
+      return true;
+    }
     const rights = adminRights(who);
     if (!rights.administer) {
       s.audit(who.user, `${req.method} ${url.pathname}`, `not a ${o.adminName}`, undefined, "denied");
@@ -68,7 +85,7 @@ export function panelRoutes(o: PanelOptions) {
     }
     // The page's own address ends in a slash, so its relative calls (api/…, panel.js, ../cache) land under the prefix.
     if (url.pathname === base) {
-      res.writeHead(302, { location: "admin/", ...NO_STORE });
+      res.writeHead(302, { location: `${base.slice(base.lastIndexOf("/") + 1)}/`, ...NO_STORE });
       res.end();
       return true;
     }
@@ -79,6 +96,8 @@ export function panelRoutes(o: PanelOptions) {
       let html = readFileSync(`${dir}index.html`, "utf8").replace("__TITLE__", o.title ? o.title.replace(/[<>&"]/g, "") : name).replaceAll("__NAME__", name);
       // The deployment's icon in the header's mark, as an image's address (checked in brand.ts, escaped here).
       if (brand?.icon) html = html.replace('<span class="mark" aria-hidden="true"></span>', `<span class="mark icon" aria-hidden="true"><img src="${escapeHtml(brand.icon)}" alt=""></span>`);
+      // Where the host's routes are from the page: one level up (../) at <prefix>/admin/, the same level when they share it.
+      html = html.replace("/*__ADMIN__*/", `window.__lpAdmin=${scriptJson({ host: base === o.prefix ? "" : "../", ...o.shell?.(req) })};`);
       res.writeHead(200, { "content-type": TYPES[".html"]!, ...NO_STORE });
       res.end(html);
       return true;

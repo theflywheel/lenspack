@@ -149,84 +149,89 @@ export function addressKey(addr: string | undefined): string {
   return `${full.slice(0, 4).map((x) => x.toLowerCase().replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
-export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "password" } {
-  const now = o.now ?? Date.now;
-  const log = o.log ?? (() => {});
-  const origin = o.baseUrl ? new URL(o.baseUrl).origin : undefined;
+/**
+ * The folder a sign-in keeps its state in: made private (0700, with a .gitignore) on first use, and refused when
+ * another user could have planted or may change it. Checked once.
+ */
+export function stateFolder(dir: string) {
   let checked = false;
-  const ensureDir = () => {
-    if (!checked) {
-      try {
-        if (!existsSync(o.dir)) {
-          mkdirSync(o.dir, { recursive: true, mode: 0o700 });
-          // So the folder is never committed by accident with the config next to it.
-          writeFileSync(join(o.dir, ".gitignore"), "*\n", { mode: 0o600 });
-        }
-      } catch (e) {
-        throw new Error(`cannot write the sign-in state to ${o.dir} (${(e as Error).message}); set LENSPACK_STATE_DIR or auth.dir to a writable folder, or LENSPACK_ADMIN_PASSWORD`);
+  const ensure = () => {
+    if (checked) return;
+    try {
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        // So the folder is never committed by accident with the config next to it.
+        writeFileSync(join(dir, ".gitignore"), "*\n", { mode: 0o600 });
       }
-      checkOwn(o.dir, "dir");
-      checked = true;
+    } catch (e) {
+      throw new Error(`cannot write the sign-in state to ${dir} (${(e as Error).message}); set LENSPACK_STATE_DIR or auth.dir to a writable folder, or LENSPACK_ADMIN_PASSWORD`);
     }
+    checkOwn(dir, "dir");
+    checked = true;
   };
-  const read = (path: string) => readOwn(path, lstatSync(o.dir).uid);
+  return { ensure, read: (path: string) => readOwn(path, lstatSync(dir).uid) };
+}
 
-  // How the password is checked: against the plain one given, or a hash.
-  let check: (attempt: string) => Promise<boolean>;
-  let material: Buffer;
+/**
+ * How a password is checked: against the plain one given (12+ characters, compared in equal time), or a scrypt hash
+ * (given, or made at first start with the password written once to a file only this user may read). `material` is
+ * what a session's fingerprint is made from, so a new password ends every session made with the old one.
+ */
+export function passwordChecker(o: Pick<PasswordOptions, "password" | "passwordHash" | "dir" | "log">, folder = stateFolder(o.dir)): { check: (attempt: string) => Promise<boolean>; material: Buffer } {
+  const log = o.log ?? (() => {});
   if (o.password !== undefined) {
     if (o.password.length < MIN_LENGTH) throw new Error(`the admin password must be at least ${MIN_LENGTH} characters`);
     const want = digest(o.password);
-    check = async (attempt) => timingSafeEqual(digest(attempt), want);
-    material = Buffer.concat([Buffer.from("password:"), want]);
-  } else {
-    let stored = o.passwordHash;
-    if (stored === undefined) {
-      const hashFile = join(o.dir, "admin-password.hash");
-      if (!present(hashFile)) {
-        ensureDir();
-        const made = randomBytes(18).toString("base64url");
-        const plainFile = join(o.dir, "admin-password.txt");
-        // Only the start whose hash lands writes the password file, over any old one,
-        // so the file always holds the password of the hash in place.
-        const plainTmp = `${plainFile}.${randomBytes(6).toString("hex")}.tmp`;
-        writePrivate(plainTmp, `${made}\n`);
-        if (claim(hashFile, `${hashPassword(made)}\n`)) {
-          renameSync(plainTmp, plainFile);
-          log(`made a password for ${ADMIN}; it is in ${plainFile}, readable by this user only. Read it, then delete the file. Set LENSPACK_ADMIN_PASSWORD to choose one.`);
-        } else rmSync(plainTmp, { force: true });
-      }
-      ensureDir();
-      stored = read(hashFile);
-    }
-    const parsed = parseHash(stored);
-    check = (attempt) => verifyHash(attempt, parsed);
-    material = Buffer.concat([Buffer.from("hash:"), parsed.hash]);
+    return { check: async (attempt) => timingSafeEqual(digest(attempt), want), material: Buffer.concat([Buffer.from("password:"), want]) };
   }
+  let stored = o.passwordHash;
+  if (stored === undefined) {
+    const hashFile = join(o.dir, "admin-password.hash");
+    if (!present(hashFile)) {
+      folder.ensure();
+      const made = randomBytes(18).toString("base64url");
+      const plainFile = join(o.dir, "admin-password.txt");
+      // Only the start whose hash lands writes the password file, over any old one,
+      // so the file always holds the password of the hash in place.
+      const plainTmp = `${plainFile}.${randomBytes(6).toString("hex")}.tmp`;
+      writePrivate(plainTmp, `${made}\n`);
+      if (claim(hashFile, `${hashPassword(made)}\n`)) {
+        renameSync(plainTmp, plainFile);
+        log(`made a password for ${ADMIN}; it is in ${plainFile}, readable by this user only. Read it, then delete the file. Set LENSPACK_ADMIN_PASSWORD to choose one.`);
+      } else rmSync(plainTmp, { force: true });
+    }
+    folder.ensure();
+    stored = folder.read(hashFile);
+  }
+  const parsed = parseHash(stored);
+  return { check: (attempt) => verifyHash(attempt, parsed), material: Buffer.concat([Buffer.from("hash:"), parsed.hash]) };
+}
 
-  let secret = o.sessionSecret;
+/** The key that signs a sign-in's cookies: the one given, else one kept in the folder (made on first start). */
+export function sessionKey(dir: string, given: string | undefined, file = "session.key", folder = stateFolder(dir)): string {
+  let secret = given;
   if (secret === undefined) {
-    const keyFile = join(o.dir, "session.key");
-    ensureDir();
+    const keyFile = join(dir, file);
+    folder.ensure();
     if (!present(keyFile)) claim(keyFile, randomBytes(32).toString("hex"));
-    secret = read(keyFile).trim();
+    secret = folder.read(keyFile).trim();
   }
   if (secret.length < 32) throw new Error("the session secret must be at least 32 characters");
-  const { seal, unseal } = sealer(secret, now);
-  const ttl = Math.round(o.sessionHours * 3600);
-  // The password's fingerprint goes into each session, so a new password ends every session made
-  // with the old one. Keyed by the session secret: a leaked cookie gives no hash to guess against.
-  const fingerprint = createHmac("sha256", secret).update(material).digest().subarray(0, 12).toString("base64url");
+  return secret;
+}
 
-  // Brute force. Each try counts as a failure before the password is checked
-  // (a burst sent at once cannot slip past). After five failures, a caller
-  // waits longer for each (1 s, doubling, at most 15 minutes); failures are
-  // forgotten after an hour without one. A caller is its address (an IPv6
-  // /64), or, once it has signed in from this browser, the device cookie set
-  // then: success clears a device's failures, never an address's, which
-  // attackers may share. Callers without a device cookie also share a budget
-  // of 100 failures in 10 minutes, and only a few of their passwords are
-  // checked at once; a known browser is held up by neither.
+/**
+ * Brute force. Each try counts as a failure before the password is checked
+ * (a burst sent at once cannot slip past). After five failures, a caller
+ * waits longer for each (1 s, doubling, at most 15 minutes); failures are
+ * forgotten after an hour without one. A caller is its address (an IPv6
+ * /64), or, once it has signed in from this browser, the device cookie set
+ * then: success clears a device's failures, never an address's, which
+ * attackers may share. Callers without a device cookie also share a budget
+ * of 100 failures in 10 minutes, and only a few of their passwords are
+ * checked at once; a known browser is held up by neither.
+ */
+export function attemptLimiter(now: () => number = Date.now) {
   const tries = new Map<string, { fails: number; until: number; last: number }>();
   const MAX_CHECKING = 4;
   const BUDGET = { fails: 100, windowMs: 10 * 60_000 };
@@ -261,6 +266,40 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
       if (mine) mine.fails--;
     }
   };
+  return {
+    /**
+     * One try: null while the caller must wait (the password is then not even checked: a right guess teaches nothing),
+     * with how long; else whether `check` said yes. A known device is not held up by others' checks in flight.
+     */
+    async attempt(key: string, known: boolean, check: () => Promise<boolean>): Promise<{ ok: boolean } | { waitS: number }> {
+      const wait = waitFor(key, known);
+      if (wait > 0 || (!known && checking >= MAX_CHECKING)) return { waitS: Math.max(1, Math.ceil(wait / 1000)) };
+      failed(key, known);
+      checking++;
+      let ok: boolean;
+      try {
+        ok = await check();
+      } finally {
+        checking--;
+      }
+      if (ok) succeeded(key, known);
+      return { ok };
+    },
+  };
+}
+
+export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "password" } {
+  const now = o.now ?? Date.now;
+  const origin = o.baseUrl ? new URL(o.baseUrl).origin : undefined;
+  const folder = stateFolder(o.dir);
+  const { check, material } = passwordChecker(o, folder);
+  const secret = sessionKey(o.dir, o.sessionSecret, "session.key", folder);
+  const { seal, unseal } = sealer(secret, now);
+  const ttl = Math.round(o.sessionHours * 3600);
+  // The password's fingerprint goes into each session, so a new password ends every session made with the old one.
+  // Keyed by the session secret: a leaked cookie gives no hash to guess against.
+  const fingerprint = createHmac("sha256", secret).update(material).digest().subarray(0, 12).toString("base64url");
+  const limiter = attemptLimiter(now);
 
   const secureFor = (req: IncomingMessage) => origin?.startsWith("https:") || !!(req.socket as { encrypted?: boolean }).encrypted || req.headers["x-forwarded-proto"] === "https";
   const sessionCookie = (req: IncomingMessage, value: string, maxAgeS: number) => cookie(SESSION, value, { path: "/", maxAgeS, secure: secureFor(req) });
@@ -306,27 +345,15 @@ export function passwordAdapter(o: PasswordOptions): AuthAdapter & { kind: "pass
         const device = unseal<{ d?: string }>("device", cookies(req)[DEVICE])?.d;
         const known = !!device;
         const key = known ? `device:${device}` : `addr:${addressKey(req.socket.remoteAddress)}`;
-        const wait = waitFor(key, known);
-        // While waiting, the password is not even checked: a right guess then teaches nothing.
-        // A known device is not held up by others' checks in flight.
-        if (wait > 0 || (!known && checking >= MAX_CHECKING)) {
-          const s = Math.max(1, Math.ceil(wait / 1000));
-          form(res, 429, ret, `Too many tries. Wait ${s} s.`, { "retry-after": String(s) });
+        const tried = await limiter.attempt(key, known, async () => (body.get("user") ?? ADMIN) === ADMIN && (await check(body.get("password") ?? "")));
+        if ("waitS" in tried) {
+          form(res, 429, ret, `Too many tries. Wait ${tried.waitS} s.`, { "retry-after": String(tried.waitS) });
           return true;
         }
-        failed(key, known);
-        checking++;
-        let ok: boolean;
-        try {
-          ok = (body.get("user") ?? ADMIN) === ADMIN && (await check(body.get("password") ?? ""));
-        } finally {
-          checking--;
-        }
-        if (!ok) {
+        if (!tried.ok) {
           form(res, 401, ret, "Wrong password.");
           return true;
         }
-        succeeded(key, known);
         res.writeHead(303, {
           location: ret,
           "cache-control": "no-store",

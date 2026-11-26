@@ -1,4 +1,5 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { createHmac } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +10,7 @@ import { rotatingAudit } from "@lenspack/serve";
 import { serviceAccount } from "../src/bootstrap";
 import type { SupersetClient } from "../src/client";
 import { adminRights, mayUse } from "@lenspack/policy";
-import { IDENTITY_HEADER, type Identity, READ_ONLY_MESSAGE, editPolicyFrom, callerOf, roleRulesFrom, signIdentity, supersetAccess, supersetRights, verifyIdentity } from "../src/identity";
+import { CLIENT_HEADER, IDENTITY_HEADER, signedClient, type Identity, READ_ONLY_MESSAGE, editPolicyFrom, callerOf, roleRulesFrom, signIdentity, supersetAccess, supersetRights, verifyIdentity } from "../src/identity";
 import { actorOf } from "../src/personal-routes";
 
 const KEY = "k".repeat(64);
@@ -180,19 +181,19 @@ describe("who is an admin: Lenspack's admins rule over Superset's role names", (
   const admin = async (rights: ReturnType<typeof supersetRights>, over: Partial<Identity>) => adminRights(await access(rights)(over));
 
   it("by default, Superset's Admin role, as before; the usage right goes with it", async () => {
-    expect(await admin(supersetRights(), { u: "boss", a: true, r: ["Admin"] })).toEqual({ administer: true, users: true });
-    expect(await admin(supersetRights(), { u: "gamma", r: ["Gamma"] })).toEqual({ administer: false, users: false });
+    expect(await admin(supersetRights(), { u: "boss", a: true, r: ["Admin"] })).toMatchObject({ administer: true, users: true });
+    expect(await admin(supersetRights(), { u: "gamma", r: ["Gamma"] })).toMatchObject({ administer: false, users: false });
     // A Superset role that happens to be called "admin" is not Superset's Admin.
-    expect(await admin(supersetRights(), { u: "odd", r: ["admin"] })).toEqual({ administer: false, users: false });
+    expect(await admin(supersetRights(), { u: "odd", r: ["admin"] })).toMatchObject({ administer: false, users: false });
     // An older plugin that signs no role names: its admin flag stands for the Admin role.
-    expect(await admin(supersetRights(), { u: "boss", a: true })).toEqual({ administer: true, users: true });
+    expect(await admin(supersetRights(), { u: "boss", a: true })).toMatchObject({ administer: true, users: true });
   });
 
   it("names its own roles: the signed admin flag alone gives nothing, and the admin role widens nothing", async () => {
     const rights = supersetRights({ admins: ["Lenspack admin"] });
-    expect(await admin(rights, { u: "boss", a: true, r: ["Admin"] })).toEqual({ administer: false, users: false });
-    expect(await admin(rights, { u: "kemi", r: ["Gamma", "Lenspack admin"] })).toEqual({ administer: true, users: true });
-    expect(await admin(rights, { u: "ali", r: ["Alpha", "Lenspack admin"] })).toEqual({ administer: true, users: true });
+    expect(await admin(rights, { u: "boss", a: true, r: ["Admin"] })).toMatchObject({ administer: false, users: false });
+    expect(await admin(rights, { u: "kemi", r: ["Gamma", "Lenspack admin"] })).toMatchObject({ administer: true, users: true });
+    expect(await admin(rights, { u: "ali", r: ["Alpha", "Lenspack admin"] })).toMatchObject({ administer: true, users: true });
     // Still only what Superset lets them do on the dashboard: a viewer stays a viewer.
     expect(await access(rights)({ u: "kemi", r: ["Gamma", "Lenspack admin"], d: 7, e: false, v: true })).toMatchObject({ edit: false, readOnly: READ_ONLY_MESSAGE });
     // The personal dashboards' admin is the same person.
@@ -202,8 +203,8 @@ describe("who is an admin: Lenspack's admins rule over Superset's role names", (
 
   it("gives the usage right by its own rule when named, else to the admins", async () => {
     const rights = supersetRights({ admins: ["Lenspack admin"], usage: ["Finance"] });
-    expect(await admin(rights, { u: "kemi", r: ["Lenspack admin"] })).toEqual({ administer: true, users: false });
-    expect(await admin(rights, { u: "fola", r: ["Lenspack admin", "Finance"] })).toEqual({ administer: true, users: true });
+    expect(await admin(rights, { u: "kemi", r: ["Lenspack admin"] })).toMatchObject({ administer: true, users: false });
+    expect(await admin(rights, { u: "fola", r: ["Lenspack admin", "Finance"] })).toMatchObject({ administer: true, users: true });
     expect((await access(rights)({ u: "ngozi", r: ["Finance"] })).usage).toBe(true);
     expect(supersetRights({ admins: ["Ops"] })).toEqual({ editors: [], maintainers: [], admins: ["role:Ops"], usage: ["role:Ops"] });
     expect(supersetRights({ admins: ["role:Ops"] }).admins).toEqual(["role:Ops"]);
@@ -239,5 +240,33 @@ describe("who is an admin: Lenspack's admins rule over Superset's role names", (
     expect(() => roleRulesFrom({ admins: "Admin" })).toThrow(/list of Superset role names/);
     expect(() => roleRulesFrom({ admins: [""] })).toThrow(/list of Superset role names/);
     expect(() => roleRulesFrom(["Admin"])).toThrow(/auth must be a map/);
+  });
+});
+
+describe("admin and user access through Superset's identity", () => {
+  const key = "k".repeat(64);
+  const sign = (c: unknown, k = key) => {
+    const body = Buffer.from(JSON.stringify(c)).toString("base64url");
+    return `${body}.${createHmac("sha256", k).update(`client:${body}`).digest("hex")}`;
+  };
+  const req = (v?: string) => ({ headers: v ? { [CLIENT_HEADER]: v } : {} }) as unknown as IncomingMessage;
+
+  it("reads a client address only when signed with the identity key, and recent", () => {
+    const now = 1_800_000_000;
+    expect(signedClient(req(sign({ c: "198.51.100.7", t: now })), key, now)).toBe("198.51.100.7");
+    expect(signedClient(req(sign({ c: "198.51.100.7", t: now }, "other")), key, now)).toBeUndefined();
+    expect(signedClient(req(sign({ c: "198.51.100.7", t: now - 3600 })), key, now)).toBeUndefined();
+    expect(signedClient(req(), key, now)).toBeUndefined();
+    expect(signedClient(req(sign({ c: "x", t: now })), null, now)).toBeUndefined();
+  });
+
+  it("passes Superset's user id on, so rules may name id:<n>", () => {
+    expect(callerOf({ u: "bea", i: 7, t: 0 } as Identity, "superset")).toMatchObject({ user: "bea", userId: 7 });
+    expect(callerOf({ u: "bea", t: 0 } as Identity, "superset")).not.toHaveProperty("userId");
+  });
+
+  it("accepts the access settings under auth", () => {
+    expect(() => roleRulesFrom({ adminAccess: "superset-users", adminUsers: ["olga"], userAccess: "granted", seedUsers: ["bea"] })).not.toThrow();
+    expect(() => roleRulesFrom({ adminz: [] })).toThrow(/adminAccess and adminUsers/);
   });
 });
