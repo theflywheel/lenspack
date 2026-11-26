@@ -159,7 +159,7 @@ type Detail = {
   models?: string[];
   tokens?: { in?: number; out?: number };
   cost?: { total?: { usd?: number; inputTokens?: number; outputTokens?: number; unpriced?: number }; models?: Line[] };
-  explain?: { calls?: { description?: unknown }[] };
+  card?: { calls?: { description?: unknown }[] };
 };
 
 const round = (usd: number) => Math.round(usd * 1e6) / 1e6;
@@ -191,7 +191,7 @@ export function turnRow(e: AuditEvent): TurnRow | null {
 
 /** The descriptions of a turn's data calls, from its explanation; the statements and rows stay in the audit line. */
 const explainedOf = (d: Detail): { explained?: string[] } => {
-  const words = (Array.isArray(d.explain?.calls) ? d.explain.calls : []).map((c) => c?.description).filter((w): w is string => typeof w === "string");
+  const words = (Array.isArray(d.card?.calls) ? d.card.calls : []).map((c) => c?.description).filter((w): w is string => typeof w === "string");
   return words.length ? { explained: words } : {};
 };
 

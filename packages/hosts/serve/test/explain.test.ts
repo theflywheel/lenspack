@@ -1,8 +1,8 @@
-// "How this was worked out" under a chat answer, end to end on a SQL source: the stub model asks
-// one breakdown and one computed value; the turn's stream carries one data-explain part with each
-// call in plain words, the SQL that ran with its values, and the first rows; the turn's audit line
-// keeps the same record, bounded. The switches: explain off, explain.sql: false, and a caller not
-// shown compiled statements.
+// The answer card ("How this was worked out") under a chat answer, end to end on a SQL source: the
+// stub model asks one breakdown and one computed value; the turn's stream carries one
+// data-answer-card part with each call in plain words, the SQL that ran with its values, the first
+// rows, and the viewer's dashboard filters; the turn's audit line keeps the same card. The
+// switches: explain off, explain.sql: false, and a caller not shown compiled statements.
 import { mkdtempSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -14,26 +14,9 @@ import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { seed } from "../../../../examples/commerce/seed";
-import {
-  type AppOptions,
-  type AuditEvent,
-  EXPLAIN_LIMITS,
-  type Explanation,
-  type ExplainedCall,
-  type Host,
-  type Provider,
-  adminSettings,
-  boundExplanation,
-  buildProvider,
-  configSchema,
-  createApp,
-  explainFrom,
-  maskCredentials,
-  openConfig,
-  registerLlmAdapter,
-  savedCall,
-  turnRow,
-} from "../src";
+import type { AnswerCard } from "@lenspack/agent";
+
+import { type AppOptions, type AuditEvent, type Host, type Provider, adminSettings, buildProvider, configSchema, createApp, explainFrom, openConfig, registerLlmAdapter, turnRow } from "../src";
 
 const commerce = fileURLToPath(new URL("../../../../examples/commerce/", import.meta.url));
 const usage = { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 2, text: 2, reasoning: 0 } };
@@ -84,7 +67,7 @@ describe("how an answer was worked out", () => {
     await close();
   });
 
-  const turn = async (options: Partial<AppOptions> = {}) => {
+  const turn = async (options: Partial<AppOptions> = {}, selections?: Record<string, string>) => {
     const name = `m${++n}`;
     const model = scripted();
     registerLlmAdapter({ kind: `explain-${name}`, defaultBaseUrl: "mock:", build: () => model });
@@ -96,13 +79,13 @@ describe("how an answer was worked out", () => {
     const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/${host.name}`;
     // A signed-in caller asks on a board of their own; the open server's one user on the pack's.
     await host.store.create({ id: name, pack: host.pack, title: "Shop", ...(options.access ? { owner: "someone" } : {}) });
-    const res = await fetch(`${base}/${name}/chat`, { method: "POST", body: JSON.stringify({ messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "top countries for web revenue in August, and orders per day last month" }] }] }) });
+    const res = await fetch(`${base}/${name}/chat`, { method: "POST", body: JSON.stringify({ messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "top countries for web revenue in August, and orders per day last month" }] }], ...(selections ? { selections } : {}) }) });
     const parts = (await res.text())
       .split("\n")
       .filter((l) => l.startsWith("data: ") && l !== "data: [DONE]")
       .map((l) => JSON.parse(l.slice(6)) as Part);
     const line = audited.find((e) => e.action === "chat-turn")!;
-    return { parts, explain: parts.find((p) => p.type === "data-explain")?.data as Explanation | undefined, line, detail: JSON.parse(line.detail!) };
+    return { parts, explain: parts.find((p) => p.type === "data-answer-card")?.data as AnswerCard | undefined, line, detail: JSON.parse(line.detail!) };
   };
 
   it("streams one explanation: each call in words, the SQL that ran with its values, the first rows", async () => {
@@ -134,12 +117,12 @@ describe("how an answer was worked out", () => {
     expect(daily.rows).toHaveLength(1);
     // The explanation goes out before the turn's cost line.
     const order = t.parts.map((p) => p.type);
-    expect(order.indexOf("data-explain")).toBeLessThan(order.indexOf("data-usage"));
+    expect(order.indexOf("data-answer-card")).toBeLessThan(order.indexOf("data-usage"));
   });
 
   it("is kept in the turn's audit line, and the turn list names what each call asked", async () => {
     const t = await turn();
-    expect(t.detail.explain).toEqual(t.explain);
+    expect(t.detail.card).toEqual(t.explain);
     const row = turnRow(t.line)!;
     expect(row.explained).toHaveLength(2);
     expect(row.explained!.some((w) => w.startsWith("Revenue (sum of total_cents"))).toBe(true);
@@ -154,14 +137,23 @@ describe("how an answer was worked out", () => {
       expect(c.description).toMatch(/approved measure/);
       expect(c.rows.length).toBeGreaterThan(0);
     }
-    expect(JSON.stringify(t.detail.explain)).not.toMatch(/SELECT/);
+    expect(JSON.stringify(t.detail.card)).not.toMatch(/SELECT/);
   });
 
   it("switched off, there is none, in the stream or the audit line", async () => {
     const t = await turn({ explain: () => explainFrom(false) });
     expect(t.explain).toBeUndefined();
-    expect(t.detail.explain).toBeUndefined();
+    expect(t.detail.card).toBeUndefined();
     expect(t.parts.some((p) => p.type === "data-usage")).toBe(true);
+  });
+
+  it("carries the viewer's dashboard filters, named by the pack, and says whether every call applied them", async () => {
+    const t = await turn({}, { channel: "web", country: "", "": "x" });
+    // The breakdown filtered on channel; the daily average did not, so the answer is not all for "web".
+    expect(t.explain!.selections).toEqual([{ field: "channel", label: "Sales channel", value: "web", applied: false }]);
+    expect(t.detail.card.selections).toEqual(t.explain!.selections);
+    const none = await turn();
+    expect(none.explain!.selections).toBeUndefined();
   });
 
   it("a caller not shown compiled statements gets no SQL and no definitions", async () => {
@@ -171,42 +163,6 @@ describe("how an answer was worked out", () => {
       expect(c.description).not.toMatch(/total_cents|count of rows/);
     }
     expect(t.explain!.calls.some((c) => c.description.startsWith("Revenue (the pack's approved measure “revenue”)"))).toBe(true);
-  });
-});
-
-describe("the explanation's size and safety", () => {
-  const call = (i: number, rows = 20, sql = 500): ExplainedCall => ({
-    tool: "query",
-    description: `Call ${i}`,
-    statements: [{ language: "sql", text: "x".repeat(sql) }],
-    columns: [{ key: "group", label: "Group" }, { key: "value", label: "Value" }],
-    rows: Array.from({ length: rows }, (_, r) => [`group ${r} ${"y".repeat(150)}`, r]),
-    total: 400,
-  });
-  const bytes = (x: unknown) => Buffer.byteLength(JSON.stringify(x));
-
-  it("keeps a small turn whole", () => {
-    const x = { calls: [call(1, 5, 100)], sql: true };
-    expect(boundExplanation(x)).toEqual(x);
-  });
-
-  it("stays within its bound: fewer rows, shorter statements, then fewer calls, counted", () => {
-    const x = boundExplanation({ calls: Array.from({ length: 14 }, (_, i) => call(i, 20, 5000)), sql: true });
-    expect(bytes(x)).toBeLessThanOrEqual(EXPLAIN_LIMITS.bytes);
-    expect(x.calls.length + (x.more ?? 0)).toBe(14);
-    expect(x.calls.length).toBeLessThanOrEqual(EXPLAIN_LIMITS.calls);
-    expect(x.calls[0]!.description).toBe("Call 0");
-    // Rows are dropped whole, never cut mid-row.
-    for (const c of x.calls) for (const r of c.rows) expect(r).toHaveLength(2);
-  });
-
-  it("masks anything in a statement that looks like a credential", () => {
-    expect(maskCredentials("SELECT * FROM remote('postgres://reader:s3cret@db:5432/x') WHERE password = 'hunter2'")).toBe("SELECT * FROM remote('postgres://***@db:5432/x') WHERE password = ***");
-    expect(maskCredentials("SELECT a FROM t WHERE b = $1")).toBe("SELECT a FROM t WHERE b = $1");
-  });
-
-  it("a saved answer's call says when its data was read", () => {
-    expect(savedCall(call(1, 1), new Date("2026-09-01T06:00:00Z")).saved).toEqual({ asOf: "2026-09-01T06:00:00.000Z" });
   });
 });
 

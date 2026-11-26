@@ -311,6 +311,8 @@ export function App() {
   // The first paint needs the board, its data and its filter options: one
   // request brings all three, and the host serves them from this primer.
   const primer = React.useRef<{ config: string; data: Record<string, WidgetData>; options: Record<string, FilterOption[]> } | null>(null);
+  // The board's filter selections as last loaded: the chat sends them with each question.
+  const picked = React.useRef<Record<string, string>>({});
   const reloadBoard = React.useCallback(
     (withData = false) => {
       const fetchBoard = () => api(`${base}${withData ? "?include=data,options" : ""}`);
@@ -343,6 +345,7 @@ export function App() {
   const host = React.useMemo<BoardHost>(
     () => ({
       loadBoardData: (config, selections) => {
+        picked.current = selections;
         const p = primer.current;
         if (p && Object.keys(selections).length === 0 && JSON.stringify(config) === p.config) {
           // Used once: a refresh or a new selection asks the server.
@@ -582,6 +585,7 @@ export function App() {
                   onModelChange={setModel}
                   effort={effort}
                   onEffortChange={setEffort}
+                  selections={() => picked.current}
                 />
               </React.Suspense>
             ) : (

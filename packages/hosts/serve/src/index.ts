@@ -9,7 +9,6 @@ export * from "./llm";
 export * from "./prompt";
 export * from "./reply-script";
 export * from "./review";
-export * from "./explain";
 export * from "./metering";
 export * from "./speech";
 export * from "./audit";

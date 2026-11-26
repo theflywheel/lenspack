@@ -1,13 +1,14 @@
 import * as React from "react";
 
-// "How this was worked out" under an answer (docs/explain.md): the turn's data-explain part, one
+// "How this was worked out" under an answer (docs/explain.md): the turn's data-answer-card part (the answer card), one
 // expander, collapsed. Each data call in the order made: the query in plain words, the statement
 // the source ran, and the first rows behind the answer.
 
 type Cell = string | number | boolean | null;
 type Statement = { language: "sql" | "json"; text: string; params?: string[]; cachedAt?: string; note?: string };
 type Call = { description: string; statements?: Statement[]; after?: string; columns: { key: string; label: string; format?: string }[]; rows: Cell[][]; total: number; saved?: { asOf: string } };
-export type ExplainData = { calls: Call[]; more?: number; sql: boolean };
+type Selection = { field: string; label: string; value: string; applied: boolean };
+export type AnswerCardData = { calls: Call[]; more?: number; sql: boolean; selections?: Selection[] };
 
 const shown = (v: Cell, format?: string) => {
   if (typeof v !== "number") return v === null ? "—" : String(v);
@@ -79,7 +80,7 @@ function Rows({ c }: { c: Call }) {
   );
 }
 
-export function ExplainBlock({ x }: { x: ExplainData }) {
+export function ExplainBlock({ x }: { x: AnswerCardData }) {
   const [open, setOpen] = React.useState(false);
   const id = React.useId();
   if (!x.calls?.length) return null;
@@ -90,6 +91,11 @@ export function ExplainBlock({ x }: { x: ExplainData }) {
         How this was worked out
       </button>
       <div id={id} hidden={!open} className="mt-1 space-y-3 rounded-md border bg-card p-2">
+        {x.selections?.length ? (
+          <p className="text-[11px] text-muted-foreground" data-testid="explain-filters">
+            Dashboard filters when you asked: {x.selections.map((f) => `${f.label} = ${f.value} (${f.applied ? "applied" : "not applied to these numbers"})`).join("; ")}
+          </p>
+        ) : null}
         {x.calls.map((c, i) => (
           <section key={i} aria-label={`Data call ${i + 1}`} className="min-w-0 space-y-1.5 border-t pt-2 first:border-0 first:pt-0">
             <p className="leading-5 text-foreground">

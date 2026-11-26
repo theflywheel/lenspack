@@ -12,6 +12,7 @@ type Chat = { mount: (root: HTMLElement, opts: Record<string, unknown>) => { sen
 
 const EXPLAIN = {
   sql: true,
+  selections: [{ field: "area", label: "Area", value: "North", applied: false }],
   calls: [
     {
       tool: "query",
@@ -28,7 +29,7 @@ const EXPLAIN = {
 const enc = new TextEncoder();
 const ev = (e: unknown) => `data: ${JSON.stringify(e)}\n\n`;
 function stubFetch() {
-  const frames = [ev({ type: "text-delta", id: "t", delta: "Area 1 had the most visits." }), ev({ type: "data-explain", data: EXPLAIN }), ev({ type: "data-usage", data: { summary: { costUsd: 0.001, models: ["m"], tokens: { in: 10, out: 2 } } } }), ev({ type: "finish" }), "data: [DONE]\n\n"];
+  const frames = [ev({ type: "text-delta", id: "t", delta: "Area 1 had the most visits." }), ev({ type: "data-answer-card", data: EXPLAIN }), ev({ type: "data-usage", data: { summary: { costUsd: 0.001, models: ["m"], tokens: { in: 10, out: 2 } } } }), ev({ type: "finish" }), "data: [DONE]\n\n"];
   vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: { method?: string; body?: string }) => {
     if (init?.method !== "POST") return { ok: true, status: 200, json: async () => ({ board: { version: 1 } }) };
     let i = 0;
@@ -105,6 +106,15 @@ describe("how this was worked out, in the panel", () => {
     await chat.send("and last week?");
     const posts = (fetch as unknown as { mock: { calls: [string, { method?: string; body?: string }][] } }).mock.calls.filter(([, i]) => i?.method === "POST");
     expect(posts.at(-1)![1].body).not.toContain("SELECT area");
+  });
+
+  it("sends the viewer's dashboard filters with the question, and the card names them", async () => {
+    stubFetch();
+    const { root, chat } = mount({ selections: () => ({ area: "North" }) });
+    await chat.send("which area had the most visits?");
+    const posts = (fetch as unknown as { mock: { calls: [string, { method?: string; body?: string }][] } }).mock.calls.filter(([, i]) => i?.method === "POST");
+    expect(JSON.parse(posts.at(-1)![1].body!).selections).toEqual({ area: "North" });
+    expect(root.querySelector(".lpc-ex-filters")!.textContent).toBe("Dashboard filters when you asked: Area = North (not applied to these numbers)");
   });
 
   it("is hidden when the explain switch is off", async () => {

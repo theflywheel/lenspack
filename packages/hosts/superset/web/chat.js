@@ -131,10 +131,10 @@
 [data-lp-theme=dark] .lpc-ex-btn{color:#3fb1cc}
 `;
   const EXPLAIN_STRINGS = {
-    en: { toggle: "How this was worked out", sql: "SQL that ran", request: "Request that ran", copy: "Copy", copied: "Copied", values: "Values", rows: "Showing {0} of {1} rows", allRows: "{0} rows", oneRow: "1 row", noRows: "No rows came back.", saved: "Saved answer, data as of {0}", cached: "Answered from the source's cache, data as of {0}", more: "{0} more data calls are not shown.", call: "Data call {0}" },
-    fr: { toggle: "Comment ce résultat a été obtenu", sql: "SQL exécuté", request: "Requête exécutée", copy: "Copier", copied: "Copié", values: "Valeurs", rows: "{0} lignes affichées sur {1}", allRows: "{0} lignes", oneRow: "1 ligne", noRows: "Aucune ligne renvoyée.", saved: "Réponse enregistrée, données au {0}", cached: "Réponse tirée du cache de la source, données au {0}", more: "{0} autres appels de données ne sont pas affichés.", call: "Appel de données {0}" },
-    hi: { toggle: "यह कैसे निकाला गया", sql: "चलाया गया SQL", request: "चलाया गया अनुरोध", copy: "कॉपी करें", copied: "कॉपी हो गया", values: "मान", rows: "{1} में से {0} पंक्तियाँ दिखाई गईं", allRows: "{0} पंक्तियाँ", oneRow: "1 पंक्ति", noRows: "कोई पंक्ति नहीं मिली।", saved: "सहेजा गया जवाब, डेटा {0} तक का", cached: "स्रोत के कैश से जवाब, डेटा {0} तक का", more: "{0} और डेटा कॉल नहीं दिखाए गए।", call: "डेटा कॉल {0}" },
-    pt: { toggle: "Como este resultado foi obtido", sql: "SQL executado", request: "Pedido executado", copy: "Copiar", copied: "Copiado", values: "Valores", rows: "{0} de {1} linhas mostradas", allRows: "{0} linhas", oneRow: "1 linha", noRows: "Nenhuma linha devolvida.", saved: "Resposta gravada, dados de {0}", cached: "Resposta da cache da fonte, dados de {0}", more: "Mais {0} chamadas de dados não são mostradas.", call: "Chamada de dados {0}" },
+    en: { toggle: "How this was worked out", sql: "SQL that ran", request: "Request that ran", copy: "Copy", copied: "Copied", values: "Values", rows: "Showing {0} of {1} rows", allRows: "{0} rows", oneRow: "1 row", noRows: "No rows came back.", saved: "Saved answer, data as of {0}", cached: "Answered from the source's cache, data as of {0}", more: "{0} more data calls are not shown.", call: "Data call {0}", filters: "Dashboard filters when you asked", applied: "applied", notApplied: "not applied to these numbers" },
+    fr: { toggle: "Comment ce résultat a été obtenu", sql: "SQL exécuté", request: "Requête exécutée", copy: "Copier", copied: "Copié", values: "Valeurs", rows: "{0} lignes affichées sur {1}", allRows: "{0} lignes", oneRow: "1 ligne", noRows: "Aucune ligne renvoyée.", saved: "Réponse enregistrée, données au {0}", cached: "Réponse tirée du cache de la source, données au {0}", more: "{0} autres appels de données ne sont pas affichés.", call: "Appel de données {0}", filters: "Filtres du tableau de bord au moment de la question", applied: "appliqué", notApplied: "non appliqué à ces chiffres" },
+    hi: { toggle: "यह कैसे निकाला गया", sql: "चलाया गया SQL", request: "चलाया गया अनुरोध", copy: "कॉपी करें", copied: "कॉपी हो गया", values: "मान", rows: "{1} में से {0} पंक्तियाँ दिखाई गईं", allRows: "{0} पंक्तियाँ", oneRow: "1 पंक्ति", noRows: "कोई पंक्ति नहीं मिली।", saved: "सहेजा गया जवाब, डेटा {0} तक का", cached: "स्रोत के कैश से जवाब, डेटा {0} तक का", more: "{0} और डेटा कॉल नहीं दिखाए गए।", call: "डेटा कॉल {0}", filters: "पूछते समय डैशबोर्ड के फ़िल्टर", applied: "लागू", notApplied: "इन संख्याओं पर लागू नहीं" },
+    pt: { toggle: "Como este resultado foi obtido", sql: "SQL executado", request: "Pedido executado", copy: "Copiar", copied: "Copiado", values: "Valores", rows: "{0} de {1} linhas mostradas", allRows: "{0} linhas", oneRow: "1 linha", noRows: "Nenhuma linha devolvida.", saved: "Resposta gravada, dados de {0}", cached: "Resposta da cache da fonte, dados de {0}", more: "Mais {0} chamadas de dados não são mostradas.", call: "Chamada de dados {0}", filters: "Filtros do painel no momento da pergunta", applied: "aplicado", notApplied: "não aplicado a estes números" },
   };
 
   // The panel's words, by language. "auto" shows the page's language (Superset's, else the
@@ -699,7 +699,7 @@
       return d;
     }
     // ---- How this was worked out (docs/explain.md): one expander under an answer, from the turn's
-    // data-explain part. Kept in this tab beside the conversation (by message id), so it is there
+    // data-answer-card part (the answer card). Kept in this tab beside the conversation (by message id), so it is there
     // again after a reload, and never sent back to the server.
     const exKey = `lenspack-explain:${opts.board}`;
     const tx = (k, ...a) => fmt((EXPLAIN_STRINGS[uiLang()] || EXPLAIN_STRINGS.en)[k] ?? EXPLAIN_STRINGS.en[k], ...a);
@@ -799,6 +799,11 @@
         btn.setAttribute("aria-expanded", open ? "true" : "false");
         body.hidden = !open;
       };
+      if (ex.selections && ex.selections.length) {
+        const f = el("p", "lpc-ex-tag lpc-ex-filters", `${tx("filters")}: `);
+        f.append(document.createTextNode(ex.selections.map((x) => `${x.label} = ${x.value} (${x.applied ? tx("applied") : tx("notApplied")})`).join("; ")));
+        body.append(f);
+      }
       (ex.calls || []).forEach((c, i) => {
         const sec = el("section", "lpc-ex-call");
         sec.setAttribute("aria-label", tx("call", i + 1));
@@ -816,6 +821,15 @@
       if (ex.more) body.append(el("p", "lpc-ex-tag", tx("more", ex.more)));
       box.append(btn, body);
       return box;
+    }
+    /** The viewer's dashboard filters, from the host page (opts.selections: () => {field: value}), sent as turn context. */
+    function selectionsNow() {
+      try {
+        const picked = typeof opts.selections === "function" ? opts.selections() : null;
+        return picked && typeof picked === "object" && Object.keys(picked).length ? { selections: picked } : {};
+      } catch {
+        return {};
+      }
     }
     /** Shows an answer's explanation under it: the one just streamed (kept for reloads), or the one kept for it. */
     function showExplain(id, ex) {
@@ -942,7 +956,7 @@
       };
       try {
         const spoken = clips.slice();
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}) }) });
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}), ...selectionsNow() }) });
         if (!res.ok || !res.body) {
           let msg = `${res.status}`;
           try {
@@ -1032,7 +1046,7 @@
                 case "data-usage":
                   if (ev.data && ev.data.summary) usage = ev.data.summary;
                   break;
-                case "data-explain":
+                case "data-answer-card":
                   explained = ev.data;
                   break;
                 case "finish":
