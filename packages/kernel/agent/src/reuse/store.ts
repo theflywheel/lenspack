@@ -3,10 +3,12 @@
 // stands. fileAnswerStore is the one there is today: one JSON file in the state directory
 // (reuse.json, beside settings.json and the audit log), read at start and written whole (a
 // temporary file renamed into place) a moment after each change, so it survives restarts and a
-// crash never leaves half a file. It is bounded: past maxEntries, the least recently used entry
-// that is not pinned goes first.
+// crash never leaves half a file. It holds people's questions and the rows that answered them, so
+// only the server's own user may read it (mode 600, like the audit and telemetry logs; a file
+// written before is put right at start). It is bounded: past maxEntries, the least recently used
+// entry that is not pinned goes first.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { Ctx } from "@lenspack/engine";
@@ -29,6 +31,12 @@ export type Entry = {
   access?: Access;
   /** What else must be the same: the pack, its definitions, the prompt version, the board's filters, the language rules. */
   version: string;
+  /**
+   * The part of the key every entry of its pack shares on this deployment, whoever asks (reuseLayer's ReuseBase): the
+   * pack, its definitions, the prompt version, the language rules and the deployment's own row scope. One that no
+   * longer matches is never served again, so it is dropped at start. Absent on entries kept before it was recorded.
+   */
+  stamp?: string;
   lang: string;
   /** The language the reply was asked in ("auto" or a pick). */
   replyLang: string;
@@ -83,6 +91,8 @@ export interface AnswerStore {
   /** Adds or replaces an entry (by id); past the limit, the least recently used unpinned one goes. */
   put(e: Entry): Promise<void>;
   delete(id: string): Promise<boolean>;
+  /** Removes every entry at once (an admin's "Clear saved answers"), written out straight away; how many there were. */
+  clear(): Promise<number>;
   /** A turn counted: served at a tier (with what it saved), or answered by the full assistant. */
   count(c: { tier?: Tier; savedUsd?: number }): Promise<void>;
   /** A full turn's cost on a model, for the running average a saved answer is said to save. */
@@ -101,10 +111,15 @@ export interface AnswerStore {
 const pending = new Set<() => unknown>();
 let exitHook = false;
 
+/** Only the server's own user reads or writes the store: it holds questions, replies and rows. */
+const MODE = 0o600;
+
 function writeWhole(path: string, text: string) {
   const tmp = `${path}.${process.pid}.tmp`;
   try {
-    writeFileSync(tmp, text);
+    // A temporary file left from a crash would keep its old mode: start from none. The rename keeps the mode.
+    rmSync(tmp, { force: true });
+    writeFileSync(tmp, text, { mode: MODE });
     renameSync(tmp, path);
   } catch (e) {
     rmSync(tmp, { force: true });
@@ -120,6 +135,11 @@ export function fileAnswerStore(path: string, o: { maxEntries: () => number; now
   mkdirSync(dirname(path), { recursive: true });
   let file: File = { version: 1, stats: { since: now().toISOString(), turns: 0, hits: emptyTiers(), misses: 0, savedUsd: 0 }, entries: [], avg: {}, boards: {} };
   if (existsSync(path)) {
+    try {
+      chmodSync(path, MODE);
+    } catch (e) {
+      o.log?.(`answer store ${path}: could not make it readable by this user only (${e instanceof Error ? e.message : String(e)})`);
+    }
     try {
       const read = JSON.parse(readFileSync(path, "utf8")) as File;
       if (read?.version === 1 && Array.isArray(read.entries)) file = { ...file, ...read };
@@ -177,6 +197,13 @@ export function fileAnswerStore(path: string, o: { maxEntries: () => number; now
       const had = byId.delete(id);
       if (had) save();
       return had;
+    },
+    async clear() {
+      const n = byId.size;
+      byId.clear();
+      // Written now, not a second later: what was cleared leaves the disk before the admin is told it is gone.
+      flush();
+      return n;
     },
     async count(t) {
       file.stats.turns++;
