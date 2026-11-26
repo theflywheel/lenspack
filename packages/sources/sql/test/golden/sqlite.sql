@@ -254,6 +254,15 @@ LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "
 WHERE ("things"."__d_colour" = ?) AND ("things"."__d_colour" <> ?) AND ("things"."__d_size" >= ?) AND ("things"."__d_size" <= ?) AND ("things"."__d_colour" IN (?, ?)) AND (("things"."__d_size" >= ?) AND ("things"."__d_size" <= ?)) AND (instr('|' || CAST("things"."__d_path" AS TEXT) || '|', '|' || ? || '|') > 0 OR instr('|' || CAST("things"."__d_path" AS TEXT) || '|', '|' || ? || '|') > 0) AND ((("things"."__d_path" = ?) OR ("things"."__d_path" LIKE ? ESCAPE '\'))) AND (LOWER(CAST("things"."__d_colour" AS TEXT)) LIKE LOWER(?) ESCAPE '\') AND ("owners"."__d_tier" = ?)
 LIMIT 1;
 
+-- {"kind":"breakdown","dimension":"colour","measure":"things","limit":10,"sort":"desc","filters":[{"dimension":"colour","op":"not_in","value":["blue","green"]}]}
+-- params: ["ke_1","ke\\_1.%","test","blue","green"]
+SELECT "things"."__d_colour" AS "group", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour" FROM "app"."things" WHERE ((("tenant_id" = ?) OR ("tenant_id" LIKE ? ESCAPE '\'))) AND (deleted = false) AND ("kind" IS NOT ?)) AS "things"
+WHERE ("things"."__d_colour" NOT IN (?, ?))
+GROUP BY "things"."__d_colour"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
 -- {"kind":"rows","entity":"things","columns":["colour","size","origin"],"limit":4,"orderBy":{"key":"size","dir":"desc"}}
 -- params: ["ke_1","ke\\_1.%","test"]
 SELECT "things"."__d_colour" AS "colour", "things"."__d_size" AS "size", "things"."__d_origin" AS "origin"
@@ -376,16 +385,16 @@ ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST, "series" ASC NULLS LAS
 LIMIT 10001;
 
 -- {"kind":"series","measure":"things","grain":"hour"} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "things" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
+-- refused (NOT_SUPPORTED): No series of "things" can be drawn on this deployment, at any grain: its time column has a time of day, and this source cannot cut it into days in Asia/Kolkata, the pack's time zone. Do not try another series, grain or window on "things". Answer with a plain value or breakdown instead, with no grain or compute over time (a time window still works), and tell the user plainly that over-time charts of this data are not available here. The fix is the deployment's: a date column for its time, or a pack kept in UTC
 
 -- {"kind":"series","measure":"things","grain":"week"} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "things" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
+-- refused (NOT_SUPPORTED): No series of "things" can be drawn on this deployment, at any grain: its time column has a time of day, and this source cannot cut it into days in Asia/Kolkata, the pack's time zone. Do not try another series, grain or window on "things". Answer with a plain value or breakdown instead, with no grain or compute over time (a time window still works), and tell the user plainly that over-time charts of this data are not available here. The fix is the deployment's: a date column for its time, or a pack kept in UTC
 
 -- {"kind":"series","measure":"things","grain":"month"} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "things" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
+-- refused (NOT_SUPPORTED): No series of "things" can be drawn on this deployment, at any grain: its time column has a time of day, and this source cannot cut it into days in Asia/Kolkata, the pack's time zone. Do not try another series, grain or window on "things". Answer with a plain value or breakdown instead, with no grain or compute over time (a time window still works), and tell the user plainly that over-time charts of this data are not available here. The fix is the deployment's: a date column for its time, or a pack kept in UTC
 
 -- {"kind":"series","measure":"parts","grain":"day","time":{"period":"month","offset":-1}} in Asia/Kolkata
--- refused (NOT_SUPPORTED): Pack "golden" starts its days in Asia/Kolkata, and this source can only bucket time by UTC days. "parts" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC
+-- refused (NOT_SUPPORTED): No series of "parts" can be drawn on this deployment, at any grain: its time column has a time of day, and this source cannot cut it into days in Asia/Kolkata, the pack's time zone. Do not try another series, grain or window on "parts". Answer with a plain value or breakdown instead, with no grain or compute over time (a time window still works), and tell the user plainly that over-time charts of this data are not available here. The fix is the deployment's: a date column for its time, or a pack kept in UTC
 
 -- {"kind":"series","measure":"dispatched","grain":"day","time":{"last":"7d"}} in Asia/Kolkata
 -- params: ["2026-02-09","2026-02-16"]

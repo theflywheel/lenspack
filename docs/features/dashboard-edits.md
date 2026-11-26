@@ -21,7 +21,8 @@ Edits can also come from:
 ## Who may edit
 
 A person who may only view a board can still ask questions. The edit tools then refuse, and the assistant says
-why. Who may edit is decided by the host:
+why. Its instructions say so from the start of the turn: it cannot change this dashboard for this person, and it
+never offers or suggests a change (no "you can remove the filter"). Who may edit is decided by the host:
 
 - **in Superset**, whoever Superset lets edit that dashboard (its owners and admins), by default;
 - **in the standalone server**, a board's owner (who needs the editor right), and, for the boards that ship with

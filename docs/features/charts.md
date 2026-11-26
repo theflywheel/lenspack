@@ -44,8 +44,10 @@ each group of rows at the same place) is a dot, coloured by a dimension and size
 
 ## Charts a source keeps differently
 
-Inside Superset, every widget is saved as an ordinary Superset chart. A chart Lenspack cannot express exactly
-(custom SQL filters, ad hoc metrics, a heatmap shaded per row or column) is kept as Superset's: the assistant can
+Inside Superset, every widget is saved as an ordinary Superset chart. A chart made in Superset is read as a widget
+when it says exactly what a widget can, ad hoc metrics included when each is one plain aggregate a pack measure also
+is (`SUM(quantity)`, `COUNT(*)`). A chart Lenspack cannot express exactly (custom SQL filters, other ad hoc
+metrics, a heatmap shaded per row or column) is kept as Superset's: the assistant can
 move, resize or remove it but not rewrite it. A previous-period KPI is drawn by Superset without its comparison.
 Computed widgets have their own rules: see [Computed charts in Superset](../hosts/superset/computed-charts.md).
 

@@ -108,3 +108,12 @@ describe("groups past the size the request asked for", () => {
     expect(toRequest(plain, regions, env).cut?.(response) ?? false).toBe(false);
   });
 });
+
+describe("a not_in filter", () => {
+  it("keeps rows with a value that is none of the values, and leaves out rows with no value, as SQL's NOT IN does", () => {
+    const bound = resolve({ kind: "value", measure: "visits", filters: [{ dimension: "region", op: "not_in", value: ["north", "east"] }] }, regions, {}, ELASTICSEARCH_CAPABILITIES);
+    const query = JSON.stringify(toRequest(bound, regions, env).body.query);
+    expect(query).toContain('{"exists":{"field":"region"}}');
+    expect(query).toContain('"must_not":[{"terms":{"region":["north","east"]}}]');
+  });
+});

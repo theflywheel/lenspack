@@ -4,7 +4,7 @@ import { type Tool, boardTools } from "@lenspack/agent";
 import { type Query, memoryStore } from "@lenspack/core";
 import { checkOps, run } from "@lenspack/engine";
 
-import { SUPERSET_CAPABILITIES, supersetConnector } from "../src/connector";
+import { SUPERSET_CAPABILITIES, supersetConnector, timeZoneWarnings } from "../src/connector";
 import { packFromDatasets, widgetToChart, type SupersetDataset } from "../src/index";
 
 // A pack whose days start in Lagos, over Superset. Superset cuts time into
@@ -95,10 +95,23 @@ describe("a zoned pack over Superset, on a column with a time of day", () => {
     // The second dataset's metric of the same name is keyed by its entity.
     expect(pack.measures.find((m) => m.key === "event_dispatched")?.entity).toBe("event");
     const refused = await run({ kind: "series", measure: "event_dispatched", grain: "day", time: { last: "7d" } }, { pack, connector, ctx });
-    expect(refused.error).toBe(
-      'Pack "s" starts its days in Africa/Lagos, and this source can only bucket time by UTC days. "event" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC',
-    );
+    // Plain enough that the model stops trying other series on it, and says why.
+    expect(refused.error).toContain('No series of "event" can be drawn on this deployment, at any grain');
+    expect(refused.error).toContain("cannot cut it into days in Africa/Lagos, the pack's time zone");
+    expect(refused.error).toContain('Do not try another series, grain or window on "event"');
+    expect(refused.error).toContain("tell the user plainly that over-time charts of this data are not available here");
+    expect(refused.error).toContain("a date column for its time, or a pack kept in UTC");
     expect(sent).toHaveLength(0);
+  });
+
+  it("is said at start-up, naming the dataset and column and what to do; dated datasets and UTC packs have none", () => {
+    expect(timeZoneWarnings(pack, binding)).toEqual([
+      'Superset dataset "stock_events" (4): its time column "logged_at" has a time of day, and the pack\'s timeZone is Africa/Lagos, which this source cannot cut days in, so every series over it (by hour, day, week or month) is refused. Use a date column for its time, or keep the pack in UTC.',
+    ]);
+    const utc = packFromDatasets([dataset(4, "stock_events", "logged_at", "TIMESTAMP WITHOUT TIME ZONE")], { ...zoned, timeZone: "UTC" });
+    expect(timeZoneWarnings(utc.pack, utc.binding)).toEqual([]);
+    const plain = packFromDatasets([dataset(4, "stock_events", "logged_at", "TIMESTAMP WITHOUT TIME ZONE")], { pack: "s" });
+    expect(timeZoneWarnings(plain.pack, plain.binding)).toEqual([]);
   });
 });
 

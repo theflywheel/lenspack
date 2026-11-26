@@ -315,6 +315,43 @@ describe("a chat turn", () => {
     expect(report.total).toMatchObject({ turns: 1, inputTokens: 1000, outputTokens: 50 });
   });
 
+  it("tells the model plainly that a caller who may not edit cannot have the board changed", async () => {
+    const reply = () =>
+      new MockLanguageModelV4({
+        doStream: {
+          stream: new ReadableStream({
+            start(c) {
+              c.enqueue({ type: "text-start", id: "t" });
+              c.enqueue({ type: "text-delta", id: "t", delta: "It is empty." });
+              c.enqueue({ type: "text-end", id: "t" });
+              c.enqueue({ type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, text: 5, reasoning: 0 } } });
+              c.close();
+            },
+          }),
+        },
+      });
+    const reason = "Changing dashboards through the chat is turned off on this deployment, so nothing was changed.";
+    const systemFor = async (who: { user: string; edit?: boolean; maintain?: boolean; readOnly?: string }, board: string) => {
+      const model = reply();
+      registerLlmAdapter({ kind: "read-only-mock", defaultBaseUrl: "mock:", build: () => model });
+      const mock: Provider = { ...buildProvider({ name: "mock", kind: "read-only-mock", model: "m" }), available: true };
+      await host.store.create({ id: board, pack: host.pack, title: "Overview" });
+      const server = createServer(createApp([host], { providers: [mock], ledger: usageLedger(), access: () => who }));
+      servers.push(server);
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api`;
+      const res = await fetch(`${base}/${host.name}/${board}/chat?review=off`, { method: "POST", body: JSON.stringify({ messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "remove the filter" }] }] }) });
+      const body = await res.text();
+      if (!model.doStreamCalls[0]) throw new Error(`${res.status}: ${body.slice(0, 300)}`);
+      return String(model.doStreamCalls[0].prompt[0]!.content);
+    };
+    const reader = await systemFor({ user: "reader", readOnly: reason }, "read-only-board");
+    expect(reader).toContain(`You cannot change this dashboard for this user: ${reason}`);
+    expect(reader).toContain("Never offer, suggest or hint at a change to the dashboard");
+    const editor = await systemFor({ user: "editor", edit: true, maintain: true }, "editor-board");
+    expect(editor).not.toContain("EDITS ARE NOT AVAILABLE");
+  });
+
   it("with Sonnet 5.5: a tool loop with thinking passed back, cache breakpoints, and cache reads and writes priced", async () => {
     const usage0 = { input_tokens: 40, cache_creation_input_tokens: 3000, cache_read_input_tokens: 0, output_tokens: 1, cache_creation: { ephemeral_1h_input_tokens: 3000, ephemeral_5m_input_tokens: 0 } };
     const { sent, fetch } = recorder(

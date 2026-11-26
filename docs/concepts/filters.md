@@ -11,7 +11,7 @@ Part of the question. The model adds them ("revenue in France"), or a widget is 
 { "kind": "value", "measure": "revenue", "filters": [{ "dimension": "country", "op": "eq", "value": "FR" }] }
 ```
 
-The operators are `eq`, `neq`, `in`, `gte`, `lte`, `between`, `contains`, `subtree` (a node of a dotted path and
+The operators are `eq`, `neq`, `in`, `not_in`, `gte`, `lte`, `between`, `contains`, `subtree` (a node of a dotted path and
 everything under it) and `segment` (one part of a `|`-separated path).
 
 ## 2. A board's filter bar
