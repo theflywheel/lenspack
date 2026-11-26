@@ -29,7 +29,7 @@ export function diskProblem(e: unknown): string {
 
 export class SettingsSaveError extends Error {
   constructor(readonly cause: unknown) {
-    super(`Lenspack can't save settings: ${diskProblem(cause)}. Nothing was changed.`);
+    super(`The assistant's server can't save settings: ${diskProblem(cause)}. Nothing was changed.`);
   }
 }
 

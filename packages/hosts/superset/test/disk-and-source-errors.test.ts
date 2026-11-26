@@ -32,7 +32,7 @@ describe("when the disk refuses a write", () => {
     expect(diskProblem({ code: "ENOSPC" })).toBe("the disk is full");
     expect(diskProblem({ code: "EROFS" })).toBe("the disk is read-only");
     expect(diskProblem({ code: "EACCES" })).toMatch(/no permission/);
-    expect(new SettingsSaveError({ code: "ENOSPC" }).message).toBe("Lenspack can't save settings: the disk is full. Nothing was changed.");
+    expect(new SettingsSaveError({ code: "ENOSPC" }).message).toBe("The assistant's server can't save settings: the disk is full. Nothing was changed.");
   });
 
   it("board links: a failed save doesn't throw, is logged once, and the next good save catches up", () => {

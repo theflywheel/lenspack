@@ -11,6 +11,13 @@ brought it.
 
 ### 26 November 2026
 
+- **One name everywhere.** Once the assistant has its own name (`brand.name`), the word Lenspack shows nowhere
+  people look: the admin panel, Superset's settings page and menu entry, messages and refusals, and the assistant's
+  own replies (asked what it is or what it runs on, it gives only its name). The only exception is the "Powered by
+  Lenspack" credit, which `brand.poweredBy` turns off. Superset's menu now follows the name set on the server, and
+  `LENSPACK_PATH` in Superset's environment moves the route from `/lenspack` (for example to `/assistant`). The
+  prompt version goes to 30, so saved answers are made afresh once. Update the plugin file with the server. See
+  [Naming the assistant](docs/features/naming.md). ([#102](https://github.com/theflywheel/lenspack/pull/102))
 - **Superset under a path.** Superset 6.1 running below a path of its host (`SUPERSET_APP_ROOT=/superset`) now
   gets the button, the chat, the settings page and its menu entry, and links to dashboards, all below that path,
   with no new setting. At the root nothing changes. Update the plugin file and the server image together. See

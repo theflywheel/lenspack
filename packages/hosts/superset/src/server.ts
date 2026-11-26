@@ -193,7 +193,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const rights = supersetRights(roleRules);
   const ownRule = roleRules.admins !== undefined && roleRules.admins.join("\n") !== DEFAULT_SUPERSET_ADMINS.join("\n");
   // In refusals: a deployment that names its own admin roles is not asking for Superset admins.
-  const adminName = ownRule ? "Lenspack admin" : "Superset admin";
+  const adminName = ownRule ? "assistant admin" : "Superset admin";
   const settle = (id: Parameters<typeof principalOf>[0]) => principalOf(id, rights);
   /**
    * Whether the users rule leaves the person a request was signed for out: from the signed role names alone (one

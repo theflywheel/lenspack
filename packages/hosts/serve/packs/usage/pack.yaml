@@ -1,6 +1,6 @@
 pack: lenspack_usage
 version: 1
-description: How people use this Lenspack server, one row per chat turn. Users are named as they sign in, so this pack is for admins only.
+description: How people use this assistant, one row per chat turn. Users are named as they sign in, so this pack is for admins only.
 instructions: >-
   Each row of usage_turns is one chat turn: one question or instruction and the assistant's reply. Rates (answer rate, failure rate,
   saved-answer rate, spoken share) are one count over another, computed with the ratio step, for example failed ratio turns. Costs are

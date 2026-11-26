@@ -72,7 +72,7 @@ describe("the system prompt's parts", () => {
   it("keeps replies after edits to plain sentences, and allows short lists and bold for an informational answer", async () => {
     const pack = await loadPack(tickets);
     const [stable] = systemParts(pack, catalogueFrom(pack));
-    expect(PROMPT_VERSION).toBe(29);
+    expect(PROMPT_VERSION).toBe(30);
     expect(stable).toContain("no links, HTML or images (a board holds no URLs");
     expect(stable).toContain("After edits, reply in one or two plain sentences with the outcome only.");
     expect(stable).toContain("may use a short bullet list and **bold**");

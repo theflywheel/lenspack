@@ -38,7 +38,7 @@ export async function supersetActions(client: SupersetClient, q: { dashboards: n
       rows = (await client.get<{ result: LogRow[] }>(`/api/v1/log/?q=${encodeURIComponent(query)}`)).result ?? [];
     } catch (e) {
       if (page > 0) return { available: true, truncated: true, actions };
-      const why = e instanceof SupersetError ? (e.status === 404 ? "this Superset has no action log API (SUPERSET_LOG_VIEW may be off)" : e.status === 403 || e.status === 401 ? "Lenspack's Superset account may not read the action log" : e.message) : String(e);
+      const why = e instanceof SupersetError ? (e.status === 404 ? "this Superset has no action log API (SUPERSET_LOG_VIEW may be off)" : e.status === 403 || e.status === 401 ? "the assistant's Superset account may not read the action log" : e.message) : String(e);
       return { available: false, reason: why, actions: [] };
     }
     for (const r of rows) {

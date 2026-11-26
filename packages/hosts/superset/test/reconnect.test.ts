@@ -24,7 +24,7 @@ const up: (url: string) => Reply = (url) =>
   url.includes("/_superset/bind") ? { status: 200, body: { board: "superset-6", title: "Board" } }
   : url.includes("/_superset/info") ? { status: 200, body: { pack: "p", examples: [], panel: "float" } }
   : { status: 200, body: { ok: true } };
-const down: (url: string) => Reply = () => ({ status: 502, body: { error: "Lenspack is not reachable" } });
+const down: (url: string) => Reply = () => ({ status: 502, body: { error: "The assistant's server is not reachable" } });
 
 function startOverlay() {
   Object.defineProperty(document, "currentScript", { configurable: true, value: { src: "http://x/lenspack/overlay.js" } });
@@ -289,7 +289,7 @@ describe("chat while Lenspack restarts", () => {
   it("treats a 502 from Superset's proxy as lost, not as an error to read", async () => {
     vi.useRealTimers();
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { method?: string }) =>
-      init?.method === "POST" ? { ok: false, status: 502, json: async () => ({ error: "Lenspack is not reachable: ConnectionError" }) } : { ok: false, status: 502, json: async () => ({}) }));
+      init?.method === "POST" ? { ok: false, status: 502, json: async () => ({ error: "The assistant's server is not reachable: ConnectionError" }) } : { ok: false, status: 502, json: async () => ({}) }));
     const { root, chat } = mountChat();
     await chat.send("Hello");
     expect((root.querySelector(".lpc-note.bad") as HTMLElement).textContent).toContain("connection to Lenspack was lost");
