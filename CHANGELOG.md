@@ -11,6 +11,18 @@ brought it.
 
 ### 26 November 2026
 
+- **Saved layouts in Superset behave as expected.** Applying a layout fits it to the dashboard as it is now, so a
+  chart removed in Superset is not brought back, and Undo after an apply goes back to the right version. Charts made
+  in Superset that Lenspack can't redraw stay with their own dashboard: the panel says so when saving, the reply says
+  how many charts a layout carried, and it suggests your own copy when most would stay behind. A new blank dashboard
+  starts with a layout Superset can draw. See [Personal dashboards](docs/features/personal-dashboards.md).
+  ([#97](https://github.com/theflywheel/lenspack/pull/97))
+- **The quick start works as written, `lenspack sources` runs before a pack exists, and text widgets draw no
+  links.** `pnpm demo` finds the data in the folder you ran it from. `lenspack sources` reads only `sources:`. A link
+  in a note shows as its text, in the board app and on Superset dashboards, and a markdown block written in Superset
+  keeps its text, however long. The chat's prompt changed, so saved answers from before are not reused. See
+  [Boards and widgets](docs/concepts/boards.md#what-a-board-can-never-contain).
+  ([#96](https://github.com/theflywheel/lenspack/pull/96))
 - **Name the assistant.** A deployment can call the assistant by its own name and give its button its own label, in
   each language, from the config, the environment or the admin panel. See
   [Naming the assistant](docs/features/naming.md). ([#91](https://github.com/theflywheel/lenspack/pull/91))

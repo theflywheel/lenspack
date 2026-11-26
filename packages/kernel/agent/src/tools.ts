@@ -413,7 +413,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         kind: z.enum(WIDGET_KINDS),
         title: z.string().describe("What the reader sees above it"),
         chart: CHART.describe("Only when kind is chart"),
-        body: str().describe("Only when kind is text: the note itself, in markdown (paragraphs, **bold**, *italics*, - lists, [links](https://...)); up to 2000 characters"),
+        body: str().describe("Only when kind is text: the note itself, in markdown (paragraphs, **bold**, *italics*, - lists; no links, since a board holds no URLs); up to 2000 characters"),
         ...QUERY_SHAPE,
         place: PLACE,
         width: WIDTH,

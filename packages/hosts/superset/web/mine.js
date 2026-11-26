@@ -53,7 +53,7 @@
     en: {
       dashboards: "My dashboards", layouts: "Saved layouts", newDash: "New dashboard", copyThis: "Make my own copy of this dashboard", title: "Title", create: "Create", copy: "Make copy", cancel: "Cancel",
       mine: "Yours", none: "None yet.", open: "Open {0}", del: "Delete {0}", confirmDel: "Delete “{0}”? Its charts go with it. This can't be undone.", delete: "Delete", deleted: "Deleted “{0}”.",
-      saveCurrent: "Save this layout", name: "Name", save: "Save", saved: "Saved the layout as “{0}”.", apply: "Apply", applyTo: "Apply {0} to this dashboard", applied: "Applied the layout “{0}”.", left: "Left out: {0}.",
+      saveCurrent: "Save this layout", name: "Name", save: "Save", saved: "Saved the layout as “{0}”.", apply: "Apply", applyTo: "Apply {0} to this dashboard", applied: "Applied the layout “{0}”.", left: "Left out: {0}.", saveHint: "Charts made in Superset ({0} here) stay with this dashboard: a saved layout takes only the others to another dashboard.", stayed: "Charts made in Superset stay with their dashboard, so this layout carried {0} of {1} charts.", mostStay: "{0} of this layout's {1} charts were made in Superset and stay with “{2}”. Your own copy of that dashboard keeps them all.", openCopy: "Open “{0}” to copy it", applyAnyway: "Apply anyway",
       rename: "Rename {0}", renamed: "Renamed to “{0}”.", confirmLayoutDel: "Delete the saved layout “{0}”? Dashboards keep their charts.", noEdit: "You can't edit this dashboard. Make your own copy first, then apply the layout there.",
       limitD: "{0} of {1}", off: "Turned off on this deployment.", copyNo: "You can't copy this dashboard.", fullD: "You have the most dashboards allowed ({0}). Delete one first.", fullL: "You have the most saved layouts allowed ({0}). Delete one first.",
       viewOnly: "You can only view this dashboard.", offer: "Make my own copy", copyToEdit: "Make my own copy to edit", ownOnly: "On this deployment, {name} changes only your own dashboards. Make your own copy to edit, then apply the layout there.", ownOnlyChat: "{name} changes only your own dashboards here.", offerDone: "Made your copy “{0}”. Opening it to make the change there…", made: "Made “{0}”.", openIt: "Open it", undo: "Undo", undone: "Layout undone.",
@@ -62,7 +62,7 @@
     fr: {
       dashboards: "Mes tableaux de bord", layouts: "Dispositions enregistrées", newDash: "Nouveau tableau de bord", copyThis: "Faire ma copie de ce tableau de bord", title: "Titre", create: "Créer", copy: "Copier", cancel: "Annuler",
       mine: "Les vôtres", none: "Aucun pour l'instant.", open: "Ouvrir {0}", del: "Supprimer {0}", confirmDel: "Supprimer « {0} » ? Ses graphiques partent avec lui. C'est définitif.", delete: "Supprimer", deleted: "« {0} » supprimé.",
-      saveCurrent: "Enregistrer cette disposition", name: "Nom", save: "Enregistrer", saved: "Disposition enregistrée sous « {0} ».", apply: "Appliquer", applyTo: "Appliquer {0} à ce tableau de bord", applied: "Disposition « {0} » appliquée.", left: "Laissés de côté : {0}.",
+      saveCurrent: "Enregistrer cette disposition", name: "Nom", save: "Enregistrer", saved: "Disposition enregistrée sous « {0} ».", apply: "Appliquer", applyTo: "Appliquer {0} à ce tableau de bord", applied: "Disposition « {0} » appliquée.", left: "Laissés de côté : {0}.", saveHint: "Les graphiques créés dans Superset ({0} ici) restent sur ce tableau de bord : une disposition enregistrée n'emporte que les autres vers un autre tableau de bord.", stayed: "Les graphiques créés dans Superset restent sur leur tableau de bord : cette disposition a apporté {0} graphiques sur {1}.", mostStay: "{0} des {1} graphiques de cette disposition ont été créés dans Superset et restent sur « {2} ». Votre propre copie de ce tableau de bord les garde tous.", openCopy: "Ouvrir « {0} » pour le copier", applyAnyway: "Appliquer quand même",
       rename: "Renommer {0}", renamed: "Renommée en « {0} ».", confirmLayoutDel: "Supprimer la disposition « {0} » ? Les tableaux de bord gardent leurs graphiques.", noEdit: "Vous ne pouvez pas modifier ce tableau de bord. Faites d'abord votre copie, puis appliquez-y la disposition.",
       limitD: "{0} sur {1}", off: "Désactivé sur ce déploiement.", copyNo: "Vous ne pouvez pas copier ce tableau de bord.", fullD: "Vous avez le maximum de tableaux de bord ({0}). Supprimez-en un d'abord.", fullL: "Vous avez le maximum de dispositions ({0}). Supprimez-en une d'abord.",
       viewOnly: "Vous pouvez seulement consulter ce tableau de bord.", offer: "Faire ma copie", copyToEdit: "Faire ma copie pour la modifier", ownOnly: "Ici, {name} ne modifie que vos propres tableaux de bord. Faites votre copie pour la modifier, puis appliquez-y la disposition.", ownOnlyChat: "Ici, {name} ne modifie que vos propres tableaux de bord.", offerDone: "Copie « {0} » créée. Ouverture pour y faire la modification…", made: "« {0} » créé.", openIt: "L'ouvrir", undo: "Annuler", undone: "Disposition annulée.",
@@ -71,7 +71,7 @@
     pt: {
       dashboards: "Os meus painéis", layouts: "Disposições guardadas", newDash: "Novo painel", copyThis: "Fazer a minha cópia deste painel", title: "Título", create: "Criar", copy: "Copiar", cancel: "Cancelar",
       mine: "Os seus", none: "Nenhum ainda.", open: "Abrir {0}", del: "Eliminar {0}", confirmDel: "Eliminar “{0}”? Os gráficos vão com ele. Não é possível desfazer.", delete: "Eliminar", deleted: "“{0}” eliminado.",
-      saveCurrent: "Guardar esta disposição", name: "Nome", save: "Guardar", saved: "Disposição guardada como “{0}”.", apply: "Aplicar", applyTo: "Aplicar {0} a este painel", applied: "Disposição “{0}” aplicada.", left: "Deixados de fora: {0}.",
+      saveCurrent: "Guardar esta disposição", name: "Nome", save: "Guardar", saved: "Disposição guardada como “{0}”.", apply: "Aplicar", applyTo: "Aplicar {0} a este painel", applied: "Disposição “{0}” aplicada.", left: "Deixados de fora: {0}.", saveHint: "Os gráficos criados no Superset ({0} aqui) ficam neste painel: uma disposição guardada leva só os outros para outro painel.", stayed: "Os gráficos criados no Superset ficam no seu painel, por isso esta disposição trouxe {0} de {1} gráficos.", mostStay: "{0} dos {1} gráficos desta disposição foram criados no Superset e ficam em “{2}”. A sua própria cópia desse painel guarda-os todos.", openCopy: "Abrir “{0}” para o copiar", applyAnyway: "Aplicar mesmo assim",
       rename: "Mudar o nome de {0}", renamed: "Novo nome: “{0}”.", confirmLayoutDel: "Eliminar a disposição “{0}”? Os painéis mantêm os gráficos.", noEdit: "Não pode alterar este painel. Faça primeiro a sua cópia e aplique lá a disposição.",
       limitD: "{0} de {1}", off: "Desativado nesta instalação.", copyNo: "Não pode copiar este painel.", fullD: "Já tem o número máximo de painéis ({0}). Elimine um primeiro.", fullL: "Já tem o número máximo de disposições ({0}). Elimine uma primeiro.",
       viewOnly: "Só pode consultar este painel.", offer: "Fazer a minha cópia", copyToEdit: "Fazer a minha cópia para alterar", ownOnly: "Aqui, {name} só altera os seus próprios painéis. Faça a sua cópia para alterar e aplique lá a disposição.", ownOnlyChat: "Aqui, {name} só altera os seus próprios painéis.", offerDone: "Cópia “{0}” criada. A abrir para fazer lá a alteração…", made: "“{0}” criado.", openIt: "Abrir", undo: "Desfazer", undone: "Disposição desfeita.",
@@ -80,7 +80,7 @@
     hi: {
       dashboards: "मेरे डैशबोर्ड", layouts: "सहेजे गए लेआउट", newDash: "नया डैशबोर्ड", copyThis: "इस डैशबोर्ड की अपनी कॉपी बनाएँ", title: "शीर्षक", create: "बनाएँ", copy: "कॉपी बनाएँ", cancel: "रद्द करें",
       mine: "आपके", none: "अभी कोई नहीं।", open: "{0} खोलें", del: "{0} मिटाएँ", confirmDel: "“{0}” मिटाएँ? इसके चार्ट भी मिट जाएँगे। यह वापस नहीं होगा।", delete: "मिटाएँ", deleted: "“{0}” मिटा दिया गया।",
-      saveCurrent: "यह लेआउट सहेजें", name: "नाम", save: "सहेजें", saved: "लेआउट “{0}” नाम से सहेजा गया।", apply: "लागू करें", applyTo: "{0} इस डैशबोर्ड पर लागू करें", applied: "लेआउट “{0}” लागू किया गया।", left: "छोड़े गए: {0}।",
+      saveCurrent: "यह लेआउट सहेजें", name: "नाम", save: "सहेजें", saved: "लेआउट “{0}” नाम से सहेजा गया।", apply: "लागू करें", applyTo: "{0} इस डैशबोर्ड पर लागू करें", applied: "लेआउट “{0}” लागू किया गया।", left: "छोड़े गए: {0}।", saveHint: "Superset में बने चार्ट (यहाँ {0}) इसी डैशबोर्ड पर रहते हैं: सहेजा गया लेआउट दूसरे डैशबोर्ड पर सिर्फ़ बाकी चार्ट ले जाता है।", stayed: "Superset में बने चार्ट अपने डैशबोर्ड पर ही रहते हैं, इसलिए यह लेआउट {1} में से {0} चार्ट लाया।", mostStay: "इस लेआउट के {1} में से {0} चार्ट Superset में बने हैं और “{2}” पर ही रहते हैं। उस डैशबोर्ड की अपनी कॉपी में वे सब रहते हैं।", openCopy: "कॉपी करने के लिए “{0}” खोलें", applyAnyway: "फिर भी लागू करें",
       rename: "{0} का नाम बदलें", renamed: "नया नाम “{0}”।", confirmLayoutDel: "सहेजा गया लेआउट “{0}” मिटाएँ? डैशबोर्ड के चार्ट बने रहेंगे।", noEdit: "आप यह डैशबोर्ड बदल नहीं सकते। पहले अपनी कॉपी बनाएँ, फिर उस पर लेआउट लागू करें।",
       limitD: "{1} में से {0}", off: "इस डिप्लॉयमेंट पर बंद है।", copyNo: "आप यह डैशबोर्ड कॉपी नहीं कर सकते।", fullD: "आपके पास अधिकतम डैशबोर्ड ({0}) हैं। पहले एक मिटाएँ।", fullL: "आपके पास अधिकतम सहेजे लेआउट ({0}) हैं। पहले एक मिटाएँ।",
       viewOnly: "आप यह डैशबोर्ड सिर्फ़ देख सकते हैं।", offer: "मेरी अपनी कॉपी बनाएँ", copyToEdit: "बदलने के लिए अपनी कॉपी बनाएँ", ownOnly: "यहाँ {name} सिर्फ़ आपके अपने डैशबोर्ड बदलता है। बदलने के लिए अपनी कॉपी बनाएँ, फिर उस पर लेआउट लागू करें।", ownOnlyChat: "यहाँ {name} सिर्फ़ आपके अपने डैशबोर्ड बदलता है।", offerDone: "आपकी कॉपी “{0}” बन गई। बदलाव करने के लिए उसे खोला जा रहा है…", made: "“{0}” बन गया।", openIt: "खोलें", undo: "वापस लाएँ", undone: "लेआउट हटाया गया।",
@@ -343,10 +343,11 @@
           action(ICON.save, "saveCurrent", () =>
             form(slot, "name", "", "save", async (name) => {
               const r = await call("POST", "/layouts", { name }, true);
-              ctx.note(t("saved", r.name), "sync");
+              ctx.note(`${t("saved", r.name)}${r.superset ? ` ${t("saveHint", r.superset)}` : ""}`, "sync");
               refresh(layoutMenu, false);
             }), s.here.canSave ? null : full || t("copyNo")),
         );
+        if (s.here.superset) pop.append(el("div", "lpm-offer", t("saveHint", s.here.superset)));
       }
       pop.append(slot);
       const canApply = !!(s.here && s.here.edit);
@@ -379,7 +380,7 @@
         apply.type = "button";
         apply.disabled = !canApply;
         apply.setAttribute("aria-label", t("applyTo", l.name));
-        apply.onclick = async () => {
+        const go = async () => {
           apply.disabled = true;
           try {
             const r = await call("POST", `/layouts/${encodeURIComponent(l.id)}/apply`, {}, true);
@@ -391,6 +392,25 @@
             sub.replaceChildren(el("div", "lpm-err", t("failed", x.message)));
             apply.disabled = false;
           }
+        };
+        // Most of its charts were made in Superset and stay with the dashboard it came from: their own copy of that
+        // dashboard is the better way to keep them, so say so before applying.
+        apply.onclick = () => {
+          if (!(l.superset && l.superset * 2 > l.widgets && l.fromDashboard !== dashboardId)) return go();
+          const n = el("div", "lpm-offer", t("mostStay", l.superset, l.widgets, l.from));
+          if (l.fromDashboard) {
+            // Opens that dashboard with the panel open, where "Make my own copy" is.
+            const o = el("button", "lpm-pill", t("openCopy", l.from));
+            o.type = "button";
+            o.onclick = () => open(l.fromDashboard);
+            n.append(o);
+          }
+          const b = el("button", "lpm-pill", t("applyAnyway"));
+          b.type = "button";
+          b.onclick = () => (sub.replaceChildren(), go());
+          n.append(b);
+          sub.replaceChildren(n);
+          b.focus();
         };
         const ren = svgButton("lpm-ico", ICON.pencil, t("rename", l.name));
         ren.onclick = () =>
@@ -414,7 +434,7 @@
 
     function appliedNote(r) {
       const n = el("div", "lpc-note sync");
-      n.append(document.createTextNode(`${t("applied", r.name)}${r.skipped && r.skipped.length ? ` ${t("left", r.skipped.map((s) => `“${s.title}”`).join(", "))}` : ""}`));
+      n.append(document.createTextNode(`${t("applied", r.name)}${r.skipped && r.skipped.length ? ` ${t("left", r.skipped.map((s) => `“${s.title}”`).join(", "))}` : ""}${r.carried && r.carried.stayed ? ` ${t("stayed", r.carried.widgets, r.carried.of)}` : ""}`));
       if (typeof r.previous === "number") {
         const u = el("button", "lpc-undo", t("undo"));
         u.type = "button";

@@ -68,9 +68,9 @@ describe("/_superset/my", () => {
     await post("/_superset/my/dashboards?dashboard=3", { d: 3, v: true, e: false }, { copy: true, title: "Mine" });
     expect(calls.at(-1)).toMatchObject({ fn: "copy", who: { user: "vee", userId: 6, roles: [] }, args: [{ dashboard: 3, view: true, edit: false }, "Mine", ""] });
     await post("/_superset/my/layouts/l_1/apply?dashboard=3", { d: 3, v: true, e: false });
-    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { board: "superset-3", edit: false }] });
+    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { board: "superset-3", edit: false }, ""] });
     await post("/_superset/my/layouts/l_1/apply?dashboard=3", { d: 3, v: true, e: true });
-    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: true }] });
+    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: true }, ""] });
   });
 
   it("makes, deletes, renames and lists for the signed person; the everyone view is the admin's", async () => {
@@ -92,7 +92,7 @@ describe("/_superset/my", () => {
     calls.length = 0;
     const editor = { d: 3, v: true, e: true };
     await post("/_superset/my/layouts/l_1/apply?dashboard=3", editor);
-    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: true }] });
+    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: true }, ""] });
     const put = (claims: Partial<Identity>, body: unknown) => fetch(`${base}/_superset/settings/edit-scope`, { method: "PUT", headers: as(claims), body: JSON.stringify(body) });
     expect((await put({}, { scope: "own" })).status).toBe(403);
     expect((await put({ a: true }, { scope: "nope" })).status).toBe(400);
@@ -100,7 +100,7 @@ describe("/_superset/my", () => {
     expect(audited.filter((a) => a.action.endsWith("edit-scope")).map((a) => [a.user, a.outcome])).toEqual([["vee", "denied"], ["vee", "refused"], ["vee", "ok"]]);
     // Superset lets them edit dashboard 3, but it isn't theirs: the apply is asked with edit false, and the menu says why.
     await post("/_superset/my/layouts/l_1/apply?dashboard=3", editor);
-    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: false }] });
+    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: false }, ""] });
     await fetch(`${base}/_superset/my?dashboard=3`, { headers: as(editor) });
     expect(calls.at(-1)).toMatchObject({ fn: "overview", args: [{ dashboard: 3, edit: false, byScope: true }, ""] });
     await put({ a: true }, { scope: "superset" });

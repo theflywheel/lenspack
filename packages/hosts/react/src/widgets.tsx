@@ -284,11 +284,12 @@ export function TableWidget({ id, widget, data, currency }: WidgetProps<"table">
   );
 }
 
-// A note's markdown: built as React elements, never HTML from the text.
+// A note's markdown: built as React elements, never HTML from the text, and with no links:
+// a board holds no URLs, so a link in a note shows as its text.
 const NOTE: MarkdownClasses = { root: "lp-text lp-md", code: "lp-md-code", heading: "lp-md-h", pre: "lp-md-pre", quote: "lp-md-quote" };
 
 export function TextWidget({ widget }: WidgetProps<"text">) {
-  return <Markdown text={widget.body} classes={NOTE} />;
+  return <Markdown text={widget.body} classes={NOTE} links={false} />;
 }
 
 export const defaultWidgets: Required<WidgetRegistry> = { chart: ChartWidget, kpi: KpiWidget, table: TableWidget, text: TextWidget };

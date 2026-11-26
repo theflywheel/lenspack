@@ -4,6 +4,7 @@ import type { Pack } from "@lenspack/pack";
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
 import { type PlacedChart, filtersFromNative, nativeFiltersAfter } from "./filters";
+import { plainNote } from "./note";
 import { type Component, type Position, COLUMNS, componentAt, defaultContainer, freshId, insertInRow, insertRow, isComponent, layoutProblems, locate, nestedLayout, openTab, parentMap, reachable, removeComponent, rowWidth, wrapRow } from "./layout";
 import { chartToWidget, queryContextOf, widgetToChart } from "./query";
 
@@ -33,7 +34,10 @@ export type DashboardState = {
    * their ids from one read to the next, and a resize or a removal touches the one placement.
    */
   placements?: Record<string, string>;
-  /** Widgets Lenspack removed, by id: what they showed and where, so restoring a version puts the same chart back in the same place. */
+  /**
+   * Widgets removed, by id (by Lenspack, or in Superset itself): what they showed and where, so restoring a version
+   * puts the same chart back (in the same place, when Lenspack removed it).
+   */
   removed?: Record<string, Removed>;
   changedOn?: string;
 };
@@ -44,7 +48,7 @@ export type Removed = {
   /** The chart was Lenspack's own and was deleted with its widget: a restore makes it again. */
   deleted?: boolean;
   locked?: boolean;
-  /** The widget as it was, to tell whether a restore brings back the same one. */
+  /** The widget as it was, to tell whether a restore brings back the same one ("" when Superset removed it: not known here). */
   widget: string;
   component?: string;
   meta?: Record<string, any>;
@@ -181,6 +185,13 @@ export function dashboardToBoard(read: Awaited<ReturnType<typeof readDashboard>>
     place({ id: `CHART-${chart.id}`, type: "CHART", children: [], meta: { chartId: chart.id, width: 4, height: 50 } }, x, y);
     x += 4;
   }
+  // Charts removed in Superset itself since the last read: remembered like Lenspack's own removals, so restoring a
+  // version that had one puts the same chart back (or leaves it out if it is gone), never a note standing in for it.
+  const nowCharts = new Set(Object.values(state.charts));
+  for (const [w, chartId] of Object.entries(prior?.charts ?? {})) {
+    if (state.charts[w] !== undefined || nowCharts.has(chartId) || state.removed![w]) continue;
+    state.removed![w] = { chartId, ...(prior?.locked.includes(w) ? { locked: true } : {}), widget: "", at: Date.now() };
+  }
   const widgetOf = new Map(Object.entries(state.charts).map(([w, c]) => [c, w]));
   const filters = filtersFromNative(metadata(dash.json_metadata), binding, placedCharts(position, charts.map((c) => c.id)), widgetOf);
   const config = boardConfigSchema.parse({ version: 2, pack: pack.pack, packVersion: pack.version, title: dash.dashboard_title.slice(0, 160) || `Dashboard ${dash.id}`, grid: { cols: 12, rowHeight: 40, fill: true }, layout, widgets, filters });
@@ -255,6 +266,8 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
   const dropped: string[] = [];
   const restored: Record<string, Removed> = {};
   const made: number[] = [];
+  // Widgets standing for Superset charts that are gone from Superset: not written to the layout.
+  const skippedGone = new Set<string>();
   const shared = (chartId: number, but: string) => Object.entries(state.charts).some(([w, c]) => c === chartId && w !== but && after.widgets[w]);
   // Charts first: a new chart needs its id before the layout can name it.
   for (const id of ids) {
@@ -297,8 +310,13 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
         chartId = state.charts[id] = gone.chartId;
         if (gone.locked) state.locked.push(id);
         log(`chart ${chartId} back on the dashboard as ${id}`);
-        // As it was: nothing to write, and the author's formats stay.
-        if (gone.widget === JSON.stringify(now) || gone.locked) continue;
+        // As it was (or as Superset had it when it was removed there): nothing to write, and the author's formats stay.
+        if (gone.widget === JSON.stringify(now) || gone.widget === "" || gone.locked) continue;
+      } else if (gone.locked) {
+        // A chart of Superset's own that Lenspack can't redraw, and it is gone from Superset: left out.
+        log(`${id}: chart ${gone.chartId} is no longer in Superset, so it is left out`);
+        skippedGone.add(id);
+        continue;
       } else if (!chartId && !gone.chartId && gone.component && now.kind === "text") state.markdown[id] = gone.component;
     }
     if (now.kind === "text" && !chartId) {
@@ -337,7 +355,9 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
   state.removed = Object.fromEntries(removed);
 
   // Then the dashboard: title, layout, and its chart list (Superset reads that from positions).
-  const position = nested ? patchedPosition(old, before, after, state, { dropped, restored, hints: o.hints ?? {}, known: new Set(Object.values(given.charts)), knownMarkdown: new Set(Object.values(given.markdown)) }) : gridPosition(old, after, state, restored);
+  // What the layout draws: the board, less charts of Superset's own that are gone from Superset.
+  const drawn: BoardConfig = skippedGone.size ? { ...after, widgets: Object.fromEntries(Object.entries(after.widgets).filter(([w]) => !skippedGone.has(w))), layout: after.layout.filter((l) => !skippedGone.has(l.i)) } : after;
+  const position = nested ? patchedPosition(old, before, drawn, state, { dropped, restored, hints: o.hints ?? {}, known: new Set(Object.values(given.charts)), knownMarkdown: new Set(Object.values(given.markdown)) }) : gridPosition(old, drawn, state, restored);
   // Never a layout Superset can't draw. Problems it already had are left as they were.
   const had = new Set(layoutProblems(old));
   const wrong = layoutProblems(position).filter((p) => !had.has(p));
@@ -388,7 +408,11 @@ function widgetComponent(widgetId: string, config: BoardConfig, state: Dashboard
   }
   if (widget.kind === "text") {
     const id = state.markdown[widgetId] ?? `MARKDOWN-lp-${widgetId}`;
-    return { ...component(id, "MARKDOWN", parents), meta: { width: l.w, height: toSupersetH(l.h), code: widget.body } };
+    // A block someone wrote in Superset keeps its text while the note is unchanged (it is read
+    // cut to 2000 characters); a note Lenspack wrote or changed is made plain (note.ts).
+    const had = componentAt(old, id)?.meta?.code;
+    const code = typeof had === "string" && had.slice(0, 2000) === widget.body ? had : plainNote(widget.body);
+    return { ...component(id, "MARKDOWN", parents), meta: { width: l.w, height: toSupersetH(l.h), code } };
   }
   return null;
 }

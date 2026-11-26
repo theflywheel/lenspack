@@ -137,7 +137,8 @@ export function personalDashboards(o: PersonalOptions) {
     const v = mayCreateDashboard(who, o.limits(), (await mineOf(who)).length);
     if (!v.ok) return denied(who, "dashboard-create", v);
     const name = title.trim().slice(0, 160) || "My dashboard";
-    const made = await client.post<{ id: number }>("/api/v1/dashboard/", { dashboard_title: name, owners: [who.userId], ...PRIVATE_DRAFT });
+    // A layout Superset can draw from the start (ROOT → GRID), so the first change to it has nothing to repair.
+    const made = await client.post<{ id: number }>("/api/v1/dashboard/", { dashboard_title: name, owners: [who.userId], position_json: JSON.stringify(withRoot({})), ...PRIVATE_DRAFT });
     const link = await record(who, made.id, name, null, []);
     audit(who, "dashboard-create", "ok", link.board, `dashboard ${made.id} “${name}”`);
     emit(who, "personal-dashboard", "create", `superset-${made.id}`, { dashboard: made.id });
@@ -250,7 +251,7 @@ export function personalDashboards(o: PersonalOptions) {
     return `You have no saved layout called “${which}”.${own.length ? ` Yours: ${own.map((l) => `“${l.name}”`).join(", ")}.` : " You have none yet."}`;
   }
 
-  async function saveLayout(who: PersonalActor, source: SignedRights & { board: string }, name: string, config: BoardConfig, title?: string): Promise<PersonalResult<{ id: string; name: string; replaced: boolean }>> {
+  async function saveLayout(who: PersonalActor, source: SignedRights & { board: string }, name: string, config: BoardConfig, title?: string): Promise<PersonalResult<{ id: string; name: string; replaced: boolean; charts: number; superset: number }>> {
     const clean = name.trim().replace(/\s+/g, " ").slice(0, 80);
     if (!clean) return { ok: false, error: "Give the layout a name.", code: "invalid" };
     const own = (await o.layouts.list()).filter((l) => l.owner === who.user);
@@ -271,7 +272,8 @@ export function personalDashboards(o: PersonalOptions) {
     await o.layouts.put(layout.id, layout);
     audit(who, "layout-save", "ok", source.board, `“${clean}”${same ? " (replaced)" : ""}, ${Object.keys(config.widgets).length} widgets`);
     emit(who, "saved-layout", "save", source.dashboard ? `superset-${source.dashboard}` : null, { layout: layout.id });
-    return { ok: true, id: layout.id, name: clean, replaced: !!same };
+    // charts, and how many of them were made in Superset: those stay with this dashboard (the panel says so).
+    return { ok: true, id: layout.id, name: clean, replaced: !!same, charts: Object.keys(config.widgets).length, superset: layout.locked.length };
   }
 
   async function layoutToApply(who: PersonalActor, which: string, target: { board: string; edit: boolean }): Promise<PersonalResult<{ layout: SavedLayout; targetLocked: string[] }>> {
@@ -279,19 +281,27 @@ export function personalDashboards(o: PersonalOptions) {
     if (typeof found === "string") return { ok: false, error: found, code: "missing" };
     const v = mayApplyLayout(who, o.limits(), found, target);
     if (!v.ok) return denied(who, "layout-apply", v, target.board);
+    // Superset's latest first (a chart removed there since the last read), so the chat fits the layout to the board as it is.
+    await store.pull(target.board).catch((e: Error) => log(`${target.board}: could not read Superset: ${e.message}`));
     return { ok: true, layout: found, targetLocked: store.lockedOf(target.board) };
   }
 
   /** Applies a saved layout to a board as one change (the panel's menu; the chat goes through its own store). */
-  async function applyLayout(who: PersonalActor, which: string, target: { board: string; edit: boolean; ctx: Ctx; capabilities?: Capabilities }): Promise<PersonalResult<{ version: number; previous: number; name: string } & Pick<FittedLayout, "skipped" | "skippedFilters" | "packChanged">>> {
+  async function applyLayout(who: PersonalActor, which: string, target: { board: string; edit: boolean; ctx: Ctx; capabilities?: Capabilities }, base = ""): Promise<PersonalResult<{ version: number; previous: number; name: string; from: { dashboard: number | null; title: string; url: string | null } } & Pick<FittedLayout, "skipped" | "skippedFilters" | "packChanged" | "carried">>> {
     const got = await layoutToApply(who, which, target);
     if (!got.ok) return got;
-    const board = await store.get(target.board);
-    if (!board) return { ok: false, error: "This dashboard is not open in Lenspack.", code: "missing" };
-    const fit = fitSavedLayout(got.layout.config, board.config, pack, { ctx: target.ctx, capabilities: target.capabilities, savedLocked: got.layout.locked, targetLocked: got.targetLocked });
-    const saved = await store.replaceConfig({ id: target.board, config: fit.config, source: "layout", summary: `applied saved layout “${got.layout.name}”` });
+    if (!(await store.get(target.board))) return { ok: false, error: "This dashboard is not open in Lenspack.", code: "missing" };
+    // Fitted to the board as it is when written (Superset's latest read first), never to an earlier read: a chart
+    // removed in Superset in between is left out, not brought back.
+    let previous = 0;
+    const { board: saved, made: fit } = await store.replaceFrom(
+      target.board,
+      (board, locked) => ((previous = board.version), fitSavedLayout(got.layout.config, board.config, pack, { ctx: target.ctx, capabilities: target.capabilities, savedLocked: got.layout.locked, targetLocked: locked })),
+      { source: "layout", summary: `applied saved layout “${got.layout.name}”` },
+    );
     applied(who, got.layout, target.board, { version: saved.version, skipped: fit.skipped.length });
-    return { ok: true, version: saved.version, previous: board.version, name: got.layout.name, skipped: fit.skipped, skippedFilters: fit.skippedFilters, packChanged: fit.packChanged };
+    const src = got.layout.source;
+    return { ok: true, version: saved.version, previous, name: got.layout.name, skipped: fit.skipped, skippedFilters: fit.skippedFilters, packChanged: fit.packChanged, carried: fit.carried, from: { dashboard: src.dashboard ?? null, title: src.title, url: src.dashboard ? urlOf(base, src.dashboard) : null } };
   }
 
   function applied(who: PersonalActor, layout: SavedLayout, board: string, r: { version?: number; skipped: number; held?: boolean }) {
@@ -325,7 +335,8 @@ export function personalDashboards(o: PersonalOptions) {
     return { ok: true, id: found.id, name: found.name };
   }
 
-  const layoutView = (l: SavedLayout) => ({ id: l.id, name: l.name, owner: l.owner, from: l.source.title, fromDashboard: l.source.dashboard, savedAt: l.savedAt, widgets: Object.keys(l.config.widgets).length });
+  // superset: how many of its charts were made in Superset (they stay with the dashboard the layout came from).
+  const layoutView = (l: SavedLayout) => ({ id: l.id, name: l.name, owner: l.owner, from: l.source.title, fromDashboard: l.source.dashboard, savedAt: l.savedAt, widgets: Object.keys(l.config.widgets).length, superset: (l.locked ?? []).filter((w) => l.config.widgets[w]).length });
   const dashboardView = (d: PersonalDashboard, base = "") => ({ dashboard: d.dashboard, board: d.board, title: d.title, from: d.from, createdAt: d.createdAt, url: urlOf(base, d.dashboard) });
 
   /** What the panel's menus show: the person's own dashboards and layouts, and what they may do here. */
@@ -349,6 +360,8 @@ export function personalDashboards(o: PersonalOptions) {
             mine: !!onHere,
             canCopy: mayCopyDashboard(who, limits, mine.length, here).ok,
             canSave: maySaveLayout(who, limits, own.length, here).ok || own.length >= limits.maxSavedLayoutsPerUser,
+            // Charts on this dashboard made in Superset: a layout saved here carries them to no other dashboard.
+            superset: store.lockedOf(`superset-${here.dashboard}`).length,
           }
         : null,
     };

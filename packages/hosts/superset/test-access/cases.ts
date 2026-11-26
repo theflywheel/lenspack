@@ -659,6 +659,12 @@ export function accessSuite(version: string) {
         const me = (await s.lp_viewer.send("GET", "/api/v1/me/")).json.result.id as number;
         const meta = (await s.lp_admin.send("GET", `/api/v1/dashboard/${blank}`)).json.result;
         expect([meta.owners.map((o: { id: number }) => o.id), meta.published, meta.roles]).toEqual([[me], false, []]);
+        // A layout Superset can draw from the start (ROOT → GRID): the first change finds nothing to repair.
+        const startLayout = JSON.parse(meta.position_json);
+        expect([startLayout.ROOT_ID?.children, startLayout.GRID_ID?.parents]).toEqual([["GRID_ID"], ["ROOT_ID"]]);
+        const first = await s.lp_viewer.lp("POST", `api/${PACK}/superset-${blank}/ops`, widgetOps([["visits_blank", "Visits by region", "visit_total"]]));
+        expect(first.status, first.text).toBe(200);
+        expect(stack.log()).not.toMatch(new RegExp(`superset-${blank}: layout already had a problem`));
         const copied = await copyOf("lp_viewer", stack.fixtures.dashboards.a);
         expect(copied.status, copied.text).toBe(200);
         viewerCopy = copied.json.dashboard;
@@ -769,6 +775,59 @@ export function accessSuite(version: string) {
         }
         // Back to the default: lp_owner edits A again.
         expect((await s.lp_owner.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A"))).status).toBe(200);
+      });
+
+      it("undo after applying a layout takes back a chart of Superset's own that came back, in Superset too", async () => {
+        const copied = await copyOf("lp_viewer", stack.fixtures.dashboards.a);
+        expect(copied.status, copied.text).toBe(200);
+        const copy = copied.json.dashboard as number;
+        const board = `superset-${copy}`;
+        const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        const charts = async () => ((await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}/charts`)).json.result as { id: number }[]).map((c) => c.id).sort((x, y) => x - y);
+        const layout = async () => JSON.parse((await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}`)).json.result.position_json) as Record<string, any>;
+        // Superset's own API, as its admin, with the CSRF token its pages send.
+        const csrf = (await s.lp_admin.send("GET", "/api/v1/security/csrf_token/")).json.result as string;
+        const write = (method: string, path: string, body: object) => s.lp_admin.send(method, path, { headers: { "x-csrftoken": csrf }, body });
+        const putLayout = (pos: Record<string, any>) => write("PUT", `/api/v1/dashboard/${copy}`, { position_json: JSON.stringify(pos), json_metadata: JSON.stringify({ positions: pos }) });
+        const drawn = (pos: Record<string, any>) => Object.values(pos).filter((c: any) => c?.type === "CHART" || c?.type === "MARKDOWN").map((c: any) => c.meta?.chartId ?? c.id);
+        try {
+          // A chart made in Superset that Lenspack can't redraw (kept as Superset's), added to the copy in Superset.
+          const made = await write("POST", "/api/v1/chart/", { slice_name: "Word cloud", viz_type: "word_cloud", datasource_id: stack.fixtures.datasets.visits, datasource_type: "table", params: JSON.stringify({ viz_type: "word_cloud", series: "region", metric: "count" }), dashboards: [copy] });
+          expect(made.status, made.text).toBe(201);
+          const cloud = made.json.id as number;
+          const pos = await layout();
+          const row = Object.values(pos).find((c: any) => c?.type === "ROW") as any;
+          pos[`CHART-cloud`] = { id: "CHART-cloud", type: "CHART", children: [], parents: [...row.parents, row.id], meta: { chartId: cloud, width: 4, height: 50 } };
+          row.children.push("CHART-cloud");
+          expect((await putLayout(pos)).status).toBe(200);
+          await wait(3500);
+          const before = (await s.lp_viewer.lp("GET", `api/${PACK}/${board}`)).json.board;
+          expect(Object.keys(before.config.widgets)).toHaveLength(3);
+          expect((await s.lp_viewer.lp("POST", `_superset/my/layouts?dashboard=${copy}`, { name: "With cloud" })).status).toBe(200);
+          const withCloud = await charts();
+          expect(withCloud).toContain(cloud);
+          // Removed in Superset itself.
+          const out = await layout();
+          delete out["CHART-cloud"];
+          for (const c of Object.values(out) as any[]) if (Array.isArray(c?.children)) c.children = c.children.filter((k: string) => k !== "CHART-cloud");
+          expect((await putLayout(out)).status).toBe(200);
+          const removed = await charts();
+          expect(removed).not.toContain(cloud);
+          const shown = drawn(await layout()).sort();
+          // Applied straight away, then undone.
+          const layouts = (await s.lp_viewer.lp("GET", "_superset/my")).json.layouts as { id: string; name: string }[];
+          const id = layouts.find((l) => l.name === "With cloud")!.id;
+          const applied = await s.lp_viewer.lp("POST", `_superset/my/layouts/${id}/apply?dashboard=${copy}`, {});
+          expect(applied.status, applied.text).toBe(200);
+          const undo = await s.lp_viewer.lp("POST", `api/${PACK}/${board}/revert`, { version: applied.json.previous });
+          expect(undo.status, undo.text).toBe(200);
+          // Whatever the layout brought back is gone again, from the layout and from the dashboard's charts.
+          expect(await charts()).toEqual(removed);
+          expect(drawn(await layout()).sort()).toEqual(shown);
+          await s.lp_viewer.lp("POST", `_superset/my/layouts/${id}/delete`, {});
+        } finally {
+          await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: copy });
+        }
       });
 
       it("leaves no personal dashboards behind", async () => {

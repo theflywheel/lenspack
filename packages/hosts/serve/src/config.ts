@@ -51,23 +51,21 @@ export type ExplainConfig = z.infer<typeof explainSchema>;
 /** The config's explain setting as the board API reads it: on unless false, the SQL shown unless sql is false. */
 export const explainFrom = (c: ExplainConfig | undefined): { on: boolean; sql: boolean } => ({ on: c !== false, sql: !(typeof c === "object" && c.sql === false) });
 
+const packEntrySchema = z.object({
+  pack: z.string().min(1),
+  source: z.string(),
+  name: z.string().regex(/^[a-z][a-z0-9_-]*$/).optional(),
+  boards: z.string().optional(),
+  tenant: z.string().optional(),
+  /** Pin "now" (for fixed demo data); otherwise the clock. */
+  now: z.string().datetime({ offset: true }).optional(),
+  /** Who may open this pack and what of it they see, by role; first match wins. Absent: everyone signed in sees all of it. */
+  access: z.array(packRuleSchema).min(1).optional(),
+});
+
 export const configSchema = z.object({
   sources: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), sourceSchema),
-  packs: z
-    .array(
-      z.object({
-        pack: z.string().min(1),
-        source: z.string(),
-        name: z.string().regex(/^[a-z][a-z0-9_-]*$/).optional(),
-        boards: z.string().optional(),
-        tenant: z.string().optional(),
-        /** Pin "now" (for fixed demo data); otherwise the clock. */
-        now: z.string().datetime({ offset: true }).optional(),
-        /** Who may open this pack and what of it they see, by role; first match wins. Absent: everyone signed in sees all of it. */
-        access: z.array(packRuleSchema).min(1).optional(),
-      }),
-    )
-    .min(1),
+  packs: z.array(packEntrySchema).min(1),
   store: z.union([z.object({ kind: z.literal("memory") }), z.object({ kind: z.literal("duckdb"), path: z.string().min(1) }), z.object({ kind: z.literal("postgres"), url: secret })]).default({ kind: "memory" }),
   /**
    * The bundled UI: its directory, or how it presents itself. home
@@ -166,6 +164,16 @@ export function readConfig(path: string): { config: LenspackConfig; dir: string 
   return { config: parsed, dir: dirname(resolve(path)) };
 }
 
+// `lenspack sources` is how you look at a source before writing its pack, so it reads the
+// file without asking for packs: `packs:` may be missing, empty, or name files not written yet.
+const sourcesOnlySchema = configSchema.extend({ packs: z.unknown().optional() });
+
+/** A config read for its sources alone: the packs are not checked or opened. */
+export function readSourcesConfig(path: string): { config: Pick<LenspackConfig, "sources">; dir: string } {
+  const parsed = sourcesOnlySchema.parse(YAML.parse(readFileSync(path, "utf8")));
+  return { config: { sources: parsed.sources }, dir: dirname(resolve(path)) };
+}
+
 type Sql = { executor: Executor; writer: Writer; dialect: "postgres" | "duckdb"; close(): Promise<void> };
 
 async function openSql(kind: "postgres" | "duckdb", target: string): Promise<Sql> {
@@ -181,8 +189,8 @@ export function readBoards(dir: string): BoardFile[] {
     .map((f) => ({ id: f.replace(/\.json$/, ""), ...(JSON.parse(readFileSync(join(dir, f), "utf8")) as { title: string; ops: unknown[] }) }));
 }
 
-/** Opens every source and store a config names, and binds each pack to its source. */
-export async function openConfig(config: LenspackConfig, dir: string, env = process.env): Promise<{ hosts: Host[]; sources: Map<string, Connector>; close(): Promise<void> }> {
+/** Opens every source a config names, and nothing else: no store, no packs. */
+export async function openSources(config: Pick<LenspackConfig, "sources">, dir: string, env = process.env): Promise<{ sources: Map<string, Connector>; skipped: Set<string>; close(): Promise<void> }> {
   const at = (p: string) => (isAbsolute(p) ? p : join(dir, p));
   const closers: (() => Promise<void>)[] = [];
   const connectors = new Map<string, Connector>();
@@ -208,6 +216,14 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
     closers.push(connection.close);
     connectors.set(name, connector);
   }
+  return { sources: connectors, skipped, close: async () => void (await Promise.all(closers.map((c) => c()))) };
+}
+
+/** Opens every source and store a config names, and binds each pack to its source. */
+export async function openConfig(config: LenspackConfig, dir: string, env = process.env): Promise<{ hosts: Host[]; sources: Map<string, Connector>; close(): Promise<void> }> {
+  const at = (p: string) => (isAbsolute(p) ? p : join(dir, p));
+  const { sources: connectors, skipped, close: closeSources } = await openSources(config, dir, env);
+  const closers: (() => Promise<void>)[] = [closeSources];
 
   // Boards live apart from the data: a pack's source is read-only to lenspack.
   // Each pack gets its own store, or its own space in a shared database: a pack

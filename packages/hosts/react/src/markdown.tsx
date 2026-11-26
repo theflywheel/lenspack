@@ -3,8 +3,10 @@ import * as React from "react";
 // A small markdown renderer, for chat replies and text widgets: paragraphs, bullet and numbered
 // lists (one level of nesting), bold, italics, inline code, links, and code
 // blocks; a heading becomes a bold line. It builds React elements from text
-// and never parses HTML, so a reply cannot put markup in the page. Links open
-// in a new tab, and only http(s) and mailto links are links at all.
+// and never parses HTML, so a reply cannot put markup in the page. In a chat
+// reply, links open in a new tab, and only http(s) and mailto links are links
+// at all. With links off (text widgets: a board holds no URLs), a link shows
+// its text only. Bare addresses are never turned into links.
 
 type Block =
   | { kind: "p"; lines: string[] }
@@ -98,7 +100,7 @@ const cx = (c: string | undefined) => (c === undefined ? {} : { className: c });
 // verbatim; everything else may hold further marks.
 const INLINE = /(`+)([^`]+?)\1|\[([^\]]+)\]\(([^)\s]+)\)|\*\*(.+?)\*\*|__(.+?)__|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?!\w)|(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w])/;
 
-export function renderInline(text: string, key = "i", c: MarkdownClasses = {}): React.ReactNode[] {
+export function renderInline(text: string, key = "i", c: MarkdownClasses = {}, links = true): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   let rest = text;
   let n = 0;
@@ -114,16 +116,16 @@ export function renderInline(text: string, key = "i", c: MarkdownClasses = {}): 
     else if (m[3] !== undefined) {
       const href = m[4]!;
       out.push(
-        SAFE_URL.test(href) ? (
+        links && SAFE_URL.test(href) ? (
           <a key={k} href={href} target="_blank" rel="noopener noreferrer" {...cx(c.link)}>
-            {renderInline(m[3], k, c)}
+            {renderInline(m[3], k, c, links)}
           </a>
         ) : (
-          <React.Fragment key={k}>{renderInline(m[3], k, c)}</React.Fragment>
+          <React.Fragment key={k}>{renderInline(m[3], k, c, links)}</React.Fragment>
         ),
       );
-    } else if (m[5] !== undefined || m[6] !== undefined) out.push(<strong key={k} {...cx(c.strong)}>{renderInline((m[5] ?? m[6])!, k, c)}</strong>);
-    else out.push(<em key={k}>{renderInline((m[7] ?? m[8])!, k, c)}</em>);
+    } else if (m[5] !== undefined || m[6] !== undefined) out.push(<strong key={k} {...cx(c.strong)}>{renderInline((m[5] ?? m[6])!, k, c, links)}</strong>);
+    else out.push(<em key={k}>{renderInline((m[7] ?? m[8])!, k, c, links)}</em>);
     rest = rest.slice(m.index + m[0].length);
   }
   return out;
@@ -135,22 +137,23 @@ function List({ ordered, start = 1, items, nested, c }: { ordered: boolean; star
   return ordered ? <ol {...cls} start={start === 1 ? undefined : start}>{children}</ol> : <ul {...cls}>{children}</ul>;
 }
 
-/** Text as markdown: React elements only, never HTML from the text. */
-export function Markdown({ text, classes: c = {} }: { text: string; classes?: MarkdownClasses }) {
+/** Text as markdown: React elements only, never HTML from the text. links: false shows a link's text without the link. */
+export function Markdown({ text, classes: c = {}, links = true }: { text: string; classes?: MarkdownClasses; links?: boolean }) {
   const blocks = React.useMemo(() => parseBlocks(text), [text]);
+  const inline = (t: string, key: string) => renderInline(t, key, c, links);
   return (
     <div {...cx(c.root)} data-testid="markdown">
       {blocks.map((b, i) => {
         const k = `b${i}`;
         switch (b.kind) {
           case "p":
-            return <p key={k}>{b.lines.flatMap((l, j) => (j ? [<br key={`${k}br${j}`} />, ...renderInline(l, `${k}.${j}`, c)] : renderInline(l, `${k}.${j}`, c)))}</p>;
+            return <p key={k}>{b.lines.flatMap((l, j) => (j ? [<br key={`${k}br${j}`} />, ...inline(l, `${k}.${j}`)] : inline(l, `${k}.${j}`)))}</p>;
           case "h":
-            return <p key={k} {...cx(c.heading)}>{renderInline(b.text, k, c)}</p>;
+            return <p key={k} {...cx(c.heading)}>{inline(b.text, k)}</p>;
           case "code":
             return <pre key={k} {...cx(c.pre)}>{b.text}</pre>;
           case "quote":
-            return <blockquote key={k} {...cx(c.quote)}>{renderInline(b.lines.join(" "), k, c)}</blockquote>;
+            return <blockquote key={k} {...cx(c.quote)}>{inline(b.lines.join(" "), k)}</blockquote>;
           case "list":
             return (
               <List
@@ -160,8 +163,8 @@ export function Markdown({ text, classes: c = {} }: { text: string; classes?: Ma
                 c={c}
                 items={b.items.map((item, j) => (
                   <>
-                    {renderInline(item.text, `${k}.${j}`, c)}
-                    {item.children && <List nested c={c} ordered={item.children.ordered} items={item.children.items.map((t, n) => renderInline(t, `${k}.${j}.${n}`, c))} />}
+                    {inline(item.text, `${k}.${j}`)}
+                    {item.children && <List nested c={c} ordered={item.children.ordered} items={item.children.items.map((t, n) => inline(t, `${k}.${j}.${n}`))} />}
                   </>
                 ))}
               />

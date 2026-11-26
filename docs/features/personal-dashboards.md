@@ -47,7 +47,17 @@ Some details:
 - **Applying** a layout checks each widget again, for the person and the dashboard it lands on: a widget that
   uses something they can't see (a dataset or field hidden from them under `hostPolicy: superset`) is left out,
   and the reply names it. Filters the target can't have are left out the same way. The dashboard keeps its own
-  title.
+  title. The layout is fitted to the dashboard as it is at that moment, after any change made in Superset itself
+  is read, so a chart someone removed there is not brought back.
+- **Charts made in Superset stay with their dashboard.** A chart made in Superset that Lenspack can't redraw (it
+  shows on the board as a chart "kept as it is in Superset") belongs to the dashboard it was made on. A layout
+  saved there keeps it when applied back to that dashboard, but carries only the other charts to another one: a
+  saved layout is not a template for those charts. The panel says so when saving ("Charts made in Superset (2
+  here) stay with this dashboard"), and the reply after applying says how many charts the layout carried ("this
+  layout carried 3 of 5 charts"). When most of a layout's charts would stay behind, the panel suggests opening the
+  dashboard it came from and making your own copy of it instead, which keeps them all.
+- **A new blank dashboard** starts with an empty layout Superset can draw, so the first change to it has nothing to
+  repair.
 - **A copy keeps every chart**, including one the original's layout had lost, which is placed where Superset draws
   such charts. A dashboard Superset could not draw is not copied, unless the original already had the same problem.
 - **Your own dashboards are yours.** Superset lets anyone open a draft dashboard that has no dashboard roles if
@@ -94,7 +104,8 @@ back to an earlier one. In Superset this history is kept in memory and starts ag
 
 Saved layouts are a different thing: named copies of a whole board that a person keeps until they delete them.
 Applying one is a single change, so Undo, or "restore the previous version", takes the dashboard back to how it
-was.
+was. A chart someone removed in Superset itself is remembered too: going back to a version from before puts the
+same chart back, or leaves it out if it has since been deleted in Superset.
 
 ## Where the chat may edit: `editScope`
 

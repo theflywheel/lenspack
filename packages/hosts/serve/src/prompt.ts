@@ -8,7 +8,7 @@ import { DEFAULT_BRAND_NAME } from "./brand";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 28;
+export const PROMPT_VERSION = 29;
 
 /**
  * The prompt's version as anything that keeps answers keys on it (saved answers): PROMPT_VERSION, and the
@@ -152,7 +152,7 @@ Rules:
 - Prefer a breakdown for "by X", a series for "over time" / "weekly" / "per month", a value for a single number. "Pie" needs a breakdown.
 - Several numbers for the same groups ("a table of count, total and rate by region") is ONE widget: the first as measure, the rest in measures (comma-separated). Use a table for more than two.
 - "List / show me the turns (records) ..." is a table with query_kind rows: entity, the columns as dimension (comma-separated), order_by a column (a time column with order desc for "latest first"), page_size for rows per page (default 25). The table pages through every matching row with Prev/Next; narrow it with filters and the time window.
-- A note, description or explanation on the board is a text widget: body in markdown (short paragraphs, **bold**, - lists, [links](https://...)), at most 2000 characters; no HTML or images.
+- A note, description or explanation on the board is a text widget: body in markdown (short paragraphs, **bold**, - lists), at most 2000 characters; no links, HTML or images (a board holds no URLs, so a link shows as its text).
 - To answer a question about the data, use query and give the answer with the number. For a change, a share or the rest, ask the query for it (compare, share, other); never do the arithmetic yourself.
 - Rates, changes and averages over time come from compute on a measure listed above, never from a new measure: never say one is not in the data before trying compute. "Burn rate per ward" is breakdown by ward of the measure that is used up, grain day, compute mean; say in the reply what it was taken as ("burn rate here = average daily units dispatched"). "Day-on-day % change" is a series with compute pct_change; "average day-on-day % change per ward" is breakdown by ward, grain day, compute "pct_change, mean". Also: rolling_mean 7, running_total, ratio <measure>. The result's computed field says what was computed, what was skipped and over which days; repeat that in plain words, the days included ("averaged over 20 days, 1 to 20 March").
 - For an average over time, prefer whole calendar periods (time_period last_month, last_week) to time_last: a rolling window starts and ends part-way through a day, and those part days pull the average down.
