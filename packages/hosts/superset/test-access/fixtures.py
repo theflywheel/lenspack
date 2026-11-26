@@ -15,6 +15,13 @@ Users (all with the password in LP_USER_PASSWORD):
   lp_rbac_off  the same roles as lp_rbac (asked about only while dashboard roles are turned off)
   lp_noroles   no roles at all
   lp_outage    Gamma + both datasets (asked about only while Superset is cut off)
+  lp_lensadmin Gamma + visits only + "Lenspack admin", a Superset role with no permissions: Lenspack's admins rule
+               may name it (the suite restarts Lenspack with auth.admins: ["Lenspack admin"] at the end)
+  lp_reader    a copy of Gamma without can_write on Dashboard or Chart ("lp_read_only", the kind of viewer role a
+               deployment makes) + both datasets: views dashboards, may not make or change any
+  lp_alpha     Alpha
+  lp_lensuser  Gamma + both datasets + "Lenspack user", a Superset role with no permissions: Lenspack's users rule
+               may name it (the suite restarts Lenspack with auth.users: ["Lenspack user"] last)
 Dashboards: A (owner lp_owner, no dashboard roles), B (owner lp_admin, dashboard role lp_board_b) and C (owner
 lp_admin, dashboard role lp_board_c). All start empty; the suite adds their charts through Lenspack as lp_admin: one
 of each dataset on A, stock on B, visits on C.
@@ -69,6 +76,11 @@ with app.app_context():
     gamma, admin = sm.find_role("Gamma"), sm.find_role("Admin")
     r_visits, r_stock = role("lp_visits", [visits]), role("lp_stock", [stock])
     r_north, r_inlist, r_like, r_templ, r_board_b, r_board_c = (role(n) for n in ["lp_rls_north", "lp_rls_inlist", "lp_rls_like", "lp_rls_templ", "lp_board_b", "lp_board_c"])
+    r_lens_admin, r_lens_user = role("Lenspack admin"), role("Lenspack user")
+    # A viewer role: Gamma's permissions less writing dashboards and charts.
+    r_read_only = role("lp_read_only")
+    r_read_only.permissions = [pv for pv in gamma.permissions if not (pv.permission.name == "can_write" and pv.view_menu.name in ("Dashboard", "Chart"))]
+    alpha = sm.find_role("Alpha")
 
     def rule(name, clause, roles, tables):
         f = RowLevelSecurityFilter(name=name, filter_type=RowLevelSecurityFilterType.REGULAR, clause=clause)
@@ -96,6 +108,10 @@ with app.app_context():
         "lp_rbac_off": [gamma, r_board_b, r_board_c],
         "lp_noroles": [],
         "lp_outage": both,
+        "lp_lensadmin": [gamma, r_visits, r_lens_admin],
+        "lp_lensuser": [*both, r_lens_user],
+        "lp_reader": [r_read_only, r_visits, r_stock],
+        "lp_alpha": [alpha],
     }
     made = {}
     for name, roles in users.items():

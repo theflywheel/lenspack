@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 import { rotatingAudit } from "@lenspack/serve";
 import { serviceAccount } from "../src/bootstrap";
 import type { SupersetClient } from "../src/client";
-import { IDENTITY_HEADER, type Identity, READ_ONLY_MESSAGE, editPolicyFrom, callerOf, signIdentity, supersetAccess, verifyIdentity } from "../src/identity";
+import { adminRights, mayUse } from "@lenspack/policy";
+import { IDENTITY_HEADER, type Identity, READ_ONLY_MESSAGE, editPolicyFrom, callerOf, roleRulesFrom, signIdentity, supersetAccess, supersetRights, verifyIdentity } from "../src/identity";
+import { actorOf } from "../src/personal-routes";
 
 const KEY = "k".repeat(64);
 const now = () => Math.floor(Date.now() / 1000);
@@ -50,13 +52,14 @@ describe("who may edit", () => {
     const admin = callerOf(as({ u: "admin", a: true, e: true }), "superset");
     const otherAlpha = callerOf(as({ u: "alpha", e: false }), "superset");
     const gamma = callerOf(as({ u: "gamma", e: false }), "superset");
-    expect(owner).toEqual({ user: "owner", roles: [], usage: false, edit: true, maintain: true });
-    expect(admin).toMatchObject({ roles: ["admin"], usage: true, edit: true, maintain: true });
-    for (const p of [otherAlpha, gamma]) expect(p).toEqual({ user: p.user, roles: [], usage: false, readOnly: READ_ONLY_MESSAGE });
+    expect(owner).toEqual({ user: "owner", roles: [], edit: true, maintain: true });
+    // No role names signed (an older plugin): the admin flag stands for Superset's Admin role.
+    expect(admin).toMatchObject({ roles: ["Admin"], edit: true, maintain: true });
+    for (const p of [otherAlpha, gamma]) expect(p).toEqual({ user: p.user, roles: [], readOnly: READ_ONLY_MESSAGE });
   });
 
   it("signed-in: anyone signed in edits, as before", () => {
-    expect(callerOf(as({ u: "gamma", e: false }), "signed-in")).toEqual({ user: "gamma", roles: [], usage: false, edit: true, maintain: true });
+    expect(callerOf(as({ u: "gamma", e: false }), "signed-in")).toEqual({ user: "gamma", roles: [], edit: true, maintain: true });
   });
 
   it("reads the policy from the environment, refusing a typo", () => {
@@ -168,5 +171,73 @@ describe("Lenspack's Superset account", () => {
   it("says what to set when there is no account and no admin password", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "lp-account-"));
     await expect(serviceAccount({ url: "http://superset", username: "lenspack", stateDir, client: fakeSuperset({}).client })).rejects.toThrow(/SUPERSET_ADMIN_PASSWORD .* LENSPACK_SUPERSET_PASSWORD/);
+  });
+});
+
+describe("who is an admin: Lenspack's admins rule over Superset's role names", () => {
+  const as = (over: Partial<Identity>): Identity => ({ u: "someone", a: false, t: now(), ...over });
+  const access = (rights = supersetRights()) => async (over: Partial<Identity>) => (await supersetAccess(() => KEY, "superset", undefined, rights)(req(signIdentity(as(over), KEY))))!;
+  const admin = async (rights: ReturnType<typeof supersetRights>, over: Partial<Identity>) => adminRights(await access(rights)(over));
+
+  it("by default, Superset's Admin role, as before; the usage right goes with it", async () => {
+    expect(await admin(supersetRights(), { u: "boss", a: true, r: ["Admin"] })).toEqual({ administer: true, users: true });
+    expect(await admin(supersetRights(), { u: "gamma", r: ["Gamma"] })).toEqual({ administer: false, users: false });
+    // A Superset role that happens to be called "admin" is not Superset's Admin.
+    expect(await admin(supersetRights(), { u: "odd", r: ["admin"] })).toEqual({ administer: false, users: false });
+    // An older plugin that signs no role names: its admin flag stands for the Admin role.
+    expect(await admin(supersetRights(), { u: "boss", a: true })).toEqual({ administer: true, users: true });
+  });
+
+  it("names its own roles: the signed admin flag alone gives nothing, and the admin role widens nothing", async () => {
+    const rights = supersetRights({ admins: ["Lenspack admin"] });
+    expect(await admin(rights, { u: "boss", a: true, r: ["Admin"] })).toEqual({ administer: false, users: false });
+    expect(await admin(rights, { u: "kemi", r: ["Gamma", "Lenspack admin"] })).toEqual({ administer: true, users: true });
+    expect(await admin(rights, { u: "ali", r: ["Alpha", "Lenspack admin"] })).toEqual({ administer: true, users: true });
+    // Still only what Superset lets them do on the dashboard: a viewer stays a viewer.
+    expect(await access(rights)({ u: "kemi", r: ["Gamma", "Lenspack admin"], d: 7, e: false, v: true })).toMatchObject({ edit: false, readOnly: READ_ONLY_MESSAGE });
+    // The personal dashboards' admin is the same person.
+    expect(adminRights(actorOf(as({ u: "boss", a: true, r: ["Admin"] }), rights)).administer).toBe(false);
+    expect(adminRights(actorOf(as({ u: "kemi", r: ["Gamma", "Lenspack admin"] }), rights)).administer).toBe(true);
+  });
+
+  it("gives the usage right by its own rule when named, else to the admins", async () => {
+    const rights = supersetRights({ admins: ["Lenspack admin"], usage: ["Finance"] });
+    expect(await admin(rights, { u: "kemi", r: ["Lenspack admin"] })).toEqual({ administer: true, users: false });
+    expect(await admin(rights, { u: "fola", r: ["Lenspack admin", "Finance"] })).toEqual({ administer: true, users: true });
+    expect((await access(rights)({ u: "ngozi", r: ["Finance"] })).usage).toBe(true);
+    expect(supersetRights({ admins: ["Ops"] })).toEqual({ editors: [], maintainers: [], admins: ["role:Ops"], usage: ["role:Ops"] });
+    expect(supersetRights({ admins: ["role:Ops"] }).admins).toEqual(["role:Ops"]);
+  });
+
+  it("switches the assistant on by Superset role with the users rule; absent, for everyone; admins always", async () => {
+    expect(mayUse(await access()({ u: "gamma", r: ["Gamma"] }))).toBe(true);
+    const rights = supersetRights({ users: ["Lenspack user"] });
+    expect(rights.users).toEqual(["role:Lenspack user"]);
+    expect(mayUse(await access(rights)({ u: "gamma", r: ["Gamma"] }))).toBe(false);
+    expect(mayUse(await access(rights)({ u: "bo", r: ["Gamma", "Lenspack user"] }))).toBe(true);
+    // An admin without the role still may.
+    expect(mayUse(await access(rights)({ u: "boss", a: true, r: ["Admin"] }))).toBe(true);
+    expect(roleRulesFrom({ users: ["Lenspack user"] }, {})).toEqual({ users: ["Lenspack user"] });
+    expect(roleRulesFrom({}, { LENSPACK_USER_ROLES: "Lenspack user, Field lead" })).toEqual({ users: ["Lenspack user", "Field lead"] });
+  });
+
+  it("takes the right to write dashboards from Superset's signed w; an older plugin's, from the admin flag", () => {
+    expect(actorOf(as({ u: "gamma", w: true })).writes).toBe(true);
+    expect(actorOf(as({ u: "reader", w: false })).writes).toBe(false);
+    // A Lenspack admin by the rule gains no write right Superset didn't sign.
+    expect(actorOf(as({ u: "kemi", r: ["Lenspack admin"], w: false }), supersetRights({ admins: ["Lenspack admin"] }))).toMatchObject({ roles: ["Lenspack admin", "admin"], writes: false });
+    expect(actorOf(as({ u: "old", a: false })).writes).toBe(false);
+    expect(actorOf(as({ u: "boss", a: true })).writes).toBe(true);
+  });
+
+  it("reads auth from superset.yaml and the environment, refusing anything else", () => {
+    expect(roleRulesFrom(undefined)).toEqual({});
+    expect(roleRulesFrom({ admins: ["Lenspack admin"] })).toEqual({ admins: ["Lenspack admin"] });
+    expect(roleRulesFrom({ admins: ["Ops"], usage: [] })).toEqual({ admins: ["Ops"], usage: [] });
+    expect(roleRulesFrom({ admins: ["Ops"] }, { LENSPACK_ADMIN_ROLES: "Lenspack admin, Ops lead", LENSPACK_USAGE_ROLES: "Finance" })).toEqual({ admins: ["Lenspack admin", "Ops lead"], usage: ["Finance"] });
+    expect(() => roleRulesFrom({ kind: "oidc" })).toThrow(/auth\.kind is not a setting in Superset mode/);
+    expect(() => roleRulesFrom({ admins: "Admin" })).toThrow(/list of Superset role names/);
+    expect(() => roleRulesFrom({ admins: [""] })).toThrow(/list of Superset role names/);
+    expect(() => roleRulesFrom(["Admin"])).toThrow(/auth must be a map/);
   });
 });

@@ -221,6 +221,11 @@ export type Stack = {
   dashboardRbac: (on: boolean) => void;
   /** A session signed in to Superset as this fixture user. */
   as: (user: string) => Promise<Session>;
+  /**
+   * Stops Lenspack and starts it again on the same port and state, with these lines added to its superset.yaml
+   * (none: the suite's own config). Superset sessions stay signed in.
+   */
+  restartLenspack: (extraYaml?: string[]) => Promise<void>;
   stop: () => Promise<void>;
 };
 
@@ -296,40 +301,64 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
     }
 
     // Lenspack, with nothing but what it needs in its environment: no model keys, and no host policy (the default is under test).
-    writeFileSync(
-      join(dir, "superset.yaml"),
-      [
-        `superset: { url: "http://127.0.0.1:${wayPort}${appRoot}" }`,
-        "datasets: [visits, stock]",
-        `dashboards: [${fixtures.dashboards.a}, ${fixtures.dashboards.b}, ${fixtures.dashboards.c}]`,
-        `overlay: { pack: ${PACK} }`,
-        "host: 127.0.0.1",
-        `port: ${lpPort}`,
-        "publicPath: /lenspack",
-        `state: ${join(dir, "state", "superset-boards.json")}`,
-        "",
-      ].join("\n"),
-    );
-    const out = openSync(join(dir, "lenspack.log"), "a");
-    child = spawn(join(root, "node_modules", ".bin", "tsx"), ["--tsconfig", "tsconfig.base.json", "packages/hosts/superset/bin/serve.ts", join(dir, "superset.yaml")], {
-      cwd: root,
-      stdio: ["ignore", out, out],
-      env: {
-        PATH: process.env.PATH ?? "/usr/bin:/bin",
-        HOME: dir,
-        SUPERSET_ADMIN_USERNAME: "lp_admin",
-        SUPERSET_ADMIN_PASSWORD: secrets.LP_USER_PASSWORD,
-        LENSPACK_LLM_PROVIDERS: JSON.stringify([{ name: "stub", model: "stub", baseUrl: `http://127.0.0.1:${stubPort}/v1`, apiKey: "stub" }]),
-        ...o.lenspackEnv,
-      },
-    });
-    const log = () => readFileSync(join(dir, "lenspack.log"), "utf8");
-    for (const until = Date.now() + 180_000; ; ) {
-      if (child.exitCode !== null) throw new Error(`Lenspack exited while starting:\n${log().split("\n").slice(-30).join("\n")}`);
-      if (log().includes(`http://127.0.0.1:${lpPort}/`)) break;
-      if (Date.now() > until) throw new Error(`Lenspack was not up in 3 minutes:\n${log().split("\n").slice(-30).join("\n")}`);
-      await sleep(500);
-    }
+    const logFile = join(dir, "lenspack.log");
+    const log = () => readFileSync(logFile, "utf8");
+    const startLenspack = async (extraYaml: string[] = []) => {
+      writeFileSync(
+        join(dir, "superset.yaml"),
+        [
+          `superset: { url: "http://127.0.0.1:${wayPort}${appRoot}" }`,
+          "datasets: [visits, stock]",
+          `dashboards: [${fixtures!.dashboards.a}, ${fixtures!.dashboards.b}, ${fixtures!.dashboards.c}]`,
+          `overlay: { pack: ${PACK} }`,
+          "host: 127.0.0.1",
+          `port: ${lpPort}`,
+          "publicPath: /lenspack",
+          `state: ${join(dir, "state", "superset-boards.json")}`,
+          ...extraYaml,
+          "",
+        ].join("\n"),
+      );
+      const out = openSync(logFile, "a");
+      // Ready once this start's own "listening" line is in the log, not an earlier start's.
+      const from = (() => {
+        try {
+          return log().length;
+        } catch {
+          return 0;
+        }
+      })();
+      const started = spawn(join(root, "node_modules", ".bin", "tsx"), ["--tsconfig", "tsconfig.base.json", "packages/hosts/superset/bin/serve.ts", join(dir, "superset.yaml")], {
+        cwd: root,
+        stdio: ["ignore", out, out],
+        env: {
+          PATH: process.env.PATH ?? "/usr/bin:/bin",
+          HOME: dir,
+          SUPERSET_ADMIN_USERNAME: "lp_admin",
+          SUPERSET_ADMIN_PASSWORD: secrets.LP_USER_PASSWORD,
+          LENSPACK_LLM_PROVIDERS: JSON.stringify([{ name: "stub", model: "stub", baseUrl: `http://127.0.0.1:${stubPort}/v1`, apiKey: "stub" }]),
+          ...o.lenspackEnv,
+        },
+      });
+      child = started;
+      for (const until = Date.now() + 180_000; ; ) {
+        if (started.exitCode !== null) throw new Error(`Lenspack exited while starting:\n${log().split("\n").slice(-30).join("\n")}`);
+        if (log().slice(from).includes(`http://127.0.0.1:${lpPort}/`)) break;
+        if (Date.now() > until) throw new Error(`Lenspack was not up in 3 minutes:\n${log().split("\n").slice(-30).join("\n")}`);
+        await sleep(500);
+      }
+    };
+    const stopLenspack = async () => {
+      if (!child || child.exitCode !== null) return;
+      const running = child;
+      running.kill("SIGTERM");
+      await Promise.race([new Promise((r) => running.once("exit", r)), sleep(5000)]);
+      if (running.exitCode === null) {
+        running.kill("SIGKILL");
+        await new Promise((r) => running.once("exit", r));
+      }
+    };
+    await startLenspack();
 
     const identityKey = createHmac("sha256", secrets.SUPERSET_SECRET_KEY).update("lenspack-identity-v1").digest("hex");
     return {
@@ -346,7 +375,11 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
         const r = docker(["exec", containers[1]!, "sh", "-c", on ? "rm -f /tmp/lp-dashboard-rbac-off" : "touch /tmp/lp-dashboard-rbac-off"]);
         if (r.status) throw new Error(`could not turn dashboard roles ${on ? "on" : "off"}: ${r.stderr.trim()}`);
       },
-      as: (user) => new Session(superset, user, appRoot).signIn(secrets.LP_USER_PASSWORD),
+      as: (user) => new Session(superset, user).signIn(secrets.LP_USER_PASSWORD),
+      restartLenspack: async (extraYaml = []) => {
+        await stopLenspack();
+        await startLenspack(extraYaml);
+      },
       stop,
     };
   } catch (e) {

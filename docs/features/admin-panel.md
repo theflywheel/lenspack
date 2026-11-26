@@ -8,15 +8,16 @@ admins.
 The panel is served by Lenspack itself, so it looks the same in every host.
 
 - **In Superset**, it is at `/lenspack/_superset/admin/`, linked from the Lenspack settings page (`/ai-assistant/`).
-  Only Superset admins can open it.
-- **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Anyone with a sign-in
-  role named `admin` can open it. It needs a `state:` directory in `lenspack.yaml`.
+  Only admins can open it: Superset's admins by default, or the Superset roles `auth.admins` names.
+- **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Admins by the
+  `auth.admins` rule can open it; without a rule, anyone with a sign-in role named `admin`. It needs a `state:` directory in `lenspack.yaml`.
 
 Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the
-policy layer, from what the host says about the caller: the admin role, never a dashboard's edit right. In Superset that
-is a Superset admin, from the signed admin flag (a Superset role that happens to be named `admin` does not count). In
-the standalone server it is any sign-in role or group named `admin`: the built-in password user, a role from OpenID
-Connect, a login proxy or a token, or the one local user when sign-in is off. The settings page and the saved answers'
+policy layer, from the roles the host says the caller holds and the deployment's `admins` rule, never a dashboard's
+edit right. In Superset, the rule lists Superset role names and defaults to `["Admin"]`; Superset's signed admin flag
+does not decide it. In the standalone server, the rule lists user names and `role:<name>` entries and defaults to any
+sign-in role or group named `admin`; the built-in password user and the one local user when sign-in is off are always
+admins. Being an admin opens these pages and gives no more data. See [Rights](../access/rights.md#admin). The settings page and the saved answers'
 routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also
 read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
 

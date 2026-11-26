@@ -6,14 +6,14 @@ import { type EditScope, EDIT_SCOPE_DEFAULT, boardRights, editScopeFacts, hidden
 
 const on = PERSONAL_DEFAULTS;
 const off = { ...on, on: false };
-const olu = { user: "olu", userId: 5, roles: [] };
-const ada = { user: "ada", userId: 1, roles: ["admin"] };
+const olu = { user: "olu", userId: 5, roles: [], writes: true };
+const ada = { user: "ada", userId: 1, roles: ["admin"], writes: true };
 
 describe("own dashboards", () => {
   it("anyone with a host id may make one, up to the limit", () => {
     expect(mayCreateDashboard(olu, on, 0)).toEqual({ ok: true });
     expect(mayCreateDashboard(olu, on, 20)).toMatchObject({ ok: false, code: "limit" });
-    expect(mayCreateDashboard({ user: "olu" }, on, 0)).toMatchObject({ ok: false, code: "no-user-id" });
+    expect(mayCreateDashboard({ user: "olu", writes: true }, on, 0)).toMatchObject({ ok: false, code: "no-user-id" });
     expect(mayCreateDashboard(ada, off, 0)).toMatchObject({ ok: false, code: "off" });
   });
 
@@ -26,8 +26,29 @@ describe("own dashboards", () => {
   it("deleted by an owner or an admin, never anyone else", () => {
     expect(mayDeleteDashboard(olu, on, { owners: [5, 9] })).toEqual({ ok: true });
     expect(mayDeleteDashboard(olu, on, { owners: [9] })).toMatchObject({ ok: false, code: "not-yours" });
-    expect(mayDeleteDashboard({ user: "olu" }, on, { owners: [5] })).toMatchObject({ ok: false, code: "not-yours" });
-    expect(mayDeleteDashboard(ada, on, { owners: [9] })).toEqual({ ok: true });
+    expect(mayDeleteDashboard(olu, on, { owners: [9], personal: true })).toMatchObject({ ok: false, code: "not-yours" });
+    expect(mayDeleteDashboard({ user: "olu", writes: true }, on, { owners: [5] })).toMatchObject({ ok: false, code: "not-yours" });
+    expect(mayDeleteDashboard(ada, on, { owners: [9], personal: true })).toEqual({ ok: true });
+  });
+
+  it("an admin deletes only personal dashboards: Lenspack's admin role reaches only what Lenspack made", () => {
+    expect(mayDeleteDashboard(ada, on, { owners: [9] })).toMatchObject({ ok: false, code: "not-yours", why: expect.stringMatching(/Only its owners can delete it/) });
+    expect(mayDeleteDashboard(ada, on, { owners: [9], personal: false })).toMatchObject({ ok: false, code: "not-yours" });
+  });
+});
+
+describe("without the host's right to write dashboards", () => {
+  const reader = { user: "rae", userId: 7, roles: [] };
+  const readerAdmin = { user: "kemi", userId: 8, roles: ["admin"], writes: false };
+  it("makes, copies, deletes and applies nothing, admin or not, and says why", () => {
+    for (const who of [reader, readerAdmin]) {
+      expect(mayCreateDashboard(who, on, 0)).toMatchObject({ ok: false, code: "no-write", why: expect.stringMatching(/view dashboards but not make or change them/) });
+      expect(mayCopyDashboard(who, on, 0, { view: true })).toMatchObject({ ok: false, code: "no-write" });
+      expect(mayDeleteDashboard(who, on, { owners: [who.userId], personal: true })).toMatchObject({ ok: false, code: "no-write" });
+      expect(mayApplyLayout(who, on, { owner: who.user }, { edit: true })).toMatchObject({ ok: false, code: "no-write" });
+    }
+    // Saving a layout writes nothing to the host: still theirs to do.
+    expect(maySaveLayout(reader, on, 0, { view: true })).toEqual({ ok: true });
   });
 });
 

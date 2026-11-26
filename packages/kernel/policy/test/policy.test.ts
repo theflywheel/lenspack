@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -283,6 +283,48 @@ describe("admin rights", () => {
     // A read-only admin (edits switched off) still runs the deployment.
     expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true, readOnly: "edits are off" }))).toEqual({ administer: true, users: true });
     expect(adminRights(principalOf({ user: "ana", usage: true }))).toEqual({ administer: false, users: false });
+  });
+
+  it("follow the deployment's admins rule, which alone gives the admin role; absent, a role named admin, as before", () => {
+    const rule = { editors: [], maintainers: [], admins: ["role:Lenspack admin", "ops-lead"] };
+    // The rule's role or user name gives it, whatever else they hold.
+    expect(adminRights(principalOf({ user: "kemi", roles: ["Gamma", "Lenspack admin"] }, rule)).administer).toBe(true);
+    expect(adminRights(principalOf({ user: "ops-lead" }, rule)).administer).toBe(true);
+    // A role the host happens to call "admin" counts only when the rule names it.
+    expect(principalOf({ user: "tunde", roles: ["Admin", "admin"] }, rule)).toMatchObject({ roles: ["Admin"] });
+    expect(adminRights(principalOf({ user: "tunde", roles: ["Admin", "admin"] }, rule)).administer).toBe(false);
+    // Absent, a role named admin, as every sign-in had before the rule.
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"] }, { editors: [], maintainers: [] })).administer).toBe(true);
+    expect(adminRights(principalOf({ user: "ana", roles: ["Admin"] }, { editors: [], maintainers: [] })).administer).toBe(false);
+    // An empty rule: nobody.
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"] }, { editors: [], maintainers: [], admins: [] })).administer).toBe(false);
+    // The admin role adds nothing else: no edit, no data the host kept.
+    const kemi = principalOf({ user: "kemi", roles: ["Gamma", "Lenspack admin"], hiddenEntities: ["stock"], scope: [north] }, rule);
+    expect(kemi).toMatchObject({ edit: false, usage: false, hiddenEntities: ["stock"], scope: [north] });
+    expect(kemi.maintain).toBeUndefined();
+    // Settled once, it stays settled: again under the same rule, and under none (as recordRights reads it).
+    expect(principalOf(kemi, rule)).toEqual(kemi);
+    expect(principalOf(kemi)).toEqual(kemi);
+    expect(recordRights(kemi).settings).toBe(true);
+  });
+});
+
+describe("who may use the assistant", () => {
+  it("is everyone signed in without a users rule; with one, its roles and users, and admins always", () => {
+    const none = { editors: [], maintainers: [] };
+    expect(mayUse(principalOf({ user: "ana" }, none))).toBe(true);
+    expect(principalOf({ user: "ana" }, none)).not.toHaveProperty("uses");
+    const rule = { editors: ["*"], maintainers: [], users: ["role:Lenspack user", "kofi"], admins: ["role:Lenspack admin"] };
+    expect(mayUse(principalOf({ user: "ana", roles: ["Gamma"] }, rule))).toBe(false);
+    expect(mayUse(principalOf({ user: "bo", roles: ["Gamma", "Lenspack user"] }, rule))).toBe(true);
+    expect(mayUse(principalOf({ user: "kofi" }, rule))).toBe(true);
+    expect(mayUse(principalOf({ user: "kemi", roles: ["Lenspack admin"] }, rule))).toBe(true);
+    // An empty rule: nobody but admins.
+    expect(mayUse(principalOf({ user: "bo", roles: ["Lenspack user"] }, { ...rule, users: [] }))).toBe(false);
+    // Settled no stays no, under the same rule and under none.
+    const ana = principalOf({ user: "ana", roles: ["Gamma"] }, rule);
+    expect(principalOf(ana, rule)).toEqual(ana);
+    expect(mayUse(principalOf(ana))).toBe(false);
   });
 });
 

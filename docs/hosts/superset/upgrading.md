@@ -29,6 +29,17 @@ Superset; only Lenspack's own records go back.
 
 ## Changes that need attention
 
+**Admins and users are Lenspack's rules.** New keys in `superset.yaml`: `auth.admins` (who gets the admin pages, by
+Superset role name), `auth.usage` (who also sees user names there) and `auth.users` (who may use the assistant at
+all), or `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES` and `LENSPACK_USER_ROLES`. Left out, nothing changes:
+admins are Superset's `Admin` role and everyone signed in may use the assistant. Before, Superset's admin flag made
+someone a Lenspack admin directly. See [Who is asking](identity.md#who-may-administer).
+
+**Personal dashboards need Superset's right to write dashboards.** Making, copying, deleting and applying a layout
+now need `can_write` on Dashboard (or Admin), which the plugin signs as `w`. Update `lenspack_superset.py` together
+with the server: with an older plugin, only Superset admins can make personal dashboards. See [Personal
+dashboards](../../features/personal-dashboards.md).
+
 **Each person's Superset access is now the default (`hostPolicy: superset`).** Earlier releases defaulted to
 `hostPolicy: off`, which answered everyone with Lenspack's service account. A deployment that left `hostPolicy`
 unset applies each user's Superset access when it upgrades: users without access to a dataset stop seeing its

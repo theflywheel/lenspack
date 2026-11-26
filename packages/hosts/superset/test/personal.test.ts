@@ -30,9 +30,10 @@ const DATASETS: SupersetDataset[] = [
 const { pack, packYaml, binding } = packFromDatasets(DATASETS, { pack: "stock", entities: { "3": "move", "4": "visit" } });
 
 const LENSPACK_ID = 99;
-const OWNER = { user: "olu", userId: 5, roles: [] };
-const VIEWER = { user: "vee", userId: 6, roles: [] };
-const ADMIN = { user: "ada", userId: 1, roles: ["admin"] };
+// Superset lets each of them write dashboards (w); a viewer role that may not is its own case.
+const OWNER = { user: "olu", userId: 5, roles: [], writes: true };
+const VIEWER = { user: "vee", userId: 6, roles: [], writes: true };
+const ADMIN = { user: "ada", userId: 1, roles: ["admin"], writes: true };
 
 const KPI = { kind: "kpi", title: "Stock moved", query: { kind: "value", measure: "quantity" } } as const;
 const VISITS = { kind: "kpi", title: "Visits", query: { kind: "value", measure: "visit_total" } } as const;
@@ -297,7 +298,9 @@ describe("a dashboard of one's own", () => {
 
   it("is not made without the person's Superset id (an older plugin)", async () => {
     const t = setup();
-    expect(await t.personal.create({ user: "olu", roles: [] }, "x")).toMatchObject({ ok: false, code: "no-user-id" });
+    expect(await t.personal.create({ user: "olu", roles: [], writes: true }, "x")).toMatchObject({ ok: false, code: "no-user-id" });
+    // A role Superset doesn't let write dashboards: refused first, with the reason, and nothing made.
+    expect(await t.personal.create({ user: "rae", userId: 7, roles: [] }, "x")).toMatchObject({ ok: false, code: "no-write", error: expect.stringMatching(/view dashboards but not make or change them/) });
   });
 
   it("is deleted by its owner with the charts made for it; another person's is refused; an admin may", async () => {

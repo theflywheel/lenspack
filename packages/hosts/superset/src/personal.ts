@@ -205,9 +205,10 @@ export function personalDashboards(o: PersonalOptions) {
       if ((e as { status?: number }).status === 404) return { ok: false, error: `There is no dashboard ${dashboard}.`, code: "missing" };
       throw e;
     }
-    const v = mayDeleteDashboard(who, o.limits(), { owners: (dash.owners ?? []).map((x) => x.id) });
-    if (!v.ok) return denied(who, "dashboard-delete", v, board);
     const link = await o.links.get(String(dashboard));
+    // An admin may delete a personal dashboard (one Lenspack made); any other is its owners' alone.
+    const v = mayDeleteDashboard(who, o.limits(), { owners: (dash.owners ?? []).map((x) => x.id), personal: !!link });
+    if (!v.ok) return denied(who, "dashboard-delete", v, board);
     const candidates = [...new Set([...(link?.charts ?? []), ...store.createdOf(board)])];
     await client.delete(`/api/v1/dashboard/${dashboard}`);
     let removed = 0;
@@ -349,6 +350,8 @@ export function personalDashboards(o: PersonalOptions) {
       on: limits.on,
       limits: { maxDashboardsPerUser: limits.maxDashboardsPerUser, maxSavedLayoutsPerUser: limits.maxSavedLayoutsPerUser },
       canCreate: mayCreateDashboard(who, limits, mine.length).ok,
+      // Superset lets them write dashboards at all: without it the panel offers no create, copy or apply.
+      canWrite: !!who.writes,
       dashboards: mine.map((d) => dashboardView(d, base)),
       layouts: layoutsShownTo(who, layouts).map(layoutView),
       ownLayouts: own.length,
@@ -356,7 +359,7 @@ export function personalDashboards(o: PersonalOptions) {
         ? {
             dashboard: here.dashboard,
             view: here.view,
-            edit: here.edit,
+            edit: here.edit && !!who.writes,
             mine: !!onHere,
             canCopy: mayCopyDashboard(who, limits, mine.length, here).ok,
             canSave: maySaveLayout(who, limits, own.length, here).ok || own.length >= limits.maxSavedLayoutsPerUser,
