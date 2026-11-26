@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Identity, type PackRule, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
+import { type Identity, type PackRule, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -156,5 +156,41 @@ describe("holds", () => {
     expect(holds({ grants: ["/x"] }, "/x")).toBe(true);
     expect(holds({ grants: ["/x"] }, "/y")).toBe(false);
     expect(holds({ grants: [] })).toBe(false);
+  });
+});
+
+describe("the deployment's own records", () => {
+  it("are the host's admins' to read, with user names only for those with the usage right", () => {
+    expect(recordRights({ user: "a", roles: ["admin"], usage: true })).toEqual({ settings: true, telemetry: true, usernames: true, audio: true });
+    expect(recordRights({ user: "a", roles: ["admin"], usage: false })).toEqual({ settings: true, telemetry: true, usernames: false, audio: true });
+    expect(recordRights({ user: "b", roles: ["Gamma"], maintain: true })).toEqual({ settings: false, telemetry: false, usernames: false, audio: false });
+    expect(recordRights({ user: "c" })).toEqual({ settings: false, telemetry: false, usernames: false, audio: false });
+  });
+  it("are reported on by the user whose turn it was, in their own tenant", () => {
+    expect(reportsOn({ user: "ana" }, { user: "ana" })).toBe(true);
+    expect(reportsOn({ user: "ben" }, { user: "ana" })).toBe(false);
+    expect(reportsOn({ user: "ana", tenant: "t2" }, { user: "ana", tenant: "t1" })).toBe(false);
+    expect(reportsOn({ user: "ana", tenant: "t1" }, { user: "ana", tenant: "t1" })).toBe(true);
+  });
+});
+
+describe("the deployment's context", () => {
+  const map = deploymentContextSchema.parse({
+    "superset-12": { campaign: "Round 2" },
+    visits_a: { campaign: "Round 1", campaignType: "door-to-door", country: "A" },
+    "role:Supervisor-B": { country: "B" },
+    "*": { country: "Z" },
+  });
+  it("takes each field from the board, then the datasets, then the roles, then *", () => {
+    expect(contextFor(map, { board: "superset-12", datasets: ["visits_a"], roles: [] })).toEqual({ campaign: "Round 2", campaignType: "door-to-door", country: "A" });
+    expect(contextFor(map, { board: "superset-9", datasets: [], roles: ["Supervisor-B"] })).toEqual({ campaign: null, campaignType: null, country: "B" });
+    expect(contextFor(map, { board: null, datasets: [], roles: [] })).toEqual({ campaign: null, campaignType: null, country: "Z" });
+    expect(contextFor({}, { board: "x" })).toEqual({ campaign: null, campaignType: null, country: null });
+  });
+  it("refuses a mapping it can't read", () => {
+    expect(deploymentContextSchema.safeParse({ x: { region: "A" } }).success).toBe(false);
+    expect(deploymentContextSchema.safeParse({ x: "A" }).success).toBe(false);
+    expect(deploymentContextSchema.safeParse({ x: { country: 3 } }).success).toBe(false);
+    expect(deploymentContextSchema.safeParse({ x: { country: "" } }).success).toBe(false);
   });
 });

@@ -462,7 +462,7 @@ def lenspack_app_mutator(app):
         route_base = "/ai-assistant"
         default_view = "index"
         # The forms below use the page's own permission (can_index), so no new permissions to sync.
-        method_permission_name = {"index": "index", "chat": "index", "speech": "index", "speech_hold": "index", "language": "index", "features": "index"}
+        method_permission_name = {"index": "index", "chat": "index", "speech": "index", "speech_hold": "index", "speech_audio": "index", "audio_delete": "index", "audio_export": "index", "language": "index", "features": "index", "telemetry": "index"}
 
         @expose("/")
         @has_access
@@ -528,6 +528,65 @@ def lenspack_app_mutator(app):
                 flash("Space-bar hold: enter a whole number of milliseconds.", FLASH_BAD)
                 return redirect("/ai-assistant/")
             return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": hold}))
+
+        # Kept recordings of spoken questions (off unless turned on here, in the config or by LENSPACK_SPEECH_KEEP_AUDIO).
+        @expose("/speech-audio", methods=["POST"])
+        @has_access
+        def speech_audio(self):
+            if not security_manager.is_admin():
+                abort(403)
+            if request.form.get("reset"):
+                body = {"keepAudio": None, "audioRetentionDays": None, "maxStoredMb": None, "consentNotice": None}
+            else:
+                body = {"keepAudio": request.form.get("keepAudio") == "on", "consentNotice": request.form.get("consentNotice", "")}
+                try:
+                    body["audioRetentionDays"] = int(request.form.get("audioRetentionDays", ""))
+                    body["maxStoredMb"] = int(request.form.get("maxStoredMb", ""))
+                except ValueError:
+                    flash("Kept recordings: enter whole numbers of days and MB.", FLASH_BAD)
+                    return redirect("/ai-assistant/")
+            return saved("Kept recordings", call("PUT", "/_superset/settings/speech", body))
+
+        @expose("/audio-delete", methods=["POST"])
+        @has_access
+        def audio_delete(self):
+            if not security_manager.is_admin():
+                abort(403)
+            from urllib.parse import quote
+
+            user = request.form.get("user", "").strip()
+            done, error = call("DELETE", f"/_superset/audio?user={quote(user)}" if user else "/_superset/audio?all=1")
+            if error is None:
+                flash(f"Deleted {done.get('deleted', 0)} kept recording(s){' of ' + user if user else ''}.", FLASH_OK)
+            else:
+                flash(f"Recordings not deleted: {error}", FLASH_BAD)
+            return redirect("/ai-assistant/")
+
+        @expose("/audio-export", methods=["POST"])
+        @has_access
+        def audio_export(self):
+            if not security_manager.is_admin():
+                abort(403)
+            done, error = call("POST", "/_superset/audio/export", {})
+            if error is None:
+                flash(f"Manifest written: {done.get('clips', 0)} clip(s) in {done.get('file')}, {done.get('flagged', 0)} set aside in {done.get('flaggedFile')}.", FLASH_OK)
+            else:
+                flash(f"Manifest not written: {error}", FLASH_BAD)
+            return redirect("/ai-assistant/")
+
+        @expose("/telemetry", methods=["POST"])
+        @has_access
+        def telemetry(self):
+            if not security_manager.is_admin():
+                abort(403)
+            if request.form.get("reset"):
+                return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": None, "questionText": None}))
+            try:
+                days = int(request.form.get("retentionDays", ""))
+            except ValueError:
+                flash("Usage telemetry: enter a whole number of days.", FLASH_BAD)
+                return redirect("/ai-assistant/")
+            return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": days, "questionText": request.form.get("questionText") == "on"}))
 
         @expose("/language", methods=["POST"])
         @has_access
@@ -707,6 +766,30 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
           {% if sp.holdMs is not none and sp.holdMs != sp.defaultHoldMs %}<button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to default</button>{% endif %}
         </form>
       {% endif %}
+      {% if sp.keepAudio is defined %}
+        <h3 style="font-size:13.5px;margin:14px 0 6px">Kept recordings</h3>
+        <p class="mute" style="margin:0 0 6px">Off by default. On, each spoken question's recording is kept in Lenspack's state folder for checking speech to text, deleted after the days below or, oldest first, when over the size cap. Only Superset admins can play one, and each play is in the audit log. The speech provider receives the recording either way.
+          {% if sp.stored %}Kept now: {{ sp.stored.files }} recording(s), {{ (sp.stored.bytes / 1048576)|round(1) }} MB.{% endif %}</p>
+        <form class="lp-form" method="post" action="/ai-assistant/speech-audio">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label><input type="checkbox" name="keepAudio" {% if sp.keepAudio %}checked{% endif %} {% if not sp.writable %}disabled{% endif %}> Keep recordings</label>
+          <label class="mute">for <input type="number" name="audioRetentionDays" min="1" max="3650" value="{{ sp.audioRetentionDays }}" style="width:70px" {% if not sp.writable %}disabled{% endif %}> days</label>
+          <label class="mute">at most <input type="number" name="maxStoredMb" min="1" max="100000" value="{{ sp.maxStoredMb }}" style="width:90px" {% if not sp.writable %}disabled{% endif %}> MB</label>
+          <label class="mute" style="flex-basis:100%">Notice each person acknowledges once before recording (optional)<br><textarea name="consentNotice" rows="2" maxlength="2000" style="width:100%" {% if not sp.writable %}disabled{% endif %}>{{ sp.consentNotice or '' }}</textarea></label>
+          <button type="submit" {% if not sp.writable %}disabled{% endif %}>Save</button>
+          <button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to defaults</button>
+        </form>
+        <form class="lp-form" method="post" action="/ai-assistant/audio-delete" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="text" name="user" placeholder="Superset username (empty: everyone's)" aria-label="Superset username" style="width:240px" {% if not sp.writable %}disabled{% endif %}>
+          <button class="ghost" type="submit" {% if not sp.writable %}disabled{% endif %}>Delete stored audio</button>
+        </form>
+        <form class="lp-form" method="post" action="/ai-assistant/audio-export" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="ghost" type="submit" {% if not sp.writable or not sp.stored or not sp.stored.files %}disabled{% endif %}>Export for evaluation</button>
+          <span class="mute">writes manifest.jsonl beside the recordings, in the speech benchmark's format (evals/speech)</span>
+        </form>
+      {% endif %}
       {% if stt_bench %}<details style="margin-top:8px"><summary class="mute">Measured word error rate (with a language hint) and median latency</summary>
         <table class="bench"><tr><th>Model</th><th>Field fr A</th><th>Field fr B</th><th>FLEURS fr</th><th>FLEURS hi</th><th>Latency</th></tr>
           {% for id, r in stt_bench|dictsort %}<tr><td><code>{{ id }}</code>{% if id == sp.model %} <b>(current)</b>{% endif %}</td><td>{{ r[0] }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td><td>{{ r[3] }}</td><td>{{ r[4] }}</td></tr>{% endfor %}
@@ -728,6 +811,21 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
       <label>Board language <select name="board" {% if not lg.writable %}disabled{% endif %}>{% for o in (opts.board or ['en', 'fr', 'hi', 'pt']) %}<option value="{{ o }}" {% if o == lg.board %}selected{% endif %}>{{ names.get(o, o) }}</option>{% endfor %}</select></label>
       <button type="submit" {% if not lg.writable %}disabled{% endif %}>Save</button>
       {% if lg.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not lg.writable %}disabled{% endif %}>Back to defaults</button>{% endif %}
+    </form>
+  </div>
+  {% endif %}
+
+  {% if settings.telemetry %}{% set tl = settings.telemetry %}
+  <div class="lp-card">
+    <h2>Usage telemetry</h2>
+    <p class="mute" style="margin:0 0 8px">One record per question (who asked, the kind of question, how it went, time and cost) and the thumbs under each answer, in <code>{{ tl.file }}</code>.
+      {% if not tl.enabled %}<span class="bad">Off (Off switches).</span>{% endif %} Read it as an admin at <code>/lenspack/_superset/telemetry</code>.</p>
+    <form class="lp-form" method="post" action="/ai-assistant/telemetry">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="mute">Keep for <input type="number" name="retentionDays" min="1" max="3650" value="{{ tl.retentionDays }}" style="width:80px" {% if not tl.writable %}disabled{% endif %}> days</label>
+      <label><input type="checkbox" name="questionText" {% if tl.questionText %}checked{% endif %} {% if not tl.writable %}disabled{% endif %}> Keep the words of each question (off: a hash only)</label>
+      <button type="submit" {% if not tl.writable %}disabled{% endif %}>Save</button>
+      {% if tl.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not tl.writable %}disabled{% endif %}>Back to defaults</button>{% endif %}
     </form>
   </div>
   {% endif %}

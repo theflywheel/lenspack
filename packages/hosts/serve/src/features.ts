@@ -6,7 +6,7 @@
 
 import type { SettingsStore } from "./settings";
 
-export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost"] as const;
+export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "telemetry"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type FeatureValues = Partial<Record<Feature, boolean>>;
 
@@ -24,6 +24,7 @@ export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
   maps: { label: "Maps", help: "Point maps made and read through the chat. Off refuses map queries; existing map charts stay in Superset." },
   reviewer: { label: "Reviewer", help: "A second model call that checks each dashboard change. Off saves a call per change." },
   turnCost: { label: "Cost per answer", help: "A line under each reply with what the turn cost (an estimate from list prices), and a running total in the chat menu. Off hides them; the audit log still records each turn's cost." },
+  telemetry: { label: "Usage telemetry", help: "One record per question in telemetry.jsonl (who asked, what kind of question, how it went, how long it took, what it cost) and the thumbs under each answer. Off stops recording and hides the thumbs; the audit log is unaffected." },
 };
 
 const isFeature = (k: string): k is Feature => (FEATURES as readonly string[]).includes(k);

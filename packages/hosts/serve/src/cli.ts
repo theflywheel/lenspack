@@ -7,6 +7,7 @@ import { resolveBoard } from "@lenspack/engine";
 
 import { buildBoard, seedBoards } from "./app";
 import { fileAudit } from "./audit";
+import { fileTelemetry } from "./telemetry";
 import { authFrom, effectiveAuth } from "./auth";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
@@ -59,7 +60,15 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined, historyTurns: config.historyTurns },
+        app: {
+          ui,
+          page,
+          auth: adapter,
+          rights,
+          audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined,
+          historyTurns: config.historyTurns,
+          ...(config.telemetry ? { telemetry: fileTelemetry(resolve(dir, config.telemetry.dir), { retentionDays: () => config.telemetry!.retentionDays, questionText: () => config.telemetry!.questionText, context: () => config.context ?? {} }).telemetry } : {}),
+        },
         log: (m) => console.error(`lenspack: ${m}`),
         onListening: () => console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}`),
       });

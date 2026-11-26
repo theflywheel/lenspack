@@ -111,6 +111,10 @@ lenspack came out of a consultation tool whose dashboard logic was welded to one
 
 The security model in full: [security.md](security.md).
 
+## Knowing how it is used
+
+Every chat turn leaves one record: who asked, on which board, what kind of question it was, how it ended, how long it took and what it cost. People can rate answers with a thumbs up or down. Admins read the records, and a checklist of what is being recorded, from the settings routes. It is on by default and can be switched off. What is kept, for how long, and who may read it: [telemetry.md](telemetry.md).
+
 ## The demo app
 
 `pnpm demo` serves the example packs in the board app (`examples/demo`). You can build boards with the chat, drag widgets and restore versions. Its look carries one idea: colour is provenance. A key that the pack declares is always mono and blue, whether in prose, in the metrics reference or in a board title. Something the compiler refuses is always ochre.

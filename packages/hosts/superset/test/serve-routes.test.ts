@@ -53,6 +53,16 @@ function fakeSuperset(): Server {
     if (path === "/api/v1/dashboard/7" || path === "/api/v1/dashboard/ops") return send({ result: { id: 7, dashboard_title: "Ops", position_json: null, json_metadata: null, changed_on: "2026-01-01T00:00:00" } });
     if (path === "/api/v1/dashboard/7/charts") return send({ result: [] });
     if (path === "/api/v1/dashboard/") return send({ result: [{ id: 7, dashboard_title: "Ops", changed_on_delta_humanized: "a day ago" }] });
+    // Superset's action log: an export and a permalink on dashboard 7, a chart view there, and an export elsewhere.
+    if (path === "/api/v1/log/")
+      return send({
+        result: [
+          { action: "log", dttm: "2026-11-20T10:00:00", dashboard_id: 7, slice_id: 3, json: JSON.stringify({ event_name: "export_csv_dashboard_chart" }), user: { username: "ana" } },
+          { action: "log", dttm: "2026-11-20T09:00:00", dashboard_id: null, json: JSON.stringify({ event_name: "copy_permalink", dashboard_id: 7 }), user: { username: "ben" } },
+          { action: "log", dttm: "2026-11-20T08:00:00", dashboard_id: 7, json: JSON.stringify({ event_name: "mount_dashboard" }), user: { username: "ana" } },
+          { action: "log", dttm: "2026-11-20T07:00:00", dashboard_id: 99, json: JSON.stringify({ event_name: "dashboard_download_as_pdf" }), user: { username: "cleo" } },
+        ],
+      });
     if (path === "/models") return send({ data: [{ id: "vendor/listen-1", name: "Listen 1", pricing: { prompt: "0.0001", completion: "0" } }] });
     res.writeHead(404, { "content-type": "application/json" });
     res.end(JSON.stringify({ message: "not here" }));
@@ -206,7 +216,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "speech", "superset", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "speech", "superset", "telemetry", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -314,6 +324,30 @@ describe("Superset mode's server", () => {
     const embed = await call("/superset/7", { as: VIEWER, headers: { "x-forwarded-host": "bi.example.org", "x-forwarded-proto": "https" } });
     expect(vars(embed.body)).toMatchObject({ dashboard: 7, supersetUrl: "https://bi.example.org", examples: { en: ["Visits by region"] } });
     expect(embed.body).not.toContain("__BASE__");
+  });
+
+  it("records the Superset role names telemetry reads from the signed identity, and none when none are signed", async () => {
+    const event = (as: Partial<Identity>) => call("/api/_telemetry", { method: "POST", body: JSON.stringify({ type: "chart-exported", choice: "png" }), as });
+    expect((await event({ u: "field-1", a: false, r: ["Gamma", "Supervisor-A"] })).status).toBe(202);
+    expect((await event({ u: "older-plugin", a: false })).status).toBe(202);
+    expect((await call("/_superset/telemetry?type=event", { as: VIEWER })).status).toBe(403);
+    const page = await call("/_superset/telemetry?type=event", { as: ADMIN });
+    expect(page.status).toBe(200);
+    const roles = Object.fromEntries(page.body.records.map((r: { user: string; roles: string[] }) => [r.user, r.roles]));
+    expect(roles).toMatchObject({ "field-1": ["Gamma", "Supervisor-A"], "older-plugin": [] });
+    expect(existsSync(join(dir, "state", "telemetry.jsonl"))).toBe(true);
+  });
+
+  it("reads exports and shares done in Superset on the dashboards Lenspack works on, for admins", async () => {
+    expect((await call("/_superset/telemetry/superset-actions", { as: VIEWER })).status).toBe(403);
+    const r = await call("/_superset/telemetry/superset-actions?from=2026-11-19&to=2026-11-21", { as: ADMIN });
+    expect(r.status).toBe(200);
+    // Dashboard 7 is bound (above); 99 is not Lenspack's, and a plain view is neither an export nor a share.
+    expect(r.body).toMatchObject({ available: true, actions: [
+      { dashboard: 7, chart: 3, event: "export_csv_dashboard_chart", user: "ana" },
+      { dashboard: 7, chart: null, event: "copy_permalink", user: "ben" },
+    ] });
+    expect(r.body.actions).toHaveLength(2);
   });
 
   it("answers 404 for a signed request to nowhere", async () => {

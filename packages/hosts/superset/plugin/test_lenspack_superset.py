@@ -174,6 +174,22 @@ class ProxyEndpoint(unittest.TestCase):
             self.assertNotEqual(claims.get("d"), self.mine, path)
             self.assertFalse(claims.get("e", False), path)
 
+    def test_signs_the_users_role_names_on_every_request_telemetry_reads(self):
+        # Telemetry records the Superset role names: on a dashboard's board, on the telemetry and speech routes alike.
+        for method, path in [("POST", f"/lenspack/api/hcm/superset-{self.mine}/chat"), ("POST", "/lenspack/api/_telemetry"), ("POST", "/lenspack/api/_stt"), ("GET", "/lenspack/_superset/info")]:
+            r, (url, claims) = self.send(method, path, json={})
+            r.get_data()
+            self.assertEqual(r.status_code, 200, path)
+            self.assertEqual(claims["r"], ["Gamma"], path)
+
+    def test_an_identity_without_roles_has_no_r_claim(self):
+        # Older callers sign no roles; Lenspack then records none (backward compatible both ways).
+        import base64
+        import json
+
+        body = lp.lenspack_sign("alice", False).split(".")[0]
+        self.assertNotIn("r", json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))))
+
     def test_digits_are_an_id_never_a_slug(self):
         # The lookalike's slug is OTHER's id, and the owner owns the lookalike: the rights are still OTHER's.
         _, (_, claims) = self.send("GET", f"/lenspack/api/hcm/superset-{self.other}")

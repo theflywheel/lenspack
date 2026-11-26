@@ -5,7 +5,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
+import { type ProposalStore, boardTools, toVercelAI, type Asker, type Telemetry } from "@lenspack/agent";
 import { type Principal, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -17,7 +17,8 @@ import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetR
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
 import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
-import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
+import { LANGUAGE, type SpeechOptions, SpeechError, audioFormat, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
+import type { AudioStore } from "./audio";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
 export const CLOSING_PROMPT =
@@ -100,6 +101,14 @@ export type AppOptions = {
    * `language` ("auto", "fr", …) is the user's pick.
    */
   language?: () => Omit<LanguagePolicy, "reply">;
+  /** Usage telemetry (@lenspack/agent telemetry.ts): a record per turn and transcription, and POST /api/_telemetry for client events. */
+  telemetry?: Telemetry;
+  /** The caller's role names as telemetry records them (Superset's signed role names); absent, the sign-in's roles. */
+  telemetryRoles?: (req: IncomingMessage) => string[] | undefined;
+  /** The dataset name telemetry records for a pack entity (Superset: the dataset's table name); absent, the entity key. */
+  telemetryDataset?: (entity: string) => string | undefined;
+  /** Kept recordings of spoken questions (audio.ts): off unless speech.keepAudio is on; also gates the mic on a consent notice. */
+  audio?: AudioStore;
 };
 
 const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
@@ -303,6 +312,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
+  // Transcripts no question claimed within the hour are recorded as abandoned, even on a quiet server.
+  if (opts.telemetry) setInterval(() => void opts.telemetry?.sweep(), 60_000).unref();
+  // Kept recordings past their retention or over the size cap go once a day (and at start).
+  if (opts.audio) {
+    void opts.audio.sweep();
+    setInterval(() => void opts.audio?.sweep(), 86_400_000).unref();
+  }
+
   // What the client needs to show the mic; null when speech is off.
   const speechInfo = () => (opts.speech?.apiKey ? { maxSeconds: opts.speech.maxSeconds ?? 60 } : null);
 
@@ -327,6 +344,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       const who = access ? await access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
+      // Who telemetry says asked: the role names the host signed (Superset's own), else the sign-in's.
+      const asker: Asker = { user: who.user, tenant: who.tenant, roles: opts.telemetryRoles?.(req) ?? who.roles };
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
       const decisionFor = (h: Host, as: Principal = who) => decide(as, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx });
       // The pack's own boards first, in board-file order; then people's, latest first.
@@ -351,9 +370,18 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
       if (packName === "_stt") {
+        // The consent notice, while recordings are kept: GET says whether this user must still acknowledge it; POST acknowledges it.
+        if (boardId === "consent") {
+          if (req.method === "POST") await opts.audio?.acknowledge(who.user);
+          else if (req.method !== "GET") return json(res, 405, { error: "GET or POST" });
+          return json(res, 200, { notice: (await opts.audio?.consentNeeded(who.user)) ?? null });
+        }
         if (req.method !== "POST") return json(res, 405, { error: "POST a clip" });
         const speech = opts.speech;
         if (!speech?.apiKey) return json(res, 503, { error: "speech to text is not configured on this server" });
+        // Recordings are kept and this user has not acknowledged the notice yet: nothing is recorded until they do.
+        const notice = await opts.audio?.consentNeeded(who.user);
+        if (notice) return json(res, 403, { error: "consent_required", notice });
         const over = overBudget(ledger, opts.budget, who.user);
         if (over) return json(res, 429, { error: over });
         const language = url.searchParams.get("language") || undefined;
@@ -391,14 +419,47 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             }
             if (!fallback || !fitsLanguages(t.text, expected)) return json(res, 422, { error: "unsure_language", script: scriptOf(t.text), expected });
           }
-          // The clip id: the chat request that sends this text names it, and the turn's cost includes the clip.
-          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}), clip: keepClip(who.user, spent) });
+          // The clip id: the chat request that sends this text names it, and the turn's cost includes the clip. It is
+          // also the transcript's id in telemetry, which keeps the text to compare with what is sent.
+          const clip = keepClip(who.user, spent);
+          // The recording itself only when speech.keepAudio is on, and only once it was transcribed.
+          const format = audioFormat(req.headers["content-type"]);
+          const kept = format ? ((await opts.audio?.keep(clip, who.user, audio, format)) ?? null) : null;
+          await opts.telemetry?.transcribed({
+            id: clip,
+            who: asker,
+            pack: pack ?? null,
+            model: t.model,
+            languageRequested: hint ?? null,
+            languageDetected: t.language,
+            seconds: t.seconds,
+            usd: spent.some((r) => r.usd !== null) ? Math.round(spent.reduce((s, r) => s + (r.usd ?? 0), 0) * 1e6) / 1e6 : null,
+            ms: spent.reduce((s, r) => s + r.ms, 0),
+            retried,
+            text: t.text,
+            audio: kept,
+          });
+          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}), clip, transcriptId: clip });
         } catch (e) {
           if (!(e instanceof SpeechError)) throw e;
           if (e.status === 502) recordCall(speechRecord({ model: speech.model(), usd: null, ms: e.ms, ok: false, error: e.message.slice(0, 300), language: hint ?? null }, { user: who.user, pack }), sinks);
           opts.log?.(`stt: ${e.message}`);
           return json(res, e.status, { error: e.message });
         }
+      }
+      // Client events for telemetry (feedback, a corrected transcript, an answer left early, …), each about the caller's own turn.
+      if (packName === "_telemetry") {
+        if (req.method !== "POST") return json(res, 405, { error: "POST an event" });
+        if (!opts.telemetry) return json(res, 404, { error: "telemetry is off on this server" });
+        let body: unknown;
+        try {
+          body = await read(req, 8_000);
+        } catch (e) {
+          return json(res, e instanceof BodyTooLarge ? 413 : 400, { error: e instanceof BodyTooLarge ? "event too large" : "body must be JSON" });
+        }
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
+        const r = await opts.telemetry.event(asker, body as Record<string, unknown>);
+        return r.ok ? json(res, 202, { ok: true }) : json(res, r.status, { error: r.error });
       }
       const h = byName.get(packName);
       const d = h ? decisionFor(h) : null;
@@ -532,6 +593,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           if (!board.owner) return json(res, 403, { error: "The pack's own boards are everyone's already" });
           const shared = await h.store.share(boardId, body.shared === true);
           audit({ user: who.user, pack: packName, board: boardId, action: body.shared === true ? "share" : "unshare", outcome: "ok" });
+          if (body.shared === true) await opts.telemetry?.event({ ...asker, board: boardId, pack: packName }, { type: "board-shared" });
           return json(res, 200, shown(shared));
         }
         case "POST revert": {
@@ -542,7 +604,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         case "POST chat":
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly);
+          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly, asker);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -552,7 +614,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
 
   // Everything the chat model and the reviewer read of the board is as the caller is shown it (shownConfig, from h.ctx):
   // the prompt, the summaries before and after, and the tools' results.
-  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string) {
+  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string, asker: Asker = { user, roles: [] }) {
+    const startedAt = Date.now();
     const fallback = opts.chatDefault?.();
     const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
     if (!builderModel) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
@@ -583,12 +646,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const store = staged ?? h.store;
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; transcriptIds?: unknown; client?: unknown };
     // What this turn costs: every model call made in its scope, the queries its tools run, and the
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
-    const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
+    const turnId = randomUUID();
+    const scope = { user, pack: h.name, board: boardId, turn: turnId, sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
     const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged,
@@ -605,6 +669,28 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
     const before = summarise(config);
+    // Telemetry (@lenspack/agent): the turn's hooks, called below where each thing happens. Null while it is off.
+    const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+    const entityOf = new Map([...h.pack.dimensions, ...h.pack.measures].flatMap((x) => (x.entity ? [[x.key, x.entity] as const] : [])));
+    const tel = await opts.telemetry?.begin({
+      turnId,
+      who: asker,
+      board: boardId,
+      pack: h.name,
+      question: instruction,
+      transcriptIds: [...new Set([...strings(body.speech), ...strings(body.transcriptIds)])],
+      newConversation: body.messages.filter((m) => m.role === "user").length <= 1,
+      languagePicked: picked ?? null,
+      client: body.client,
+      builder: builderModel.name,
+      effort: effort ?? null,
+      readOnly: !!readOnly,
+      datasetOf: (k) => {
+        const e = entityOf.get(k);
+        return e && (opts.telemetryDataset?.(e) ?? e);
+      },
+      startedAt,
+    });
 
     // One more call to a builder with tools off, for the words a turn ends with when its tool
     // loop could not supply them. Empty when the call fails or says nothing.
@@ -655,6 +741,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // for tools that want them; the person reads the outcome in the reply.
     const stream = createUIMessageStream({
       execute: ({ writer }) => withMeter(scope, async () => {
+        if (tel) writer.write(tel.part());
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
         const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[] } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
@@ -698,6 +785,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             turn.refusals.push(...refused);
             const history = [...messages, ...steps.flatMap((s) => s.response.messages)];
             const finish = await result.finishReason;
+            tel?.round({ steps, finish, answered: !!answer, maxSteps: 12, fix: !!fixing });
             if (!answer) {
               // A tool loop stopped before the model said a word (the step cap, or the guard on
               // repeated refusals). The board may have changed on the way, so the reply describes
@@ -717,6 +805,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             if (!fixing && !wantsReview(gained, steps as never)) break;
             const verdict = await review(writer, reviewer, turn.refusals.slice(-8));
             const material = materialFindings(verdict);
+            tel?.reviewed({ material: material.length, fix: !!fixing });
             // Round 1's held words go out when its edit stands; a fix round's words will replace them.
             if (!fixing) material.length ? held?.drop() : held?.release();
             writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...verdict, raw: undefined } });
@@ -745,6 +834,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             if (minor) writeText(writer, `note-${randomUUID()}`, minor);
             break;
           }
+        } catch (e) {
+          tel?.failed(e);
+          throw e;
         } finally {
           // A turn that ended before a verdict (no review, or a failure part-way) shows what round 1 said.
           held?.release();
@@ -776,6 +868,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);
           const summary = turnSummary(cost);
+          tel?.ended({ cost, rolledBack: misleading.length > 0, saveFailed: turn.outcome === "not saved", refusals: turn.refusals });
           ledger.turn({ user, pack: h.name }, cost);
           audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, ...summary, cost }) });
           writer.write({ type: "data-usage", data: { ...cost, summary } });
@@ -784,10 +877,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }),
       onError: (e) => (e instanceof Error ? e.message : String(e)),
     });
-    const response = createUIMessageStreamResponse({ stream });
+    // The reader going away before the answer finished is an answer left early.
+    res.on("close", () => res.writableEnded || tel?.left());
+    const response = createUIMessageStreamResponse({ stream: tel ? tel.watch(stream) : stream });
     // Unbuffered all the way: a proxy that holds the stream while the
     // reviewer thinks would cut it as idle.
-    const headers: Record<string, string> = { "x-accel-buffering": "no" };
+    const headers: Record<string, string> = { "x-accel-buffering": "no", ...(tel ? { "x-lenspack-turn": turnId } : {}) };
     response.headers.forEach((v, k) => (headers[k] = v));
     res.writeHead(response.status, headers);
     res.flushHeaders();
@@ -797,6 +892,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     } catch {
       // The reader went away mid-turn. The turn runs on, and its edits are saved, or not, as if they were still there.
     }
-    return res.end();
+    res.end();
+    // Written once the turn has ended, which it does even after a reader leaves.
+    await tel?.record();
   }
 }

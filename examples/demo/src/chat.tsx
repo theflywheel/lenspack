@@ -11,6 +11,7 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { Feedback, clientInfo } from "./feedback";
 import { Markdown } from "./markdown";
 
 // The chat panel beside the board.
@@ -202,7 +203,8 @@ export function ChatPanel({
     startVersion.current = b.board?.version ?? null;
     // The model sees the board as it is now; a notice pending for edits before this is moot.
     if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
-    void sendMessage({ text }, lastTurnFrom.current !== null ? { body: { since: lastTurnFrom.current } } : undefined);
+    // client: the device, network and viewport classes usage telemetry records (docs/telemetry.md).
+    void sendMessage({ text }, { body: { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), client: clientInfo() } });
     setInput("");
   };
   const noticesAt = (at: number) =>
@@ -306,6 +308,11 @@ export function ChatPanel({
                   <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
                 ) : null,
               )}
+              {/* Thumbs once the answer is complete; the turn's id comes in its data-turn part (telemetry on). */}
+              {m.role === "assistant" && !(busy && mi === messages.length - 1) && (() => {
+                const turn = (m.parts as Part[]).find((p) => p.type === "data-turn")?.data as { turnId?: string } | undefined;
+                return turn?.turnId ? <Feedback turnId={turn.turnId} /> : null;
+              })()}
               {m.role === "assistant" && receipts[m.id] && (
                 <div className="rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground" data-testid="receipt">
                   <span className="font-medium text-foreground">Receipt</span>

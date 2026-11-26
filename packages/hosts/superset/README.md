@@ -353,6 +353,7 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `heatmap` | new heatmaps are refused (existing ones stay) | the server |
 | `maps` | map queries are refused (existing deck_scatter charts stay in Superset) | the server |
 | `reviewer` | no second model call checking each change: edits are saved as they are made, and a wrong one is not caught before the reply | the server |
+| `telemetry` | no usage records, no thumbs under answers; `/api/_telemetry` answers 404 ([docs/telemetry.md](../../../docs/telemetry.md)) | the server |
 
 `/_superset/info` returns `features` (the effective booleans) for the page. `GET /_superset/settings` returns
 `features: {values, defaults, source, options, writable}`: `defaults` is what the deployment says without the
@@ -361,3 +362,20 @@ and help text. A page holding an old copy picks up a change on its next dashboar
 
 Gaps: a previous-period KPI is drawn by Superset
 without its comparison; tabs and columns in a dashboard are kept, and new widgets are added below them.
+
+## Usage telemetry
+
+Each chat turn, transcription and client event (a thumbs up or down, an answer left early) leaves a record in
+`telemetry.jsonl` in the state directory. The record holds the user and the role names the plugin signs. The
+deployment's `context:` section maps boards, datasets and roles to a campaign, campaign type and country:
+
+```yaml
+context:
+  superset-12: { campaign: Round 2 }
+  "role:Supervisor-North": { country: Country A }
+```
+
+Admins read the records at `/_superset/telemetry` and a checklist of what is being recorded at
+`/_superset/telemetry/checklist`. Retention, question text and kept recordings are on the settings page. What is
+recorded, and the privacy choices, are in [docs/telemetry.md](../../../docs/telemetry.md).
+
