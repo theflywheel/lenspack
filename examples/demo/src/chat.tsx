@@ -11,6 +11,7 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { type ExplainData, ExplainBlock } from "./explain";
 import { Markdown } from "./markdown";
 
 // The chat panel beside the board.
@@ -300,6 +301,8 @@ export function ChatPanel({
                 ) : p.type === "data-review" ? (
                   // Only the last check: an earlier one's findings were fixed, or the board was left as it was.
                   p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
+                ) : p.type === "data-explain" ? (
+                  <ExplainBlock key={i} x={p.data as ExplainData} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (

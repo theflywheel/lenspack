@@ -14,6 +14,7 @@ import { type Access, type AuthAdapter, NO_RIGHTS, type PackRule, type Rights, w
 import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson, serveStatic } from "./http";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
+import { type ExplainSettings, type Explanation, turnExplainer } from "./explain";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
 import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
@@ -100,6 +101,11 @@ export type AppOptions = {
    * `language` ("auto", "fr", …) is the user's pick.
    */
   language?: () => Omit<LanguagePolicy, "reply">;
+  /**
+   * "How this was worked out" under each answer (explain.ts), read per turn: on unless `on` is
+   * false; the statements shown unless `sql` is false (the words and rows stay).
+   */
+  explain?: () => ExplainSettings | undefined;
 };
 
 const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
@@ -588,10 +594,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
+    // How the answer was worked out, from the data calls its tools make (never run again to explain them).
+    // A caller not shown compiled statements is not shown them here either, nor the measures' definitions.
+    const explaining = opts.explain?.();
+    const explainer = explaining?.on === false ? null : turnExplainer({ pack: h.pack, sql: explaining?.sql !== false && showsStatement(h.ctx), definitions: showsStatement(h.ctx), dialect: h.connector.kind });
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged,
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, onData: explainer?.onData,
       onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const view = (c: BoardConfig) => shownConfig(c, h.ctx);
@@ -657,7 +667,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       execute: ({ writer }) => withMeter(scope, async () => {
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
-        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[] } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
+        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[]; explain?: Explanation } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
         // The findings that would make the held edits mislead; while there are any, they are dropped rather than saved.
         let misleading: Finding[] = [];
         let toldUnchanged = false;
@@ -772,6 +782,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
                 say(`The change could not be saved: ${why}`);
               }
             }
+          }
+          // To the person who asked, under their answer, and into the turn's audit line (bounded).
+          const explanation = explainer?.record();
+          if (explanation) {
+            turn.explain = explanation;
+            writer.write({ type: "data-explain", data: explanation });
           }
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);

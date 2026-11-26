@@ -108,7 +108,10 @@ export function elasticsearchConnector(opts: ElasticsearchOptions): Connector & 
     async execute(plan, o) {
       const req = plan.native as SearchRequest;
       const timeoutMs = o?.timeoutMs ?? opts.defaultTimeoutMs ?? 15_000;
-      const response = await request("POST", `/${indexPath(req.index)}/_search`, { ...req.body, timeout: `${Math.max(1, Math.floor(timeoutMs / 1000))}s` }, timeoutMs);
+      const body = { ...req.body, timeout: `${Math.max(1, Math.floor(timeoutMs / 1000))}s` };
+      // The request as sent, for whoever asks what ran (an answer's explanation): the query DSL as JSON.
+      o?.ran?.({ language: "json", text: `POST /${req.index}/_search\n${JSON.stringify(body, null, 2)}` });
+      const response = await request("POST", `/${indexPath(req.index)}/_search`, body, timeoutMs);
       const data = shapeBound(req.decode(response), plan.bound, req.cut?.(response));
       return req.approximate ? { ...data, approximate: true } : data;
     },
