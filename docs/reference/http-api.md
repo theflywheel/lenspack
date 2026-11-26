@@ -56,6 +56,13 @@ the clip.
 
 See [Voice](../features/voice.md#the-route).
 
+## Telemetry
+
+`POST /api/_telemetry` takes the browser's events (a thumbs up or down, an answer left early); it answers 404 when the
+`telemetry` switch is off. Admins read the records at `<prefix>/telemetry` and the switchboard at
+`<prefix>/telemetry/checklist`, changed with `PUT <prefix>/settings/telemetry`. Every route and its rules are in
+[Telemetry](../features/telemetry.md).
+
 ## Usage
 
 `GET /api/_usage`, for callers with the usage right: what chat has cost since the server started, with the budget

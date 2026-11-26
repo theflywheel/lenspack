@@ -5,7 +5,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type AnswerCard, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, toVercelAI } from "@lenspack/agent";
+import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, tabsText, toVercelAI, viewFrom } from "@lenspack/agent";
 import { type Principal, accessNote, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -19,7 +19,8 @@ import { waitForTurn, withRetryWindow } from "./queue";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
 import { PROMPT_VERSION, prewarmTurns, savedChunks, smallModel } from "./reuse";
 import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
-import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
+import { LANGUAGE, type SpeechOptions, SpeechError, audioFormat, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
+import type { AudioStore } from "./audio";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
 export const CLOSING_PROMPT =
@@ -102,6 +103,14 @@ export type AppOptions = {
    * `language` ("auto", "fr", …) is the user's pick.
    */
   language?: () => Omit<LanguagePolicy, "reply">;
+  /** Usage telemetry (@lenspack/agent telemetry.ts): a record per turn and transcription, and POST /api/_telemetry for client events. */
+  telemetry?: Telemetry;
+  /** The caller's role names as telemetry records them (Superset's signed role names); absent, the sign-in's roles. */
+  telemetryRoles?: (req: IncomingMessage) => string[] | undefined;
+  /** The dataset name telemetry records for a pack entity (Superset: the dataset's table name); absent, the entity key. */
+  telemetryDataset?: (entity: string) => string | undefined;
+  /** Kept recordings of spoken questions (audio.ts): off unless speech.keepAudio is on; also gates the mic on a consent notice. */
+  audio?: AudioStore;
   /** Saved answers and plans (@lenspack/agent reuseLayer): a repeated question is answered without the model. Absent, every turn runs the model. */
   reuse?: Reuse;
   /** How many model turns run at once, and how many wait (@lenspack/agent TurnGate). Absent: a queue with the defaults (8 at a time). */
@@ -340,6 +349,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
+  // Transcripts no question claimed within the hour are recorded as abandoned, even on a quiet server.
+  if (opts.telemetry) setInterval(() => void opts.telemetry?.sweep(), 60_000).unref();
+  // Kept recordings past their retention or over the size cap go once a day (and at start).
+  if (opts.audio) {
+    void opts.audio.sweep();
+    setInterval(() => void opts.audio?.sweep(), 86_400_000).unref();
+  }
+
   // What the client needs to show the mic; null when speech is off.
   const speechInfo = () => (opts.speech?.apiKey ? { maxSeconds: opts.speech.maxSeconds ?? 60 } : null);
 
@@ -364,6 +381,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       const who = access ? await access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
+      // Who telemetry says asked: the role names the host signed (Superset's own), else the sign-in's.
+      const asker: Asker = { user: who.user, tenant: who.tenant, roles: opts.telemetryRoles?.(req) ?? who.roles };
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
       const decisionFor = (h: Host, as: Principal = who) => decide(as, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx });
       // The pack's own boards first, in board-file order; then people's, latest first.
@@ -388,9 +407,18 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
       if (packName === "_stt") {
+        // The consent notice, while recordings are kept: GET says whether this user must still acknowledge it; POST acknowledges it.
+        if (boardId === "consent") {
+          if (req.method === "POST") await opts.audio?.acknowledge(who.user);
+          else if (req.method !== "GET") return json(res, 405, { error: "GET or POST" });
+          return json(res, 200, { notice: (await opts.audio?.consentNeeded(who.user)) ?? null });
+        }
         if (req.method !== "POST") return json(res, 405, { error: "POST a clip" });
         const speech = opts.speech;
         if (!speech?.apiKey) return json(res, 503, { error: "speech to text is not configured on this server" });
+        // Recordings are kept and this user has not acknowledged the notice yet: nothing is recorded until they do.
+        const notice = await opts.audio?.consentNeeded(who.user);
+        if (notice) return json(res, 403, { error: "consent_required", notice });
         const over = overBudget(ledger, opts.budget, who.user);
         if (over) return json(res, 429, { error: over });
         const language = url.searchParams.get("language") || undefined;
@@ -428,14 +456,47 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             }
             if (!fallback || !fitsLanguages(t.text, expected)) return json(res, 422, { error: "unsure_language", script: scriptOf(t.text), expected });
           }
-          // The clip id: the chat request that sends this text names it, and the turn's cost includes the clip.
-          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}), clip: keepClip(who.user, spent) });
+          // The clip id: the chat request that sends this text names it, and the turn's cost includes the clip. It is
+          // also the transcript's id in telemetry, which keeps the text to compare with what is sent.
+          const clip = keepClip(who.user, spent);
+          // The recording itself only when speech.keepAudio is on, and only once it was transcribed.
+          const format = audioFormat(req.headers["content-type"]);
+          const kept = format ? ((await opts.audio?.keep(clip, who.user, audio, format)) ?? null) : null;
+          await opts.telemetry?.transcribed({
+            id: clip,
+            who: asker,
+            pack: pack ?? null,
+            model: t.model,
+            languageRequested: hint ?? null,
+            languageDetected: t.language,
+            seconds: t.seconds,
+            usd: spent.some((r) => r.usd !== null) ? Math.round(spent.reduce((s, r) => s + (r.usd ?? 0), 0) * 1e6) / 1e6 : null,
+            ms: spent.reduce((s, r) => s + r.ms, 0),
+            retried,
+            text: t.text,
+            audio: kept,
+          });
+          return json(res, 200, { ...t, ...(retried ? { retried, hint } : {}), clip, transcriptId: clip });
         } catch (e) {
           if (!(e instanceof SpeechError)) throw e;
           if (e.status === 502) recordCall(speechRecord({ model: speech.model(), usd: null, ms: e.ms, ok: false, error: e.message.slice(0, 300), language: hint ?? null }, { user: who.user, pack }), sinks);
           opts.log?.(`stt: ${e.message}`);
           return json(res, e.status, { error: e.message });
         }
+      }
+      // Client events for telemetry (feedback, a corrected transcript, an answer left early, …), each about the caller's own turn.
+      if (packName === "_telemetry") {
+        if (req.method !== "POST") return json(res, 405, { error: "POST an event" });
+        if (!opts.telemetry) return json(res, 404, { error: "telemetry is off on this server" });
+        let body: unknown;
+        try {
+          body = await read(req, 8_000);
+        } catch (e) {
+          return json(res, e instanceof BodyTooLarge ? 413 : 400, { error: e instanceof BodyTooLarge ? "event too large" : "body must be JSON" });
+        }
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
+        const r = await opts.telemetry.event(asker, body as Record<string, unknown>);
+        return r.ok ? json(res, 202, { ok: true, recorded: r.recorded }) : json(res, r.status, { error: r.error });
       }
       const h = byName.get(packName);
       // On a board, what the host lets the caller read there only (a Superset dashboard role) is read there too.
@@ -548,14 +609,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         case "GET versions":
           return json(res, 200, (await h.store.versions(boardId)).map(shown));
         case "POST ops": {
-          const body = (await read(req)) as { ops: unknown[] };
+          const body = (await read(req)) as { ops: unknown[]; view?: unknown };
           const ops = body.ops.map((o) => opSchema.parse(o)) as BoardOp[];
+          // The tab the caller has open, on a host layout with tabs: where a new widget goes when its placement names no other.
+          const view = viewFrom(body.view);
           const checked = checkOps(ops, h.pack, { ctx, capabilities: h.connector.capabilities });
           if (!checked.ok) {
             audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "refused", detail: checked.error });
             return json(res, 200, checked);
           }
-          const patched = await h.store.patch({ id: boardId, ops, catalogue, source: "ops" });
+          const patched = await h.store.patch({ id: boardId, ops, catalogue, source: "ops", ...(view ? { view } : {}) });
           audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "ok", detail: ops.map((o) => o.op).join(",") });
           return json(res, 200, patched.ok ? { ...patched, board: shown(patched.board) } : patched);
         }
@@ -575,6 +638,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           if (!board.owner) return json(res, 403, { error: "The pack's own boards are everyone's already" });
           const shared = await h.store.share(boardId, body.shared === true);
           audit({ user: who.user, pack: packName, board: boardId, action: body.shared === true ? "share" : "unshare", outcome: "ok" });
+          if (body.shared === true) await opts.telemetry?.event({ ...asker, board: boardId, pack: packName }, { type: "board-shared" });
           return json(res, 200, shown(shared));
         }
         case "POST revert": {
@@ -590,7 +654,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             return json(res, 403, { error: d.notice });
           }
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly);
+          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly, asker);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -600,7 +664,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
 
   // Everything the chat model and the reviewer read of the board is as the caller is shown it (shownConfig, from h.ctx):
   // the prompt, the summaries before and after, and the tools' results.
-  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string) {
+  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string, asker: Asker = { user, roles: [] }) {
     const started = Date.now();
     const fallback = opts.chatDefault?.();
     const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
@@ -640,7 +704,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const defsVersion = await definitionsVersion(defs, h.name, h.pack);
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown; transcriptIds?: unknown; client?: unknown; view?: unknown };
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     // A quick reply picked under a clarifying question: counted against that reading in the open-questions log.
@@ -653,11 +717,15 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // The answer card (kernel/agent answer.ts), from the data calls the tools make; policy decides what it shows.
     const shown = answerView(h.ctx, opts.explain?.());
     const card = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
-    const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
+    // Where the viewer is on the host's page (the tab they have open), as the host page said; the tab names come from the store.
+    const turnView = viewFrom(body.view);
+    let tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
+    const turnId = randomUUID();
+    const scope = { user, pack: h.name, board: boardId, turn: turnId, sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
     const tools = toVercelAI([
-      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, onData: card?.onData,
+      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, onData: card?.onData, view: turnView,
         onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }),
       ...(clarifying && defs ? [clarifyTool({ note: (n) => defs.note(h.name, n), question: instruction })] : []),
     ]);
@@ -667,17 +735,43 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
     const access = accessNote(h.ctx);
-    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access });
+    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView) });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
     let before = summarise(config);
+    const selections = { ...selectionsOf(url), ...selectionsFrom(body.selections) };
+    // Telemetry (@lenspack/agent): the turn's hooks, called below where each thing happens. Null while it is off.
+    const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+    const entityOf = new Map([...h.pack.dimensions, ...h.pack.measures].flatMap((x) => (x.entity ? [[x.key, x.entity] as const] : [])));
+    const tel = await opts.telemetry?.begin({
+      turnId,
+      who: asker,
+      board: boardId,
+      pack: h.name,
+      question: instruction,
+      transcriptIds: [...new Set([...strings(body.speech), ...strings(body.transcriptIds)])],
+      newConversation: body.messages.filter((m) => m.role === "user").length <= 1,
+      languagePicked: picked ?? null,
+      client: body.client,
+      selections,
+      builder: builderModel.name,
+      effort: effort ?? null,
+      readOnly: !!readOnly,
+      datasetOf: (k) => {
+        const e = entityOf.get(k);
+        return e && (opts.telemetryDataset?.(e) ?? e);
+      },
+      startedAt: started,
+    });
+    // The turn's id reaches the client in a header (set now: a queued turn's headers go out with its place) and a stream part.
+    if (tel) res.setHeader("x-lenspack-turn", turnId);
+
 
     // A question answered before, by someone with the same access, on the same pack and board: answered from the
     // saved plan without the agent (reuse/, docs/features/saved-answers.md). "Ask fresh" (fresh: true) always runs the agent.
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
-    const selections = { ...selectionsOf(url), ...selectionsFrom(body.selections) };
-    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, promptVersion: String(PROMPT_VERSION), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
+    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: String(PROMPT_VERSION), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
     const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
     const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) });
@@ -686,25 +780,35 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const summary = turnSummary(cost);
       ledger.turn({ user, pack: h.name }, cost);
       audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: "saved answer", queueMs: 0, reuse: { tier: reused.tier, entry: reused.entry.id, savedUsd: reused.savedUsd, dataAsOf: reused.dataAsOf, ...(reused.why ? { how: reused.why } : {}) }, instruction: instruction.slice(0, 2000), answer: reused.reply.slice(0, 2000), ...summary, cost }) });
+      tel?.mark({ reuse: reused.tier, queueMs: 0 });
       return respond(res, createUIMessageStream({ execute: ({ writer }) => {
+        if (tel) writer.write(tel.part());
         for (const c of savedChunks(reused)) writer.write(c);
         const answered = savedCard?.record();
         if (answered) writer.write({ type: "data-answer-card", data: answered });
         writer.write({ type: "data-usage", data: { ...cost, summary } });
         writer.write({ type: "finish" });
-      } }));
+        tel?.ended({ cost });
+      } }), tel);
     }
 
     // A model turn waits for a place (and an edit for the edit before it on this board), told its place meanwhile (queue.ts).
     const place = await waitForTurn(res, queue, { board: boardId, edit: !readOnly && looksLikeEdit(instruction) });
-    if (!place) return audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: "busy" });
+    if (!place) {
+      tel?.failed("busy");
+      tel?.ended({ cost: turnCost(calls, queries) });
+      await tel?.record();
+      return audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: "busy" });
+    }
+    tel?.mark({ queueMs: place.queueMs });
     if (place.boardWaited) {
       // The edit before this one may have changed the board: read it as that edit left it.
       const now = await h.store.get(boardId);
       if (now && now.version !== startVersion) {
         config = view(now.config);
         startVersion = now.version;
-        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access });
+        tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
+        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView) });
         before = summarise(config);
         reuseTurn.config = config;
       }
@@ -759,6 +863,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // for tools that want them; the person reads the outcome in the reply.
     const stream = withRetryWindow(queue.settings().maxWaitSeconds * 1000, () => createUIMessageStream({
       execute: ({ writer }) => withMeter(scope, async () => {
+        if (tel) writer.write(tel.part());
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
         const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[]; language?: string; definitions?: string; clarify?: unknown; quickReply?: unknown; card?: AnswerCard } = {
@@ -822,6 +927,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             turn.refusals.push(...refused);
             const history = [...messages, ...steps.flatMap((s) => s.response.messages)];
             const finish = await result.finishReason;
+            tel?.round({ steps, finish, answered: !!answer, maxSteps: 12, fix: !!fixing });
             if (!answer) {
               // A tool loop stopped before the model said a word (the step cap, or the guard on
               // repeated refusals). The board may have changed on the way, so the reply describes
@@ -846,6 +952,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             }
             const verdict = await review(writer, reviewer, turn.refusals.slice(-8));
             const material = materialFindings(verdict);
+            tel?.reviewed({ material: material.length, fix: !!fixing });
             // Round 1's held words go out when its edit stands; a fix round's words will replace them.
             if (!fixing) material.length ? held?.drop() : held?.release();
             writer.write({ type: "data-review", data: { round, reviewer: reviewer.name, ...verdict, raw: undefined } });
@@ -878,6 +985,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             break;
           }
           completed = true;
+        } catch (e) {
+          tel?.failed(e);
+          throw e;
         } finally {
           // A turn that ended before a verdict (no review, or a failure part-way) shows what round 1 said.
           held?.release();
@@ -915,6 +1025,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);
           const summary = turnSummary(cost);
+          tel?.ended({ cost, rolledBack: misleading.length > 0, saveFailed: turn.outcome === "not saved", refusals: turn.refusals });
           ledger.turn({ user, pack: h.name }, cost);
           audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), queueMs: place.queueMs, ...turn, ...summary, cost, ms: Date.now() - started }) });
           place.release();
@@ -926,11 +1037,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }).finally(() => place.release()),
       onError: (e) => (e instanceof Error ? e.message : String(e)),
     }));
-    return respond(res, stream);
+    return respond(res, stream, tel);
   }
 
-  async function respond(res: ServerResponse, stream: ReadableStream<UIMessageChunk>) {
-    const response = createUIMessageStreamResponse({ stream });
+  async function respond(res: ServerResponse, stream: ReadableStream<UIMessageChunk>, tel?: TurnCapture | null) {
+    // The reader going away before the answer finished is an answer left early (telemetry).
+    res.on("close", () => res.writableEnded || tel?.left());
+    const response = createUIMessageStreamResponse({ stream: tel ? tel.watch(stream) : stream });
     // Unbuffered all the way: a proxy that holds the stream while the
     // reviewer thinks would cut it as idle.
     const headers: Record<string, string> = { "x-accel-buffering": "no" };
@@ -946,6 +1059,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     } catch {
       // The reader went away mid-turn. The turn runs on, and its edits are saved, or not, as if they were still there.
     }
-    return res.end();
+    res.end();
+    // Written once the turn has ended, which it does even after a reader leaves.
+    await tel?.record();
   }
 }

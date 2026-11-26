@@ -29,6 +29,8 @@ The standalone server's config. The blocks, in brief:
 | `explain` | `false`, or `{ sql: false }` | [How this was worked out](../features/explain.md#the-switches) |
 | `proposals` | the folder for each pack's `<name>.proposals.json` (default: the config's folder) | [Write a pack](../extending/write-a-pack.md#7-give-it-to-a-model) |
 | `features` | starting values for switches | [Feature switches](../operating/switches.md) |
+| `telemetry` | usage records: `{ dir, retentionDays, groups, items }` (`questionText` is the older name of `items.question-text`) | [Telemetry](../features/telemetry.md) |
+| `context` | what a board, a dataset or `role:<name>` belongs to (campaign, campaign type, country), for telemetry | [Telemetry](../features/telemetry.md#the-deployments-context-campaign-campaign-type-and-country) |
 
 ### Packs
 
@@ -157,6 +159,16 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `auth (kind: oidc).usage` | list of string |  |  |
 | `host` | string |  |  |
 | `audit` | string |  |  |
+| `telemetry` | object |  |  |
+| `telemetry.dir` | string | yes |  |
+| `telemetry.retentionDays` | number |  | `90` |
+| `telemetry.groups` | map of boolean |  |  |
+| `telemetry.items` | map of boolean |  |  |
+| `telemetry.questionText` | boolean |  |  |
+| `context` | map of object |  |  |
+| `context.<name>.campaign` | string |  |  |
+| `context.<name>.campaignType` | string |  |  |
+| `context.<name>.country` | string |  |  |
 | `usage` | string |  |  |
 | `budget` | object |  |  |
 | `budget.usdPerDay` | number |  |  |
@@ -206,6 +218,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `budget` | `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | daily caps |
 | `speech` | `model: mistralai/voxtral-mini-transcribe-3-0`, `maxSeconds: 60`, `holdMs: 2000` | voice: `{ model, baseUrl, maxSeconds, holdMs }`. See [Voice](../features/voice.md) |
 | `language` | `default: auto`, `titles: board`, `board: en` | see [Languages](../features/languages.md) |
+| `telemetry`, `context` | | as in `lenspack.yaml`; the telemetry sits in the state directory. See [Telemetry](../features/telemetry.md) |
 | `features`, `cache`, `queue`, `explain` | | as in `lenspack.yaml` |
 
 ## Environment variables
@@ -234,6 +247,9 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `LENSPACK_EDIT_POLICY` | superset | `editPolicy` |
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` |
 | `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept |
+| `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) |
+| `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) |
+| `LENSPACK_SPEECH_KEEP_AUDIO`, `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE` | both | keeping recordings of spoken questions: whether (off by default), for how long (30 days), how much (1000 MB), and the notice shown |
 | `LENSPACK_MCP_TOKEN` | mcp | the bearer token for `lenspack-mcp --http` |
 | `LENSPACK_DATA_DIR` | the demo | where `pnpm demo` looks for `<name>.duckdb` |
 

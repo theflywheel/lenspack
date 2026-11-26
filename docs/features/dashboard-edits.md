@@ -62,11 +62,9 @@ from the board as the first left it. See [Busy hours](busy-hours.md).
 
 Inside Superset, every change is sent to Superset before it counts, and a change Superset refuses is undone. A
 chart Lenspack cannot express exactly is kept as Superset's: the assistant can move, resize or remove it, but not
-rewrite it. On a dashboard with tabs or columns, the existing layout is kept and new widgets are added below it.
-
-> **Coming soon.** Edits on dashboards with tabs: charts inside tabs are read, the assistant is told which tab the
-> viewer has open, and widgets are added, resized, removed and restored in place inside their tab. Moving a widget
-> between tabs is refused.
+rewrite it. On a dashboard with tabs or columns, charts inside tabs are read, the assistant is told which tab the
+viewer has open, and widgets are added, resized, removed and restored in place inside their tab. Moving a widget on
+such a dashboard is refused: move it in Superset.
 
 See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md).
 

@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
-import { type CacheSettings, type QueueSettings, cacheSettings, localTurnGate, queueSettings, reuseLayer } from "@lenspack/agent";
-import { mayAdminister } from "@lenspack/policy";
+import { type CacheSettings, type ChecklistInput, type QueueSettings, type TelemetryLine, type TranscriptLine, type TurnLine, cacheSettings, localTurnGate, queueSettings, reuseLayer, telemetryChecklist, withoutNames } from "@lenspack/agent";
+import { type DeploymentContext, adminRights, deploymentContextSchema, recordRights } from "@lenspack/policy";
 
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
+import { type AudioSettings, audioManifest, fileAudioStore } from "./audio";
 import { type AuditLog, turnsReport } from "./audit";
 import type { Principal } from "./auth";
 import { type ExplainConfig, explainFrom } from "./config";
@@ -16,6 +17,8 @@ import { cacheRoutes } from "./reuse";
 import { type ReviewMountOptions, reviewMount } from "./review/mount";
 import { settingsStore } from "./settings";
 import { DEFAULT_SPEECH_MODEL, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
+import { fileTelemetry } from "./telemetry";
+import { type TelemetryConfig, telemetrySwitches } from "./telemetry-switches";
 
 // What an admin changes on a running server, from a host's settings page:
 // the chat's default model, speech, languages and the off switches, kept in
@@ -28,18 +31,45 @@ export const LANGUAGES = ["auto", "en", "fr", "hi", "pt"] as const;
 /** How long Space is held before the mic listens (a shorter press types a space). */
 const HOLD_MS = { min: 500, max: 3000 };
 
-type SpeechSettings = { model?: string; holdMs?: number };
+type SpeechSettings = { model?: string; holdMs?: number } & Partial<AudioSettings>;
+const AUDIO_DAYS = { min: 1, max: 3650 };
+const AUDIO_MB = { min: 1, max: 100_000 };
+const whole = (v: unknown, r: { min: number; max: number }): v is number => typeof v === "number" && Number.isInteger(v) && v >= r.min && v <= r.max;
 type LanguageSettings = { default?: string; titles?: "board" | "speaker"; board?: string };
 type ChatSetting = { model?: string; effort?: string };
 
 /** A deployment's defaults for what the settings page can change. */
 export type AdminConfig = {
   /** Speech to text for the mic. The model here is the default. */
-  speech?: { model?: string; baseUrl?: string; maxSeconds?: number; holdMs?: number };
+  speech?: {
+    model?: string;
+    baseUrl?: string;
+    maxSeconds?: number;
+    holdMs?: number;
+    /** Keep each spoken question's recording (default false; LENSPACK_SPEECH_KEEP_AUDIO). See docs/features/telemetry.md. */
+    keepAudio?: boolean;
+    /** Days a kept recording stays (default 30; LENSPACK_SPEECH_AUDIO_RETENTION_DAYS). */
+    audioRetentionDays?: number;
+    /** The most the kept recordings may take, in MB, the oldest deleted first (default 1000; LENSPACK_SPEECH_MAX_STORED_MB). */
+    maxStoredMb?: number;
+    /** Shown once to each user, and acknowledged, before the mic records while recordings are kept (LENSPACK_SPEECH_CONSENT_NOTICE). */
+    consentNotice?: string;
+  };
   /** Language defaults: the chat's, and whether new titles follow the board's language or the speaker's. */
   language?: LanguageSettings;
   /** Off switches, all on by default (see features.ts); LENSPACK_FEATURES and the settings page override them. */
   features?: FeatureValues;
+  /**
+   * Usage telemetry (docs/features/telemetry.md), on unless the telemetry feature switch is off. retentionDays (default 90,
+   * else LENSPACK_TELEMETRY_RETENTION_DAYS); groups and items: the switchboard's starting values (every key and its
+   * default are in docs/features/telemetry.md), which admins change on the admin panel's Telemetry tab.
+   */
+  telemetry?: TelemetryConfig;
+  /**
+   * The deployment's context (@lenspack/policy): a board id, a dataset name or "role:<name>" (and "*") mapped to the
+   * campaign, campaign type and country it belongs to. Part of the deployment's policy; telemetry reads it.
+   */
+  context?: DeploymentContext;
   /** Saved answers (docs/features/saved-answers.md): the defaults the settings page starts from. */
   cache?: Partial<CacheSettings>;
   /** The turn queue (docs/features/busy-hours.md): model turns at once, and how many wait and for how long. */
@@ -74,6 +104,50 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
   const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...saved<LanguageSettings>("language") });
   const off = () => Object.entries(features.values()).filter(([, on]) => !on).map(([f]) => f);
+  // Kept recordings: off unless the config, the environment or the settings page turns them on.
+  const flag = (v: string | undefined) => (["true", "on", "1", "yes"].includes((v ?? "").trim().toLowerCase()) ? true : ["false", "off", "0", "no"].includes((v ?? "").trim().toLowerCase()) ? false : undefined);
+  const cs = config.speech ?? {};
+  if (cs.keepAudio !== undefined && typeof cs.keepAudio !== "boolean") throw new Error("speech.keepAudio must be true or false");
+  if (cs.audioRetentionDays !== undefined && !whole(cs.audioRetentionDays, AUDIO_DAYS)) throw new Error(`speech.audioRetentionDays must be a whole number of days from ${AUDIO_DAYS.min} to ${AUDIO_DAYS.max}`);
+  if (cs.maxStoredMb !== undefined && !whole(cs.maxStoredMb, AUDIO_MB)) throw new Error(`speech.maxStoredMb must be a whole number of MB from ${AUDIO_MB.min} to ${AUDIO_MB.max}`);
+  const envNum = (v: string | undefined, r: { min: number; max: number }) => (whole(Number(v), r) && v?.trim() ? Number(v) : undefined);
+  const audioDefaults: AudioSettings = {
+    keepAudio: false,
+    audioRetentionDays: envNum(env.LENSPACK_SPEECH_AUDIO_RETENTION_DAYS, AUDIO_DAYS) ?? cs.audioRetentionDays ?? 30,
+    maxStoredMb: envNum(env.LENSPACK_SPEECH_MAX_STORED_MB, AUDIO_MB) ?? cs.maxStoredMb ?? 1000,
+    consentNotice: env.LENSPACK_SPEECH_CONSENT_NOTICE?.trim() || cs.consentNotice?.trim() || null,
+  };
+  // The telemetry switchboard (telemetry-switches.ts): telemetry as a whole, each section, each item.
+  const parsedContext = deploymentContextSchema.safeParse(config.context ?? {});
+  if (!parsedContext.success) throw new Error(`context: ${parsedContext.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; ")}`);
+  const context = parsedContext.data;
+  const switches = telemetrySwitches({
+    settings,
+    features,
+    config: config.telemetry,
+    env,
+    // Kept recordings were speech.keepAudio before they were an item: that is still the item's starting value.
+    keepAudio: () => saved<SpeechSettings>("speech")?.keepAudio ?? flag(env.LENSPACK_SPEECH_KEEP_AUDIO) ?? cs.keepAudio,
+    voiceReady: () => features.on("voice") && !!speechKey.apiKey,
+    consentNotice: () => audioSettings().consentNotice,
+  });
+  const audioSettings = (): AudioSettings => {
+    const saved_ = saved<SpeechSettings>("speech") ?? {};
+    return {
+      // The voice-audio item (and with it its section and telemetry as a whole).
+      keepAudio: switches.on().has("voice-audio"),
+      audioRetentionDays: saved_.audioRetentionDays ?? audioDefaults.audioRetentionDays,
+      maxStoredMb: saved_.maxStoredMb ?? audioDefaults.maxStoredMb,
+      consentNotice: saved_.consentNotice !== undefined ? saved_.consentNotice || null : audioDefaults.consentNotice,
+    };
+  };
+  const audio = fileAudioStore({ dir: stateDir, settings: audioSettings });
+  const { store: telemetryLog, telemetry } = fileTelemetry(stateDir, {
+    on: () => features.on("telemetry"),
+    items: () => switches.on(),
+    retentionDays: () => switches.retentionDays(),
+    context: () => context,
+  });
   const cache = cacheSettings(settings, config.cache);
   const queue = queueSettings(settings, config.queue);
   const cacheNow = () => ({ ...cache.get(), on: features.on("cache") });
@@ -92,12 +166,20 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     speech,
     holdMs,
     language,
+    telemetry,
+    telemetryLog,
+    switches,
+    context,
+    audio,
+    audioSettings,
     /** The board API's per-turn reads of these settings. */
     app: {
       review: () => features.on("reviewer"),
       speech,
       language: () => ({ titles: language().titles, board: language().board }),
       chatDefault: () => saved<ChatSetting>("chat"),
+      telemetry,
+      audio,
       reuse,
       queue: gate,
       // The explain switch (settings page, env, config) and the config's explain.sql.
@@ -108,7 +190,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       return reviewMount({ features, settings, app: { review: () => features.on("reviewer"), chatDefault: () => saved<ChatSetting>("chat") } }, o);
     },
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
-    speechView: (writable: boolean) => ({
+    speechView: async (writable: boolean) => ({
       enabled: !!speechKey.apiKey,
       keyFrom: speechKey.keyFrom,
       provider: "openrouter",
@@ -118,9 +200,15 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       holdMs: holdMs(),
       defaultHoldMs,
       holdMsRange: HOLD_MS,
+      ...audioSettings(),
+      audioDefaults,
+      audioRetentionRange: AUDIO_DAYS,
+      maxStoredMbRange: AUDIO_MB,
+      stored: await audio.stats(),
       writable,
     }),
     languageView: (writable: boolean) => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: saved("language") ? "settings" : "default", writable }),
+    telemetryView: (writable: boolean) => ({ ...switches.view(writable), file: telemetryLog.file, context: Object.keys(context).length }),
   };
 }
 export type AdminSettings = ReturnType<typeof adminSettings>;
@@ -140,6 +228,10 @@ export type AdminRouteOptions = {
   /** The host's own fields in <prefix>/info (any signed-in user) and <prefix>/settings (admins). */
   info?: (url: URL) => Record<string, unknown>;
   details?: () => Record<string, unknown>;
+  /** The host's view of Superset's action log for the telemetry checklist: exports and shares on Lenspack's dashboards since a date. */
+  supersetLogs?: (since: Date) => Promise<ChecklistInput["supersetLogs"]>;
+  /** What features that own a checklist item counted since a date (review runs, proposals, open questions). */
+  owned?: (since: Date) => Promise<ChecklistInput["owned"]>;
 };
 
 /** The settings page's routes, answering by responding. A caller who is not signed in never reaches them: the host answers 401 first. */
@@ -160,6 +252,29 @@ export function adminRoutes(o: AdminRouteOptions) {
   };
   // Saved answers' admin routes (<prefix>/cache…), beside the settings.
   const cachePage = cacheRoutes({ prefix: o.prefix, reuse: s.reuse, queue: s.gate, audit: o.audit, adminName: o.adminName });
+  /** The checklist and switchboard as they stand: the switches, the last 7 days of records, what features counted. */
+  async function checklistNow() {
+    const now = new Date();
+    const since = new Date(now.getTime() - 7 * 86_400_000);
+    const sinceIso = since.toISOString();
+    const audio = s.audioSettings();
+    const sw = s.switches.values();
+    // Superset's action log is read only while its item is on.
+    const logsOn = s.switches.on().has("trust-superset-actions");
+    const supersetLogs = !o.supersetLogs ? null : logsOn ? await o.supersetLogs(since).catch((e: unknown) => ({ available: false, reason: e instanceof Error ? e.message.slice(0, 200) : String(e), count: 0, lastSeen: null })) : { available: true, count: 0, lastSeen: null };
+    return telemetryChecklist({
+      now,
+      switches: sw,
+      changed: s.switches.changed(),
+      settings: { retentionDays: sw.retentionDays, audioRetentionDays: audio.audioRetentionDays, consentNotice: audio.consentNotice },
+      features: s.switches.featureValues(true),
+      context: s.context,
+      lines: await s.telemetryLog.find({ from: since }),
+      audioSaved: (await s.audio.list()).filter((c) => c.at >= sinceIso).map((c) => c.at),
+      supersetLogs,
+      owned: await o.owned?.(since),
+    });
+  }
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<void> => {
     if (!url.pathname.startsWith(`${o.prefix}/`)) return;
     await cachePage(req, res, url, who);
@@ -170,13 +285,82 @@ export function adminRoutes(o: AdminRouteOptions) {
     const writable = o.writable();
 
     if (path === "/info") {
-      const speech = s.speech.apiKey ? { enabled: true, maxSeconds: s.speech.maxSeconds, holdMs: s.holdMs() } : { enabled: false };
+      // consent: the notice this user must acknowledge before the mic records, while recordings are kept; else null.
+      const speech = s.speech.apiKey ? { enabled: true, maxSeconds: s.speech.maxSeconds, holdMs: s.holdMs(), consent: await s.audio.consentNeeded(who.user) } : { enabled: false };
       return send(200, { ...o.info?.(url), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values() });
     }
     if (path === "/settings/speech/models") return send(200, (await speechModels({ baseUrl: s.speech.baseUrl })).models);
     const put = req.method === "PUT";
-    if (!["/settings", "/turns", "/audit"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue"].includes(path))) return;
-    if (!mayAdminister(who)) {
+    // Kept recordings: GET /audio (what is kept), GET or DELETE /audio/<transcriptId>, DELETE /audio?user=<name> or
+    // ?all=1, POST /audio/export (a benchmark manifest). Admins only, each play and deletion audited. No other route serves audio.
+    const clip = /^\/audio(?:\/([\w-]{1,64}))?$/.exec(path);
+    if (clip) {
+      if (!recordRights(who).audio) {
+        audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
+        return send(403, { error: `only ${o.adminName}s can do this` });
+      }
+      const id = clip[1];
+      if (id === "export" && req.method === "POST") {
+        const all = await s.telemetryLog.find({ from: new Date(0) });
+        const transcripts = new Map(all.filter((l): l is TranscriptLine => l.type === "transcript").map((l) => [l.transcriptId, l]));
+        const turns = all.filter((l): l is TurnLine => l.type === "turn" && !!l.transcriptIds?.length);
+        const { lines, flagged } = audioManifest(
+          await s.audio.list(),
+          (tid) => {
+            const t = transcripts.get(tid);
+            if (!t) return null;
+            const turn = turns.find((x) => x.transcriptIds?.includes(tid));
+            return {
+              // Texts only while their items were on (transcript-text, question-text).
+              transcript: t.transcript ?? null,
+              sent: turn?.question ?? null,
+              lang: t.languageDetected ?? t.languageRequested ?? turn?.questionLanguage ?? null,
+              seconds: t.seconds ?? null,
+              edits: turn?.transcriptEditDistance ?? null,
+              several: (turn?.transcriptIds?.length ?? 0) > 1,
+            };
+          },
+          (user) => s.telemetry.hash(`speaker:${user}`).slice(0, 12),
+        );
+        const write = (name: string, rows: unknown[]) => s.audio.saveExport(name, rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : ""));
+        const file = await write("manifest.jsonl", lines);
+        const flaggedFile = await write("manifest-flagged.jsonl", flagged);
+        audit("audio export", `${lines.length} clips, ${flagged.length} flagged`);
+        return send(200, { file, flaggedFile, clips: lines.length, flagged: flagged.length, note: "Audio paths are relative to the audio folder in the state directory; copy it beside evals/speech/data to score." });
+      }
+      if (req.method === "GET" && !id) return send(200, { ...(await s.audio.stats()), settings: s.audioSettings(), clips: (await s.audio.list()).map(({ id: cid, user, at, bytes, format }) => ({ id: cid, user, at, bytes, format })) });
+      if (req.method === "GET" && id) {
+        const found = await s.audio.read(id);
+        audit("audio play", id, found ? "ok" : "denied");
+        if (!found) return send(404, { error: "no kept recording with that id" });
+        res.writeHead(200, { "content-type": found.type, "content-length": String(found.data.byteLength), "content-disposition": `inline; filename="${found.id}.${found.file.split(".").pop()}"`, ...NO_STORE });
+        return void res.end(found.data);
+      }
+      if (req.method === "DELETE" && id) {
+        const n = await s.audio.delete(id);
+        audit("audio delete", id);
+        return send(n ? 200 : 404, n ? { deleted: n } : { error: "no kept recording with that id" });
+      }
+      if (req.method === "DELETE" && !id) {
+        const user = url.searchParams.get("user");
+        if (user) {
+          const n = await s.audio.deleteUser(user);
+          audit("audio delete user", `${user}: ${n}`);
+          return send(200, { deleted: n });
+        }
+        if (url.searchParams.get("all") === "1") {
+          const n = await s.audio.deleteAll();
+          audit("audio delete all", String(n));
+          return send(200, { deleted: n });
+        }
+        return send(400, { error: "name ?user=<name>, or ?all=1 to delete every kept recording" });
+      }
+      return send(405, { error: "not a method this route takes" });
+    }
+    if (!["/settings", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/telemetry"].includes(path))) return;
+    const may = recordRights(who);
+    // The settings and every switch: the admin role (adminRights in @lenspack/policy); the records: recordRights.
+    if (path.startsWith("/telemetry") ? !may.telemetry : !adminRights(who).administer) {
       audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
       return send(403, { error: `only ${o.adminName}s can do this` });
     }
@@ -189,9 +373,10 @@ export function adminRoutes(o: AdminRouteOptions) {
         budget: o.budget ?? null,
         audit: o.audit ? { file: o.audit.file, retentionDays: o.audit.retentionDays, months: o.audit.months() } : null,
         chat: chatSettings(),
-        speech: s.speechView(writable),
+        speech: await s.speechView(writable),
         language: s.languageView(writable),
         features: s.features.view(writable),
+        telemetry: s.telemetryView(writable),
         cache: s.cache.view(writable),
         queue: s.queue.view(writable),
       });
@@ -208,6 +393,32 @@ export function adminRoutes(o: AdminRouteOptions) {
       try {
         const events = o.audit.read({ month: url.searchParams.get("month") ?? undefined, limit: Number(url.searchParams.get("limit")) || 200 });
         return send(200, { enabled: true, retentionDays: o.audit.retentionDays, months: o.audit.months(), events });
+      } catch (e) {
+        return send(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    // What telemetry records for this deployment, item by item, each with its switch: the Telemetry tab (docs/features/telemetry.md).
+    if (path === "/telemetry/checklist") return send(200, await checklistNow());
+
+    // Usage telemetry, newest first: ?from=&to= (ISO dates or times; default the last 7 days), ?type=turn|event|transcript, ?offset=&limit= (a page, at most 5000).
+    if (path === "/telemetry") {
+      const date = (k: string) => {
+        const v = url.searchParams.get(k);
+        if (!v) return undefined;
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) throw new Error(`${k} must be a date or time, like 2026-11-01`);
+        return d;
+      };
+      try {
+        const to = date("to");
+        const from = date("from") ?? new Date((to ?? new Date()).getTime() - 7 * 86_400_000);
+        const type = url.searchParams.get("type") || undefined;
+        if (type && !["turn", "event", "transcript"].includes(type)) throw new Error("type must be turn, event or transcript");
+        const page = await s.telemetry.read({ from, to, type: type as TelemetryLine["type"] | undefined, offset: Number(url.searchParams.get("offset")) || 0, limit: Number(url.searchParams.get("limit")) || 500 });
+        // User names only for a reader policy lets see them; else a stable stand-in per name.
+        const records = may.usernames ? page.records : withoutNames(page.records, s.telemetry.hash);
+        return send(200, { enabled: s.telemetry.enabled(), retentionDays: s.telemetryLog.retentionDays, items: [...s.telemetry.items()], usernames: may.usernames, from: from.toISOString(), to: (to ?? new Date()).toISOString(), ...page, records });
       } catch (e) {
         return send(400, { error: e instanceof Error ? e.message : String(e) });
       }
@@ -254,6 +465,22 @@ export function adminRoutes(o: AdminRouteOptions) {
         else if (typeof model !== "string" || !(await speechModelAllowed(model, { baseUrl: s.speech.baseUrl }))) return send(400, { error: `not a transcription model: ${String(model)}` });
         else next.model = model;
       }
+      // Kept recordings: audioRetentionDays, maxStoredMb, consentNotice ("" or null for none… null resets). Whether they
+      // are kept at all is the voice-audio item, switched on the Telemetry tab (PUT settings/telemetry) with a confirm step.
+      if ("keepAudio" in b) return send(409, { error: 'keeping recordings is the voice-audio telemetry item: PUT settings/telemetry {"items.voice-audio": true, "confirm": true}' });
+      for (const [k, r] of [["audioRetentionDays", AUDIO_DAYS], ["maxStoredMb", AUDIO_MB]] as const) {
+        if (!(k in b)) continue;
+        const v = b[k];
+        if (v === null) delete next[k];
+        else if (!whole(v, r)) return send(400, { error: `${k} is a whole number from ${r.min} to ${r.max}` });
+        else next[k] = v;
+      }
+      if ("consentNotice" in b) {
+        const v = b.consentNotice;
+        if (v === null) delete next.consentNotice;
+        else if (typeof v !== "string" || v.length > 2000) return send(400, { error: "consentNotice is a text of at most 2000 characters" });
+        else next.consentNotice = v.trim();
+      }
       if ("holdMs" in b) {
         const v = b.holdMs;
         if (v === null || v === "") delete next.holdMs;
@@ -261,9 +488,10 @@ export function adminRoutes(o: AdminRouteOptions) {
         else next.holdMs = v;
       }
       s.settings.set("speech", Object.keys(next).length ? next : undefined);
-      o.log(`speech: model ${s.speech.model()}, hold ${s.holdMs()} ms`);
+      o.log(`speech: model ${s.speech.model()}, hold ${s.holdMs()} ms, keep audio ${s.audioSettings().keepAudio ? `on (${s.audioSettings().audioRetentionDays} days, ${s.audioSettings().maxStoredMb} MB)` : "off"}`);
+      await s.audio.sweep();
       audit("settings speech", JSON.stringify(next));
-      return send(200, s.speechView(writable));
+      return send(200, await s.speechView(writable));
     }
     // Any of default, titles, board; null resets the field.
     if (path === "/settings/language") {
@@ -279,6 +507,20 @@ export function adminRoutes(o: AdminRouteOptions) {
       o.log(`language: ${JSON.stringify(s.language())}`);
       audit("settings language", JSON.stringify(next));
       return send(200, s.languageView(writable));
+    }
+    // The switchboard: any of {"telemetry", "groups.<section>", "items.<item>": true|false|null, "retentionDays": n|null};
+    // null puts a switch back to the deployment's value. A privacy-sensitive item turns on only with "confirm": true.
+    // Applied at once (every record reads the switches), audited, and answered with the checklist as it now stands.
+    if (path === "/settings/telemetry") {
+      const r = s.switches.update(b, who.user);
+      if (!r.ok) {
+        if (r.confirm) audit("settings telemetry", `${r.confirm.key}: needs confirming`, "denied");
+        return send(r.status, { error: r.error, ...(r.confirm ? { confirm: r.confirm } : {}) });
+      }
+      const words = r.changes.map((c) => `${c.key} ${c.from} → ${c.to}`).join("; ");
+      o.log(`telemetry: ${words}`);
+      audit("settings telemetry", JSON.stringify({ changes: r.changes, confirmed: b.confirm === true }));
+      return send(200, await checklistNow());
     }
     // The chat model when the client asks for none: { model, effort? }, or { model: null } for the default.
     if (b.model === null) {

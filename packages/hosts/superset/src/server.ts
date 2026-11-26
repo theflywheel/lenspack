@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { memoryStore } from "@lenspack/core";
 import { boardRights } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
+import { recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
 import { identityKey, serviceAccount } from "./bootstrap";
@@ -26,6 +27,7 @@ import { examplesByLanguage, examplesFor } from "./examples";
 import { supersetPolicy, viewableDashboards } from "./access";
 import { editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
 import { supersetBoards } from "./store";
+import { supersetActions } from "./actions";
 import { defaultMapStyle, supersetVersion } from "./version";
 
 /**
@@ -221,7 +223,18 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   });
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
-    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined), audit: auditLog?.audit, ...admin.app, definitions: review.turn },
+    app: {
+      auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined),
+      audit: auditLog?.audit,
+      ...admin.app,
+      // Telemetry records the user's Superset role names as Superset signed them (none signed: none), and datasets by name.
+      telemetryRoles: (req) => {
+        const id = identityOf(req, () => idKey);
+        return id ? (id.r ?? []) : undefined;
+      },
+      telemetryDataset: (entity) => binding.datasets.get(entity)?.table,
+      definitions: review.turn,
+    },
     port,
     host,
     budget: config.budget,
@@ -239,6 +252,10 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         log,
         adminName: "Superset admin",
         writable: () => !!idKey,
+        supersetLogs: async (since) => {
+          const r = await supersetActions(client, { dashboards: Object.values(dashboards), from: since, to: new Date() });
+          return { available: r.available, ...(r.reason ? { reason: r.reason } : {}), count: r.actions.length, lastSeen: r.actions.reduce<string | null>((m, a) => (m === null || a.at > m ? a.at : m), null) };
+        },
         info: (url) => ({ pack: pack.pack, examples: examplesFor(examples, url.searchParams.get("lang")), examplesByLang: examples, panel }),
         details: () => ({
           pack: pack.pack,
@@ -270,6 +287,19 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (await adminPanel(req, res, url, who)) return;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
+        // Exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (admins only).
+        if (url.pathname === "/_superset/telemetry/superset-actions" && req.method === "GET") {
+          if (!recordRights(who).telemetry) return json(res, 403, { error: "only Superset admins can do this" }, NO_STORE);
+          const day = (k: string, fallback: Date) => {
+            const v = url.searchParams.get(k);
+            const d = v ? new Date(v) : fallback;
+            return Number.isNaN(d.getTime()) ? null : d;
+          };
+          const to = day("to", new Date());
+          const from = to && day("from", new Date(to.getTime() - 7 * 86_400_000));
+          if (!to || !from) return json(res, 400, { error: "from and to must be dates, like 2026-11-01" }, NO_STORE);
+          return json(res, 200, { from: from.toISOString(), to: to.toISOString(), ...(await supersetActions(client, { dashboards: Object.values(dashboards), from, to })) }, NO_STORE);
+        }
         if (url.pathname === "/_superset/bind") {
           const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, () => idKey)?.d);
           return bound ? json(res, 200, bound, NO_STORE) : json(res, 403, { error: "Superset did not check your access to this dashboard." }, NO_STORE);

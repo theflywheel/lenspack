@@ -60,7 +60,8 @@ A saved answer is used only for the same:
 - **language rules.** A reply in a chosen language is not served to someone who chose another.
 - **board grant.** An answer made on a dashboard that the person may read only there (a Superset dashboard role) is never used on another dashboard, or for someone who reads that data another way.
 
-> **Coming soon.** On a Superset dashboard with tabs, a saved edit is also kept apart by the tab the viewer had open: "add a chart here" puts the chart on that tab. A saved answer is not: which tab is open does not change what a number is.
+A saved edit is also kept apart by **the tab the viewer had open**, on a dashboard with tabs: "add a chart here" puts
+the chart on that tab. A saved answer is not: which tab is open does not change what a number is.
 
 And it expires:
 

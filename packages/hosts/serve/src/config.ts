@@ -11,6 +11,8 @@ import YAML from "yaml";
 import { z } from "zod";
 
 import type { BoardFile, Host } from "./app";
+import { deploymentContextSchema } from "@lenspack/policy";
+
 import { authSchema, hiddenKeys, packRuleSchema } from "./auth";
 
 // lenspack.yaml: which sources exist, which pack reads which source, and where
@@ -94,6 +96,22 @@ export const configSchema = z.object({
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
+  /**
+   * Usage telemetry (docs/features/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. groups and
+   * items switch sections and items on or off (every key and its default are in docs/features/telemetry.md); questionText is
+   * the older name of items.question-text.
+   */
+  telemetry: z
+    .object({
+      dir: z.string().min(1),
+      retentionDays: z.number().int().min(1).max(3650).default(90),
+      groups: z.record(z.string(), z.boolean()).optional(),
+      items: z.record(z.string(), z.boolean()).optional(),
+      questionText: z.boolean().optional(),
+    })
+    .optional(),
+  /** The deployment's context (@lenspack/policy): what a board, dataset or role:<name> belongs to (campaign, campaignType, country). */
+  context: deploymentContextSchema.optional(),
   /** Append a JSON line per model call (tokens, US$, who, what for) to this file; today's totals are read back at startup. */
   usage: z.string().optional(),
   /** Daily caps (UTC) on priced model spend, in US$. Over one, chat answers 429 until midnight UTC. */
