@@ -6,6 +6,7 @@ import { type BoardConfig, type Catalogue, applyOps, emptyBoard } from "@lenspac
 
 import "./setup";
 import { Board } from "../src/grid";
+import { Markdown } from "../src/markdown";
 import { BoardProvider } from "../src/provider";
 import type { BoardHost, WidgetData, WidgetPage } from "../src/types";
 
@@ -112,8 +113,9 @@ describe("a computed answer", () => {
 });
 
 describe("a text widget", () => {
-  it("renders markdown as elements, never markup from the text, and links safely", async () => {
-    const body = 'A **bold** note\n\n- one\n- two\n\n<script>alert(1)</script> [docs](https://example.org) [x](javascript:alert(1))';
+  it("renders markdown as elements, never markup from the text, and never a link", async () => {
+    const body =
+      "A **bold** note\n\n- one\n- two\n\n<script>alert(1)</script> [docs](https://example.org) [x](javascript:void) [write](mailto:a@example.org)\n\nSee https://example.org/page or mailto:b@example.org or www.example.org";
     const c = config([{ op: "add_widget", id: "n", widget: { kind: "text", title: "Note", body } }]);
     mount(c, { loadBoardData: async () => ({}) });
     const md = await screen.findByTestId("markdown");
@@ -121,9 +123,18 @@ describe("a text widget", () => {
     expect(md.querySelectorAll("li").length).toBe(2);
     expect(md.querySelector("script")).toBeNull();
     expect(md.textContent).toContain("<script>alert(1)</script>");
-    const links = md.querySelectorAll("a");
-    expect(links.length).toBe(1);
-    expect(links[0]!.getAttribute("href")).toBe("https://example.org");
+    // A board holds no URLs: a link shows its text only, and a bare address stays text.
+    expect(md.querySelectorAll("a").length).toBe(0);
+    expect(md.querySelector("[href]")).toBeNull();
+    expect(md.textContent).toContain("docs x write");
+    expect(md.textContent).not.toContain("javascript:");
+    expect(md.textContent).toContain("See https://example.org/page or mailto:b@example.org or www.example.org");
+  });
+
+  it("keeps links in a chat reply, where only http(s) and mailto are links", () => {
+    render(<Markdown text="[docs](https://example.org) [x](javascript:alert(1)) [write](mailto:a@example.org)" />);
+    const links = Array.from(screen.getByTestId("markdown").querySelectorAll("a"));
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["https://example.org", "mailto:a@example.org"]);
     expect(links[0]!.getAttribute("rel")).toBe("noopener noreferrer");
   });
 

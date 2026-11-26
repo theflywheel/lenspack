@@ -229,8 +229,9 @@ export const widgetSchema = z.preprocess(migrateKpi, z.discriminatedUnion("kind"
   z.object({
     ...baseWidget,
     kind: z.literal("text"),
-    // Rendered as a text node, never as markup: nothing in a config is ever
-    // interpreted as code, HTML or CSS.
+    // A short note in a small markdown subset (bold, italics, lists, code), drawn as
+    // elements, never as HTML: nothing in a config is ever interpreted as code, HTML
+    // or CSS. A board holds no URLs, so a link in a note is drawn as its text.
     body: z.string().max(2000),
   }),
 ]));

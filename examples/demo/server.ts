@@ -6,7 +6,7 @@
 //   LENSPACK_ES_URL=http://…                                  (campaign on Elasticsearch)
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
 import { fileProposals } from "@lenspack/agent";
@@ -15,7 +15,8 @@ import { sqlConnector, sqlStore } from "@lenspack/sql";
 
 import { type ExampleName, contextFor, examples } from "../index";
 
-const dataDir = process.env.LENSPACK_DATA_DIR ?? ".";
+// Absolute, so the hints below say exactly where the demo looked.
+const dataDir = resolve(process.env.LENSPACK_DATA_DIR ?? ".");
 const port = Number(process.env.PORT ?? 8787);
 
 // Chat is optional. Providers come from the environment (see llm.ts); each
@@ -63,5 +64,5 @@ const roles = process.env.LENSPACK_LLM_ROLES ? JSON.parse(process.env.LENSPACK_L
 // Saved answers (docs/caching.md), kept beside the data; LENSPACK_CACHE=off turns them off.
 const reuse = process.env.LENSPACK_CACHE === "off" ? undefined : reuseLayer({ store: join(dataDir, "reuse.json"), settings: () => ({ ...CACHE_DEFAULTS, on: true }), log: (m) => console.log(`lenspack: ${m}`) });
 createServer(createApp(hosts, { providers, roles, reuse })).listen(port, () =>
-  console.log(`lenspack demo api: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ") || "(no examples seeded)"} on http://localhost:${port}/api`),
+  console.log(`lenspack demo api: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ") || `(no examples seeded: no <example>.duckdb in ${dataDir})`} on http://localhost:${port}/api`),
 );
