@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, sharingShown, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -222,6 +222,35 @@ describe("boardRights", () => {
     expect(boardRights(maintainer, { owner: "ann" })).toEqual({ view: false, edit: false });
     expect(boardRights(maintainer, { owner: "ann", shared: true })).toEqual({ view: true, edit: false });
     expect(boardRights(principalOf({ user: "ann", tenant: "t1" }), { owner: "ann", tenant: "t1" })).toEqual({ view: true, edit: false });
+  });
+
+  it("a board shared by name: its owner, the people named and, with everyone, the rest of its tenant read it; nobody else", () => {
+    const as = (user: string, tenant = "t1") => principalOf({ user, edit: true, tenant });
+    const byName = { owner: "ann", tenant: "t1", shared: true, everyone: false, people: ["bob"] };
+    expect(boardRights(as("ann"), byName)).toEqual({ view: true, edit: true });
+    expect(boardRights(as("bob"), byName)).toEqual({ view: true, edit: false });
+    expect(boardRights(as("cy"), byName)).toEqual({ view: false, edit: false });
+    expect(boardRights(as("bob", "t2"), byName)).toEqual({ view: false, edit: false });
+    const toAll = { ...byName, everyone: true };
+    expect(boardRights(as("cy"), toAll)).toEqual({ view: true, edit: false });
+    expect(boardRights(as("cy", "t2"), toAll)).toEqual({ view: false, edit: false });
+    // A name matches whatever its case.
+    expect(boardRights(as("BOB"), byName)).toEqual({ view: true, edit: false });
+    expect(boardRights(as("bob"), { ...byName, people: ["Bob"] })).toEqual({ view: true, edit: false });
+    // A board the host keeps from the caller stays hidden, however it is shared, even from its owner.
+    const hiding = (user: string) => principalOf({ user, edit: true, tenant: "t1", hiddenBoards: ["b_1"] });
+    for (const user of ["ann", "bob", "cy"]) expect(boardRights(hiding(user), { ...toAll, id: "b_1" })).toEqual({ view: false, edit: false });
+    expect(boardRights(hiding("bob"), { ...byName, id: "b_2" })).toEqual({ view: true, edit: false });
+    // Not shared: everyone false and nobody named, whatever an old `shared` says.
+    expect(boardRights(as("bob"), { owner: "ann", tenant: "t1", shared: true, everyone: false, people: [] })).toEqual({ view: false, edit: false });
+  });
+
+  it("tells only a board's owner who it is shared with by name; others learn whether it is everyone's", () => {
+    const board = { owner: "ann", tenant: "t1", shared: true, everyone: true, people: ["bob"] };
+    expect(sharingShown(principalOf({ user: "ann", tenant: "t1" }), board)).toEqual(board);
+    expect(sharingShown(principalOf({ user: "bob", tenant: "t1" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true, everyone: true });
+    expect(sharingShown(principalOf({ user: "ann", tenant: "t2" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true, everyone: true });
+    expect(sharingShown(principalOf({ user: "bob", tenant: "t1" }), { ...board, everyone: false })).toEqual({ owner: "ann", tenant: "t1", shared: true, everyone: false });
   });
 });
 

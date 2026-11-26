@@ -233,13 +233,31 @@ describe("boards kept in a database", () => {
     const again = await open();
     expect(await again.north.get("mine")).toMatchObject({ owner: "amina", shared: false });
     // The pack's own boards list first, even after someone's board changed more recently.
-    await again.north.share("mine", true);
+    await again.north.share("mine", { everyone: true, people: [] });
     const { server, base } = await listen(createApp(again.hosts));
     const listed = (await (await fetch(`${base}/north`)).json()).boards.map((b: { id: string }) => b.id);
     server.close();
     expect(listed).toEqual(["overview", "mine"]);
     expect(await title(again.north, "overview")).toBe("Edited in the app");
     await again.close();
+  });
+
+  it("offers the people who used it after a restart", async () => {
+    file("From the file");
+    const as = (user: string) => ({ "x-user": user });
+    const access = (req: { headers: Record<string, unknown> }) => ({ user: String(req.headers["x-user"]), edit: true });
+    const first = await open();
+    const one = await listen(createApp(first.hosts, { access }));
+    await fetch(`${one.base}/north`, { headers: as("bob") });
+    one.server.close();
+    await first.close();
+
+    const again = await open();
+    const two = await listen(createApp(again.hosts, { access }));
+    const people = (await (await fetch(`${two.base}/_people`, { headers: as("alice") })).json()).people;
+    two.server.close();
+    await again.close();
+    expect(people).toContain("bob");
   });
 
   it("puts a changed board file on top, the app's edit kept in the history", async () => {

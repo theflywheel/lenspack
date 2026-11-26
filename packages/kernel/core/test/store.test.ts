@@ -50,6 +50,31 @@ describe("memory store", () => {
     expect(quoted.endsWith("…")).toBe(true);
   });
 
+  it("keeps who a board is shared with, apart from its versions", async () => {
+    const store = memoryStore();
+    await store.create({ id: "x", pack: packRef, title: "T", owner: "ann", tenant: "t1" });
+    expect(await store.get("x")).toMatchObject({ owner: "ann", tenant: "t1", shared: false, everyone: false, people: [] });
+    await store.share("x", { everyone: false, people: ["bob"] });
+    await store.patch({ id: "x", catalogue, ops: [{ op: "set_title", title: "New" }] });
+    expect(await store.get("x")).toMatchObject({ version: 2, shared: true, everyone: false, people: ["bob"] });
+    expect((await store.list())[0]).toMatchObject({ shared: true, everyone: false, people: ["bob"] });
+    await store.share("x", { everyone: true, people: [] });
+    expect(await store.get("x")).toMatchObject({ shared: true, everyone: true, people: [] });
+    // The pack's own boards have no owner and are not shared by anyone.
+    await store.create({ id: "pack", pack: packRef, title: "P" });
+    expect(await store.share("pack", { everyone: true, people: [] })).toBeNull();
+  });
+
+  it("notes the user names that used it, by tenant", async () => {
+    const store = memoryStore();
+    await store.noteUser("bob", "t1");
+    await store.noteUser("bob", "t1");
+    await store.noteUser("cy");
+    expect(await store.users("t1")).toEqual(["bob"]);
+    expect(await store.users()).toEqual(["cy"]);
+    expect(await store.users("t2")).toEqual([]);
+  });
+
   it("summarises by row", async () => {
     const store = memoryStore();
     await store.create({ id: "x", pack: packRef, title: "T" });

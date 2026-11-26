@@ -83,6 +83,16 @@ Unchanged, plus `rolesHeader` (oauth2-proxy can inject a `groups` claim as `X-Fo
 | maintainer | also change the pack's own boards; implies editor |
 | usage | read the AI usage page (`GET /api/_usage`), which names every user. Absent `usage:`, the maintainers |
 
+## Sharing a board
+
+A board someone makes is theirs, and nobody else sees it until they share it. Its owner shares it with people by user name, with everyone signed in, or both. Everyone is off until the owner turns it on. Sharing gives view only: those it is shared with read the board and may save a copy (with the edit right); only the owner changes, shares or deletes it. Sharing stays within the tenant the board was made in: a name in another tenant does not see it, even the same name. A board the host keeps from someone (in Superset, a dashboard they may not open) stays hidden from them, however it is shared.
+
+- `POST /api/<pack>/<board>/share` with `{ "everyone": false, "people": ["bob", "carol"] }` replaces who the board is shared with. Names are trimmed; the owner and repeats are dropped; at most 200 names. A user name matches whatever its case: `Bob` and `bob` are one person, and the first spelling is kept. `{ "shared": true }`, from older clients, shares with everyone and keeps the names; `{ "shared": false }` shares with nobody. The action is in the audit log, with the everyone flag and the number of names.
+- Every board in a listing and a board response carries `shared`: shared with anyone at all. Its owner also gets `everyone` and `people`. Anyone else gets `everyone` (shared with everyone, or with them by name) and `owner`, never the other names.
+- `GET /api/_people` lists names to share with, for editors only (403 for anyone else): people who have used a pack the caller can open, and owners of boards there, in the caller's tenant, one entry per name whatever its case. Lenspack has no user directory, so any other name may be typed too. Under `password` there is one user, so the list is empty and sharing with everyone is what remains.
+- A board store keeps the names beside the board, not in its versions. In a database, `lenspack_boards.people` holds them (JSON); the `shared` column is the everyone flag. A store from before gets the column at start, and a board shared then stays shared with everyone.
+- The names to offer are kept in the board store too, so they outlast a restart: user names only, per pack and tenant, in `lenspack_users` in a database (made at start). An older lenspack ignores that table.
+
 ## Pack access
 
 Each pack in `lenspack.yaml` may carry `access:` rules. The first rule whose `roles` the caller has decides; a caller no rule matches does not see the pack at all (404, as if absent). A pack without rules is open to everyone signed in.
@@ -227,5 +237,5 @@ CI runs it on every pull request, in its own job beside the unit tests. The suit
 ## What this does not do yet
 
 - Bearer access tokens from the provider for API clients (the `oidc` kind signs in browsers).
-- Per-board sharing with people or groups, and read-only links ([#6](https://github.com/theflywheel/lenspack/issues/6)).
+- More of per-board sharing ([#6](https://github.com/theflywheel/lenspack/issues/6)): editors other than the owner, sharing with groups or roles, read-only links, and handing a board to another owner.
 - Access rules inside `pack.yaml`. They live in `lenspack.yaml` because role names belong to a deployment, and one pack serves several.

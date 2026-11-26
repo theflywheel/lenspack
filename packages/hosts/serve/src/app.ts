@@ -3,10 +3,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, NOT_SHARED, type Ownership, type Sharing, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, tabsText, toVercelAI, viewFrom } from "@lenspack/agent";
-import { type Principal, accessNote, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
+import { type Principal, accessNote, answerView, boardRights, decide, otherTenant, principalOf, sameUser, sharingShown, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -158,6 +158,28 @@ export function apiRoute(target: string | undefined): ApiRoute {
   return { api: api === "api", pack: pack || undefined, board: board || undefined, action: action || undefined };
 }
 const randomId = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+
+// A board is shared by name with at most this many people; more is a case for everyone.
+const MAX_PEOPLE = 200;
+/**
+ * Who a share request names: { everyone, people }, or the older { shared } (true: everyone, the people
+ * named kept; false: nobody). Names are trimmed, and repeats and the owner left out, whatever their case. A string says what is wrong.
+ */
+function sharingFrom(body: unknown, board: Ownership): Sharing | string {
+  const b = (body ?? {}) as { shared?: unknown; everyone?: unknown; people?: unknown };
+  if (b.everyone === undefined && b.people === undefined) {
+    if (typeof b.shared !== "boolean") return "say who to share with: { everyone: true or false, people: [user names] }";
+    return b.shared ? { everyone: true, people: board.people ?? [] } : NOT_SHARED;
+  }
+  if (b.everyone !== undefined && typeof b.everyone !== "boolean") return "everyone is true or false";
+  if (b.people !== undefined && !(Array.isArray(b.people) && b.people.every((p) => typeof p === "string"))) return "people is a list of user names";
+  // A name is one person whatever its case: the first spelling stays.
+  const people: string[] = [];
+  for (const p of ((b.people ?? []) as string[]).map((p) => p.trim())) if (p && !people.some((q) => sameUser(p, q)) && !sameUser(p, board.owner ?? "")) people.push(p);
+  if (people.length > MAX_PEOPLE) return `a board is shared by name with at most ${MAX_PEOPLE} people; share it with everyone instead`;
+  if (people.some((p) => p.length > 200)) return "a user name is at most 200 characters";
+  return { everyone: b.everyone === true, people };
+}
 
 /**
  * The last n user turns and everything after them. A cut falls only before a
@@ -349,6 +371,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
+  // Who has used this server, by tenant: the names an owner is offered to share a board with. Each pack's store
+  // keeps the names that opened it, so they outlast a restart. This process notes a name once (whatever its case),
+  // and at most so many per tenant, as a login proxy may name anyone.
+  const seen = new Map<string, Set<string>>();
+  const SEEN_PER_TENANT = 5000;
+  const saw = async (who: Principal, packs: () => Host[]) => {
+    const names = seen.get(who.tenant ?? "") ?? new Set<string>();
+    seen.set(who.tenant ?? "", names);
+    const key = who.user.toLowerCase();
+    if (names.has(key) || names.size >= SEEN_PER_TENANT || who.user.length > 200) return;
+    names.add(key);
+    // A store that cannot take it now is asked again next time.
+    await Promise.all(packs().map((h) => h.store.noteUser(who.user, who.tenant))).catch(() => names.delete(key));
+  };
   // Transcripts no question claimed within the hour are recorded as abandoned, even on a quiet server.
   if (opts.telemetry) setInterval(() => void opts.telemetry?.sweep(), 60_000).unref();
   // Kept recordings past their retention or over the size cap go once a day (and at start).
@@ -385,11 +421,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const asker: Asker = { user: who.user, tenant: who.tenant, roles: opts.telemetryRoles?.(req) ?? who.roles };
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
       const decisionFor = (h: Host, as: Principal = who) => decide(as, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx });
+      if (access) await saw(who, () => [...byName.values()].filter((h) => decisionFor(h)));
       // The pack's own boards first, in board-file order; then people's, latest first.
       const boardsOf = async (h: Host) => {
         const order = (b: Ownership & { id: string }) => (b.owner ? h.boards.length : Math.max(0, h.boards.findIndex((f) => f.id === b.id)));
         const listed = (await h.store.list()).filter((b) => boardRights(who, b).view);
-        return listed.map((b, i) => ({ b, i })).sort((x, y) => order(x.b) - order(y.b) || x.i - y.i).map(({ b }) => ({ ...b, writable: boardRights(who, b).edit }));
+        return listed.map((b, i) => ({ b, i })).sort((x, y) => order(x.b) - order(y.b) || x.i - y.i).map(({ b }) => ({ ...sharingShown(who, b), writable: boardRights(who, b).edit }));
       };
       if (!packName) {
         const list = await Promise.all(
@@ -404,6 +441,21 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         if (!who.usage) return json(res, 403, { error: "usage is not shown to you" });
         // The caps go with it, so whoever watches spend sees how near they are.
         return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
+      }
+      // The names an owner may share a board with: whoever has used a pack the caller opens, in their tenant, and
+      // whoever owns a board there. Editors only, as it names people; any other name may be typed as well.
+      if (packName === "_people" && req.method === "GET") {
+        if (!who.edit) return json(res, 403, { error: "only editors share boards" });
+        const tenant = who.tenant ?? "";
+        // One entry per name whatever its case, the caller left out.
+        const names = new Map<string, string>([[who.user.toLowerCase(), ""]]);
+        const add = (n: string) => names.has(n.toLowerCase()) || names.set(n.toLowerCase(), n);
+        for (const h of byName.values()) {
+          if (!decisionFor(h)) continue;
+          (await h.store.users(who.tenant)).forEach(add);
+          for (const b of await h.store.list()) if (b.owner && (b.tenant ?? "") === tenant) add(b.owner);
+        }
+        return json(res, 200, { people: [...names.values()].filter(Boolean).sort((a, b) => a.localeCompare(b)) });
       }
       // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
       if (packName === "_stt") {
@@ -512,6 +564,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       // every board config they are sent keeps a hidden key's filter, not its value (d.board).
       const catalogue = d.catalogue(h.catalogue);
       const shown = d.board;
+      // A board as the caller is sent it: who else it is shared with is its owner's to know.
+      const told = <B extends Parameters<typeof shown>[0] & Ownership>(b: B) => sharingShown(who, shown(b));
       // The decided scope narrows every query; hidden keys are refused in resolution, on every path.
       const ctx = d.ctx;
       const run = { pack: h.pack, connector: h.connector, ctx };
@@ -581,14 +635,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // response, instead of a board request followed by two more.
           const include = new Set((url.searchParams.get("include") ?? "").split(",").filter(Boolean));
           const mine = rights.edit;
-          if (include.size === 0) return json(res, 200, { board: shown(board), catalogue, writable: mine, ...notice });
+          if (include.size === 0) return json(res, 200, { board: told(board), catalogue, writable: mine, ...notice });
           const [data, options] = await Promise.all([
             include.has("data") ? resolveBoard(board.config, run) : undefined,
             include.has("options")
               ? Promise.all(board.config.filters.filter((f) => f.type !== "host").map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
               : undefined,
           ]);
-          return json(res, 200, { board: shown(board), catalogue, writable: mine, ...notice, ...(data ? { data } : {}), ...(options ? { options } : {}) });
+          return json(res, 200, { board: told(board), catalogue, writable: mine, ...notice, ...(data ? { data } : {}), ...(options ? { options } : {}) });
         }
         case "GET data":
           return json(res, 200, await resolveBoard(board.config, run, selectionsOf(url)));
@@ -634,11 +688,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           return json(res, 200, shown(saved));
         }
         case "POST share": {
-          const body = (await read(req)) as { shared?: boolean };
           if (!board.owner) return json(res, 403, { error: "The pack's own boards are everyone's already" });
-          const shared = await h.store.share(boardId, body.shared === true);
-          audit({ user: who.user, pack: packName, board: boardId, action: body.shared === true ? "share" : "unshare", outcome: "ok" });
-          if (body.shared === true) await opts.telemetry?.event({ ...asker, board: boardId, pack: packName }, { type: "board-shared" });
+          const to = sharingFrom(await read(req), board);
+          if (typeof to === "string") return json(res, 400, { error: to });
+          const shared = await h.store.share(boardId, to);
+          const anyone = to.everyone || to.people.length > 0;
+          audit({ user: who.user, pack: packName, board: boardId, action: anyone ? "share" : "unshare", outcome: "ok", detail: `everyone ${to.everyone ? "yes" : "no"}, ${to.people.length} by name` });
+          if (anyone) await opts.telemetry?.event({ ...asker, board: boardId, pack: packName }, { type: "board-shared" });
           return json(res, 200, shown(shared));
         }
         case "POST revert": {
