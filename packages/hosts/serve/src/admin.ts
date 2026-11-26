@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
-import { type CacheSettings, type ChecklistInput, type QueueSettings, type TelemetryLine, type TranscriptLine, type TurnLine, cacheSettings, localTurnGate, queueSettings, reuseLayer, telemetryChecklist, withoutNames } from "@lenspack/agent";
+import { type CacheSettings, type ChecklistInput, fieldNotices, type QueueSettings, type TelemetryLine, type TranscriptLine, type TurnLine, cacheSettings, localTurnGate, queueSettings, reuseLayer, telemetryChecklist, withoutNames } from "@lenspack/agent";
 import { type DeploymentContext, adminRights, deploymentContextSchema, recordRights } from "@lenspack/policy";
 
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
@@ -159,6 +159,9 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/features/saved-answers.md).
   const reuse = reuseLayer({ store: join(stateDir, "reuse.json"), settings: cacheNow, log: (m) => console.error(`lenspack: ${m}`) });
   const gate = localTurnGate(queue.get);
+  // What reads each telemetry field: the usage board's widgets, once the review mount has made it.
+  let telemetryUses: (() => Promise<Record<string, { id: string; label: string }[]>>) | null = null;
+  const notices = () => fieldNotices({ switches: switches.values(), features: switches.featureValues(true), context });
   return {
     settings,
     features,
@@ -178,6 +181,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     context,
     audio,
     audioSettings,
+    /** By telemetry field group id, the widgets of the usage board that read it ({} before the board is made). */
+    telemetryUses: async () => (telemetryUses ? await telemetryUses().catch(() => ({})) : {}),
     /** The board API's per-turn reads of these settings. */
     app: {
       review: () => features.on("reviewer"),
@@ -194,7 +199,10 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     } satisfies Partial<AppOptions>,
     /** The review system and admin panel over these settings (review/mount.ts), so a host wires it with no more imports. */
     review(o: ReviewMountOptions) {
-      return reviewMount({ features, settings, brand, app: { review: () => features.on("reviewer"), chatDefault: () => saved<ChatSetting>("chat") } }, o);
+      return reviewMount(
+        { features, settings, brand, app: { review: () => features.on("reviewer"), chatDefault: () => saved<ChatSetting>("chat") }, telemetry: { notices, setUses: (f) => (telemetryUses = f) } },
+        o,
+      );
     },
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
     speechView: async (writable: boolean) => ({
@@ -266,8 +274,8 @@ export function adminRoutes(o: AdminRouteOptions) {
     const sinceIso = since.toISOString();
     const audio = s.audioSettings();
     const sw = s.switches.values();
-    // Superset's action log is read only while its item is on.
-    const logsOn = s.switches.on().has("trust-superset-actions");
+    // Superset's action log is read only while its field is on.
+    const logsOn = s.switches.on().has("superset-actions");
     const supersetLogs = !o.supersetLogs ? null : logsOn ? await o.supersetLogs(since).catch((e: unknown) => ({ available: false, reason: e instanceof Error ? e.message.slice(0, 200) : String(e), count: 0, lastSeen: null })) : { available: true, count: 0, lastSeen: null };
     return telemetryChecklist({
       now,
@@ -280,6 +288,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       audioSaved: (await s.audio.list()).filter((c) => c.at >= sinceIso).map((c) => c.at),
       supersetLogs,
       owned: await o.owned?.(since),
+      uses: await s.telemetryUses?.(),
     });
   }
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<void> => {

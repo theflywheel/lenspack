@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
-import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
+import { type Connector, type Ctx, type Notice, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, tabsText, toVercelAI, viewFrom } from "@lenspack/agent";
 import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
@@ -50,6 +50,12 @@ export type Host = {
   catalogue?: Catalogue;
   /** Who may open the pack and what of it they see (lenspack.yaml packs[].access). */
   access?: PackRule[];
+  /**
+   * Keys the source can't answer right now, and why (read on every request): a query naming one is refused with the
+   * notice, which a board draws in place of the widget and the chat passes on. The usage pack's keys whose telemetry
+   * fields are switched off, for example.
+   */
+  unavailable?: () => ReadonlyMap<string, Notice> | undefined;
 };
 
 export type AppOptions = {
@@ -528,7 +534,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const catalogue = d.catalogue(h.catalogue);
       const shown = d.board;
       // The decided scope narrows every query; hidden keys are refused in resolution, on every path.
-      const ctx = d.ctx;
+      const gone = h.unavailable?.();
+      const ctx = gone?.size ? { ...d.ctx, unavailable: gone } : d.ctx;
       const run = { pack: h.pack, connector: h.connector, ctx };
       // The host keeps every measure from the caller: said up front (the chat panel shows it before anything is asked).
       const notice = d.notice ? { accessNotice: d.notice } : {};

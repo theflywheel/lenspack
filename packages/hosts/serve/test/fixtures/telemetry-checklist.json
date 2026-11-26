@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-26T13:08:41.386Z",
+  "generatedAt": "2026-11-26T14:05:50.422Z",
   "telemetry": {
     "on": true,
     "changed": null
@@ -38,28 +38,32 @@
           ],
           "usedBy": [
             {
-              "id": "users-active",
-              "label": "Daily and weekly active users"
+              "id": "users_7d",
+              "label": "Active users, 7 days"
             },
             {
-              "id": "users-by-role",
-              "label": "Active users by role"
+              "id": "users_24h",
+              "label": "Active users, last 24 hours"
             },
             {
-              "id": "users-by-country",
-              "label": "Active users by country"
+              "id": "questions_per_user",
+              "label": "Questions per user, 7 days"
             },
             {
-              "id": "users-return",
-              "label": "Users who come back next campaign"
+              "id": "users_daily",
+              "label": "Active users per day"
             },
             {
-              "id": "volume-per-user",
-              "label": "Questions per user"
+              "id": "users_role",
+              "label": "Active users by role, 7 days"
             },
             {
-              "id": "cost-per-user",
-              "label": "Cost per user"
+              "id": "users_country",
+              "label": "Active users by country, 7 days"
+            },
+            {
+              "id": "cost_per_user",
+              "label": "Cost per user, 7 days (US$)"
             }
           ],
           "switch": {
@@ -77,7 +81,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 462,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -94,12 +98,12 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "users-by-role",
-              "label": "Active users by role"
+              "id": "users_role",
+              "label": "Active users by role, 7 days"
             },
             {
-              "id": "asks-top-by-role",
-              "label": "Top 10 questions by role"
+              "id": "top_questions_role",
+              "label": "Top questions by role, 7 days"
             }
           ],
           "switch": {
@@ -117,7 +121,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 462,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -134,16 +138,12 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "users-by-country",
-              "label": "Active users by country"
+              "id": "users_country",
+              "label": "Active users by country, 7 days"
             },
             {
-              "id": "users-return",
-              "label": "Users who come back next campaign"
-            },
-            {
-              "id": "quality-answer-rate",
-              "label": "Answer rate by campaign type and language"
+              "id": "answer_rate_campaign",
+              "label": "Answer rate by campaign type, 7 days"
             }
           ],
           "switch": {
@@ -161,7 +161,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -177,16 +177,12 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "quality-thumbs-down",
-              "label": "Thumbs down and their reasons"
+              "id": "sessions_7d",
+              "label": "Conversations, 7 days"
             },
             {
-              "id": "quality-clarify",
-              "label": "Clarifying questions: answered or dropped"
-            },
-            {
-              "id": "conv-follow-ups",
-              "label": "Follow-ups per conversation"
+              "id": "follow_ups",
+              "label": "Questions per conversation, 7 days"
             }
           ],
           "switch": {
@@ -204,7 +200,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 357,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -217,12 +213,7 @@
             "turn.selections"
           ],
           "privacy": [],
-          "usedBy": [
-            {
-              "id": "asks-top-by-role",
-              "label": "Top 10 questions by role"
-            }
-          ],
+          "usedBy": [],
           "switch": {
             "key": "fields.selections",
             "on": true,
@@ -238,7 +229,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -256,8 +247,8 @@
           ],
           "usedBy": [
             {
-              "id": "device-class",
-              "label": "Phone, tablet or desktop, and screen width"
+              "id": "device_mix",
+              "label": "Questions by device, 7 days"
             }
           ],
           "switch": {
@@ -293,8 +284,8 @@
           ],
           "usedBy": [
             {
-              "id": "device-network",
-              "label": "Network type and data saver"
+              "id": "network_mix",
+              "label": "Questions by network, 7 days"
             }
           ],
           "switch": {
@@ -337,24 +328,20 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "quality-unanswered",
-              "label": "Top unanswered questions"
+              "id": "distinct_questions",
+              "label": "Different questions, 7 days"
             },
             {
-              "id": "asks-top-by-role",
-              "label": "Top 10 questions by role"
+              "id": "unanswered_distinct",
+              "label": "Different questions not answered, 7 days"
             },
             {
-              "id": "asks-repeated-direct",
-              "label": "Repeated direct questions"
+              "id": "kind_repeats",
+              "label": "Questions and different questions, by kind, 7 days"
             },
             {
-              "id": "asks-repeated-derived",
-              "label": "Repeated derived questions"
-            },
-            {
-              "id": "voice-wer-proxy",
-              "label": "Word error rate (estimate from edits)"
+              "id": "word_error",
+              "label": "Word error rate, estimated from edits, 7 days"
             }
           ],
           "switch": {
@@ -372,7 +359,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -391,20 +378,16 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "quality-answer-rate",
-              "label": "Answer rate by campaign type and language"
+              "id": "answer_rate_language",
+              "label": "Answer rate by language, 7 days"
             },
             {
-              "id": "voice-edit-rate",
-              "label": "Transcripts edited before sending"
+              "id": "language_mix",
+              "label": "Language mix, 7 days"
             },
             {
-              "id": "language-mix",
-              "label": "Language mix"
-            },
-            {
-              "id": "voice-wer-proxy",
-              "label": "Word error rate (estimate from edits)"
+              "id": "edited_language",
+              "label": "Transcripts edited before sending, by language, 7 days"
             }
           ],
           "switch": {
@@ -422,7 +405,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 385,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -438,12 +421,12 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "voice-reask",
-              "label": "Typed again after speaking"
+              "id": "rephrased_share",
+              "label": "Asked again in other words, 7 days"
             },
             {
-              "id": "conv-rephrase",
-              "label": "Questions asked again in other words"
+              "id": "reasked_share",
+              "label": "Typed again after speaking, 7 days"
             }
           ],
           "switch": {
@@ -461,7 +444,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         }
@@ -486,16 +469,36 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "quality-answer-rate",
-              "label": "Answer rate by campaign type and language"
+              "id": "answer_rate",
+              "label": "Answer rate, 7 days"
             },
             {
-              "id": "quality-unanswered",
-              "label": "Top unanswered questions"
+              "id": "asked_back",
+              "label": "Clarifying questions asked, 7 days"
             },
             {
-              "id": "quality-clarify",
-              "label": "Clarifying questions: answered or dropped"
+              "id": "quick_reply_share",
+              "label": "Clarifying questions answered with a quick reply"
+            },
+            {
+              "id": "answer_rate_campaign",
+              "label": "Answer rate by campaign type, 7 days"
+            },
+            {
+              "id": "answer_rate_language",
+              "label": "Answer rate by language, 7 days"
+            },
+            {
+              "id": "not_answered_why",
+              "label": "Why questions were not answered, 7 days"
+            },
+            {
+              "id": "top_unanswered",
+              "label": "Top unanswered questions, 7 days"
+            },
+            {
+              "id": "unanswered_distinct",
+              "label": "Different questions not answered, 7 days"
             }
           ],
           "switch": {
@@ -513,7 +516,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -534,24 +537,16 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "quality-answer-rate",
-              "label": "Answer rate by campaign type and language"
+              "id": "kind_mix",
+              "label": "Direct, derived and chart questions, 7 days"
             },
             {
-              "id": "asks-repeated-direct",
-              "label": "Repeated direct questions"
+              "id": "kind_repeats",
+              "label": "Questions and different questions, by kind, 7 days"
             },
             {
-              "id": "asks-repeated-derived",
-              "label": "Repeated derived questions"
-            },
-            {
-              "id": "asks-mix",
-              "label": "Mix of direct, derived and chart questions"
-            },
-            {
-              "id": "speed-p95",
-              "label": "Slowest answers (95th percentile) by kind"
+              "id": "p95_kind",
+              "label": "95th percentile reply time by kind of question (s)"
             }
           ],
           "switch": {
@@ -569,7 +564,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -584,12 +579,7 @@
             "turn.fixRound"
           ],
           "privacy": [],
-          "usedBy": [
-            {
-              "id": "cost-per-question",
-              "label": "Cost per question (model, voice, review)"
-            }
-          ],
+          "usedBy": [],
           "switch": {
             "key": "fields.review",
             "on": true,
@@ -605,7 +595,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -621,12 +611,16 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "reuse-hit-rate",
-              "label": "Saved answers used, by tier"
+              "id": "saved_rate",
+              "label": "Answered from saved answers, 7 days"
             },
             {
-              "id": "reuse-saved",
-              "label": "Money saved by saved answers"
+              "id": "saved_usd",
+              "label": "Money saved by saved answers, 7 days (US$)"
+            },
+            {
+              "id": "saved_tier",
+              "label": "Saved answers used, by tier, 7 days"
             }
           ],
           "switch": {
@@ -644,7 +638,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -657,12 +651,7 @@
           "privacy": [
             "usernames visible to admins with the usage right"
           ],
-          "usedBy": [
-            {
-              "id": "trust-superset-actions",
-              "label": "Exports and shares in Superset on {name}'s dashboards"
-            }
-          ],
+          "usedBy": [],
           "switch": {
             "key": "fields.superset-actions",
             "on": true,
@@ -691,16 +680,7 @@
           "source": "feature",
           "fields": [],
           "privacy": [],
-          "usedBy": [
-            {
-              "id": "review-runs",
-              "label": "Daily review runs"
-            },
-            {
-              "id": "review-proposals",
-              "label": "Daily review proposals"
-            }
-          ],
+          "usedBy": [],
           "switch": {
             "key": null,
             "on": false,
@@ -733,12 +713,7 @@
           "source": "feature",
           "fields": [],
           "privacy": [],
-          "usedBy": [
-            {
-              "id": "review-open-questions",
-              "label": "Open questions (two readings)"
-            }
-          ],
+          "usedBy": [],
           "switch": {
             "key": null,
             "on": true,
@@ -793,12 +768,20 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "cost-per-question",
-              "label": "Cost per question (model, voice, review)"
+              "id": "cost_per_question",
+              "label": "Cost per question, 7 days (US$)"
             },
             {
-              "id": "cost-per-user",
-              "label": "Cost per user"
+              "id": "cost_per_user",
+              "label": "Cost per user, 7 days (US$)"
+            },
+            {
+              "id": "cost_daily",
+              "label": "Cost per day by model (US$)"
+            },
+            {
+              "id": "cost_parts",
+              "label": "Cost by model: model, review and speech, 7 days (US$)"
             }
           ],
           "switch": {
@@ -816,7 +799,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -832,8 +815,20 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "speed-p95",
-              "label": "Slowest answers (95th percentile) by kind"
+              "id": "reply_median",
+              "label": "Median reply time, 7 days"
+            },
+            {
+              "id": "reply_p95",
+              "label": "95th percentile reply time, 7 days"
+            },
+            {
+              "id": "p95_kind",
+              "label": "95th percentile reply time by kind of question (s)"
+            },
+            {
+              "id": "reply_daily",
+              "label": "Median reply time per day (s)"
             }
           ],
           "switch": {
@@ -851,7 +846,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -866,8 +861,8 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "speed-queue",
-              "label": "Time waiting for a free slot"
+              "id": "waited_share",
+              "label": "Questions that waited for a free slot, 7 days"
             }
           ],
           "switch": {
@@ -885,7 +880,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -904,8 +899,8 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "speed-abandoned",
-              "label": "Answers left before they finished"
+              "id": "abandoned_share",
+              "label": "Answers left before they finished, 7 days"
             }
           ],
           "switch": {
@@ -923,7 +918,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         }
@@ -950,8 +945,12 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "quality-thumbs-down",
-              "label": "Thumbs down and their reasons"
+              "id": "thumbs_down_share",
+              "label": "Thumbs down, share of ratings, 7 days"
+            },
+            {
+              "id": "thumbs_reasons",
+              "label": "Thumbs-down reasons, 7 days"
             }
           ],
           "switch": {
@@ -969,7 +968,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 37,
-          "lastSeen": "2026-11-26T10:12:27.538Z",
+          "lastSeen": "2026-11-26T11:01:03.047Z",
           "offSince": null,
           "offBy": null
         },
@@ -985,8 +984,8 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "quality-clarify",
-              "label": "Clarifying questions: answered or dropped"
+              "id": "quick_reply_share",
+              "label": "Clarifying questions answered with a quick reply"
             }
           ],
           "switch": {
@@ -1004,7 +1003,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 12,
-          "lastSeen": "2026-11-24T01:14:36.148Z",
+          "lastSeen": "2026-11-24T02:03:11.657Z",
           "offSince": null,
           "offBy": null
         },
@@ -1019,8 +1018,8 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "trust-explain",
-              "label": "How an answer was worked out, opened"
+              "id": "explain_opened",
+              "label": "How an answer was worked out, opened, 7 days"
             }
           ],
           "switch": {
@@ -1038,7 +1037,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 28,
-          "lastSeen": "2026-11-26T08:55:26.500Z",
+          "lastSeen": "2026-11-26T09:44:02.009Z",
           "offSince": null,
           "offBy": null
         },
@@ -1055,8 +1054,12 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "trust-export-share",
-              "label": "Charts exported or boards shared in {name}"
+              "id": "exports",
+              "label": "Charts exported, 7 days"
+            },
+            {
+              "id": "shares",
+              "label": "Boards shared, 7 days"
             }
           ],
           "switch": {
@@ -1091,8 +1094,8 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "personal-dashboards",
-              "label": "Own dashboards made, copied and deleted; saved layouts used"
+              "id": "dashboards",
+              "label": "Own dashboards and saved layouts used, 7 days"
             }
           ],
           "switch": {
@@ -1141,12 +1144,24 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "voice-share",
-              "label": "Share of questions spoken"
+              "id": "spoken_share",
+              "label": "Questions spoken, 7 days"
             },
             {
-              "id": "voice-reask",
-              "label": "Typed again after speaking"
+              "id": "edited_share",
+              "label": "Transcripts edited before sending, 7 days"
+            },
+            {
+              "id": "reasked_share",
+              "label": "Typed again after speaking, 7 days"
+            },
+            {
+              "id": "word_error",
+              "label": "Word error rate, estimated from edits, 7 days"
+            },
+            {
+              "id": "edited_language",
+              "label": "Transcripts edited before sending, by language, 7 days"
             }
           ],
           "switch": {
@@ -1164,7 +1179,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -1178,12 +1193,7 @@
             "turn.transcriptIds"
           ],
           "privacy": [],
-          "usedBy": [
-            {
-              "id": "voice-share",
-              "label": "Share of questions spoken"
-            }
-          ],
+          "usedBy": [],
           "switch": {
             "key": "fields.transcript-links",
             "on": true,
@@ -1199,7 +1209,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 320,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -1220,12 +1230,16 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "voice-edit-rate",
-              "label": "Transcripts edited before sending"
+              "id": "edited_share",
+              "label": "Transcripts edited before sending, 7 days"
             },
             {
-              "id": "voice-wer-proxy",
-              "label": "Word error rate (estimate from edits)"
+              "id": "word_error",
+              "label": "Word error rate, estimated from edits, 7 days"
+            },
+            {
+              "id": "edited_language",
+              "label": "Transcripts edited before sending, by language, 7 days"
             }
           ],
           "switch": {
@@ -1243,7 +1257,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 385,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -1262,12 +1276,12 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "cost-voice",
-              "label": "Speech to text cost"
+              "id": "speech_cost",
+              "label": "Speech-to-text cost, 7 days (US$)"
             },
             {
-              "id": "voice-wer-proxy",
-              "label": "Word error rate (estimate from edits)"
+              "id": "speech_seconds",
+              "label": "Speech transcribed, 7 days"
             }
           ],
           "switch": {
@@ -1285,7 +1299,7 @@
           "status": "recording",
           "howToEnable": null,
           "count7d": 65,
-          "lastSeen": "2026-11-26T12:06:58.878Z",
+          "lastSeen": "2026-11-26T12:55:34.387Z",
           "offSince": null,
           "offBy": null
         },
@@ -1303,8 +1317,8 @@
           "privacy": [],
           "usedBy": [
             {
-              "id": "voice-not-sent",
-              "label": "Transcripts never sent"
+              "id": "not_sent",
+              "label": "Transcripts never sent, 7 days"
             }
           ],
           "switch": {
@@ -1347,7 +1361,16 @@
           "privacy": [
             "stores question text"
           ],
-          "usedBy": [],
+          "usedBy": [
+            {
+              "id": "top_unanswered",
+              "label": "Top unanswered questions, 7 days"
+            },
+            {
+              "id": "top_questions_role",
+              "label": "Top questions by role, 7 days"
+            }
+          ],
           "switch": {
             "key": "fields.question-text",
             "on": false,
@@ -1431,1636 +1454,6 @@
           "lastSeen": null,
           "offSince": null,
           "offBy": null
-        }
-      ]
-    }
-  ],
-  "metrics": [
-    {
-      "id": "users",
-      "title": "Users",
-      "metrics": [
-        {
-          "id": "users-active",
-          "label": "Daily and weekly active users",
-          "decision": "Is the pilot reaching people, and is use growing?",
-          "needs": [
-            {
-              "id": "user",
-              "label": "User name",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 14,
-              "unit": "users"
-            },
-            "parts": [
-              {
-                "key": "last24h",
-                "figure": {
-                  "kind": "count",
-                  "value": 14,
-                  "unit": "users"
-                }
-              },
-              {
-                "key": "dailyAvg",
-                "figure": {
-                  "kind": "number",
-                  "value": 13.25,
-                  "unit": "users"
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "users-by-role",
-          "label": "Active users by role",
-          "decision": "Which roles use it, and who needs training or a different entry point?",
-          "needs": [
-            {
-              "id": "user",
-              "label": "User name",
-              "on": true
-            },
-            {
-              "id": "roles",
-              "label": "Role names",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 3,
-              "unit": "roles"
-            },
-            "parts": [
-              {
-                "label": "Supervisor",
-                "figure": {
-                  "kind": "count",
-                  "value": 8,
-                  "unit": "users"
-                }
-              },
-              {
-                "label": "Analyst",
-                "figure": {
-                  "kind": "count",
-                  "value": 4,
-                  "unit": "users"
-                }
-              },
-              {
-                "label": "Admin",
-                "figure": {
-                  "kind": "count",
-                  "value": 2,
-                  "unit": "users"
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "users-by-country",
-          "label": "Active users by country",
-          "decision": "Where to put support and the next rollout.",
-          "needs": [
-            {
-              "id": "user",
-              "label": "User name",
-              "on": true
-            },
-            {
-              "id": "context",
-              "label": "Campaign and country tags",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 2,
-              "unit": "countries"
-            },
-            "parts": [
-              {
-                "label": "Country A",
-                "figure": {
-                  "kind": "count",
-                  "value": 9,
-                  "unit": "users"
-                }
-              },
-              {
-                "label": "Country B",
-                "figure": {
-                  "kind": "count",
-                  "value": 5,
-                  "unit": "users"
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "users-return",
-          "label": "Users who come back next campaign",
-          "decision": "Does it keep its users from one campaign to the next?",
-          "needs": [
-            {
-              "id": "user",
-              "label": "User name",
-              "on": true
-            },
-            {
-              "id": "context",
-              "label": "Campaign and country tags",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "needs-config",
-            "text": "Needs configuration: map dashboards, datasets or roles to a campaign in the context: section of the config.",
-            "context": [
-              "campaign"
-            ],
-            "fix": {
-              "kind": "config",
-              "key": "context"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "volume-cost",
-      "title": "Volume and cost",
-      "metrics": [
-        {
-          "id": "volume-per-user",
-          "label": "Questions per user",
-          "decision": "How much each person leans on it; sizing and budgets.",
-          "needs": [
-            {
-              "id": "user",
-              "label": "User name",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "number",
-              "value": 22.857142857142858,
-              "unit": "questions"
-            },
-            "parts": [
-              {
-                "key": "questions",
-                "figure": {
-                  "kind": "count",
-                  "value": 320
-                }
-              },
-              {
-                "key": "users",
-                "figure": {
-                  "kind": "count",
-                  "value": 14
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "cost-per-question",
-          "label": "Cost per question (model, voice, review)",
-          "decision": "Which model to run, and whether the review step pays for itself.",
-          "needs": [
-            {
-              "id": "cost",
-              "label": "Cost, tokens and models",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "review",
-              "label": "Review step",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "usd",
-              "value": 0.004452870455993862
-            },
-            "parts": [
-              {
-                "key": "total",
-                "figure": {
-                  "kind": "usd",
-                  "value": 1.4249185459180358
-                }
-              },
-              {
-                "key": "model",
-                "figure": {
-                  "kind": "usd",
-                  "value": 0.0035622963647950895
-                }
-              },
-              {
-                "key": "speech",
-                "figure": {
-                  "kind": "usd",
-                  "value": 8.125000000000005e-05
-                }
-              },
-              {
-                "key": "review",
-                "figure": {
-                  "kind": "usd",
-                  "value": 0.0008873162395948619
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "cost-per-user",
-          "label": "Cost per user",
-          "decision": "The budget per supervisor for a campaign.",
-          "needs": [
-            {
-              "id": "user",
-              "label": "User name",
-              "on": true
-            },
-            {
-              "id": "cost",
-              "label": "Cost, tokens and models",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "usd",
-              "value": 0.10177989613700256
-            },
-            "parts": [
-              {
-                "key": "total",
-                "figure": {
-                  "kind": "usd",
-                  "value": 1.4249185459180358
-                }
-              },
-              {
-                "key": "users",
-                "figure": {
-                  "kind": "count",
-                  "value": 14
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "cost-voice",
-          "label": "Speech to text cost",
-          "decision": "Whether voice is affordable at campaign scale.",
-          "needs": [
-            {
-              "id": "speech-cost",
-              "label": "Speech to text cost and time",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "usd",
-              "value": 0.026000000000000016
-            },
-            "parts": [
-              {
-                "key": "clips",
-                "figure": {
-                  "kind": "count",
-                  "value": 65
-                }
-              },
-              {
-                "key": "perClip",
-                "figure": {
-                  "kind": "usd",
-                  "value": 0.00040000000000000024
-                }
-              },
-              {
-                "key": "minutes",
-                "figure": {
-                  "kind": "number",
-                  "value": 4.3705684591413325
-                }
-              }
-            ],
-            "records": 65
-          },
-          "unavailable": null
-        }
-      ]
-    },
-    {
-      "id": "quality",
-      "title": "Quality",
-      "metrics": [
-        {
-          "id": "quality-answer-rate",
-          "label": "Answer rate by campaign type and language",
-          "decision": "Where the pack or the model falls short.",
-          "needs": [
-            {
-              "id": "outcome",
-              "label": "How it ended",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "language",
-              "label": "Languages",
-              "on": true
-            },
-            {
-              "id": "context",
-              "label": "Campaign and country tags",
-              "on": true
-            },
-            {
-              "id": "work",
-              "label": "Kind of question and the work it took",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "percent",
-              "value": 0.8375
-            },
-            "parts": [
-              {
-                "label": "fixed-site",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.8518518518518519
-                }
-              },
-              {
-                "label": "door-to-door",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.8227848101265823
-                }
-              },
-              {
-                "label": "en",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.8403361344537815
-                }
-              },
-              {
-                "label": "fr",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.8292682926829268
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "quality-unanswered",
-          "label": "Top unanswered questions",
-          "decision": "What to add to the pack next.",
-          "needs": [
-            {
-              "id": "outcome",
-              "label": "How it ended",
-              "on": true
-            },
-            {
-              "id": "question-hash",
-              "label": "Question fingerprint and length",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 52,
-              "unit": "questions"
-            },
-            "parts": [
-              {
-                "key": "distinct",
-                "figure": {
-                  "kind": "count",
-                  "value": 29
-                }
-              },
-              {
-                "key": "topRepeat",
-                "figure": {
-                  "kind": "count",
-                  "value": 4,
-                  "unit": "times"
-                }
-              }
-            ],
-            "records": 52
-          },
-          "unavailable": null
-        },
-        {
-          "id": "quality-thumbs-down",
-          "label": "Thumbs down and their reasons",
-          "decision": "Which answers people do not trust, and why.",
-          "needs": [
-            {
-              "id": "feedback",
-              "label": "Thumbs up or down, and the reason",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "conversation",
-              "label": "Conversation",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 10,
-              "unit": "thumbsDown"
-            },
-            "parts": [
-              {
-                "key": "ofRatings",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.2702702702702703
-                }
-              },
-              {
-                "label": "misunderstood",
-                "figure": {
-                  "kind": "count",
-                  "value": 3
-                }
-              },
-              {
-                "label": "too-slow",
-                "figure": {
-                  "kind": "count",
-                  "value": 3
-                }
-              },
-              {
-                "label": "wrong-number",
-                "figure": {
-                  "kind": "count",
-                  "value": 2
-                }
-              }
-            ],
-            "records": 37
-          },
-          "unavailable": null
-        },
-        {
-          "id": "quality-clarify",
-          "label": "Clarifying questions: answered or dropped",
-          "decision": "Whether asking back helps or loses people.",
-          "needs": [
-            {
-              "id": "outcome",
-              "label": "How it ended",
-              "on": true
-            },
-            {
-              "id": "quick-replies",
-              "label": "Quick replies picked",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "conversation",
-              "label": "Conversation",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 18,
-              "unit": "askedBack"
-            },
-            "parts": [
-              {
-                "key": "picked",
-                "figure": {
-                  "kind": "count",
-                  "value": 12
-                }
-              },
-              {
-                "key": "answeredShare",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.6666666666666666
-                }
-              }
-            ],
-            "records": 30
-          },
-          "unavailable": null
-        }
-      ]
-    },
-    {
-      "id": "asks",
-      "title": "What people ask",
-      "metrics": [
-        {
-          "id": "asks-top-by-role",
-          "label": "Top 10 questions by role",
-          "decision": "What to put on dashboards and in suggested questions.",
-          "needs": [
-            {
-              "id": "question-hash",
-              "label": "Question fingerprint and length",
-              "on": true
-            },
-            {
-              "id": "roles",
-              "label": "Role names",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "selections",
-              "label": "Dashboard filters picked",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 40,
-              "unit": "distinctQuestions"
-            },
-            "parts": [
-              {
-                "label": "Supervisor",
-                "figure": {
-                  "kind": "count",
-                  "value": 12,
-                  "unit": "topAsked"
-                }
-              },
-              {
-                "label": "Analyst",
-                "figure": {
-                  "kind": "count",
-                  "value": 6,
-                  "unit": "topAsked"
-                }
-              },
-              {
-                "label": "Admin",
-                "figure": {
-                  "kind": "count",
-                  "value": 5,
-                  "unit": "topAsked"
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "asks-repeated-direct",
-          "label": "Repeated direct questions",
-          "decision": "Which numbers deserve a chart instead of a question.",
-          "needs": [
-            {
-              "id": "work",
-              "label": "Kind of question and the work it took",
-              "on": true
-            },
-            {
-              "id": "question-hash",
-              "label": "Question fingerprint and length",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 36,
-              "unit": "questions"
-            },
-            "parts": [
-              {
-                "key": "askedTimes",
-                "figure": {
-                  "kind": "count",
-                  "value": 134
-                }
-              }
-            ],
-            "records": 136
-          },
-          "unavailable": null
-        },
-        {
-          "id": "asks-repeated-derived",
-          "label": "Repeated derived questions",
-          "decision": "Which rates or comparisons to add as measures.",
-          "needs": [
-            {
-              "id": "work",
-              "label": "Kind of question and the work it took",
-              "on": true
-            },
-            {
-              "id": "question-hash",
-              "label": "Question fingerprint and length",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 30,
-              "unit": "questions"
-            },
-            "parts": [
-              {
-                "key": "askedTimes",
-                "figure": {
-                  "kind": "count",
-                  "value": 89
-                }
-              }
-            ],
-            "records": 97
-          },
-          "unavailable": null
-        },
-        {
-          "id": "asks-mix",
-          "label": "Mix of direct, derived and chart questions",
-          "decision": "Whether people use it to ask or to build.",
-          "needs": [
-            {
-              "id": "work",
-              "label": "Kind of question and the work it took",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 320,
-              "unit": "questions"
-            },
-            "parts": [
-              {
-                "label": "direct",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.425
-                }
-              },
-              {
-                "label": "derived",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.303125
-                }
-              },
-              {
-                "label": "meta",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.14375
-                }
-              },
-              {
-                "label": "chart",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.128125
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        }
-      ]
-    },
-    {
-      "id": "speed",
-      "title": "Speed",
-      "metrics": [
-        {
-          "id": "speed-p95",
-          "label": "Slowest answers (95th percentile) by kind",
-          "decision": "Whether answers are fast enough on field networks.",
-          "needs": [
-            {
-              "id": "timing",
-              "label": "Answer time",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "work",
-              "label": "Kind of question and the work it took",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "ms",
-              "value": 9043
-            },
-            "parts": [
-              {
-                "key": "median",
-                "figure": {
-                  "kind": "ms",
-                  "value": 4437
-                }
-              },
-              {
-                "label": "direct",
-                "figure": {
-                  "kind": "ms",
-                  "value": 6483
-                }
-              },
-              {
-                "label": "derived",
-                "figure": {
-                  "kind": "ms",
-                  "value": 10001
-                }
-              },
-              {
-                "label": "meta",
-                "figure": {
-                  "kind": "ms",
-                  "value": 6420
-                }
-              },
-              {
-                "label": "chart",
-                "figure": {
-                  "kind": "ms",
-                  "value": 6323
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "speed-abandoned",
-          "label": "Answers left before they finished",
-          "decision": "Where waiting loses people.",
-          "needs": [
-            {
-              "id": "abandoned",
-              "label": "Answers left early",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "percent",
-              "value": 0.059375
-            },
-            "parts": [
-              {
-                "key": "count",
-                "figure": {
-                  "kind": "count",
-                  "value": 19,
-                  "unit": "answers"
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "speed-queue",
-          "label": "Time waiting for a free slot",
-          "decision": "When to add capacity at campaign peaks.",
-          "needs": [
-            {
-              "id": "queue",
-              "label": "Wait for a free slot",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "ms",
-              "value": 3540
-            },
-            "parts": [
-              {
-                "key": "waitedShare",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.06875
-                }
-              },
-              {
-                "key": "longest",
-                "figure": {
-                  "kind": "ms",
-                  "value": 3658
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "speed-time-saved",
-          "label": "Time saved against the old way",
-          "decision": "Whether the tool is worth the change.",
-          "needs": [],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "not-telemetry",
-            "text": "Needs a baseline: time the same tasks done the old way in a small study, then compare with the answer times here.",
-            "fix": null
-          }
-        }
-      ]
-    },
-    {
-      "id": "voice",
-      "title": "Voice and language",
-      "metrics": [
-        {
-          "id": "voice-share",
-          "label": "Share of questions spoken",
-          "decision": "Whether voice is worth keeping and improving.",
-          "needs": [
-            {
-              "id": "input",
-              "label": "Typed or spoken",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "transcript-links",
-              "label": "Transcript links",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "percent",
-              "value": 0.203125
-            },
-            "parts": [
-              {
-                "key": "spoken",
-                "figure": {
-                  "kind": "count",
-                  "value": 65,
-                  "unit": "questions"
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "voice-edit-rate",
-          "label": "Transcripts edited before sending",
-          "decision": "Which languages speech to text gets wrong.",
-          "needs": [
-            {
-              "id": "transcript-edits",
-              "label": "Edits to the transcript",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "language",
-              "label": "Languages",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "percent",
-              "value": 0.23076923076923078
-            },
-            "parts": [
-              {
-                "label": "en",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.20454545454545456
-                }
-              },
-              {
-                "label": "fr",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.2857142857142857
-                }
-              }
-            ],
-            "records": 65
-          },
-          "unavailable": null
-        },
-        {
-          "id": "voice-reask",
-          "label": "Typed again after speaking",
-          "decision": "Whether voice failures push people back to typing.",
-          "needs": [
-            {
-              "id": "repeats",
-              "label": "Asked again",
-              "on": true
-            },
-            {
-              "id": "input",
-              "label": "Typed or spoken",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 0,
-              "unit": "times"
-            },
-            "parts": [
-              {
-                "key": "ofSpoken",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "voice-not-sent",
-          "label": "Transcripts never sent",
-          "decision": "Whether people give up after hearing the transcript.",
-          "needs": [
-            {
-              "id": "voice-not-sent",
-              "label": "Transcripts never sent",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "no-data",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 0,
-              "unit": "transcripts"
-            },
-            "parts": [],
-            "records": 0
-          },
-          "unavailable": null
-        },
-        {
-          "id": "language-mix",
-          "label": "Language mix",
-          "decision": "Which languages to support well.",
-          "needs": [
-            {
-              "id": "language",
-              "label": "Languages",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 2,
-              "unit": "languages"
-            },
-            "parts": [
-              {
-                "label": "en",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.74375
-                }
-              },
-              {
-                "label": "fr",
-                "figure": {
-                  "kind": "percent",
-                  "value": 0.25625
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "voice-wer-proxy",
-          "label": "Word error rate (estimate from edits)",
-          "decision": "Which speech model to use per language.",
-          "needs": [
-            {
-              "id": "transcript-edits",
-              "label": "Edits to the transcript",
-              "on": true
-            },
-            {
-              "id": "question-hash",
-              "label": "Question fingerprint and length",
-              "on": true
-            }
-          ],
-          "by": [
-            {
-              "id": "speech-cost",
-              "label": "Speech to text cost and time",
-              "on": true
-            },
-            {
-              "id": "language",
-              "label": "Languages",
-              "on": true
-            }
-          ],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "percent",
-              "value": 0.06529850746268656
-            },
-            "parts": [
-              {
-                "key": "spoken",
-                "figure": {
-                  "kind": "count",
-                  "value": 65,
-                  "unit": "questions"
-                }
-              }
-            ],
-            "records": 65
-          },
-          "unavailable": null
-        },
-        {
-          "id": "voice-wer-true",
-          "label": "True word error rate",
-          "decision": "Which speech model to use per language.",
-          "needs": [],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "not-telemetry",
-            "text": "Needs hand-made transcripts of real clips. Keep recordings and export the benchmark manifest to make them.",
-            "fix": null
-          }
-        }
-      ]
-    },
-    {
-      "id": "conversation",
-      "title": "Conversation",
-      "metrics": [
-        {
-          "id": "conv-rephrase",
-          "label": "Questions asked again in other words",
-          "decision": "Where the first answer misses.",
-          "needs": [
-            {
-              "id": "repeats",
-              "label": "Asked again",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "percent",
-              "value": 0.06875
-            },
-            "parts": [
-              {
-                "key": "count",
-                "figure": {
-                  "kind": "count",
-                  "value": 22,
-                  "unit": "questions"
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "conv-follow-ups",
-          "label": "Follow-ups per conversation",
-          "decision": "Whether people explore or ask once and leave.",
-          "needs": [
-            {
-              "id": "conversation",
-              "label": "Conversation",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "number",
-              "value": 2.9906542056074765,
-              "unit": "questions"
-            },
-            "parts": [
-              {
-                "key": "conversations",
-                "figure": {
-                  "kind": "count",
-                  "value": 107
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        }
-      ]
-    },
-    {
-      "id": "trust-reuse",
-      "title": "Trust and reuse",
-      "metrics": [
-        {
-          "id": "trust-explain",
-          "label": "How an answer was worked out, opened",
-          "decision": "Whether people check where numbers come from.",
-          "needs": [
-            {
-              "id": "explain",
-              "label": "“How this was worked out” opened",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 28,
-              "unit": "times"
-            },
-            "parts": [],
-            "records": 28
-          },
-          "unavailable": null
-        },
-        {
-          "id": "trust-export-share",
-          "label": "Charts exported or boards shared in {name}",
-          "decision": "Whether answers travel beyond the person who asked.",
-          "needs": [
-            {
-              "id": "export-share",
-              "label": "Charts exported, boards shared",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "no-data",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 0,
-              "unit": "times"
-            },
-            "parts": [
-              {
-                "key": "exported",
-                "figure": {
-                  "kind": "count",
-                  "value": 0
-                }
-              },
-              {
-                "key": "shared",
-                "figure": {
-                  "kind": "count",
-                  "value": 0
-                }
-              }
-            ],
-            "records": 0
-          },
-          "unavailable": null
-        },
-        {
-          "id": "personal-dashboards",
-          "label": "Own dashboards made, copied and deleted; saved layouts used",
-          "decision": "Whether people make dashboards of their own, and reuse their saved layouts.",
-          "needs": [
-            {
-              "id": "personal-dashboards",
-              "label": "Own dashboards and saved layouts",
-              "on": false
-            }
-          ],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "locked",
-            "text": "Unavailable: Own dashboards and saved layouts: Needs the personal dashboards switch, which is off: turn it on in Settings.",
-            "fields": [
-              {
-                "id": "personal-dashboards",
-                "label": "Own dashboards and saved layouts"
-              }
-            ],
-            "lock": {
-              "kind": "feature",
-              "feature": "personalDashboards",
-              "missing": false
-            },
-            "fix": {
-              "kind": "settings",
-              "feature": "personalDashboards"
-            }
-          }
-        },
-        {
-          "id": "trust-superset-actions",
-          "label": "Exports and shares in Superset on {name}'s dashboards",
-          "decision": "Whether dashboards {name} built get used.",
-          "needs": [
-            {
-              "id": "superset-actions",
-              "label": "Exports and shares in Superset",
-              "on": false
-            }
-          ],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "locked",
-            "text": "Unavailable: Exports and shares in Superset: Only when {name} runs inside Superset, which keeps the action log.",
-            "fields": [
-              {
-                "id": "superset-actions",
-                "label": "Exports and shares in Superset"
-              }
-            ],
-            "lock": {
-              "kind": "superset"
-            },
-            "fix": null
-          }
-        },
-        {
-          "id": "reuse-hit-rate",
-          "label": "Saved answers used, by tier",
-          "decision": "How much reuse saves, and whether its tiers are right.",
-          "needs": [
-            {
-              "id": "reuse",
-              "label": "Saved answers used",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "percent",
-              "value": 0.175
-            },
-            "parts": [
-              {
-                "label": "t1",
-                "figure": {
-                  "kind": "count",
-                  "value": 25
-                }
-              },
-              {
-                "label": "t2",
-                "figure": {
-                  "kind": "count",
-                  "value": 23
-                }
-              },
-              {
-                "label": "t3",
-                "figure": {
-                  "kind": "count",
-                  "value": 8
-                }
-              }
-            ],
-            "records": 320
-          },
-          "unavailable": null
-        },
-        {
-          "id": "reuse-saved",
-          "label": "Money saved by saved answers",
-          "decision": "Whether answer reuse pays for itself.",
-          "needs": [
-            {
-              "id": "reuse",
-              "label": "Saved answers used",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "ready",
-          "reading": {
-            "value": {
-              "kind": "usd",
-              "value": 0.22400000000000017
-            },
-            "parts": [
-              {
-                "key": "reused",
-                "figure": {
-                  "kind": "count",
-                  "value": 56,
-                  "unit": "answers"
-                }
-              }
-            ],
-            "records": 56
-          },
-          "unavailable": null
-        },
-        {
-          "id": "review-runs",
-          "label": "Daily review runs",
-          "decision": "How often answers are checked after the fact.",
-          "needs": [
-            {
-              "id": "daily-review",
-              "label": "Daily review runs and proposals",
-              "on": false
-            }
-          ],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "locked",
-            "text": "Unavailable: Owned by the daily review switch: change it on the Settings tab.",
-            "fields": [
-              {
-                "id": "daily-review",
-                "label": "Daily review runs and proposals"
-              }
-            ],
-            "lock": {
-              "kind": "owned",
-              "feature": "review.daily"
-            },
-            "fix": {
-              "kind": "settings",
-              "feature": "review.daily"
-            }
-          }
-        },
-        {
-          "id": "review-proposals",
-          "label": "Daily review proposals",
-          "decision": "Which definition changes the review suggests, and which admins accept.",
-          "needs": [
-            {
-              "id": "daily-review",
-              "label": "Daily review runs and proposals",
-              "on": false
-            }
-          ],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "locked",
-            "text": "Unavailable: Owned by the daily review switch: change it on the Settings tab.",
-            "fields": [
-              {
-                "id": "daily-review",
-                "label": "Daily review runs and proposals"
-              }
-            ],
-            "lock": {
-              "kind": "owned",
-              "feature": "review.daily"
-            },
-            "fix": {
-              "kind": "settings",
-              "feature": "review.daily"
-            }
-          }
-        },
-        {
-          "id": "review-open-questions",
-          "label": "Open questions (two readings)",
-          "decision": "What is waiting on a person to settle.",
-          "needs": [
-            {
-              "id": "open-questions",
-              "label": "Open questions",
-              "on": true
-            }
-          ],
-          "by": [],
-          "status": "no-data",
-          "reading": {
-            "value": {
-              "kind": "count",
-              "value": 0,
-              "unit": "questions"
-            },
-            "parts": [],
-            "records": 0
-          },
-          "unavailable": null
-        }
-      ]
-    },
-    {
-      "id": "device-network",
-      "title": "Device and network",
-      "metrics": [
-        {
-          "id": "device-class",
-          "label": "Phone, tablet or desktop, and screen width",
-          "decision": "Which screens to design for first.",
-          "needs": [
-            {
-              "id": "device-class",
-              "label": "Device and screen width",
-              "on": false
-            }
-          ],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "fields-off",
-            "text": "Unavailable: needs Device and screen width (switched off).",
-            "fields": [
-              {
-                "id": "device-class",
-                "label": "Device and screen width"
-              }
-            ],
-            "fix": {
-              "kind": "field",
-              "id": "device-class"
-            }
-          }
-        },
-        {
-          "id": "device-network",
-          "label": "Network type and data saver",
-          "decision": "How light answers must be for field networks.",
-          "needs": [
-            {
-              "id": "device-network",
-              "label": "Network type and data saver",
-              "on": false
-            }
-          ],
-          "by": [],
-          "status": "unavailable",
-          "reading": null,
-          "unavailable": {
-            "kind": "fields-off",
-            "text": "Unavailable: needs Network type and data saver (switched off).",
-            "fields": [
-              {
-                "id": "device-network",
-                "label": "Network type and data saver"
-              }
-            ],
-            "fix": {
-              "kind": "field",
-              "id": "device-network"
-            }
-          }
         }
       ]
     }

@@ -12,8 +12,8 @@ import {
   EVENT_TYPES,
   FIELD_CATEGORIES,
   FIELD_GROUPS,
+  LEGACY_ITEMS,
   LEGACY_SECTIONS,
-  METRICS,
   type SwitchValues,
   type TelemetryLine,
   type TelemetryStore,
@@ -118,10 +118,9 @@ describe("the switchboard's defaults", () => {
     }
   });
 
-  it("give every metric field groups that exist, and every field group a metric that reads it or a feature that keeps it", () => {
+  it("give every older metric switch field groups that exist, so older settings translate to real fields", () => {
     const ids = new Set(FIELD_GROUPS.map((f) => f.id));
-    for (const m of METRICS) for (const n of [...m.needs, ...(m.by ?? [])]) expect(ids.has(n), `${m.id} reads ${n}`).toBe(true);
-    for (const f of FIELD_GROUPS.filter((x) => !x.sensitive || x.id.startsWith("device"))) expect(METRICS.some((m) => m.needs.includes(f.id) || m.by?.includes(f.id)), f.id).toBe(true);
+    for (const m of LEGACY_ITEMS) for (const n of [...m.needs, ...(m.by ?? [])]) expect(ids.has(n), `${m.id} reads ${n}`).toBe(true);
   });
 
   it("record no texts, recordings or device detail out of the box", async () => {
@@ -263,7 +262,7 @@ describe("the older metric and section switches", () => {
     // One metric off changes nothing while others still need its fields.
     expect(legacyChanges({}, { items: { "users-active": false } })).toEqual({});
     // Every metric that needs the user name off: names are no longer recorded.
-    const userItems = LEGACY_SECTIONS.flatMap((s) => s.items).filter((i) => METRICS.find((m) => m.id === i)?.needs.includes("user"));
+    const userItems = LEGACY_SECTIONS.flatMap((s) => s.items).filter((i) => LEGACY_ITEMS.find((m) => m.id === i)?.needs.includes("user"));
     expect(legacyChanges({}, { items: Object.fromEntries(userItems.map((i) => [i, false])) })).toEqual({ user: false });
     // A section off: the fields only its metrics needed go off.
     expect(legacyChanges({}, { groups: { speed: false } })).toEqual({ timing: false, queue: false, abandoned: false });

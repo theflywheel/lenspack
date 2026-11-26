@@ -127,14 +127,18 @@ and translated into English, French, Portuguese and Hindi.
 - **A new field** goes in the catalogue (`switchboard.ts` in `@lenspack/agent`) with the record fields it keeps, its
   category and its default. A new event type needs a field there too, or the server answers `400`. The catalogue's
   test checks that each field's switch stops its capture.
-- **A new metric** goes in the same catalogue with the fields it needs, and how to work it out from records goes in
-  `metrics.ts` next to it. A metric is never stored.
+- **A new metric** is a widget on the usage pack's `telemetry` board (`packs/usage/boards/telemetry.json` in the
+  server package). If it needs a new base measure, add it to `packs/usage/pack.yaml` as a count, sum, distinct count
+  or percentile, and leave rates and averages to the widget's compute step. If it reads a new record field, add the
+  column to the usage source (`usage-source.ts`); the column's entry there names the record field it comes from, so
+  the widget says which switch it needs when that field is off. A metric is never stored.
 
 ## The checklist
 
-`GET /_superset/telemetry/checklist` is both views of the Telemetry tab as data. Besides `generatedAt`, it has
-`telemetry` (the switch for telemetry as a whole, and who changed it last), `settings` (retention and the consent
-notice), `categories` (what's recorded) and `metrics` (what it tells you).
+`GET /_superset/telemetry/checklist` is the Telemetry tab's What's recorded view as data. Besides `generatedAt`, it
+has `telemetry` (the switch for telemetry as a whole, and who changed it last), `settings` (retention and the consent
+notice) and `categories`. What it tells you is a board; its data comes from the board API (see
+[What it tells you](#what-it-tells-you-the-board)).
 
 ### What's recorded: `categories`
 
@@ -154,7 +158,7 @@ Each row is one field, and has:
 - the record `fields` it switches, such as `turn.user` or `event:feedback`;
 - `count7d` and `lastSeen`: records from the last 7 days that carry it. Records, not the value of a metric;
 - `privacy`, what it means for privacy (for example, that user names are visible to admins with the usage right);
-- `usedBy`: the metrics that read it;
+- `usedBy`: the widgets on the What it tells you board that read it (`id` and `label`);
 - a `status`, and `howToEnable` when the status is not `recording`;
 - its `switch`: `key` (`fields.<field>`), `on`, `default`, `editable`, `sensitive` and `consent` for the confirm step,
   and `changed`. When it can't be changed here: `lock` (`owned`, `feature`, `voice`, `needs-config` or `superset`),
@@ -169,25 +173,29 @@ Each row is one field, and has:
 | `off` | its switch is off, telemetry's is, or the feature that owns it is not present or not on |
 | `needs-config` | something is missing. Examples: a country or campaign nobody mapped in `context:`; role names that an older plugin does not sign; Superset's action log outside Superset. |
 
-### What it tells you: `metrics`
+### What it tells you: the board
 
-Grouped as users; volume and cost; quality; what people ask; speed; voice and language; conversation; trust and reuse;
-device and network. Each metric has a `label`, the `decision` it helps make, `needs` and `by` (the fields it reads,
-and the fields its breakdown reads, each with `on`), and a `status`:
+`GET /_superset/admin/api/usage/telemetry/data` answers with each widget's data, as for any board: its `rows`, the
+`format`, and a comparison when the widget asks one. No row carries the words of a question; a user name only for an
+admin with the usage right.
 
-| status | meaning |
-|---|---|
-| `ready` | worked out: `reading` has the `value`, its `parts` (a breakdown, for example by role or by kind of question), and how many `records` it read |
-| `no-data` | it could be worked out, but no record from the last 7 days carries what it needs |
-| `unavailable` | it can't be: `unavailable` says why (`kind`: `telemetry-off`, `fields-off`, `locked`, `needs-config` or `not-telemetry`), in words (`text`), with the `fields` that are off and a `fix` (`{"kind": "field", "id": …}` points at a field's switch) |
+When a widget reads a field that is not recording, its data has no figures, an `error` for any caller that only
+reads errors, and a `notice` that a renderer shows instead:
 
-Each value is a figure: `kind` (`count`, `usd`, `percent` as a share from 0 to 1, `ms` or `number`), `value`, and a
-`unit` or `label` for the words. For example, `{"kind": "count", "value": 14, "unit": "users"}`. No reading carries a
-user name or the words of a question. Readings of the daily review and open questions come from the review feature,
-not from records.
+```json
+{
+  "rows": [],
+  "error": "\"user\" can't be answered right now: Needs the User name field, which is switched off.",
+  "notice": {
+    "text": "Needs the User name field, which is switched off.",
+    "action": { "label": "Show the field", "href": "#telemetry/field/user" }
+  }
+}
+```
 
-`not-telemetry` metrics are ones records cannot measure: time saved against the old way, which needs a baseline study;
-true word error rate, which needs hand-made transcripts.
+`action` is absent when nothing on the page can fix it; the link is `#settings` when a feature switch owns the field.
+Which fields a widget reads is found from the usage pack: each column a measure, dimension or filter reads, and each
+event a measure counts, is matched to the field that fills it.
 
 ## Older settings
 

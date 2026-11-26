@@ -48,6 +48,24 @@ describe("the usage pack's rows", () => {
     expect(t.roles.length).toBeGreaterThan(40);
     expect(t.turns[0]).toMatchObject({ chat_session: "s0", country: "Country A", input: "spoken", reply_s: 3, first_token_s: 0.8, cache_tier: "t1", speech_s: 4.5 });
   });
+
+  it("reads what the switches left out as missing, not as a value, and keeps transcripts and events that belong to no turn", () => {
+    const at = "2026-11-20T10:00:00.000Z";
+    const t = usageFromTelemetry([
+      // No user and no roles field: their switches were off when it was written.
+      { type: "turn", v: 2, turnId: "a", at, sessionId: "s", pack: "p", board: "b", kind: "direct", outcome: "answered", input: "spoken", questionHash: "h", questionWords: 6, transcriptEditDistance: 2, queueMs: 1200 },
+      { type: "transcript", v: 2, transcriptId: "x", at, user: "ana", model: "speech-a", seconds: 4, usd: 0.0005, ms: 300, words: 6 },
+      { type: "event", v: 2, event: "voice-not-sent", at, stage: "review" },
+      { type: "event", v: 2, event: "quick-reply", at, turnId: "a", choice: "Last week" },
+    ] as never);
+    expect(t.turns[0]).toMatchObject({ user_name: null, question_hash: "h", question_words: 6, transcript_edits: 2, edited: 1, queue_s: 1.2, waited: 1 });
+    expect(t.roles).toEqual([]);
+    expect(t.transcripts).toEqual([{ transcript_id: "x", at, user_name: "ana", model: "speech-a", language: null, seconds: 4, usd: 0.0005, ms: 300, words: 6 }]);
+    expect(t.events).toEqual([
+      { turn_id: null, event: "voice-not-sent", value: null, reason: null, stage: "review", at, user_name: null },
+      { turn_id: "a", event: "quick-reply", value: "Last week", reason: null, stage: null, at, user_name: null },
+    ]);
+  });
 });
 
 const PACK = parsePackText(`pack: shop
@@ -150,20 +168,19 @@ describe("the admin panel", () => {
     // The Cache tab reads the saved answers' own admin routes (docs/features/saved-answers.md).
     for (const route of ["../cache${path}", "/chart-candidates", "/boards", "/suggestions?board=", "/prewarm", '"unpin" : "pin"', "/evict"]) expect(js).toContain(route);
     const packs = await (await fetch(`${base}/api/packs`, { headers: as("ana", true) })).json();
-    expect(packs.usage).toEqual({ board: "overview", source: "telemetry" });
+    expect(packs.usage).toEqual({ board: "overview", telemetryBoard: "telemetry", source: "telemetry" });
   });
 
-  it("serves the telemetry tab's script, which sums up both views and copies them as Markdown with each switch and each metric", async () => {
+  it("serves the telemetry tab's script, which sums up what's recorded and copies it as Markdown with each switch", async () => {
     const js = await (await fetch(`${base}/checklist.js`, { headers: as("ana", true) })).text();
-    const box: { window: { LenspackChecklist?: { summary: Function; metricSummary: Function; markdown: Function; counts: Function } } } = { window: {} };
+    const box: { window: { LenspackChecklist?: { summary: Function; markdown: Function; counts: Function } } } = { window: {} };
     runInNewContext(js, box);
     const C = box.window.LenspackChecklist!;
     // Made-up data, made by telemetryChecklist itself.
     const data = JSON.parse(readFileSync(fileURLToPath(new URL("./fixtures/telemetry-checklist.json", import.meta.url)), "utf8"));
-    const words: Record<string, string> = { tlSumRecording: "{0} of {1} fields recording", tlSumNoData: "{0} on, nothing yet", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumReady: "{0} of {1} metrics available", tlSumMetNoData: "{0} with no records yet", tlSumUnavailable: "{0} unavailable", tlTitle: "Telemetry", tlViewRecorded: "What's recorded", tlViewMetrics: "What it tells you", tlOn: "on", tlOff: "off", tlMixed: "mixed", tlNoSwitch: "no switch", tlOffSince: "Off since {0}, by {1}.", tlMaster: "Record telemetry", st_off: "off", tmNoData: "Nothing recorded in the last 7 days." };
+    const words: Record<string, string> = { tlSumRecording: "{0} of {1} fields recording", tlSumNoData: "{0} on, nothing yet", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlTitle: "Telemetry", tlViewRecorded: "What's recorded", tlViewMetrics: "What it tells you", tlOn: "on", tlOff: "off", tlMixed: "mixed", tlNoSwitch: "no switch", tlOffSince: "Off since {0}, by {1}.", tlMaster: "Record telemetry", st_off: "off", st_recording: "recording", tmNoData: "Nothing recorded in the last 7 days." };
     const t = (k: string, ...a: unknown[]) => (words[k] ?? k).replace(/\{(\d)\}/g, (_, i) => String(a[Number(i)]));
     expect(C.summary(data, t)).toBe("23 of 34 fields recording · 3 on, nothing yet · 1 need configuration · 7 off");
-    expect(C.metricSummary(data, t)).toBe("31 of 40 metrics available · 3 with no records yet · 9 unavailable");
     const md: string = C.markdown(data, t);
     expect(md.startsWith("# Telemetry")).toBe(true);
     expect(md).toContain("- Record telemetry: on");
@@ -172,9 +189,9 @@ describe("the admin panel", () => {
     expect(md).toMatch(/\| off \| Question words \| ○ off \|/);
     expect(md).toMatch(/\| off \| Daily review runs and proposals \| ○ off \|.*Owned by the daily review switch/);
     expect(md).toContain("### Texts (off)");
-    // Each metric with its value, or why it has none.
-    expect(md).toMatch(/\| Time saved against the old way \| Needs a baseline/);
-    expect(md).toMatch(/\| Cost per user \| \d/);
+    // What reads each field: the usage board's widgets.
+    expect(md).toMatch(/\| on \| User name \| ✓ recording \| \d+ \| Active users, 7 days · /);
+    expect(md).not.toContain("What it tells you");
   });
 
   it("draws the usage board from the telemetry, through the same board API as every board", async () => {

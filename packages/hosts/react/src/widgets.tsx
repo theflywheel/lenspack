@@ -35,11 +35,29 @@ function Problem({ message, hint }: { message: string; hint?: string }) {
   );
 }
 
+/**
+ * A widget with no answer right now, for a reason the host gave: something it reads is not being collected or is not
+ * set up. Said plainly, with the host's link to where it is fixed, instead of an error or a figure that would be wrong.
+ */
+function Notice({ notice }: { notice: NonNullable<WidgetData["notice"]> }) {
+  return (
+    <div className="lp-notice" role="note">
+      <p className="lp-notice-text">{notice.text}</p>
+      {notice.action && (
+        <a className="lp-notice-action" href={notice.action.href}>
+          {notice.action.label}
+        </a>
+      )}
+    </div>
+  );
+}
+
 // The chart widget is library-agnostic: it builds a ChartSpec and hands it to
 // whichever adapter the provider holds (svg when none is given).
 export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
   const { charts, catalogue, drill, drillTarget, mapTiles } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
+  if (data.notice) return <Notice notice={data.notice} />;
   if (data.error) return <Empty>{data.error}{data.hint ? ` — did you mean “${data.hint}”?` : ""}</Empty>;
   const q = widget.query;
   // A computed answer names its own numbers ("average daily …"); otherwise the measure's label.
@@ -66,6 +84,7 @@ export function ChartWidget({ widget, data, currency }: WidgetProps<"chart">) {
 export function KpiWidget({ widget, data, currency }: WidgetProps<"kpi">) {
   const { catalogue } = useBoard();
   if (!data) return <Empty>Loading…</Empty>;
+  if (data.notice) return <Notice notice={data.notice} />;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
   // A series KPI shows its latest bucket; a summary over the buckets is the engine's (a value query's compute).
   const value = (widget.query.kind === "series" ? data.rows.at(-1) : data.rows[0])?.value ?? null;
@@ -173,6 +192,7 @@ export function TableWidget({ id, widget, data, currency }: WidgetProps<"table">
       ? { className: "lp-drillable", onClick: () => drill(target.selects!, group), title: `Drill into ${group}` }
       : {};
   if (!data) return <Empty>Loading…</Empty>;
+  if (data.notice) return <Notice notice={data.notice} />;
   if (data.error) return <Problem message={data.error} hint={data.hint} />;
   if (data.records) return <RowsTable id={id} widget={widget} data={data} />;
   const label = (key: string) => labelOf(catalogue.measures, key) ?? key;

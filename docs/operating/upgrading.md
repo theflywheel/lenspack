@@ -40,7 +40,8 @@ rules](../features/compute.md#how-zeros-and-gaps-are-treated): a percentage or a
 
 Telemetry used to be switched by metric (`telemetry.items.<metric>`) and by section of metrics
 (`telemetry.groups.<section>`). It is now switched by field: the facts a record carries, such as the user name, the
-cost or the answer time (`telemetry.fields.<field>`). Metrics are worked out from the records and have no switches.
+cost or the answer time (`telemetry.fields.<field>`). Metrics are no longer switched or listed one by one: they are
+figures on a board over the usage pack, worked out from the records, in the Telemetry tab's What it tells you.
 
 **Nothing needs doing by hand.** Older names in the config and in the settings an admin saved are still read, with
 the rule they always followed: a field is recorded when some metric that is on, in a section that is on, used it. So
@@ -58,11 +59,13 @@ What changes for scripts:
 - `PUT <prefix>/settings/telemetry` takes `fields.<field>` and `categories.<category>`. It refuses `items.<metric>`
   and `groups.<section>` with `400`, and the message names the fields to switch instead. `items.<field>` for the five
   privacy-sensitive fields, `questionText` and `keepAudio` still work.
-- `GET <prefix>/telemetry/checklist` answers with `categories` (the fields) and `metrics` (each with its value),
-  instead of `groups`. See [the checklist](../reference/telemetry-records.md#the-checklist).
+- `GET <prefix>/telemetry/checklist` answers with `categories` (the fields), instead of `groups`. See
+  [the checklist](../reference/telemetry-records.md#the-checklist). The figures are on the usage board API, at
+  `<prefix>/admin/api/usage/telemetry/data`.
 - `GET <prefix>/telemetry` lists the fields that are on as `fields`, instead of `items`.
-- In `@lenspack/agent`, the switchboard exports `FIELD_GROUPS`, `FIELD_CATEGORIES` and `METRICS` instead of
-  `TELEMETRY_ITEMS` and `TELEMETRY_GROUPS`, and `turnTelemetry` takes `fields` instead of `items`.
+- In `@lenspack/agent`, the switchboard exports `FIELD_GROUPS` and `FIELD_CATEGORIES` instead of `TELEMETRY_ITEMS`
+  and `TELEMETRY_GROUPS`, and `turnTelemetry` takes `fields` instead of `items`. The older metric and section names
+  are kept only to translate older settings, as `LEGACY_ITEMS` and `LEGACY_SECTIONS`.
 
 ## Code using the packages
 

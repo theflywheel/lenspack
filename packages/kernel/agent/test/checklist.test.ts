@@ -1,9 +1,9 @@
 // The Telemetry tab's data: what's recorded (each field group's switch and status from the deployment's switches,
-// its context, its features and the last 7 days of records) and what it tells you (each metric worked out from the
-// same records, or why it can't be).
+// its context, its features and the last 7 days of records), and for each field group that is not recording, why
+// (fieldNotices): what a board widget that needs it says instead of a figure.
 import { describe, expect, it } from "vitest";
 
-import { type ChecklistInput, type FieldRow, type MetricRow, type TelemetryLine, fieldDefaults, telemetryChecklist } from "../src";
+import { type ChecklistInput, type FieldRow, type TelemetryLine, fieldDefaults, fieldNotices, telemetryChecklist } from "../src";
 
 const now = new Date("2026-11-20T12:00:00Z");
 const turn = (o: Record<string, unknown> = {}) => ({ type: "turn", v: 2, turnId: "t", sessionId: "s1", at: "2026-11-19T10:00:00.000Z", pack: "p", board: "b", tenant: null, datasets: [], user: "ana", roles: ["Gamma"], kind: "direct", outcome: "answered", outcomeReason: null, input: "typed", questionHash: "h", questionWords: 4, questionLanguage: "en", totalMs: 900, costUsd: 0.004, ...o }) as unknown as TelemetryLine;
@@ -24,12 +24,6 @@ const row = (i: ChecklistInput, id: string): FieldRow => {
   if (!found) throw new Error(`no field ${id}`);
   return found;
 };
-const metric = (i: ChecklistInput, id: string): MetricRow => {
-  const found = telemetryChecklist(i).metrics.flatMap((g) => g.metrics).find((x) => x.id === id);
-  if (!found) throw new Error(`no metric ${id}`);
-  return found;
-};
-
 describe("what's recorded", () => {
   it("lists the field groups by plain category, each with what it holds, its record fields, a status and a switch", () => {
     const c = telemetryChecklist(input());
@@ -44,9 +38,10 @@ describe("what's recorded", () => {
     expect(c.note).toMatch(/stays until it ages out/);
   });
 
-  it("names the metrics that read each field", () => {
-    expect(row(input(), "user").usedBy.map((m) => m.id)).toEqual(["users-active", "users-by-role", "users-by-country", "users-return", "volume-per-user", "cost-per-user"]);
-    expect(row(input(), "question-text").usedBy).toEqual([]);
+  it("names what reads each field, as the host found it on the usage board", () => {
+    const uses = { user: [{ id: "users_7d", label: "Active users, 7 days" }] };
+    expect(row(input({ uses }), "user").usedBy).toEqual([{ id: "users_7d", label: "Active users, 7 days" }]);
+    expect(row(input({ uses }), "question-text").usedBy).toEqual([]);
   });
 
   it("counts the records that carry the field in the last 7 days, not a metric's value", () => {
@@ -100,57 +95,28 @@ describe("what's recorded", () => {
   });
 });
 
-describe("what it tells you", () => {
-  const week = [
-    turn({ turnId: "a", user: "ana", roles: ["Gamma"], at: "2026-11-20T09:00:00.000Z", costUsd: 0.004, outcome: "answered", sessionId: "s1", questionHash: "h1" }),
-    turn({ turnId: "b", user: "ana", roles: ["Gamma"], at: "2026-11-18T09:00:00.000Z", costUsd: 0.006, outcome: "declined", outcomeReason: "no-data", sessionId: "s1", questionHash: "h2", kind: "derived", totalMs: 4000 }),
-    turn({ turnId: "c", user: "ben", roles: ["Alpha"], at: "2026-11-17T09:00:00.000Z", costUsd: 0.002, outcome: "answered", sessionId: "s2", questionHash: "h1", input: "spoken", transcriptEditDistance: 1 }),
-    turn({ turnId: "d", user: "cy", roles: ["Gamma", "Alpha"], at: "2026-11-16T09:00:00.000Z", costUsd: 0.004, outcome: "answered", sessionId: "s3", questionHash: "h1" }),
-    { type: "event", v: 2, event: "feedback", at: "2026-11-19T09:00:00.000Z", turnId: "b", pack: "p", board: "b", data: null, rating: "down", reason: "wrong-number" } as unknown as TelemetryLine,
-    { type: "event", v: 2, event: "feedback", at: "2026-11-19T09:00:00.000Z", turnId: "a", pack: "p", board: "b", data: null, rating: "up", reason: null } as unknown as TelemetryLine,
-  ];
+describe("why a field is not recording", () => {
+  const notices = (o: Partial<ChecklistInput> = {}) => fieldNotices(input(o));
 
-  it("works out each metric live from the last 7 days of records", () => {
-    const i = input({ lines: week });
-    expect(metric(i, "users-active")).toMatchObject({ status: "ready", reading: { value: { kind: "count", value: 3, unit: "users" }, parts: [{ key: "last24h", figure: { value: 1 } }, { key: "dailyAvg" }] } });
-    expect(metric(i, "cost-per-question").reading!.value).toEqual({ kind: "usd", value: 0.004 });
-    expect(metric(i, "cost-per-user").reading!.value.value).toBeCloseTo(0.016 / 3);
-    expect(metric(i, "quality-answer-rate").reading!.value).toEqual({ kind: "percent", value: 0.75 });
-    expect(metric(i, "volume-per-user").reading!.value.value).toBeCloseTo(4 / 3);
-    expect(metric(i, "users-by-role").reading).toMatchObject({ value: { value: 2 }, parts: [{ label: "Alpha", figure: { value: 2 } }, { label: "Gamma", figure: { value: 2 } }] });
-    expect(metric(i, "quality-thumbs-down").reading).toMatchObject({ value: { value: 1 }, parts: [{ key: "ofRatings", figure: { value: 0.5 } }, { label: "wrong-number", figure: { value: 1 } }] });
-    expect(metric(i, "conv-follow-ups").reading!.value.value).toBeCloseTo(4 / 3);
-    expect(metric(i, "asks-mix").reading!.parts).toEqual([{ label: "direct", figure: { kind: "percent", value: 0.75 } }, { label: "derived", figure: { kind: "percent", value: 0.25 } }]);
-    expect(metric(i, "speed-p95").reading!.value).toEqual({ kind: "ms", value: 4000 });
-    expect(metric(i, "voice-share").reading!.value).toEqual({ kind: "percent", value: 0.25 });
-    expect(metric(i, "quality-unanswered").reading).toMatchObject({ value: { value: 1 }, parts: [{ key: "distinct", figure: { value: 1 } }, { key: "topRepeat" }] });
-    // Each lists the fields it uses, and whether each is recording.
-    expect(metric(i, "cost-per-user").needs).toEqual([{ id: "user", label: "User name", on: true }, { id: "cost", label: "Cost, tokens and models", on: true }]);
+  it("leaves out every field that is recording", () => {
+    const n = notices();
+    expect(n.user).toBeUndefined();
+    expect(n.cost).toBeUndefined();
+    // Off by default: the privacy-sensitive ones, and the daily review, which starts off.
+    expect(Object.keys(n).sort()).toEqual(["daily-review", "device-class", "device-network", "question-text", "superset-actions", "transcript-text", "voice-audio"]);
   });
 
-  it("never shows a name or the words of a question", () => {
-    const words = turn({ question: "How many visits in the north?" });
-    const text = JSON.stringify(telemetryChecklist(input({ lines: [...week, words] })).metrics);
-    for (const name of ["ana", "ben", "cy", "How many visits"]) expect(text).not.toContain(`"${name}`);
+  it("says which field a figure needs and how to get it back: its switch, a feature, voice or the config", () => {
+    expect(notices({ switches: { telemetry: true, fields: { ...fieldDefaults(), user: false } } }).user).toEqual({ text: "Needs the User name field, which is switched off.", fix: { kind: "field", id: "user" } });
+    expect(notices({ features: { ...input().features, cache: false } }).reuse).toEqual({ text: "Needs the Saved answers used field, which comes with the saved answers switch; that switch is off.", fix: { kind: "settings", feature: "cache" } });
+    expect(notices({ features: { ...input().features, voice: false } }).input).toMatchObject({ text: expect.stringMatching(/needs voice/), fix: { kind: "settings", feature: "voice" } });
+    expect(notices({ context: {} }).context).toMatchObject({ text: expect.stringMatching(/needs configuration: map dashboards, datasets or roles to a campaign, campaign type or country/), fix: { kind: "config", key: "context" } });
+    expect(notices()["daily-review"]).toMatchObject({ text: expect.stringMatching(/daily review feature keeps/), fix: { kind: "settings", feature: "review.daily" } });
+    expect(notices({ superset: true })["superset-actions"]).toBeUndefined();
   });
 
-  it("says no data when the fields are on and nothing came in", () => {
-    expect(metric(input({ lines: [] }), "users-active")).toMatchObject({ status: "no-data", reading: { value: { value: 0 } } });
-  });
-
-  it("says unavailable, and what would fix it, when a field it needs is off, locked or needs configuring", () => {
-    expect(metric(withField("user", false), "cost-per-user")).toMatchObject({ status: "unavailable", reading: null, unavailable: { kind: "fields-off", text: "Unavailable: needs User name (switched off).", fields: [{ id: "user" }], fix: { kind: "field", id: "user" } } });
-    expect(metric(input({ features: { ...input().features, cache: false } }), "reuse-saved")).toMatchObject({ unavailable: { kind: "locked", lock: { kind: "feature", feature: "cache" }, fix: { kind: "settings", feature: "cache" } } });
-    expect(metric(input({ context: { b1: { campaign: "Round 1" } } }), "users-by-country")).toMatchObject({ unavailable: { kind: "needs-config", context: ["country"], text: expect.stringMatching(/to a country/), fix: { kind: "config" } } });
-    expect(metric(input(), "review-runs")).toMatchObject({ unavailable: { kind: "locked", fix: { kind: "settings", feature: "review.daily" } } });
-    expect(metric(input(), "speed-time-saved")).toMatchObject({ unavailable: { kind: "not-telemetry", text: expect.stringMatching(/baseline/) } });
-    expect(metric(input({ switches: { telemetry: false, fields: fieldDefaults() } }), "users-active")).toMatchObject({ unavailable: { kind: "telemetry-off" } });
-    // Kept by a feature, not by telemetry: telemetry off does not hide it.
-    expect(metric(input({ switches: { telemetry: false, fields: fieldDefaults() }, features: { ...input().features, "review.daily": true }, owned: { "review-runs": { count: 3, lastSeen: null } } }), "review-runs")).toMatchObject({ status: "ready", reading: { value: { value: 3 } } });
-  });
-
-  it("reads Superset's action log only inside Superset", () => {
-    expect(metric(input(), "trust-superset-actions")).toMatchObject({ unavailable: { kind: "locked", lock: { kind: "superset" } } });
-    expect(metric(input({ supersetLogs: { available: true, count: 3, lastSeen: "2026-11-19T00:00:00" } }), "trust-superset-actions")).toMatchObject({ status: "ready", reading: { value: { value: 3 } } });
+  it("says telemetry is off for every field when it is", () => {
+    const n = notices({ switches: { telemetry: false, fields: fieldDefaults() } });
+    expect(n.user).toEqual({ text: "Telemetry is off, so nothing new is recorded.", fix: { kind: "settings", feature: "telemetry" } });
   });
 });

@@ -51,13 +51,15 @@ renderer as every other board, over a built-in pack about the server itself.
 
 ### How it is built
 
-The usage pack is an ordinary pack (`packs/usage/pack.yaml` in the server package, with its default board in
-`packs/usage/boards/overview.json`). It reads from a small adapter, the usage source, the way other packs read from a
+The usage pack is an ordinary pack (`packs/usage/pack.yaml` in the server package, with its default boards in
+`packs/usage/boards/`: `overview.json` for the Overview tab, `telemetry.json` for the Telemetry tab's What it tells
+you). It reads from a small adapter, the usage source, the way other packs read from a
 database. The adapter turns the server's own records into tables.
 
 ### The data
 
-One row per chat turn, read into an in-process DuckDB table:
+One row per chat turn, read into an in-process DuckDB table, and beside it each turn's roles and features, each event a
+client reported (a rating, a quick reply, an answer left early) and each transcription:
 
 - from the turn telemetry (`telemetry*.jsonl` in the state directory) when the server writes it;
 - otherwise from the audit log's chat-turn lines, which carry less (no sessions, roles, countries, feedback or reply
@@ -70,12 +72,18 @@ The table is read again when the board is opened, at most every 30 seconds.
 - **Measures**: turns, questions and edits, active users, cost (model, reviewer and speech), tokens in and out, answers
   from saved answers and the money they saved, failures, refusals, declines, reviewer checks and material findings, fix
   rounds, clarifying questions, open questions logged, rephrased questions, median and 95th-percentile reply time, time
-  to first words, speech seconds, thumbs up and down.
+  to first words, speech seconds, thumbs up and down, different questions and different questions not answered,
+  answers left early, waits for a free slot and the 95th-percentile wait, transcripts edited and the words changed,
+  transcriptions, their cost and seconds, quick replies, explanations opened, exports, shares and transcripts never
+  sent.
 - **Dimensions**: day and hour, user, role, session, board, pack, campaign and country (when the telemetry has them),
   model, language, typed or spoken, answer or edit, kind of answer (direct, derived, chart, meta), outcome, saved-answer
-  tier, feature used, device, and feedback reason.
+  tier, feature used, device, network, feedback reason, why a question was not answered, question (its keyed hash
+  when the words are not kept), transcript language and speech model.
 
-### The default board
+### The default boards
+
+Overview (`overview.json`):
 
 - Figures: turns today, cost today, saved-answer rate, failure rate, answer rate, spoken share, active users and the
   95th-percentile reply time.
@@ -86,6 +94,9 @@ The table is read again when the board is opened, at most every 30 seconds.
 - A pie of direct, derived and chart answers.
 - A table of the most-asked questions with their outcomes.
 - Reply time over time.
+
+The Telemetry tab's What it tells you (`telemetry.json`) is described in
+[Telemetry](telemetry.md#what-it-tells-you).
 
 ### Who sees it
 
@@ -108,7 +119,7 @@ shows:
 - the field's plain name, with the record fields it switches on hover or focus and in the detail;
 - a status: ✓ recording, ◐ on but nothing yet, ○ off (since when, and by whom), ⚠ needs configuration;
 - how many records from the last seven days carry it. This counts records, not the value of a metric;
-- the metrics that use it;
+- the widgets on the What it tells you board that read it;
 - an eye for the fields that say something about people, such as user names (visible to admins with the usage
   right) and the texts, with the privacy note on the row and on hover or focus.
 
@@ -120,18 +131,20 @@ shows a middle position. Above the table are a summary line (for example "23 of 
 yet · 1 need configuration · 7 off"), the switch for telemetry as a whole, and how long records are kept. On a phone
 the table keeps the switch, the name and the status, and the rest moves into the detail.
 
-**What it tells you** shows each metric worked out from the last seven days of records, with its value (for example
-"14 users" or "84%") and a short breakdown, and the fields it uses. A metric that can't be worked out says why, such
-as "Unavailable: needs Device and screen width (switched off)", with a button to that field or to Settings. This view
-has no switches; to change what a metric can use, switch its fields under What's recorded.
+**What it tells you** is a board over the same usage pack as Overview, drawn by the same renderer, with the same chat
+beside it, and the chat's turns are marked internal. It has a section per question a deployment is judged on (users,
+volume and cost, quality, what people ask, speed, voice and language, trust and reuse, device and network). A widget
+that needs a field that is off says so in place of its figure, for example "Needs the Device and screen width field,
+which is switched off", with **Show the field** (to that row under What's recorded) or **Open Settings**. See
+[Telemetry](telemetry.md#what-it-tells-you).
 
 A change applies to the next question. Turning something off keeps what was already recorded until it ages out; the
 tab says so. Turning on a privacy-sensitive field (question words, transcript words, recordings, device and network
 detail) shows what it records, and for recordings the consent notice, and asks to confirm. Only admins can change
 switches, and every change is in the audit log.
 
-The page prints cleanly for a usage report, and **Copy as Markdown** copies both views as text, with each switch as
-it stands and each metric's value. Both follow the panel's language (English or French) and its light or dark theme.
+The page prints cleanly for a usage report, and **Copy as Markdown** copies What's recorded as text, with each switch
+as it stands and the widgets that read each field. Both follow the panel's language (English or French) and its light or dark theme.
 
 The table comes from the server (`<prefix>/telemetry/checklist`, changed with `PUT <prefix>/settings/telemetry`; see
 [Telemetry](telemetry.md#the-switchboard)). A server that does not report its telemetry shows "Telemetry is not

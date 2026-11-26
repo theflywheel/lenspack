@@ -337,9 +337,8 @@ describe("the admin routes", () => {
       const rows = checklist.categories.flatMap((c: { rows: { id: string; status: string }[] }) => c.rows);
       expect(rows.find((i: { id: string }) => i.id === "voice-audio")).toMatchObject({ status: "recording", count7d: 1 });
       expect(rows.find((i: { id: string }) => i.id === "context")).toMatchObject({ status: "enabled-no-data", switch: { editable: true } });
-      const metrics = checklist.metrics.flatMap((g: { metrics: { id: string }[] }) => g.metrics);
-      expect(metrics.find((m: { id: string }) => m.id === "users-by-country")).toMatchObject({ status: "no-data" });
-      expect(metrics.find((m: { id: string }) => m.id === "users-return")).toMatchObject({ status: "unavailable", unavailable: { kind: "needs-config", context: ["campaign"] } });
+      // The metrics are a board over the usage pack now, not part of the checklist.
+      expect(checklist.metrics).toBeUndefined();
       expect((await fetch(`${at}/audio/clip-1`, as(false))).status).toBe(403);
       const page = await (await fetch(`${at}/telemetry?from=2000-01-01&type=transcript&limit=1`, as(true))).json();
       // This admin lacks the usage right: each user name is a stable stand-in.

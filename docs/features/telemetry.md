@@ -13,8 +13,9 @@ In short:
   asked, how it ended, what it cost and how long it took. One record per transcription, when a question is spoken.
   One record per event a client reports: a thumbs up or down, an answer left before it finished, a chart exported, and
   so on.
-- **Metrics are worked out, not stored.** Active users, cost per question, answer rate and the rest are worked out from
-  the records of the last 7 days when someone opens the Telemetry tab. See [What it tells you](#what-it-tells-you).
+- **Metrics are worked out, not stored.** Active users, cost per question, answer rate and the rest are figures on a
+  board, worked out from the records when someone opens the Telemetry tab, by the same engine as every other board.
+  See [What it tells you](#what-it-tells-you).
 - **Every field has a switch.** The switches are on the facts themselves (the user name, the cost, the answer time, the
   words of a question), grouped in plain categories. There is one switch for telemetry as a whole. See
   [The switchboard](#the-switchboard).
@@ -56,8 +57,8 @@ telemetry:
 
 The Telemetry tab of the admin panel has two views. **What's recorded** lists the fields a record can carry, as a
 table: one row per field, grouped in categories, each row with its switch, its status, how many records from the
-last 7 days carry it, and which metrics use it. That count is of records, not the value of a metric. The same list
-is the configuration:
+last 7 days carry it, and which figures on the board use it. That count is of records, not the value of a metric.
+The same list is the configuration:
 
 - **Telemetry as a whole** is the `telemetry` feature switch (`features:` in the config, `LENSPACK_FEATURES`, the
   settings page). Off, nothing is recorded.
@@ -150,28 +151,53 @@ Off, each of them still leaves something useful:
 - **Recordings off**: the clip lives only as long as its transcription takes.
 
 The user name has a switch too. Its row says that names are visible to admins with the usage right. With it off, the
-records name nobody, and metrics that count people say they are unavailable.
+records name nobody, and figures that count people say they need it.
 
 ## What it tells you
 
-The tab's second view lists the metrics a deployment is judged on, grouped as before (users, volume and cost,
-quality, what people ask, speed, voice and language, conversation, trust and reuse, device and network). Each one is
-worked out when the tab opens, from the records of the last 7 days, and shows its value, for example "14 users",
-"$0.0045" per question or "84%" of questions answered, with a short breakdown. Nothing here is stored, and no metric
-shows a user name or the words of a question.
+The tab's second view is a board: the same board, renderer and chat as the usage board on the Overview tab, over the
+same [usage pack](admin-panel.md#usage-is-a-board), with its default in `packs/usage/boards/telemetry.json`. The board has one section per question a deployment is
+judged on: users; volume and cost; quality; what people ask; speed; voice and language; trust and reuse; device and
+network. Each figure is worked out from the records when the tab opens, for example "14" active users, "$0.0045" per
+question or "84%" of questions answered. Nothing here is stored.
 
-Each metric lists the fields it uses. When it can't be worked out, it says why and offers a way to fix it:
+The pack holds only simple base measures: counts, sums, distinct counts and percentiles, such as turns, answered
+turns, cost or active users. A rate, an average or a share is a compute step on the widget (answered turns as a share
+of turns; cost per active user), so it is worked out the same way as any other figure, and the chat beside the board
+can answer the same kind of question: "Which roles asked most this week?", "How did the answer rate change over the
+last 30 days?". The chat's turns are marked internal, like the Overview chat's.
 
-- **Unavailable: needs a field (switched off)**, with a button to that field's switch;
-- **Unavailable** because a field it needs is locked (a feature that is off, voice not set up), with a button to
-  Settings;
-- **Needs configuration**, for example "map dashboards, datasets or roles to a country", in the `context:` section of
-  the config;
-- **Not measured from records**: time saved against the old way needs a baseline study, and the true word error rate
-  needs hand-made transcripts.
+The board is for admins only. An admin without the usage right sees it with the user, the words of a question and
+the chat session hidden, so it names nobody to them.
 
-A metric reads only the records that carry the fields it needs. So a field switched off part of the week narrows the
-reading to the records that have it.
+**When a figure needs a field that is off.** Each widget reads some fields. When one of them is off, the widget says
+so in place of a figure, with a link:
+
+- "Needs the User name field, which is switched off", with **Show the field**, which opens that field's row under
+  What's recorded;
+- "Needs the Saved answers used field, which comes with the saved answers switch; that switch is off", with **Open
+  Settings**;
+- "needs configuration: map dashboards, datasets or roles to a campaign, campaign type or country", for a breakdown by
+  campaign or country nobody mapped in `context:`;
+- "Telemetry is off, so nothing new is recorded."
+
+A figure reads only the records that carry the fields it needs. So a field switched off part of the week narrows the
+figure to the records that have it.
+
+**What is not on the board.** A few of the older metric names have no figure, because the records cannot give one:
+
+- **Time saved against the old way** needs a baseline study of how long the old way took.
+- **The true word error rate** needs hand-made transcripts to compare with. The board shows an estimate instead:
+  words changed in a transcript before sending, as a share of its words.
+- **Returning users across campaigns**: a person counted again in a later campaign is not a count of records. The
+  board shows active users by role and by country instead.
+- **Exports and shares inside Superset** come from Superset's own action log, not from the records; see
+  `GET /_superset/telemetry/superset-actions` below.
+- **Daily review runs, proposals and open questions** are kept by the review feature, not by telemetry. The
+  Overview tab's "Waiting for you" shows the open questions and the proposals waiting.
+
+Change the board like any other: ask the chat beside it, or edit the widgets by hand, and undo from its version
+history. To change the default for a deployment, edit `packs/usage/boards/telemetry.json`.
 
 ### The older switch names
 
@@ -210,7 +236,8 @@ usage right. Other readers see a stable stand-in (`u_…`) for each name.
 | route | what it gives |
 |---|---|
 | `GET /_superset/telemetry?from=&to=&type=&offset=&limit=` | records newest first, a page at a time (at most 5000; default the last 7 days) |
-| `GET /_superset/telemetry/checklist` | both views of the tab as data: the fields with their switches, and the metrics with their values; see [Telemetry records](../reference/telemetry-records.md#the-checklist) |
+| `GET /_superset/telemetry/checklist` | What's recorded as data: the fields with their switches, statuses and the board widgets that read each; see [Telemetry records](../reference/telemetry-records.md#the-checklist) |
+| `GET /_superset/admin/api/usage/telemetry/data` | What it tells you as data: each widget's figures, through the board API (admins only) |
 | `PUT /_superset/settings/telemetry` | admins: `{"telemetry": bool, "fields.<field>": bool, "categories.<category>": bool, "retentionDays": n}`, any of them; `null` puts a field back to the deployment's value; `"confirm": true` to turn on a privacy-sensitive field. Answers with the checklist. |
 | `GET /_superset/telemetry/superset-actions?from=&to=` | exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (`/api/v1/log/`) |
 

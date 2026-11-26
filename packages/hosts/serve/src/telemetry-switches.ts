@@ -1,4 +1,4 @@
-import { type FieldGroup, type SwitchChange, type SwitchValues, FIELD_CATEGORIES, categoryChanges, fieldById, fieldLock, fieldsOn, isLegacyItem, isLegacySection, lockWords, metricById, resolveFields, switchable } from "@lenspack/agent";
+import { type FieldGroup, type SwitchChange, type SwitchValues, FIELD_CATEGORIES, categoryChanges, fieldById, fieldLock, fieldsOn, isLegacyItem, isLegacySection, lockWords, legacyItemById, resolveFields, switchable } from "@lenspack/agent";
 import type { ContextField, DeploymentContext } from "@lenspack/policy";
 
 import type { Features } from "./features";
@@ -172,9 +172,9 @@ export function telemetrySwitches(o: {
         }
         if (f) return { ok: false, status: 409, error: `${f.label} is kept by the ${f.feature} feature; change that switch instead` };
         // The older metric and section switches: a metric is now worked out from fields, and a section is a category.
-        if (kind === "items" && id && metricById(id)) {
-          const m = metricById(id)!;
-          return { ok: false, status: 400, error: m.notTelemetry ? `${m.label} is not telemetry: ${m.notTelemetry}` : `${key} is an older name: metrics are worked out from fields now. Switch the fields it reads instead: ${m.needs.map((n) => `fields.${n}`).join(", ")}` };
+        if (kind === "items" && id && legacyItemById(id)) {
+          const m = legacyItemById(id)!;
+          return { ok: false, status: 400, error: m.notTelemetry ? `${m.label} is not telemetry: ${m.notTelemetry}` : `${key} is an older name: metrics are worked out from the records now, with no switches. Switch the fields it read instead: ${m.needs.map((n) => `fields.${n}`).join(", ")}` };
         }
         if (kind === "groups" && id && isLegacySection(id)) return { ok: false, status: 400, error: `${key} is an older name: switch a category (categories.<category>) or a field (fields.<field>) instead` };
         return { ok: false, status: 400, error: `${key} is not a telemetry switch: name telemetry, fields.<field>, categories.<category> or retentionDays` };

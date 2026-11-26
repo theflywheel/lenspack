@@ -26,6 +26,8 @@ export type WidgetData = {
   computed?: string;
   error?: string;
   hint?: string;
+  /** Why the widget has no answer right now, from the host (something it reads is not collected or not set up), and where to fix it. */
+  notice?: { text: string; action?: { label: string; href: string } };
 };
 
 export type FilterOption = { value: string; count: number };

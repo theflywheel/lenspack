@@ -36,7 +36,8 @@ returns a bound plan or refuses. It:
 - pushes the tenant condition into each entity that declares one, or refuses (`TENANT_REQUIRED`);
 - turns a relative window into exact bounds, in the pack's time zone;
 - adds the caller's scope and refuses a query the scope cannot narrow (`OUT_OF_SCOPE`);
-- refuses a hidden key (`NOT_PERMITTED`) or a key the host keeps from the caller (`ACCESS_HIDDEN`);
+- refuses a hidden key (`NOT_PERMITTED`), a key the host keeps from the caller (`ACCESS_HIDDEN`), or a key the
+  source can't answer right now (`UNAVAILABLE`, with the host's notice);
 - refuses what the connector says it cannot do (`NOT_SUPPORTED`).
 
 Every path to a source goes through `resolve`: board widgets, filter menus, explain, and the chat's tools.

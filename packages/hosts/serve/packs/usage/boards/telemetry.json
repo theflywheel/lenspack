@@ -1,0 +1,1381 @@
+{
+  "title": "What it tells you",
+  "ops": [
+    {
+      "op": "add_widget",
+      "id": "s_users",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "Users",
+        "body": "Is the pilot reaching people, and is use growing? Which roles and countries use it?"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "users_7d",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Active users, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "people",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "users_24h",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Active users, last 24 hours",
+        "query": {
+          "kind": "value",
+          "measure": "people",
+          "time": {
+            "last": "24h"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "questions_per_user",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Questions per user, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "turns",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "people"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "sessions_7d",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Conversations, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "sessions",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "users_daily",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "line",
+        "title": "Active users per day",
+        "query": {
+          "kind": "series",
+          "measure": "people",
+          "grain": "day",
+          "time": {
+            "last": "30d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "users_role",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Active users by role, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "role",
+          "measure": "role_people",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "users_country",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Active users by country, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "country",
+          "measure": "people",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "s_cost",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "Volume and cost",
+        "body": "What each question and each person costs, and whether voice and the review step pay for themselves."
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "questions_7d",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Questions, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "turns",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cost_per_question",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Cost per question, 7 days (US$)",
+        "query": {
+          "kind": "value",
+          "measure": "cost_usd",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns"
+              }
+            ]
+          }
+        },
+        "format": "currency"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cost_per_user",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Cost per user, 7 days (US$)",
+        "query": {
+          "kind": "value",
+          "measure": "cost_usd",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "people"
+              }
+            ]
+          }
+        },
+        "format": "currency"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "speech_cost",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Speech-to-text cost, 7 days (US$)",
+        "query": {
+          "kind": "value",
+          "measure": "transcript_usd",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "format": "currency"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cost_daily",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "line",
+        "title": "Cost per day by model (US$)",
+        "query": {
+          "kind": "series",
+          "measure": "cost_usd",
+          "grain": "day",
+          "time": {
+            "last": "30d"
+          },
+          "by": "model"
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "cost_parts",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "table",
+        "title": "Cost by model: model, review and speech, 7 days (US$)",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "model",
+          "measure": "model_usd",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          },
+          "measures": [
+            "review_usd",
+            "speech_usd"
+          ]
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "s_quality",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "Quality",
+        "body": "Where the pack or the model falls short, which answers people do not trust, and whether asking back helps."
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "answer_rate",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Answer rate, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "answered",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "thumbs_down_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Thumbs down, share of ratings, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "thumbs_down",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "feedback_given",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "asked_back",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Clarifying questions asked, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "clarifying_asked",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "quick_reply_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Clarifying questions answered with a quick reply",
+        "query": {
+          "kind": "value",
+          "measure": "quick_replies",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "clarifying_asked",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "answer_rate_campaign",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Answer rate by campaign type, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "campaign_type",
+          "measure": "answered",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "answer_rate_language",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Answer rate by language, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "language",
+          "measure": "answered",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "thumbs_reasons",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Thumbs-down reasons, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "reason",
+          "measure": "thumbs_down",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "not_answered_why",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Why questions were not answered, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "outcome_reason",
+          "measure": "unanswered",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "top_unanswered",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 6
+      },
+      "widget": {
+        "kind": "table",
+        "title": "Top unanswered questions, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "question",
+          "measure": "unanswered",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "s_asks",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "What people ask",
+        "body": "What to put on dashboards, which numbers deserve a chart, and which rates to add to the pack."
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "distinct_questions",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Different questions, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "distinct_questions",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "rephrased_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Asked again in other words, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "rephrased",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "follow_ups",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Questions per conversation, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "turns",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "sessions"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "unanswered_distinct",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Different questions not answered, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "distinct_unanswered",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "kind_mix",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "pie",
+        "title": "Direct, derived and chart questions, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "answer_kind",
+          "measure": "turns",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "kind_repeats",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "table",
+        "title": "Questions and different questions, by kind, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "answer_kind",
+          "measure": "turns",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          },
+          "measures": [
+            "distinct_questions"
+          ]
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "top_questions_role",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 7
+      },
+      "widget": {
+        "kind": "table",
+        "title": "Top questions by role, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "question",
+          "measure": "role_turns",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          },
+          "by": "role"
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "s_speed",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "Speed",
+        "body": "Whether answers are fast enough on field networks, where waiting loses people, and when to add capacity."
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "reply_median",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Median reply time, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "reply_median_s",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "reply_p95",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "95th percentile reply time, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "reply_p95_s",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "abandoned_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Answers left before they finished, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "abandoned_answers",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "waited_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Questions that waited for a free slot, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "waited",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "p95_kind",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "95th percentile reply time by kind of question (s)",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "answer_kind",
+          "measure": "reply_p95_s",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "reply_daily",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "line",
+        "title": "Median reply time per day (s)",
+        "query": {
+          "kind": "series",
+          "measure": "reply_median_s",
+          "grain": "day",
+          "time": {
+            "last": "30d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "s_voice",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "Voice and language",
+        "body": "Whether voice is worth keeping and improving, which languages to support, and which speech model to use."
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "spoken_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Questions spoken, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "spoken",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "edited_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Transcripts edited before sending, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "edited_transcripts",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "spoken",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "reasked_share",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Typed again after speaking, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "reasked_after_voice",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "spoken",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "word_error",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Word error rate, estimated from edits, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "edit_words",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "spoken_words",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "not_sent",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Transcripts never sent, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "not_sent",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "speech_seconds",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Speech transcribed, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "transcript_seconds",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "language_mix",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "pie",
+        "title": "Language mix, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "language",
+          "measure": "turns",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "edited_language",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Transcripts edited before sending, by language, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "language",
+          "measure": "edited_transcripts",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "spoken",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "s_trust",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "Trust and reuse",
+        "body": "Whether people check where numbers come from, whether answers travel, and whether reuse pays."
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "explain_opened",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "How an answer was worked out, opened, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "explain_opened",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "exports",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Charts exported, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "exports",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "shares",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Boards shared, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "shares",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "dashboards",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Own dashboards and saved layouts used, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "dashboard_actions",
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "saved_rate",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Answered from saved answers, 7 days",
+        "query": {
+          "kind": "value",
+          "measure": "cache_hits",
+          "time": {
+            "last": "7d"
+          },
+          "compute": {
+            "steps": [
+              {
+                "op": "ratio",
+                "to": "turns",
+                "percent": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "saved_usd",
+      "placement": {
+        "place": "bottom",
+        "width": "quarter",
+        "height": 3
+      },
+      "widget": {
+        "kind": "kpi",
+        "title": "Money saved by saved answers, 7 days (US$)",
+        "query": {
+          "kind": "value",
+          "measure": "saved_usd",
+          "time": {
+            "last": "7d"
+          }
+        },
+        "format": "currency"
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "saved_tier",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "bar",
+        "title": "Saved answers used, by tier, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "cache_tier",
+          "measure": "cache_hits",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "s_device",
+      "placement": {
+        "place": "bottom",
+        "width": "full",
+        "height": 2
+      },
+      "widget": {
+        "kind": "text",
+        "title": "Device and network",
+        "body": "Which screens to design for first, and how light answers must be for field networks."
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "device_mix",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "pie",
+        "title": "Questions by device, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "device",
+          "measure": "turns",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    },
+    {
+      "op": "add_widget",
+      "id": "network_mix",
+      "placement": {
+        "place": "bottom",
+        "width": "half",
+        "height": 6
+      },
+      "widget": {
+        "kind": "chart",
+        "chart": "pie",
+        "title": "Questions by network, 7 days",
+        "query": {
+          "kind": "breakdown",
+          "dimension": "network",
+          "measure": "turns",
+          "limit": 10,
+          "time": {
+            "last": "7d"
+          }
+        }
+      }
+    }
+  ]
+}

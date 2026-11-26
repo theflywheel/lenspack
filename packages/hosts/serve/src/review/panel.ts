@@ -13,7 +13,7 @@ import { SettingsSaveError } from "../settings";
 import { OverlayError, overlaySize } from "./overlay";
 import { QuestionError } from "./questions";
 import { ReviewBusy, type ReviewSystem } from "./system";
-import type { UsageBoard } from "./usage";
+import { TELEMETRY_BOARD, type UsageBoard } from "./usage";
 
 // The admin panel, served by Lenspack itself under a host's admin prefix (<prefix>/admin/), so
 // it works the same in any host: Superset reaches it through its /lenspack/ route with the signed
@@ -116,7 +116,7 @@ export function panelRoutes(o: PanelOptions) {
       switch (a) {
         case "packs": {
           const usage = await o.usage;
-          return send(200, { me: { user: who.user }, usage: usage ? { board: "overview", source: usage.source() } : null, packs: await Promise.all(s.packs().map(async (p) => ({ ...p, definitionsVersion: await s.definitionsVersion(p.name) }))) });
+          return send(200, { me: { user: who.user }, usage: usage ? { board: "overview", telemetryBoard: TELEMETRY_BOARD, source: usage.source() } : null, packs: await Promise.all(s.packs().map(async (p) => ({ ...p, definitionsVersion: await s.definitionsVersion(p.name) }))) });
         }
         case "overview":
           return send(200, await s.overview(Math.max(1, Math.min(Number(url.searchParams.get("days")) || 14, 90))));

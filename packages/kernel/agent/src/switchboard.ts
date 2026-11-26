@@ -8,9 +8,9 @@ import type { EventRecord, TelemetryLine, TranscriptRecord, TurnRecord } from ".
 // record keeps while telemetry is on (its id, its time, the pack and board, the tenant) only place it; even the
 // user name has a switch, so with it off the records carry no names.
 //
-// The metrics a deployment reads (active users, cost per question, answer rate) are not recorded: they are worked
-// out from these fields when someone looks (metrics.ts). Each metric names the field groups it needs, and says it
-// is unavailable while one of them is off.
+// The metrics a deployment reads (active users, cost per question, answer rate) are not recorded: they are measures
+// in the usage pack, worked out from the records by the engine when someone looks. A measure that reads a field group
+// that is off, or not set up, is unavailable rather than wrong (fieldNotices in checklist.ts says why).
 //
 // The switches are deployment config (telemetry.fields) that admins change on the Telemetry tab without a restart.
 // The older names (telemetry.items.<metric>, telemetry.groups.<section>) are read through fieldsFromLegacy below. This
@@ -200,17 +200,22 @@ export const categoryOf = (id: string) => CATEGORY_OF.get(id);
 /** Whether a field group has a switch of its own (not one a feature keeps outright). */
 export const switchable = (f: FieldGroup) => !f.owned;
 
-// ---- the metrics: worked out from the fields, never recorded ----------------------------------------------------
+// ---- the older switches: one per metric, read as field switches ------------------------------------------------
+//
+// Before field switches, a deployment switched what it measured: one switch per metric, in sections. Metrics are
+// now measures in the usage pack (packs/usage), worked out by the engine from the records, with no switches. This
+// table keeps each older switch's id with the field groups it read, so older settings keep their meaning
+// (fieldsFromLegacy below) and a route can say which fields to switch instead.
 
-export type MetricSource = "records" | "transcripts" | "superset-logs" | "feature" | "none";
+export type LegacySource = "records" | "transcripts" | "superset-logs" | "feature" | "none";
 
-/** What a deployment reads off the records: a measure the pilot is judged on, and the field groups it needs. */
-export type Metric = {
+/** An older metric switch: its id, what it measured, and the field groups it read. */
+export type LegacyItem = {
   id: string;
   label: string;
   /** The decision this measure helps make. */
   decision: string;
-  source: MetricSource;
+  source: LegacySource;
   /** Field groups it cannot be worked out without. */
   needs: string[];
   /** Field groups it breaks its value down by when they are on (optional). */
@@ -221,9 +226,9 @@ export type Metric = {
   notTelemetry?: string;
 };
 
-export type MetricGroup = { id: string; title: string; metrics: Metric[] };
+export type LegacyGroup = { id: string; title: string; metrics: LegacyItem[] };
 
-export const METRIC_GROUPS: MetricGroup[] = [
+export const LEGACY_GROUPS: LegacyGroup[] = [
   {
     id: "users",
     title: "Users",
@@ -320,11 +325,9 @@ export const METRIC_GROUPS: MetricGroup[] = [
   },
 ];
 
-export const METRICS: Metric[] = METRIC_GROUPS.flatMap((g) => g.metrics);
-const METRIC_BY_ID = new Map(METRICS.map((m) => [m.id, m]));
-export const metricById = (id: string) => METRIC_BY_ID.get(id);
-/** The metrics that read a field group (to need it, or to break their value down by it). */
-export const metricsUsing = (fieldId: string) => METRICS.filter((m) => m.needs.includes(fieldId) || m.by?.includes(fieldId));
+export const LEGACY_ITEMS: LegacyItem[] = LEGACY_GROUPS.flatMap((g) => g.metrics);
+const LEGACY_BY_ID = new Map(LEGACY_ITEMS.map((m) => [m.id, m]));
+export const legacyItemById = (id: string) => LEGACY_BY_ID.get(id);
 
 // ---- the switches' values --------------------------------------------------------------------------------------
 
@@ -376,6 +379,11 @@ export function fieldForEvent(type: string, stage?: string | null): FieldGroup |
   return FIELD_GROUPS.find((f) => f.events?.includes(key));
 }
 
+/** The field group a record's field belongs to (turn.user is the user name's), or undefined for a field every record keeps. */
+export function fieldOfRecord(kind: "turn" | "transcript" | "event", name: string): FieldGroup | undefined {
+  return FIELD_GROUPS.find((f) => (f[kind] as readonly string[] | undefined)?.includes(name));
+}
+
 /** Every client event type some field group keeps. */
 export const EVENT_TYPES = [...new Set(FIELD_GROUPS.flatMap((f) => f.events ?? []).map((e) => e.split(":")[0]!))];
 
@@ -394,7 +402,7 @@ export function carries(l: TelemetryLine, f: FieldGroup): boolean {
  * the older values now: a field group is on when some metric that is on (with its section on) needs it. The five
  * privacy-sensitive items had the ids their field groups have now, so items.question-text is fields.question-text.
  */
-export const LEGACY_SECTIONS: { id: string; items: string[] }[] = METRIC_GROUPS.map((g) => ({
+export const LEGACY_SECTIONS: { id: string; items: string[] }[] = LEGACY_GROUPS.map((g) => ({
   id: g.id,
   items: [...g.metrics.filter((m) => !m.notTelemetry && m.source !== "feature").map((m) => m.id), ...(g.id === "asks" ? ["question-text"] : g.id === "voice" ? ["transcript-text", "voice-audio"] : [])],
 }));
@@ -404,7 +412,7 @@ export const isLegacyItem = (id: string) => LEGACY_SECTION_OF.has(id);
 export const isLegacySection = (id: string) => LEGACY_SECTIONS.some((s) => s.id === id);
 /** The field groups an older item switch stood for. */
 export function legacyNeeds(item: string): string[] {
-  const m = metricById(item);
+  const m = legacyItemById(item);
   if (m && !fieldById(item)) return [...m.needs, ...(m.by ?? [])];
   return fieldById(item) ? [item] : [];
 }
