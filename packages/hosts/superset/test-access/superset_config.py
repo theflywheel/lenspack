@@ -11,6 +11,16 @@ FEATURE_FLAGS = {
     "DASHBOARD_RBAC": True,
 }
 # The suite's sample data is in Postgres on the same host; nothing else is reachable from here.
+# The suite turns dashboard roles off for one case without a restart: while this file exists, DASHBOARD_RBAC is off.
+DASHBOARD_RBAC_OFF_FILE = "/tmp/lp-dashboard-rbac-off"
+
+
+def IS_FEATURE_ENABLED_FUNC(name, default):
+    if name == "DASHBOARD_RBAC" and os.path.exists(DASHBOARD_RBAC_OFF_FILE):
+        return False
+    return default
+
+
 PREVENT_UNSAFE_DB_CONNECTIONS = False
 TALISMAN_ENABLED = False
 # Superset 5 warns and slows down without a cache; the suite needs none.
