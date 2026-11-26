@@ -25,6 +25,10 @@
 .lp-problem-reason { margin: 0; font-size: 12px; line-height: 1.5; color: var(--lp-refused, var(--lp-muted)); }
 .lp-problem-hint { margin: 0; font-size: 12px; color: var(--lp-muted); }
 .lp-problem-hint code { font-family: var(--lp-mono, ui-monospace, monospace); color: var(--lp-key, inherit); }
+.lp-notice { display: flex; height: 100%; flex-direction: column; justify-content: center; align-items: flex-start; gap: 6px; overflow: auto; }
+.lp-notice-text { margin: 0; font-size: 12px; line-height: 1.4; color: var(--lp-muted); }
+.lp-notice-action { font-size: 12px; font-weight: 500; color: var(--lp-accent, var(--lp-series-1)); border: 1px solid var(--lp-border); border-radius: 999px; padding: 2px 10px; text-decoration: none; }
+.lp-notice-action:hover, .lp-notice-action:focus-visible { background: var(--lp-hover, rgba(127,127,127,.08)); }
 .lp-empty-board { border: 1px dashed var(--lp-border); border-radius: var(--lp-radius); padding: 48px 24px; line-height: 1.6; }
 .lp-kpi { display: flex; flex-direction: column; justify-content: center; height: 100%; }
 .lp-kpi-value { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }

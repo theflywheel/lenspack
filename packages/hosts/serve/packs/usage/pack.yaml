@@ -6,8 +6,10 @@ instructions: >-
   saved-answer rate, spoken share) are one count over another, computed with the ratio step, for example failed ratio turns. Costs are
   estimates from list prices, in US dollars. Reply time is the seconds from the question to the end of the reply. Active users are people
   (distinct users) over a day or a week. A turn on the pack "usage" was asked here, about usage. Feedback, transcript edits and other
-  events are in usage_events, one row per event, joined to the turn they are about. Roles are in usage_roles, one row per role a turn's
-  user had.
+  events are in usage_events, one row per event, joined to the turn they are about when there is one. Roles are in usage_roles, one row per
+  role a turn's user had. Each transcription of a spoken question is a row of usage_transcripts. A question's words are kept only when the
+  deployment keeps them; otherwise a question is known by its fingerprint, which is the same each time the same question is asked. A key
+  that reads a record field the deployment does not record answers that it is unavailable, and why: say so rather than estimate.
 entities:
   usage_turns:
     source: usage_turns
@@ -31,6 +33,10 @@ entities:
     time: asked_at
     joins:
       - { to: usage_turns, on: usage_events.turn_id = usage_turns.id, type: many_to_one }
+  usage_transcripts:
+    source: usage_transcripts
+    grain: one row per transcription of a spoken question
+    time: asked_at
 dimensions:
   - { key: day, entity: usage_turns, sql: asked_at, type: time, grains: [hour, day, week, month], label: Day }
   - { key: hour, entity: usage_turns, sql: hour, type: number, label: Hour of the day (UTC) }
@@ -49,7 +55,9 @@ dimensions:
   - { key: answer_kind, entity: usage_turns, sql: answer_kind, type: enum, label: Kind of answer, hint: "direct (a figure read from the data), derived (worked out from figures), chart (a chart drawn or changed), meta (about the tool or the data, no figure)." }
   - { key: outcome, entity: usage_turns, sql: outcome, type: enum, label: Outcome, hint: "answered, declined, failed, or clarify (the assistant asked which reading was meant)." }
   - { key: cache_tier, entity: usage_turns, sql: cache_tier, label: Saved-answer tier, hint: The tier of saved answers that answered the turn; empty when none did. }
-  - { key: question, entity: usage_turns, sql: question, label: Question asked }
+  - { key: question, entity: usage_turns, sql: question, label: Question asked, hint: The question's words; empty unless the deployment keeps them. }
+  - { key: question_id, entity: usage_turns, sql: question_hash, label: Question fingerprint, hint: The same for each time the same question is asked; not readable as words. }
+  - { key: outcome_reason, entity: usage_turns, sql: outcome_reason, label: Why not answered, hint: "For a declined or failed turn: the reason, such as no-data or timeout." }
   - { key: device, entity: usage_turns, sql: device, label: Device }
   - { key: network, entity: usage_turns, sql: network, label: Network }
   - { key: feature, entity: usage_features, sql: feature, label: Feature used }
@@ -57,6 +65,8 @@ dimensions:
   - { key: event, entity: usage_events, sql: event, label: Event }
   - { key: event_value, entity: usage_events, sql: value, label: Event value, hint: up or down for feedback, chosen or ignored for a quick reply. }
   - { key: reason, entity: usage_events, sql: reason, label: Feedback reason }
+  - { key: transcript_language, entity: usage_transcripts, sql: language, label: Language heard, hint: The language speech to text detected. }
+  - { key: speech_model, entity: usage_transcripts, sql: model, label: Speech-to-text model }
 measures:
   - { key: turns, entity: usage_turns, agg: count, label: Turns, synonyms: [chats, requests] }
   - { key: questions, entity: usage_turns, agg: count, filter: "kind = 'answer'", label: Questions answered, hint: Turns that changed no board. }
@@ -92,3 +102,24 @@ measures:
   - { key: events, entity: usage_events, agg: count, label: Events }
   - { key: thumbs_down, entity: usage_events, agg: count, filter: "event = 'feedback' AND value = 'down'", label: Thumbs down }
   - { key: thumbs_up, entity: usage_events, agg: count, filter: "event = 'feedback' AND value = 'up'", label: Thumbs up }
+  - { key: distinct_questions, entity: usage_turns, agg: count_distinct, sql: question_hash, label: Different questions, hint: Questions told apart by their fingerprint; the same question asked twice counts once. }
+  - { key: unanswered, entity: usage_turns, agg: count, filter: "outcome <> 'answered'", label: Questions not answered, hint: "Declined, failed, or answered with a clarifying question." }
+  - { key: distinct_unanswered, entity: usage_turns, agg: count_distinct, sql: question_hash, filter: "outcome <> 'answered'", label: Different questions not answered }
+  - { key: abandoned_answers, entity: usage_turns, agg: sum, sql: abandoned, label: Answers left before they finished }
+  - { key: waited, entity: usage_turns, agg: sum, sql: waited, label: Turns that waited for a free slot }
+  - { key: queue_p95_s, entity: usage_turns, agg: p95, sql: queue_s, filter: "waited = 1", format: duration, label: 95th percentile wait for a free slot (s) }
+  - { key: queue_max_s, entity: usage_turns, agg: max, sql: queue_s, format: duration, label: Longest wait for a free slot (s) }
+  - { key: edited_transcripts, entity: usage_turns, agg: sum, sql: edited, label: Transcripts edited before sending }
+  - { key: edit_words, entity: usage_turns, agg: sum, sql: transcript_edits, label: Words changed in transcripts }
+  - { key: spoken_words, entity: usage_turns, agg: sum, sql: question_words, filter: "input = 'spoken'", label: Words in spoken questions }
+  - { key: feedback_given, entity: usage_events, agg: count, filter: "event = 'feedback'", label: Ratings given, hint: Thumbs up and thumbs down. }
+  - { key: quick_replies, entity: usage_events, agg: count, filter: "event = 'quick-reply'", label: Quick replies picked }
+  - { key: explain_opened, entity: usage_events, agg: count, filter: "event = 'explain-opened'", label: How an answer was worked out, opened }
+  - { key: exports, entity: usage_events, agg: count, filter: "event = 'chart-exported'", label: Charts exported }
+  - { key: shares, entity: usage_events, agg: count, filter: "event = 'board-shared'", label: Boards shared }
+  - { key: dashboard_actions, entity: usage_events, agg: count, filter: "event IN ('personal-dashboard', 'saved-layout')", label: Own dashboards and saved layouts used, hint: "Own dashboards made, copied or deleted, and saved layouts saved or applied." }
+  - { key: not_sent, entity: usage_events, agg: count, filter: "event = 'abandoned' AND stage = 'after-transcription'", label: Transcripts never sent }
+  - { key: role_turns, entity: usage_roles, agg: count, label: Turns by role, hint: A turn counts once for each role its user had. }
+  - { key: transcripts, entity: usage_transcripts, agg: count, label: Transcriptions }
+  - { key: transcript_usd, entity: usage_transcripts, agg: sum, sql: usd, label: Speech-to-text cost of transcriptions (US$) }
+  - { key: transcript_seconds, entity: usage_transcripts, agg: sum, sql: seconds, format: duration, label: Seconds of speech transcribed }

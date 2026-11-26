@@ -1,6 +1,6 @@
 import { type DeploymentContext, type Identity, contextFor, reportsOn } from "@lenspack/policy";
 
-import { CORE_FIELDS, type SwitchValues, keptFields, onlyKept, switchDefaults, itemForEvent, itemsOn } from "./switchboard";
+import { CORE_FIELDS, type SwitchValues, fieldDefaults, fieldForEvent, fieldsOn, keptFields, onlyKept } from "./switchboard";
 
 // Usage telemetry: one flat record per chat turn, per transcription and per event a client reports (a thumbs up or
 // down, an answer left before it finished, a transcript the user corrected). It answers how the assistant is used:
@@ -13,8 +13,8 @@ import { CORE_FIELDS, type SwitchValues, keptFields, onlyKept, switchDefaults, i
 // Nothing here models an organisation: what a board, dataset or role belongs to is the deployment's context
 // (@lenspack/policy). Secrets never reach a record.
 //
-// What is recorded follows the deployment's switches (switchboard.ts): a record keeps only the fields of the items
-// that are on, and a client event no item keeps is not written. The switches are read on every record.
+// What is recorded follows the deployment's switches (switchboard.ts): a record keeps only the fields of the field
+// groups that are on, and a client event no group keeps is not written. The switches are read on every record.
 
 export const TELEMETRY_VERSION = 2;
 
@@ -155,7 +155,7 @@ export type EventRecord = {
   data: Record<string, Scalar> | null;
 };
 
-/** A record as written: the fields that place it always, the rest only while an item that needs them is on. */
+/** A record as written: the fields that place it always, the rest only while their field group is on. */
 export type Kept<T, K extends keyof T> = Pick<T, K> & Partial<Omit<T, K>>;
 export type TurnLine = Kept<TurnRecord, "type" | "v" | "turnId" | "at" | "pack" | "board" | "tenant" | "datasets">;
 export type TranscriptLine = Kept<TranscriptRecord, "type" | "v" | "transcriptId" | "at" | "pack">;
@@ -410,14 +410,14 @@ export type TelemetryOptions = {
   store: TelemetryStore;
   /** A keyed hash (the host keeps the key), given normalised text: equal texts share it, and nobody without the key can test a guess. */
   hash: (text: string) => string;
-  /** Whether to record now (the telemetry switch, which turns every item off). */
+  /** Whether to record now (the telemetry switch, which turns every field group off). */
   on?: () => boolean;
   /**
-   * The items recording now (switchboard.ts itemsOn), read on every record: a record keeps only their fields.
+   * The field groups recording now (switchboard.ts fieldsOn), read on every record: a record keeps only their fields.
    * Absent: the catalogue's defaults. Texts (questions, transcripts, comments) are kept only with question-text
    * and transcript-text on; otherwise a keyed hash stands in.
    */
-  items?: () => ReadonlySet<string>;
+  fields?: () => ReadonlySet<string>;
   /** The deployment's context: what a board, dataset or role belongs to. */
   context?: () => DeploymentContext;
   now?: () => Date;
@@ -482,7 +482,7 @@ export type TurnCapture = {
 };
 
 export type EventInput = { type?: unknown; turnId?: unknown; data?: unknown; [k: string]: unknown };
-/** recorded: false when the item that keeps this event is switched off (accepted, not written). */
+/** recorded: false when the field group that keeps this event is switched off (accepted, not written). */
 export type EventResult = { ok: true; recorded: boolean } | { ok: false; status: number; error: string };
 
 const SESSION_IDLE_MS = 30 * 60_000;
@@ -505,9 +505,9 @@ export function turnTelemetry(opts: TelemetryOptions) {
   const store = opts.store;
   const now = () => (opts.now ?? (() => new Date()))().getTime();
   const enabled = () => opts.on?.() ?? true;
-  const defaults: SwitchValues = { telemetry: true, ...switchDefaults() };
-  /** The items on now: none while telemetry is off. */
-  const on = (): ReadonlySet<string> => (enabled() ? (opts.items?.() ?? itemsOn(defaults, { voice: true, clarify: true, cache: true })) : new Set());
+  const defaults: SwitchValues = { telemetry: true, fields: fieldDefaults() };
+  /** The field groups on now: none while telemetry is off. */
+  const on = (): ReadonlySet<string> => (enabled() ? (opts.fields?.() ?? fieldsOn(defaults, { voice: true, clarify: true, cache: true })) : new Set());
   const keepText = () => on().has("question-text");
   const keepTranscript = () => on().has("transcript-text");
   const waitMs = opts.transcriptWaitMs ?? 60 * 60_000;
@@ -516,7 +516,7 @@ export function turnTelemetry(opts: TelemetryOptions) {
   const hash = (s: string) => opts.hash(normaliseText(s));
   const text = (s: string | null) => (s === null ? null : keepText() ? s : null);
   const heardText = (s: string | null) => (s === null ? null : keepTranscript() ? s : null);
-  /** Writes a record with only the fields its on items need. */
+  /** Writes a record with only the fields of the groups that are on. */
   const append = <T extends TurnRecord | TranscriptRecord | EventRecord>(kind: "turn" | "transcript" | "event", line: T) => store.append(onlyKept(kind, line, on()) as TelemetryLine);
   const iso = (ms: number) => new Date(ms).toISOString();
   /** The words of a text as working state keeps them: each one hashed, so edits and overlaps can be counted whether or not texts are kept. */
@@ -548,7 +548,7 @@ export function turnTelemetry(opts: TelemetryOptions) {
     const open = await store.state.get<OpenTurn>(`turn:${turnId}`);
     if (open) return open;
     const [line] = await store.find({ from: new Date(now() - 30 * 86_400_000), type: "turn", turnId });
-    // A record written with the user items off names nobody: no one can report on it.
+    // A record written with the user name off names nobody: no one can report on it.
     return line?.type === "turn" && line.user ? { user: line.user, tenant: line.tenant ?? null, sessionId: line.sessionId ?? "", board: line.board, pack: line.pack, at: Date.parse(line.at) } : null;
   }
 
@@ -590,8 +590,8 @@ export function turnTelemetry(opts: TelemetryOptions) {
 
   return {
     enabled,
-    /** The items recording now. */
-    items: on,
+    /** The field groups recording now. */
+    fields: on,
     hash,
     sweep,
 
@@ -599,7 +599,7 @@ export function turnTelemetry(opts: TelemetryOptions) {
     async transcribed(t: { id: string; who: Asker; pack: string | null; model: string; languageRequested: string | null; languageDetected: string | null; seconds: number | null; usd: number | null; ms: number; retried: boolean; text: string; audio?: AudioLink | null }) {
       if (!enabled()) return;
       const at = now();
-      // A transcript record only while some item reads one (its cost, its words, the text, the recording).
+      // A transcript record only while some field group reads one (its cost, its words, the text, the recording).
       if (keptFields("transcript", on()).size > CORE_FIELDS.transcript.length)
         await append("transcript", {
         type: "transcript",
@@ -797,8 +797,8 @@ export function turnTelemetry(opts: TelemetryOptions) {
       const base = { event: type, user: who.user, roles: who.roles, turnId: (body.turnId as string | undefined) ?? null, sessionId: owner?.sessionId ?? null, board: owner?.board ?? who.board ?? null, pack: owner?.pack ?? who.pack ?? null };
       const data = flatData(body.data);
       if (data === undefined) return { ok: false, status: 400, error: "data must be a flat map of up to 20 short values" };
-      // The item that keeps this event: none, not an event this server records; switched off, accepted and not written.
-      const item = itemForEvent(type, typeof body.stage === "string" ? body.stage : null);
+      // The field group that keeps this event: none, not an event this server records; switched off, accepted and not written.
+      const item = fieldForEvent(type, typeof body.stage === "string" ? body.stage : null);
       if (!item) return { ok: false, status: 400, error: `not an event this server records: ${type}` };
       const keeps = on().has(item.id);
 

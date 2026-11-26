@@ -51,13 +51,15 @@ renderer as every other board, over a built-in pack about the server itself.
 
 ### How it is built
 
-The usage pack is an ordinary pack (`packs/usage/pack.yaml` in the server package, with its default board in
-`packs/usage/boards/overview.json`). It reads from a small adapter, the usage source, the way other packs read from a
+The usage pack is an ordinary pack (`packs/usage/pack.yaml` in the server package, with its default boards in
+`packs/usage/boards/`: `overview.json` for the Overview tab, `telemetry.json` for the Telemetry tab's What it tells
+you). It reads from a small adapter, the usage source, the way other packs read from a
 database. The adapter turns the server's own records into tables.
 
 ### The data
 
-One row per chat turn, read into an in-process DuckDB table:
+One row per chat turn, read into an in-process DuckDB table, and beside it each turn's roles and features, each event a
+client reported (a rating, a quick reply, an answer left early) and each transcription:
 
 - from the turn telemetry (`telemetry*.jsonl` in the state directory) when the server writes it;
 - otherwise from the audit log's chat-turn lines, which carry less (no sessions, roles, countries, feedback or reply
@@ -70,12 +72,18 @@ The table is read again when the board is opened, at most every 30 seconds.
 - **Measures**: turns, questions and edits, active users, cost (model, reviewer and speech), tokens in and out, answers
   from saved answers and the money they saved, failures, refusals, declines, reviewer checks and material findings, fix
   rounds, clarifying questions, open questions logged, rephrased questions, median and 95th-percentile reply time, time
-  to first words, speech seconds, thumbs up and down.
+  to first words, speech seconds, thumbs up and down, different questions and different questions not answered,
+  answers left early, waits for a free slot and the 95th-percentile wait, transcripts edited and the words changed,
+  transcriptions, their cost and seconds, quick replies, explanations opened, exports, shares and transcripts never
+  sent.
 - **Dimensions**: day and hour, user, role, session, board, pack, campaign and country (when the telemetry has them),
   model, language, typed or spoken, answer or edit, kind of answer (direct, derived, chart, meta), outcome, saved-answer
-  tier, feature used, device, and feedback reason.
+  tier, feature used, device, network, feedback reason, why a question was not answered, question (its keyed hash
+  when the words are not kept), transcript language and speech model.
 
-### The default board
+### The default boards
+
+Overview (`overview.json`):
 
 - Figures: turns today, cost today, saved-answer rate, failure rate, answer rate, spoken share, active users and the
   95th-percentile reply time.
@@ -87,6 +95,9 @@ The table is read again when the board is opened, at most every 30 seconds.
 - A table of the most-asked questions with their outcomes.
 - Reply time over time.
 
+The Telemetry tab's What it tells you (`telemetry.json`) is described in
+[Telemetry](telemetry.md#what-it-tells-you).
+
 ### Who sees it
 
 The usage board is for admins only. It names users as they sign in, so it is never listed beside the deployment's own
@@ -97,31 +108,43 @@ so the review never reviews itself.
 
 ## What is recorded
 
-The **Telemetry** tab is the deployment's telemetry switchboard: a compact table of every item Lenspack can record,
-one row per item, grouped by section. Each row shows:
+The **Telemetry** tab has two views.
 
-- its switch. An item that cannot be switched here has a disabled switch with the reason: it is not telemetry, it
-  needs configuring first, or a feature that is off owns it (with a link to that feature's switch on the Settings
-  tab);
-- a status: ✓ recording, ◐ on but no data yet, ○ off (since when, and by whom), ⚠ needs configuration, — not
-  telemetry (kept for another reason, such as the audit log);
-- how many it saw in the last seven days, and when it last saw one;
-- the decision the item feeds ("whether voice is worth its cost"), cut short with the full text on hover or focus;
-- a lock for the privacy-sensitive items, with the note on hover or focus.
+**What's recorded** is the switchboard: a compact table of the facts a record can carry, one row per field, grouped
+in plain categories (who and where, what was asked, what happened, cost and speed, feedback, voice, texts). Each row
+shows:
 
-Each row opens a detail with the longer text: the fields it reads, where it comes from, its default and config key,
-how to turn it on, and its privacy note. Each section's header row has the section's switch and folds the section
-away. Above the table are a summary line (for example "28 of 42 recording · 4 on but no data · 1 need configuration
-· 7 off · 2 not telemetry"), the switch for telemetry as a whole, and how long records are kept. On a phone the table
-keeps the switch, the name and the status, and the rest moves into the detail.
+- its switch. A field that can't be switched here has a disabled switch, and the row itself says why, with a button
+  to the switch that owns it (for example "Owned by the daily review switch", with Open Settings);
+- the field's plain name, with the record fields it switches on hover or focus and in the detail;
+- a status: ✓ recording, ◐ on but nothing yet, ○ off (since when, and by whom), ⚠ needs configuration;
+- how many records from the last seven days carry it. This counts records, not the value of a metric;
+- the widgets on the What it tells you board that read it;
+- an eye for the fields that say something about people, such as user names (visible to admins with the usage
+  right) and the texts, with the privacy note on the row and on hover or focus.
+
+Each row opens a detail with the longer text: what it records, where it comes from, its default and config key, when
+it was last seen, and its privacy note. Each category's header row folds the category away and has the category's
+switch: off turns every field in it off; on turns on every field in it except the privacy-sensitive ones, which are
+only turned on one at a time with their confirm step. When some fields are on and some off, the category's switch
+shows a middle position. Above the table are a summary line (for example "23 of 34 fields recording · 3 on, nothing
+yet · 1 need configuration · 7 off"), the switch for telemetry as a whole, and how long records are kept. On a phone
+the table keeps the switch, the name and the status, and the rest moves into the detail.
+
+**What it tells you** is a board over the same usage pack as Overview, drawn by the same renderer, with the same chat
+beside it, and the chat's turns are marked internal. It has a section per question a deployment is judged on (users,
+volume and cost, quality, what people ask, speed, voice and language, trust and reuse, device and network). A widget
+that needs a field that is off says so in place of its figure, for example "Needs the Device and screen width field,
+which is switched off", with **Show the field** (to that row under What's recorded) or **Open Settings**. See
+[Telemetry](telemetry.md#what-it-tells-you).
 
 A change applies to the next question. Turning something off keeps what was already recorded until it ages out; the
-tab says so. Turning on a privacy-sensitive item (question text, transcript text, kept recordings, device and network
-detail) shows what it records, and for kept recordings the consent notice, and asks to confirm. Only admins can
-change switches, and every change is in the audit log.
+tab says so. Turning on a privacy-sensitive field (question words, transcript words, recordings, device and network
+detail) shows what it records, and for recordings the consent notice, and asks to confirm. Only admins can change
+switches, and every change is in the audit log.
 
-The page prints cleanly for a usage report, and **Copy as Markdown** copies the same table as text, with each switch
-as it stands. Both follow the panel's language (English or French) and its light or dark theme.
+The page prints cleanly for a usage report, and **Copy as Markdown** copies What's recorded as text, with each switch
+as it stands and the widgets that read each field. Both follow the panel's language (English or French) and its light or dark theme.
 
 The table comes from the server (`<prefix>/telemetry/checklist`, changed with `PUT <prefix>/settings/telemetry`; see
 [Telemetry](telemetry.md#the-switchboard)). A server that does not report its telemetry shows "Telemetry is not

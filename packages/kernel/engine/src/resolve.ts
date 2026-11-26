@@ -31,7 +31,16 @@ export type Ctx = {
    * in words for them: a refusal of one is ACCESS_HIDDEN and says why, so it is not read as "not in the pack".
    */
   accessHidden?: { keys: ReadonlySet<string>; reason: string };
+  /**
+   * Keys the source can't answer right now, though the caller may use them: what they read is not being collected
+   * or not set up. A query naming one is refused (UNAVAILABLE) with the host's notice, which says why in words for
+   * the reader and may point at where to fix it, so a board shows that instead of a wrong or empty figure.
+   */
+  unavailable?: ReadonlyMap<string, Notice>;
 };
+
+/** Why a key can't be answered now, in words for the reader, and optionally where to fix it. */
+export type Notice = { text: string; action?: { label: string; href: string } };
 
 export type ResolveErrorCode =
   | "UNKNOWN_MEASURE"
@@ -48,7 +57,8 @@ export type ResolveErrorCode =
   | "NOT_SUPPORTED"
   | "OUT_OF_SCOPE"
   | "NOT_PERMITTED"
-  | "ACCESS_HIDDEN";
+  | "ACCESS_HIDDEN"
+  | "UNAVAILABLE";
 
 /** What a backend can do. Resolution refuses the rest up front. */
 export type Capabilities = {
@@ -90,12 +100,14 @@ export class ResolveError extends Error {
     message: string,
     public readonly key?: string,
     public readonly nearest?: string,
+    /** For UNAVAILABLE: the host's notice, drawn by a board in place of the widget. */
+    public readonly notice?: Notice,
   ) {
     super(message);
     this.name = "ResolveError";
   }
   toJSON() {
-    return { code: this.code, error: this.message, key: this.key, nearest: this.nearest };
+    return { code: this.code, error: this.message, key: this.key, nearest: this.nearest, ...(this.notice ? { notice: this.notice } : {}) };
   }
 }
 
@@ -105,10 +117,15 @@ export class ResolveError extends Error {
  * filter menu or compiled statement is ever built over a hidden key.
  */
 export function notPermitted(query: Query, ctx: Ctx = {}): ResolveError | null {
-  if (!ctx.hidden?.size) return null;
+  if (!ctx.hidden?.size && !ctx.unavailable?.size) return null;
   const k = queryKeys(query);
-  const key = [...k.measures, ...k.dimensions].find((x) => ctx.hidden!.has(x));
-  return key ? refusedKey(key, ctx) : null;
+  const keys = [...k.measures, ...k.dimensions];
+  const key = ctx.hidden?.size ? keys.find((x) => ctx.hidden!.has(x)) : undefined;
+  if (key) return refusedKey(key, ctx);
+  const gone = ctx.unavailable?.size ? keys.find((x) => ctx.unavailable!.has(x)) : undefined;
+  if (!gone) return null;
+  const notice = ctx.unavailable!.get(gone)!;
+  return new ResolveError("UNAVAILABLE", `"${gone}" can't be answered right now: ${notice.text}`, gone, undefined, notice);
 }
 
 /** The refusal of a key or entity the caller may not use: the host's own reason when the host keeps it (ACCESS_HIDDEN). */

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type EventRecord, type TelemetryLine, type TranscriptRecord, type TurnRecord, TELEMETRY_ITEMS, switchable } from "@lenspack/agent";
+import { type EventRecord, type TelemetryLine, type TranscriptRecord, type TurnRecord, FIELD_GROUPS, switchable } from "@lenspack/agent";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -26,7 +26,7 @@ const turns = (dir: string) => lines(dir).filter((l): l is TurnRecord => l.type 
 const events = (dir: string) => lines(dir).filter((l): l is EventRecord => l.type === "event");
 const asker = { user: "ana", roles: ["Gamma"] };
 // Every item on, so these tests see every field; the defaults and the switches are tested below and in the kernel.
-const ALL: ReadonlySet<string> = new Set(TELEMETRY_ITEMS.filter(switchable).map((s) => s.id));
+const ALL: ReadonlySet<string> = new Set(FIELD_GROUPS.filter(switchable).map((s) => s.id));
 
 describe("retention", () => {
   it("moves the month to its own file and deletes months past the retention", () => {
@@ -54,14 +54,14 @@ describe("the file store", () => {
     const dir = tmp();
     const t = new Date("2026-11-20T10:00:00Z");
     const start = (turnId: string, question: string, transcriptIds: string[] = []) => ({ turnId, who: asker, board: "b1", pack: "p", question, transcriptIds, newConversation: false, languagePicked: null, client: null, builder: "m", effort: null, readOnly: false, datasetOf: () => undefined });
-    const first = fileTelemetry(dir, { now: () => t, items: () => ALL }).telemetry;
+    const first = fileTelemetry(dir, { now: () => t, fields: () => ALL }).telemetry;
     const a = (await first.begin(start("t1", "how many visits")))!;
     a.ended({});
     await a.record();
     await first.transcribed({ id: "clip-1", who: asker, pack: "p", model: "stt", languageRequested: null, languageDetected: "en", seconds: 1, usd: null, ms: 1, retried: false, text: "how many visit today" });
     const open = (await first.begin(start("t2", "what is on the board")))!;
     // The process restarts here: a new store over the same directory.
-    const second = fileTelemetry(dir, { now: () => new Date(t.getTime() + 60_000), items: () => ALL }).telemetry;
+    const second = fileTelemetry(dir, { now: () => new Date(t.getTime() + 60_000), fields: () => ALL }).telemetry;
     expect(await second.event(asker, { type: "explain-opened", turnId: open.turnId })).toEqual({ ok: true, recorded: true });
     const b = (await second.begin(start("t3", "how many visits today", ["clip-1"])))!;
     b.ended({});
@@ -126,7 +126,7 @@ describe("telemetry through the server", () => {
     const mock: Provider = { ...buildProvider({ name: "mock", kind: "tel-mock", model: "m", pricing: { input: 1, output: 2 } }), available: true };
     state = tmp();
     keep = { keepAudio: false, audioRetentionDays: 30, maxStoredMb: 100, consentNotice: null };
-    const { telemetry } = fileTelemetry(state, { items: () => ALL, context: () => ({ "tel-board": { campaign: "Round 1", country: "A" } }) });
+    const { telemetry } = fileTelemetry(state, { fields: () => ALL, context: () => ({ "tel-board": { campaign: "Round 1", country: "A" } }) });
     const audio = fileAudioStore({ dir: state, settings: () => keep });
     const stt = (async (_u: unknown, init?: RequestInit) => {
       const lang = JSON.parse(String(init?.body)).language;
@@ -334,17 +334,18 @@ describe("the admin routes", () => {
       const checklist = await (await fetch(`${at}/telemetry/checklist`, as(true))).json();
       expect(checklist.telemetry).toEqual({ on: true, changed: null });
       expect(checklist.settings).toEqual({ retentionDays: 90, audioRetentionDays: 30, consentNotice: null });
-      const items = checklist.groups.flatMap((g: { items: { id: string; status: string }[] }) => g.items);
-      expect(items.find((i: { id: string }) => i.id === "voice-audio")).toMatchObject({ status: "recording", count7d: 1 });
-      expect(items.find((i: { id: string }) => i.id === "users-by-country")).toMatchObject({ status: "enabled-no-data" });
-      expect(items.find((i: { id: string }) => i.id === "users-return")).toMatchObject({ status: "needs-config" });
+      const rows = checklist.categories.flatMap((c: { rows: { id: string; status: string }[] }) => c.rows);
+      expect(rows.find((i: { id: string }) => i.id === "voice-audio")).toMatchObject({ status: "recording", count7d: 1 });
+      expect(rows.find((i: { id: string }) => i.id === "context")).toMatchObject({ status: "enabled-no-data", switch: { editable: true } });
+      // The metrics are a board over the usage pack now, not part of the checklist.
+      expect(checklist.metrics).toBeUndefined();
       expect((await fetch(`${at}/audio/clip-1`, as(false))).status).toBe(403);
       const page = await (await fetch(`${at}/telemetry?from=2000-01-01&type=transcript&limit=1`, as(true))).json();
       // This admin lacks the usage right: each user name is a stable stand-in.
       expect(page).toMatchObject({ enabled: true, usernames: false, total: 1, offset: 0, limit: 1, next: null, records: [{ type: "transcript", user: expect.stringMatching(/^u_[0-9a-f]{12}$/) }] });
       // Transcript text is off by default: left out of the record.
       expect(page.records[0]).not.toHaveProperty("transcript");
-      expect(page.items).toContain("voice-audio");
+      expect(page.fields).toContain("voice-audio");
       expect((await fetch(`${at}/telemetry?from=yesterday`, as(true))).status).toBe(400);
       const played = await fetch(`${at}/audio/clip-1`, as(true));
       expect(played.status).toBe(200);
@@ -357,42 +358,54 @@ describe("the admin routes", () => {
       expect((await (await fetch(`${at}/audio?user=ana`, as(true, { method: "DELETE" }))).json()).deleted).toBe(1);
       expect((await fetch(`${at}/audio/clip-1`, as(true))).status).toBe(404);
       expect(audited.map((e) => `${e.action} ${e.outcome}`)).toEqual(["GET /_x/telemetry denied", "GET /_x/telemetry/checklist denied", "GET /_x/audio/clip-1 denied", "audio play ok", "audio export ok", "audio delete user ok", "audio play denied"]);
-      // The switchboard: admins only; a privacy-sensitive item turns on only when confirmed; every change audited and live.
+      // The switchboard: admins only; a privacy-sensitive field turns on only when confirmed; every change audited and live.
       const put = (body: unknown, adminUser = true) => fetch(`${at}/settings/telemetry`, as(adminUser, { method: "PUT", body: JSON.stringify(body) }));
-      type Item = { id: string; status: string; offBy: string | null; switch: { on: boolean; changed: { by: string } | null } };
-      const itemOf = (c: { groups: { items: Item[] }[] }, id: string) => c.groups.flatMap((g) => g.items).find((i) => i.id === id)!;
-      expect((await put({ "items.question-text": true, confirm: true }, false)).status).toBe(403);
+      type Row = { id: string; status: string; offBy: string | null; switch: { on: boolean; changed: { by: string } | null } };
+      const rowOf = (c: { categories: { rows: Row[] }[] }, id: string) => c.categories.flatMap((g) => g.rows).find((i) => i.id === id)!;
+      expect((await put({ "fields.question-text": true, confirm: true }, false)).status).toBe(403);
+      // The older name of the field still works.
       const unconfirmed = await put({ "items.transcript-text": true });
       expect(unconfirmed.status).toBe(409);
-      expect(await unconfirmed.json()).toMatchObject({ confirm: { key: "items.transcript-text", sensitive: expect.stringMatching(/word for word/) } });
-      const confirmed = await (await put({ "items.transcript-text": true, confirm: true })).json();
-      expect(itemOf(confirmed, "transcript-text").switch).toMatchObject({ on: true, changed: { by: "root" } });
+      expect(await unconfirmed.json()).toMatchObject({ confirm: { key: "fields.transcript-text", sensitive: expect.stringMatching(/word for word/) } });
+      const confirmed = await (await put({ "fields.transcript-text": true, confirm: true })).json();
+      expect(rowOf(confirmed, "transcript-text").switch).toMatchObject({ on: true, changed: { by: "root" } });
       // Applied at once: the next transcript keeps its words.
       await settings.telemetry.transcribed({ id: "clip-2", who: { user: "ana", roles: [] }, pack: "p", model: "stt", languageRequested: "en", languageDetected: "en", seconds: 1, usd: null, ms: 1, retried: false, text: "hello again" });
       expect(await settings.telemetryLog.find({ from: new Date(0), type: "transcript" })).toEqual([expect.objectContaining({ transcriptId: "clip-2", transcript: "hello again" }), expect.not.objectContaining({ transcript: expect.anything() })]);
       // Off needs no confirming, and says since when and by whom.
-      const off = await (await put({ "items.speed-p95": false })).json();
-      expect(itemOf(off, "speed-p95")).toMatchObject({ status: "off", offBy: "root" });
-      // A section off stops kept recordings; null puts it back.
-      await put({ "groups.voice": false });
+      const off = await (await put({ "fields.timing": false })).json();
+      expect(rowOf(off, "timing")).toMatchObject({ status: "off", offBy: "root" });
+      // A category off turns every switch in it off, visibly; on turns them back on, except the privacy-sensitive ones.
+      const texts = await (await put({ "categories.texts": false })).json();
       expect(settings.audioSettings().keepAudio).toBe(false);
-      await put({ "groups.voice": null });
+      expect(rowOf(texts, "voice-audio").switch.on).toBe(false);
+      expect(texts.categories.find((c: { id: string }) => c.id === "texts")).toMatchObject({ state: "off", next: null });
+      const costOff = await (await put({ "categories.cost-speed": false })).json();
+      expect(costOff.categories.find((c: { id: string }) => c.id === "cost-speed")).toMatchObject({ state: "off", next: true });
+      const costOn = await (await put({ "categories.cost-speed": true })).json();
+      expect(costOn.categories.find((c: { id: string }) => c.id === "cost-speed")).toMatchObject({ state: "on", next: false });
+      expect(rowOf(costOn, "timing").switch.on).toBe(true);
+      // Back to the deployment's value: kept recordings (speech.keepAudio) turn on only when confirmed.
+      expect((await put({ "fields.voice-audio": null })).status).toBe(409);
+      await put({ "fields.voice-audio": null, confirm: true });
       expect(settings.audioSettings().keepAudio).toBe(true);
       // Telemetry as a whole is the telemetry feature switch.
       const allOff = await (await put({ telemetry: false })).json();
       expect(allOff.telemetry).toMatchObject({ on: false, changed: { by: "root" } });
       expect(settings.features.on("telemetry")).toBe(false);
       await put({ telemetry: true });
-      // What cannot be switched, and what is not a switch.
-      expect((await put({ "items.speed-time-saved": true })).status).toBe(409);
-      expect((await put({ "items.nope": true })).status).toBe(400);
-      expect((await put({ "items.speed-p95": "yes" })).status).toBe(400);
+      // What cannot be switched, and what is not a switch: the older metric and section names point to the fields.
+      expect((await put({ "fields.daily-review": true })).status).toBe(409);
+      expect(await (await put({ "items.cost-per-user": false })).json()).toMatchObject({ error: expect.stringMatching(/fields\.user, fields\.cost/) });
+      expect((await put({ "groups.voice": false })).status).toBe(400);
+      expect((await put({ "fields.nope": true })).status).toBe(400);
+      expect((await put({ "fields.timing": "yes" })).status).toBe(400);
       expect((await put({ retentionDays: 30 })).status).toBe(200);
       expect(settings.switches.retentionDays()).toBe(30);
       const changes = audited.filter((e) => e.action === "settings telemetry");
-      expect(changes.map((e) => e.outcome)).toEqual(["denied", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+      expect(changes.map((e) => e.outcome)).toEqual(["denied", "ok", "ok", "ok", "ok", "ok", "denied", "ok", "ok", "ok", "ok"]);
       expect(changes[1]!.detail).toContain('"confirmed":true');
-      // Kept recordings are the voice-audio item now, not a speech setting.
+      // Kept recordings are the voice-audio field now, not a speech setting.
       expect((await fetch(`${at}/settings/speech`, as(true, { method: "PUT", body: JSON.stringify({ keepAudio: false }) }))).status).toBe(409);
       const speech = await (await fetch(`${at}/settings/speech`, as(true, { method: "PUT", body: JSON.stringify({ audioRetentionDays: 7, consentNotice: "Kept a week." }) }))).json();
       expect(speech).toMatchObject({ keepAudio: true, audioRetentionDays: 7, maxStoredMb: 1000, consentNotice: "Kept a week." });

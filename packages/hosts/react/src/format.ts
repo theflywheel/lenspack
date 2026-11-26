@@ -7,17 +7,20 @@ export type Grain = (typeof GRAINS)[number];
 export function formatValue(value: number | null | undefined, format: WidgetData["format"], opts: { currency?: string; locale?: string } = {}) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   const locale = opts.locale;
+  // An amount under one (a cost per question, a share of a cent) keeps two significant digits, not rounded to 0.
+  const small = value !== 0 && Math.abs(value) < 1;
   switch (format) {
     case "percent":
       return `${(value * 100).toLocaleString(locale, { maximumFractionDigits: Math.abs(value) < 0.01 ? 2 : 1 })}%`;
     case "currency":
-      return value.toLocaleString(locale, { style: "currency", currency: opts.currency ?? "USD", maximumFractionDigits: 0 });
+      // Cents always show (so $0.10, not $0.1); below a cent, enough places for two significant digits ($0.0045).
+      return value.toLocaleString(locale, { style: "currency", currency: opts.currency ?? "USD", ...(small ? { minimumFractionDigits: 2, maximumFractionDigits: Math.max(2, 1 - Math.floor(Math.log10(Math.abs(value)))) } : { maximumFractionDigits: 0 }) });
     case "compact":
       return value.toLocaleString(locale, { notation: "compact", maximumFractionDigits: 1 });
     case "duration":
       return value >= 100 ? value.toLocaleString(locale, { maximumFractionDigits: 0 }) : value.toLocaleString(locale, { maximumFractionDigits: 1 });
     default:
-      return Number.isInteger(value) ? value.toLocaleString(locale) : value.toLocaleString(locale, { maximumFractionDigits: 2 });
+      return Number.isInteger(value) ? value.toLocaleString(locale) : value.toLocaleString(locale, small ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 2 });
   }
 }
 

@@ -49,6 +49,8 @@ export type WidgetData = {
   window?: { from: string; to: string; buckets: number; grain: Grain };
   error?: string;
   hint?: string;
+  /** Why the widget has no answer right now (a key it reads is unavailable), and where to fix it: drawn instead of an error. */
+  notice?: { text: string; action?: { label: string; href: string } };
 };
 
 export const MAX_SERIES = 12;

@@ -96,14 +96,15 @@ export const configSchema = z.object({
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
   /**
-   * Usage telemetry (docs/features/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. groups and
-   * items switch sections and items on or off (every key and its default are in docs/features/telemetry.md); questionText is
-   * the older name of items.question-text.
+   * Usage telemetry (docs/features/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. fields
+   * switches each field group on or off (every key and its default are in docs/features/telemetry.md); groups and items are
+   * the older metric and section switches, still read; questionText is the older name of fields.question-text.
    */
   telemetry: z
     .object({
       dir: z.string().min(1),
       retentionDays: z.number().int().min(1).max(3650).default(90),
+      fields: z.record(z.string(), z.boolean()).optional(),
       groups: z.record(z.string(), z.boolean()).optional(),
       items: z.record(z.string(), z.boolean()).optional(),
       questionText: z.boolean().optional(),

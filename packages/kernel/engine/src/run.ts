@@ -176,7 +176,7 @@ function combine(query: Query, across: Across, data: WidgetData[], pack: Pack): 
 // One row per group and series: how the operands of a combined measure line up.
 const keyOf = (r: DataRow) => `${r.group}\u0000${r.series ?? ""}`;
 
-const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: "number", error: e.message, hint: e.nearest });
+const refusal = (e: ResolveError): WidgetData => ({ rows: [], total: 0, format: "number", error: e.message, hint: e.nearest, ...(e.notice ? { notice: e.notice } : {}) });
 
 /** Compile and run one query. Resolution errors come back as data, not throws. */
 export async function run(query: Query, opts: RunOptions): Promise<WidgetData> {
@@ -489,7 +489,8 @@ export async function resolveBoard(config: BoardConfig, opts: RunOptions, select
         data[id] = await byKey.get(key)!;
       } catch (error) {
         // One widget that cannot load must not take the board down with it.
-        data[id] = { rows: [], total: 0, format: "number", error: String(error instanceof Error ? error.message : error).slice(0, 200) };
+        const notice = error instanceof ResolveError ? error.notice : undefined;
+        data[id] = { rows: [], total: 0, format: "number", error: String(error instanceof Error ? error.message : error).slice(0, 200), ...(notice ? { notice } : {}) };
       }
     }),
   );
