@@ -2,7 +2,7 @@
 // the host says, never from the rights of the account Lenspack acts through.
 import { describe, expect, it } from "vitest";
 
-import { type EditScope, EDIT_SCOPE_DEFAULT, boardRights, editScopeFacts, inEditScope, principalOf, NOBODY_EDITS_MESSAGE, NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, editScopeFrom, editScopeWarning, layoutsShownTo, mayApplyLayout, mayCopyDashboard, mayCreateDashboard, mayDeleteDashboard, mayManageLayout, maySaveLayout, mayViewAllPersonal, personalLimitsFrom } from "../src";
+import { type EditScope, EDIT_SCOPE_DEFAULT, boardRights, editScopeFacts, hiddenPersonalBoards, inEditScope, principalOf, NOBODY_EDITS_MESSAGE, NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, editScopeFrom, editScopeWarning, layoutsShownTo, mayApplyLayout, mayCopyDashboard, mayCreateDashboard, mayDeleteDashboard, mayManageLayout, maySaveLayout, mayViewAllPersonal, personalLimitsFrom } from "../src";
 
 const on = PERSONAL_DEFAULTS;
 const off = { ...on, on: false };
@@ -58,6 +58,22 @@ describe("limits", () => {
     expect(personalLimitsFrom({ maxDashboardsPerUser: 3, maxSavedConfigsPerUser: 4 })).toMatchObject({ maxDashboardsPerUser: 3, maxSavedLayoutsPerUser: 4 });
     expect(personalLimitsFrom({ maxDashboardsPerUser: 3 }, { LENSPACK_MAX_DASHBOARDS_PER_USER: "7" }).maxDashboardsPerUser).toBe(7);
     expect(() => personalLimitsFrom({ maxDashboardsPerUser: -1 })).toThrow(/whole number/);
+  });
+});
+
+describe("other people's own dashboards", () => {
+  it("are hidden from everyone but their owner and admins, and boardRights keeps them shut", () => {
+    const all = [
+      { board: "superset-7", owner: "olu", ownerId: 5 },
+      { board: "superset-8", owner: "vee", ownerId: 6 },
+    ];
+    expect(hiddenPersonalBoards(olu, all)).toEqual(["superset-8"]);
+    // Matched by the host's user id too, so a renamed user keeps theirs.
+    expect(hiddenPersonalBoards({ user: "olu-renamed", userId: 5 }, all)).toEqual(["superset-8"]);
+    expect(hiddenPersonalBoards(ada, all)).toEqual([]);
+    const who = principalOf({ user: "olu", edit: true, hiddenBoards: hiddenPersonalBoards(olu, all) });
+    expect(boardRights(who, { id: "superset-8" })).toEqual({ view: false, edit: false });
+    expect(boardRights(who, { id: "superset-7" })).toEqual({ view: true, edit: false });
   });
 });
 

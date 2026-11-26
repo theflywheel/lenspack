@@ -32,6 +32,7 @@ copying, deleting, saving and applying are in `packages/kernel/policy/src/person
 | Ask about a dashboard | everyone who can view it in Superset | unchanged |
 | Change a shared dashboard | whoever Superset lets edit it: its owners with `can_write` on Dashboard, and admins | unchanged (`editPolicy: superset`) |
 | Make a blank dashboard | anyone signed in, up to the limit | it is owned by them in Superset |
+| Open someone's own dashboard | its owner, and admins | narrower than Superset, which opens a draft with no roles for anyone who has its address |
 | Copy a dashboard | anyone who can view it, up to the limit | the copy and its charts are new and owned by them |
 | Delete a dashboard | its owners in Superset, and admins | never anyone else's, whatever else they may edit |
 | Save a layout | anyone who can view the dashboard, up to the limit | saving under a name they already used replaces it |
@@ -53,6 +54,10 @@ Some details:
   the original but missing from its layout is placed first, where Superset draws such charts: the first tab of a
   dashboard with tabs, else the end of the grid. The layout is checked before the copy is made; one Superset
   could not draw is refused, unless the original already had the same problem.
+- **Your own dashboards are yours.** Superset lets anyone open a draft dashboard that has no dashboard roles if
+  they know its address. Lenspack doesn't: a dashboard made or copied through Lenspack is hidden from everyone but
+  its owner and admins (`hiddenPersonalBoards()` in policy, applied through `boardRights()`), in the chat, the board
+  API, the dashboard lists and the copy menu. Sharing one isn't built yet.
 - **A copy starts private.** A new dashboard or a copy is a draft (not published) with no dashboard roles. A copy
   of a dashboard that some people open through its dashboard roles (Superset's `DASHBOARD_RBAC`) does not carry
   those roles, so it does not give them, or its owner, the access the original's roles gave. The owner reads on it

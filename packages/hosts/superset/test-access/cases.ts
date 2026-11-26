@@ -46,6 +46,8 @@ export function accessSuite(version: string) {
     const signed = (over: Partial<Identity>, key = stack.identityKey) => signIdentity({ u: "lp_viewer", a: false, r: ["Gamma", "lp_stock", "lp_visits"], t: Math.floor(Date.now() / 1000), ...over }, key);
     const direct = (method: string, path: string, header?: string, body?: object) => http(stack.lenspack, method, path, { headers: header ? { "x-lenspack-identity": header } : {}, ...(body ? { body } : {}) });
     const dashboardTitle = async (id: number) => (await s.lp_admin.send("GET", `/api/v1/dashboard/${id}`)).json.result.dashboard_title as string;
+    /** The personal dashboards a user has (the panel's list). */
+    const mine = async (who: User) => ((await s[who].lp("GET", "_superset/my")).json.dashboards as { dashboard: number }[]).map((d) => d.dashboard);
     const widgetOps = (widgets: [string, string, string][]) => ({
       ops: widgets.map(([id, title, measure]) => ({ op: "add_widget", id, widget: { title, kind: "chart", chart: "bar", query: { kind: "breakdown", dimension: "region", measure } }, placement: { place: "bottom", width: "half" } })),
     });
@@ -617,16 +619,20 @@ export function accessSuite(version: string) {
           // A private draft of theirs: no dashboard roles, not published.
           const meta = (await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}`)).json.result;
           expect([meta.roles, meta.published]).toEqual([[], false]);
-          // They own it, so it opens; but nothing on it reads stock for them, in Superset or in Lenspack.
-          expect((await s.lp_rbac.lp("GET", `api/${PACK}/${board}`)).status).toBe(200);
+          // It is theirs, but nothing on it reads stock for them, in Superset or in Lenspack.
+          expect(await mine("lp_rbac")).toContain(copy);
           // Superset refuses the copy's stock chart to them, as the copy asks for it.
           const copyChart = (await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}/charts`)).json.result[0].id as number;
           const bChart = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.b}/charts`)).json.result[0].id as number;
           const savedQc = async (chart: number) => (await s.lp_admin.send("GET", `/api/v1/chart/${chart}`)).json.result.query_context as string | null;
           const qc = JSON.parse((await savedQc(copyChart)) ?? (await savedQc(bChart))!);
           expect(chartRows(await s.lp_rbac.send("POST", "/api/v1/chart/data", { body: { ...qc, form_data: { ...qc.form_data, dashboardId: copy, slice_id: copyChart } } }))).toEqual({ refused: 403 });
-          const out = toolOutput(await chat("lp_rbac", board, "query", BREAKDOWN("stock_total")));
-          expect([out.ok, out.error]).toEqual([false, expect.stringMatching(NO_ACCESS)]);
+          // Opened, it shows no stock (or, with nothing at all to show, it is refused up front); asked, stock is refused.
+          const opened = await s.lp_rbac.lp("GET", `api/${PACK}/${board}`);
+          if (opened.status === 200) expect(opened.json.catalogue.measures.map((m: { key: string }) => m.key)).not.toContain("stock_total");
+          else expect([opened.status, opened.json.error]).toEqual([403, expect.stringMatching(NO_ACCESS)]);
+          const asked = await chat("lp_rbac", board, "query", BREAKDOWN("stock_total"));
+          expect(asked.status === 200 ? toolOutput(asked).error : asked.error).toMatch(NO_ACCESS);
           // B itself still reads for them.
           expect(byGroup(toolOutput(await chat("lp_rbac", B, "query", BREAKDOWN("stock_total"))).rows)).toEqual(B_STOCK);
         } finally {
@@ -644,7 +650,6 @@ export function accessSuite(version: string) {
         return r.json.dashboard as number;
       };
       const copyOf = async (who: User, dashboard: number) => s[who].lp("POST", `_superset/my/dashboards?dashboard=${dashboard}`, { copy: true });
-      const mine = async (who: User) => ((await s[who].lp("GET", "_superset/my")).json.dashboards as { dashboard: number }[]).map((d) => d.dashboard);
       const rename = (title: string) => ({ ops: [{ op: "set_title", title }] });
       /** lp_viewer's copy of A, made in the first case and used by the rest. */
       let viewerCopy = 0;
@@ -676,8 +681,9 @@ export function accessSuite(version: string) {
         // Not someone else's, even for a user who may edit shared dashboards.
         const refused = await s.lp_owner.lp("POST", "_superset/my/dashboards/delete", { dashboard: one });
         expect([refused.status, refused.json.code]).toEqual([403, "not-yours"]);
-        // Nor a shared dashboard through this route, even one they own in Superset (it was not made through Lenspack).
-        expect((await s.lp_owner.lp("POST", "_superset/my/dashboards/delete", { dashboard: stack.fixtures.dashboards.a })).status).toBe(403);
+        // Nor a shared dashboard they don't own in Superset (A is lp_owner's).
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: stack.fixtures.dashboards.a })).status).toBe(403);
+        expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.a}`)).status).toBe(200);
         expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${one}`)).status).toBe(200);
         // Their owner may; so may an admin.
         expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: one })).status).toBe(200);
@@ -710,8 +716,11 @@ export function accessSuite(version: string) {
         expect(await mine("lp_owner")).not.toContain(viewerCopy);
         expect(((await s.lp_owner.lp("GET", `api/${PACK}`)).json.boards as { id: string }[]).map((b) => b.id)).not.toContain(board);
         expect(((await s.lp_owner.lp("GET", "_superset/dashboards")).json as { id: number }[]).map((d) => d.id)).not.toContain(viewerCopy);
-        expect((await s.lp_owner.lp("GET", `api/${PACK}/${board}`)).status).toBe(403);
-        expect((await s.lp_owner.lp("POST", `api/${PACK}/${board}/ops`, rename("Not yours"))).status).toBe(403);
+        // Not found, as for any board they may not open (its existence isn't confirmed).
+        expect((await s.lp_owner.lp("GET", `api/${PACK}/${board}`)).status).toBe(404);
+        expect([403, 404]).toContain((await s.lp_owner.lp("POST", `api/${PACK}/${board}/ops`, rename("Not yours"))).status);
+        // Superset lets anyone open a draft with no roles by its address; Lenspack keeps it to its owner, so it isn't copied either.
+        expect((await copyOf("lp_owner", viewerCopy)).status).toBe(403);
         expect(await dashboardTitle(viewerCopy)).toBe("Viewer copy");
         // Everyone's list is the admins' only.
         expect((await s.lp_owner.lp("GET", "_superset/personal")).status).toBe(403);

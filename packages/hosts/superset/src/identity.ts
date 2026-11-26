@@ -120,8 +120,11 @@ export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Call
   return { user: id.u, roles, usage, readOnly: READ_ONLY_MESSAGE };
 }
 
-/** The deployment's edit scope for one identity Superset lets edit, as facts for policy (none: no narrowing). */
-export type EditScopeOf = (id: Identity) => Promise<EditScopeFacts | undefined>;
+/**
+ * What the deployment adds about one identity, as facts for policy: its edit scope (for one Superset lets edit) and
+ * boards it may not open (other people's own dashboards). Both only narrow.
+ */
+export type CallerFacts = (id: Identity, o: { edit: boolean }) => Promise<{ editScope?: EditScopeFacts; hiddenBoards?: string[] }>;
 
 /** Lenspack's name for a Superset dashboard's board. */
 const DASHBOARD_BOARD = /^superset-\d+$/;
@@ -177,7 +180,7 @@ const decodePart = (s: string | undefined) => {
  * With a host policy (hostPolicy: superset), the user's own Superset roles, dataset access and row-level security
  * come with them, and policy narrows every query by those rather than by the service account's.
  */
-export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, editScope?: EditScopeOf): AuthAdapter {
+export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, extra?: CallerFacts): AuthAdapter {
   return {
     kind: "superset",
     handle: async (req, res) => {
@@ -193,14 +196,16 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
       const check = boardCheck(id, req.url);
       if (check.refused) return null;
       let caller = callerOf(check.onBoard ? id : { ...id, e: false }, policy, editsOn());
-      // The deployment's edit scope, as facts for policy (boardRights narrows edits by them, never widens): read per request.
-      const facts = caller.edit && editScope ? await editScope(id) : undefined;
-      if (facts) caller = { ...caller, editScope: facts };
-      if (!host) return caller;
+      // The deployment's own facts for policy (boardRights narrows by them, never widens): read per request.
+      const facts = extra ? await extra(id, { edit: !!caller.edit }) : {};
+      if (facts.editScope) caller = { ...caller, editScope: facts.editScope };
+      const ownHidden = facts.hiddenBoards ?? [];
+      if (!host) return ownHidden.length ? { ...caller, hiddenBoards: ownHidden } : caller;
       const access = await host(id.u, id.r);
       // The dashboard Superset just checked this user may view opens, whatever an older answer said.
       const signed = check.onBoard ? signedBoard(id) : null;
-      const hiddenBoards = access.hiddenBoards?.filter((b) => b !== signed);
+      const fromHost = access.hiddenBoards?.filter((b) => b !== signed);
+      const hiddenBoards = fromHost || ownHidden.length ? [...(fromHost ?? []), ...ownHidden] : undefined;
       // "admin" stays the signed admin flag's: a Superset role of that name grants nothing here.
       return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...access, ...(hiddenBoards ? { hiddenBoards } : {}) };
     },

@@ -89,6 +89,14 @@ export function mayApplyLayout(who: PersonalActor, limits: PersonalLimits, layou
 export const mayViewAllPersonal = (who: PersonalActor): Verdict => (isAdmin(who) ? OK : no("not-yours", "Only admins can see everyone's dashboards and layouts."));
 
 /** The saved layouts a person is shown: their own; an admin, everyone's. */
+/**
+ * The personal dashboards this person may not open: everyone else's, unless they are an admin. Lenspack's own rule,
+ * narrower than Superset's (which lets anyone open a draft dashboard with no roles by its address), so a dashboard
+ * of one's own stays one's own. The host puts these in Identity.hiddenBoards, which boardRights() honours.
+ */
+export const hiddenPersonalBoards = (who: PersonalActor, all: readonly { board: string; owner: string; ownerId?: number | null }[]): string[] =>
+  isAdmin(who) ? [] : all.filter((d) => d.owner !== who.user && !(who.userId && d.ownerId === who.userId)).map((d) => d.board);
+
 export const layoutsShownTo = <L extends { owner: string }>(who: PersonalActor, all: L[]): L[] => (isAdmin(who) ? all : all.filter((l) => l.owner === who.user));
 
 /** Limits from config and environment, checked; anything missing takes the default. */

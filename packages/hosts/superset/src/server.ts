@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, memoryStore } from "@lenspack/core";
-import { type EditScope, boardRights, decide, editScopeFacts, editScopeFrom, editScopeWarning, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
+import { type EditScope, boardRights, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
 import { recordRights } from "@lenspack/policy";
 import YAML from "yaml";
@@ -25,7 +25,7 @@ import { supersetClient } from "./client";
 import { supersetConnector } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
 import { supersetPolicy, viewableDashboards } from "./access";
-import { type EditScopeOf, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
+import { type CallerFacts, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
 import { personalDashboards } from "./personal";
 import { actorOf, personalRoutes } from "./personal-routes";
 import { fileRecords } from "./records";
@@ -233,18 +233,23 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   };
   const scopeWarning = () => editScopeWarning(editScope(), { personalOn: admin.features.on("personalDashboards"), editsOn: admin.features.on("boardEdits") });
   /** The edit scope as facts for policy (boardRights): the person's own boards, made or copied through Lenspack. */
-  const editScopeOf: EditScopeOf = async (id) => {
+  const editScopeOf = async (id: Identity) => {
     const scope = editScope();
     if (scope.scope !== "own") return undefined;
     const on = limits().on;
     const own = on ? (await links.list()).filter((l) => l.ownerId === id.i || l.owner === id.u).map((l) => l.board) : [];
     return editScopeFacts(scope, { own, personalOn: on });
   };
-  /** What policy says this person may do on the dashboard Superset signed for: Superset's rights, narrowed by the edit scope. */
+  /** The deployment's facts about a person for policy: the edit scope, and other people's own dashboards, which they may not open. */
+  const callerFacts: CallerFacts = async (id, o) => {
+    const facts = o.edit ? await editScopeOf(id) : undefined;
+    const hidden = hiddenPersonalBoards(actorOf(id), await links.list());
+    return { ...(facts ? { editScope: facts } : {}), ...(hidden.length ? { hiddenBoards: hidden } : {}) };
+  };
+  /** What policy says this person may do on the dashboard Superset signed for: Superset's rights, narrowed by the deployment's facts. */
   const rightsOn = async (id: Identity) => {
     const caller = callerOf(id, editPolicy, admin.features.on("boardEdits"));
-    const facts = caller.edit ? await editScopeOf(id) : undefined;
-    const r = boardRights(principalOf({ ...caller, ...(facts ? { editScope: facts } : {}) }), { id: `superset-${id.d}` });
+    const r = boardRights(principalOf({ ...caller, ...(await callerFacts(id, { edit: !!caller.edit })) }), { id: `superset-${id.d}` });
     return { view: id.v === true && r.view, edit: r.edit, ...(r.readOnly ? { byScope: true } : {}) };
   };
   log(`edit scope ${configScope.scope}${configScope.scope === "own" ? ` (admins ${configScope.adminsExempt ? "exempt" : "not exempt"})` : ""}`);
@@ -314,7 +319,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     title: pack.pack,
     log,
   });
-  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined, editScopeOf);
+  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined, callerFacts);
   const supersetBase = (req: IncomingMessage) => (base ? "" : (pageVars(req).supersetUrl ?? ""));
   const mine = personalRoutes({
     personal,
@@ -470,8 +475,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           if (hostPolicy === "superset") {
             const open = await viewableDashboards(client, who.user, shown.map((d) => d.id));
             const hiddenBoards = shown.filter((d) => !open.has(d.id)).map((d) => `superset-${d.id}`);
-            shown = shown.filter((d) => boardRights({ ...who, hiddenBoards }, { id: `superset-${d.id}` }).view);
-          }
+            shown = shown.filter((d) => boardRights({ ...who, hiddenBoards: [...(who.hiddenBoards ?? []), ...hiddenBoards] }, { id: `superset-${d.id}` }).view);
+          } else shown = shown.filter((d) => boardRights(who, { id: `superset-${d.id}` }).view);
           return json(res, 200, shown.map((d) => ({ id: d.id, title: d.dashboard_title, changed: d.changed_on_delta_humanized })), NO_STORE);
         }
         const embed = /^\/superset\/(\d+)\/?$/.exec(url.pathname);
