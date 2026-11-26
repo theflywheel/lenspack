@@ -22,9 +22,10 @@ It adds:
     makes Lenspack's own service account (admins only), the second hands it the signing key, derived from
     SECRET_KEY (admins and that account only);
   - /api/v1/lenspack/access?user=&datasets=&dashboards=, which Lenspack calls with hostPolicy: superset (the
-    default): whether that user may read each dataset and the row-level security clauses on it, and whether they
-    may open each dashboard, as Superset's security manager decides them for that user, Jinja rendered (admins
-    and Lenspack's account only);
+    default): whether that user may read each dataset and the row-level security clauses on it, whether they
+    may open each dashboard, and, with dashboard roles on (DASHBOARD_RBAC), which datasets they may read only on
+    each dashboard, as Superset's security manager decides them for that user, Jinja rendered (admins and
+    Lenspack's account only);
   - /api/v1/lenspack/version: Superset's version, which Lenspack reads on start (admins and Lenspack's account);
   - a fix for concurrent list requests in Flask-AppBuilder;
   - on Superset 6.1, ClickHouse column aliases with a hash suffix again, as up to 6.0 (see
@@ -213,8 +214,10 @@ def lenspack_rls_clauses(filters, render) -> list:
     return clauses + [g[0] if len(g) == 1 else " OR ".join(f"({c})" for c in g) for g in groups.values()]
 
 
-def lenspack_dataset_access(user, ids) -> dict:
-    """Per dataset id: may this user read it, and its RLS clauses for them. A missing dataset is not readable."""
+def lenspack_dataset_access(user, ids, also_rls=()) -> dict:
+    """Per dataset id: may this user read it, and its RLS clauses for them. A missing dataset is not readable.
+    also_rls: datasets the user may not read in general but may read on a dashboard (lenspack_dashboard_datasets):
+    their RLS clauses are rendered too, as Superset applies RLS there as well."""
     from superset.connectors.sqla.models import SqlaTable
     from superset.extensions import db, security_manager
     from superset.jinja_context import get_template_processor
@@ -224,11 +227,59 @@ def lenspack_dataset_access(user, ids) -> dict:
     with override_user(user):
         for ds_id in ids:
             ds = db.session.query(SqlaTable).filter_by(id=ds_id).one_or_none()
-            if ds is None or not security_manager.can_access_datasource(ds):
+            access = ds is not None and security_manager.can_access_datasource(ds)
+            if ds is None or not (access or ds_id in also_rls):
                 out[str(ds_id)] = {"access": False, "rls": []}
                 continue
             processor = get_template_processor(database=ds.database, table=ds)
-            out[str(ds_id)] = {"access": True, "rls": lenspack_rls_clauses(security_manager.get_rls_filters(ds), processor.process_template)}
+            out[str(ds_id)] = {"access": bool(access), "rls": lenspack_rls_clauses(security_manager.get_rls_filters(ds), processor.process_template)}
+    return out
+
+
+class _ChartOnDashboard:
+    """What Superset's raise_for_access reads of a chart's data request (a QueryContext): the dataset it reads, and
+    form data naming the dashboard and the chart it is drawn on, as a dashboard's charts send them."""
+
+    def __init__(self, datasource, dashboard_id, slice_id):
+        self.datasource = datasource
+        self.form_data = {"dashboardId": dashboard_id, "slice_id": slice_id}
+
+
+def lenspack_dashboard_datasets(user, dashboard_ids, dataset_ids) -> dict:
+    """Per dashboard id: the datasets of dataset_ids this user may not read in general but may read on that dashboard,
+    as Superset decides it for a chart's data on a dashboard. Superset's own raise_for_access is asked, as the user,
+    for a data request from one of the dashboard's charts on each dataset. With DASHBOARD_RBAC on, Superset lets it
+    through when the dashboard has dashboard roles, the user may open the dashboard (a member of one of its roles
+    and the dashboard published, or an owner, or an admin), and the chart is on the dashboard and reads that dataset.
+    So only datasets behind the dashboard's charts count. A dataset only a native filter of the dashboard reads is
+    left out: Superset lets that filter list its values, nothing else. Missing dashboards and datasets count as none."""
+    from superset.connectors.sqla.models import SqlaTable
+    from superset.exceptions import SupersetSecurityException
+    from superset.extensions import db, security_manager
+    from superset.models.dashboard import Dashboard
+    from superset.utils.core import override_user
+
+    wanted = set(dataset_ids)
+    out = {}
+    with override_user(user):
+        for dash_id in dashboard_ids:
+            dash = db.session.query(Dashboard).filter_by(id=dash_id).one_or_none()
+            found = []
+            # One chart per dataset: what Superset checks is the same for every chart on the dashboard that reads it.
+            charts = {}
+            for slc in (dash.slices if dash is not None else []):
+                if slc.datasource_type == "table" and slc.datasource_id in wanted:
+                    charts.setdefault(slc.datasource_id, slc)
+            for ds_id, slc in sorted(charts.items()):
+                ds = db.session.query(SqlaTable).filter_by(id=ds_id).one_or_none()
+                if ds is None or security_manager.can_access_datasource(ds):
+                    continue  # readable everywhere already, or gone
+                try:
+                    security_manager.raise_for_access(query_context=_ChartOnDashboard(ds, dash.id, slc.id))
+                except SupersetSecurityException:
+                    continue
+                found.append(ds_id)
+            out[str(dash_id)] = found
     return out
 
 
@@ -448,9 +499,11 @@ def lenspack_app_mutator(app):
         return jsonify({"result": {"username": username, "account": made}})
 
     # What one user may read, as Superset decides it for them: the datasets their roles may access, and the
-    # row-level security clauses on each, rendered as that user (Jinja such as current_username() included), and
-    # the dashboards they may open. Lenspack reads data as its own account, so it narrows each user's queries by
-    # this, and lists them only the dashboards they may open (hostPolicy: superset).
+    # row-level security clauses on each, rendered as that user (Jinja such as current_username() included), the
+    # dashboards they may open, and with DASHBOARD_RBAC on, the datasets they may read only on a dashboard (its
+    # charts' datasets, on a dashboard they open through its dashboard roles). Lenspack reads data as its own
+    # account, so it narrows each user's queries by this, and lists them only the dashboards they may open
+    # (hostPolicy: superset).
     def access_view():
         caller = api_user()
         if caller is None:
@@ -463,7 +516,20 @@ def lenspack_app_mutator(app):
         def ids(name):
             return [int(x) for x in (request.args.get(name) or "").split(",") if x.strip().isdigit()][:500]
 
-        return jsonify({"result": {"datasets": lenspack_dataset_access(target, ids("datasets")), "dashboards": lenspack_dashboard_access(target, ids("dashboards"))}})
+        from superset import is_feature_enabled
+
+        datasets, dashboards = ids("datasets"), ids("dashboards")
+        # Dashboard roles (DASHBOARD_RBAC): on a dashboard a user opens through one, its charts' datasets are readable
+        # to them there, even without access to those datasets. Off, Superset grants nothing through a dashboard.
+        rbac = bool(is_feature_enabled("DASHBOARD_RBAC"))
+        via = lenspack_dashboard_datasets(target, dashboards, datasets) if rbac else {str(d): [] for d in dashboards}
+        on_dashboards = {ds for found in via.values() for ds in found}
+        return jsonify({"result": {
+            "datasets": lenspack_dataset_access(target, datasets, also_rls=on_dashboards),
+            "dashboards": lenspack_dashboard_access(target, dashboards),
+            "dashboardRbac": rbac,
+            "dashboardDatasets": via,
+        }})
 
     # Superset's version, for what differs between 5 and 6 on Lenspack's side (the default basemap of maps).
     # Superset 6.1 has its own /version, 5.x and 6.0 do not.

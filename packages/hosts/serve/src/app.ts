@@ -499,7 +499,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         return r.ok ? json(res, 202, { ok: true, recorded: r.recorded }) : json(res, r.status, { error: r.error });
       }
       const h = byName.get(packName);
-      const d = h ? decisionFor(h) : null;
+      // On a board, what the host lets the caller read there only (a Superset dashboard role) is read there too.
+      const d = h ? decide(who, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx, board: boardId }) : null;
       // Another tenant's pack is refused outright, not hidden, when nothing else keeps it from the caller.
       if (h && !d && otherTenant(who, h.ctx) && decisionFor(h, { ...who, tenant: h.ctx.tenant })) {
         audit({ user: who.user, pack: packName, action: "open", outcome: "denied", detail: "tenant" });

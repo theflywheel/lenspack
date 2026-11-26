@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -151,6 +151,55 @@ describe("decide", () => {
     // A board filter's default selection on a hidden key is that key's data too.
     const filtered = { config: { widgets: {}, filters: [{ field: "delivered_by", default: { values: ["Ann"] } }, { field: "visit_type", default: { values: ["home"] } }] } };
     expect(d.board(filtered).config.filters).toEqual([{ field: "delivered_by", default: { values: ["(hidden)"] } }, { field: "visit_type", default: { values: ["home"] } }]);
+  });
+
+  describe("entities the host opens on one board only (Superset's dashboard roles)", () => {
+    const why = "your Superset access doesn't include it. A Superset admin can give you access.";
+    const onB = { entity: "project", ...north };
+    // Reads neither entity in general; on board superset-2, the host opens project, with a row scope on it.
+    const rbac = as([], { hiddenEntities: ["task", "project"], hiddenReason: why, boardEntities: { "superset-2": { entities: ["project"], scope: [onB] } } });
+
+    it("reads them on that board, with their row scope, and marks the context with the grant", () => {
+      const d = decide(rbac, pack, { board: "superset-2" })!;
+      expect(d.ctx.hiddenEntities).toEqual(new Set(["task"]));
+      expect(d.hidden.has("household_target")).toBe(false);
+      expect(d.hidden.has("visits")).toBe(true);
+      expect(d.scope).toEqual([onB]);
+      expect(d.ctx.onBoard).toEqual({ board: "superset-2", entities: ["project"] });
+      expect(d.catalogue(catalogueFrom(pack)).entities.map((e) => e.key)).toEqual(["project"]);
+      expect(d.notice).toBeNull();
+    });
+
+    it("reads nothing more anywhere else: another board, no board (the catalogue), or a board the caller may not open", () => {
+      for (const board of ["superset-3", undefined, "explain", "b_1"]) {
+        const d = decide(rbac, pack, { board })!;
+        expect([board, d.ctx.hiddenEntities, d.ctx.onBoard, d.scope]).toEqual([board, new Set(["task", "project"]), undefined, []]);
+        expect(d.notice).toBe(`None of this assistant's data is available to you: ${why}`);
+      }
+      const shut = principalOf({ ...rbac, hiddenBoards: ["superset-2"] });
+      expect(decide(shut, pack, { board: "superset-2" })!.ctx.hiddenEntities).toEqual(new Set(["task", "project"]));
+    });
+
+    it("can't open what the host doesn't keep in the first place, and takes no scope for what it doesn't open", () => {
+      const reads = as([], { hiddenEntities: ["task"], boardEntities: { "superset-2": { entities: ["project", "nope"], scope: [onB, { entity: "task", ...village }, north] } } });
+      expect(boardGrant(reads, "superset-2")).toBeNull();
+      const d = decide(reads, pack, { board: "superset-2" })!;
+      expect([d.ctx.onBoard, d.scope, d.ctx.hiddenEntities]).toEqual([undefined, [], new Set(["task"])]);
+      const opens = as([], { hiddenEntities: ["task", "project"], boardEntities: { "superset-2": { entities: ["project"], scope: [onB, { entity: "task", ...village }, north] } } });
+      expect(boardGrant(opens, "superset-2")).toEqual({ entities: ["project"], scope: [onB] });
+      // A board id that is an Object property name is no grant.
+      expect(boardGrant(opens, "constructor")).toBeNull();
+    });
+
+    it("still narrows by the pack's own rules", () => {
+      const d = decide(principalOf({ ...rbac, roles: ["auditor"] }), pack, { rules: RULES, board: "superset-2" })!;
+      expect(d.hidden.has("household_target")).toBe(true);
+      expect(d.ctx.onBoard).toEqual({ board: "superset-2", entities: ["project"] });
+    });
+
+    it("comes through principalOf", () => {
+      expect(principalOf({ user: "u", boardEntities: { b: { entities: ["x"] } } }).boardEntities).toEqual({ b: { entities: ["x"] } });
+    });
   });
 
   it("stops at an unknown key, so a typo cannot leave a key showing", () => {

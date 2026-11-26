@@ -16,8 +16,8 @@ FEATURE_FLAGS = {"ENABLE_TEMPLATE_PROCESSING": True} (Superset renders RLS templ
 and ends with `from lenspack_superset import *`. RlsClauses and Route need only the module. ProxyEndpoint makes
 users and dashboards and sends /lenspack/... requests through Flask's test client, with the forward to Lenspack
 caught. AccessEndpoint makes a throwaway SQLite database, a dataset, a role with access to it, users and RLS rules
-in Superset's metadata, and calls /api/v1/lenspack/access (and /api/v1/lenspack/version) through Flask's test
-client. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. ClickHouseLabels
+in Superset's metadata, and dashboards with and without dashboard roles, and calls /api/v1/lenspack/access (and
+/api/v1/lenspack/version) through Flask's test client; it turns DASHBOARD_RBAC on and off itself where a case needs it. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. ClickHouseLabels
 checks the ClickHouse column-name suffix, and runs a query against ClickHouse when one is given (above).
 """
 
@@ -306,9 +306,26 @@ class AccessEndpoint(unittest.TestCase):
         roled = Dashboard(dashboard_title=f"lp roled {os.getpid()}", published=True, slices=[])
         roled.roles = [board_role]
         user("carol", [gamma, board_role])
-        db.session.add_all([chart, mine, roled])
+        # Dashboard roles on a dashboard with a chart on the table: dave is in its role and reads no dataset, and an
+        # RLS rule of that role narrows the table for him. The same chart on an unpublished dashboard with the same
+        # role: Superset opens it to its owners and admins only.
+        charted_role = sm.find_role("LenspackCharted") or sm.add_role("LenspackCharted")
+        dave = user("dave", [gamma, charted_role])
+        rule = RowLevelSecurityFilter(name=f"lp_charted_{os.getpid()}", filter_type=RowLevelSecurityFilterType.REGULAR, clause="team = '{{ current_username() }}'")
+        rule.roles = [charted_role]
+        rule.tables = [table]
+        db.session.add(rule)
+        charted = Dashboard(dashboard_title=f"lp charted {os.getpid()}", published=True, slices=[chart])
+        charted.roles = [charted_role]
+        draft = Dashboard(dashboard_title=f"lp draft {os.getpid()}", published=False, slices=[chart])
+        draft.roles = [charted_role]
+        # An owner of the draft who is not in its role: owners open a dashboard whether or not it is published.
+        erin = user("erin", [gamma])
+        draft.owners = [erin]
+        db.session.add_all([chart, mine, roled, charted, draft])
         db.session.commit()
-        cls.dash, cls.roled = str(mine.id), str(roled.id)
+        cls.dash, cls.roled, cls.charted, cls.draft = str(mine.id), str(roled.id), str(charted.id), str(draft.id)
+        del dave
         cls.client = cls.app.test_client()
         cls.admin = cls.token("lp_admin")
 
@@ -348,6 +365,50 @@ class AccessEndpoint(unittest.TestCase):
         self.assertEqual(dashboards("bob"), {self.dash: False, self.roled: not rbac, "999999": False})
         self.assertEqual(dashboards("carol"), {self.dash: False, self.roled: True, "999999": False})
         self.assertEqual(dashboards("lp_admin"), {self.dash: True, self.roled: True, "999999": False})
+
+    def on_dashboards(self, user, rbac):
+        """The access answer for one user about the table and every test dashboard, with DASHBOARD_RBAC on or off."""
+        from superset.extensions import feature_flag_manager
+
+        flags = feature_flag_manager._feature_flags
+        before = dict(flags)
+        flags["DASHBOARD_RBAC"] = rbac
+        try:
+            ids = ",".join([self.dash, self.roled, self.charted, self.draft, "999999"])
+            r = self.client.get(f"/api/v1/lenspack/access?user={user}&datasets={self.table},999999&dashboards={ids}", headers=self.admin)
+        finally:
+            flags.clear()
+            flags.update(before)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return r.get_json()["result"]
+
+    def test_dashboard_roles_open_a_dashboard_s_chart_datasets_on_that_dashboard_only(self):
+        r = self.on_dashboards("dave", True)
+        self.assertTrue(r["dashboardRbac"])
+        table = int(self.table)
+        # The charted dashboard opens through its role and reads the table there; nowhere else does.
+        self.assertEqual(r["dashboardDatasets"], {self.dash: [], self.roled: [], self.charted: [table], self.draft: [], "999999": []})
+        self.assertEqual((r["dashboards"][self.charted], r["dashboards"][self.draft], r["dashboards"][self.dash]), (True, False, False))
+        # Not readable in general; its RLS for dave comes with it, rendered as dave, as Superset applies RLS there too.
+        self.assertEqual(r["datasets"][self.table], {"access": False, "rls": ["team = 'dave'"]})
+        self.assertEqual(r["datasets"]["999999"], {"access": False, "rls": []})
+
+    def test_superset_grants_nothing_through_a_dashboard_with_dashboard_roles_off(self):
+        r = self.on_dashboards("dave", False)
+        self.assertFalse(r["dashboardRbac"])
+        self.assertEqual(r["dashboardDatasets"], {self.dash: [], self.roled: [], self.charted: [], self.draft: [], "999999": []})
+        self.assertEqual(r["datasets"][self.table], {"access": False, "rls": []})
+
+    def test_only_the_role_s_members_and_owners_get_a_dashboard_s_datasets(self):
+        table = int(self.table)
+        # alice reads the table everywhere: nothing is listed for her as only-on-a-dashboard.
+        self.assertEqual(self.on_dashboards("alice", True)["dashboardDatasets"][self.charted], [])
+        # bob and carol are in neither role of the charted dashboard.
+        for user in ("bob", "carol"):
+            self.assertEqual(set(map(tuple, self.on_dashboards(user, True)["dashboardDatasets"].values())), {()}, user)
+        # erin owns the unpublished draft (not in its role): Superset opens it to her and its chart reads the table.
+        erin = self.on_dashboards("erin", True)
+        self.assertEqual((erin["dashboardDatasets"][self.draft], erin["dashboardDatasets"][self.charted]), ([table], []))
 
     def test_the_identity_header_carries_the_role_names(self):
         import base64

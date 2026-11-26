@@ -150,8 +150,9 @@ One file, loaded by Superset's own config. It needs no fork, no custom image and
 - `GET /api/v1/lenspack/identity-key` and `POST /api/v1/lenspack/bootstrap`, which this server calls on start
   to fetch the signing key and to make its own account (below);
 - `GET /api/v1/lenspack/access?user=&datasets=&dashboards=`, which this server calls with `hostPolicy: superset`
-  (the default): for one user, whether they may read each dataset and the row-level security clauses on it, and
-  whether they may open each dashboard (below);
+  (the default): for one user, whether they may read each dataset and the row-level security clauses on it,
+  whether they may open each dashboard, and with dashboard roles on, which datasets they may read only on each
+  dashboard (below);
 - `GET /api/v1/lenspack/version`, Superset's version, which this server reads on start (admins and its own
   account);
 - a fix for Flask-AppBuilder (4.x in Superset 5, 5.x in Superset 6.1), whose list endpoints share filters between
@@ -246,8 +247,10 @@ every answer to what the person asking may see in Superset: their own dataset pe
 - **Dashboards.** The dashboards list (`/_superset/dashboards`) and the boards list (`GET /api/<pack>`) show
   only the dashboards the user may open in Superset (owners, admins, dashboard roles with `DASHBOARD_RBAC`, or
   access to one of its datasets). The dashboard a request is about is still checked on every request (see "Who is
-  asking"). Dashboard roles open a dashboard, not its datasets: Lenspack shows such a user only the datasets
-  their roles may read, which can be less than Superset draws on that dashboard.
+  asking").
+- **Dashboard roles.** With `DASHBOARD_RBAC` on, a user who opens a dashboard through its dashboard roles can ask
+  about the data of that dashboard's charts there, with their RLS, as Superset shows it to them, and nowhere else
+  (update the plugin for this; see [docs/access.md, "Dashboard roles"](../../../docs/access.md#dashboard-roles-dashboard_rbac)).
 - **What users are told.** A question about data their access keeps from them is answered with "not available to
   you: your Superset access doesn't include it. A Superset admin can give you access.", not with "the pack doesn't
   have it". The chat is told some data is kept from this user, so it doesn't guess what. A user who may read none

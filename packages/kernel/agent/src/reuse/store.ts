@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname } from "node:path";
 
 import type { Ctx } from "@lenspack/engine";
+import type { Scoped } from "@lenspack/policy";
 
 import type { Call, Slot } from "./slots";
 
@@ -56,12 +57,16 @@ export type Entry = {
   pinned: boolean;
 };
 
-export type Access = { tenant?: string; scope?: unknown[]; hidden?: string[]; hiddenEntities?: string[] };
+/** onBoard: the entities read only on that board (a host's board grant, policy's boardGrant), kept so a refresh runs under the same grant. */
+export type Access = { tenant?: string; scope?: unknown[]; hidden?: string[]; hiddenEntities?: string[]; onBoard?: { board: string; entities: string[] } };
+
+/** The engine context a saved answer is made in: what the engine reads, and the board grant it was made under (policy's Scoped). */
+export type KeptCtx = Ctx & Pick<Scoped, "onBoard">;
 
 /** The access an engine context grants, as data: kept with an entry so a refresh runs under exactly it. */
-export const accessOf = (ctx: Ctx): Access => ({ ...(ctx.tenant ? { tenant: ctx.tenant } : {}), ...(ctx.scope?.length ? { scope: ctx.scope } : {}), ...(ctx.hidden?.size ? { hidden: [...ctx.hidden].sort() } : {}), ...(ctx.hiddenEntities?.size ? { hiddenEntities: [...ctx.hiddenEntities].sort() } : {}) });
+export const accessOf = (ctx: KeptCtx): Access => ({ ...(ctx.tenant ? { tenant: ctx.tenant } : {}), ...(ctx.scope?.length ? { scope: ctx.scope } : {}), ...(ctx.hidden?.size ? { hidden: [...ctx.hidden].sort() } : {}), ...(ctx.hiddenEntities?.size ? { hiddenEntities: [...ctx.hiddenEntities].sort() } : {}), ...(ctx.onBoard ? { onBoard: { board: ctx.onBoard.board, entities: [...ctx.onBoard.entities].sort() } } : {}) });
 /** An engine context from kept access, at the host's "now". */
-export const ctxOf = (a: Access, now?: Date): Ctx => ({ ...(a.tenant ? { tenant: a.tenant } : {}), ...(now ? { now } : {}), ...(a.scope ? { scope: a.scope as Ctx["scope"] } : {}), ...(a.hidden ? { hidden: new Set(a.hidden) } : {}), ...(a.hiddenEntities ? { hiddenEntities: new Set(a.hiddenEntities) } : {}) });
+export const ctxOf = (a: Access, now?: Date): KeptCtx => ({ ...(a.tenant ? { tenant: a.tenant } : {}), ...(now ? { now } : {}), ...(a.scope ? { scope: a.scope as Ctx["scope"] } : {}), ...(a.hidden ? { hidden: new Set(a.hidden) } : {}), ...(a.hiddenEntities ? { hiddenEntities: new Set(a.hiddenEntities) } : {}), ...(a.onBoard ? { onBoard: a.onBoard } : {}) });
 
 export type BoardInfo = { edits: number[]; widgets: string[] };
 
