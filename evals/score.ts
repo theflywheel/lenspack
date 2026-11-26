@@ -219,7 +219,9 @@ function scoreValue(value: TruthValue, truth: Truth, text: string): AnswerScore 
       const named = (truth.universe ?? keys).filter((k) => findKey(keys.includes(k) ? segs : answerClauses, k).length > 0);
       const right = keys.filter((k) => named.includes(k));
       keys.filter((k) => !named.includes(k)).forEach((k) => missing.push(k));
-      const precision = named.length ? right.length / named.length : 0;
+      // An empty answer ("no ward is below 80%") is right when the reply names none of the universe; a refusal
+      // never gets here, as declines are told apart before scoring.
+      const precision = named.length ? right.length / named.length : keys.length ? 0 : 1;
       return { correct: right.length === keys.length && precision === 1, recall: keys.length ? right.length / keys.length : 1, precision, coarse, matched: null, missing };
     }
     case "list": {
