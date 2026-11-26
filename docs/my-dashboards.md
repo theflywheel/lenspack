@@ -22,7 +22,8 @@ makes it, and makes the change there. The shared dashboard stays as it was.
 Lenspack talks to Superset through its own admin account, so the rules below are Lenspack's, checked on every
 request before anything is written to Superset. They never allow more than Superset does. They live in
 `@lenspack/policy`, as plain functions that the chat tools and the panel's routes both call, on the same
-footing as the rest of Lenspack's access rules: who counts as an admin is `adminRights()`, what a person may do on
+footing as the rest of Lenspack's access rules: who counts as an admin is `adminRights()` (the `auth.admins`
+rule, by default Superset's Admin role; see [access](access.md#admins)), what a person may do on
 a dashboard is `boardRights()` (which also applies the edit scope below), and the data a person reads on a
 dashboard is `decide()` with that dashboard, so dashboard roles count there and only there. The rules for making,
 copying, deleting, saving and applying are in `packages/kernel/policy/src/personal.ts`.
@@ -31,16 +32,24 @@ copying, deleting, saving and applying are in `packages/kernel/policy/src/person
 |---|---|---|
 | Ask about a dashboard | everyone who can view it in Superset | unchanged |
 | Change a shared dashboard | whoever Superset lets edit it: its owners with `can_write` on Dashboard, and admins | unchanged (`editPolicy: superset`) |
-| Make a blank dashboard | anyone signed in, up to the limit | it is owned by them in Superset |
+| Make a blank dashboard | anyone whose Superset roles may write dashboards, up to the limit | it is owned by them in Superset |
 | Open someone's own dashboard | its owner, and admins | narrower than Superset, which opens a draft with no roles for anyone who has its address |
-| Copy a dashboard | anyone who can view it, up to the limit | the copy and its charts are new and owned by them |
-| Delete a dashboard | its owners in Superset, and admins | never anyone else's, whatever else they may edit |
+| Copy a dashboard | anyone who can view it and may write dashboards, up to the limit | the copy and its charts are new and owned by them |
+| Delete a dashboard | among those who may write dashboards: its owners in Superset; admins too, for a personal dashboard (one made or copied through Lenspack) | never anyone else's, whatever else they may edit; any other dashboard only its owners delete here |
 | Save a layout | anyone who can view the dashboard, up to the limit | saving under a name they already used replaces it |
-| Apply a layout | the layout's owner (or an admin), on a dashboard they may edit | otherwise: make your own copy first |
+| Apply a layout | the layout's owner (or an admin) who may write dashboards, on a dashboard they may edit | otherwise: make your own copy first |
 | Rename or delete a layout | its owner, and admins | |
 | See everyone's | admins | `GET /_superset/personal` |
 
 Some details:
+
+- **Writing dashboards is Superset's right.** Making, copying, deleting and applying a layout all need what
+  Superset needs for the same thing: `can_write` on Dashboard (or the Admin role). A viewer role without it, for
+  example a copy of Gamma with that permission taken away, can still ask questions and save layouts, which writes
+  nothing to Superset. The panel then offers no "New dashboard" or copy, and says why; the routes and the chat
+  refuse with "Your role lets you view dashboards but not make or change them". Being a Lenspack admin does not
+  change this. Superset's signed header says it per request (`w`); a plugin too old to sign it leaves this to
+  Superset admins only, so update `lenspack_superset.py` together with Lenspack.
 
 - **Owners are real people.** A new dashboard, a copy and every chart made for them are given the person's own
   Superset user as owner, not Lenspack's account. That person can then also edit them in Superset itself.

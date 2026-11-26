@@ -56,6 +56,8 @@ export type Identity = {
   maintain?: boolean;
   /** May read the AI usage page, which names every user. Absent: as maintain. */
   usage?: boolean;
+  /** May use the assistant at all (the deployment's users rule, settled by principalOf). Absent: yes. See mayUse(). */
+  uses?: boolean;
   /**
    * Set when the caller may read a board and ask about it, but not change it: the chat still answers,
    * and every edit tool replies with this message (e.g. "you can view this dashboard but not edit it").
@@ -70,18 +72,35 @@ export type BoardEntities = { entities: string[]; scope?: ScopeClause[] };
 /** An identity with its rights settled: maintain implies edit, usage follows maintain unless set. Absent maintain is no. */
 export type Principal = Identity & { roles: string[]; edit: boolean; usage: boolean };
 
-/** Rights by user name, "role:<name>" for anyone with that role or group, or "*". */
-export type Rights = { editors: string[]; maintainers: string[]; usage?: string[] };
+/**
+ * Rights by user name, "role:<name>" for anyone with that role or group, or "*". `admins` says who holds Lenspack's
+ * admin role (ADMIN_ROLE): absent, whoever the host already gave a role named "admin" (DEFAULT_ADMINS). `users` says
+ * who may use the assistant at all: absent, everyone signed in; admins always may.
+ */
+export type Rights = { editors: string[]; maintainers: string[]; usage?: string[]; admins?: string[]; users?: string[] };
 export const NO_RIGHTS: Rights = { editors: [], maintainers: [] };
 
-/** The principal an identity is under the deployment's rights by user and role. Rights only add; applying it twice changes nothing. */
+/** Lenspack's admin role: what adminRights() reads. principalOf() alone gives it, by the deployment's admins rule. */
+export const ADMIN_ROLE = "admin";
+/** The admins rule when a deployment names none: a role named "admin", as every sign-in had before the rule existed. */
+export const DEFAULT_ADMINS: readonly string[] = [`role:${ADMIN_ROLE}`];
+
+/**
+ * The principal an identity is under the deployment's rights by user and role. Rights only add, except Lenspack's
+ * admin role: the admins rule alone decides it, so a host role that happens to be called "admin" counts only when
+ * the rule names it (the default does). Applying it twice changes nothing.
+ */
 export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal {
-  const roles = id.roles ?? [];
+  const given = id.roles ?? [];
   // A role: entry matches roles only, so a user named like one gets nothing from it.
-  const among = (list: string[]) => list.some((e) => e === "*" || (e.startsWith("role:") ? roles.includes(e.slice(5)) : e === id.user));
+  const among = (list: readonly string[]) => list.some((e) => e === "*" || (e.startsWith("role:") ? given.includes(e.slice(5)) : e === id.user));
+  // The one place a host's roles become Lenspack's admin role.
+  const admin = among(rights.admins ?? DEFAULT_ADMINS);
+  const roles = admin ? (given.includes(ADMIN_ROLE) ? given : [...given, ADMIN_ROLE]) : given.filter((r) => r !== ADMIN_ROLE);
   const maintain = !!id.maintain || among(rights.maintainers);
-  // Open question, not applied: the usage page for admins only would be `const usage = roles.includes("admin");`
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
+  // The users rule switches the assistant on per person; admins always pass. Once settled "no", it stays no.
+  const uses = id.uses !== false && (admin || !rights.users || among(rights.users));
   const { user, tenant, scope, hidden, hiddenEntities, hiddenBoards, boardEntities, hiddenReason, packs, grants, readOnly, editScope } = id;
   // Only what is set, so a principal compares equal to the one it was built from.
   return {
@@ -101,8 +120,18 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
     packs,
     grants,
     readOnly: readOnly || undefined,
+    ...(uses ? {} : { uses: false }),
   };
 }
+
+/** The refusal for someone the users rule leaves out, from every route that answers with data or the chat. */
+export const NOT_TURNED_ON_MESSAGE = "The assistant isn't turned on for your account. An admin can turn it on for you.";
+
+/**
+ * Whether a principal may use the assistant at all: the button, the chat, boards and data. The deployment's users
+ * rule (principalOf) decides it; absent, everyone signed in may. Admins always may.
+ */
+export const mayUse = (who: Pick<Identity, "uses">) => who.uses !== false;
 
 /** Whether a caller holds a host grant; with none named, whether they are trusted with every one. */
 export const holds = (who: Pick<Identity, "grants">, grant?: string) => !who.grants || (grant !== undefined && who.grants.includes(grant));
@@ -360,13 +389,14 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
 /**
  * What a principal may do on a deployment's admin pages, decided here so every host and every page asks the same
  * question. administer: see and change the settings, the saved answers, the definitions, the open questions and the
- * daily review: the host's admin role (a Superset admin, the built-in admin), never a dashboard's edit right. users:
+ * daily review: Lenspack's admin role, which principalOf() gives by the deployment's admins rule (by default, a role
+ * named "admin"; under Superset, the Superset roles its auth.admins names), never a dashboard's edit right. users:
  * also see who asked what (usernames on the usage board and in review reports), which needs the usage right as well.
- * It only narrows what the host gave: no admin role, no admin pages.
+ * Neither widens what anyone may read of the data.
  */
 export type AdminRights = { administer: boolean; users: boolean };
 export function adminRights(who: { roles?: readonly string[]; usage?: boolean }): AdminRights {
-  const administer = !!who.roles?.includes("admin");
+  const administer = !!who.roles?.includes(ADMIN_ROLE);
   return { administer, users: administer && !!who.usage };
 }
 
@@ -394,7 +424,7 @@ export function boardRights(who: Principal, b: Ownership & { id?: string }): { v
 // --- the deployment's own records -------------------------------------------------
 //
 // What a caller may do with what the deployment keeps about its own use: the settings page, the usage telemetry log,
-// kept recordings of spoken questions, and the user names in them. Today these follow the host's admin role, as the
+// kept recordings of spoken questions, and the user names in them. Today these follow Lenspack's admin role, as the
 // settings page always has (adminRights); the coming policy document narrows them per role. Nothing here can widen them.
 
 export type RecordRights = {

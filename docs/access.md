@@ -14,11 +14,11 @@ Who may sign in, what they may do in the app, and what of each pack's data they 
 | `tokens` | bearer tokens the deployment issues | `roles:` per token |
 | `none` | open, for a local demo; listens on 127.0.0.1 unless `host:` says otherwise (opened by `LENSPACK_AUTH`, only `--host` moves it, so in a container pass `--host 0.0.0.0` too) | none: the one local user sees everything |
 
-Superset mode (`lenspack superset`) takes none of these kinds: Superset signs who is asking on every request, and that signed identity, with Superset's own dashboard rights, is the only sign-in there. It is an adapter of its own kind, `superset`, which gives a Superset admin the role `admin`. By default (`hostPolicy: superset`) it also brings each user's Superset roles, dataset access, row-level security and the dashboards they may open (see [How the layers combine](#how-the-layers-combine)). See [packages/hosts/superset/README.md](../packages/hosts/superset/README.md).
+Superset mode (`lenspack superset`) takes none of these kinds: Superset signs who is asking on every request, and that signed identity, with Superset's own dashboard rights, is the only sign-in there. It is an adapter of its own kind, `superset`. Superset says who the user is and which Superset roles they hold; Lenspack's own `admins` rule decides which of those roles make someone a Lenspack admin (by default, Superset's `Admin` role; see [Admins](#admins)). By default (`hostPolicy: superset`) it also brings each user's Superset roles, dataset access, row-level security and the dashboards they may open (see [How the layers combine](#how-the-layers-combine)). See [packages/hosts/superset/README.md](../packages/hosts/superset/README.md).
 
 ### `password`
 
-For a deployment with no identity provider. There is one user, `admin`, with every right (editor, maintainer, usage) and the role `admin`, which pack rules can match. lenspack keeps no other users and has no user management: for named people, use `oidc` or a login proxy.
+For a deployment with no identity provider. There is one user, `admin`, with every right (editor, maintainer, usage, admin) and the role `admin`, which pack rules can match. It stays an admin whatever `admins:` says. lenspack keeps no other users and has no user management: for named people, use `oidc` or a login proxy.
 
 ```yaml
 auth:
@@ -56,6 +56,7 @@ auth:
   editors: ["*"]
   maintainers: ["role:lens-maintainers"]
   usage: ["role:lens-maintainers", "finance"]
+  admins: ["role:lens-admins"]
 ```
 
 The flow is the authorization code flow with PKCE (S256), a `state` and a `nonce`. The ID token's signature is checked against the issuer's published keys (RS, PS, ES and EdDSA algorithms; never `none` or a shared secret), and so are its issuer, audience (and `azp`), expiry and nonce.
@@ -74,7 +75,7 @@ Unchanged, plus `rolesHeader` (oauth2-proxy can inject a `groups` claim as `X-Fo
 
 ## App rights
 
-`editors`, `maintainers` and `usage` list user names, `role:<name>` for anyone with that role or group, or `"*"`. Every kind takes them; a token's own `edit`, `maintain` and `usage` add to them, and `admin` under `password` has all three.
+`editors`, `maintainers`, `usage`, `admins` and `users` list user names, `role:<name>` for anyone with that role or group, or `"*"`. Every kind takes them, except that `tokens` has no `users` rule: there `users` is the list of tokens, and leaving a token out already keeps its holder out. A token's own `edit`, `maintain` and `usage` add to them, and `admin` under `password` has every right.
 
 | right | lets a caller |
 |---|---|
@@ -82,6 +83,38 @@ Unchanged, plus `rolesHeader` (oauth2-proxy can inject a `groups` claim as `X-Fo
 | editor | make boards of their own, change, share and delete them |
 | maintainer | also change the pack's own boards; implies editor |
 | usage | read the AI usage page (`GET /api/_usage`), which names every user. Absent `usage:`, the maintainers |
+| user | use the assistant at all: boards, data, the chat and its button. Absent `users:`, everyone signed in. Admins always may |
+| admin | use the admin pages: the settings and switches, the admin panel, saved answers, definitions, open questions, the daily review and the audit log. User names on those pages also need the usage right. Absent `admins:`, anyone with a role named `admin` |
+
+### Admins
+
+Who may use the admin pages is one rule, `admins`, read the same way for every sign-in, Superset included. The sign-in only says who someone is and which roles they hold; Lenspack decides which of them are admins. A role that happens to be called `admin` counts only while the rule names it, which the default does.
+
+```yaml
+auth:
+  kind: oidc
+  # ...
+  admins: ["role:lens-admins", "ops-lead"]   # a group, and one named person
+```
+
+Being an admin opens the admin pages and nothing else. It does not let anyone read more data, open more dashboards or change more boards: those still follow the sign-in, the host and the pack rules.
+
+Under Superset the same rule lists Superset role names, in `superset.yaml`:
+
+```yaml
+auth:
+  admins: ["Lenspack admin"]   # default ["Admin"]: Superset's own admins, as before
+  usage: ["Lenspack admin"]    # who also sees user names; default: the same roles as admins
+  users: ["Lenspack user"]     # who may use the assistant; default: everyone signed in
+```
+
+With `admins: ["Lenspack admin"]`, a Superset Admin without that role gets no admin pages, and a Gamma or Alpha user with it does, still with only their own Superset data access. `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES` and `LENSPACK_USER_ROLES` (comma-separated) set the same from the environment. Details in [packages/hosts/superset/README.md](../packages/hosts/superset/README.md#who-is-asking).
+
+### Users
+
+`users` switches the assistant on per person. Left out, everyone signed in may use it, as before. Set, only people the rule names, and every admin, may: anyone else gets a plain refusal ("The assistant isn't turned on for your account") from every board, data and chat route. Under Superset they also see no **Ask** button. Turning it on for someone is giving them the role: in Superset, an admin adds it to the person in Settings → List Users, and nothing in Lenspack needs changing.
+
+**Upgrading:** the keys are `auth.admins` and `auth.users`, in `lenspack.yaml` and in `superset.yaml`. Leaving them out keeps today's behaviour: admins are anyone with a role named `admin` under `lenspack serve`, Superset's `Admin` role under Superset, and the built-in `admin` under `password` always; and everyone signed in may use the assistant.
 
 ## Pack access
 
@@ -125,7 +158,7 @@ Pack descriptions, instructions and hints are shown to everyone who may open the
 One pure function, `decide()` in `@lenspack/policy`, settles what a caller may use of a pack. Every host with callers goes through it: `lenspack serve` with any sign-in, Superset mode, and the CCRS API. `lenspack-mcp` has one caller, the person who started it, and does not.
 
 1. **The host says who the caller is and what it already allows.** The sign-in (or Superset, or CCRS) gives an identity: user, roles, tenant, and whatever the host limits itself: a row scope, keys it keeps from them, capabilities it grants.
-2. **Lenspack's rules only narrow it.** The rights by user and role add edit, maintain and usage rights. A pack's access rule adds its `scope` to the host's and the caller's, and its `hide`/`only` keys to the host's hidden keys. Nothing in lenspack.yaml can widen what the host allows.
+2. **Lenspack's rules only narrow it.** The rights by user and role add edit, maintain and usage rights, the `admins` rule says who uses the admin pages, which shows no extra data, and the `users` rule can leave people out of the assistant altogether. A pack's access rule adds its `scope` to the host's and the caller's, and its `hide`/`only` keys to the host's hidden keys. Nothing in lenspack.yaml can widen what the host allows.
 3. **The engine enforces the result.** Every query carries the scope (`ctx.scope`) and is refused if it names a hidden key (`ctx.hidden`). The engine reads both by shape and does not know who decided them.
 
 The scope is the pack's own (its `ctx.scope`), then the caller's, then their rule's, all applied together. A query that cannot be narrowed by one of them is refused (`OUT_OF_SCOPE`) rather than answered unnarrowed. A host's scope may be tied to one entity (a table's row-level security): it then narrows only the queries that read that entity. A host may also keep whole entities from a caller: their measures and the dimensions only they have are hidden, and a query that reads one is refused (`NOT_PERMITTED`).
@@ -172,6 +205,10 @@ The access suite starts real Superset 6.1 and 5.0, each with a Postgres database
 | `lp_rbac` | Gamma and the roles of dashboards B and C | opens B and C through their dashboard roles, reads no dataset; RLS `region IN ('North', 'South')` on `stock` through B's role |
 | `lp_rbac_off` | the same as `lp_rbac` | used only while dashboard roles are turned off |
 | `lp_noroles` | none | signs in, nothing else |
+| `lp_lensadmin` | Gamma, `visits` only, and a role called "Lenspack admin" with no permissions | no access to `stock`; an admin in Lenspack only once its `admins` rule names that role |
+| `lp_lensuser` | Gamma, both datasets, and a role called "Lenspack user" with no permissions | views A; let in by Lenspack's `users` rule when it names that role |
+| `lp_reader` | a copy of Gamma without `can_write` on Dashboard or Chart, both datasets | views dashboards, may not make or change any |
+| `lp_alpha` | Alpha | reads every dataset and may make dashboards |
 
 Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard B holds a stock chart and C a visits chart; each opens only for its dashboard role (`DASHBOARD_RBAC`). The suite can turn `DASHBOARD_RBAC` off without restarting Superset. Every number in the sample data is a different power of two, so a total shows exactly which rows were counted.
 
@@ -202,7 +239,15 @@ Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard 
   - Stock on C, visits on B, the list of everything they can ask about, and a compiled query outside a dashboard are all refused. Superset refuses B's chart asked for as if it were on C.
   - A saved answer `lp_rbac` gets on B is never given to an admin on B, to `lp_rbac` on C, or to a viewer on A.
   - With `DASHBOARD_RBAC` off, B no longer opens for them, Superset refuses its chart data, and Lenspack shows none of B's data even on a request signed as able to view B.
-- **Admin surfaces.** Settings, the audit log, cost per answer and usage are for Superset admins only. A dashboard owner gets 403, and so does Superset's own AI assistant page.
+- **Admin surfaces.** Under the default `admins` rule, settings, the admin panel, the audit log, cost per answer and usage are for Superset admins only. A dashboard owner gets 403, and so does Superset's own AI assistant page. So does `lp_lensadmin`: a role called "Lenspack admin" gives nothing until the rule names it.
+- **Personal dashboards.** An admin deletes another person's personal dashboard, but not a dashboard that wasn't made through Lenspack: that stays its owners' to delete, in Superset. `lp_reader`, whose role can't write dashboards, is offered no create or copy, and making, copying (through the routes or the chat) and applying a layout are refused with the reason; saving a layout, which writes nothing to Superset, still works. `lp_alpha` makes, copies and deletes its own.
+- **Lenspack's own admins rule.** The suite restarts Lenspack with `auth: { admins: ["Lenspack admin"] }`.
+  - `lp_admin`, a Superset Admin without that role, gets 403 from the admin panel, the settings, the audit log, cost per answer, usage, everyone's personal dashboards and every settings change, and Superset's own AI assistant page refuses them. Their dashboards and data are unchanged.
+  - `lp_lensadmin`, a Gamma user with that role, gets all of those (Superset's AI assistant page, which lists Superset's databases, stays a Superset Admin's). Their data stays exactly `lp_partial`'s: the same catalogue, `stock` refused, the same boards, no edit on dashboard A, and no deleting it.
+- **Lenspack switched on per person.** The suite restarts Lenspack again, with `auth: { users: ["Lenspack user"] }`.
+  - `lp_viewer`, without the role, is served an overlay script that draws nothing (no button), and every chat, board and data route, the personal dashboards' routes and binding answer 403 "isn't turned on for your account".
+  - `lp_lensuser`, with the role, gets the real overlay, their board and correct chat answers, and still can't edit dashboard A.
+  - `lp_admin`, an admin without the role, gets the overlay, the chat and the settings.
 - **Caching and saved answers.**
   - Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
   - Five users with different access (all datasets, `visits` only, North only, North and East, their own team) ask the same question. Nobody is answered from another's saved answer: not when the same question comes again within minutes (sent as saved, no model), not when the saved queries run again on fresh data, and not when the question names another region (the region swapped into the saved queries). Each answer has exactly that user's rows.

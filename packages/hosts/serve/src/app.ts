@@ -6,7 +6,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, tabsText, toVercelAI, viewFrom } from "@lenspack/agent";
-import { type Principal, accessNote, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
+import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -307,7 +307,7 @@ export function pickEffort(p: Pickable, asked: string | null | undefined, fallba
 /** Who a request is under these options, rights settled: the sign-in adapter with the rights above it, or the access hook. */
 export function accessOf(opts: Pick<AppOptions, "auth" | "access" | "rights">): ((req: IncomingMessage) => Promise<Principal | null>) | undefined {
   if (opts.auth && opts.access) throw new Error("createApp takes auth or access, not both");
-  if (opts.auth) return withRights(opts.auth, opts.rights ?? NO_RIGHTS);
+  if (opts.auth) return withRights(opts.auth, opts.rights ?? opts.auth.rights ?? NO_RIGHTS);
   const hook = opts.access;
   return hook && (async (req) => {
     const id = await hook(req);
@@ -394,6 +394,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       const who = access ? await access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
+      // The deployment's users rule (policy): left out, no board, data or chat, whatever the route.
+      if (!mayUse(who)) return json(res, 403, { error: NOT_TURNED_ON_MESSAGE, code: "not-turned-on" });
       // Who telemetry says asked: the role names the host signed (Superset's own), else the sign-in's.
       const asker: Asker = { user: who.user, tenant: who.tenant, roles: opts.telemetryRoles?.(req) ?? who.roles };
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.

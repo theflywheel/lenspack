@@ -2,18 +2,19 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 import { filterClauseSchema } from "@lenspack/core";
-import { type Identity, NO_RIGHTS, type Principal as Settled, type Rights, principalOf } from "@lenspack/policy";
+import { DEFAULT_ADMINS, type Identity, NO_RIGHTS, type Principal as Settled, type Rights, principalOf } from "@lenspack/policy";
 import { z } from "zod";
 
 import { join, resolve } from "node:path";
 
 import { oidcAdapter } from "./oidc";
-import { passwordAdapter } from "./password";
+import { ADMIN, passwordAdapter } from "./password";
 
 // How a caller signs in. An auth adapter says who a caller is: the built-in
 // admin with a password (the default), an OpenID Connect sign-in, the login
 // proxy in front, or a bearer token. Above every adapter alike, the rights by
-// user and role and each pack's access rules apply (@lenspack/policy).
+// user and role (editors, maintainers, usage, admins) and each pack's access
+// rules apply (@lenspack/policy).
 
 export { type Identity, NO_RIGHTS, type PackRule, type Rights, hiddenKeys, packRuleSchema, principalOf } from "@lenspack/policy";
 
@@ -34,6 +35,8 @@ export interface AuthAdapter {
   signInPath?(url: URL): string;
   /** The UI's sign-out link. */
   signOutUrl?: string;
+  /** Rights by role the sign-in brings with it (Superset's role rules); a host's own rights option wins over them. */
+  rights?: Rights;
 }
 
 const scopeSchema = z.array(filterClauseSchema).optional();
@@ -47,7 +50,16 @@ const roleRules = {
   maintainers: z.array(z.string()).default([]),
   /** May read the AI usage page; absent, the maintainers may. */
   usage: z.array(z.string()).optional(),
+  /**
+   * Hold Lenspack's admin role: the settings, the admin panel, saved answers and the audit log. Absent, anyone
+   * whose roles include one named "admin", as before; the built-in admin under password always does.
+   */
+  admins: z.array(z.string()).optional(),
+  /** May use the assistant at all: boards, data and the chat. Absent, everyone signed in; admins always may. */
+  users: z.array(z.string()).optional(),
 };
+// Under tokens, `users` is the list of tokens, and leaving someone's token out already keeps them out: no users rule.
+const { users: _usersRule, ...tokenRules } = roleRules;
 
 export const authSchema = z.discriminatedUnion("kind", [
   // Explicitly open, for a local demo: anyone who reaches the port may read
@@ -87,7 +99,7 @@ export const authSchema = z.discriminatedUnion("kind", [
         }),
       )
       .min(1),
-    ...roleRules,
+    ...tokenRules,
   }),
   // A login proxy in front (oauth2-proxy, an ingress with SSO) names the user
   // in a header. Headers are trusted only with the proxy's shared secret, so a
@@ -171,13 +183,15 @@ export function authFrom(auth: AuthConfig, opts: { dir?: string; env?: NodeJS.Pr
         ...(auth.sessionSecret ? { sessionSecret: auth.sessionSecret } : {}),
         log: opts.log,
       });
-      return { adapter, rights: auth };
+      // The built-in user stays an admin whatever the admins rule names.
+      return { adapter, rights: { ...auth, admins: [...(auth.admins ?? DEFAULT_ADMINS), ADMIN] } };
     }
     case "oidc":
       return { adapter: oidcAdapter(auth), rights: auth };
     case "tokens":
       return {
-        rights: auth,
+        // Its users are the tokens, not a rule.
+        rights: { editors: auth.editors, maintainers: auth.maintainers, ...(auth.usage ? { usage: auth.usage } : {}), ...(auth.admins ? { admins: auth.admins } : {}) },
         adapter: {
           kind: "tokens",
           identify: (req) => {

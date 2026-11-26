@@ -150,6 +150,8 @@ port: 8795                               # LENSPACK_PORT, 8795
 state: /data/superset-boards.json        # LENSPACK_STATE_DIR/superset-boards.json, state/superset-boards.json
 budget: { usdPerDay: 20 }                # LENSPACK_BUDGET_USD_PER_DAY, LENSPACK_BUDGET_USD_PER_USER_PER_DAY
 hostPolicy: superset                     # LENSPACK_HOST_POLICY, superset: each user's own Superset access (see "What each user sees")
+auth: { admins: [Admin], usage: [Admin] } # LENSPACK_ADMIN_ROLES, LENSPACK_USAGE_ROLES, [Admin] and the admins: who uses the admin pages (see "Who is asking")
+# auth: { users: [Lenspack user] }       # LENSPACK_USER_ROLES, everyone signed in: who may use the assistant at all
 ```
 
 Models: `LENSPACK_LLM_PROVIDERS` as for `lenspack serve` ([docs/llm.md](../../docs/llm.md)). With only
@@ -164,7 +166,7 @@ One file, loaded by Superset's own config. It needs no fork, no custom image and
   header (below). Chat replies stream through unbuffered, and a change sent from another site is refused.
   Browsers never reach Lenspack's port.
 - the **Ask Lenspack** button on every page, through `tail_js_custom_extra.html`;
-- **Settings → Manage → AI assistant** for admins: chat and speech models, languages, off switches, spend, cost
+- **Settings → Manage → AI assistant** for Superset admins whom Lenspack's admins rule also names (below): chat and speech models, languages, off switches, spend, cost
   per answer and the audit log, all through `/_superset/*` on this server;
 - `GET /api/v1/lenspack/identity-key` and `POST /api/v1/lenspack/bootstrap`, which this server calls on start
   to fetch the signing key and to make its own account (below);
@@ -204,8 +206,8 @@ so raise `SERVER_THREADS_AMOUNT` for more than about ten chats at once.
 ## Who is asking
 
 Browsers never reach this server directly. Superset forwards `/lenspack/...` to it for signed-in users and adds
-`x-lenspack-identity`: base64url JSON `{u, i, a, r, d, b, p, e, v, t}` (user, their Superset user id, Superset admin,
-their Superset role names, the dashboard the request is about, its board `superset-<d>` and the pack in the path,
+`x-lenspack-identity`: base64url JSON `{u, i, a, r, w, d, b, p, e, v, t}` (user, their Superset user id, Superset admin,
+their Superset role names, whether they may write dashboards at all, the dashboard the request is about, its board `superset-<d>` and the pack in the path,
 whether Superset lets them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
 Superset's `SECRET_KEY` on the Superset side; this server fetches it on start
 (`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid
@@ -228,9 +230,40 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
   edits through the chat, admins included. Someone who can only view a dashboard can make their own copy and change that: see
   [your own dashboards and saved layouts](../../../docs/my-dashboards.md). `editScope: own` (or
   `LENSPACK_EDIT_SCOPE=own`) narrows chat edits further, to each person's own dashboards, so shared ones stay as
-  they are; admins are exempt unless `adminsExempt: false`.
-- **Settings** writes, the audit log and the usage page (`GET /api/_usage`, which names every user's spend) need
-  a Superset admin. Owning a dashboard does not give them.
+  they are; admins (by `auth.admins`) are exempt unless `adminsExempt: false`, though still only on dashboards
+  Superset lets them edit.
+- **Admins** are Lenspack's to decide, by Superset role name: `auth.admins` in the config (or
+  `LENSPACK_ADMIN_ROLES`, comma-separated), default `[Admin]`, Superset's own admins. An admin may use the
+  settings and their changes, the admin panel, saved answers, the audit log, cost per answer, everyone's personal
+  dashboards and the usage page (`GET /api/_usage`, which names every user's spend). User names on those pages
+  also need the usage right: `auth.usage` (or `LENSPACK_USAGE_ROLES`), default the same roles as `admins`. Being
+  an admin gives no more data, dashboards or edits than Superset already gives the person, and owning a dashboard
+  does not make anyone an admin. Superset's admin flag in the header no longer decides it.
+
+  ```yaml
+  auth:
+    admins: ["Lenspack admin"]   # a Superset role; a Superset Admin without it gets no admin pages
+  ```
+
+  With that, a Gamma or Alpha user given the "Lenspack admin" role in Superset opens the admin panel at
+  `/lenspack/_superset/admin/` and changes the settings through it, while still seeing only their own data.
+  Superset's Settings → AI assistant page also lists Superset's databases, so it stays for Superset admins, and
+  Lenspack refuses it to any of them the rule does not name.
+
+  > **Changed:** before this release a Superset admin was always a Lenspack admin. The new key is `auth.admins`
+  > (and `auth.usage`). Left out, it is `[Admin]`, which keeps today's behaviour. A plugin too old to sign role
+  > names still signs the admin flag, which counts as the `Admin` role, so the default holds for it too.
+- **Users** may be chosen by Superset role: `auth.users` (or `LENSPACK_USER_ROLES`), for example
+  `["Lenspack user"]`. Left out, everyone signed in to Superset may use the assistant, as before. Set, only people
+  with one of those roles, and every admin, see the **Ask** button and may use the chat; everyone else sees no
+  button, and the chat, board and data routes answer 403 "The assistant isn't turned on for your account". To turn
+  it on for someone, a Superset admin gives them the role in Settings → List Users (make the role once in
+  Settings → List Roles; it needs no permissions). It takes effect on their next page load.
+
+  The button costs nothing extra to hide. Every Superset page already loads `/lenspack/overlay.js` through
+  Superset's own route, which signs the person's role names onto that request. Lenspack checks the signature and
+  the rule (no call back to Superset) and, for someone left out, answers with an empty script, never cached. No
+  page makes a request it did not make before, and the plugin needs no copy of the rule.
 - **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
   `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls `POST /api/v1/lenspack/bootstrap`, which makes the
   `lenspack` user (Admin role: it edits dashboards it doesn't own, which Superset allows only owners and admins).
@@ -294,8 +327,9 @@ with no row-level security, even datasets Superset keeps from them**, through th
 board API, on any dashboard they can open. Lenspack prints a warning saying so at every start. Use it only when
 everyone who can sign in to Superset may see all of those datasets in full.
 
-The roles in the header also become the user's roles in Lenspack's policy, beside `admin` for a Superset admin.
-A Superset role literally named `admin` grants nothing here; Lenspack's admin comes from the signed admin flag.
+The roles in the header also become the user's roles in Lenspack's policy. Lenspack's own `admin` role is given
+only by the `auth.admins` rule, so a Superset role that happens to be called `admin` grants nothing unless the rule
+names it.
 What a Superset dashboard shows natively is unchanged: Superset applies its own security there.
 
 The plugin's tests run in Superset's image, once for each supported version:
@@ -365,7 +399,7 @@ page, which calls:
 | `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}`; `null` resets ([docs/my-dashboards.md](../../../docs/my-dashboards.md)) |
 | `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
 
-Reads and writes need a Superset admin's signed identity (above). Settings persist in `settings.json` beside
+Reads and writes need an admin's signed identity, by the `auth.admins` rule (above). Settings persist in `settings.json` beside
 the board state.
 
 When the state directory can't be written (disk full, read-only mount), the assistant keeps working: dashboards
@@ -427,7 +461,7 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `review.compare` | open questions' readings are not run on the data after a review | the server |
 
 The admin panel (open questions, definitions, the daily review, a board of how the assistant is used) is at
-`/lenspack/_superset/admin/`, for Superset admins, linked from the settings page: see [docs/review.md](../../../docs/review.md).
+`/lenspack/_superset/admin/`, for admins by the `auth.admins` rule, linked from the settings page: see [docs/review.md](../../../docs/review.md).
 
 `/_superset/info` returns `features` (the effective booleans) for the page. `GET /_superset/settings` returns
 `features: {values, defaults, source, options, writable}`: `defaults` is what the deployment says without the

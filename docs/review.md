@@ -22,10 +22,10 @@ So Lenspack keeps a log of questions with more than one reading and shows the ad
 
 The panel is served by Lenspack itself, so it looks the same in every host.
 
-- **In Superset**, it is at `/lenspack/_superset/admin/`, linked from the Lenspack settings page (`/ai-assistant/`). Only Superset admins can open it.
+- **In Superset**, it is at `/lenspack/_superset/admin/`, linked from the Lenspack settings page (`/ai-assistant/`). Only admins can open it: by default Superset's admins, or the Superset roles `auth.admins` names ([access](access.md#admins)).
 - **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Only the admin can open it. It needs a `state:` directory in `lenspack.yaml` (see below).
 
-Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the policy layer, from what the host says about the caller: the admin role (a Superset admin, or the standalone server's built-in admin), never a dashboard's edit right. The settings page and the saved answers' routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
+Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the policy layer, from what the host says about the caller and the deployment's `admins` rule: Lenspack's admin role (by default a Superset admin, a role named `admin`, or the standalone server's built-in admin), never a dashboard's edit right. The settings page and the saved answers' routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
 
 It has eight tabs, in English and French, in light and dark, and it works at phone width:
 
