@@ -123,6 +123,8 @@ export const GOLDEN_QUERIES: Query[] = [
       { dimension: "tier", op: "eq", value: "GOLD" },
     ],
   },
+  // None of the values: a row with no colour is left out, as with neq.
+  { kind: "breakdown", dimension: "colour", measure: "things", limit: 10, sort: "desc", filters: [{ dimension: "colour", op: "not_in", value: ["blue", "green"] }] },
   { kind: "rows", entity: "things", columns: ["colour", "size", "origin"], limit: 4, orderBy: { key: "size", dir: "desc" } },
   { kind: "rows", entity: "things", columns: ["colour", "nested"], limit: 20 },
   // A later page of rows: LIMIT then OFFSET; with no order, the columns order it so pages line up.

@@ -95,6 +95,9 @@ function filterClause(f: BoundFilter, env: Env): { must: Json[]; mustNot: Json[]
       return { must: [{ exists: { field } }], mustNot: [{ term: { [field]: v } }] };
     case "in":
       return { must: [{ terms: { [field]: Array.isArray(v) ? v : [v] } }], mustNot: [] };
+    case "not_in":
+      // As SQL's NOT IN does, rows without the field are left out.
+      return { must: [{ exists: { field } }], mustNot: [{ terms: { [field]: Array.isArray(v) ? v : [v] } }] };
     case "gte":
       return { must: [{ range: { [field]: { gte: v } } }], mustNot: [] };
     case "lte":

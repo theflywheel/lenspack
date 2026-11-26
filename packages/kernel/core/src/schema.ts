@@ -21,7 +21,8 @@ export const MAX_OFFSET = 10000;
 // "a.b" and "a.b.c", not "a.bc").
 // segment: one of the values is a whole segment of a "|"-separated path
 // (a boundary path "KE|BOMET|SOTIK" has segment "BOMET", not "BOM").
-export const FILTER_OPS = ["eq", "neq", "in", "gte", "lte", "between", "contains", "subtree", "segment"] as const;
+// not_in: none of the values. Like neq, a row with no value is left out, on every source.
+export const FILTER_OPS = ["eq", "neq", "in", "not_in", "gte", "lte", "between", "contains", "subtree", "segment"] as const;
 
 const scalar = z.union([z.string(), z.number(), z.boolean()]);
 
