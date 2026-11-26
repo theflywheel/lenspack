@@ -23,6 +23,14 @@ brought it.
   with no new setting. At the root nothing changes. Update the plugin file and the server image together. See
   [Superset under a path](docs/hosts/superset/install.md#superset-under-a-path).
   ([#99](https://github.com/theflywheel/lenspack/pull/99))
+- **Inside Superset, a missing identity key no longer needs a restart.** A server that started before Superset (or
+  before the plugin was loaded there) used to refuse every request until it was restarted, while `/healthz` stayed
+  green. It now keeps asking Superset for the key, with backoff up to once a minute, and signs people in as soon as it
+  has it. A new `GET /readyz` answers 503 until then, for a readiness probe; `/healthz` stays the liveness check. See
+  [Health and shutdown](docs/operating/deploying.md#health-and-shutdown).
+- **Excluded columns are not named to the model.** With `overlay.exclude`, the descriptions of Superset charts the
+  assistant keeps as they are, the board notes, and filters on an excluded column no longer name the column (a map
+  of excluded coordinates, a chart split or filtered by an excluded column, a filter called after it). (PR_THREE)
 - **After a chat edit in Superset, the open page shows the dashboard as saved, even when the reply is cut off.** A
   reply can be cut off after the change was made, for example when a phone changes networks. The chat panel now finds
   out what happened before offering Retry: "Your change was made: removed …", and the page drops the chart without a

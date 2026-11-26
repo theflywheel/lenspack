@@ -61,6 +61,44 @@ export async function serviceAccount(o: BootstrapOptions): Promise<ServiceAccoun
   return { username: o.username, password, source: "bootstrap" };
 }
 
+/**
+ * The identity key, kept trying for until Superset gives it: with backoff (2 s, 5 s, 10 s, 20 s, 30 s, then every
+ * 60 s), never giving up, so a server that starts before Superset (or before the plugin is loaded there) recovers by
+ * itself. key() is null until then, and every signed request is refused meanwhile; first settles once the key is
+ * here. stop() ends the tries (for tests).
+ */
+export function identityKeeper(o: { fetch: () => Promise<string>; log: (s: string) => void; waits?: number[] }) {
+  const waits = o.waits ?? [2000, 5000, 10_000, 20_000, 30_000, 60_000];
+  let key: string | null = null;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let wake: (() => void) | undefined;
+  const first = (async () => {
+    for (let i = 0; !key && !stopped; i++) {
+      try {
+        key = await o.fetch();
+        if (i) o.log(`identity key fetched from Superset after ${i + 1} tries: signed requests are accepted now`);
+      } catch (e) {
+        const wait = waits[Math.min(i, waits.length - 1)]!;
+        o.log(`fetching the identity key failed (${e instanceof Error ? e.message : String(e)}); every request is refused until it works; trying again in ${wait / 1000} s`);
+        await new Promise<void>((r) => {
+          wake = r;
+          timer = setTimeout(r, wait);
+        });
+      }
+    }
+  })();
+  return {
+    key: () => key,
+    first,
+    stop: () => {
+      stopped = true;
+      clearTimeout(timer);
+      wake?.();
+    },
+  };
+}
+
 /** The identity-signing key, from Superset (derived there from its SECRET_KEY). */
 export async function identityKey(client: SupersetClient): Promise<string> {
   const r = await client.get<{ result: { key: string } }>("/api/v1/lenspack/identity-key");

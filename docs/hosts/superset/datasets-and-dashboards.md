@@ -68,7 +68,11 @@ overlay:
 - A dashboard filter on an excluded column stays on the dashboard, but it is not passed to the chat: its value never
   reaches the model, a saved answer or the usage records. "How this was worked out" says that a dashboard filter on a
   field the assistant does not use was not applied, without naming the field or its value. The model is told about
-  such a filter without its column name or default values.
+  such a filter without its column name, its default values or its own name (it is "Filter on a field this assistant
+  does not use"; Superset keeps its real name).
+- A Superset chart the assistant keeps as it is (see below) is described to the model without naming an excluded
+  column: a chart split by, filtered on or mapped from one says "a field this assistant does not use". Chart titles
+  and Markdown notes are shown as their authors wrote them.
 - The exclusion wins over `notDimensions` and `measures`: a measure that reads an excluded column is refused.
 - Superset itself is unchanged: its charts can still group by the column.
 - With `hostPolicy: superset`, a row-level security rule on an excluded column can't be applied by Lenspack, so the
