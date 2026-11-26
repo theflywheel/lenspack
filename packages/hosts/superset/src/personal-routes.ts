@@ -120,7 +120,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         const board = await o.bind(here.dashboard);
         const scope = await o.scope(req, board);
         const shown = scope && (await o.shownBoard(board, scope.ctx));
-        if (!shown) return o.reply(res, 404, { error: "This dashboard is not open in Lenspack.", code: "missing" }), true;
+        if (!shown) return o.reply(res, 404, { error: "The assistant has not opened this dashboard yet.", code: "missing" }), true;
         return send(await personal.saveLayout(who, { ...here, board }, str("name"), shown.config, shown.title)), true;
       }
       const m = /^\/_superset\/my\/layouts\/([A-Za-z0-9_-]{1,40})\/(apply|rename|delete)$/.exec(path);

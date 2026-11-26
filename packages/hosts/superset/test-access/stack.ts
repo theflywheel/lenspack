@@ -225,7 +225,16 @@ export type Stack = {
 };
 
 /** Starts the stack for one Superset version (an apache/superset image tag). */
-export async function startStack(version: string, o: { lenspackEnv?: Record<string, string>; /** Superset under a path of its host (SUPERSET_APP_ROOT, Superset 6.1). */ appRoot?: string } = {}): Promise<Stack> {
+export async function startStack(
+  version: string,
+  o: {
+    lenspackEnv?: Record<string, string>;
+    /** Variables for Superset's container (the plugin reads LENSPACK_PATH and LENSPACK_BRAND_NAME there). */
+    supersetEnv?: Record<string, string>;
+    /** Superset under a path of its host (SUPERSET_APP_ROOT, Superset 6.1). */
+    appRoot?: string;
+  } = {},
+): Promise<Stack> {
   const appRoot = (o.appRoot ?? "").replace(/\/+$/, "");
   const tag = `lpacc-${version.replace(/\W/g, "")}-${process.pid}-${randomBytes(3).toString("hex")}`;
   const dir = mkdtempSync(join(tmpdir(), "lenspack-access-suite-"));
@@ -276,6 +285,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
         "-e", `LENSPACK_INTERNAL_URL=${lenspack}`, "-e", "SUPERSET_BIND_ADDRESS=127.0.0.1", "-e", `SUPERSET_PORT=${ssPort}`,
         "-e", "SERVER_THREADS_AMOUNT=20", "-e", "GUNICORN_TIMEOUT=120",
         ...(appRoot ? ["-e", `SUPERSET_APP_ROOT=${appRoot}`] : []),
+        ...Object.entries(o.supersetEnv ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
         "-v", `${plugin}:/plugin:ro`, "-v", `${here}:/access:ro`,
         `apache/superset:${version}`, "sh", "-c", script,
       ],

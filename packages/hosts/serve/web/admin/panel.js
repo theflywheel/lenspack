@@ -45,7 +45,7 @@
       suggestionsLede: "The most-asked questions on each board: the chat offers them as suggestions.", candidatesLede: "Asked often, and no chart on their board answers them.", askedN: "asked {0}×", settledH: "Settled boards", settledLede: "No change in a week.", lastEdit: "last changed {0}",
       // Settings
       bTitle: "Name", bLede: "What the assistant is called on dashboards and in this panel: its name, the dashboard button's label, and words for one language only. Saved for everyone; open pages show it after a reload. Leave a box empty for the deployment's value.",
-      bName: "Name", bButton: "Button label", bButtonHelp: "{0} in the label stands for the name.", bIcon: "Icon: an https:// address, a path on this site, or a small data:image file", bPowered: "Show “Powered by Lenspack” in the chat when the name is not Lenspack", bIn: "In {0}", bSave: "Save name", bPreview: "Preview",
+      bName: "Name", bButton: "Button label", bButtonHelp: "{0} in the label stands for the name.", bIcon: "Icon: an https:// address, a path on this site, or a small data:image file", bPowered: "Show a small “Powered by Lenspack” credit under the chat (only when the assistant has its own name)", bIn: "In {0}", bSave: "Save name", bPreview: "Preview",
       sLede: "Switches for this server. A change applies to the next question. Where a value comes from: default, the config file, the environment, or this page.",
       source_default: "default", source_config: "config", source_env: "environment", source_settings: "set here", reset: "Reset to the deployment's value",
       // Telemetry
@@ -96,7 +96,7 @@
       pwr_schedule: "planifié", pwr_data: "données modifiées", pwr_admin: "par un administrateur", asks7d: "Posées, 7 jours", dataAsOf: "Données du", kindEdit: "modification du tableau", noEntries: "Aucune réponse gardée pour l'instant.",
       suggestionsLede: "Les questions les plus posées sur chaque tableau : le chat les propose en suggestions.", candidatesLede: "Posées souvent, sans graphique qui y réponde sur leur tableau.", askedN: "posée {0} fois", settledH: "Tableaux stables", settledLede: "Aucun changement depuis une semaine.", lastEdit: "dernier changement {0}",
       bTitle: "Nom", bLede: "Comment l'assistant s'appelle sur les tableaux de bord et dans ce panneau : son nom, le libellé du bouton, et des mots pour une seule langue. Enregistré pour tout le monde ; les pages ouvertes l'affichent après rechargement. Laissez une case vide pour la valeur du déploiement.",
-      bName: "Nom", bButton: "Libellé du bouton", bButtonHelp: "{0} dans le libellé représente le nom.", bIcon: "Icône : une adresse https://, un chemin sur ce site, ou un petit fichier data:image", bPowered: "Afficher « Propulsé par Lenspack » dans la discussion quand le nom n'est pas Lenspack", bIn: "En {0}", bSave: "Enregistrer le nom", bPreview: "Aperçu",
+      bName: "Nom", bButton: "Libellé du bouton", bButtonHelp: "{0} dans le libellé représente le nom.", bIcon: "Icône : une adresse https://, un chemin sur ce site, ou un petit fichier data:image", bPowered: "Afficher une petite mention « Propulsé par Lenspack » sous la discussion (seulement quand l'assistant a son propre nom)", bIn: "En {0}", bSave: "Enregistrer le nom", bPreview: "Aperçu",
       sLede: "Les interrupteurs de ce serveur. Un changement s'applique à la question suivante. Origine de chaque valeur : défaut, fichier de configuration, environnement ou cette page.",
       source_default: "défaut", source_config: "configuration", source_env: "environnement", source_settings: "réglé ici", reset: "Revenir à la valeur du déploiement",
       tabTelemetry: "Télémétrie", tlTitle: "Ce que ce déploiement enregistre", tlLede: "Chaque élément que {name} peut enregistrer pour ce déploiement, avec son interrupteur. Un changement s'applique à la question suivante. À imprimer ou à copier dans un rapport de pilote.",
@@ -169,8 +169,8 @@
       "conv-rephrase": ["Questions reposées autrement", "Où la première réponse manque sa cible."],
       "conv-follow-ups": ["Relances par conversation", "Si l'on explore ou si l'on pose une question puis part."],
       "trust-explain": ["« Comment c'est calculé » ouvert", "Si l'on vérifie d'où viennent les chiffres."],
-      "trust-export-share": ["Graphiques exportés ou tableaux partagés dans Lenspack", "Si les réponses circulent au-delà de qui les a demandées."],
-      "trust-superset-actions": ["Exports et partages dans Superset sur les tableaux de Lenspack", "Si les tableaux construits par Lenspack servent."],
+      "trust-export-share": ["Graphiques exportés ou tableaux partagés depuis la discussion", "Si les réponses circulent au-delà de qui les a demandées."],
+      "trust-superset-actions": ["Exports et partages dans Superset sur les tableaux construits par l'assistant", "Si les tableaux construits par l'assistant servent."],
       "reuse-hit-rate": ["Réponses gardées réutilisées, par niveau", "Ce que la réutilisation fait gagner, et si ses niveaux sont justes."],
       "reuse-saved": ["Argent économisé par les réponses gardées", "Si la réutilisation est rentable."],
       "review-runs": ["Passages de la revue quotidienne", "À quelle fréquence les réponses sont vérifiées après coup."],

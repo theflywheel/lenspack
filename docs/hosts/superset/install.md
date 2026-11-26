@@ -55,6 +55,8 @@ Superset's environment, for the plugin:
 |---|---|---|
 | `LENSPACK_INTERNAL_URL` | `http://lenspack:8795` | where Superset's server reaches the Lenspack server |
 | `LENSPACK_SERVICE_USER` | `lenspack` | the Lenspack server's Superset account (`superset.username` in its config) |
+| `LENSPACK_PATH` | `/lenspack` | where browsers reach the assistant, below Superset's own path, such as `/assistant` (see [Naming the assistant](../../features/naming.md#superset)) |
+| `LENSPACK_BRAND_NAME` | none | the settings page's menu entry and heading, when `superset_config.py` names none; without either, the server's own name |
 | `LENSPACK_TEMPLATES` | none | a folder whose `tail_js_custom_extra.html` or `lenspack/settings.html` replaces the built-in one |
 | `LENSPACK_CLICKHOUSE_LABEL_SUFFIX` | `on` | `off` keeps Superset 6.1's own ClickHouse column names (see [Versions](versions.md#clickhouse-column-names-on-superset-61)) |
 

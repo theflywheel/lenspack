@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, loadPack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { BUSY_TEXT, DEFAULT_BRAND, markOf, PROMPT_VERSION, brandFromEnv, brandSettings, busyText, configSchema, parseBrand, promptVersionFor, resolveBrand, settingsStore, systemParts } from "../src";
+import { BUSY_TEXT, DEFAULT_BRAND, markOf, PROMPT_VERSION, brandFromEnv, brandSettings, busyText, configSchema, parseBrand, promptVersionFor, resolveBrand, settingsStore, systemParts, identityRule } from "../src";
 
 const tickets = fileURLToPath(new URL("../../../../examples/tickets/pack.yaml", import.meta.url));
 const state = () => settingsStore(join(mkdtempSync(join(tmpdir(), "lp-brand-")), "state"));
@@ -158,13 +158,22 @@ describe("where the brand comes from", () => {
 });
 
 describe("the brand in the prompt", () => {
-  it("introduces the assistant by its name, Lenspack by default; the rest of the prompt is the same", async () => {
+  it("introduces the assistant by its name, Lenspack by default; a named one keeps to its name, and the rest is the same", async () => {
     const pack = await loadPack(tickets);
     const [plain] = systemParts(pack, catalogueFrom(pack));
     const [named] = systemParts(pack, catalogueFrom(pack), undefined, undefined, undefined, undefined, { name: "Campaign assistant" });
     expect(plain.startsWith("You are Lenspack, a dashboard assistant. You build and edit a dashboard")).toBe(true);
     expect(named.startsWith("You are Campaign assistant, a dashboard assistant. You build and edit a dashboard")).toBe(true);
-    expect(named.replace("Campaign assistant", "Lenspack")).toBe(plain);
+    // Named: it never calls itself by the product's name or names what it runs on, even when asked.
+    const rule = identityRule("Campaign assistant");
+    expect(rule).toContain('Your only name is "Campaign assistant".');
+    expect(rule).toContain("not even when asked what you are, what you run on, who made you or which model you use");
+    expect(identityRule()).toBe("");
+    expect(identityRule("Lenspack")).toBe("");
+    expect(plain).not.toContain("Your only name is");
+    expect(named.replace(rule, "").replace("Campaign assistant", "Lenspack")).toBe(plain);
+    // Apart from that rule's own "never call yourself Lenspack", the product's name is nowhere in a named prompt.
+    expect(named.replace(rule, "")).not.toMatch(/lenspack/i);
   });
 
   it("is part of the prompt version that saved answers key on", () => {

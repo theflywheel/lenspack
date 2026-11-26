@@ -55,7 +55,7 @@ export function fitSavedLayout(saved: BoardConfig, target: BoardConfig, pack: Pa
       // The very chart is on this board (the layout came from here): it stays as the board has it.
       if (targetLocked.has(id) && target.widgets[id]) widgets[id] = target.widgets[id]!;
       else {
-        skipped.push({ id, title: w.title, why: "it is a chart made in Superset, which Lenspack can't redraw, so it stays with the dashboard it was made on" });
+        skipped.push({ id, title: w.title, why: "it is a chart made in Superset, which the assistant can't redraw, so it stays with the dashboard it was made on" });
         stayed++;
       }
       continue;

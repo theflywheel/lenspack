@@ -1086,7 +1086,7 @@
         },
         {
           "id": "trust-export-share",
-          "label": "Charts exported or boards shared in Lenspack",
+          "label": "Charts exported or boards shared from the chat",
           "decision": "Whether answers travel beyond the person who asked.",
           "source": "client-event",
           "fields": [
@@ -1114,8 +1114,8 @@
         },
         {
           "id": "trust-superset-actions",
-          "label": "Exports and shares in Superset on Lenspack's dashboards",
-          "decision": "Whether dashboards Lenspack built get used.",
+          "label": "Exports and shares in Superset on dashboards the assistant built",
+          "decision": "Whether dashboards the assistant built get used.",
           "source": "superset-logs",
           "fields": [],
           "privacy": [

@@ -7,7 +7,9 @@ switches, and what happens when Lenspack cannot save. It is for Superset admins.
 
 **Settings → Manage → AI assistant** (`/ai-assistant/`) is for Superset admins. It holds the chat and speech
 models, languages, switches, spend, cost per answer and the audit log, and links to the
-[admin panel](../../features/admin-panel.md) (`/lenspack/_superset/admin/`). On Superset 6.1 it has its own page
+[admin panel](../../features/admin-panel.md) (`/lenspack/_superset/admin/`, or below `LENSPACK_PATH`). Its menu
+entry and heading say the assistant's name once it has one (see
+[Naming the assistant](../../features/naming.md#superset)), and so does the page's text. On Superset 6.1 it has its own page
 frame with a link back to Superset, light or dark as Superset is; on 5.0 it sits inside Superset's server-drawn page.
 
 Values set here are kept in `settings.json` beside the board state and win over the config file and the
@@ -84,7 +86,7 @@ When the state directory cannot be written (a full disk, a read-only mount), the
 
 - dashboards still bind and answer, with the links between widgets and charts kept in memory (the log says so
   once) until a save works again;
-- a settings write changes nothing and gets `503` with the reason ("Lenspack can't save settings: the disk is full.
+- a settings write changes nothing and gets `503` with the reason ("The assistant's server can't save settings: the disk is full.
   Nothing was changed.").
 
 Files are written whole (a temporary file renamed into place), and an unreadable board-state file is set aside as

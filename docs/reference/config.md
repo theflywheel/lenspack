@@ -286,11 +286,13 @@ Read by the Superset plugin, in Superset's environment:
 |---|---|---|
 | `LENSPACK_INTERNAL_URL` | `http://lenspack:8795` | where Superset's server reaches Lenspack |
 | `LENSPACK_SERVICE_USER` | `lenspack` | Lenspack's Superset account |
+| `LENSPACK_PATH` | `/lenspack` | where browsers reach the assistant below Superset's path |
+| `LENSPACK_BRAND_NAME` | | the settings page's menu entry and heading |
 | `LENSPACK_TEMPLATES` | | a folder of replacement templates |
 | `LENSPACK_CLICKHOUSE_LABEL_SUFFIX` | `on` | `off` keeps Superset 6.1's own ClickHouse column names |
 
-`LENSPACK_BRAND_NAME` set in `superset_config.py` (a Superset setting, not an environment variable) renames the
-settings page's menu entry and heading; see [Naming the assistant](../features/naming.md#superset).
+The settings page's menu entry and heading take `LENSPACK_BRAND_NAME` from `superset_config.py`, then from
+Superset's environment, then the server's own `brand.name`; see [Naming the assistant](../features/naming.md#superset).
 
 ---
 

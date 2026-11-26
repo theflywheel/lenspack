@@ -28,7 +28,7 @@ const OK: Verdict = { ok: true };
 const no = (code: PersonalRefusal, why: string): Verdict => ({ ok: false, code, why });
 
 const OFF = no("off", "Personal dashboards and saved layouts are turned off on this deployment.");
-const NO_ID = no("no-user-id", "Superset did not say who you are in a way Lenspack can give a dashboard to you (update lenspack_superset.py in Superset), so nothing was made.");
+const NO_ID = no("no-user-id", "Superset did not say who you are in a way the assistant can give a dashboard to you (update lenspack_superset.py in Superset), so nothing was made.");
 
 function room(limits: PersonalLimits, owned: number): Verdict {
   return owned < limits.maxDashboardsPerUser ? OK : no("limit", `You already have ${owned} dashboards of your own, the most this deployment allows (${limits.maxDashboardsPerUser}). Delete one first.`);
