@@ -10,10 +10,18 @@
 //       numbers" call), no agent. A suggested question whose query was checked when it was written
 //       runs that query the same way, the first time too;
 //   T3  the same question with another place or time (a slot): the plan with them swapped in, as T2;
-//   T4  a different wording: one small router call picks a saved question, or none; a match runs as T2/T3.
-// Only turns that ended well are kept (an answer with data, or edits the reviewer accepted), only
-// for the same access scope, pack, definitions, prompt version, board filters, the viewer's filter
-// selections and language rules.
+//   T4  a different wording: one small router call picks a saved answer, or none; a match runs as T2/T3.
+//       Only answers: a board change is never made on a small model's say-so (the full assistant and
+//       the reviewer make it).
+// Only turns that ended well are kept (an answer from at least one query that worked, or edits the
+// reviewer accepted), only for the same access scope, edit rights on the board (and personal-copy
+// offer), pack, definitions, prompt version, board filters, the viewer's filter selections and
+// language rules.
+//
+// The `cache` switch governs all of it: off, nothing is served or kept, no suggestion chip comes
+// from a saved question, the admin lists are empty, no edit is counted and nothing is refreshed.
+// What is on disk stays until an admin clears it (clear()) or it expires; entries whose key can no
+// longer match are dropped at start (prune()).
 //
 // This module knows no host and no HTTP: a host hands it a turn (ReuseTurn), a small model to call
 // (SmallModel) and a store (AnswerStore), and turns what it serves into its own stream. See
@@ -80,7 +88,10 @@ export type ReuseTurn = {
   view?: TurnView;
   /** The host's assistant prompt version: a new one makes every saved answer stale. */
   promptVersion?: string;
+  /** Why the asker may not change this board; absent, they may. Part of an entry's key, as is copy. */
   readOnly?: string;
+  /** The asker is offered a personal copy of the board to change (personal dashboards). */
+  copy?: boolean;
   /** "Ask fresh": the full assistant answers, whatever is saved. */
   fresh?: boolean;
   /** The model the full assistant would have used: what a saved answer is said to save. */
@@ -89,8 +100,10 @@ export type ReuseTurn = {
   small?: SmallModel | null;
   /** What the turn has spent on models so far, US$. */
   spentUsd?: () => number;
-  /** Suggested questions with the query each was checked with: answered by that query directly. */
-  examples?: { question: string; query: Query }[];
+  /** Suggested questions with the query each was checked with (and their other wordings, such as translations): answered by that query directly. */
+  examples?: { question: string; wordings?: string[]; query: Query }[];
+  /** What every entry of this pack shares on this deployment: kept with an entry so a stale one is dropped at start. */
+  base?: ReuseBase;
   onEdit?: BoardToolsOptions["onEdit"];
   /** Hears every data call a replay makes (the host's answer card). */
   onData?: BoardToolsOptions["onData"];
@@ -112,8 +125,20 @@ export type TurnOutcome = {
   costUsd: number;
 };
 
-/** What a saved answer's reply line says (the host sends it as data with the reply). */
-export type ServedNote = { tier: Tier; entry: string; kind: Entry["kind"]; dataAsOf: string; savedUsd: number; question: string; how?: string };
+/**
+ * What a saved answer's reply line says (the host sends it as data with the reply). dataAsOf is when its numbers were
+ * read from the source, not how recent the source's data is. model: the small model that matched the question or
+ * worded the reply, when one did; absent, no model was used.
+ */
+export type ServedNote = { tier: Tier; entry: string; kind: Entry["kind"]; dataAsOf: string; savedUsd: number; question: string; how?: string; model?: string };
+
+/**
+ * What every entry of a pack shares on a deployment, whoever asks: the pack as built (its exclusions with it), the
+ * version of the admin's definitions, the prompt version (the assistant's name with it), the language rules and the
+ * deployment's own row scope. A host hands it with each turn, and all of them at start (prune), so entries kept under
+ * an earlier one, which can never be served again, stop taking space and are not refreshed.
+ */
+export type ReuseBase = { pack: Pack; definitions?: string | null; promptVersion?: string; rules?: unknown; scope?: unknown[] };
 
 /** A turn served from the store: the calls it ran (with results), the reply, and the note for the reader and the audit. */
 export type Served = { tier: Tier; entry: Entry; reply: string; calls: Call[]; note: ServedNote; savedUsd: number; dataAsOf: string; why?: string };
@@ -148,6 +173,9 @@ const packHash = (p: Pack) => {
   if (!h) packHashes.set(p, (h = shortHash(canonical(p))));
   return h;
 };
+const stampOf = (b: ReuseBase) => shortHash(canonical({ pack: packHash(b.pack), definitions: b.definitions ?? null, prompt: b.promptVersion ?? null, rules: b.rules ?? null, scope: b.scope ?? [] }));
+/** An answer from at least one query: the only kind kept (a reply with no query behind it is not a saved answer). */
+const hasQuery = (e: Pick<Entry, "plan">) => e.plan.some((c) => DATA_TOOLS.has(c.tool));
 /** A board's content, without its title: two boards with the same widgets, layout and filters hash the same. */
 export const boardHash = (c: BoardConfig) => shortHash(canonical({ ...c, title: "" }));
 const isApplied = (o: unknown) => !!o && typeof o === "object" && (o as { applied?: unknown }).applied === true;
@@ -178,11 +206,26 @@ export function reuseLayer(o: ReuseOptions) {
     return s.on && s.enabled;
   };
   const warn = (what: string) => (err: unknown) => o.log?.(`reuse: ${what}: ${err instanceof Error ? err.message : String(err)}`);
+  // Each pack's current stamp (ReuseBase), from the host at start and from every turn since: what a refresh checks.
+  const stamps = new Map<string, string>();
+  const stampFor = (t: ReuseTurn) => {
+    if (!t.base) return undefined;
+    const s = stampOf(t.base);
+    stamps.set(t.packName, s);
+    return s;
+  };
+  /** An entry kept under an earlier deployment stamp: never served again. */
+  const stale = (e: Entry) => {
+    const now = stamps.get(e.pack);
+    return !!now && e.stamp !== now;
+  };
 
   const keys = (t: ReuseTurn, kind: "answer" | "edit") => ({
     scope: scopeOf(t.ctx),
     // The board's filters and the viewer's selections are part of an answer's version; an edit's board is its content hash.
-    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : t.view?.tabs?.length ? { view: t.view.tabs } : {}) })),
+    // Whether the asker may change the board (and is offered a copy of it) is too: the assistant is told differently, so an
+    // editor's reply, which may offer or describe a change, is never served to a reader, nor a reader's to an editor.
+    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, rights: { edit: !t.readOnly, copy: !!t.copy }, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : t.view?.tabs?.length ? { view: t.view.tabs } : {}) })),
     replyLang: t.picked ?? "auto",
   });
   const expired = (e: Entry) => !e.pinned && now().getTime() - Date.parse(e.createdAt) > o.settings().ttlHours * 3_600_000;
@@ -236,7 +279,7 @@ export function reuseLayer(o: ReuseOptions) {
   }
 
   /** The reply for fresh results: by template when safe, else one small rewrite call; null when neither works. */
-  async function replyFor(t: ReuseTurn, e: Entry, fresh: Call[], opt: { swap?: [string, string][]; language?: string; noTemplate?: string; noModel?: boolean }): Promise<{ text: string; how: string } | null> {
+  async function replyFor(t: ReuseTurn, e: Entry, fresh: Call[], opt: { swap?: [string, string][]; language?: string; noTemplate?: string; noModel?: boolean }): Promise<{ text: string; how: string; model?: string } | null> {
     const before = e.plan.filter((c) => DATA_TOOLS.has(c.tool)).map((c) => c.output);
     const after = fresh.filter((c) => DATA_TOOLS.has(c.tool)).map((c) => c.output);
     let reply = e.reply;
@@ -250,7 +293,7 @@ export function reuseLayer(o: ReuseOptions) {
     if (opt.noModel || !t.small) return null;
     try {
       const text = await t.small.complete(REWRITE_PROMPT, rewriteMessage({ question: t.question, reply, before, after, language: opt.language }), 1500);
-      return text.trim() ? { text: text.trim(), how: `rewritten by ${t.small.name}: ${why}` } : null;
+      return text.trim() ? { text: text.trim(), how: `rewritten by ${t.small.name}: ${why}`, model: t.small.name } : null;
     } catch (err) {
       warn("rewrite failed")(err);
       return null;
@@ -258,7 +301,8 @@ export function reuseLayer(o: ReuseOptions) {
   }
 
   /** Keeps a turn's work as an entry (or refreshes the one it replaces). */
-  async function keep(t: ReuseTurn, kind: "answer" | "edit", plan: Call[], reply: string, k2: { costUsd: number; model: string; dataAsOf?: string; from?: Entry }) {
+  // count: false when the caller counts the ask itself (served() does, for an entry it serves at once).
+  async function keep(t: ReuseTurn, kind: "answer" | "edit", plan: Call[], reply: string, k2: { costUsd: number; model: string; dataAsOf?: string; from?: Entry; count?: boolean }) {
     const k = keys(t, kind);
     const norm = normalise(t.question);
     const before = kind === "edit" ? boardHash(t.config) : undefined;
@@ -266,6 +310,7 @@ export function reuseLayer(o: ReuseOptions) {
     const old = await store.get(id);
     const slotted = kind === "answer" ? slotsOf(t.question, plan) : null;
     const at = now().toISOString();
+    const stamp = stampFor(t);
     const e: Entry = {
       id,
       kind,
@@ -274,6 +319,7 @@ export function reuseLayer(o: ReuseOptions) {
       scope: k.scope,
       access: accessOf(t.ctx),
       version: k.version,
+      ...(stamp ? { stamp } : {}),
       lang: guessLanguage(t.question, t.picked),
       replyLang: k.replyLang,
       question: old?.question ?? t.question.trim().slice(0, 500),
@@ -293,12 +339,13 @@ export function reuseLayer(o: ReuseOptions) {
       tierCounts: old?.tierCounts ?? emptyTiers(),
       pinned: old?.pinned ?? false,
     };
-    if (!k2.from) asked(e);
+    if (!k2.from && k2.count !== false) asked(e);
     await store.put(e);
     return e;
   }
 
-  async function served(t: ReuseTurn, e: Entry, tier: Tier, calls: Call[], reply: string, dataAsOf: string, how?: string): Promise<Served> {
+  // model: the small model that worded the reply; a router match (T4) always used one.
+  async function served(t: ReuseTurn, e: Entry, tier: Tier, calls: Call[], reply: string, dataAsOf: string, how?: string, usedModel?: string): Promise<Served> {
     e.hits++;
     e.tierCounts[tier]++;
     e.lastHit = now().toISOString();
@@ -310,7 +357,8 @@ export function reuseLayer(o: ReuseOptions) {
     const average = (await store.averageTurn(t.builder)) ?? e.costUsd;
     const savedUsd = Math.max(0, Math.round((average - spent) * 1e6) / 1e6);
     await store.count({ tier, savedUsd });
-    const note: ServedNote = { tier, entry: e.id, kind: e.kind, dataAsOf, savedUsd, question: e.question, ...(how ? { how } : {}) };
+    const model = usedModel ?? (tier === "t4" ? t.small?.name : undefined);
+    const note: ServedNote = { tier, entry: e.id, kind: e.kind, dataAsOf, savedUsd, question: e.question, ...(how ? { how } : {}), ...(model ? { model } : {}) };
     return { tier, entry: e, reply, calls, note, savedUsd, dataAsOf, ...(how ? { why: how } : {}) };
   }
 
@@ -331,9 +379,9 @@ export function reuseLayer(o: ReuseOptions) {
       e.plan = fresh;
       e.reply = reply.text;
       e.dataAsOf = at;
-      return served(t, e, tier, fresh, reply.text, at, reply.how);
+      return served(t, e, tier, fresh, reply.text, at, reply.how, reply.model);
     }
-    const s = await served(t, e, tier, fresh, reply.text, at, reply.how);
+    const s = await served(t, e, tier, fresh, reply.text, at, reply.how, reply.model);
     if (standalone(t.question, t.firstTurn)) await keep(t, "answer", fresh, reply.text, { costUsd: e.costUsd, model: e.model, dataAsOf: at, from: e });
     return s;
   }
@@ -346,17 +394,20 @@ export function reuseLayer(o: ReuseOptions) {
     const results = fresh.map((c) => c.output);
     let reply = "";
     let how = "a suggested question's checked query, said plainly";
+    let model: string | undefined;
     if (t.small) {
       try {
         reply = (await t.small.complete(PHRASE_PROMPT, phraseMessage({ question: t.question, results, language: t.picked && t.picked !== "auto" ? t.picked : undefined }), 600)).trim();
         how = `a suggested question's checked query, said by ${t.small.name}`;
+        if (reply) model = t.small.name;
       } catch (err) {
         warn("phrasing failed")(err);
       }
     }
     if (!reply) reply = plainReply(results[0]);
-    const e = await keep(t, "answer", fresh, reply, { costUsd: 0, model: t.builder });
-    return served(t, e, "t2", fresh, reply, e.dataAsOf, how);
+    // Counted once, as it is served: one click is one ask.
+    const e = await keep(t, "answer", fresh, reply, { costUsd: 0, model: t.builder, count: false });
+    return served(t, e, "t2", fresh, reply, e.dataAsOf, how, model);
   }
 
   /** An edit entry replayed: the same edits on a board with the same content, saved together, or not at all. */
@@ -416,12 +467,18 @@ export function reuseLayer(o: ReuseOptions) {
     return { changed, plan: slotInto(e.plan, slots, next), swap, noTemplate: timeChanged ? "the time period changed, so dates in the reply would" : undefined };
   }
 
-  /** T4: one small call to pair the question with a saved one, and the slot values it names. */
+  /**
+   * T4: one small call to pair the question with a saved answer, and the slot values it names. Answers only: a saved
+   * board change is never offered, so a question that only looks like an earlier "add a chart" never makes one. A
+   * change is replayed only for the same words on a board with the same content (T1); any other wording goes to the
+   * full assistant and its reviewer.
+   */
   async function route(t: ReuseTurn, pool: Entry[], norm: string): Promise<Served | null> {
     if (!t.small || o.settings().router !== "on") return null;
     // Saved questions that share words with this one; one in another language shares none, so it is a candidate anyway.
     const lang = guessLanguage(t.question, t.picked);
     const ranked = pool
+      .filter((e) => e.kind === "answer")
       .map((e) => ({ e, s: Math.max(similarity(norm, e.norm), ...e.variants.map((v) => similarity(norm, normalise(v)))) }))
       .filter((x) => x.s >= 0.15 || x.e.lang !== lang)
       .sort((a, b) => b.s - a.s)
@@ -436,8 +493,7 @@ export function reuseLayer(o: ReuseOptions) {
       return null;
     }
     const e = r?.match ? ranked.find((x) => x.id === r!.match) : undefined;
-    if (!e) return null;
-    if (e.kind === "edit") return lang === e.lang ? edit(t, e, "t4") : null;
+    if (!e || e.kind !== "answer") return null;
     // A slot the router left out keeps its value only if the question still says it.
     const texts = (e.slots ?? []).map((s) => r!.slots[slotName(s)] ?? (` ${norm} `.includes(` ${s.text} `) ? s.text : "\u0000"));
     if (texts.includes("\u0000")) return null;
@@ -466,7 +522,8 @@ export function reuseLayer(o: ReuseOptions) {
       const since = now().getTime() - 14 * 86_400_000;
       const groups = new Map<string, Entry[]>();
       for (const e of await store.entries()) {
-        if (e.kind !== "answer" || expired(e) || (pack && e.pack !== pack)) continue;
+        // An entry kept under an earlier pack, prompt, scope or definitions is never served again: not refreshed either.
+        if (e.kind !== "answer" || expired(e) || stale(e) || (pack && e.pack !== pack)) continue;
         const k = [e.pack, e.board, e.scope].join("\u0000");
         groups.set(k, [...(groups.get(k) ?? []), e]);
       }
@@ -559,6 +616,7 @@ export function reuseLayer(o: ReuseOptions) {
     /** Before the agent: a saved answer for this turn, or null (the full assistant answers). Never throws. */
     async serve(t: ReuseTurn): Promise<Served | null> {
       if (!on() || t.fresh) return null;
+      stampFor(t);
       try {
         // What the board shows, for "a chart would answer this" (chart candidates).
         const info = await store.board(t.board);
@@ -573,8 +631,8 @@ export function reuseLayer(o: ReuseOptions) {
           const s = exact.kind === "edit" ? await edit(t, exact, "t1") : await answer(t, exact, "t2");
           if (s) return s;
         }
-        // A suggested question asked for the first time: its checked query, no agent.
-        const ex = t.examples?.find((x) => normalise(x.question) === norm);
+        // A suggested question asked for the first time, in any of its wordings (a chip in another language): its checked query, no agent.
+        const ex = t.examples?.find((x) => [x.question, ...(x.wordings ?? [])].some((w) => normalise(w) === norm));
         if (ex && !exact) {
           const s = await example(t, ex);
           if (s) return s;
@@ -615,9 +673,10 @@ export function reuseLayer(o: ReuseOptions) {
         // An answer: only calls that read data or the pack, and at least the data calls succeeded.
         if (calls.some((c) => !DATA_TOOLS.has(c.tool) && !PACK_TOOLS.has(c.tool))) return;
         const plan = calls.filter((c) => DATA_TOOLS.has(c.tool) && !failed(c.output));
-        // Every data call failed (refused, an unknown key, the source down): the reply answers nothing, and replaying
-        // it would repeat a refusal or an outage with no query run. Not kept.
-        if (!plan.length && calls.some((c) => DATA_TOOLS.has(c.tool))) return;
+        // No query worked: none ran (a reply from the model's own words, a pack lookup, an "I can't"), or every one
+        // failed (refused, an unknown key, the source down). There is nothing to read again, and replaying it would
+        // repeat words with no numbers behind them. Not kept.
+        if (!plan.length) return;
         if (JSON.stringify(plan).length > MAX_PLAN_CHARS) return;
         await keep(t, "answer", plan, reply, { costUsd: r.costUsd, model: t.builder });
       } catch (e) {
@@ -638,7 +697,7 @@ export function reuseLayer(o: ReuseOptions) {
 
     /** Every audit event: a change to a board counts toward its edit frequency (settled boards). */
     noteEvent(e: { board?: string; action: string; outcome: string; detail?: string }) {
-      if (!e.board || e.outcome !== "ok") return;
+      if (!on() || !e.board || e.outcome !== "ok") return;
       const isEdit = ["ops", "layout", "revert", "chat-save"].includes(e.action) || (e.action === "chat-edit" && !String(e.detail ?? "").includes("draft"));
       if (!isEdit) return;
       const board = e.board;
@@ -649,14 +708,15 @@ export function reuseLayer(o: ReuseOptions) {
       })().catch(warn("could not count the edit"));
     },
 
-    /** The most-asked questions on a board, for the chat's suggestion chips; scope null: every scope (admins). */
+    /** The most-asked questions on a board, for the chat's suggestion chips; scope null: every scope (admins). None while the cache is off. */
     async suggestions(q: { board: string; pack?: string; scope?: KeptCtx | null; lang?: string | null; limit?: number }): Promise<string[]> {
+      if (!on()) return [];
       const scope = q.scope ? scopeOf(q.scope) : null;
       const since = now().getTime() - 30 * 86_400_000;
       const lang = q.lang && q.lang !== "auto" ? q.lang.slice(0, 2) : null;
       const seen = new Set<string>();
       return (await store.entries())
-        .filter((e) => e.kind === "answer" && e.board === q.board && (!q.pack || e.pack === q.pack) && (!scope || e.scope === scope) && (!lang || e.lang === lang) && !expired(e))
+        .filter((e) => e.kind === "answer" && e.board === q.board && (!q.pack || e.pack === q.pack) && (!scope || e.scope === scope) && (!lang || e.lang === lang) && !expired(e) && !stale(e))
         .map((e) => ({ e, n: e.asked.filter((x) => x >= since).length }))
         .filter((x) => x.n >= 2 || x.e.pinned)
         .sort((a, b) => Number(b.e.pinned) - Number(a.e.pinned) || b.n - a.n || (b.e.lastHit ?? "").localeCompare(a.e.lastHit ?? ""))
@@ -665,13 +725,20 @@ export function reuseLayer(o: ReuseOptions) {
         .slice(0, q.limit ?? 5);
     },
 
-    /** For the admin API: the stats, the last refresh, and every entry. */
+    /**
+     * For the admin API: the stats, the last refresh, and every entry. While the cache is off no entry is listed (on:
+     * false), only how many are still on disk (stored), so the admin can clear them.
+     */
     async list() {
       const week = now().getTime() - 7 * 86_400_000;
+      const all = await store.entries();
+      if (!on()) return { on: false, stored: all.length, stats: await store.stats(), prewarm: lastPrewarm, entries: [] };
       return {
+        on: true,
+        stored: all.length,
         stats: await store.stats(),
         prewarm: lastPrewarm,
-        entries: (await store.entries())
+        entries: all
           .sort((a, b) => (b.lastHit ?? b.createdAt).localeCompare(a.lastHit ?? a.createdAt))
           .map((e) => ({
             id: e.id,
@@ -698,15 +765,36 @@ export function reuseLayer(o: ReuseOptions) {
       return true;
     },
     evict: (id: string) => store.delete(id),
+    /** An admin's "Clear saved answers": every entry goes, off the disk at once, whether the cache is on or off. How many went. */
+    clear: () => store.clear(),
+
+    /**
+     * At start, with each hosted pack's ReuseBase: drops the entries that can never be served again (kept under an
+     * earlier pack, definitions, prompt version, language rules or deployment scope, or before that was recorded),
+     * expired ones, and answers with no query behind them. Entries of a pack not named are left alone (a pack that
+     * failed to load keeps its answers). How many went.
+     */
+    async prune(bases: Record<string, ReuseBase>): Promise<number> {
+      for (const [pack, b] of Object.entries(bases)) stamps.set(pack, stampOf(b));
+      let n = 0;
+      for (const e of await store.entries()) {
+        const current = stamps.get(e.pack);
+        const gone = expired(e) || (bases[e.pack] && e.stamp !== current) || (e.kind === "answer" && !hasQuery(e));
+        if (gone && (await store.delete(e.id))) n++;
+      }
+      if (n) o.log?.(`reuse: dropped ${n} saved answer(s) that can no longer be served`);
+      return n;
+    },
 
     /** Questions asked often that no chart on their board answers: candidates for a new chart. */
     async chartCandidates(q: { minAsks?: number; days?: number } = {}) {
+      if (!on()) return [];
       const since = now().getTime() - (q.days ?? 14) * 86_400_000;
       const min = q.minAsks ?? 3;
       const boards = await store.boards();
       const out: { id: string; board: string; question: string; variants: string[]; asks: number; query: unknown; lastHit: string | null }[] = [];
       for (const e of await store.entries()) {
-        if (e.kind !== "answer") continue;
+        if (e.kind !== "answer" || stale(e)) continue;
         const asks = e.asked.filter((x) => x >= since).length;
         const first = e.plan.find((c) => c.tool === "query");
         const query = first && (first.output as { query?: unknown } | undefined)?.query;
@@ -719,6 +807,7 @@ export function reuseLayer(o: ReuseOptions) {
 
     /** How often each board was changed: a board with no change in a week is settled. */
     async boards() {
+      if (!on()) return [];
       const t = now().getTime();
       return Object.entries(await store.boards())
         .filter(([, b]) => b.edits.length)

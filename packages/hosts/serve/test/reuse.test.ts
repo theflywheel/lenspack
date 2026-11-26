@@ -2,7 +2,7 @@
 // are stubs (a builder that queries and then reads the number it got back, a router that answers
 // from a script), the data the synthetic campaign example on DuckDB, scaled on demand to stand for
 // data that changed since.
-import { mkdtempSync } from "node:fs";
+import { chmodSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,7 +59,7 @@ describe("answer and plan reuse", () => {
   const data = { factor: 1 };
   // The builder plays these steps in order; the router answers with these.
   const script: { steps: Step[]; calls: number; reviews: number; verdicts: unknown[] } = { steps: [], calls: 0, reviews: 0, verdicts: [] };
-  const router: { answers: ((system: string, user: string) => string)[]; calls: number; seen: string[] } = { answers: [], calls: 0, seen: [] };
+  const router: { answers: ((system: string, user: string) => string)[]; calls: number; seen: string[]; users: string[] } = { answers: [], calls: 0, seen: [], users: [] };
 
   beforeAll(async () => {
     const db = await openDuckdb(join(dir, "campaign.duckdb"));
@@ -101,6 +101,7 @@ describe("answer and plan reuse", () => {
         const system = prompt.filter((m) => m.role === "system").map((m) => String(m.content)).join("");
         const user = JSON.stringify(prompt.filter((m) => m.role === "user"));
         router.seen.push(system.slice(0, 40));
+        router.users.push(user);
         const answer = router.answers.shift()?.(system, user) ?? '{"match": null}';
         return { content: [{ type: "text", text: answer }], finishReason: { unified: "stop", raw: "stop" }, usage, warnings: [] };
       },
@@ -118,6 +119,7 @@ describe("answer and plan reuse", () => {
       const user = String(req.headers["x-user"] ?? "a");
       const kept = user === "kept" || user === "granted" ? { hiddenEntities: ["project"] } : {};
       const granted = user === "granted" ? { boardEntities: { [grantedOn.board]: { entities: ["project"] } } } : {};
+      if (user === "reader") return { user, edit: false, readOnly: "You may only view this dashboard." };
       return { user, edit: true, maintain: true, ...(user === "north" ? { scope: [{ dimension: "province", op: "eq" as const, value: "Northern" }] } : {}), ...kept, ...granted };
     };
     appOptions = { providers, roles: { router: "router" }, reuse, access: access as never };
@@ -262,6 +264,9 @@ describe("answer and plan reuse", () => {
     expect(routed.router).toBe(1);
     expect(routed.saved.tier).toBe("t4");
     expect(routed.reply).toBe(first.reply);
+    // The reply line can say truly that a small model matched it; an exact replay says no model ran.
+    expect(routed.saved.model).toBe("router");
+    expect((await ask(b, "How many households were delivered?")).saved).not.toHaveProperty("model");
     // In another language: the saved question shares no words with it, but is still offered to the router,
     // and the reply is rewritten in the question's language.
     router.answers.push(
@@ -315,6 +320,28 @@ describe("answer and plan reuse", () => {
     const sug = async (user: string) => (await (await fetch(`${base}/${b}/suggestions`, { headers: { "x-user": user } })).json()).suggestions;
     expect(await sug("a")).toEqual(["How many households were delivered?"]);
     expect(await sug("north")).toEqual([]);
+  });
+
+  it("keys saved answers on edit rights: an editor's reply never reaches a reader, nor a reader's an editor", async () => {
+    const b = await newBoard();
+    answers("", {}, (n) => `${n.toLocaleString("en-US")} households were delivered. I can add this as a KPI.`);
+    const editor = await ask(b, "How many households were delivered?", { user: "a" });
+    expect(editor.model).toBe(2);
+    // A reader with the same data access: not the editor's saved reply; the assistant answers, told they cannot edit.
+    answers();
+    const reader = await ask(b, "How many households were delivered?", { user: "reader" });
+    expect(reader.saved).toBeUndefined();
+    expect(reader.model).toBe(2);
+    expect(reader.reply).not.toContain("KPI");
+    // Each gets their own from then on.
+    expect(await ask(b, "How many households were delivered?", { user: "reader" })).toMatchObject({ model: 0, reply: reader.reply, saved: { tier: "t1" } });
+    expect(await ask(b, "How many households were delivered?", { user: "a" })).toMatchObject({ model: 0, reply: editor.reply, saved: { tier: "t1" } });
+    // A reader who is offered a personal copy of the board is told so: not the same answer either.
+    const copying = await serverWith({ personal: () => ({ offersCopy: true }) as never });
+    answers();
+    const offered = await ask(b, "How many households were delivered?", { user: "reader", base: copying });
+    expect(offered.saved).toBeUndefined();
+    expect(offered.model).toBe(2);
   });
 
   it("keys saved answers on a board grant: never served on another board, or to a caller without the same grant", async () => {
@@ -537,11 +564,153 @@ describe("answer and plan reuse", () => {
       expect(chip).toMatchObject({ model: 0, router: 1, reply: "That many households were delivered.", saved: { tier: "t2" } });
       expect(chip.saved.how).toMatch(/checked query, said by router/);
       expect(chip.parts.find((p) => p.type === "tool-output-available")?.output).toMatchObject({ ok: true, rows: [{ value: expect.any(Number) }] });
+      // One click is one ask: not yet a most-asked chip (that takes two), nor a chart candidate.
+      expect((await reuse.store.entries()).find((e) => e.board === b)!.asked).toHaveLength(1);
+      expect(await reuse.suggestions({ board: b, scope: null })).toEqual([]);
       // Kept like any answer: the next ask is T1.
       expect((await ask(b, "how many households were delivered so far")).saved.tier).toBe("t1");
     } finally {
       pack.examples = was;
     }
+  });
+
+  it("a suggested question clicked in another language runs the same checked query", async () => {
+    const b = await newBoard();
+    const pack = host.pack as { examples: { question: string; wordings?: string[]; query: unknown }[] };
+    const was = pack.examples;
+    pack.examples = [{ question: "Households delivered to date?", wordings: ["Ménages livrés à ce jour ?", "Domicílios entregues até hoje?"], query: { kind: "value", measure: "households_delivered" } }];
+    try {
+      router.answers.push((system, user) => (system.startsWith("You answer a dashboard question") && user.includes("Ménages livrés") ? "Des ménages ont été livrés." : "?"));
+      const fr = await ask(b, "Ménages livrés à ce jour ?");
+      expect(fr).toMatchObject({ model: 0, router: 1, reply: "Des ménages ont été livrés.", saved: { tier: "t2", model: "router" } });
+      expect(fr.parts.find((p) => p.type === "tool-output-available")?.output).toMatchObject({ ok: true, query: { kind: "value", measure: "households_delivered" } });
+      const pt = await ask(b, "domicilios entregues ate hoje");
+      expect(pt).toMatchObject({ model: 0, saved: { tier: "t2" } });
+    } finally {
+      pack.examples = was;
+    }
+  });
+
+  it("the small-model match never replays a board change: only the same words on the same board content do", async () => {
+    const b = await newBoard();
+    const kpi = { kind: "kpi", title: "Delivered so far", query_kind: "value", measure: "households_delivered", place: "top", width: "quarter" };
+    script.steps.push(toolStep("add_widget", { id: "so_far", ...kpi }), sayStep("I added the delivered-so-far KPI."));
+    await ask(b, "Add a delivered so far KPI at the top");
+    const saved = (await reuse.store.entries()).find((e) => e.kind === "edit" && e.question === "Add a delivered so far KPI at the top")!;
+    expect(saved).toBeDefined();
+    await host.store.revertTo(b, 1);
+    // An answer on the same board, so the router has something to look at.
+    answers();
+    await ask(b, "How many households were delivered?");
+    // A wording the router might pair with the saved change: it is not offered, and the router's pick of it is ignored.
+    const calls = router.users.length;
+    router.answers.push(() => JSON.stringify({ match: saved.id, slots: {} }));
+    script.steps.push(sayStep("Which measure should the KPI show?"));
+    const reworded = await ask(b, "Could you put a so-far delivered KPI up top");
+    expect(router.users.slice(calls).join("")).not.toContain(saved.id);
+    expect(reworded.saved).toBeUndefined();
+    expect(reworded.model).toBe(1);
+    expect(Object.keys((await host.store.get(b))!.config.widgets)).toEqual([]);
+    // The same words on the same board content still replay it, as before.
+    expect((await ask(b, "add a delivered so far KPI at the top")).saved).toMatchObject({ tier: "t1", kind: "edit" });
+  });
+
+  it("a turn that ran no query is not kept", async () => {
+    const b = await newBoard();
+    script.steps.push(sayStep("Households are homes the teams visit."));
+    expect((await ask(b, "What does a household mean here?")).model).toBe(1);
+    script.steps.push(sayStep("Households are homes the teams visit."));
+    const again = await ask(b, "What does a household mean here?");
+    expect(again.saved).toBeUndefined();
+    expect(again.model).toBe(1);
+    expect((await reuse.store.entries()).some((e) => e.question === "What does a household mean here?")).toBe(false);
+  });
+
+  it("at start, entries that can no longer match are dropped, and a refresh skips them", async () => {
+    for (const e of await reuse.store.entries()) await reuse.store.delete(e.id);
+    const b = await newBoard();
+    answers();
+    await ask(b, "How many households were delivered?");
+    const current = (await reuse.store.entries()).find((e) => e.board === b)!;
+    expect(current.stamp).toEqual(expect.any(String));
+    // Kept under an earlier prompt, pack, scope or definitions; before stamps were kept; with no query; another pack's.
+    await reuse.store.put({ ...current, id: "older", stamp: "earlier" });
+    await reuse.store.put({ ...current, id: "unstamped", stamp: undefined });
+    await reuse.store.put({ ...current, id: "noquery", plan: [] });
+    await reuse.store.put({ ...current, id: "elsewhere", pack: "another-pack", stamp: "earlier" });
+    // A refresh before the restart already skips the stale ones (this pack's stamp is known from the turn).
+    // Of this pack's: the current one and the one with no query (dropped at start, below).
+    expect((await reuse.prewarm(host.name))!.entries).toBe(2);
+    // A restart: the host hands each pack's base at start.
+    await serverWith({});
+    for (let i = 0; i < 100 && (await reuse.store.get("older")); i++) await new Promise((r) => setTimeout(r, 10));
+    const ids = (await reuse.store.entries()).map((e) => e.id).sort();
+    expect(ids).toEqual([current.id, "elsewhere"].sort());
+    // A changed deployment scope (superset.yaml scope:) is a new base: what was kept before goes at the next start.
+    const scoped = { ...host, ctx: { ...host.ctx, scope: [{ dimension: "province", op: "eq" as const, value: "Northern" }] } };
+    createApp([scoped], appOptions);
+    for (let i = 0; i < 100 && (await reuse.store.get(current.id)); i++) await new Promise((r) => setTimeout(r, 10));
+    expect(await reuse.store.get(current.id)).toBeUndefined();
+  });
+
+  it("the cache switch governs everything: off, no chips, no admin lists, no edit counting, no refresh; Clear empties the store", async () => {
+    const b = await newBoard();
+    answers();
+    for (let i = 0; i < 3; i++) await ask(b, "How many households were delivered?");
+    expect(await reuse.suggestions({ board: b, scope: null })).not.toEqual([]);
+    const audited: { action: string; outcome: string; detail?: string }[] = [];
+    const routes = cacheRoutes({ prefix: "/_x", reuse, adminName: "admin", audit: { audit: (e) => void audited.push(e) } });
+    const call = async (method: string, path: string) => {
+      let status = 0;
+      let body: any;
+      const res = { headersSent: false, writeHead: (s: number) => ((status = s), res), setHeader: () => undefined, end: (t: string) => (body = JSON.parse(t)) } as never;
+      await routes({ method } as never, res, new URL(`http://x${path}`), { user: "u", edit: true, roles: ["admin"] } as never);
+      return { status, body };
+    };
+    settings = { on: false };
+    const sug = async (user: string) => (await (await fetch(`${base}/${b}/suggestions`, { headers: { "x-user": user } })).json()).suggestions;
+    expect(await sug("a")).toEqual([]);
+    expect(await reuse.suggestions({ board: b, scope: null })).toEqual([]);
+    expect(await reuse.chartCandidates()).toEqual([]);
+    expect(await reuse.boards()).toEqual([]);
+    const list = await call("GET", "/_x/cache");
+    expect(list.body).toMatchObject({ on: false, entries: [] });
+    expect(list.body.stored).toBeGreaterThan(0);
+    expect((await call("GET", `/_x/cache/suggestions?board=${b}`)).body.suggestions).toEqual([]);
+    // Edits are not counted while it is off.
+    const before = (await reuse.store.board(b)).edits.length;
+    reuse.noteEvent({ board: b, action: "ops", outcome: "ok" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await reuse.store.board(b)).edits).toHaveLength(before);
+    // No refresh, by schedule, data change or an admin.
+    settings = { on: false, prewarm: { enabled: true, times: ["00:00"], timeZone: "UTC", topN: 10, maxUsd: 0 } };
+    expect(reuse.tick()).toBeNull();
+    expect(await reuse.prewarm()).toBeNull();
+    expect(await reuse.dataChanged(null, 0)).toBeNull();
+    // Switching off does not delete; Clear does, at once, on or off, and is audited.
+    expect((await reuse.store.entries()).length).toBe(list.body.stored);
+    const cleared = await call("POST", "/_x/cache/clear");
+    expect(cleared).toEqual({ status: 200, body: { ok: true, removed: list.body.stored } });
+    expect(await reuse.store.entries()).toEqual([]);
+    expect(audited).toContainEqual(expect.objectContaining({ action: "cache clear", outcome: "ok", detail: `${list.body.stored} removed` }));
+    expect((await call("GET", "/_x/cache")).body).toMatchObject({ on: false, stored: 0 });
+  });
+
+  it("reuse.json is readable by the server's user only, and an older file is put right at start", async () => {
+    const file = join(dir, "modes", "reuse.json");
+    const one = reuseLayer({ timer: false, store: file, settings: () => ({ ...CACHE_DEFAULTS, on: true }), now: () => clock.now });
+    await one.store.count({});
+    await one.flush();
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    chmodSync(file, 0o644);
+    reuseLayer({ timer: false, store: file, settings: () => ({ ...CACHE_DEFAULTS, on: true }), now: () => clock.now });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // A temporary file left by a crash with a wider mode does not carry it over.
+    writeFileSync(`${file}.${process.pid}.tmp`, "{}", { mode: 0o644 });
+    const two = reuseLayer({ timer: false, store: file, settings: () => ({ ...CACHE_DEFAULTS, on: true }), now: () => clock.now });
+    await two.store.count({});
+    await two.flush();
+    expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it("saved answers skip the queue; a full queue turns a model turn away with the suggestions", async () => {

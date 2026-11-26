@@ -1,7 +1,8 @@
 // The overlay's suggested questions (the chat's chips), in the languages the deployment wrote.
 // Each example in the config is a question and the query that answers it; the question may be one
 // string or a map by language ({en, fr, hi}), so every translation answers with the same query.
-// The pack sees only the English (or first) wording, as a few-shot example for the model.
+// The model sees only the English (or first) wording, as a few-shot example; the other languages' words go
+// into the pack as the example's wordings, so asking one of them runs the same checked query.
 
 export type ExampleQuestion = string | Record<string, string>;
 
@@ -35,7 +36,15 @@ export function examplesFor(byLang: Record<string, string[]>, lang: string | nul
   return byLang[l] ?? byLang.en ?? [];
 }
 
-/** Examples with each question as one string, for the pack. */
-export function examplesForPack<T extends { question?: unknown }>(examples: T[]): (T & { question: string })[] {
-  return examples.map((e) => ({ ...e, question: questionIn(e.question) ?? "" }));
+/**
+ * Examples with each question as one string, for the pack, and its other languages' words as wordings: a chip
+ * clicked in French, Hindi or Portuguese is answered by the same checked query as the English one.
+ */
+export function examplesForPack<T extends { question?: unknown }>(examples: T[]): (Omit<T, "question"> & { question: string; wordings?: string[] })[] {
+  return examples.map((e) => {
+    const question = questionIn(e.question) ?? "";
+    const all = e.question && typeof e.question === "object" ? Object.values(e.question as Record<string, unknown>) : [];
+    const wordings = [...new Set(all.filter((v): v is string => typeof v === "string" && !!v.trim()).map((v) => v.trim()))].filter((v) => v !== question && v.length <= 200).slice(0, 10);
+    return { ...e, question, ...(wordings.length ? { wordings } : {}) };
+  });
 }
