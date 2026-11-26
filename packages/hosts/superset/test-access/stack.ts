@@ -375,7 +375,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
         const r = docker(["exec", containers[1]!, "sh", "-c", on ? "rm -f /tmp/lp-dashboard-rbac-off" : "touch /tmp/lp-dashboard-rbac-off"]);
         if (r.status) throw new Error(`could not turn dashboard roles ${on ? "on" : "off"}: ${r.stderr.trim()}`);
       },
-      as: (user) => new Session(superset, user).signIn(secrets.LP_USER_PASSWORD),
+      as: (user) => new Session(superset, user, appRoot).signIn(secrets.LP_USER_PASSWORD),
       restartLenspack: async (extraYaml = []) => {
         await stopLenspack();
         await startLenspack(extraYaml);
