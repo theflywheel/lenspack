@@ -1,0 +1,94 @@
+pack: lenspack_usage
+version: 1
+description: How people use this Lenspack server, one row per chat turn. Users are named as they sign in, so this pack is for admins only.
+instructions: >-
+  Each row of usage_turns is one chat turn: one question or instruction and the assistant's reply. Rates (answer rate, failure rate,
+  saved-answer rate, spoken share) are one count over another, computed with the ratio step, for example failed ratio turns. Costs are
+  estimates from list prices, in US dollars. Reply time is the seconds from the question to the end of the reply. Active users are people
+  (distinct users) over a day or a week. A turn on the pack "usage" was asked here, about usage. Feedback, transcript edits and other
+  events are in usage_events, one row per event, joined to the turn they are about. Roles are in usage_roles, one row per role a turn's
+  user had.
+entities:
+  usage_turns:
+    source: usage_turns
+    grain: one row per chat turn
+    time: asked_at
+  usage_features:
+    source: usage_features
+    grain: one row per feature a chat turn used
+    time: asked_at
+    joins:
+      - { to: usage_turns, on: usage_features.turn_id = usage_turns.id, type: many_to_one }
+  usage_roles:
+    source: usage_roles
+    grain: one row per role the user of a chat turn had
+    time: asked_at
+    joins:
+      - { to: usage_turns, on: usage_roles.turn_id = usage_turns.id, type: many_to_one }
+  usage_events:
+    source: usage_events
+    grain: one row per event on a chat turn (feedback, a transcript edit, a quick reply, an export)
+    time: asked_at
+    joins:
+      - { to: usage_turns, on: usage_events.turn_id = usage_turns.id, type: many_to_one }
+dimensions:
+  - { key: day, entity: usage_turns, sql: asked_at, type: time, grains: [hour, day, week, month], label: Day }
+  - { key: hour, entity: usage_turns, sql: hour, type: number, label: Hour of the day (UTC) }
+  - { key: user, entity: usage_turns, sql: user_name, label: User, synonyms: [person, who] }
+  - { key: session, entity: usage_turns, sql: chat_session, label: Chat session }
+  - { key: board, entity: usage_turns, sql: board, label: Board, synonyms: [dashboard] }
+  - { key: pack, entity: usage_turns, sql: pack, label: Pack }
+  - { key: datasets, entity: usage_turns, sql: datasets, label: Datasets read }
+  - { key: campaign, entity: usage_turns, sql: campaign, label: Campaign }
+  - { key: campaign_type, entity: usage_turns, sql: campaign_type, label: Campaign type }
+  - { key: country, entity: usage_turns, sql: country, label: Country }
+  - { key: model, entity: usage_turns, sql: model, label: Model }
+  - { key: language, entity: usage_turns, sql: language, label: Language }
+  - { key: input, entity: usage_turns, sql: input, type: enum, label: Typed or spoken, synonyms: [voice] }
+  - { key: kind, entity: usage_turns, sql: kind, type: enum, label: Answer or edit, hint: edit when the turn saved a change to a board, answer otherwise. }
+  - { key: answer_kind, entity: usage_turns, sql: answer_kind, type: enum, label: Kind of answer, hint: "direct (a figure read from the data), derived (worked out from figures), chart (a chart drawn or changed), meta (about the tool or the data, no figure)." }
+  - { key: outcome, entity: usage_turns, sql: outcome, type: enum, label: Outcome, hint: "answered, declined, failed, or clarify (the assistant asked which reading was meant)." }
+  - { key: cache_tier, entity: usage_turns, sql: cache_tier, label: Saved-answer tier, hint: The tier of saved answers that answered the turn; empty when none did. }
+  - { key: question, entity: usage_turns, sql: question, label: Question asked }
+  - { key: device, entity: usage_turns, sql: device, label: Device }
+  - { key: network, entity: usage_turns, sql: network, label: Network }
+  - { key: feature, entity: usage_features, sql: feature, label: Feature used }
+  - { key: role, entity: usage_roles, sql: role, label: Role }
+  - { key: event, entity: usage_events, sql: event, label: Event }
+  - { key: event_value, entity: usage_events, sql: value, label: Event value, hint: up or down for feedback, chosen or ignored for a quick reply. }
+  - { key: reason, entity: usage_events, sql: reason, label: Feedback reason }
+measures:
+  - { key: turns, entity: usage_turns, agg: count, label: Turns, synonyms: [chats, requests] }
+  - { key: questions, entity: usage_turns, agg: count, filter: "kind = 'answer'", label: Questions answered, hint: Turns that changed no board. }
+  - { key: edits, entity: usage_turns, agg: count, filter: "kind = 'edit'", label: Board edits, hint: Turns that saved a change to a board. }
+  - { key: answered, entity: usage_turns, agg: count, filter: "outcome = 'answered'", label: Answered turns }
+  - { key: failed, entity: usage_turns, agg: count, filter: "outcome = 'failed'", label: Failed turns, synonyms: [errors] }
+  - { key: people, entity: usage_turns, agg: count_distinct, sql: user_name, label: Active users, synonyms: [users, people] }
+  - { key: sessions, entity: usage_turns, agg: count_distinct, sql: chat_session, label: Chat sessions }
+  - { key: cost_usd, entity: usage_turns, agg: sum, sql: usd, label: Cost (US$), synonyms: [spend, money] }
+  - { key: model_usd, entity: usage_turns, agg: sum, sql: model_usd, label: Model cost (US$) }
+  - { key: review_usd, entity: usage_turns, agg: sum, sql: review_usd, label: Reviewer cost (US$) }
+  - { key: speech_usd, entity: usage_turns, agg: sum, sql: speech_usd, label: Speech-to-text cost (US$) }
+  - { key: tokens_in, entity: usage_turns, agg: sum, sql: tokens_in, format: compact, label: Tokens in }
+  - { key: tokens_out, entity: usage_turns, agg: sum, sql: tokens_out, format: compact, label: Tokens out }
+  - { key: cache_hits, entity: usage_turns, agg: sum, sql: cache_hit, label: Answered from saved answers, synonyms: [cache hits] }
+  - { key: saved_usd, entity: usage_turns, agg: sum, sql: saved_usd, label: Saved by saved answers (US$) }
+  - { key: refusals, entity: usage_turns, agg: sum, sql: refused, label: Turns with a refusal, hint: The pack or the server refused part of what was asked. }
+  - { key: declines, entity: usage_turns, agg: count, filter: "outcome = 'declined'", label: Turns declined }
+  - { key: reviewer_runs, entity: usage_turns, agg: sum, sql: reviewed, label: Reviewer checks }
+  - { key: material_findings, entity: usage_turns, agg: sum, sql: material, label: Material reviewer findings }
+  - { key: fix_rounds, entity: usage_turns, agg: sum, sql: fix_round, label: Fix rounds }
+  - { key: clarifying_asked, entity: usage_turns, agg: count, filter: "outcome = 'clarify'", label: Clarifying questions asked }
+  - { key: questions_logged, entity: usage_turns, agg: sum, sql: logged, label: Open questions logged }
+  - { key: rephrased, entity: usage_turns, agg: sum, sql: rephrase, label: Rephrased questions, hint: A question asked again in other words soon after. }
+  - { key: reasked_after_voice, entity: usage_turns, agg: sum, sql: reask_voice, label: Typed again after speaking }
+  - { key: reply_median_s, entity: usage_turns, agg: median, sql: reply_s, format: duration, label: Median reply time (s) }
+  - { key: reply_p95_s, entity: usage_turns, agg: p95, sql: reply_s, format: duration, label: 95th percentile reply time (s), synonyms: [p95] }
+  - { key: first_token_median_s, entity: usage_turns, agg: median, sql: first_token_s, format: duration, label: Median time to first words (s) }
+  - { key: spoken, entity: usage_turns, agg: count, filter: "input = 'spoken'", label: Spoken questions }
+  - { key: speech_seconds, entity: usage_turns, agg: sum, sql: speech_s, format: duration, label: Speech seconds }
+  - { key: feature_uses, entity: usage_features, agg: count, label: Feature uses }
+  - { key: role_people, entity: usage_roles, agg: count_distinct, sql: user_name, label: Active users by role }
+  - { key: events, entity: usage_events, agg: count, label: Events }
+  - { key: thumbs_down, entity: usage_events, agg: count, filter: "event = 'feedback' AND value = 'down'", label: Thumbs down }
+  - { key: thumbs_up, entity: usage_events, agg: count, filter: "event = 'feedback' AND value = 'up'", label: Thumbs up }

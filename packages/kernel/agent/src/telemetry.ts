@@ -1,5 +1,7 @@
 import { type DeploymentContext, type Identity, contextFor, reportsOn } from "@lenspack/policy";
 
+import { CORE_FIELDS, type SwitchValues, keptFields, onlyKept, signalDefaults, signalForEvent, signalsOn } from "./signals";
+
 // Usage telemetry: one flat record per chat turn, per transcription and per event a client reports (a thumbs up or
 // down, an answer left before it finished, a transcript the user corrected). It answers how the assistant is used:
 // by whom (the user and the role names the host signed), where (board, pack, datasets, and the campaign and country
@@ -10,11 +12,14 @@ import { type DeploymentContext, type Identity, contextFor, reportsOn } from "@l
 // gives it a TelemetryStore (a file today, a database tomorrow) and calls a few hooks on each turn (TurnCapture).
 // Nothing here models an organisation: what a board, dataset or role belongs to is the deployment's context
 // (@lenspack/policy). Secrets never reach a record.
+//
+// What is recorded follows the deployment's switches (signals.ts): a record keeps only the fields of the signals
+// that are on, and a client event no signal keeps is not written. The switches are read on every record.
 
-export const TELEMETRY_VERSION = 1;
+export const TELEMETRY_VERSION = 2;
 
 export type TurnKind = "direct" | "derived" | "chart" | "meta";
-export type TurnOutcome = "answered" | "declined" | "failed" | "clarify";
+export type RecordedOutcome = "answered" | "declined" | "failed" | "clarify";
 export type DeviceClass = "mobile" | "tablet" | "desktop";
 export type NetworkType = "slow-2g" | "2g" | "3g" | "4g";
 export type ViewportClass = "narrow" | "medium" | "wide";
@@ -59,7 +64,7 @@ export type TurnRecord = {
   /** Word-level edits between the transcript and the question sent (0: sent as heard). */
   transcriptEditDistance: number | null;
   kind: TurnKind;
-  outcome: TurnOutcome;
+  outcome: RecordedOutcome;
   outcomeReason: string | null;
   toolCalls: number;
   queries: number;
@@ -86,6 +91,10 @@ export type TurnRecord = {
   fixRound: boolean;
   /** Filled by answer reuse when a turn was answered from a saved answer (its tier); null otherwise. */
   reuse: string | null;
+  /** What the saved answer saved against running the model (an estimate); null when not reused. */
+  reuseSavedUsd: number | null;
+  /** How long the turn waited for a free place in the turn queue; 0 for a saved answer, which skips the queue. */
+  queueMs: number | null;
   rephraseOf: string | null;
   reAskAfterVoice: string | null;
   device: DeviceClass | null;
@@ -146,7 +155,12 @@ export type EventRecord = {
   data: Record<string, Scalar> | null;
 };
 
-export type TelemetryLine = TurnRecord | TranscriptRecord | EventRecord;
+/** A record as written: the fields that place it always, the rest only while a signal that needs them is on. */
+export type Kept<T, K extends keyof T> = Pick<T, K> & Partial<Omit<T, K>>;
+export type TurnLine = Kept<TurnRecord, "type" | "v" | "turnId" | "at" | "pack" | "board" | "tenant" | "datasets">;
+export type TranscriptLine = Kept<TranscriptRecord, "type" | "v" | "transcriptId" | "at" | "pack">;
+export type EventLine = Kept<EventRecord, "type" | "v" | "event" | "at" | "turnId" | "pack" | "board" | "data">;
+export type TelemetryLine = TurnLine | TranscriptLine | EventLine;
 
 // --- storage ------------------------------------------------------------------
 
@@ -243,7 +257,7 @@ const STOPWORDS: Record<string, string[]> = {
 };
 
 /** The question's language from its words: hi for Devanagari, else the Latin-script language with the most common words, or null. */
-export function guessLanguage(text: string): string | null {
+export function scriptLanguage(text: string): string | null {
   const letters = text.match(/\p{L}/gu) ?? [];
   if (!letters.length) return null;
   const deva = letters.filter((c) => /\p{Script=Devanagari}/u.test(c)).length;
@@ -347,7 +361,7 @@ export type TurnEnd = {
  * a change rolled back or not saved. clarify: it asked a clarifying question. declined: the provider declined it,
  * every edit was refused, or no query it ran returned data. answered: anything else.
  */
-export function classifyOutcome(end: TurnEnd): { outcome: TurnOutcome; reason: string | null } {
+export function classifyOutcome(end: TurnEnd): { outcome: RecordedOutcome; reason: string | null } {
   if (end.error) return { outcome: "failed", reason: /time(d)? ?out|abort/i.test(end.error) ? "timeout" : "error" };
   if (end.stepCap) return { outcome: "failed", reason: "step-cap" };
   if (end.rolledBack) return { outcome: "failed", reason: "rolled-back" };
@@ -396,10 +410,14 @@ export type TelemetryOptions = {
   store: TelemetryStore;
   /** A keyed hash (the host keeps the key), given normalised text: equal texts share it, and nobody without the key can test a guess. */
   hash: (text: string) => string;
-  /** Whether to record now (the telemetry off switch). */
+  /** Whether to record now (the telemetry switch, which turns every signal off). */
   on?: () => boolean;
-  /** False keeps a keyed hash of question, transcript and comment texts instead of the texts. */
-  questionText?: () => boolean;
+  /**
+   * The signals recording now (signals.ts signalsOn), read on every record: a record keeps only their fields.
+   * Absent: the catalogue's defaults. Texts (questions, transcripts, comments) are kept only with question-text
+   * and transcript-text on; otherwise a keyed hash stands in.
+   */
+  signals?: () => ReadonlySet<string>;
   /** The deployment's context: what a board, dataset or role belongs to. */
   context?: () => DeploymentContext;
   now?: () => Date;
@@ -439,7 +457,7 @@ export type TurnStart = {
 export type TurnCostLike = { total: { usd: number; unpriced: number; inputTokens: number; outputTokens: number }; models: { role: string; model: string; usd: number }[] };
 
 /** What a turn's own code may say beside what is read from its run: the tier of a reused answer, or that it asked a clarifying question. */
-export type TurnMarks = { reuse?: string | null; clarify?: boolean };
+export type TurnMarks = { reuse?: string | null; reuseSavedUsd?: number | null; clarify?: boolean; queueMs?: number | null };
 
 /**
  * The hooks a host calls on a turn, each one line where the thing happens. The record is written by record(), once
@@ -464,7 +482,8 @@ export type TurnCapture = {
 };
 
 export type EventInput = { type?: unknown; turnId?: unknown; data?: unknown; [k: string]: unknown };
-export type EventResult = { ok: true } | { ok: false; status: number; error: string };
+/** recorded: false when the signal that keeps this event is switched off (accepted, not written). */
+export type EventResult = { ok: true; recorded: boolean } | { ok: false; status: number; error: string };
 
 const SESSION_IDLE_MS = 30 * 60_000;
 /** A turn in flight is known by its id this long; after that its record answers who it belongs to. */
@@ -486,12 +505,19 @@ export function turnTelemetry(opts: TelemetryOptions) {
   const store = opts.store;
   const now = () => (opts.now ?? (() => new Date()))().getTime();
   const enabled = () => opts.on?.() ?? true;
-  const keepText = () => opts.questionText?.() ?? true;
+  const defaults: SwitchValues = { telemetry: true, ...signalDefaults() };
+  /** The signals on now: none while telemetry is off. */
+  const on = (): ReadonlySet<string> => (enabled() ? (opts.signals?.() ?? signalsOn(defaults, { voice: true, clarify: true, cache: true })) : new Set());
+  const keepText = () => on().has("question-text");
+  const keepTranscript = () => on().has("transcript-text");
   const waitMs = opts.transcriptWaitMs ?? 60 * 60_000;
   const newId = opts.newId ?? (() => globalThis.crypto.randomUUID());
   // Over the normalised words, so equal questions share a hash whatever their case and punctuation.
   const hash = (s: string) => opts.hash(normaliseText(s));
   const text = (s: string | null) => (s === null ? null : keepText() ? s : null);
+  const heardText = (s: string | null) => (s === null ? null : keepTranscript() ? s : null);
+  /** Writes a record with only the fields its on signals need. */
+  const append = <T extends TurnRecord | TranscriptRecord | EventRecord>(kind: "turn" | "transcript" | "event", line: T) => store.append(onlyKept(kind, line, on()) as TelemetryLine);
   const iso = (ms: number) => new Date(ms).toISOString();
   /** The words of a text as working state keeps them: each one hashed, so edits and overlaps can be counted whether or not texts are kept. */
   const keptWords = (s: string) => wordsOf(s).map((w) => hash(w).slice(0, 10));
@@ -522,7 +548,8 @@ export function turnTelemetry(opts: TelemetryOptions) {
     const open = await store.state.get<OpenTurn>(`turn:${turnId}`);
     if (open) return open;
     const [line] = await store.find({ from: new Date(now() - 30 * 86_400_000), type: "turn", turnId });
-    return line?.type === "turn" ? { user: line.user, tenant: line.tenant ?? null, sessionId: line.sessionId, board: line.board, pack: line.pack, at: Date.parse(line.at) } : null;
+    // A record written with the user signals off names nobody: no one can report on it.
+    return line?.type === "turn" && line.user ? { user: line.user, tenant: line.tenant ?? null, sessionId: line.sessionId ?? "", board: line.board, pack: line.pack, at: Date.parse(line.at) } : null;
   }
 
   const eventLine = (e: Partial<EventRecord> & Pick<EventRecord, "event" | "user">): EventRecord => ({
@@ -556,14 +583,15 @@ export function turnTelemetry(opts: TelemetryOptions) {
     for (const { key, value } of await store.state.list<Heard>("heard:")) {
       if (t - value.at < waitMs) continue;
       const p = await store.state.take<Heard>(key);
-      if (!p || !enabled()) continue;
-      await store.append(eventLine({ event: "abandoned", user: p.user, pack: p.pack, transcriptId: p.id, transcript: text(p.text), how: "not-sent", stage: "after-transcription", data: { waitedMs: t - p.at } }));
+      if (!p || !on().has("voice-not-sent")) continue;
+      await append("event", eventLine({ event: "abandoned", user: p.user, pack: p.pack, transcriptId: p.id, transcript: p.text, how: "not-sent", stage: "after-transcription", data: { waitedMs: t - p.at } }));
     }
   }
 
   return {
     enabled,
-    questionText: keepText,
+    /** The signals recording now. */
+    signals: on,
     hash,
     sweep,
 
@@ -571,7 +599,9 @@ export function turnTelemetry(opts: TelemetryOptions) {
     async transcribed(t: { id: string; who: Asker; pack: string | null; model: string; languageRequested: string | null; languageDetected: string | null; seconds: number | null; usd: number | null; ms: number; retried: boolean; text: string; audio?: AudioLink | null }) {
       if (!enabled()) return;
       const at = now();
-      await store.append({
+      // A transcript record only while some signal reads one (its cost, its words, the text, the recording).
+      if (keptFields("transcript", on()).size > CORE_FIELDS.transcript.length)
+        await append("transcript", {
         type: "transcript",
         v: TELEMETRY_VERSION,
         transcriptId: t.id,
@@ -586,13 +616,13 @@ export function turnTelemetry(opts: TelemetryOptions) {
         usd: t.usd,
         ms: t.ms,
         retried: t.retried,
-        transcript: text(t.text),
+        transcript: t.text,
         transcriptHash: hash(t.text),
         words: wordsOf(t.text).length,
         audio: t.audio ?? null,
       });
       // Only words the user can send wait for a question; an empty transcript is a miss, not an abandoned one.
-      if (t.text.trim()) await store.state.put(`heard:${t.id}`, { id: t.id, user: t.who.user, at, text: text(t.text), hashed: hash(t.text), words: keptWords(t.text), language: t.languageDetected ?? t.languageRequested, pack: t.pack } satisfies Heard, waitMs + 86_400_000);
+      if (t.text.trim()) await store.state.put(`heard:${t.id}`, { id: t.id, user: t.who.user, at, text: heardText(t.text), hashed: hash(t.text), words: keptWords(t.text), language: t.languageDetected ?? t.languageRequested, pack: t.pack } satisfies Heard, waitMs + 86_400_000);
     },
 
     /** Starts a turn: its session and the repeats it makes now, and the hooks that gather the rest. Null while telemetry is off. */
@@ -616,7 +646,7 @@ export function turnTelemetry(opts: TelemetryOptions) {
       await store.state.put(`turn:${s.turnId}`, { user: s.who.user, tenant: s.who.tenant ?? null, sessionId, board: s.board, pack: s.pack, at } satisfies OpenTurn, OPEN_TURN_MS);
       const transcriptText = heard.every((h) => h.text !== null) && heard.length ? heard.map((h) => h.text).join(" ") : null;
       const transcriptWords = heard.flatMap((h) => h.words);
-      const questionLanguage = heard.find((h) => h.language)?.language?.split("-")[0] ?? guessLanguage(s.question);
+      const questionLanguage = heard.find((h) => h.language)?.language?.split("-")[0] ?? scriptLanguage(s.question);
       const picked = s.languagePicked;
 
       // What the run reports, as it goes.
@@ -652,17 +682,22 @@ export function turnTelemetry(opts: TelemetryOptions) {
         mark(m) {
           if (m.clarify) marks.clarify = true;
           if (m.reuse !== undefined) marks.reuse ??= m.reuse;
+          if (m.reuseSavedUsd !== undefined) marks.reuseSavedUsd ??= m.reuseSavedUsd;
+          if (m.queueMs !== undefined) marks.queueMs = m.queueMs;
         },
         watch<T extends { type: string }>(stream: ReadableStream<T>) {
           return stream.pipeThrough(
             new TransformStream<T, T>({
               transform(chunk, out) {
-                const c = chunk as T & { errorText?: string; data?: { tier?: unknown } };
+                const c = chunk as T & { errorText?: string; data?: { tier?: unknown; savedUsd?: unknown } };
                 if (c.type === "text-delta" && firstTokenMs === null) firstTokenMs = now() - startedAt;
                 else if (c.type === "error") end.error ??= String(c.errorText ?? "error").slice(0, 300);
                 else if (c.type === "finish") finished = true;
                 else if (c.type === "data-quick-replies" || c.type === "data-clarify") marks.clarify = true;
-                else if (c.type === "data-reuse") marks.reuse ??= String(c.data?.tier ?? "reused");
+                else if (c.type === "data-reuse") {
+                  marks.reuse ??= String(c.data?.tier ?? "reused");
+                  if (typeof c.data?.savedUsd === "number") marks.reuseSavedUsd ??= c.data.savedUsd;
+                }
                 out.enqueue(chunk);
               },
             }),
@@ -703,12 +738,12 @@ export function turnTelemetry(opts: TelemetryOptions) {
             replyLanguage: picked && picked !== "auto" ? picked.split("-")[0]! : questionLanguage,
             questionLanguage,
             input: spoken ? "spoken" : "typed",
-            question: text(s.question),
+            question: s.question,
             questionHash: hash(s.question),
             questionWords: wordsOf(s.question).length,
             transcriptId: ids[0] ?? null,
             transcriptIds: ids,
-            transcript: text(transcriptText),
+            transcript: transcriptText,
             transcriptHash: heard.length === 1 ? heard[0]!.hashed : heard.length ? hash(heard.map((h) => h.hashed).join(" ")) : null,
             transcriptEditDistance: heard.length ? editDistance(transcriptWords, words) : null,
             kind: classifyKind(facts),
@@ -733,11 +768,13 @@ export function turnTelemetry(opts: TelemetryOptions) {
             reviewMaterial: end.review.material,
             fixRound: end.review.fixRound,
             reuse: marks.reuse ?? null,
+            reuseSavedUsd: marks.reuse ? (marks.reuseSavedUsd ?? null) : null,
+            queueMs: marks.queueMs ?? null,
             rephraseOf,
             reAskAfterVoice,
             ...clientInfo(s.client),
           };
-          await store.append(line);
+          await append("turn", line);
           // Its record says whose it is from now on.
           await store.state.take(`turn:${s.turnId}`);
         },
@@ -760,6 +797,10 @@ export function turnTelemetry(opts: TelemetryOptions) {
       const base = { event: type, user: who.user, roles: who.roles, turnId: (body.turnId as string | undefined) ?? null, sessionId: owner?.sessionId ?? null, board: owner?.board ?? who.board ?? null, pack: owner?.pack ?? who.pack ?? null };
       const data = flatData(body.data);
       if (data === undefined) return { ok: false, status: 400, error: "data must be a flat map of up to 20 short values" };
+      // The signal that keeps this event: none, not an event this server records; switched off, accepted and not written.
+      const signal = signalForEvent(type, typeof body.stage === "string" ? body.stage : null);
+      if (!signal) return { ok: false, status: 400, error: `not an event this server records: ${type}` };
+      const keeps = on().has(signal.id);
 
       if (type === "feedback") {
         if (!owner) return { ok: false, status: 400, error: "feedback needs the turnId it is about" };
@@ -768,22 +809,22 @@ export function turnTelemetry(opts: TelemetryOptions) {
         const reason = body.reason === undefined || body.reason === null ? null : oneOf(body.reason, FEEDBACK_REASONS);
         if (body.reason !== undefined && body.reason !== null && !reason) return { ok: false, status: 400, error: `reason must be one of ${FEEDBACK_REASONS.join(", ")}` };
         const comment = str(body.comment, 1000);
-        await store.append(eventLine({ ...base, rating, reason, comment: text(comment), commentHash: comment === null ? null : hash(comment), data }));
-        return { ok: true };
+        if (keeps) await append("event", eventLine({ ...base, rating, reason, comment, commentHash: comment === null ? null : hash(comment), data }));
+        return { ok: true, recorded: keeps };
       }
       if (type === "transcript") {
         // The fallback when a question was spoken without a transcript id: both texts, from the browser.
         const returned = str(body.transcript, 4000);
         const sent = str(body.sent, 4000);
         if (returned === null || sent === null) return { ok: false, status: 400, error: "transcript and sent are both needed" };
-        await store.append(eventLine({ ...base, transcript: text(returned), transcriptSent: text(sent), transcriptEditDistance: wordEditDistance(returned, sent), transcriptWords: wordsOf(sent).length, data }));
-        return { ok: true };
+        if (keeps) await append("event", eventLine({ ...base, transcript: returned, transcriptSent: sent, transcriptEditDistance: wordEditDistance(returned, sent), transcriptWords: wordsOf(sent).length, data }));
+        return { ok: true, recorded: keeps };
       }
       const how = str(body.how, 40);
       const stage = str(body.stage, 40);
       const choice = str(body.choice, 200);
-      await store.append(eventLine({ ...base, how, stage, choice: choice === null ? null : keepText() ? choice : hash(choice), data }));
-      return { ok: true };
+      if (keeps) await append("event", eventLine({ ...base, how, stage, choice: choice === null ? null : keepText() ? choice : hash(choice), data }));
+      return { ok: true, recorded: keeps };
     },
 
     /** Records between from and to (newest first), optionally of one type, a page at a time. */

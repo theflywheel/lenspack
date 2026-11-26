@@ -15,7 +15,7 @@ export const postgresRules: DialectRules = {
     if (path.length === 1) return `(${col} ->> ${lit(path[0]!)})`;
     return `(${col} #>> ARRAY[${path.map(lit).join(",")}])`;
   },
-  percentile: (fn, arg) => `percentile_cont(${fn === "median" ? 0.5 : 0.9}) WITHIN GROUP (ORDER BY ${arg})`,
+  percentile: (fn, arg) => `percentile_cont(${fn === "median" ? 0.5 : fn === "p90" ? 0.9 : 0.95}) WITHIN GROUP (ORDER BY ${arg})`,
   trunc: (grain, arg) => `date_trunc('${grain}', ${arg})`,
   zonedTrunc: (grain, arg, zone) => `date_trunc('${grain}', ${zoned(arg, zone)})`,
   // The split-and-match form, which the planner estimates as it does CCRS's.

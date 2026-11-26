@@ -112,10 +112,30 @@ export const configSchema = z.object({
   budget: z.object({ usdPerDay: z.number().positive().optional(), usdPerUserPerDay: z.number().positive().optional() }).strict().optional(),
   /** How many of the latest user turns the chat model is sent (default 8). */
   historyTurns: z.number().int().positive().optional(),
+  /**
+   * Saved answers (docs/caching.md): `true`, or the store's file (default reuse.json beside this file) and its
+   * settings. Absent, every question runs the full assistant.
+   */
+  cache: z
+    .union([
+      z.boolean(),
+      z.object({ file: z.string().optional(), enabled: z.boolean().optional(), ttlHours: z.number().optional(), router: z.enum(["on", "off"]).optional(), maxEntries: z.number().int().optional(), freshMinutes: z.number().optional(), prewarm: z.record(z.unknown()).optional() }).strict(),
+    ])
+    .optional(),
+  /** The turn queue (docs/caching.md): { maxConcurrent, maxWaiting, maxWaitSeconds }. Absent: 8 at a time, 50 waiting, 60 s. */
+  queue: z.object({ maxConcurrent: z.number().int().optional(), maxWaiting: z.number().int().optional(), maxWaitSeconds: z.number().int().optional() }).strict().optional(),
   /** "How this was worked out" under each answer: false turns it off; `{ sql: false }` keeps the words and rows but not the SQL. */
   explain: explainSchema.optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
   proposals: z.string().optional(),
+  /**
+   * A writable directory for the server's own state: its switches, the admins' definitions overlay, open questions and
+   * the daily review. With it, the admin panel is served at /_lenspack/admin/ (maintainers only), and the audit log is kept there
+   * by month unless audit: names a file.
+   */
+  state: z.string().optional(),
+  /** Switches (see features.ts): on or off by name; the admin panel can change them while the server runs. */
+  features: z.record(z.boolean()).optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 

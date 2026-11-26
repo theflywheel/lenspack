@@ -251,8 +251,19 @@ describe("an answer whose right set is empty", () => {
   it("is right when the reply names none of them", () => {
     expect(scoreAnswer(t, "No LGA is short of its target: every one has reached more children than planned.").correct).toBe(true);
   });
+  it("is right when it opens with 'none' and lists the groups after as context", () => {
+    expect(scoreAnswer(t, "None of the three LGAs has children still to reach. Every one is past its target: Bakor 112%, Lino 109%, Tama 104%.").correct).toBe(true);
+  });
   it("is wrong when the reply names one", () => {
     expect(scoreAnswer(t, "Tama accounts for most of the gap.").correct).toBe(false);
+  });
+});
+
+describe("a change in a rate written in points", () => {
+  it("reads points and percentage points as a percentage, and a fall as negative", () => {
+    expect(numbersIn("a drop of about 8.9 percentage points").some((x) => numberMatches(-0.0894, "ratio", x).ok)).toBe(true);
+    expect(numbersIn("Tama fell 8.9 points").some((x) => numberMatches(-0.0894, "ratio", x).ok)).toBe(true);
+    expect(numbersIn("Tama rose 8.9 points").some((x) => numberMatches(-0.0894, "ratio", x).ok)).toBe(false);
   });
 });
 

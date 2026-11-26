@@ -2,8 +2,11 @@ node_modules/
 dist/
 *.duckdb
 *.duckdb.wal
+reuse.json
 .env
 coverage/
 .DS_Store
 .publish/
 **/.lenspack/
+packages/hosts/serve/web/admin/board.js
+packages/hosts/serve/web/admin/board.css

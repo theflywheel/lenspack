@@ -1,6 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { join } from "node:path";
+
+import { type CacheSettings, type ChecklistInput, type QueueSettings, type TranscriptRecord, type TurnRecord, cacheSettings, localTurnGate, queueSettings, reuseLayer, telemetryChecklist, withoutNames } from "@lenspack/agent";
+import { type DeploymentContext, deploymentContextSchema, recordRights } from "@lenspack/policy";
 
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
+import { type AudioSettings, audioManifest, fileAudioStore } from "./audio";
 import { type AuditLog, turnsReport } from "./audit";
 import type { Principal } from "./auth";
 import { type ExplainConfig, explainFrom } from "./config";
@@ -8,13 +13,11 @@ import { type FeatureValues, features as featureSwitches } from "./features";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, publicView } from "./llm";
 import type { Budget } from "./metering";
+import { cacheRoutes } from "./reuse";
+import { type ReviewMountOptions, reviewMount } from "./review/mount";
 import { settingsStore } from "./settings";
 import { DEFAULT_SPEECH_MODEL, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
-import { type ChecklistInput, type TranscriptRecord, type TurnRecord, telemetryChecklist, withoutNames } from "@lenspack/agent";
-import { type DeploymentContext, deploymentContextSchema, recordRights } from "@lenspack/policy";
-
 import { fileTelemetry } from "./telemetry";
-import { type AudioSettings, audioManifest, fileAudioStore } from "./audio";
 
 // What an admin changes on a running server, from a host's settings page:
 // the chat's default model, speech, languages and the off switches, kept in
@@ -69,6 +72,10 @@ export type AdminConfig = {
    * campaign, campaign type and country it belongs to. Part of the deployment's policy; telemetry reads it.
    */
   context?: DeploymentContext;
+  /** Saved answers (docs/caching.md): the defaults the settings page starts from. */
+  cache?: Partial<CacheSettings>;
+  /** The turn queue (docs/caching.md): model turns at once, and how many wait and for how long. */
+  queue?: Partial<QueueSettings>;
   /** "How this was worked out" under each answer: false turns it off; `sql: false` keeps the words and rows but not the SQL. */
   explain?: ExplainConfig;
 };
@@ -142,9 +149,21 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     questionText: () => telemetrySettings().questionText,
     context: () => context,
   });
+  const cache = cacheSettings(settings, config.cache);
+  const queue = queueSettings(settings, config.queue);
+  const cacheNow = () => ({ ...cache.get(), on: features.on("cache") });
+  // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/caching.md).
+  const reuse = reuseLayer({ store: join(stateDir, "reuse.json"), settings: cacheNow, log: (m) => console.error(`lenspack: ${m}`) });
+  const gate = localTurnGate(queue.get);
   return {
     settings,
     features,
+    cache,
+    /** The answer store's effective settings: the section, and the cache feature switch. */
+    cacheNow,
+    queue,
+    reuse,
+    gate,
     speech,
     holdMs,
     language,
@@ -162,9 +181,15 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       chatDefault: () => saved<ChatSetting>("chat"),
       telemetry,
       audio,
+      reuse,
+      queue: gate,
       // The explain switch (settings page, env, config) and the config's explain.sql.
       explain: () => ({ ...explainFrom(config.explain), ...(features.on("explain") ? {} : { on: false }) }),
     } satisfies Partial<AppOptions>,
+    /** The review system and admin panel over these settings (review/mount.ts), so a host wires it with no more imports. */
+    review(o: ReviewMountOptions) {
+      return reviewMount({ features, settings, app: { review: () => features.on("reviewer"), chatDefault: () => saved<ChatSetting>("chat") } }, o);
+    },
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
     speechView: async (writable: boolean) => ({
       enabled: !!speechKey.apiKey,
@@ -233,8 +258,12 @@ export function adminRoutes(o: AdminRouteOptions) {
       options: o.providers.map(publicView),
     };
   };
+  // Saved answers' admin routes (<prefix>/cache…), beside the settings.
+  const cachePage = cacheRoutes({ prefix: o.prefix, reuse: s.reuse, queue: s.gate, audit: o.audit, adminName: o.adminName });
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<void> => {
     if (!url.pathname.startsWith(`${o.prefix}/`)) return;
+    await cachePage(req, res, url, who);
+    if (res.headersSent) return;
     const path = url.pathname.slice(o.prefix.length);
     const send = (status: number, body: unknown) => json(res, status, body, NO_STORE);
     const audit = (action: string, detail?: string, outcome: "ok" | "denied" = "ok") => o.audit?.audit({ at: new Date().toISOString(), user: who.user, action, outcome, ...(detail !== undefined ? { detail } : {}) });
@@ -312,7 +341,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       }
       return send(405, { error: "not a method this route takes" });
     }
-    if (!["/settings", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/telemetry"].includes(path))) return;
+    if (!["/settings", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/telemetry"].includes(path))) return;
     const may = recordRights(who);
     if (path.startsWith("/telemetry") ? !may.telemetry : !may.settings) {
       audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
@@ -331,6 +360,8 @@ export function adminRoutes(o: AdminRouteOptions) {
         language: s.languageView(writable),
         features: s.features.view(writable),
         telemetry: s.telemetryView(writable),
+        cache: s.cache.view(writable),
+        queue: s.queue.view(writable),
       });
     // What chat has cost: the newest turns and the totals for today and the last 7 days, from the audit log.
     if (path === "/turns") {
@@ -408,6 +439,22 @@ export function adminRoutes(o: AdminRouteOptions) {
       o.log(s.featuresLine());
       audit("settings features", JSON.stringify(r.changed));
       return send(200, s.features.view(writable));
+    }
+    // Saved answers: any of enabled, ttlHours, router, maxEntries, freshMinutes; null puts a field back to the default.
+    if (path === "/settings/cache") {
+      const r = s.cache.update(b);
+      if (!r.ok) return send(400, { error: r.error });
+      o.log(`cache: ${JSON.stringify(s.cache.get())}`);
+      audit("settings cache", JSON.stringify(b));
+      return send(200, s.cache.view(writable));
+    }
+    // The turn queue: any of maxConcurrent, maxWaiting, maxWaitSeconds; read on every turn.
+    if (path === "/settings/queue") {
+      const r = s.queue.update(b);
+      if (!r.ok) return send(400, { error: r.error });
+      o.log(`queue: ${JSON.stringify(s.queue.get())}`);
+      audit("settings queue", JSON.stringify(b));
+      return send(200, s.queue.view(writable));
     }
     // Any of model, holdMs; a field left out is kept, and null or "" puts it back to the default.
     if (path === "/settings/speech") {

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { type EventRecord, type TelemetryLine, type TelemetryStore, type ToolFact, type TranscriptRecord, type TurnRecord, type TurnStart, classifyKind, classifyOutcome, factsFromSteps, guessLanguage, textSimilarity, turnTelemetry, wordEditDistance } from "../src";
+import { type EventRecord, type TelemetryLine, type TelemetryStore, type ToolFact, type TranscriptRecord, type TurnRecord, type TurnStart, classifyKind, classifyOutcome, factsFromSteps, scriptLanguage, textSimilarity, turnTelemetry, wordEditDistance } from "../src";
 
 function memoryStore(clock: () => number): TelemetryStore & { lines: TelemetryLine[] } {
   const lines: TelemetryLine[] = [];
@@ -101,11 +101,11 @@ describe("text measures", () => {
     expect(textSimilarity("How many visits last week?", "how many visits last week")).toBe(1);
     expect(textSimilarity("how many visits last week", "how many visits in the last week")).toBeGreaterThanOrEqual(0.6);
     expect(textSimilarity("how many visits last week", "add a map of the regions")).toBeLessThan(0.6);
-    expect(guessLanguage("combien de visites par mois")).toBe("fr");
-    expect(guessLanguage("quantos casos por mês")).toBe("pt");
-    expect(guessLanguage("how many cases by month")).toBe("en");
-    expect(guessLanguage("पिछले सप्ताह कितने मामले")).toBe("hi");
-    expect(guessLanguage("ok")).toBe(null);
+    expect(scriptLanguage("combien de visites par mois")).toBe("fr");
+    expect(scriptLanguage("quantos casos por mês")).toBe("pt");
+    expect(scriptLanguage("how many cases by month")).toBe("en");
+    expect(scriptLanguage("पिछले सप्ताह कितने मामले")).toBe("hi");
+    expect(scriptLanguage("ok")).toBe(null);
   });
 });
 

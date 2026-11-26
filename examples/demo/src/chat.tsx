@@ -4,7 +4,7 @@ import { Chat, useChat } from "@ai-sdk/react";
 import { changesSince, listInWords } from "@lenspack/core";
 import type { BoardVersion } from "@lenspack/react";
 import { DefaultChatTransport } from "ai";
-import { Hand, PanelRightClose, SendHorizontal } from "lucide-react";
+import { Bookmark, Hand, PanelRightClose, SendHorizontal } from "lucide-react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -54,6 +54,21 @@ function ReviewBlock({ r, onApply }: { r: ReviewData; onApply?: (text: string) =
 
 type UsageData = { total: { inputTokens: number; cachedInputTokens: number; outputTokens: number; usd: number; unpriced: number }; models?: { role: string; effort?: string }[]; queries: { queries: number } };
 
+type ClarifyData = { question: string; options: { label: string; text: string }[] };
+
+// The readings of a question that can be read more than one way, as quick replies.
+function QuickReplies({ q, onPick }: { q: ClarifyData; onPick: (o: ClarifyData["options"][number], q: ClarifyData) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" data-testid="quick-replies">
+      {q.options.map((o) => (
+        <Button key={o.label} variant="outline" size="sm" className="h-auto whitespace-normal rounded-sm py-1 text-left text-xs" title={o.text} onClick={() => onPick(o, q)}>
+          {o.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 const kilo = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 // What the turn cost, as the server metered it: one quiet line under the reply.
@@ -65,6 +80,43 @@ function UsageLine({ u }: { u: UsageData }) {
     <p className="font-mono text-[11px] text-muted-foreground" data-testid="usage">
       {kilo(t.inputTokens)} in{t.cachedInputTokens ? ` (${kilo(t.cachedInputTokens)} cached)` : ""} · {kilo(t.outputTokens)} out · {cost} · {u.queries.queries} {u.queries.queries === 1 ? "query" : "queries"}
       {effort ? ` · ${effort} effort` : ""}
+    </p>
+  );
+}
+
+type QueueWait = { state: "waiting"; reason: "busy" | "edit"; position: number; etaSeconds: number };
+
+// The server's queue was full: say so kindly, and keep the common questions one click away (saved answers answer them at once).
+function BusyNote({ suggestions, onAsk }: { suggestions: string[]; onAsk?: (q: string) => void }) {
+  if (!suggestions.length || !onAsk) return null;
+  return (
+    <div className="space-y-1.5 rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground" data-testid="busy">
+      <p>Common questions, answered at once:</p>
+      {suggestions.slice(0, 4).map((q) => (
+          <Button key={q} variant="outline" size="sm" className="h-auto w-full justify-start whitespace-normal rounded-sm py-1 text-left text-xs font-normal" onClick={() => onAsk(q)}>
+          {q}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+type ReuseData = { tier: string; kind?: "answer" | "edit"; dataAsOf: string; savedUsd?: number; how?: string };
+
+// A reply served from a saved answer: when its data was read, and a way to have the assistant work it out again.
+function SavedNote({ r, onFresh }: { r: ReuseData; onFresh?: () => void }) {
+  const when = new Date(r.dataAsOf);
+  const today = when.toDateString() === new Date().toDateString();
+  const at = Number.isNaN(when.getTime()) ? "" : today ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : when.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground" data-testid="saved-answer" title={`Answered from an earlier answer to the same question${r.how ? ` (${r.how})` : ""}. No AI model was used for the answer itself.`}>
+      <Bookmark className="size-3 shrink-0" aria-hidden="true" />
+      <span>{r.kind === "edit" ? "Saved change, made as before" : `Saved answer, data as of ${at}`}</span>
+      {onFresh && (
+        <button type="button" className="font-medium text-foreground underline underline-offset-2 hover:text-primary" onClick={onFresh} data-testid="ask-fresh">
+          Ask fresh
+        </button>
+      )}
     </p>
   );
 }
@@ -96,6 +148,9 @@ function labelFor(name: string, models: ModelInfo[]) {
   const collides = models.filter((m) => m.available !== false && m.name !== name && base(m.name) === mine).length > 0;
   return collides ? name : mine;
 }
+
+/** What a person typed in a message. */
+const textOf = (m: { parts: unknown[] } | undefined) => ((m?.parts ?? []) as Part[]).map((p) => (p.type === "text" ? (p.text ?? "") : "")).join(" ").trim();
 
 // Once the user's own edits have settled, one line in the transcript says
 // what the assistant will be told with the next message. Local: no model call.
@@ -134,12 +189,21 @@ export function ChatPanel({
   selections?: () => Record<string, string>;
 }) {
   const efforts = models.find((m) => m.name === model)?.efforts;
+  // A turn waiting for a place in the server's queue: its place and about how long (queue.ts).
+  const [queued, setQueued] = React.useState<QueueWait | null>(null);
   const chat = React.useMemo(
-    () => new Chat({ transport: new DefaultChatTransport({ api: `/api${base}/chat?model=${encodeURIComponent(model)}${effort ? `&effort=${encodeURIComponent(effort)}` : ""}` }) }),
+    () =>
+      new Chat({
+        transport: new DefaultChatTransport({ api: `/api${base}/chat?model=${encodeURIComponent(model)}${effort ? `&effort=${encodeURIComponent(effort)}` : ""}` }),
+        onData: (p) => (p.type === "data-queue" && (p.data as QueueWait).state === "waiting" ? setQueued(p.data as QueueWait) : undefined),
+      }),
     [base, model, effort],
   );
   const { messages, sendMessage, status, error } = useChat({ chat });
   const busy = status === "submitted" || status === "streaming";
+  // The turn got its place once anything else arrives.
+  const lastParts = (messages.at(-1)?.parts ?? []).length;
+  React.useEffect(() => setQueued(null), [lastParts, busy]);
   const [input, setInput] = React.useState("");
   const wasBusy = React.useRef(false);
   const bottom = React.useRef<HTMLDivElement>(null);
@@ -201,15 +265,17 @@ export function ChatPanel({
   React.useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages, busy, notices]);
-  const ask = async (text: string) => {
+  // fresh: "Ask fresh" on a saved answer; the full assistant answers, whatever is saved. quickReply: the reading picked under a clarifying question.
+  const ask = async (text: string, fresh = false, quickReply?: { question: string; option: string }) => {
     if (!text.trim() || busy) return;
     const b = await (await fetch(`/api${base}`)).json();
     startVersion.current = b.board?.version ?? null;
     // The model sees the board as it is now; a notice pending for edits before this is moot.
     if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
+    // A quick reply names the clarifying question it answers, so the server counts the choice.
     const picked = selections?.() ?? {};
+    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(quickReply?.question ? { quickReply } : {}), ...(Object.keys(picked).length ? { selections: picked } : {}), ...(fresh ? { fresh: true } : {}), client: clientInfo() };
     // client: the device, network and viewport classes usage telemetry records (docs/telemetry.md).
-    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(Object.keys(picked).length ? { selections: picked } : {}), client: clientInfo() };
     void sendMessage({ text }, { body });
     setInput("");
   };
@@ -308,10 +374,17 @@ export function ChatPanel({
                 ) : p.type === "data-review" ? (
                   // Only the last check: an earlier one's findings were fixed, or the board was left as it was.
                   p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
+                ) : p.type === "data-clarify" ? (
+                  // A clarifying question's readings: buttons under the latest reply only, each sending its reading.
+                  mi === messages.length - 1 && !busy ? <QuickReplies key={i} q={p.data as ClarifyData} onPick={(o, q) => void ask(o.text, false, { question: q.question, option: o.label })} /> : null
                 ) : p.type === "data-answer-card" ? (
                   <ExplainBlock key={i} x={p.data as AnswerCardData} onOpen={() => reportEvent("explain-opened", (m.parts as Part[]).find((q) => q.type === "data-turn")?.data as { turnId?: string } | undefined)} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
+                ) : p.type === "data-queue" && (p.data as { state?: string }).state === "full" ? (
+                  <BusyNote key={i} suggestions={suggestions} onAsk={busy ? undefined : (q) => void ask(q)} />
+                ) : p.type === "data-reuse" ? (
+                  <SavedNote key={i} r={p.data as ReuseData} onFresh={busy ? undefined : () => void ask(textOf(messages[mi - 1]), true)} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
                   <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
                 ) : null,
@@ -341,7 +414,11 @@ export function ChatPanel({
             </React.Fragment>
           ))}
           {messages.length > 0 && noticesAt(messages.length)}
-          {busy && <p className="text-xs text-muted-foreground">Working…</p>}
+          {busy && (
+            <p className="text-xs text-muted-foreground" data-testid="turn-status">
+              {queued ? (queued.reason === "edit" ? "Waiting for another edit on this dashboard…" : `Busy, about ${queued.etaSeconds} s (number ${queued.position} in line)…`) : "Working…"}
+            </p>
+          )}
           {error && <p className="text-xs text-destructive">{error.message}</p>}
           <div ref={bottom} />
         </CardContent>

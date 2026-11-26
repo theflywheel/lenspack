@@ -12,7 +12,8 @@ It adds:
     "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered.
     Lenspack trusts nothing else, so its port never needs to be reachable from outside.
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
-  - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log. On Superset 6, whose pages
+  - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log, and a link to Lenspack's own
+    admin panel (/lenspack/_superset/admin/: a board of how the assistant is used, the daily review, open questions, definitions). On Superset 6, whose pages
     are all drawn by its frontend, this page has a layout of its own that follows Superset's light or dark theme;
     on Superset 5 it sits in Superset's server-drawn layout;
   - /api/v1/lenspack/bootstrap and /api/v1/lenspack/identity-key, which Lenspack calls on start: the first
@@ -492,7 +493,7 @@ def lenspack_app_mutator(app):
                 settings=settings, settings_error=settings_error, info=info, usage=usage, usage_error=usage_error,
                 audit=audit, audit_error=audit_error, turns=turns, databases=databases,
                 account_roles=[r.name for r in account.roles] if account else None,
-                internal_url=LENSPACK_INTERNAL_URL, stt_models=stt_models, stt_bench=STT_BENCH,
+                internal_url=LENSPACK_INTERNAL_URL, lenspack_path=LENSPACK_PATH, stt_models=stt_models, stt_bench=STT_BENCH,
                 lp_layout=settings_layout, lp_flash=[FLASH_OK, FLASH_BAD],
             )
 
@@ -703,6 +704,12 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
   <h1>AI assistant</h1>
   <p class="lede">Lenspack adds a chat to Superset dashboards: the <b>Ask Lenspack</b> button on a dashboard.
     Models are chosen here; the rest comes from Lenspack's config file and environment. This page never shows a secret.</p>
+
+  <div class="lp-card">
+    <h2>Lenspack admin panel</h2>
+    <p class="mute" style="margin:0 0 8px">How people use the assistant each day, the daily review and its proposed fixes, open questions about definitions, the definitions you have added, and every switch. Served by Lenspack itself, for Superset admins.</p>
+    <p style="margin:0"><a href="{{ lenspack_path }}/_superset/admin/" target="_blank" rel="noopener">Open the admin panel</a></p>
+  </div>
 
   {% for category, message in get_flashed_messages(with_categories=true, category_filter=lp_flash or ["lenspack-info", "lenspack-danger"]) %}
     <div class="lp-flash {{ 'danger' if category.endswith('danger') else 'info' }}">{{ message }}</div>

@@ -248,6 +248,22 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
   };
 }
 
+/**
+ * What a principal may do on a deployment's admin pages, decided here so every host and every page asks the same
+ * question. administer: see and change the settings, the saved answers, the definitions, the open questions and the
+ * daily review: the host's admin role (a Superset admin, the built-in admin), never a dashboard's edit right. users:
+ * also see who asked what (usernames on the usage board and in review reports), which needs the usage right as well.
+ * It only narrows what the host gave: no admin role, no admin pages.
+ */
+export type AdminRights = { administer: boolean; users: boolean };
+export function adminRights(who: { roles?: readonly string[]; usage?: boolean }): AdminRights {
+  const administer = !!who.roles?.includes("admin");
+  return { administer, users: administer && !!who.usage };
+}
+
+/** May use the admin pages at all (adminRights().administer). */
+export const mayAdminister = (who: { roles?: readonly string[] }) => adminRights(who).administer;
+
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
 // to change. A board someone made is theirs to change, and everyone's to read
 // once they share it: everyone in their tenant, as one user name may sign in
@@ -264,7 +280,7 @@ export function boardRights(who: Principal, b: Ownership): { view: boolean; edit
 //
 // What a caller may do with what the deployment keeps about its own use: the settings page, the usage telemetry log,
 // kept recordings of spoken questions, and the user names in them. Today these follow the host's admin role, as the
-// settings page always has; the coming policy document narrows them per role. Nothing here can widen them.
+// settings page always has (adminRights); the coming policy document narrows them per role. Nothing here can widen them.
 
 export type RecordRights = {
   /** The settings page and its changes. */
@@ -279,9 +295,8 @@ export type RecordRights = {
 
 /** What a caller may read of the deployment's records. User names need the usage right too, which already means "may see who used it". */
 export function recordRights(who: Identity): RecordRights {
-  const p = principalOf(who);
-  const admin = p.roles.includes("admin");
-  return { settings: admin, telemetry: admin, usernames: admin && p.usage, audio: admin };
+  const { administer, users } = adminRights(principalOf(who));
+  return { settings: administer, telemetry: administer, usernames: users, audio: administer };
 }
 
 /** Whether a caller may report on a turn (feedback, a corrected transcript, a left answer): only their own, in their own tenant. */

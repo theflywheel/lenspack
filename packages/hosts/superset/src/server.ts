@@ -201,6 +201,18 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
 
   const port = Number(config.port ?? env.LENSPACK_PORT ?? 8795);
   const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
+  // The definitions overlay, open questions and the daily review (review/ in @lenspack/serve), kept in the state
+  // directory; the admin panel at /_superset/admin/ (through Superset: /lenspack/_superset/admin/).
+  const review = admin.review({
+    stateDir,
+    hosts: [{ name: pack.pack, pack, connector, ctx: {} }],
+    events: auditLog ? (from) => auditLog.since(from) : undefined,
+    audit: auditLog?.audit,
+    prefix: "/_superset",
+    adminName: "Superset admin",
+    title: pack.pack,
+    log,
+  });
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
     app: {
@@ -213,13 +225,16 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         return id ? (id.r ?? []) : undefined;
       },
       telemetryDataset: (entity) => binding.datasets.get(entity)?.table,
+      definitions: review.turn,
     },
     port,
     host,
     budget: config.budget,
     log,
     health: () => ({ identity: !!idKey }),
-    routes: ({ providers, budget }) => {
+    routes: (rt) => {
+      const { providers, budget } = rt;
+      const adminPanel = review.routes(rt);
       const settingsPage = adminRoutes({
         prefix: "/_superset",
         settings: admin,
@@ -262,6 +277,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (asset) return send(res, 200, readFileSync(join(web, asset[1]!), "utf8"), TYPES[asset[1]!.slice(asset[1]!.lastIndexOf("."))]!);
         const who = await signedIn();
         if (!who) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
+        if (await adminPanel(req, res, url, who)) return;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
         // Exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (admins only).
@@ -291,6 +307,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         return json(res, 404, { error: "not found" }, NO_STORE);
       };
     },
-    onListening: ({ providers }) => log(`http://${host}:${port}/ (Superset ${supersetUrl}, ${Object.keys(dashboards).length} dashboard(s) bound, chat ${providers.length ? "on" : "off"})`),
+    onListening: ({ providers }) => {
+      log(`http://${host}:${port}/ (Superset ${supersetUrl}, ${Object.keys(dashboards).length} dashboard(s) bound, chat ${providers.length ? "on" : "off"}); admin panel at ${base}/_superset/admin/`);
+      void review.start();
+    },
   });
 }

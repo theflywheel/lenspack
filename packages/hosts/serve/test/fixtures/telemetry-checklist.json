@@ -1,0 +1,479 @@
+{
+  "generatedAt": "2026-11-26T06:00:00Z",
+  "switches": {
+    "telemetry": true,
+    "questionText": true,
+    "audio": false,
+    "retentionDays": 90
+  },
+  "groups": [
+    {
+      "title": "Who uses it",
+      "items": [
+        {
+          "id": "dau",
+          "label": "Daily and weekly active users",
+          "decision": "Whether people come back after the first week; where to train next.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "user",
+            "at"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": "User names are kept on this server only."
+        },
+        {
+          "id": "roles",
+          "label": "Roles of the people asking",
+          "decision": "Which roles to design boards for.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "roles"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "country",
+          "label": "Country and campaign",
+          "decision": "Which deployments need attention.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "country",
+            "campaign",
+            "campaignType"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "device",
+          "label": "Device and network",
+          "decision": "Whether to build for low bandwidth.",
+          "source": "client",
+          "status": "needs-config",
+          "fields": [
+            "device",
+            "network"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": "Coarse only: no device ids.",
+          "howToEnable": "Set client: true in the telemetry config so the page reports device and network type."
+        },
+        {
+          "id": "session",
+          "label": "Chat sessions",
+          "decision": "How long a working session lasts.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "sessionId"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        }
+      ]
+    },
+    {
+      "title": "What they ask",
+      "items": [
+        {
+          "id": "question",
+          "label": "Question text",
+          "decision": "What people really ask, for the daily review and saved answers.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "question"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": "Question text can name people or places; switch it off to keep counts only."
+        },
+        {
+          "id": "language",
+          "label": "Language of the question",
+          "decision": "Which languages to support well.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "language"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "kind",
+          "label": "Answer or board edit",
+          "decision": "Whether people read or build.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "kind"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "answerKind",
+          "label": "Direct, derived or chart",
+          "decision": "Where the compute step and charts earn their keep.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "answerKind"
+          ],
+          "count7d": 1790,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "datasets",
+          "label": "Datasets read",
+          "decision": "Which datasets matter; which can be retired.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "datasets"
+          ],
+          "count7d": 1790,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "board",
+          "label": "Board asked on",
+          "decision": "Which boards to improve first.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "board"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        }
+      ]
+    },
+    {
+      "title": "How well it answers",
+      "items": [
+        {
+          "id": "outcome",
+          "label": "Outcome of each turn",
+          "decision": "Answer rate: the headline quality number.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "outcome"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "refusals",
+          "label": "Refusals and their reasons",
+          "decision": "Which rules block real work.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "refused"
+          ],
+          "count7d": 212,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "review",
+          "label": "Reviewer checks and findings",
+          "decision": "Whether the reviewer is worth its cost.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "reviewed",
+            "material",
+            "fixRound"
+          ],
+          "count7d": 1330,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "clarify",
+          "label": "Clarifying questions asked",
+          "decision": "Which definitions are missing.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "clarify"
+          ],
+          "count7d": 64,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "rephrase",
+          "label": "Questions asked again in other words",
+          "decision": "Where the first answer missed.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "rephrase"
+          ],
+          "count7d": 141,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "thumbs",
+          "label": "Thumbs up and down, with a reason",
+          "decision": "What people think of the answers.",
+          "source": "event",
+          "status": "enabled-no-data",
+          "fields": [
+            "feedback",
+            "reason"
+          ],
+          "count7d": 0,
+          "lastSeen": null,
+          "privacy": "",
+          "howToEnable": "Feedback buttons are on, but nobody has used them in 7 days."
+        },
+        {
+          "id": "explain",
+          "label": "Explain opened",
+          "decision": "Whether people check how an answer was worked out.",
+          "source": "event",
+          "status": "needs-config",
+          "fields": [
+            "explain"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": "",
+          "howToEnable": "Needs the explain feature, which is not on this server yet."
+        }
+      ]
+    },
+    {
+      "title": "Speed and cost",
+      "items": [
+        {
+          "id": "latency",
+          "label": "Reply time and time to first words",
+          "decision": "Whether to change the model or the cache.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "replyMs",
+            "firstTokenMs"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "cost",
+          "label": "Cost by model, reviewer and speech",
+          "decision": "Budget per user and per campaign.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "usd",
+            "modelUsd",
+            "reviewUsd",
+            "speechUsd"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": "Estimates from list prices."
+        },
+        {
+          "id": "tokens",
+          "label": "Tokens in and out",
+          "decision": "Prompt size against the pack's growth.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "tokensIn",
+            "tokensOut"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "cache",
+          "label": "Saved answers used",
+          "decision": "What the cache saves.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "cacheTier",
+            "savedUsd"
+          ],
+          "count7d": 402,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "model",
+          "label": "Model used",
+          "decision": "Which model to make the default.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "model"
+          ],
+          "count7d": 1840,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        }
+      ]
+    },
+    {
+      "title": "Voice",
+      "items": [
+        {
+          "id": "voiceShare",
+          "label": "Spoken questions",
+          "decision": "Whether voice is worth its cost.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "input"
+          ],
+          "count7d": 388,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "speechSeconds",
+          "label": "Seconds of speech",
+          "decision": "Speech-to-text spend.",
+          "source": "turn",
+          "status": "recording",
+          "fields": [
+            "speechMs"
+          ],
+          "count7d": 388,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "transcriptEdit",
+          "label": "Transcripts corrected before sending",
+          "decision": "How good speech-to-text is per language.",
+          "source": "event",
+          "status": "recording",
+          "fields": [
+            "transcriptEdit"
+          ],
+          "count7d": 57,
+          "lastSeen": "2026-11-25T17:40:00Z",
+          "privacy": ""
+        },
+        {
+          "id": "audio",
+          "label": "Audio kept for checking",
+          "decision": "Re-scoring speech-to-text on real clips.",
+          "source": "audio",
+          "status": "off",
+          "fields": [
+            "clip"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": "Audio is personal data: keep it off unless the deployment has agreed to keep it, and set a short retention.",
+          "howToEnable": "Switch audio on in this tab, and set retention."
+        },
+        {
+          "id": "reaskVoice",
+          "label": "Typed again after speaking",
+          "decision": "Where speech fails.",
+          "source": "turn",
+          "status": "needs-config",
+          "fields": [
+            "reaskVoice"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": "",
+          "howToEnable": "Needs the client to report the input of the next question; set client: true."
+        }
+      ]
+    },
+    {
+      "title": "Not telemetry",
+      "items": [
+        {
+          "id": "audit",
+          "label": "Audit log of changes",
+          "decision": "Who changed what, for accountability. Kept whatever the telemetry switches say.",
+          "source": "audit",
+          "status": "not-telemetry",
+          "fields": [
+            "user",
+            "action",
+            "outcome"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": "Kept for the deployment's audit period."
+        },
+        {
+          "id": "ledger",
+          "label": "Usage ledger for the budget",
+          "decision": "Enforcing the monthly budget. Kept whatever the telemetry switches say.",
+          "source": "ledger",
+          "status": "not-telemetry",
+          "fields": [
+            "usd"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": ""
+        },
+        {
+          "id": "export",
+          "label": "Exports downloaded",
+          "decision": "Which data leaves the tool.",
+          "source": "event",
+          "status": "needs-config",
+          "fields": [
+            "export"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": "",
+          "howToEnable": "Needs the export event, which this server does not send yet."
+        },
+        {
+          "id": "errors",
+          "label": "Client errors",
+          "decision": "Bugs seen in the field.",
+          "source": "client",
+          "status": "off",
+          "fields": [
+            "error"
+          ],
+          "count7d": null,
+          "lastSeen": null,
+          "privacy": "Error text can include what was on screen.",
+          "howToEnable": "Switch client errors on in Settings."
+        }
+      ]
+    }
+  ]
+}
