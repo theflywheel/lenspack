@@ -1178,6 +1178,8 @@
     }
 
     let busy = false;
+    // The server's notice when no data of this dashboard is open to this user; the input stays off while it holds.
+    let noAccess = null;
     // ---- Lenspack restarting: the overlay notices (its health check fails) and calls setOffline(true); the
     // banner shows, input waits, and everything comes back by itself when Lenspack answers again.
     function setOffline(on) {
@@ -1186,8 +1188,8 @@
       offline = on;
       downBar.textContent = t("restarting");
       downBar.hidden = !on;
-      input.disabled = on;
-      go.disabled = on || busy;
+      input.disabled = on || !!noAccess;
+      go.disabled = on || busy || !!noAccess;
       for (const b of retries) b.disabled = on;
       log.querySelectorAll(".lpc-chip").forEach((c) => (c.disabled = on));
       if (on) mic.disabled = true;
@@ -1487,7 +1489,7 @@
         tel.ended();
         busy = false;
         syncNew();
-        go.disabled = offline;
+        go.disabled = offline || !!noAccess;
         if (!offline) input.focus();
       }
     }
@@ -1874,6 +1876,20 @@
       relabel();
       loadInfo();
     }
+    // Nothing of this dashboard's data is open to this user in Superset: say so now, before anything is asked,
+    // and keep the input off (the server refuses the chat as well).
+    fetch(base)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => {
+        if (!b || !b.accessNotice) return;
+        noAccess = b.accessNotice;
+        log.querySelectorAll(".lpc-empty").forEach((e) => e.remove());
+        note(noAccess, "lpc-access");
+        input.disabled = true;
+        go.disabled = true;
+        mic.disabled = true;
+      })
+      .catch(() => {});
 
     go.onclick = () => send(input.value);
     // Enter sends, Shift+Enter starts a new line. The key is taken on the window, before the page sees it: a

@@ -608,6 +608,9 @@ export function reuseLayer(o: ReuseOptions) {
         // An answer: only calls that read data or the pack, and at least the data calls succeeded.
         if (calls.some((c) => !DATA_TOOLS.has(c.tool) && !PACK_TOOLS.has(c.tool))) return;
         const plan = calls.filter((c) => DATA_TOOLS.has(c.tool) && !failed(c.output));
+        // Every data call failed (refused, an unknown key, the source down): the reply answers nothing, and replaying
+        // it would repeat a refusal or an outage with no query run. Not kept.
+        if (!plan.length && calls.some((c) => DATA_TOOLS.has(c.tool))) return;
         if (JSON.stringify(plan).length > MAX_PLAN_CHARS) return;
         await keep(t, "answer", plan, reply, { costUsd: r.costUsd, model: t.builder });
       } catch (e) {

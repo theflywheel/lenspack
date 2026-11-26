@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
 import { type Connector, type Ctx, type SourceCall, type WidgetData, checkOps, explain, nowOf, run, tracedConnector, valuesQuery } from "@lenspack/engine";
-import { shownConfig, showsStatement, withoutKeys } from "@lenspack/policy";
+import { shownConfig, showsStatement, visibleCatalogue } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 
 import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, parseClear, patchQuery, str } from "./args";
@@ -199,7 +199,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // The board as this caller is shown it: the same view the board API sends them, so the model never reads a value they may not see.
   const shown = (config: BoardConfig) => summarise(shownConfig(config, ctx));
   // What the model may name: verified keys this caller may use.
-  const catalogue = withoutKeys(verifiedOnly(catalogueFrom(pack)), ctx.hidden);
+  const catalogue = visibleCatalogue(verifiedOnly(catalogueFrom(pack)), ctx);
   const proposals = opts.proposals ?? memoryProposals();
   const observed = (e: DataCall) => {
     try {

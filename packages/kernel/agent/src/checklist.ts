@@ -188,7 +188,7 @@ function itemFor(d: Def, i: ChecklistInput): ChecklistItem {
   // Role names come from the host's signed identity; turns all without them mean an older plugin that does not send them.
   if (d.roles) {
     const ts = i.lines.filter((l) => l.type === "turn");
-    if (ts.length && ts.every((l) => !l.roles.length)) return done("needs-config", "Update the Superset plugin: this one does not sign the user's role names.", seen.length, lastSeen);
+    if (ts.length && ts.every((l) => !l.roles?.length)) return done("needs-config", "Update the Superset plugin: this one does not sign the user's role names.", seen.length, lastSeen);
   }
   return seen.length ? done("recording", null, seen.length, lastSeen) : done("enabled-no-data", "On; nothing recorded in the last 7 days.", 0, null);
 }

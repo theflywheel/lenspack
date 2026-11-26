@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Identity, type PackRule, adminRights, answerView, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -69,7 +69,8 @@ describe("decide", () => {
     const d = decide(as(["partner"], { scope: [village], hidden: ["not_delivered_reason"], tenant: "t1" }), pack, { rules: RULES, host: { scope: [reason], now: new Date(0) } })!;
     expect(d.scope).toEqual([reason, village, north]);
     expect([...d.hidden].sort()).toEqual(["delivered_by", "not_delivered_reason"]);
-    expect(d.ctx).toEqual({ scope: [reason, village, north], now: new Date(0), tenant: "t1", hidden: d.hidden });
+    // The host's own hidden keys are marked as the host's, with its reason; the rule's are not.
+    expect(d.ctx).toEqual({ scope: [reason, village, north], now: new Date(0), tenant: "t1", hidden: d.hidden, accessHidden: { keys: new Set(["not_delivered_reason"]), reason: DEFAULT_HIDDEN_REASON } });
     // A host-hidden measure takes what is computed from it along.
     expect(decide(as([], { hidden: ["households_delivered"] }), pack)!.hidden.has("delivery_rate")).toBe(true);
   });
@@ -80,6 +81,32 @@ describe("decide", () => {
     // A conformed dimension the caller can still read elsewhere stays.
     for (const k of ["province", "district", "visits", "delivered_by"]) expect(d.hidden.has(k)).toBe(false);
     expect(d.ctx).toMatchObject({ hiddenEntities: new Set(["project"]), scope: [{ entity: "task", ...village }] });
+  });
+
+  it("says why the host keeps what it keeps, names a kept entity nowhere, and says so up front when it keeps everything", () => {
+    const why = "your Superset access doesn't include it. A Superset admin can give you access.";
+    const d = decide(as([], { hiddenEntities: ["project"], hiddenReason: why }), pack)!;
+    expect(d.ctx.accessHidden!.reason).toBe(why);
+    expect(d.ctx.accessHidden!.keys.has("project")).toBe(true);
+    expect(d.ctx.accessHidden!.keys.has("household_target")).toBe(true);
+    expect(d.catalogue(catalogueFrom(pack)).entities.map((e) => e.key)).toEqual(["task"]);
+    expect(d.notice).toBeNull();
+    expect(accessNote(d.ctx)).toMatch(/do not say the pack lacks it/);
+    expect(accessNote(d.ctx)).toContain(why);
+    // Every entity kept: nothing to answer from, said before any model is asked.
+    const none = decide(as([], { hiddenEntities: ["task", "project"], hiddenReason: why }), pack)!;
+    expect(none.notice).toBe(`None of this assistant's data is available to you: ${why}`);
+    // Keys a pack rule hides are not the host's: no reason, no notice, no note.
+    const ruled = decide(as(["auditor"]), pack, { rules: RULES })!;
+    expect([ruled.ctx.accessHidden, ruled.notice, accessNote(ruled.ctx)]).toEqual([undefined, null, null]);
+  });
+
+  it("keeps a board the host hides from its caller, whoever owns it", () => {
+    const who = as([], { hiddenBoards: ["superset-2"], maintain: true });
+    expect(boardRights(who, { id: "superset-2" })).toEqual({ view: false, edit: false });
+    expect(boardRights(who, { id: "superset-1" })).toEqual({ view: true, edit: true });
+    expect(boardRights(as([], { hiddenBoards: ["b_1"] }), { id: "b_1", owner: "u" })).toEqual({ view: false, edit: false });
+    expect(principalOf({ user: "u", hiddenBoards: ["x"], hiddenReason: "r" })).toMatchObject({ hiddenBoards: ["x"], hiddenReason: "r" });
   });
 
   it("leaves the context as it was for a caller with no limits", () => {

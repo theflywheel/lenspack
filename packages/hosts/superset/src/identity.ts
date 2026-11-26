@@ -189,17 +189,25 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
       if (check.refused) return null;
       const caller = callerOf(check.onBoard ? id : { ...id, e: false }, policy, editsOn());
       if (!host) return caller;
+      const access = await host(id.u, id.r);
+      // The dashboard Superset just checked this user may view opens, whatever an older answer said.
+      const signed = check.onBoard ? signedBoard(id) : null;
+      const hiddenBoards = access.hiddenBoards?.filter((b) => b !== signed);
       // "admin" stays the signed admin flag's: a Superset role of that name grants nothing here.
-      return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...(await host(id.u, id.r)) };
+      return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...access, ...(hiddenBoards ? { hiddenBoards } : {}) };
     },
   };
 }
 
-/** "superset": each user's Superset roles, dataset access and RLS narrow what they see. "off" (the default for now): the service account's. */
+/**
+ * "superset" (the default): each user's Superset roles, dataset access and RLS narrow what they see, failing closed.
+ * "off", only when chosen: every answer uses Lenspack's service account (an Admin), so anyone signed in reads every
+ * configured dataset in full.
+ */
 export function hostPolicyFrom(value: string | undefined): "superset" | "off" {
   const v = (value ?? "").trim().toLowerCase();
-  if (v === "" || v === "off") return "off";
-  if (v === "superset") return "superset";
+  if (v === "" || v === "superset") return "superset";
+  if (v === "off") return "off";
   throw new Error(`LENSPACK_HOST_POLICY (hostPolicy) must be "superset" or "off", not "${value}"`);
 }
 

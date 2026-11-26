@@ -241,6 +241,20 @@ class AccessEndpoint(unittest.TestCase):
             db.session.add(rule)
         db.session.commit()
         cls.table = str(table.id)
+        # A dashboard with a chart on the table, and one with a dashboard role: alice may open the first (she reads
+        # the table), bob neither; the dashboard role opens the second for its members only.
+        from superset.models.dashboard import Dashboard
+        from superset.models.slice import Slice
+
+        chart = Slice(slice_name=f"lp chart {os.getpid()}", datasource_type="table", datasource_id=table.id, viz_type="table", params="{}")
+        mine = Dashboard(dashboard_title=f"lp table {os.getpid()}", published=True, slices=[chart])
+        board_role = sm.find_role("LenspackBoard") or sm.add_role("LenspackBoard")
+        roled = Dashboard(dashboard_title=f"lp roled {os.getpid()}", published=True, slices=[])
+        roled.roles = [board_role]
+        user("carol", [gamma, board_role])
+        db.session.add_all([chart, mine, roled])
+        db.session.commit()
+        cls.dash, cls.roled = str(mine.id), str(roled.id)
         cls.client = cls.app.test_client()
         cls.admin = cls.token("lp_admin")
 
@@ -267,6 +281,19 @@ class AccessEndpoint(unittest.TestCase):
     def test_a_user_without_access_is_told_so(self):
         datasets = self.access("bob").get_json()["result"]["datasets"]
         self.assertEqual(datasets[self.table], {"access": False, "rls": []})
+
+    def test_says_which_dashboards_each_user_may_open(self):
+        def dashboards(user):
+            r = self.client.get(f"/api/v1/lenspack/access?user={user}&datasets=&dashboards={self.dash},{self.roled},999999", headers=self.admin)
+            self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+            return r.get_json()["result"]["dashboards"]
+
+        # With DASHBOARD_RBAC on, the role decides the second; without it, a dashboard with no charts opens for anyone.
+        rbac = bool(self.app.config["FEATURE_FLAGS"].get("DASHBOARD_RBAC"))
+        self.assertEqual(dashboards("alice"), {self.dash: True, self.roled: not rbac, "999999": False})
+        self.assertEqual(dashboards("bob"), {self.dash: False, self.roled: not rbac, "999999": False})
+        self.assertEqual(dashboards("carol"), {self.dash: False, self.roled: True, "999999": False})
+        self.assertEqual(dashboards("lp_admin"), {self.dash: True, self.roled: True, "999999": False})
 
     def test_the_identity_header_carries_the_role_names(self):
         import base64
