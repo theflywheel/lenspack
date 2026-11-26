@@ -23,6 +23,13 @@ brought it.
   on. A locked switch says why on its row. Older `telemetry.items` and `telemetry.groups` values keep their meaning;
   scripts that switched items through the route need the new names. See [Telemetry](docs/features/telemetry.md) and [Upgrading](docs/operating/upgrading.md#telemetry-switches-by-field).
   ([#100](https://github.com/theflywheel/lenspack/pull/100))
+- **Access checks fail closed, every time.** Inside Superset, when Superset answered 404 for the plugin's access
+  route even once (a pod without the plugin during a rollout, or a path prefix sending the request elsewhere), the
+  server switched for good, until restart, to Superset's row-level security rules alone, with every dataset readable.
+  Now any request whose access can't be checked is refused ("Your Superset access could not be checked just now"),
+  and the next request asks Superset again. The old fallback is there only for a Superset still running a plugin
+  without the route, as the explicit `accessFallback: rls-only` (`LENSPACK_ACCESS_FALLBACK`), with a warning at
+  every start. See [When access can't be checked](docs/access/superset.md#when-access-cant-be-checked). ([#104](https://github.com/theflywheel/lenspack/pull/104))
 - **Fixes from a read-only test on a real Superset 6.1.**
   - When the chat cannot change the dashboard (the `boardEdits` switch is off, or the person may not edit), the
     assistant's instructions now say so plainly, and it never offers or suggests a change ("you can remove the

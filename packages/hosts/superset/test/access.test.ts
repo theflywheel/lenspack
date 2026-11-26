@@ -9,7 +9,7 @@ import { memoryStore } from "@lenspack/core";
 import { createApp } from "@lenspack/serve";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { type DatasetAccess, SUPERSET_HIDDEN_REASON as HIDDEN, SUPERSET_UNREACHABLE_REASON as UNREACHABLE, parseClause, rlsScope, stockAccess, supersetPolicy, viewableDashboards } from "../src/access";
+import { type DatasetAccess, SUPERSET_HIDDEN_REASON as HIDDEN, SUPERSET_UNREACHABLE_REASON as UNREACHABLE, accessFallbackFrom, parseClause, rlsScope, stockAccess, supersetPolicy, viewableDashboards } from "../src/access";
 import { type SupersetDataset, packFromDatasets } from "../src/catalogue";
 import { supersetClient } from "../src/client";
 import { supersetConnector } from "../src/connector";
@@ -67,6 +67,14 @@ describe("RLS clauses as filters", () => {
     expect(hostPolicyFrom("off")).toBe("off");
     expect(hostPolicyFrom(" OFF ")).toBe("off");
     expect(() => hostPolicyFrom("yes")).toThrow(/superset/);
+  });
+
+  it("reads LENSPACK_ACCESS_FALLBACK: none unless rls-only is chosen", () => {
+    expect(accessFallbackFrom(undefined)).toBe("none");
+    expect(accessFallbackFrom("")).toBe("none");
+    expect(accessFallbackFrom(" None ")).toBe("none");
+    expect(accessFallbackFrom(" RLS-only ")).toBe("rls-only");
+    expect(() => accessFallbackFrom("yes")).toThrow(/rls-only/);
   });
 });
 
@@ -313,7 +321,32 @@ describe("supersetPolicy on its own", () => {
     }
   });
 
-  it("without the plugin's endpoint, reads Superset's RLS rules by role, and fails a template or missing roles closed", async () => {
+  it("refuses everything while Superset answers 404 for the access route, and never remembers it", async () => {
+    const logs: string[] = [];
+    const policy = supersetPolicy({ client, binding, log: (s) => logs.push(s), dashboards: () => [7] });
+    superset.state.access.ivy = { 1: { access: true, rls: ["region = 'north'"] }, 2: { access: false, rls: [] } };
+    superset.state.dashboards.ivy = { 7: true };
+    // A Superset 404 (a pod without the plugin, a misrouted path prefix), even with RLS rules readable.
+    superset.state.plugin = false;
+    superset.state.rules = [{ filter_type: "Regular", tables: [{ id: 1 }], roles: [{ name: "Sales" }], group_key: null, clause: "region = 'south'" }];
+    try {
+      for (let i = 0; i < 3; i++) expect(await policy("ivy", ["Sales"])).toEqual({ hiddenEntities: ["visits", "targets"], hiddenBoards: ["superset-7"], hiddenReason: UNREACHABLE });
+      expect(logs.at(-1)).toMatch(/could not ask Superset about ivy \(Superset answered 404 for \/api\/v1\/lenspack\/access/);
+      // Another user is refused too: nothing in the process switched to the RLS rules.
+      expect(await policy("jon", ["Sales"])).toMatchObject({ hiddenEntities: ["visits", "targets"], hiddenReason: UNREACHABLE });
+      // The route is back: the very next request is answered from it, with the dataset access it says.
+      superset.state.plugin = true;
+      expect(await policy("ivy", ["Sales"])).toEqual({ hiddenEntities: ["targets"], scope: [{ entity: "visits", dimension: "region", op: "eq", value: "north" }], hiddenReason: HIDDEN });
+      // And a 404 later still refuses: there is no switch to flip.
+      superset.state.plugin = false;
+      expect(await supersetPolicy({ client, binding, log: () => {} })("ivy", ["Sales"])).toMatchObject({ hiddenEntities: ["visits", "targets"], hiddenReason: UNREACHABLE });
+    } finally {
+      superset.state.plugin = true;
+      superset.state.rules = [];
+    }
+  });
+
+  it("with accessFallback: rls-only, reads Superset's RLS rules by role on a 404, and fails a template or missing roles closed", async () => {
     superset.state.plugin = false;
     superset.state.rules = [
       { filter_type: "Regular", tables: [{ id: 1 }], roles: [{ name: "Sales" }], group_key: "r", clause: "region = 'south'" },
@@ -322,7 +355,7 @@ describe("supersetPolicy on its own", () => {
       { filter_type: "Regular", tables: [{ id: 2 }], roles: [{ name: "Ops" }], group_key: null, clause: "region = '{{ current_username() }}'" },
     ];
     const logs: string[] = [];
-    const policy = supersetPolicy({ client, binding, log: (s) => logs.push(s) });
+    const policy = supersetPolicy({ client, binding, log: (s) => logs.push(s), fallback: "rls-only", ttlMs: 0 });
     expect(await policy("erin", ["Sales"])).toEqual({
       scope: [
         { entity: "visits", dimension: "region", op: "in", value: ["south", "east"] },
@@ -335,5 +368,9 @@ describe("supersetPolicy on its own", () => {
     expect(logs.some((l) => /RLS rules from Superset's REST API/.test(l))).toBe(true);
     expect(await policy("old", undefined)).toEqual({ hiddenEntities: ["visits", "targets"], hiddenReason: UNREACHABLE });
     expect(await stockAccess(client, [1], [])).toEqual({ 1: { access: true, rls: [] } });
+    // Not remembered either: with the route back, its answer (dataset access included) applies again.
+    superset.state.plugin = true;
+    superset.state.access.erin = { 1: { access: false, rls: [] }, 2: { access: true, rls: [] } };
+    expect(await policy("erin", ["Sales"])).toEqual({ hiddenEntities: ["visits"], hiddenReason: HIDDEN });
   });
 });

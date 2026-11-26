@@ -51,11 +51,11 @@ or set `hostPolicy: off` to keep the old behaviour while you do. Lenspack warns 
 dashboard roles can ask about that dashboard's data only with a plugin that reports dashboard grants. With an older
 plugin, a dashboard role opens the dashboard but none of its data in the chat.
 
-**Older plugins and the access route.** Without the plugin's `/api/v1/lenspack/access` route, the server reads
-row-level security rules from Superset's REST API and matches them to the roles in the identity header. That route
-cannot read dataset permissions or dashboard access, or render templates: every dataset counts as readable, a
-templated clause keeps its dataset from the user, and only the dashboard a request is about is listed. Update the
-plugin.
+**Older plugins and the access route.** Without the plugin's `/api/v1/lenspack/access` route, every data request is
+refused with "Your Superset access could not be checked", because the server can't check each person's access. Earlier
+releases fell back by themselves, for the rest of the process, to Superset's row-level security rules alone, with every
+dataset readable; that now happens only with `accessFallback: rls-only`. Update the plugin. See [When access can't be
+checked](../../access/superset.md#when-access-cant-be-checked).
 
 **Board and pack in the signed identity.** An older plugin signs only the dashboard id. The server still checks it,
 but update the plugin.
