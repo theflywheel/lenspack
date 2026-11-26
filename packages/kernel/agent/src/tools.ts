@@ -207,7 +207,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     if (opts.readOnly) {
       told({ outcome: "refused", ops: Array.isArray(edit) ? edit.map((o) => o.op) : [], error: "read-only" });
       // A host with personal dashboards offers a copy the caller can change instead.
-      const offer = opts.personal?.offersCopy ? { offer: "copy_dashboard" as const, error: `${opts.readOnly} You can also have your own copy of this dashboard to change: say “make me my own copy”.` } : {};
+      const offer = opts.personal?.offersCopy ? { offer: "copy_dashboard" as const, error: `${opts.readOnly} You can also have your own copy of this dashboard to change: say “make me my own copy”.`, ...(opts.personal.ownOnly ? { ownOnly: true as const } : {}) } : {};
       return Promise.resolve({ applied: false as const, error: opts.readOnly, readOnly: true as const, ...offer });
     }
     const work = async () => {

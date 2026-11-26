@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, memoryStore } from "@lenspack/core";
-import { decide, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
+import { type EditScope, decide, editScopeFrom, editScopeWarning, mayEditInScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
 import YAML from "yaml";
 
@@ -24,7 +24,7 @@ import { supersetClient } from "./client";
 import { supersetConnector } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
 import { supersetPolicy } from "./access";
-import { canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
+import { type EditScopeCheck, type Identity, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
 import { personalDashboards } from "./personal";
 import { actorOf, personalRoutes } from "./personal-routes";
 import { fileRecords } from "./records";
@@ -74,6 +74,13 @@ export type SupersetConfig = AdminConfig & {
    * LENSPACK_MAX_SAVED_CONFIGS_PER_USER, and an admin can change them on a running server.
    */
   personal?: { maxDashboardsPerUser?: number; maxSavedConfigsPerUser?: number };
+  /**
+   * Where the chat may change dashboards (docs/my-dashboards.md): "superset" (the default), any dashboard
+   * Superset lets the person edit; "own", only their own dashboards, so shared ones stay as they are and people
+   * make their own copy to change. Admins are exempt unless adminsExempt is false. LENSPACK_EDIT_SCOPE and
+   * LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT win; an admin can change it on a running server.
+   */
+  editScope?: "superset" | "own" | { scope?: "superset" | "own"; adminsExempt?: boolean };
   /** Else LENSPACK_HOST, else 127.0.0.1. */
   host?: string;
   /** Else LENSPACK_PORT, else 8795. */
@@ -197,6 +204,30 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   };
   const personal = personalDashboards({ client, store, pack, bindBoard: bindId, links, layouts, limits, audit: auditLog?.audit, log });
 
+  // Where the chat may change dashboards: the config's (or environment's) scope, unless an admin set one.
+  const configScope = editScopeFrom(config.editScope, env);
+  const editScope = (): EditScope => {
+    const saved = admin.settings.get<Partial<EditScope>>("editScope") ?? {};
+    return { scope: saved.scope ?? configScope.scope, adminsExempt: saved.adminsExempt ?? configScope.adminsExempt };
+  };
+  const scopeWarning = () => editScopeWarning(editScope(), { personalOn: admin.features.on("personalDashboards"), editsOn: admin.features.on("boardEdits") });
+  /** Whether the dashboard Superset signed for is one of this person's own (made or copied through Lenspack). */
+  const isOwn = async (id: Identity) => {
+    if (typeof id.d !== "number") return false;
+    const link = await links.get(String(id.d));
+    return !!link && (link.ownerId === id.i || link.owner === id.u);
+  };
+  const scoped: EditScopeCheck = async (id) => {
+    const scope = editScope();
+    const v = mayEditInScope(actorOf(id), scope, limits(), { hostEdit: true, own: scope.scope === "own" ? await isOwn(id) : false });
+    return v.ok ? null : v.why;
+  };
+  log(`edit scope ${configScope.scope}${configScope.scope === "own" ? ` (admins ${configScope.adminsExempt ? "exempt" : "not exempt"})` : ""}`);
+  {
+    const w = scopeWarning();
+    if (w) log(`warning: ${w}`);
+  }
+
   /**
    * Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. Only the one
    * Superset checked the user may view (the signed d); null for any other.
@@ -244,12 +275,15 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     }
   };
 
-  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined);
+  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined, scoped);
   const supersetBase = (req: IncomingMessage) => (base ? "" : (pageVars(req).supersetUrl ?? ""));
   const mine = personalRoutes({
     personal,
     identity: (req) => identityOf(req, () => idKey),
-    canEdit: (id) => canEdit(id, editPolicy, admin.features.on("boardEdits")),
+    canEdit: async (id) => {
+      if (!canEdit(id, editPolicy, admin.features.on("boardEdits"))) return { edit: false };
+      return (await scoped(id)) ? { edit: false, byScope: true } : { edit: true };
+    },
     // What the person may use of the pack, decided by policy from what Superset says about them.
     scope: async (req) => {
       const caller = await auth.identify(req);
@@ -273,6 +307,26 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       admin.settings.set("personal", Object.keys(next).length ? next : undefined);
       return { ok: true };
     },
+    editScope: () => ({ ...editScope(), defaults: configScope, warning: scopeWarning() }),
+    setEditScope: (body) => {
+      const next: Partial<EditScope> = { ...(admin.settings.get<Partial<EditScope>>("editScope") ?? {}) };
+      for (const [k, v] of Object.entries(body)) {
+        if (k === "scope") {
+          if (v === null) delete next.scope;
+          else if (v === "superset" || v === "own") next.scope = v;
+          else return { ok: false, error: 'scope must be "superset" or "own", or null' };
+        } else if (k === "adminsExempt") {
+          if (v === null) delete next.adminsExempt;
+          else if (typeof v === "boolean") next.adminsExempt = v;
+          else return { ok: false, error: "adminsExempt must be true or false, or null" };
+        } else return { ok: false, error: `unknown setting "${k}" (scope, adminsExempt)` };
+      }
+      admin.settings.set("editScope", Object.keys(next).length ? next : undefined);
+      const w = scopeWarning();
+      if (w) log(`warning: ${w}`);
+      return { ok: true };
+    },
+    audit: auditLog?.audit,
     base: supersetBase,
     reply: (res, status, body) => json(res, status, body, NO_STORE),
   });
@@ -289,7 +343,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       personal: (req, turn) => {
         const id = identityOf(req, () => idKey);
         if (!id || typeof id.d !== "number" || turn.boardId !== `superset-${id.d}` || !limits().on) return undefined;
-        return personal.port(actorOf(id), { dashboard: id.d, board: turn.boardId, view: id.v !== false, edit: !turn.readOnly }, supersetBase(req));
+        // Refused by the edit scope alone: Superset would let them edit, the deployment keeps the chat to their own.
+        const byScope = !!turn.readOnly && canEdit(id, editPolicy, admin.features.on("boardEdits"));
+        return personal.port(actorOf(id), { dashboard: id.d, board: turn.boardId, view: id.v !== false, edit: !turn.readOnly, byScope }, supersetBase(req));
       },
     },
     port,
@@ -322,6 +378,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           dashboards: Object.values(dashboards),
           // People's own dashboards and saved layouts: the switch and the limits (PUT /_superset/settings/personal).
           personal: limits(),
+          // Where the chat may change dashboards (PUT /_superset/settings/edit-scope), with a warning when no one can.
+          editScope: { ...editScope(), defaults: configScope, warning: scopeWarning() },
           publicPath: base,
           panel,
         }),

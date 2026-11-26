@@ -76,6 +76,8 @@ export type PersonalDashboardRef = { dashboard: number; board: string; title: st
 export interface PersonalPort {
   /** Whether the edit tools' "read only" answer should offer a copy of this dashboard the caller can change. */
   readonly offersCopy: boolean;
+  /** The host would let the caller edit this dashboard, but the deployment keeps chat edits to their own dashboards. */
+  readonly ownOnly?: boolean;
   mine(): Promise<{ dashboards: PersonalDashboardRef[]; layouts: { id: string; name: string; from: string; savedAt: string }[] }>;
   createDashboard(title: string): Promise<PersonalResult<PersonalDashboardRef>>;
   /** A copy of the turn's dashboard, the caller's own, its charts copied. */

@@ -15,8 +15,11 @@ export type PersonalRoutesOptions = {
   personal: PersonalDashboards;
   /** The signed identity of a request, or null. */
   identity: (req: IncomingMessage) => Identity | null;
-  /** Whether that identity may edit the dashboard it was signed for (the edit policy and the edits switch). */
-  canEdit: (id: Identity) => boolean;
+  /**
+   * Whether that identity may edit the dashboard it was signed for (the edit policy, the edits switch and the
+   * edit scope); `byScope` when Superset would let them but the deployment's edit scope does not.
+   */
+  canEdit: (id: Identity) => Promise<{ edit: boolean; byScope?: boolean }>;
   /** The engine context and capabilities the person's queries run with (their hidden keys and datasets). */
   scope: (req: IncomingMessage) => Promise<{ ctx: Ctx; capabilities?: Capabilities } | null>;
   /** Binds a dashboard the person is on, so the board exists before a save or an apply. */
@@ -26,6 +29,12 @@ export type PersonalRoutesOptions = {
   limits: () => PersonalLimits;
   /** Admin: change the limits (settings.json "personal"). Throws when the settings can't be saved. */
   setLimits: (body: Record<string, unknown>) => { ok: true } | { ok: false; error: string };
+  /** The edit scope as it stands, for the admin. */
+  editScope: () => unknown;
+  /** Admin: change the edit scope (settings.json "editScope"). Throws when the settings can't be saved. */
+  setEditScope: (body: Record<string, unknown>) => { ok: true } | { ok: false; error: string };
+  /** The audit log, for settings changes. */
+  audit?: (e: { at: string; user: string; action: string; outcome: "ok" | "refused" | "denied"; detail?: string }) => void;
   /** Where browsers reach Superset, for links ("" when the panel runs on Superset's own pages). */
   base: (req: IncomingMessage) => string;
   reply: (res: ServerResponse, status: number, body: unknown) => void;
@@ -52,18 +61,20 @@ export const actorOf = (id: Identity): PersonalActor => ({ user: id.u, userId: t
 export function personalRoutes(o: PersonalRoutesOptions) {
   const { personal } = o;
   /** The rights Superset signed for ?dashboard=, or null when it signed none for that dashboard (an older plugin, another dashboard). */
-  const signedFor = (id: Identity, url: URL): (SignedRights & { dashboard: number }) | null => {
+  const signedFor = async (id: Identity, url: URL): Promise<(SignedRights & { dashboard: number; byScope?: boolean }) | null> => {
     const want = Number(url.searchParams.get("dashboard"));
     if (!Number.isSafeInteger(want) || want <= 0 || id.d !== want) return null;
-    return { dashboard: want, view: id.v === true, edit: id.v === true && o.canEdit(id) };
+    const rights = id.v === true ? await o.canEdit(id) : { edit: false };
+    return { dashboard: want, view: id.v === true, edit: rights.edit, ...(rights.byScope ? { byScope: true } : {}) };
   };
+  const audited = (who: PersonalActor, action: string, outcome: "ok" | "refused" | "denied", detail: string) => o.audit?.({ at: new Date().toISOString(), user: who.user, action, outcome, detail: detail.slice(0, 300) });
   const unsigned = { error: "Superset did not check your access to this dashboard. Reload the page; if it keeps happening, lenspack_superset.py in Superset needs updating.", code: "unsigned" };
   const status = (r: { ok: boolean; code?: string }) => (r.ok ? 200 : r.code === "not-yours" || r.code === "no-view" || r.code === "no-edit" || r.code === "no-user-id" ? 403 : r.code === "missing" ? 404 : r.code === "limit" || r.code === "off" ? 409 : 400);
 
   /** Handles the request when it is one of these routes; false otherwise. */
   return async function handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const path = url.pathname;
-    if (path !== "/_superset/personal" && path !== "/_superset/settings/personal" && path !== "/_superset/my" && !path.startsWith("/_superset/my/")) return false;
+    if (path !== "/_superset/personal" && path !== "/_superset/settings/personal" && path !== "/_superset/settings/edit-scope" && path !== "/_superset/my" && !path.startsWith("/_superset/my/")) return false;
     const id = o.identity(req);
     if (!id) return o.reply(res, 401, { error: "sign in to Superset first" }), true;
     const who = actorOf(id);
@@ -74,21 +85,27 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         const r = await personal.everyone(who, base);
         return send(r.ok ? r : { ...r, code: "not-yours" }), true;
       }
-      if (path === "/_superset/settings/personal" && req.method === "PUT") {
-        if (!who.admin) return o.reply(res, 403, { error: "only Superset admins can change this" }), true;
-        const r = o.setLimits(await body(req));
-        return o.reply(res, r.ok ? 200 : 400, r.ok ? { ok: true, limits: o.limits() } : r), true;
+      if ((path === "/_superset/settings/personal" || path === "/_superset/settings/edit-scope") && req.method === "PUT") {
+        const action = `PUT ${path}`;
+        if (!who.admin) return audited(who, action, "denied", "not a Superset admin"), o.reply(res, 403, { error: "only Superset admins can change this" }), true;
+        const b = await body(req);
+        const r = path === "/_superset/settings/personal" ? o.setLimits(b) : o.setEditScope(b);
+        audited(who, action, r.ok ? "ok" : "refused", r.ok ? JSON.stringify(b) : r.error);
+        if (!r.ok) return o.reply(res, 400, r), true;
+        return o.reply(res, 200, path === "/_superset/settings/personal" ? { ok: true, limits: o.limits() } : { ok: true, editScope: o.editScope() }), true;
       }
       if (path === "/_superset/my" && req.method === "GET") {
-        const here = url.searchParams.has("dashboard") ? signedFor(id, url) : null;
-        return o.reply(res, 200, await personal.overview(who, here, base)), true;
+        const here = url.searchParams.has("dashboard") ? await signedFor(id, url) : null;
+        const view = await personal.overview(who, here, base);
+        // byScope: Superset would let them edit here, but the deployment keeps the chat to their own dashboards.
+        return o.reply(res, 200, view.here && here?.byScope ? { ...view, here: { ...view.here, byScope: true } } : view), true;
       }
       if (req.method !== "POST") return o.reply(res, 405, { error: "POST" }), true;
       const b = await body(req);
       const str = (k: string) => (typeof b[k] === "string" ? (b[k] as string) : "");
       if (path === "/_superset/my/dashboards") {
         if (b.copy !== true) return send(await personal.create(who, str("title"), base)), true;
-        const here = signedFor(id, url);
+        const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
         return send(await personal.copy(who, here, str("title") || undefined, base)), true;
       }
@@ -98,7 +115,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         return send(await personal.remove(who, d)), true;
       }
       if (path === "/_superset/my/layouts") {
-        const here = signedFor(id, url);
+        const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
         const scope = await o.scope(req);
         const board = await o.bind(here.dashboard);
@@ -111,7 +128,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         const [, layoutId, action] = m as unknown as [string, string, "apply" | "rename" | "delete"];
         if (action === "rename") return send(await personal.renameLayout(who, layoutId, str("name"))), true;
         if (action === "delete") return send(await personal.deleteLayout(who, layoutId)), true;
-        const here = signedFor(id, url);
+        const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
         const scope = await o.scope(req);
         if (!scope) return o.reply(res, 403, unsigned), true;

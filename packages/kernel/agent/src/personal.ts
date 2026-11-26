@@ -81,7 +81,7 @@ export function personalTools(o: PersonalToolsOptions): Tool[] {
       execute: ({ layout }) =>
         o.edit(async () => {
           const got = await port.layoutToApply(layout, !o.readOnly);
-          if (!got.ok) return { applied: false, error: got.error, ...(got.code ? { code: got.code } : {}), ...(got.code === "no-edit" && port.offersCopy ? { readOnly: true, offer: "copy_dashboard" } : {}) };
+          if (!got.ok) return { applied: false, error: got.error, ...(got.code ? { code: got.code } : {}), ...(got.code === "no-edit" && port.offersCopy ? { readOnly: true, offer: "copy_dashboard", ...(port.ownOnly ? { ownOnly: true } : {}) } : {}) };
           const board = await o.store.get(o.boardId);
           if (!board) return { applied: false, error: "This board no longer exists" };
           const fit = fitSavedLayout(got.layout.config, board.config, o.pack, { ctx: o.ctx, capabilities: o.connector.capabilities, savedLocked: got.layout.locked, targetLocked: got.targetLocked });

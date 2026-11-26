@@ -16,18 +16,23 @@ describe("/_superset/my", () => {
   let server: Server;
   let base = "";
   const calls: { fn: string; who: unknown; args: unknown[] }[] = [];
+  const audited: { user: string; action: string; outcome: string; detail?: string }[] = [];
+  let scopeOwn = false;
   // personal.ts itself is tested in personal.test.ts: here, what the routes hand it.
   const fake = new Proxy({}, { get: (_t, fn: string) => async (who: unknown, ...args: unknown[]) => (calls.push({ fn, who, args }), fn === "everyone" ? { ok: true, users: [] } : { ok: true, fn }) }) as unknown as PersonalDashboards;
   beforeAll(async () => {
     const handle = personalRoutes({
       personal: fake,
       identity: (req) => identityOf(req, () => KEY),
-      canEdit: (id) => canEdit(id, "superset"),
+      canEdit: async (id) => (!canEdit(id, "superset") ? { edit: false } : scopeOwn && !id.a ? { edit: false, byScope: true } : { edit: true }),
       scope: async () => ({ ctx: {} }),
       bind: async (d) => `superset-${d}`,
       shownBoard: async () => ({ config: emptyBoard({ pack: "p", version: 1 }, "T"), title: "T" }),
       limits: () => PERSONAL_DEFAULTS,
       setLimits: () => ({ ok: true }),
+      editScope: () => ({ scope: scopeOwn ? "own" : "superset" }),
+      setEditScope: (b) => (b.scope === "own" || b.scope === "superset" ? ((scopeOwn = b.scope === "own"), { ok: true }) : { ok: false, error: "scope must be superset or own" }),
+      audit: (e) => audited.push(e),
       base: () => "",
       reply: (res, status, body) => {
         res.writeHead(status, { "content-type": "application/json" });
@@ -81,5 +86,23 @@ describe("/_superset/my", () => {
     await fetch(`${base}/_superset/personal`, { headers: as({ a: true }) });
     expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { admin: true } });
     expect((await fetch(`${base}/_superset/settings/personal`, { method: "PUT", headers: as({}), body: "{}" })).status).toBe(403);
+  });
+
+  it("changes the edit scope for admins only, audits it, and the next request follows it", async () => {
+    calls.length = 0;
+    const editor = { d: 3, v: true, e: true };
+    await post("/_superset/my/layouts/l_1/apply?dashboard=3", editor);
+    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: true }] });
+    const put = (claims: Partial<Identity>, body: unknown) => fetch(`${base}/_superset/settings/edit-scope`, { method: "PUT", headers: as(claims), body: JSON.stringify(body) });
+    expect((await put({}, { scope: "own" })).status).toBe(403);
+    expect((await put({ a: true }, { scope: "nope" })).status).toBe(400);
+    expect(await (await put({ a: true }, { scope: "own" })).json()).toMatchObject({ ok: true, editScope: { scope: "own" } });
+    expect(audited.filter((a) => a.action.endsWith("edit-scope")).map((a) => [a.user, a.outcome])).toEqual([["vee", "denied"], ["vee", "refused"], ["vee", "ok"]]);
+    // Superset lets them edit dashboard 3, but it isn't theirs: the apply is asked with edit false, and the menu says why.
+    await post("/_superset/my/layouts/l_1/apply?dashboard=3", editor);
+    expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: false }] });
+    await fetch(`${base}/_superset/my?dashboard=3`, { headers: as(editor) });
+    expect(calls.at(-1)).toMatchObject({ fn: "overview", args: [{ dashboard: 3, edit: false, byScope: true }, ""] });
+    await put({ a: true }, { scope: "superset" });
   });
 });

@@ -56,7 +56,7 @@
       saveCurrent: "Save this layout", name: "Name", save: "Save", saved: "Saved the layout as “{0}”.", apply: "Apply", applyTo: "Apply {0} to this dashboard", applied: "Applied the layout “{0}”.", left: "Left out: {0}.",
       rename: "Rename {0}", renamed: "Renamed to “{0}”.", confirmLayoutDel: "Delete the saved layout “{0}”? Dashboards keep their charts.", noEdit: "You can't edit this dashboard. Make your own copy first, then apply the layout there.",
       limitD: "{0} of {1}", off: "Turned off on this deployment.", copyNo: "You can't copy this dashboard.", fullD: "You have the most dashboards allowed ({0}). Delete one first.", fullL: "You have the most saved layouts allowed ({0}). Delete one first.",
-      viewOnly: "You can only view this dashboard.", offer: "Make my own copy", offerDone: "Made your copy “{0}”. Opening it to make the change there…", made: "Made “{0}”.", openIt: "Open it", undo: "Undo", undone: "Layout undone.",
+      viewOnly: "You can only view this dashboard.", offer: "Make my own copy", copyToEdit: "Make my own copy to edit", ownOnly: "On this deployment, the chat changes only your own dashboards. Make your own copy to edit, then apply the layout there.", ownOnlyChat: "The chat changes only your own dashboards here.", offerDone: "Made your copy “{0}”. Opening it to make the change there…", made: "Made “{0}”.", openIt: "Open it", undo: "Undo", undone: "Layout undone.",
       working: "Working…", by: "by {0}", failed: "That didn't work: {0}", menuD: "My dashboards: make one, copy this one, open or delete yours", menuL: "Saved layouts: save this one, apply one here",
     },
     fr: {
@@ -65,7 +65,7 @@
       saveCurrent: "Enregistrer cette disposition", name: "Nom", save: "Enregistrer", saved: "Disposition enregistrée sous « {0} ».", apply: "Appliquer", applyTo: "Appliquer {0} à ce tableau de bord", applied: "Disposition « {0} » appliquée.", left: "Laissés de côté : {0}.",
       rename: "Renommer {0}", renamed: "Renommée en « {0} ».", confirmLayoutDel: "Supprimer la disposition « {0} » ? Les tableaux de bord gardent leurs graphiques.", noEdit: "Vous ne pouvez pas modifier ce tableau de bord. Faites d'abord votre copie, puis appliquez-y la disposition.",
       limitD: "{0} sur {1}", off: "Désactivé sur ce déploiement.", copyNo: "Vous ne pouvez pas copier ce tableau de bord.", fullD: "Vous avez le maximum de tableaux de bord ({0}). Supprimez-en un d'abord.", fullL: "Vous avez le maximum de dispositions ({0}). Supprimez-en une d'abord.",
-      viewOnly: "Vous pouvez seulement consulter ce tableau de bord.", offer: "Faire ma copie", offerDone: "Copie « {0} » créée. Ouverture pour y faire la modification…", made: "« {0} » créé.", openIt: "L'ouvrir", undo: "Annuler", undone: "Disposition annulée.",
+      viewOnly: "Vous pouvez seulement consulter ce tableau de bord.", offer: "Faire ma copie", copyToEdit: "Faire ma copie pour la modifier", ownOnly: "Ici, le chat ne modifie que vos propres tableaux de bord. Faites votre copie pour la modifier, puis appliquez-y la disposition.", ownOnlyChat: "Ici, le chat ne modifie que vos propres tableaux de bord.", offerDone: "Copie « {0} » créée. Ouverture pour y faire la modification…", made: "« {0} » créé.", openIt: "L'ouvrir", undo: "Annuler", undone: "Disposition annulée.",
       working: "En cours…", by: "de {0}", failed: "Échec : {0}", menuD: "Mes tableaux de bord : en créer un, copier celui-ci, ouvrir ou supprimer les vôtres", menuL: "Dispositions enregistrées : enregistrer celle-ci, en appliquer une ici",
     },
     pt: {
@@ -74,7 +74,7 @@
       saveCurrent: "Guardar esta disposição", name: "Nome", save: "Guardar", saved: "Disposição guardada como “{0}”.", apply: "Aplicar", applyTo: "Aplicar {0} a este painel", applied: "Disposição “{0}” aplicada.", left: "Deixados de fora: {0}.",
       rename: "Mudar o nome de {0}", renamed: "Novo nome: “{0}”.", confirmLayoutDel: "Eliminar a disposição “{0}”? Os painéis mantêm os gráficos.", noEdit: "Não pode alterar este painel. Faça primeiro a sua cópia e aplique lá a disposição.",
       limitD: "{0} de {1}", off: "Desativado nesta instalação.", copyNo: "Não pode copiar este painel.", fullD: "Já tem o número máximo de painéis ({0}). Elimine um primeiro.", fullL: "Já tem o número máximo de disposições ({0}). Elimine uma primeiro.",
-      viewOnly: "Só pode consultar este painel.", offer: "Fazer a minha cópia", offerDone: "Cópia “{0}” criada. A abrir para fazer lá a alteração…", made: "“{0}” criado.", openIt: "Abrir", undo: "Desfazer", undone: "Disposição desfeita.",
+      viewOnly: "Só pode consultar este painel.", offer: "Fazer a minha cópia", copyToEdit: "Fazer a minha cópia para alterar", ownOnly: "Aqui, o chat só altera os seus próprios painéis. Faça a sua cópia para alterar e aplique lá a disposição.", ownOnlyChat: "Aqui, o chat só altera os seus próprios painéis.", offerDone: "Cópia “{0}” criada. A abrir para fazer lá a alteração…", made: "“{0}” criado.", openIt: "Abrir", undo: "Desfazer", undone: "Disposição desfeita.",
       working: "A trabalhar…", by: "de {0}", failed: "Não funcionou: {0}", menuD: "Os meus painéis: criar um, copiar este, abrir ou eliminar os seus", menuL: "Disposições guardadas: guardar esta, aplicar uma aqui",
     },
     hi: {
@@ -83,7 +83,7 @@
       saveCurrent: "यह लेआउट सहेजें", name: "नाम", save: "सहेजें", saved: "लेआउट “{0}” नाम से सहेजा गया।", apply: "लागू करें", applyTo: "{0} इस डैशबोर्ड पर लागू करें", applied: "लेआउट “{0}” लागू किया गया।", left: "छोड़े गए: {0}।",
       rename: "{0} का नाम बदलें", renamed: "नया नाम “{0}”।", confirmLayoutDel: "सहेजा गया लेआउट “{0}” मिटाएँ? डैशबोर्ड के चार्ट बने रहेंगे।", noEdit: "आप यह डैशबोर्ड बदल नहीं सकते। पहले अपनी कॉपी बनाएँ, फिर उस पर लेआउट लागू करें।",
       limitD: "{1} में से {0}", off: "इस डिप्लॉयमेंट पर बंद है।", copyNo: "आप यह डैशबोर्ड कॉपी नहीं कर सकते।", fullD: "आपके पास अधिकतम डैशबोर्ड ({0}) हैं। पहले एक मिटाएँ।", fullL: "आपके पास अधिकतम सहेजे लेआउट ({0}) हैं। पहले एक मिटाएँ।",
-      viewOnly: "आप यह डैशबोर्ड सिर्फ़ देख सकते हैं।", offer: "मेरी अपनी कॉपी बनाएँ", offerDone: "आपकी कॉपी “{0}” बन गई। बदलाव करने के लिए उसे खोला जा रहा है…", made: "“{0}” बन गया।", openIt: "खोलें", undo: "वापस लाएँ", undone: "लेआउट हटाया गया।",
+      viewOnly: "आप यह डैशबोर्ड सिर्फ़ देख सकते हैं।", offer: "मेरी अपनी कॉपी बनाएँ", copyToEdit: "बदलने के लिए अपनी कॉपी बनाएँ", ownOnly: "यहाँ चैट सिर्फ़ आपके अपने डैशबोर्ड बदलता है। बदलने के लिए अपनी कॉपी बनाएँ, फिर उस पर लेआउट लागू करें।", ownOnlyChat: "यहाँ चैट सिर्फ़ आपके अपने डैशबोर्ड बदलता है।", offerDone: "आपकी कॉपी “{0}” बन गई। बदलाव करने के लिए उसे खोला जा रहा है…", made: "“{0}” बन गया।", openIt: "खोलें", undo: "वापस लाएँ", undone: "लेआउट हटाया गया।",
       working: "काम चल रहा है…", by: "{0} का", failed: "नहीं हो पाया: {0}", menuD: "मेरे डैशबोर्ड: नया बनाएँ, इसकी कॉपी बनाएँ, अपने खोलें या मिटाएँ", menuL: "सहेजे गए लेआउट: यह सहेजें, कोई यहाँ लागू करें",
     },
   };
@@ -288,7 +288,7 @@
       if (s.here) {
         const why = !s.here.canCopy ? full || t("copyNo") : null;
         pop.append(
-          action(ICON.copy, "copyThis", () =>
+          action(ICON.copy, s.here.byScope ? "copyToEdit" : "copyThis", () =>
             form(slot, "title", "", "copy", async (title) => {
               const r = await call("POST", "/dashboards", { copy: true, title }, true);
               ctx.note(t("made", r.title), "sync");
@@ -351,9 +351,9 @@
       pop.append(slot);
       const canApply = !!(s.here && s.here.edit);
       if (s.here && !canApply) {
-        const n = el("div", "lpm-offer", t("noEdit"));
+        const n = el("div", "lpm-offer", t(s.here.byScope ? "ownOnly" : "noEdit"));
         if (s.here.canCopy) {
-          const b = el("button", "lpm-pill", t("offer"));
+          const b = el("button", "lpm-pill", t(s.here.byScope ? "copyToEdit" : "offer"));
           b.type = "button";
           b.onclick = () => copyAndGo(null);
           n.append(b);
@@ -472,8 +472,8 @@
         offered = true;
         const n = el("div", "lpm-offer");
         n.setAttribute("role", "group");
-        n.append(el("span", "", t("viewOnly")));
-        const b = el("button", "lpm-pill", t("offer"));
+        n.append(el("span", "", t(o.ownOnly ? "ownOnlyChat" : "viewOnly")));
+        const b = el("button", "lpm-pill", t(o.ownOnly ? "copyToEdit" : "offer"));
         b.type = "button";
         const ask = lastUser;
         b.onclick = () => copyAndGo(ask, b);

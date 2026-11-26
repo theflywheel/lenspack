@@ -120,6 +120,9 @@ export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Call
   return { user: id.u, roles, usage, readOnly: READ_ONLY_MESSAGE };
 }
 
+/** The deployment's edit scope for one identity Superset lets edit: null to allow, else the refusal the chat gives. */
+export type EditScopeCheck = (id: Identity) => Promise<string | null>;
+
 /** Lenspack's name for a Superset dashboard's board. */
 const DASHBOARD_BOARD = /^superset-\d+$/;
 
@@ -174,7 +177,7 @@ const decodePart = (s: string | undefined) => {
  * With a host policy (hostPolicy: superset), the user's own Superset roles, dataset access and row-level security
  * come with them, and policy narrows every query by those rather than by the service account's.
  */
-export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy): AuthAdapter {
+export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, scoped?: EditScopeCheck): AuthAdapter {
   return {
     kind: "superset",
     handle: async (req, res) => {
@@ -189,7 +192,10 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
       if (!id) return null;
       const check = boardCheck(id, req.url);
       if (check.refused) return null;
-      const caller = callerOf(check.onBoard ? id : { ...id, e: false }, policy, editsOn());
+      let caller = callerOf(check.onBoard ? id : { ...id, e: false }, policy, editsOn());
+      // The deployment's edit scope can narrow an edit Superset allows (never widen one): read per request.
+      const outOfScope = caller.edit && scoped ? await scoped(id) : null;
+      if (outOfScope) caller = { user: caller.user, roles: caller.roles, usage: caller.usage, readOnly: outOfScope };
       if (!host) return caller;
       // "admin" stays the signed admin flag's: a Superset role of that name grants nothing here.
       return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...(await host(id.u, id.r)) };

@@ -92,12 +92,45 @@ version: Undo, "restore the previous version" or `POST .../revert` take the dash
 saved layout records the dashboard it came from, when it was saved, and the pack and pack version it was made
 with.
 
+## Where the chat may edit: `editScope`
+
+By default (`editScope: superset`) the chat changes any dashboard Superset lets the person edit, as before.
+With `editScope: own`, the chat changes only the person's own dashboards: the ones they made or copied through
+Lenspack. On any other dashboard, even one Superset lets them edit (an owner of a shared dashboard, say), the
+chat refuses the change and offers "make my own copy". In the panel, the copy item and the saved-layout note then
+read "Make my own copy to edit". Admins are still allowed unless `adminsExempt` is false.
+
+Use `own` when many people use the same shared dashboards, for example in a large pilot: the official dashboards
+stay as they are, everyone still asks questions about them, and anyone who wants something different makes a
+copy of their own. Changes to the official ones are then made in Superset, or through the chat by an admin.
+
+```yaml
+editScope: own                                   # or: { scope: own, adminsExempt: false }
+```
+```sh
+LENSPACK_EDIT_SCOPE=own                          # and LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT=false
+```
+
+An admin can change it on a running server with `PUT /_superset/settings/edit-scope` (below); it applies from
+the next request, and the change goes to the audit log. It only ever narrows what Superset allows. With the
+other switches:
+
+| `boardEdits` | `personalDashboards` | `editScope` | who edits through the chat |
+|---|---|---|---|
+| off | any | any | nobody, admins included |
+| on | any | `superset` | whoever Superset lets edit the dashboard |
+| on | on | `own` | each person on their own dashboards; admins anywhere Superset allows (unless not exempt) |
+| on | off | `own` | nobody but exempt admins: Lenspack warns about this at startup and on the settings page |
+
+A dashboard someone made directly in Superset, not through Lenspack, counts as shared under `own`.
+
 ## Settings
 
 | | default | set by |
 |---|---|---|
 | `personalDashboards` switch | on | `features:` in the config, `LENSPACK_FEATURES`, or an admin on the settings page (like the other [off switches](../packages/hosts/superset/README.md#off-switches)) |
 | most dashboards per person | 20 | `personal.maxDashboardsPerUser` in the config, `LENSPACK_MAX_DASHBOARDS_PER_USER`, or an admin |
+| where the chat may edit | `superset` | `editScope` in the config, `LENSPACK_EDIT_SCOPE` and `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT`, or an admin |
 | most saved layouts per person | 50 | `personal.maxSavedConfigsPerUser` in the config, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER`, or an admin |
 
 Switched off, the two buttons are hidden, the chat tools refuse, and the routes answer 409. Dashboards already
@@ -121,6 +154,7 @@ dashboard than the one signed is refused (403).
 | `POST /_superset/my/layouts/<id>/delete` | |
 | `GET /_superset/personal` | admins: everyone's dashboards and layouts, by person: `{limits, users: [{user, dashboards, layouts}]}` |
 | `PUT /_superset/settings/personal` | admins: any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}`; `null` hands a value back to the config |
+| `PUT /_superset/settings/edit-scope` | admins: any of `{scope: "superset" \| "own", adminsExempt}`; `null` hands a value back to the config. `GET /_superset/settings` shows `editScope` with a `warning` when nobody could edit |
 
 Refusals answer 403 (not allowed), 404 (no such dashboard or layout), 409 (switched off, or at the limit) or 400,
 with `{ok: false, code, error}`; `error` is a sentence to show the person.
@@ -140,7 +174,8 @@ the next time its owner opens the menu.
 
 ## Audit and telemetry
 
-Each create, copy, delete, save, apply, rename and delete of a layout is written to the audit log with the
+Each create, copy, delete, save, apply, rename and delete of a layout, and each change to the limits or the edit
+scope, is written to the audit log with the
 Superset user and the outcome (`ok`, `refused` or `denied`). For a telemetry sink, `personalDashboards()` takes
 a `telemetry` callback that receives one event per action (`dashboard.create`, `layout.apply` and so on).
 Nothing is connected to it yet.

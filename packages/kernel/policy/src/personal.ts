@@ -12,7 +12,7 @@ export const PERSONAL_DEFAULTS: PersonalLimits = { on: true, maxDashboardsPerUse
 /** Who is asking, as the host signed it. `userId` is the host's own id for them, needed to make a dashboard theirs there. */
 export type PersonalActor = { user: string; userId?: number | null; admin: boolean };
 
-export type PersonalRefusal = "off" | "limit" | "no-user-id" | "no-view" | "no-edit" | "not-yours";
+export type PersonalRefusal = "off" | "limit" | "no-user-id" | "no-view" | "no-edit" | "not-yours" | "not-own";
 export type Verdict = { ok: true } | { ok: false; code: PersonalRefusal; why: string };
 
 const OK: Verdict = { ok: true };
@@ -94,5 +94,60 @@ export function personalLimitsFrom(config: { on?: unknown; maxDashboardsPerUser?
     on: config?.on === false ? false : PERSONAL_DEFAULTS.on,
     maxDashboardsPerUser: int("maxDashboardsPerUser", env.LENSPACK_MAX_DASHBOARDS_PER_USER ?? config?.maxDashboardsPerUser, PERSONAL_DEFAULTS.maxDashboardsPerUser),
     maxSavedLayoutsPerUser: int("maxSavedConfigsPerUser", env.LENSPACK_MAX_SAVED_CONFIGS_PER_USER ?? config?.maxSavedConfigsPerUser, PERSONAL_DEFAULTS.maxSavedLayoutsPerUser),
+  };
+}
+
+/**
+ * Where the chat may change dashboards. "superset" (the default): any dashboard the host lets the person edit.
+ * "own": only the person's own dashboards (made or copied through Lenspack, theirs); on any other, even one
+ * the host lets them edit, the edit is refused and they can make their own copy. Admins are exempt unless
+ * `adminsExempt` is false. It narrows the host's rights, never widens them.
+ */
+export type EditScope = { scope: "superset" | "own"; adminsExempt: boolean };
+export const EDIT_SCOPE_DEFAULT: EditScope = { scope: "superset", adminsExempt: true };
+
+export const NOT_OWN_MESSAGE = "On this deployment, the chat changes only dashboards of your own, so nothing was changed on this one.";
+export const NOBODY_EDITS_MESSAGE =
+  "On this deployment, the chat changes only dashboards of one's own, and those are turned off, so nothing was changed. Make the change in Superset, or ask a question about the data instead.";
+
+/**
+ * Whether the edit scope lets this person change this dashboard through the chat. `hostEdit` is what the host
+ * (and the edit policy and switch) already decided; `own` is whether the dashboard is one of the person's own.
+ * With personal dashboards off, "own" leaves nobody but exempt admins able to edit.
+ */
+export function mayEditInScope(who: PersonalActor, scope: EditScope, limits: PersonalLimits, dashboard: { hostEdit: boolean; own: boolean }): Verdict {
+  if (!dashboard.hostEdit) return no("no-edit", "You can't edit this dashboard.");
+  if (scope.scope === "superset") return OK;
+  if (who.admin && scope.adminsExempt) return OK;
+  if (!limits.on) return no("not-own", NOBODY_EDITS_MESSAGE);
+  return dashboard.own ? OK : no("not-own", NOT_OWN_MESSAGE);
+}
+
+/** A warning for an admin when the settings together leave the chat unable to change anything; null when they don't. */
+export function editScopeWarning(scope: EditScope, s: { personalOn: boolean; editsOn: boolean }): string | null {
+  if (scope.scope !== "own" || !s.editsOn || s.personalOn) return null;
+  return `editScope is "own" but personal dashboards are off, so nobody${scope.adminsExempt ? " but admins" : ""} can change dashboards through the chat. Turn personalDashboards on, or set editScope back to "superset".`;
+}
+
+/** The edit scope from config (`"own"`, or `{scope, adminsExempt}`) and environment (LENSPACK_EDIT_SCOPE, LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT, which win), checked. */
+export function editScopeFrom(config: unknown, env: Record<string, string | undefined> = {}): EditScope {
+  const c = typeof config === "string" ? { scope: config } : config && typeof config === "object" ? (config as { scope?: unknown; adminsExempt?: unknown }) : {};
+  const scopeOf = (v: unknown, where: string): EditScope["scope"] => {
+    const t = String(v ?? "").trim().toLowerCase();
+    if (t === "" || t === "superset") return "superset";
+    if (t === "own") return "own";
+    throw new Error(`${where} must be "superset" or "own", not "${String(v)}"`);
+  };
+  const flag = (v: unknown, where: string, fallback: boolean): boolean => {
+    if (v === undefined || v === null || v === "") return fallback;
+    if (v === true || v === false) return v;
+    const t = String(v).trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(t)) return true;
+    if (["false", "0", "no", "off"].includes(t)) return false;
+    throw new Error(`${where} must be true or false, not "${String(v)}"`);
+  };
+  return {
+    scope: env.LENSPACK_EDIT_SCOPE !== undefined && env.LENSPACK_EDIT_SCOPE !== "" ? scopeOf(env.LENSPACK_EDIT_SCOPE, "LENSPACK_EDIT_SCOPE") : scopeOf(c.scope, "editScope"),
+    adminsExempt: flag(env.LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT ?? c.adminsExempt, "editScope.adminsExempt", EDIT_SCOPE_DEFAULT.adminsExempt),
   };
 }

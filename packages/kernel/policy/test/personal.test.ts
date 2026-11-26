@@ -2,7 +2,7 @@
 // the host says, never from the rights of the account Lenspack acts through.
 import { describe, expect, it } from "vitest";
 
-import { PERSONAL_DEFAULTS, layoutsShownTo, mayApplyLayout, mayCopyDashboard, mayCreateDashboard, mayDeleteDashboard, mayManageLayout, maySaveLayout, mayViewAllPersonal, personalLimitsFrom } from "../src";
+import { EDIT_SCOPE_DEFAULT, NOBODY_EDITS_MESSAGE, NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, editScopeFrom, editScopeWarning, mayEditInScope, layoutsShownTo, mayApplyLayout, mayCopyDashboard, mayCreateDashboard, mayDeleteDashboard, mayManageLayout, maySaveLayout, mayViewAllPersonal, personalLimitsFrom } from "../src";
 
 const on = PERSONAL_DEFAULTS;
 const off = { ...on, on: false };
@@ -58,5 +58,44 @@ describe("limits", () => {
     expect(personalLimitsFrom({ maxDashboardsPerUser: 3, maxSavedConfigsPerUser: 4 })).toMatchObject({ maxDashboardsPerUser: 3, maxSavedLayoutsPerUser: 4 });
     expect(personalLimitsFrom({ maxDashboardsPerUser: 3 }, { LENSPACK_MAX_DASHBOARDS_PER_USER: "7" }).maxDashboardsPerUser).toBe(7);
     expect(() => personalLimitsFrom({ maxDashboardsPerUser: -1 })).toThrow(/whole number/);
+  });
+});
+
+describe("where the chat may edit", () => {
+  const own = { scope: "own" as const, adminsExempt: true };
+  const strict = { scope: "own" as const, adminsExempt: false };
+
+  it("superset: wherever the host lets the person edit, never more", () => {
+    expect(mayEditInScope(olu, EDIT_SCOPE_DEFAULT, on, { hostEdit: true, own: false })).toEqual({ ok: true });
+    expect(mayEditInScope(olu, EDIT_SCOPE_DEFAULT, on, { hostEdit: false, own: true })).toMatchObject({ ok: false, code: "no-edit" });
+  });
+
+  it("own: only their own dashboards, even where the host would let them edit; admins exempt unless told otherwise", () => {
+    expect(mayEditInScope(olu, own, on, { hostEdit: true, own: true })).toEqual({ ok: true });
+    expect(mayEditInScope(olu, own, on, { hostEdit: true, own: false })).toEqual({ ok: false, code: "not-own", why: NOT_OWN_MESSAGE });
+    expect(mayEditInScope(olu, own, on, { hostEdit: false, own: true })).toMatchObject({ code: "no-edit" });
+    expect(mayEditInScope(ada, own, on, { hostEdit: true, own: false })).toEqual({ ok: true });
+    expect(mayEditInScope(ada, strict, on, { hostEdit: true, own: false })).toMatchObject({ code: "not-own" });
+  });
+
+  it("own with personal dashboards off: nobody but exempt admins, and the admin is warned", () => {
+    expect(mayEditInScope(olu, own, off, { hostEdit: true, own: true })).toEqual({ ok: false, code: "not-own", why: NOBODY_EDITS_MESSAGE });
+    expect(mayEditInScope(ada, own, off, { hostEdit: true, own: false })).toEqual({ ok: true });
+    expect(mayEditInScope(ada, strict, off, { hostEdit: true, own: false })).toMatchObject({ code: "not-own" });
+    expect(editScopeWarning(own, { personalOn: false, editsOn: true })).toMatch(/nobody but admins/);
+    expect(editScopeWarning(strict, { personalOn: false, editsOn: true })).toMatch(/nobody can/);
+    expect(editScopeWarning(own, { personalOn: true, editsOn: true })).toBeNull();
+    expect(editScopeWarning(EDIT_SCOPE_DEFAULT, { personalOn: false, editsOn: true })).toBeNull();
+    // Edits switched off already says nobody edits: no second warning.
+    expect(editScopeWarning(own, { personalOn: false, editsOn: false })).toBeNull();
+  });
+
+  it("comes from the config and the environment, checked", () => {
+    expect(editScopeFrom(undefined)).toEqual(EDIT_SCOPE_DEFAULT);
+    expect(editScopeFrom("own")).toEqual({ scope: "own", adminsExempt: true });
+    expect(editScopeFrom({ scope: "own", adminsExempt: false })).toEqual({ scope: "own", adminsExempt: false });
+    expect(editScopeFrom("superset", { LENSPACK_EDIT_SCOPE: "own", LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT: "false" })).toEqual({ scope: "own", adminsExempt: false });
+    expect(() => editScopeFrom("mine")).toThrow(/"superset" or "own"/);
+    expect(() => editScopeFrom({ adminsExempt: "perhaps" })).toThrow(/true or false/);
   });
 });

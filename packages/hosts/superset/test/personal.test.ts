@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import { type BoardConfig, type PersonalDashboard, type SavedLayout, memoryRecords, memoryStore } from "@lenspack/core";
 import { catalogueFrom } from "@lenspack/pack";
-import { PERSONAL_DEFAULTS, type PersonalLimits, decide, principalOf } from "@lenspack/policy";
+import { NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, type PersonalLimits, decide, principalOf } from "@lenspack/policy";
 import { type Host, type Provider, buildProvider, createApp, registerLlmAdapter } from "@lenspack/serve";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, describe, expect, it } from "vitest";
@@ -428,7 +428,7 @@ describe("in the chat", () => {
   const servers: Server[] = [];
   afterAll(() => servers.forEach((s) => s.close()));
 
-  async function chat(name: string, who: typeof OWNER, readOnly: boolean, steps: unknown[][], prepare?: (t: Awaited<ReturnType<typeof setup>> & { board: string; dash: number }) => Promise<void>) {
+  async function chat(name: string, who: typeof OWNER, readOnly: boolean | string, steps: unknown[][], prepare?: (t: Awaited<ReturnType<typeof setup>> & { board: string; dash: number }) => Promise<void>, byScope = false) {
     const t = setup();
     const src = t.superset.official("Campaign", [ADMIN.userId], [KPI]);
     const board = await t.bindBoard(src.id);
@@ -439,8 +439,8 @@ describe("in the chat", () => {
     const app = createApp([host], {
       providers,
       review: () => false,
-      access: async () => (readOnly ? { user: who.user, readOnly: READ_ONLY_MESSAGE } : { user: who.user, edit: true, maintain: true }),
-      personal: (_req, turn) => t.personal.port(who, { dashboard: src.id, board: turn.boardId, view: true, edit: !turn.readOnly }),
+      access: async () => (readOnly ? { user: who.user, readOnly: typeof readOnly === "string" ? readOnly : READ_ONLY_MESSAGE } : { user: who.user, edit: true, maintain: true }),
+      personal: (_req, turn) => t.personal.port(who, { dashboard: src.id, board: turn.boardId, view: true, edit: !turn.readOnly, byScope }),
     });
     const server = createServer(app);
     servers.push(server);
@@ -476,6 +476,12 @@ describe("in the chat", () => {
     });
     expect(applied.outputs[0]).toMatchObject({ applied: true, layout: "Morning" });
     expect((await applied.store.versions(applied.board))[0]!.summary).toBe("applied saved layout “Morning”");
+  });
+
+  it("under editScope own, refuses an edit Superset would allow and offers a copy to edit", async () => {
+    const r = await chat("own-only", OWNER, NOT_OWN_MESSAGE, [tool("add_widget", { id: "visits", kind: "kpi", title: "Visits", query_kind: "value", measure: "visit_total" }), say("Not here.")], undefined, true);
+    expect(r.outputs[0]).toMatchObject({ applied: false, readOnly: true, offer: "copy_dashboard", ownOnly: true });
+    expect(r.outputs[0].error).toMatch(/^On this deployment, the chat changes only dashboards of your own/);
   });
 
   it("makes and deletes the person's own dashboards by name, never someone else's", async () => {

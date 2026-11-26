@@ -204,7 +204,9 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
   answer "you can view this dashboard but not edit it in Superset", which the model passes on. `signed-in`:
   anyone signed in may edit (the behaviour before). The `boardEdits` off switch (below) comes first: off, nobody
   edits through the chat, admins included. Someone who can only view a dashboard can make their own copy and change that: see
-  [your own dashboards and saved layouts](../../../docs/my-dashboards.md).
+  [your own dashboards and saved layouts](../../../docs/my-dashboards.md). `editScope: own` (or
+  `LENSPACK_EDIT_SCOPE=own`) narrows chat edits further, to each person's own dashboards, so shared ones stay as
+  they are; admins are exempt unless `adminsExempt: false`.
 - **Settings** writes, the audit log and the usage page (`GET /api/_usage`, which names every user's spend) need
   a Superset admin. Owning a dashboard does not give them.
 - **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
@@ -314,6 +316,8 @@ page, which calls:
 | `PUT /_superset/settings/speech` | any of `{model, holdMs}`; a field left out is kept, `null` puts it back to the default |
 | `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}` (below); `null` drops the admin's value |
+| `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}`; `null` resets ([docs/my-dashboards.md](../../../docs/my-dashboards.md)) |
+| `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
 
 Reads and writes need a Superset admin's signed identity (above). Settings persist in `settings.json` beside
 the board state.

@@ -62,7 +62,7 @@ const refusal = (v: Verdict & { ok: false }) => ({ ok: false as const, error: v.
 const urlOf = (base: string, id: number) => `${base}/superset/dashboard/${id}/`;
 
 /** The rights Superset signed for one dashboard, read by the host from its identity header. */
-export type SignedRights = { dashboard: number | null; view: boolean; edit: boolean };
+export type SignedRights = { dashboard: number | null; view: boolean; edit: boolean; /** Superset would allow the edit; the edit scope doesn't. */ byScope?: boolean };
 
 export function personalDashboards(o: PersonalOptions) {
   const { client, store, pack } = o;
@@ -348,6 +348,7 @@ export function personalDashboards(o: PersonalOptions) {
   function port(who: PersonalActor, here: SignedRights & { dashboard: number; board: string }, base = ""): PersonalPort {
     return {
       offersCopy: mayCopyDashboard(who, o.limits(), 0, here).ok,
+      ownOnly: !!here.byScope,
       async mine() {
         const [d, l] = await Promise.all([mineOf(who), o.layouts.list()]);
         return { dashboards: d.map((x) => ({ dashboard: x.dashboard, board: x.board, title: x.title, url: urlOf(base, x.dashboard) })), layouts: layoutsShownTo(who, l).map((x) => ({ id: x.id, name: x.name, from: x.source.title, savedAt: x.savedAt })) };
