@@ -50,6 +50,12 @@ function fakeSuperset(): Server {
     if (path === "/api/v1/security/csrf_token/") return send({ result: "csrf" });
     if (path === "/api/v1/dataset/1") return send({ result: DATASET });
     if (path === "/api/v1/lenspack/identity-key") return send({ result: { key: KEY } });
+    // Each user's Superset access (hostPolicy: superset, the default): everyone reads the dataset and opens dashboard 7.
+    if (path === "/api/v1/lenspack/access") {
+      const q = new URL(req.url ?? "", "http://x").searchParams;
+      const ids = (name: string) => (q.get(name) ?? "").split(",").filter(Boolean);
+      return send({ result: { datasets: Object.fromEntries(ids("datasets").map((d) => [d, { access: true, rls: [] }])), dashboards: Object.fromEntries(ids("dashboards").map((d) => [d, d === "7"])) } });
+    }
     if (path === "/api/v1/dashboard/7" || path === "/api/v1/dashboard/ops") return send({ result: { id: 7, dashboard_title: "Ops", position_json: null, json_metadata: null, changed_on: "2026-01-01T00:00:00" } });
     if (path === "/api/v1/dashboard/7/charts") return send({ result: [] });
     if (path === "/api/v1/dashboard/") return send({ result: [{ id: 7, dashboard_title: "Ops", changed_on_delta_humanized: "a day ago" }] });
@@ -221,7 +227,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "queue", "speech", "superset", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "queue", "speech", "superset", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],

@@ -19,9 +19,10 @@ It adds:
   - /api/v1/lenspack/bootstrap and /api/v1/lenspack/identity-key, which Lenspack calls on start: the first
     makes Lenspack's own service account (admins only), the second hands it the signing key, derived from
     SECRET_KEY (admins and that account only);
-  - /api/v1/lenspack/access?user=&datasets=, which Lenspack calls with hostPolicy: superset: whether that user
-    may read each dataset and the row-level security clauses on it, as Superset's security manager decides
-    them for that user, Jinja rendered (admins and Lenspack's account only);
+  - /api/v1/lenspack/access?user=&datasets=&dashboards=, which Lenspack calls with hostPolicy: superset (the
+    default): whether that user may read each dataset and the row-level security clauses on it, and whether they
+    may open each dashboard, as Superset's security manager decides them for that user, Jinja rendered (admins
+    and Lenspack's account only);
   - /api/v1/lenspack/version: Superset's version, which Lenspack reads on start (admins and Lenspack's account);
   - a fix for concurrent list requests in Flask-AppBuilder;
   - on Superset 6.1, ClickHouse column aliases with a hash suffix again, as up to 6.0 (see
@@ -212,6 +213,21 @@ def lenspack_dataset_access(user, ids) -> dict:
                 continue
             processor = get_template_processor(database=ds.database, table=ds)
             out[str(ds_id)] = {"access": True, "rls": lenspack_rls_clauses(security_manager.get_rls_filters(ds), processor.process_template)}
+    return out
+
+
+def lenspack_dashboard_access(user, ids) -> dict:
+    """Per dashboard id: may this user open it (Superset's own check: owners, admins, dashboard roles, dataset
+    access). A missing dashboard may not be opened."""
+    from superset.extensions import db, security_manager
+    from superset.models.dashboard import Dashboard
+    from superset.utils.core import override_user
+
+    out = {}
+    with override_user(user):
+        for dash_id in ids:
+            dash = db.session.query(Dashboard).filter_by(id=dash_id).one_or_none()
+            out[str(dash_id)] = bool(dash is not None and security_manager.can_access_dashboard(dash))
     return out
 
 
@@ -413,8 +429,9 @@ def lenspack_app_mutator(app):
         return jsonify({"result": {"username": username, "account": made}})
 
     # What one user may read, as Superset decides it for them: the datasets their roles may access, and the
-    # row-level security clauses on each, rendered as that user (Jinja such as current_username() included).
-    # Lenspack reads data as its own account, so it narrows each user's queries by this (hostPolicy: superset).
+    # row-level security clauses on each, rendered as that user (Jinja such as current_username() included), and
+    # the dashboards they may open. Lenspack reads data as its own account, so it narrows each user's queries by
+    # this, and lists them only the dashboards they may open (hostPolicy: superset).
     def access_view():
         caller = api_user()
         if caller is None:
@@ -424,8 +441,10 @@ def lenspack_app_mutator(app):
         target = security_manager.find_user(username=request.args.get("user") or "")
         if target is None:
             return jsonify({"message": "no such user"}), 404
-        ids = [int(x) for x in (request.args.get("datasets") or "").split(",") if x.strip().isdigit()][:500]
-        return jsonify({"result": {"datasets": lenspack_dataset_access(target, ids)}})
+        def ids(name):
+            return [int(x) for x in (request.args.get(name) or "").split(",") if x.strip().isdigit()][:500]
+
+        return jsonify({"result": {"datasets": lenspack_dataset_access(target, ids("datasets")), "dashboards": lenspack_dashboard_access(target, ids("dashboards"))}})
 
     # Superset's version, for what differs between 5 and 6 on Lenspack's side (the default basemap of maps).
     # Superset 6.1 has its own /version, 5.x and 6.0 do not.
@@ -788,6 +807,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
         <tr><th>Superset account</th><td><code>{{ settings.superset.username }}</code>{% if account_roles is not none %} · roles: {{ account_roles|join(', ') or 'none' }}{% endif %}
           {% if settings.superset.account %}<span class="mute">({{ {'bootstrap': 'made by Lenspack on first start', 'state': 'made by Lenspack; password in its state directory', 'env': 'password from LENSPACK_SUPERSET_PASSWORD'}.get(settings.superset.account, settings.superset.account) }})</span>{% endif %}</td></tr>
         <tr><th>Who may edit dashboards</th><td>{% if settings.editPolicy == 'signed-in' %}Anyone signed in to Superset <span class="mute">(<code>LENSPACK_EDIT_POLICY=signed-in</code>)</span>{% else %}Whoever Superset lets edit that dashboard: its owners with write access, and admins. Everyone who can view it may ask questions. <span class="mute">(<code>LENSPACK_EDIT_POLICY=superset</code>, the default)</span>{% endif %}</td></tr>
+        {% if settings.hostPolicy %}<tr><th>Whose access applies to answers</th><td>{% if settings.hostPolicy == 'off' %}<strong>Lenspack's own account, for everyone.</strong> Anyone signed in reads every configured dataset in full, without Superset's dataset permissions or row-level security. <span class="mute">(<code>hostPolicy: off</code>)</span>{% else %}Each user's own Superset access: their dataset permissions, row-level security and the dashboards they may open. <span class="mute">(<code>hostPolicy: superset</code>, the default)</span>{% endif %}</td></tr>{% endif %}
         <tr><th>Dashboards bound</th><td>{{ settings.dashboards|join(', ') or 'none yet (a dashboard binds when the chat opens on it)' }}</td></tr>
       {% elif account_roles is not none %}
         <tr><th>Superset account</th><td><code>lenspack</code> · roles: {{ account_roles|join(', ') or 'none' }}</td></tr>

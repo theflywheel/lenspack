@@ -62,3 +62,22 @@ jobs:
         run: pnpm build
       - name: Dist smoke (each built entry exports what its .d.ts declares)
         run: pnpm smoke:dist
+  # The access suite: Lenspack against real Superset 6.1 and 5.0 containers, with Postgres sample data, checking what
+  # each kind of user can see and change (docs/access.md, "How access is tested"). Beside the unit tests, not after.
+  access:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Pull the images
+        run: |
+          docker pull -q apache/superset:6.1.0 &
+          docker pull -q apache/superset:5.0.0 &
+          docker pull -q postgres:16-alpine &
+          wait
+      - name: Access suite (Superset 6.1 and 5.0)
+        run: pnpm test:access

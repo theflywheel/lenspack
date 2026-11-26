@@ -162,7 +162,7 @@
       else if (k === "checked") e.checked = !!v;
       else e.setAttribute(k, v === true ? "" : v);
     }
-    for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false) e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+    for (const kid of kids.flat(Infinity)) if (kid !== null && kid !== undefined && kid !== false) e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
     return e;
   }
   const main = document.getElementById("main");
@@ -807,7 +807,7 @@
     try {
       const nodes = await TABS[tab]();
       if (mine !== rendering) return;
-      main.replaceChildren(...[nodes].flat().filter(Boolean));
+      main.replaceChildren(...[nodes].flat(Infinity).filter(Boolean));
     } catch (e) {
       if (mine !== rendering) return;
       main.replaceChildren(h("p", { class: "pad bad" }, t("failed", e.message)));

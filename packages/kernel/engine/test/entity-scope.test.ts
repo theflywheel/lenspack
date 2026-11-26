@@ -40,4 +40,27 @@ describe("entity scope", () => {
     expect(() => scoped({ kind: "rows", entity: "goal", columns: ["region"], limit: 5 }, { hiddenEntities })).toThrow(/"goal" is not available to you/);
     expect(scoped(byRegion("done_n"), { hiddenEntities })).toEqual([]);
   });
+
+  it("says it is the caller's access when the host keeps it (ACCESS_HIDDEN), not the pack's rules or a missing key", () => {
+    const why = "your Superset access doesn't include it. A Superset admin can give you access.";
+    const ctx = { hiddenEntities: new Set(["goal"]), hidden: new Set(["goal_n", "kind"]), accessHidden: { keys: new Set(["goal", "goal_n"]), reason: why } };
+    const refusal = (q: Query, c: Parameters<typeof resolve>[2] = ctx) => {
+      try {
+        resolve(q, pack, c, SQL_CAPABILITIES);
+      } catch (e) {
+        return e instanceof ResolveError ? { code: e.code, message: e.message, nearest: e.nearest } : String(e);
+      }
+      return null;
+    };
+    expect(refusal(byRegion("goal_n"))).toEqual({ code: "ACCESS_HIDDEN", message: `"goal_n" is not available to you: ${why}`, nearest: undefined });
+    expect(refusal({ kind: "rows", entity: "goal", columns: ["region"], limit: 5 })).toMatchObject({ code: "ACCESS_HIDDEN", message: `"goal" is not available to you: ${why}` });
+    // Hidden by the pack's own rules ("kind" is not the host's): the refusal as before.
+    expect(refusal({ kind: "breakdown", measure: "done_n", dimension: "kind", limit: 10, sort: "desc" })).toEqual({ code: "NOT_PERMITTED", message: `"kind" is not available to you`, nearest: undefined });
+    // Not in the pack at all: the pack's own message, and no suggestion of a key or entity kept from the caller.
+    expect(refusal(byRegion("doses"))).toMatchObject({ code: "UNKNOWN_MEASURE", message: `"doses" is not a measure in pack "stub"` });
+    expect(refusal(byRegion("goal_m"))).toMatchObject({ code: "UNKNOWN_MEASURE", nearest: undefined });
+    expect(refusal(byRegion("goal_m"), {})).toMatchObject({ code: "UNKNOWN_MEASURE", nearest: "goal_n" });
+    expect(refusal({ kind: "rows", entity: "goals", columns: ["region"], limit: 5 })).toMatchObject({ code: "UNKNOWN_ENTITY", nearest: undefined });
+    expect(refusal({ kind: "rows", entity: "goals", columns: ["region"], limit: 5 }, {})).toMatchObject({ code: "UNKNOWN_ENTITY", nearest: "goal" });
+  });
 });

@@ -359,6 +359,17 @@ describe("answer and plan reuse", () => {
     expect((await ask(b, "How many households were delivered?", { base: named })).saved).toMatchObject({ tier: "t1" });
   });
 
+  it("a turn whose data calls all failed (refused, unknown, source down) is not kept", async () => {
+    const b = await newBoard();
+    const refused = () => script.steps.push(toolStep("query", { query_kind: "value", measure: "no_such_measure" }), sayStep("I could not read that."));
+    refused();
+    expect((await ask(b, "How many widgets were sold?")).model).toBe(2);
+    refused();
+    const again = await ask(b, "How many widgets were sold?");
+    expect(again.saved).toBeUndefined();
+    expect(again.model).toBe(2);
+  });
+
   it("a follow-up that leans on the turn before is neither served nor kept", async () => {
     const b = await newBoard();
     answers();

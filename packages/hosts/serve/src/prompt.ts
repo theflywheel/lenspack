@@ -8,7 +8,7 @@ import { DEFAULT_BRAND_NAME } from "./brand";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 27;
+export const PROMPT_VERSION = 28;
 
 /**
  * The prompt's version as anything that keeps answers keys on it (saved answers): PROMPT_VERSION, and the
@@ -36,18 +36,20 @@ export function catalogueText(pack: Pack, catalogue: Catalogue) {
   // only those in the catalogue, which leaves out the keys this caller may not use.
   const usable = new Set(catalogue.dimensions.map((d) => d.key));
   const onEntity = (entity: string) => pack.dimensions.filter((d) => usable.has(d.key) && d.type !== "time" && (d.entity === entity || d.also?.[entity])).map((d) => d.key);
-  const entities = Object.entries(pack.entities).map(([k, e]) => {
+  // Only the entities in the catalogue: one kept from this caller is not named to the model either.
+  const listed = new Set(catalogue.entities?.map((e) => e.key) ?? Object.keys(pack.entities));
+  const entities = Object.entries(pack.entities).filter(([k]) => listed.has(k)).map(([k, e]) => {
     const joins = e.joins.map((j) => `→ ${j.to} (${j.type.replace(/_/g, "-")})`).join(", ");
     // A column of calendar dates is named as its column, as a plain time column is.
     return `- ${k}: ${e.grain ?? ""}${e.time ? `; time column ${datedTime(e) ? timeFieldOf(e) : e.time}` : "; no time column"}${e.tenant ? "; tenant-scoped" : ""}${e.geo ? `; has a location (latitude, longitude): a points query lists them, a map draws them${onEntity(k).length ? `, named or coloured by ${onEntity(k).join(", ")}` : ""}` : ""}${joins ? `; joins ${joins}` : ""}`;
   });
-  const located = Object.entries(pack.entities).filter(([, e]) => e.geo);
+  const located = Object.entries(pack.entities).filter(([k, e]) => listed.has(k) && e.geo);
   // A large catalogue: one line per entity, and a label that only restates its key left out.
   const large = tooLarge(catalogue);
   const verifiedDims = catalogue.dimensions.filter((d) => d.verified);
   const verifiedMeasures = catalogue.measures.filter((m) => m.verified);
   const brief = (xs: { key: string; label: string; entity: string }[]) =>
-    Object.keys(pack.entities).flatMap((e) => {
+    Object.keys(pack.entities).filter((e) => listed.has(e)).flatMap((e) => {
       const keys = xs.filter((x) => x.entity === e).map((x) => (x.label.toLowerCase() === x.key.replace(/_/g, " ") ? x.key : `${x.key} (${x.label})`));
       return keys.length ? [`- ${e}: ${keys.join(", ")}`] : [];
     });
@@ -132,11 +134,11 @@ export function userChangesText(changes: BoardChange[] = []) {
  * Stable first, so a provider's prompt cache keeps the long first part across
  * edits. o.name is the assistant's name (brand.name), how it introduces itself.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; name?: string } = {}): [stable: string, board: string] => [
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; name?: string } = {}): [stable: string, board: string] => [
   `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
-${catalogueText(pack, catalogue)}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
+${catalogueText(pack, catalogue)}${o.access ? `\n\nACCESS:\n${o.access}` : ""}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
 
 Rules:
 - Use only the keys listed above. ${tooLarge(catalogue) ? "Meanings are not listed: call list_metrics with q when a label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown below; call get_board only after your edits, to verify.

@@ -6,7 +6,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, toVercelAI } from "@lenspack/agent";
-import { type Principal, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
+import { type Principal, accessNote, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -461,6 +461,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       // The decided scope narrows every query; hidden keys are refused in resolution, on every path.
       const ctx = d.ctx;
       const run = { pack: h.pack, connector: h.connector, ctx };
+      // The host keeps every measure from the caller: said up front (the chat panel shows it before anything is asked).
+      const notice = d.notice ? { accessNotice: d.notice } : {};
       // Everything but reading changes a board: those need the edit right.
       const writes = req.method !== "GET" && req.method !== "HEAD";
       // A read-only caller may still talk to the chat: its edit tools refuse with who.readOnly.
@@ -469,7 +471,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? boardId ?? ""}`.trim(), outcome: "denied" });
         return json(res, 403, { error: who.readOnly ?? "you may view these boards but not change them" });
       }
-      if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, instructions: h.pack.instructions, boards: await boardsOf(h), catalogue });
+      if (!boardId) return json(res, 200, { example: h.name, pack: h.pack.pack, source: h.connector.kind, description: h.pack.description, instructions: h.pack.instructions, boards: await boardsOf(h), catalogue, ...notice });
       // The pack file defines every key: not for a caller some are hidden from.
       if (boardId === "pack") return d.hidden.size ? json(res, 403, { error: "the pack file is not shown to you" }) : json(res, 200, { yaml: h.packYaml });
       // Compile one query without running it: the real native query, or the
@@ -525,14 +527,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           // response, instead of a board request followed by two more.
           const include = new Set((url.searchParams.get("include") ?? "").split(",").filter(Boolean));
           const mine = rights.edit;
-          if (include.size === 0) return json(res, 200, { board: shown(board), catalogue, writable: mine });
+          if (include.size === 0) return json(res, 200, { board: shown(board), catalogue, writable: mine, ...notice });
           const [data, options] = await Promise.all([
             include.has("data") ? resolveBoard(board.config, run) : undefined,
             include.has("options")
               ? Promise.all(board.config.filters.filter((f) => f.type !== "host").map(async (f) => [f.field, await dimensionValues(f.field, run)] as const)).then(Object.fromEntries)
               : undefined,
           ]);
-          return json(res, 200, { board: shown(board), catalogue, writable: mine, ...(data ? { data } : {}), ...(options ? { options } : {}) });
+          return json(res, 200, { board: shown(board), catalogue, writable: mine, ...notice, ...(data ? { data } : {}), ...(options ? { options } : {}) });
         }
         case "GET data":
           return json(res, 200, await resolveBoard(board.config, run, selectionsOf(url)));
@@ -589,6 +591,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           return json(res, 200, shown(reverted));
         }
         case "POST chat":
+          // Nothing to answer from: no model is asked.
+          if (d.notice) {
+            audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "denied", detail: "no data available to this user" });
+            return json(res, 403, { error: d.notice });
+          }
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
           return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly);
       }
@@ -667,7 +674,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
-    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, name });
+    const access = accessNote(h.ctx);
+    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, name });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
@@ -704,7 +712,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       if (now && now.version !== startVersion) {
         config = view(now.config);
         startVersion = now.version;
-        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, name });
+        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, name });
         before = summarise(config);
         reuseTurn.config = config;
       }

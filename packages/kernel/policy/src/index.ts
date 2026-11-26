@@ -23,6 +23,14 @@ export type Identity = {
   hidden?: string[];
   /** Entities (tables, datasets) the host does not let this caller read: their keys are hidden and a query reading one is refused. */
   hiddenEntities?: string[];
+  /** Boards the host does not let this caller open (a host dashboard they may not view): not listed, and opened as if absent. */
+  hiddenBoards?: string[];
+  /**
+   * Why the host keeps keys, entities or boards from this caller, in words for them ("your Superset access doesn't
+   * include it. A Superset admin can give you access."). A refusal of something the host keeps says it
+   * (ACCESS_HIDDEN), so the caller learns it is their access, not that the data does not exist.
+   */
+  hiddenReason?: string;
   /** The packs this caller may open; absent means all. */
   packs?: string[];
   /** Capabilities the host grants (CCRS action URLs); absent: a trusted caller, who holds every one. */
@@ -56,9 +64,24 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
   const maintain = !!id.maintain || among(rights.maintainers);
   // Open question, not applied: the usage page for admins only would be `const usage = roles.includes("admin");`
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
-  const { user, tenant, scope, hidden, hiddenEntities, packs, grants, readOnly } = id;
+  const { user, tenant, scope, hidden, hiddenEntities, hiddenBoards, hiddenReason, packs, grants, readOnly } = id;
   // Only what is set, so a principal compares equal to the one it was built from.
-  return { user, roles, edit: maintain || !!id.edit || among(rights.editors), maintain: maintain || undefined, usage, tenant: tenant || undefined, scope, hidden, hiddenEntities, packs, grants, readOnly: readOnly || undefined };
+  return {
+    user,
+    roles,
+    edit: maintain || !!id.edit || among(rights.editors),
+    maintain: maintain || undefined,
+    usage,
+    tenant: tenant || undefined,
+    scope,
+    hidden,
+    hiddenEntities,
+    ...(hiddenBoards ? { hiddenBoards } : {}),
+    ...(hiddenReason ? { hiddenReason } : {}),
+    packs,
+    grants,
+    readOnly: readOnly || undefined,
+  };
 }
 
 /** Whether a caller holds a host grant; with none named, whether they are trusted with every one. */
@@ -149,8 +172,34 @@ export function withoutHiddenValues<C extends { widgets: Record<string, unknown>
   return { ...config, widgets, ...(filters ? { filters } : {}) };
 }
 
-/** The engine's view of a caller: what every query they run is narrowed by. Read by shape; the engine never imports this package. */
-export type Scoped = { tenant?: string; scope?: ScopeClause[]; hidden?: ReadonlySet<string>; hiddenEntities?: ReadonlySet<string> };
+/**
+ * The engine's view of a caller: what every query they run is narrowed by. Read by shape; the engine never imports this package.
+ * accessHidden: the keys and entities the host (not the pack's rules) keeps from them, and why, in words for them.
+ */
+export type Scoped = {
+  tenant?: string;
+  scope?: ScopeClause[];
+  hidden?: ReadonlySet<string>;
+  hiddenEntities?: ReadonlySet<string>;
+  accessHidden?: { keys: ReadonlySet<string>; reason: string };
+};
+
+/** What a refusal says when the host keeps something from a caller and does not say why. */
+export const DEFAULT_HIDDEN_REASON = "your access doesn't include it.";
+
+/**
+ * What the chat model is told when the host keeps some of the pack from this caller: that it is their access, so a
+ * question about data it cannot see is not answered with "the pack doesn't have it" (or a guess at what is hidden).
+ * Null when the host keeps nothing.
+ */
+export function accessNote(ctx: Pick<Scoped, "accessHidden">): string | null {
+  if (!ctx.accessHidden?.keys.size) return null;
+  return [
+    "Some of this pack's data is kept from this user by their access. It is left out of the catalogue above, and a query on it is refused.",
+    "When a question needs data that is not in the catalogue, do not say the pack lacks it or could be set up to have it, and do not guess what the hidden data is or name anything that is not listed above.",
+    `Say it may not be available to them: ${ctx.accessHidden.reason}`,
+  ].join(" ");
+}
 
 /**
  * A board config as the caller whose engine context this is may be shown it.
@@ -159,6 +208,13 @@ export type Scoped = { tenant?: string; scope?: ScopeClause[]; hidden?: Readonly
  * reviewer. Every one of them goes through here, so they cannot differ.
  */
 export const shownConfig = <C extends { widgets: Record<string, unknown> }>(config: C, ctx: Pick<Scoped, "hidden">): C => withoutHiddenValues(config, ctx.hidden);
+
+/** The catalogue as the caller whose engine context this is may see it: no hidden key, and no entity kept from them, by name. */
+export function visibleCatalogue(catalogue: Catalogue, ctx: Pick<Scoped, "hidden" | "hiddenEntities">): Catalogue {
+  const shown = withoutKeys(catalogue, ctx.hidden);
+  const off = ctx.hiddenEntities;
+  return off?.size ? { ...shown, entities: shown.entities.filter((e) => !off.has(e.key)) } : shown;
+}
 
 /** The caller's tenant is not the one the pack is pinned to. A tenant may narrow an unpinned pack, never open another tenant's. */
 export const otherTenant = (who: Pick<Identity, "tenant">, host?: Pick<Scoped, "tenant">) => !!(who.tenant && host?.tenant && who.tenant !== host.tenant);
@@ -204,6 +260,11 @@ export type Decision<C extends Scoped = Scoped> = {
   board<B extends { config: { widgets: Record<string, unknown> } } | null>(b: B): B;
   /** The pack as the chat model is shown it: no example that uses a hidden key. */
   pack(): Pack;
+  /**
+   * When the host keeps every measure of the pack from this caller: what to tell them up front, before anything
+   * asks a model ("None of this assistant's data is available to you: …"). Null when they may use some.
+   */
+  notice: string | null;
 };
 
 const ruleHidden = new WeakMap<PackRule, ReadonlySet<string>>();
@@ -230,10 +291,13 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
   // caller takes its measures along, and the dimensions it alone has.
   const off = new Set(who.hiddenEntities ?? []);
   const fromHost = [...(who.hidden ?? []), ...pack.measures.filter((m) => off.has(m.entity)).map((m) => m.key), ...pack.dimensions.filter((d) => [d.entity, ...Object.keys(d.also ?? {})].every((e) => off.has(e))).map((d) => d.key)];
-  const hidden = fromHost.length ? new Set([...hiddenKeys(pack, { hide: fromHost }), ...(fromRule ?? [])]) : (fromRule ?? NONE);
+  const byHost = fromHost.length ? hiddenKeys(pack, { hide: fromHost }) : NONE;
+  const hidden = byHost.size ? new Set([...byHost, ...(fromRule ?? [])]) : (fromRule ?? NONE);
+  // What the host keeps, and its words for why: a refusal of one of these says it is the caller's access.
+  const accessHidden = byHost.size || off.size ? { keys: new Set([...byHost, ...off]), reason: who.hiddenReason ?? DEFAULT_HIDDEN_REASON } : undefined;
   const host = o.host ?? ({} as C);
   const scope = [...(host.scope ?? []), ...(who.scope ?? []), ...(rule?.scope ?? [])];
-  const ctx = { ...host, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(hidden.size ? { hidden } : {}), ...(off.size ? { hiddenEntities: off } : {}) } as C;
+  const ctx = { ...host, ...(who.tenant ? { tenant: who.tenant } : {}), ...(scope.length ? { scope } : {}), ...(hidden.size ? { hidden } : {}), ...(off.size ? { hiddenEntities: off } : {}), ...(accessHidden ? { accessHidden } : {}) } as C;
   const uses = (q: Pack["examples"][number]["query"]) => {
     const k = queryKeys(q);
     return [...k.dimensions, ...k.measures].some((x) => hidden.has(x));
@@ -242,9 +306,11 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
     scope,
     hidden,
     ctx,
-    catalogue: (c) => withoutKeys(c, hidden),
+    // An entity the host keeps from the caller is left out by name too.
+    catalogue: (c) => visibleCatalogue(c, ctx),
     board: (b) => (b && hidden.size ? { ...b, config: shownConfig(b.config, ctx) } : b),
     pack: () => (hidden.size ? { ...pack, examples: pack.examples.filter((e) => !uses(e.query)) } : pack),
+    notice: accessHidden && pack.measures.length && pack.measures.every((m) => byHost.has(m.key)) ? `None of this assistant's data is available to you: ${accessHidden.reason}` : null,
   };
 }
 
@@ -267,8 +333,10 @@ export const mayAdminister = (who: { roles?: readonly string[] }) => adminRights
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
 // to change. A board someone made is theirs to change, and everyone's to read
 // once they share it: everyone in their tenant, as one user name may sign in
-// under two tenants.
-export function boardRights(who: Principal, b: Ownership): { view: boolean; edit: boolean } {
+// under two tenants. A board the host keeps from the caller (a dashboard they
+// may not view in Superset) is neither read nor changed, whatever else holds.
+export function boardRights(who: Principal, b: Ownership & { id?: string }): { view: boolean; edit: boolean } {
+  if (b.id !== undefined && who.hiddenBoards?.includes(b.id)) return { view: false, edit: false };
   const sameTenant = (b.tenant ?? "") === (who.tenant ?? "");
   return {
     view: !b.owner || (sameTenant && (!!b.shared || b.owner === who.user)),

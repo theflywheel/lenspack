@@ -10,6 +10,9 @@
 // readable there, and a templated clause cannot be rendered, so such a clause keeps its dataset from
 // the user. Only simple clauses translate (col = v, col IN (...), AND, and OR over one column);
 // anything else fails closed: the dataset is kept from the user, and the log says why.
+//
+// The same answer says which bound dashboards the user may open (Superset's dashboard access check, dashboard
+// roles included): the others are kept from them, so their titles are not listed to them either.
 
 import type { ScopeClause } from "@lenspack/core";
 import type { Identity } from "@lenspack/policy";
@@ -158,24 +161,52 @@ export async function stockAccess(client: SupersetClient, datasets: number[], ro
   );
 }
 
-/**
- * Each user's Superset access as policy, kept for ttlMs (60 s) per user. A failure to ask Superset
- * keeps every dataset from that user until the next try, rather than showing them the service account's.
- */
-export type HostPolicy = (user: string, roles: string[] | undefined) => Promise<Pick<Identity, "scope" | "hiddenEntities">>;
+/** What a refusal tells a user about data or a dashboard their Superset access keeps from them. */
+export const SUPERSET_HIDDEN_REASON = "your Superset access doesn't include it. A Superset admin can give you access.";
+/** What it tells them while Superset can't be asked: nothing is shown until it can. */
+export const SUPERSET_UNREACHABLE_REASON = "Your Superset access could not be checked just now, so nothing is shown. Try again in a minute.";
 
-export function supersetPolicy(o: { client: SupersetClient; binding: Binding; log: (s: string) => void; ttlMs?: number; now?: () => number }): HostPolicy {
+/** The dashboards one user may open, of these ids, as Superset decides (the plugin's endpoint); none when it can't be asked. */
+export async function viewableDashboards(client: SupersetClient, user: string, ids: number[]): Promise<Set<number>> {
+  if (!ids.length) return new Set();
+  try {
+    const r = await client.get<{ result: { dashboards?: Record<string, boolean> } }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=&dashboards=${ids.join(",")}`);
+    return new Set(ids.filter((id) => r.result.dashboards?.[String(id)] === true));
+  } catch {
+    return new Set();
+  }
+}
+
+type HostAnswer = Pick<Identity, "scope" | "hiddenEntities" | "hiddenBoards" | "hiddenReason">;
+
+/**
+ * Each user's Superset access as policy, kept for ttlMs (60 s) per user: the datasets and bound dashboards kept from
+ * them, and RLS as scope. A failure to ask Superset keeps every dataset and dashboard from that user until the next
+ * try, rather than showing them the service account's. A dashboard bound after the answer was read counts as kept
+ * until the next one (the request Superset signs for it still opens it).
+ */
+export type HostPolicy = (user: string, roles: string[] | undefined) => Promise<HostAnswer>;
+
+export function supersetPolicy(o: { client: SupersetClient; binding: Binding; log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number }): HostPolicy {
   const ttl = o.ttlMs ?? 60_000;
   const now = o.now ?? Date.now;
   const datasets = [...o.binding.entityOf.keys()];
-  const cache = new Map<string, { at: number; value: Promise<Pick<Identity, "scope" | "hiddenEntities">> }>();
+  const cache = new Map<string, { at: number; value: Promise<HostAnswer> }>();
   let plugin = true;
-  const ask = async (user: string, roles: string[] | undefined) => {
+  const boardsOf = (ids: number[], open: (id: number) => boolean) => {
+    const hiddenBoards = ids.filter((id) => !open(id)).map((id) => `superset-${id}`);
+    return hiddenBoards.length ? { hiddenBoards } : {};
+  };
+  const ask = async (user: string, roles: string[] | undefined): Promise<HostAnswer> => {
+    const dashboards = o.dashboards?.() ?? [];
     try {
       if (plugin) {
         try {
-          const r = await o.client.get<{ result: { datasets: Record<string, DatasetAccess> } }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=${datasets.join(",")}`);
-          return identityFrom(r.result.datasets, o.binding, o.log, user);
+          const r = await o.client.get<{ result: { datasets: Record<string, DatasetAccess>; dashboards?: Record<string, boolean> } }>(
+            `/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=${datasets.join(",")}${dashboards.length ? `&dashboards=${dashboards.join(",")}` : ""}`,
+          );
+          // A plugin from before dashboards were asked about answers none: each counts as kept.
+          return { ...identityFrom(r.result.datasets, o.binding, o.log, user), ...boardsOf(dashboards, (id) => r.result.dashboards?.[String(id)] === true), hiddenReason: SUPERSET_HIDDEN_REASON };
         } catch (e) {
           // Superset's own 404 (no such route), not the endpoint's (no such user).
           if (!(e instanceof SupersetError && e.status === 404 && (e.body as { message?: string } | undefined)?.message !== "no such user")) throw e;
@@ -185,11 +216,12 @@ export function supersetPolicy(o: { client: SupersetClient; binding: Binding; lo
       }
       // A regular rule is matched by role: without the signed roles (an older plugin), it cannot be.
       if (!roles) throw new Error("the identity carries no Superset roles; update lenspack_superset.py");
-      return identityFrom(await stockAccess(o.client, datasets, roles), o.binding, o.log, user);
+      // Superset's REST API can't say who may open a dashboard: each counts as kept, but for the one a request is signed for.
+      return { ...identityFrom(await stockAccess(o.client, datasets, roles), o.binding, o.log, user), ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_HIDDEN_REASON };
     } catch (e) {
-      o.log(`access: could not ask Superset about ${user} (${e instanceof Error ? e.message : String(e)}); every dataset is kept from them for now`);
+      o.log(`access: could not ask Superset about ${user} (${e instanceof Error ? e.message : String(e)}); every dataset and dashboard is kept from them for now`);
       cache.delete(user);
-      return { hiddenEntities: [...o.binding.entityOf.values()] };
+      return { hiddenEntities: [...o.binding.entityOf.values()], ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_UNREACHABLE_REASON };
     }
   };
   return (user, roles) => {

@@ -1,5 +1,5 @@
 {
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": { "noEmit": true },
-  "include": ["src", "test", "bin"]
+  "include": ["src", "test", "test-access", "bin"]
 }

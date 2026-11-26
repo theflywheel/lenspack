@@ -10,6 +10,7 @@
     "build": "pnpm -r --filter './packages/*/*' run build",
     "test": "vitest run",
     "test:pg": "LENSPACK_PG_URL=${LENSPACK_PG_URL:-postgres://localhost:5432/lenspack_test} vitest run",
+    "test:access": "vitest run --config vitest.access.config.ts",
     "typecheck": "pnpm -r --filter './packages/*/*' exec tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.json",
     "lint:domain": "node scripts/zero-domain-grep.mjs",
     "smoke:dist": "node scripts/dist-smoke.mjs",
