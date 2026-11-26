@@ -18,6 +18,7 @@ brought it.
   reloads, keeping the chat open and your tab. Asked about a chart that was removed, the assistant says when it was
   removed and that a reload shows the board as it is. Nothing changes in Superset: the panel comes from Lenspack. See
   [Dashboard edits](docs/features/dashboard-edits.md#when-the-reply-is-cut-off).
+  ([#101](https://github.com/theflywheel/lenspack/pull/101))
 - **Who is an admin, and who may use the assistant, are Lenspack's rules.** `auth.admins` says who gets the admin
   pages and `auth.users` who may use the assistant at all. Both work the same for every sign-in, Superset included,
   where they list Superset role names. Left out, nothing changes: admins are a role named `admin` (Superset's `Admin`
