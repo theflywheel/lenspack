@@ -128,7 +128,7 @@ describe("maps in Superset", () => {
     expect(read({ spatial, point_radius_fixed: { type: "metric", value: { expressionType: "SIMPLE", column: { column_name: "people" }, aggregate: "SUM" } } }).widget).toMatchObject({ query: { kind: "points", size: "people" } });
     expect(read({ spatial, dimension: "latitude" })).toMatchObject({ reason: expect.stringMatching(/coloured by "latitude"/) });
     expect(read({ spatial, js_columns: ["site", "area"] })).toMatchObject({ reason: expect.stringMatching(/extra columns/) });
-    expect(chartToWidget({ slice_name: "x", viz_type: "deck_scatter", params: { datasource: "10__table", spatial } }, pack, binding)).toMatchObject({ reason: expect.stringMatching(/no latitude/) });
+    expect(chartToWidget({ slice_name: "x", viz_type: "deck_scatter", params: { datasource: "10__table", spatial } }, pack, binding)).toMatchObject({ reason: expect.stringMatching(/no coordinates the assistant knows of/) });
   });
 
   it("queries the points through chart data: coordinates, colour and name, located rows only, one past the limit", () => {

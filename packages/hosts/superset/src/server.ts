@@ -19,7 +19,7 @@ import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSetti
 import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
-import { identityKey, serviceAccount } from "./bootstrap";
+import { identityKeeper, identityKey, serviceAccount } from "./bootstrap";
 import { type Overlay, fetchDatasets, packFromDatasets, packScope } from "./catalogue";
 import { supersetClient } from "./client";
 import { supersetConnector, timeZoneWarnings } from "./connector";
@@ -204,13 +204,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   });
   await store.seed();
 
-  // The identity key comes from Superset (derived there from its SECRET_KEY); without it nobody is signed in.
-  let idKey: string | null = null;
-  try {
-    idKey = await retried("fetching the identity key", () => identityKey(client), [2000, 5000, 10_000, 20_000], log);
-  } catch (e) {
-    log(`no identity key (${e instanceof Error ? e.message : String(e)}): every request will be refused until Lenspack restarts with lenspack_superset.py loaded in Superset`);
-  }
+  // The identity key comes from Superset (derived there from its SECRET_KEY); without it nobody is signed in. It is
+  // tried for until Superset gives it, never given up on: a start before Superset (or before the plugin is loaded
+  // there) recovers by itself, and GET /readyz says not ready meanwhile. The start waits for it about as long as before.
+  const keeper = identityKeeper({ fetch: () => identityKey(client), log });
+  await Promise.race([keeper.first, new Promise((r) => setTimeout(r, 40_000).unref())]);
+  const idKey = keeper.key;
+  if (!idKey()) log("no identity key yet: every request is refused until Superset gives it (is lenspack_superset.py loaded in Superset?); still trying, and /readyz answers 503 until then");
   const editPolicy = editPolicyFrom(env.LENSPACK_EDIT_POLICY ?? config.editPolicy);
   // Who holds Lenspack's admin role, by Superset role name: policy settles it (principalOf), never Superset's admin flag.
   const roleRules = roleRulesFrom(config.auth, env);
@@ -226,13 +226,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
    */
   const leftOut = (req: IncomingMessage) => {
     if (!rights.users) return false;
-    const id = identityOf(req, () => idKey);
+    const id = identityOf(req, idKey);
     return !!id && !mayUse(settle({ user: id.u, roles: rolesOf(id) }));
   };
   const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
   const accessFallback = accessFallbackFrom(env.LENSPACK_ACCESS_FALLBACK ?? config.accessFallback);
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
-  log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}${hostPolicy === "superset" && accessFallback === "rls-only" ? " (rls-only fallback on a missing access route)" : ""}; admins: Superset role${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).length === 1 ? "" : "s"} ${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).join(", ") || "(none)"}${roleRules.usage ? `; user names on the usage board: ${roleRules.usage.join(", ") || "(none)"}` : ""}; users: ${roleRules.users ? `Superset role${roleRules.users.length === 1 ? "" : "s"} ${roleRules.users.join(", ") || "(none)"} and admins` : "everyone signed in"}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
+  log(`identity: ${idKey() ? "signed by Superset" : "NO KEY (still trying)"}; edit policy ${editPolicy}; host policy ${hostPolicy}${hostPolicy === "superset" && accessFallback === "rls-only" ? " (rls-only fallback on a missing access route)" : ""}; admins: Superset role${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).length === 1 ? "" : "s"} ${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).join(", ") || "(none)"}${roleRules.usage ? `; user names on the usage board: ${roleRules.usage.join(", ") || "(none)"}` : ""}; users: ${roleRules.users ? `Superset role${roleRules.users.length === 1 ? "" : "s"} ${roleRules.users.join(", ") || "(none)"} and admins` : "everyone signed in"}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
   if (hostPolicy === "off")
     for (const line of [
       "WARNING: host policy is off (hostPolicy: off or LENSPACK_HOST_POLICY=off).",
@@ -387,7 +387,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     title: pack.pack,
     log,
   });
-  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards), fallback: accessFallback }) : undefined, callerFacts, rights);
+  const auth = supersetAuth(idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards), fallback: accessFallback }) : undefined, callerFacts, rights);
   // The start of a link to a Superset page: Superset's root when this server is reached through Superset's host
   // ("" or "/superset"), else Superset's address.
   const supersetBase = (req: IncomingMessage) => {
@@ -398,7 +398,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     personal,
     rights,
     adminName,
-    identity: (req) => identityOf(req, () => idKey),
+    identity: (req) => identityOf(req, idKey),
     rightsOn,
     // What the person may use of the pack, decided by policy from what Superset says about them, on the dashboard they are on.
     scope: async (req, board) => {
@@ -455,7 +455,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       ...admin.app,
       // The chat's tools for the person's own dashboards and layouts, on the dashboard Superset signed for.
       personal: (req, turn) => {
-        const id = identityOf(req, () => idKey);
+        const id = identityOf(req, idKey);
         if (!id || typeof id.d !== "number" || turn.boardId !== `superset-${id.d}` || !limits().on) return undefined;
         // Refused by the edit scope alone: Superset would let them edit, the deployment keeps the chat to their own.
         const byScope = !!turn.readOnly && canEdit(id, editPolicy, admin.features.on("boardEdits"));
@@ -463,7 +463,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       },
       // Telemetry records the user's Superset role names as Superset signed them (none signed: none), and datasets by name.
       telemetryRoles: (req) => {
-        const id = identityOf(req, () => idKey);
+        const id = identityOf(req, idKey);
         return id ? (id.r ?? []) : undefined;
       },
       telemetryDataset: (entity) => binding.datasets.get(entity)?.table,
@@ -475,7 +475,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     usageFile: join(stateDir, "usage.jsonl"),
     budget: config.budget,
     log,
-    health: () => ({ identity: !!idKey }),
+    health: () => ({ identity: !!idKey() }),
+    // Not ready while there is no identity key: every request would be refused. /healthz stays 200 (liveness).
+    ready: () => (idKey() ? { ready: true } : { ready: false, reason: "no identity key from Superset yet: is lenspack_superset.py loaded there?" }),
     routes: (rt) => {
       const { providers, budget } = rt;
       const adminPanel = review.routes(rt);
@@ -487,7 +489,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         audit: auditLog,
         log,
         adminName,
-        writable: () => !!idKey,
+        writable: () => !!idKey(),
         supersetLogs: async (since) => {
           const r = await supersetActions(client, { dashboards: Object.values(dashboards), from: since, to: new Date() });
           return { available: r.available, ...(r.reason ? { reason: r.reason } : {}), count: r.actions.length, lastSeen: r.actions.reduce<string | null>((m, a) => (m === null || a.at > m ? a.at : m), null) };
@@ -522,7 +524,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         // Before the path is read at all: URL would resolve "..", so what the route acts on could differ from what Superset checked.
         const bad = pathRefusal(req.url);
         if (bad) return json(res, 400, { error: bad }, NO_STORE);
-        if (url.pathname.startsWith("/api/") || url.pathname === "/healthz") return;
+        if (url.pathname.startsWith("/api/") || url.pathname === "/healthz" || url.pathname === "/readyz") return;
         // The scripts are public (Superset only includes them for signed-in users); everything else needs Superset's signature.
         const asset = /^\/(chat\.js|overlay\.js|mine\.js|chat\.css)$/.exec(url.pathname);
         // Someone the users rule leaves out gets an overlay that does nothing: no button, no chat (never cached).
@@ -550,7 +552,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           return json(res, 200, { from: from.toISOString(), to: to.toISOString(), ...(await supersetActions(client, { dashboards: Object.values(dashboards), from, to })) }, NO_STORE);
         }
         if (url.pathname === "/_superset/bind") {
-          const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, () => idKey)?.d);
+          const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, idKey)?.d);
           return bound ? json(res, 200, bound, NO_STORE) : json(res, 403, { error: "Superset did not check your access to this dashboard." }, NO_STORE);
         }
         if (url.pathname === "/_superset/dashboards") {

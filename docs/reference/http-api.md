@@ -10,7 +10,9 @@ caller may not open answers `404`, the same as one that is not there.
 ## Health
 
 `GET /healthz` answers `{ "ok": true, … }` without sign-in, on `lenspack serve` and the Superset host (the demo has
-none). Use it for liveness checks.
+none). Use it for liveness checks. `GET /readyz` answers `200 { "ready": true }` when the server can answer requests,
+else `503 { "ready": false, "reason": "…" }` (the Superset host, until Superset has given it the identity key). Use it
+for readiness checks.
 
 ## The board API
 
