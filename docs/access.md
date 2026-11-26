@@ -14,7 +14,7 @@ Who may sign in, what they may do in the app, and what of each pack's data they 
 | `tokens` | bearer tokens the deployment issues | `roles:` per token |
 | `none` | open, for a local demo; listens on 127.0.0.1 unless `host:` says otherwise (opened by `LENSPACK_AUTH`, only `--host` moves it, so in a container pass `--host 0.0.0.0` too) | none: the one local user sees everything |
 
-Superset mode (`lenspack superset`) takes none of these kinds: Superset signs who is asking on every request, and that signed identity, with Superset's own dashboard rights, is the only sign-in there. It is an adapter of its own kind, `superset`, which gives a Superset admin the role `admin`. With `hostPolicy: superset` it also brings each user's Superset roles, dataset access and row-level security (see [How the layers combine](#how-the-layers-combine)). See [packages/hosts/superset/README.md](../packages/hosts/superset/README.md).
+Superset mode (`lenspack superset`) takes none of these kinds: Superset signs who is asking on every request, and that signed identity, with Superset's own dashboard rights, is the only sign-in there. It is an adapter of its own kind, `superset`, which gives a Superset admin the role `admin`. By default (`hostPolicy: superset`) it also brings each user's Superset roles, dataset access, row-level security and the dashboards they may open (see [How the layers combine](#how-the-layers-combine)). See [packages/hosts/superset/README.md](../packages/hosts/superset/README.md).
 
 ### `password`
 
@@ -132,11 +132,77 @@ The scope is the pack's own (its `ctx.scope`), then the caller's, then their rul
 
 ### Superset
 
-With `hostPolicy: superset` (off by default for now), each user's Superset access is their identity: a dataset their roles may not read is a kept entity, and each simple RLS clause on a dataset they may read is scope on that entity. A clause that doesn't translate (anything beyond `=`, `IN`, `AND` and one-column `OR`) keeps the dataset from them, with the reason logged. Details in [packages/hosts/superset/README.md](../packages/hosts/superset/README.md#what-each-user-sees).
+By default (`hostPolicy: superset`), each user's Superset access is their identity: a dataset their roles may not read is a kept entity, each simple RLS clause on a dataset they may read is scope on that entity, and a dashboard they may not open is a kept board. A clause that doesn't translate (anything beyond `=`, `IN`, `AND` and one-column `OR`) keeps the dataset from them, with the reason logged. Superset also says why in words for the user, so a refusal reads "not available to you: your Superset access doesn't include it" (`ACCESS_HIDDEN`) rather than "not in the pack", and a user who may read nothing is told so before any model is asked. Details in [packages/hosts/superset/README.md](../packages/hosts/superset/README.md#what-each-user-sees).
+
+`hostPolicy: off` (or `LENSPACK_HOST_POLICY=off`) answers everyone with Lenspack's service account, so anyone signed in reads every configured dataset in full. It was the default before; it is now an explicit choice, and Lenspack warns at every start while it is on.
 
 ### CCRS
 
 The CCRS API (`@lenspack/ccrs`) puts the caller's CCRS row scope (departments, jurisdictions, own records) through the same path: it becomes the caller's scope, so every query carries it, inline filter-menu queries included, and no parameter or KPI filter can drop it. A KPI whose entity cannot be narrowed by a scope dimension is refused (`OUT_OF_SCOPE`, reported as `query_failed`) rather than failing on an unknown join. The capabilities CCRS's `/_access` returns are the caller's grants: with none returned (a trusted deployment), every tile is visible.
+
+## How access is tested
+
+The access suite starts real Superset 6.1 and 5.0, each with a Postgres database of sample data and Lenspack in front of it, and checks what each kind of user can see and change. It goes through Superset's own sign-in and its `/lenspack` route, the way a browser does. The chat runs on a stand-in model that calls exactly the tool it is told to, so the suite checks what the tools and routes let through, not what a model says. Nothing paid is called.
+
+### Who is in it
+
+| user | Superset roles | what Superset lets them do |
+|---|---|---|
+| `lp_admin` | Admin | everything |
+| `lp_owner` | Gamma, both datasets | owns dashboard A, so may edit it |
+| `lp_viewer` | Gamma, both datasets | views A, may not edit it |
+| `lp_partial` | Gamma, `visits` only | no access to `stock` |
+| `lp_north` | Gamma, both datasets | RLS `region = 'North'` on both datasets |
+| `lp_inlist` | Gamma, both datasets | RLS `region IN ('North', 'East')` on `visits` |
+| `lp_complex` | Gamma, both datasets | RLS `region LIKE 'N%'` on `visits`, which Lenspack can't translate |
+| `lp_templ` | Gamma, both datasets | RLS `team = '{{ current_username() }}'` on `visits` |
+| `lp_rbac` | Gamma and dashboard B's role | opens B through its dashboard role, reads no dataset |
+| `lp_noroles` | none | signs in, nothing else |
+
+Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard B holds a stock chart and opens only for its dashboard role (`DASHBOARD_RBAC`). Every number in the sample data is a different power of two, so a total shows exactly which rows were counted.
+
+### What each case proves
+
+- **The default.** Lenspack started with no `hostPolicy` applies each user's Superset access.
+- **Viewing.**
+  - On a dashboard the user can't open, the chat and every board route answer 403. Superset refuses it first, and Lenspack refuses it again for a request Superset signed as "may not view".
+  - A dashboard role opens its dashboard for its members only.
+  - Binding (`/_superset/bind`) works only for a dashboard the user may open.
+  - The boards list and the dashboards list name only dashboards the user may open.
+  - A request signed for dashboard A and sent for dashboard B gets 403.
+  - A missing, tampered, wrongly keyed, expired or future identity gets 401.
+  - Paths with `..`, encoded dots or encoded slashes get 400, from Superset and from Lenspack.
+- **Editing.**
+  - The owner can edit, through the board API and the chat.
+  - A viewer can't. The board API answers 403, and the chat's edit tools answer "you can view this dashboard but not edit it in Superset". Nothing changes in Superset.
+  - An admin can edit a dashboard they don't own.
+  - With the `boardEdits` switch off, nobody can, admins included.
+- **Data.**
+  - A dataset the user may not read is missing from the catalogue, the chat's `list_metrics` and the entity list, and every query on it is refused with "your Superset access doesn't include it". A measure that isn't in the pack keeps the pack's own message.
+  - RLS narrows chat queries, filter menus and board widgets to the exact rows expected for each user, and a user's own filter never widens them.
+  - The `LIKE` rule keeps `visits` from `lp_complex` entirely. The templated rule is rendered by Superset and narrows `lp_templ` to their own team's rows.
+  - A dashboard role opens a dashboard, not its datasets.
+  - A user who may read nothing is told so before any model is asked.
+  - While Lenspack can't reach Superset, a user it hasn't checked yet sees nothing. Once Superset is back, they see their data again.
+- **Admin surfaces.** Settings, the audit log, cost per answer and usage are for Superset admins only. A dashboard owner gets 403, and so does Superset's own AI assistant page.
+- **Caching.** Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
+- **Pending.**
+  - Answer reuse (the "reuse: answer repeated questions without the model" change): a reused answer must never cross to a user with different RLS.
+  - Personal dashboards and saved configurations (another change in progress): a viewer may create one; only its owner deletes it; a saved configuration applies only to dashboards the user controls; another user's personal dashboard is neither listed, opened nor edited.
+
+These cases check outcomes, not how Lenspack gets them. They keep holding when queries move to running as the user inside Superset. The `LIKE` case would then get stronger: Superset would apply the rule itself, so `lp_complex` would see the North rows instead of no `visits` at all.
+
+### Running it
+
+```sh
+pnpm install
+pnpm test:access                 # Superset 6.1 and 5.0, side by side, about 4 minutes after the images are pulled
+pnpm test:access superset-6.1    # one version
+```
+
+It needs Linux with Docker. Superset runs in the host's network and listens on 127.0.0.1 only. The first run pulls `apache/superset:6.1.0`, `apache/superset:5.0.0` and `postgres:16-alpine`, and each Superset installs the Postgres driver for the sample data. The secret key and passwords are made fresh for each run and never printed. The containers, their volumes and the temporary folder are removed at the end, whether the cases pass or fail. If a run is killed, `docker rm -f -v $(docker ps -aq --filter label=lenspack-access-suite)` clears what is left.
+
+CI runs it on every pull request, in its own job beside the unit tests. The suite is in [packages/hosts/superset/test-access](../packages/hosts/superset/test-access): `stack.ts` starts everything, `fixtures.py` makes the users, roles, rules and dashboards, and `cases.ts` holds the cases.
 
 ## What this does not do yet
 

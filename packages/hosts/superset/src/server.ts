@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { memoryStore } from "@lenspack/core";
+import { boardRights } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
 import YAML from "yaml";
 
@@ -22,7 +23,7 @@ import { type Overlay, fetchDatasets, packFromDatasets } from "./catalogue";
 import { supersetClient } from "./client";
 import { supersetConnector } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
-import { supersetPolicy } from "./access";
+import { supersetPolicy, viewableDashboards } from "./access";
 import { editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
 import { supersetBoards } from "./store";
 import { defaultMapStyle, supersetVersion } from "./version";
@@ -53,8 +54,9 @@ export type SupersetConfig = AdminConfig & {
    */
   editPolicy?: "superset" | "signed-in";
   /**
-   * Whose access narrows what each user sees (env LENSPACK_HOST_POLICY wins): "off" (the default for now), the
-   * service account's, as before; "superset", the user's own Superset dataset access and row-level security.
+   * Whose access narrows what each user sees (env LENSPACK_HOST_POLICY wins): "superset" (the default), the user's
+   * own Superset dataset access and row-level security, failing closed; "off", only when chosen, Lenspack's service
+   * account's, so anyone signed in reads every configured dataset in full (a warning says so at every start).
    * Needs lenspack_superset.py's /api/v1/lenspack/access for dataset access and templated clauses.
    */
   hostPolicy?: "superset" | "off";
@@ -148,7 +150,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
   log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
-  if (hostPolicy === "off") log(`host policy off: anyone signed in to Superset can read all ${datasets.length} configured dataset(s) through Lenspack, without Superset's dataset access or row-level security (hostPolicy: superset applies them)`);
+  if (hostPolicy === "off")
+    for (const line of [
+      "WARNING: host policy is off (hostPolicy: off or LENSPACK_HOST_POLICY=off).",
+      `WARNING: anyone signed in to Superset can read all ${datasets.length} configured dataset(s) in full through Lenspack: the chat, the filter menus and the board API.`,
+      "WARNING: Superset's dataset permissions and row-level security do not apply to what Lenspack answers. Remove the setting to apply them (the default, hostPolicy: superset).",
+    ])
+      log(line);
 
   /**
    * Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. Only the one
@@ -201,7 +209,11 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
-    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined), audit: auditLog?.audit, ...admin.app },
+    app: {
+      auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined),
+      audit: auditLog?.audit,
+      ...admin.app,
+    },
     port,
     host,
     budget: config.budget,
@@ -227,8 +239,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           warnings,
           superset: { url: supersetUrl, username: account.username, account: account.source },
           editPolicy,
-          // Only when on, so the page reads as before while it is off.
-          ...(hostPolicy === "superset" ? { hostPolicy } : {}),
+          hostPolicy,
           dashboards: Object.values(dashboards),
           publicPath: base,
           panel,
@@ -254,7 +265,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         }
         if (url.pathname === "/_superset/dashboards") {
           const list = await client.get<{ result: { id: number; dashboard_title: string; changed_on_delta_humanized: string }[] }>("/api/v1/dashboard/?q=(page_size:100,order_column:changed_on_delta_humanized,order_direction:desc)");
-          return json(res, 200, list.result.map((d) => ({ id: d.id, title: d.dashboard_title, changed: d.changed_on_delta_humanized })), NO_STORE);
+          // Lenspack's account sees every dashboard: list only those Superset lets this user open (admins open all).
+          let shown = list.result;
+          if (hostPolicy === "superset" && !who.roles.includes("admin")) {
+            const open = await viewableDashboards(client, who.user, shown.map((d) => d.id));
+            const hiddenBoards = shown.filter((d) => !open.has(d.id)).map((d) => `superset-${d.id}`);
+            shown = shown.filter((d) => boardRights({ ...who, hiddenBoards }, { id: `superset-${d.id}` }).view);
+          }
+          return json(res, 200, shown.map((d) => ({ id: d.id, title: d.dashboard_title, changed: d.changed_on_delta_humanized })), NO_STORE);
         }
         const embed = /^\/superset\/(\d+)\/?$/.exec(url.pathname);
         if (embed) return send(res, 200, page("embed.html", { ...pageVars(req), dashboard: Number(embed[1]) }), TYPES[".html"]!);

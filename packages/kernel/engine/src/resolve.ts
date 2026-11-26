@@ -26,6 +26,11 @@ export type Ctx = {
   hidden?: ReadonlySet<string>;
   /** Entities this caller may not read: a query that reads one is refused (NOT_PERMITTED). */
   hiddenEntities?: ReadonlySet<string>;
+  /**
+   * The keys and entities above that the host keeps from this caller (their access, not the pack's rules), and why,
+   * in words for them: a refusal of one is ACCESS_HIDDEN and says why, so it is not read as "not in the pack".
+   */
+  accessHidden?: { keys: ReadonlySet<string>; reason: string };
 };
 
 export type ResolveErrorCode =
@@ -42,7 +47,8 @@ export type ResolveErrorCode =
   | "NEEDS_JOIN"
   | "NOT_SUPPORTED"
   | "OUT_OF_SCOPE"
-  | "NOT_PERMITTED";
+  | "NOT_PERMITTED"
+  | "ACCESS_HIDDEN";
 
 /** What a backend can do. Resolution refuses the rest up front. */
 export type Capabilities = {
@@ -102,7 +108,14 @@ export function notPermitted(query: Query, ctx: Ctx = {}): ResolveError | null {
   if (!ctx.hidden?.size) return null;
   const k = queryKeys(query);
   const key = [...k.measures, ...k.dimensions].find((x) => ctx.hidden!.has(x));
-  return key ? new ResolveError("NOT_PERMITTED", `"${key}" is not available to you`, key) : null;
+  return key ? refusedKey(key, ctx) : null;
+}
+
+/** The refusal of a key or entity the caller may not use: the host's own reason when the host keeps it (ACCESS_HIDDEN). */
+function refusedKey(key: string, ctx: Ctx): ResolveError {
+  const host = ctx.accessHidden;
+  if (host?.keys.has(key)) return new ResolveError("ACCESS_HIDDEN", `"${key}" is not available to you: ${host.reason}`, key);
+  return new ResolveError("NOT_PERMITTED", `"${key}" is not available to you`, key);
 }
 
 export type JoinStep = { from: string; to: string; on: { left: { entity: string; column: string }; right: { entity: string; column: string } } };
@@ -291,7 +304,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   let measure: BoundMeasure | null = null;
   if (query.kind === "rows" || query.kind === "points") {
     if (!pack.entities[query.entity])
-      throw new ResolveError("UNKNOWN_ENTITY", `"${query.entity}" is not an entity in pack "${pack.pack}"`, query.entity, nearest(query.entity, Object.keys(pack.entities)) ?? undefined);
+      throw new ResolveError("UNKNOWN_ENTITY", `"${query.entity}" is not an entity in pack "${pack.pack}"`, query.entity, nearest(query.entity, Object.keys(pack.entities).filter((e) => !ctx.hiddenEntities?.has(e))) ?? undefined);
     root = query.entity;
     if (query.kind === "points") {
       if (!pack.entities[root]!.geo) throw new ResolveError("NOT_SUPPORTED", `"${root}" has no location (latitude and longitude), so it cannot be drawn as points`, root);
@@ -422,7 +435,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
 
   const entitiesUsed = entitiesOf([dimension, split, ...columns, orderBy?.dimension, ...filters.map((f) => f.dimension)]);
   const off = entitiesUsed.find((e) => ctx.hiddenEntities?.has(e));
-  if (off) throw new ResolveError("NOT_PERMITTED", `"${off}" is not available to you`, off);
+  if (off) throw refusedKey(off, ctx);
 
   // Tenancy is structural: if any entity in play declares a tenant column,
   // a tenant must be supplied. There is no "forgot to filter" state.

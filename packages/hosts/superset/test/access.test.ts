@@ -9,7 +9,7 @@ import { memoryStore } from "@lenspack/core";
 import { createApp } from "@lenspack/serve";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { type DatasetAccess, parseClause, rlsScope, stockAccess, supersetPolicy } from "../src/access";
+import { type DatasetAccess, SUPERSET_HIDDEN_REASON as HIDDEN, SUPERSET_UNREACHABLE_REASON as UNREACHABLE, parseClause, rlsScope, stockAccess, supersetPolicy, viewableDashboards } from "../src/access";
 import { type SupersetDataset, packFromDatasets } from "../src/catalogue";
 import { supersetClient } from "../src/client";
 import { supersetConnector } from "../src/connector";
@@ -60,9 +60,12 @@ describe("RLS clauses as filters", () => {
     expect(rlsScope(["notes = 'x'"], "visits", binding)).toMatchObject({ reason: expect.stringMatching(/"notes", which is not a dimension/) });
   });
 
-  it("reads LENSPACK_HOST_POLICY", () => {
-    expect(hostPolicyFrom(undefined)).toBe("off");
+  it("reads LENSPACK_HOST_POLICY: Superset's access unless off is chosen", () => {
+    expect(hostPolicyFrom(undefined)).toBe("superset");
+    expect(hostPolicyFrom("")).toBe("superset");
     expect(hostPolicyFrom(" Superset ")).toBe("superset");
+    expect(hostPolicyFrom("off")).toBe("off");
+    expect(hostPolicyFrom(" OFF ")).toBe("off");
     expect(() => hostPolicyFrom("yes")).toThrow(/superset/);
   });
 });
@@ -73,6 +76,7 @@ function fakeSuperset() {
     plugin: true,
     fail: false,
     access: {} as Record<string, Record<string, DatasetAccess>>,
+    dashboards: {} as Record<string, Record<string, boolean>>,
     rules: [] as unknown[],
     asked: [] as string[],
     charts: [] as { dataset: number; filters: unknown[] }[],
@@ -88,8 +92,11 @@ function fakeSuperset() {
     if (url.pathname === "/api/v1/lenspack/access" && state.plugin) {
       state.asked.push(url.searchParams.get("user")!);
       if (state.fail) return send({ message: "boom" }, 500);
-      expect(url.searchParams.get("datasets")).toBe("1,2");
-      return send({ result: { datasets: state.access[url.searchParams.get("user")!] ?? {} } });
+      const user = url.searchParams.get("user")!;
+      const datasets = (url.searchParams.get("datasets") ?? "").split(",").filter(Boolean);
+      const dashboards = (url.searchParams.get("dashboards") ?? "").split(",").filter(Boolean);
+      expect(datasets.length === 0 || datasets.join(",") === "1,2").toBe(true);
+      return send({ result: { datasets: datasets.length ? (state.access[user] ?? {}) : {}, dashboards: Object.fromEntries(dashboards.map((d) => [d, state.dashboards[user]?.[d] === true])) } });
     }
     if (url.pathname === "/api/v1/rowlevelsecurity/") return send({ result: state.rules, count: state.rules.length });
     if (url.pathname === "/api/v1/chart/data") {
@@ -182,7 +189,7 @@ describe("hostPolicy: superset, end to end", () => {
     expect(keys).toContain("region");
     expect(keys).toContain("target_sum");
     const rows = await bob.get(`/explain?q=${encodeURIComponent(JSON.stringify({ kind: "rows", entity: "visits", columns: ["region"], limit: 5 }))}`);
-    expect(rows).toMatchObject({ ok: false, code: "NOT_PERMITTED" });
+    expect(rows).toMatchObject({ ok: false, code: "ACCESS_HIDDEN", error: `"visits" is not available to you: ${HIDDEN}` });
     // A shared dimension's menu is counted on a dataset they may read.
     expect((await bob.options("region")).charts.map((c) => c.dataset)).toEqual([2]);
   });
@@ -191,6 +198,31 @@ describe("hostPolicy: superset, end to end", () => {
     const carol = as(on, { u: "carol", r: ["Sales"] });
     expect(await carol.keys()).not.toContain("visit_count");
     expect(logs.some((l) => l.includes("visits is kept from carol") && l.includes("LIKE"))).toBe(true);
+  });
+
+  it("tells a user up front when every dataset is kept from them, and asks no model; a measure not in the pack keeps its own message", async () => {
+    superset.state.access.nobody = { 1: { access: false, rls: [] }, 2: { access: false, rls: [] } };
+    const nobody = as(on, { u: "nobody", r: [] });
+    const notice = `None of this assistant's data is available to you: ${HIDDEN}`;
+    expect((await nobody.get("")).accessNotice).toBe(notice);
+    expect(await nobody.keys()).toEqual([]);
+    const headers = { [IDENTITY_HEADER]: signIdentity({ u: "nobody", a: false, r: [], t: Math.floor(Date.now() / 1000) }, KEY), "content-type": "application/json" };
+    const board = (await (await fetch(`${on}/boards`, { method: "POST", headers, body: JSON.stringify({ title: "t", temporary: true }) })).json()) as { id: string };
+    // This server has no model at all: a 503 would mean the chat got as far as looking for one.
+    const chat = await fetch(`${on}/${board.id}/chat`, { method: "POST", headers, body: JSON.stringify({ messages: [] }) });
+    expect([chat.status, ((await chat.json()) as { error: string }).error]).toEqual([403, notice]);
+    // Some data open: no notice.
+    expect((await as(on, { u: "bob", r: ["Gamma"] }).get("")).accessNotice).toBeUndefined();
+    const missing = await as(on, { u: "bob", r: ["Gamma"] }).get(`/explain?q=${encodeURIComponent(JSON.stringify({ kind: "value", measure: "doses" }))}`);
+    expect(missing).toMatchObject({ ok: false, code: "UNKNOWN_MEASURE", error: `"doses" is not a measure in pack "lp"` });
+  });
+
+  it("opens the dashboard a request is signed for, even when the answer it was given earlier kept it", async () => {
+    const auth = supersetAuth(() => KEY, "superset", () => true, async () => ({ hiddenBoards: ["superset-7", "superset-8"], hiddenReason: HIDDEN }));
+    const req = (path: string, d?: number) =>
+      ({ url: path, headers: { [IDENTITY_HEADER]: signIdentity({ u: "x", a: false, r: [], t: Math.floor(Date.now() / 1000), ...(d ? { d, b: `superset-${d}`, p: "lp", e: false, v: true } : {}) }, KEY) } }) as never;
+    expect((await auth.identify(req("/api/lp/superset-7", 7)))?.hiddenBoards).toEqual(["superset-8"]);
+    expect((await auth.identify(req("/api/lp")))?.hiddenBoards).toEqual(["superset-7", "superset-8"]);
   });
 
   it("asks Superset once a minute per user", async () => {
@@ -214,16 +246,29 @@ describe("supersetPolicy on its own", () => {
     const logs: string[] = [];
     const policy = supersetPolicy({ client, binding, log: (s) => logs.push(s), now: () => t });
     superset.state.fail = true;
-    expect(await policy("dan", ["Sales"])).toEqual({ hiddenEntities: ["visits", "targets"] });
+    expect(await policy("dan", ["Sales"])).toEqual({ hiddenEntities: ["visits", "targets"], hiddenReason: UNREACHABLE });
     expect(logs.at(-1)).toMatch(/could not ask Superset about dan/);
     superset.state.fail = false;
     superset.state.access.dan = { 1: { access: true, rls: [] }, 2: { access: true, rls: [] } };
-    expect(await policy("dan", ["Sales"])).toEqual({});
+    expect(await policy("dan", ["Sales"])).toEqual({ hiddenReason: HIDDEN });
     superset.state.access.dan = { 1: { access: false, rls: [] }, 2: { access: true, rls: [] } };
     t = 59_000;
-    expect(await policy("dan", ["Sales"])).toEqual({});
+    expect(await policy("dan", ["Sales"])).toEqual({ hiddenReason: HIDDEN });
     t = 61_000;
-    expect(await policy("dan", ["Sales"])).toEqual({ hiddenEntities: ["visits"] });
+    expect(await policy("dan", ["Sales"])).toEqual({ hiddenEntities: ["visits"], hiddenReason: HIDDEN });
+  });
+
+  it("keeps the bound dashboards Superset says a user may not open, and all of them when it can't be asked", async () => {
+    const bound = [7, 8];
+    const policy = supersetPolicy({ client, binding, log: () => {}, dashboards: () => bound });
+    superset.state.access.fay = { 1: { access: true, rls: [] }, 2: { access: true, rls: [] } };
+    superset.state.dashboards.fay = { 7: true, 8: false };
+    expect(await policy("fay", ["Sales"])).toEqual({ hiddenBoards: ["superset-8"], hiddenReason: HIDDEN });
+    superset.state.fail = true;
+    expect(await policy("gus", ["Sales"])).toMatchObject({ hiddenBoards: ["superset-7", "superset-8"], hiddenReason: UNREACHABLE });
+    expect(await viewableDashboards(client, "fay", [7, 8])).toEqual(new Set());
+    superset.state.fail = false;
+    expect(await viewableDashboards(client, "fay", [7, 8, 9])).toEqual(new Set([7]));
   });
 
   it("without the plugin's endpoint, reads Superset's RLS rules by role, and fails a template or missing roles closed", async () => {
@@ -241,11 +286,12 @@ describe("supersetPolicy on its own", () => {
         { entity: "visits", dimension: "region", op: "in", value: ["south", "east"] },
         { entity: "targets", dimension: "region", op: "in", value: ["a", "b"] },
       ],
+      hiddenReason: HIDDEN,
     });
-    expect(await policy("root", ["Admin"])).toEqual({});
-    expect(await policy("olu", ["Ops"])).toEqual({ hiddenEntities: ["targets"] });
+    expect(await policy("root", ["Admin"])).toEqual({ hiddenReason: HIDDEN });
+    expect(await policy("olu", ["Ops"])).toEqual({ hiddenEntities: ["targets"], hiddenReason: HIDDEN });
     expect(logs.some((l) => /RLS rules from Superset's REST API/.test(l))).toBe(true);
-    expect(await policy("old", undefined)).toEqual({ hiddenEntities: ["visits", "targets"] });
+    expect(await policy("old", undefined)).toEqual({ hiddenEntities: ["visits", "targets"], hiddenReason: UNREACHABLE });
     expect(await stockAccess(client, [1], [])).toEqual({ 1: { access: true, rls: [] } });
   });
 });
