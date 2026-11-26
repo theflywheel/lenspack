@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.duckdb
 *.duckdb.wal
+reuse.json
 .env
 coverage/
 .DS_Store

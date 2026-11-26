@@ -248,6 +248,12 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
   };
 }
 
+/**
+ * May see and change a deployment's settings and its saved answers, and refresh them: the host's
+ * admin role (a Superset admin, the built-in admin). Decided here, so every admin page asks the same question.
+ */
+export const mayAdminister = (who: { roles?: readonly string[] }) => !!who.roles?.includes("admin");
+
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
 // to change. A board someone made is theirs to change, and everyone's to read
 // once they share it: everyone in their tenant, as one user name may sign in

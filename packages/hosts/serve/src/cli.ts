@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { cacheSettings, localTurnGate, queueSettings, reuseLayer } from "@lenspack/agent";
 import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
@@ -51,6 +52,10 @@ async function main() {
       const openedByEnv = !adapter && config.auth?.kind !== "none";
       const host = flag("host") ?? (openedByEnv ? "127.0.0.1" : (config.host ?? (adapter ? "0.0.0.0" : "127.0.0.1")));
       if (!adapter) console.warn(`lenspack: auth is \`none\`: anyone who reaches ${host}:${port} may read and edit every board`);
+      // Saved answers, when the config asks for them: settings from the config (no settings page here).
+      const { file: cacheFile, ...cacheConfig } = typeof config.cache === "object" ? config.cache : {};
+      const cache = cacheSettings(null, cacheConfig);
+      const reuse = config.cache ? reuseLayer({ store: resolve(dir, cacheFile ?? "reuse.json"), settings: () => ({ ...cache.get(), on: true }), log: (m: string) => console.error(`lenspack: ${m}`) }) : undefined;
       startRuntime({
         hosts,
         close,
@@ -59,7 +64,7 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined, historyTurns: config.historyTurns, explain: () => explainFrom(config.explain) },
+        app: { ui, page, auth: adapter, rights, audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined, historyTurns: config.historyTurns, reuse, queue: localTurnGate(queueSettings(null, config.queue).get), explain: () => explainFrom(config.explain) },
         log: (m) => console.error(`lenspack: ${m}`),
         onListening: () => console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}`),
       });

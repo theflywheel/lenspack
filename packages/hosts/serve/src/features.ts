@@ -6,7 +6,7 @@
 
 import type { SettingsStore } from "./settings";
 
-export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "explain"] as const;
+export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "cache", "explain"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type FeatureValues = Partial<Record<Feature, boolean>>;
 
@@ -28,6 +28,7 @@ export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
     help: "A drill-down under each answer: each data call in plain words, the SQL it ran, and the rows behind it. Off hides it and keeps it out of the audit log; explain.sql: false in the config keeps it but leaves out the SQL.",
   },
   turnCost: { label: "Cost per answer", help: "A line under each reply with what the turn cost (an estimate from list prices), and a running total in the chat menu. Off hides them; the audit log still records each turn's cost." },
+  cache: { label: "Saved answers", help: "A question asked before is answered from its saved plan, with fresh data and no model call (the reply says so and offers Ask fresh); the most-asked questions become suggestions. Off: every question runs the full assistant." },
 };
 
 const isFeature = (k: string): k is Feature => (FEATURES as readonly string[]).includes(k);

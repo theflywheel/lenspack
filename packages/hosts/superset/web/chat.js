@@ -63,6 +63,9 @@
 .lpc-note{align-self:stretch;font-size:12px;color:var(--lpc-mute);border-left:3px solid var(--lpc-line);padding:2px 8px}
 .lpc-note.sync{border-color:var(--lpc-acc);color:var(--lpc-acc)}
 .lpc-note.bad{border-color:var(--lpc-bad);color:var(--lpc-bad)}
+.lpc-saved{align-self:flex-start;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:11.5px;color:var(--lpc-mute);margin:-4px 0 0 2px}
+.lpc-saved svg{width:12px;height:12px;flex:none}
+.lpc-saved .lpc-undo{margin-left:0;font-size:11.5px}
 .lpc-foot{border-top:1px solid var(--lpc-line);padding:10px;display:flex;gap:8px;align-items:flex-end}
 .lpc-in{flex:1;resize:none;border:1px solid var(--lpc-line);border-radius:8px;padding:8px 10px;font:inherit;min-height:40px;max-height:140px;outline:none;color:var(--lpc-fg);background:var(--lpc-bg)}
 .lpc-in::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -98,6 +101,7 @@
 [data-lp-theme=dark] .lpc-bot code,[data-lp-theme=dark] .lpc-bot pre{background:rgba(255,255,255,.08)}
 [data-lp-theme=dark] .lpc-bot a,[data-lp-theme=dark] .lpc-undo,[data-lp-theme=dark] .lpc-note.sync{color:#3fb1cc}
 [data-lp-theme=dark] .lpc-note.sync{border-color:#3fb1cc}
+[data-lp-theme=dark] .lpc-saved .lpc-undo{color:#3fb1cc}
 [data-lp-theme=dark] .lpc-menu{box-shadow:0 8px 24px rgba(0,0,0,.5)}
 `;
 
@@ -151,6 +155,8 @@
       denied: "Microphone access is blocked. Allow it for this site in the browser (the icon left of the address), then try again.", noMic: "No microphone was found.", sttFailed: "Transcription failed: {0}", sttOff: "Speech to text is not set up on this server.",
       cost: "≈ ${0}", costTitle: "Estimated cost of this answer, from list prices", costTokens: "{0}: {1} tokens in, {2} out", costSpeech: "includes speech to text, ${0}", costUnpriced: "some calls have no price and are not counted", sessionCost: "This session: ≈ ${0} for {1} answers (estimate from list prices)",
       restarting: "Lenspack is restarting, reconnecting…", lost: "The connection to Lenspack was lost before the answer finished (it may be restarting).", retry: "Retry",
+      busyWait: "Busy, about {0} s (number {1} in line)…", waitEdit: "Waiting for another edit on this dashboard…", busyFull: "Lenspack is too busy right now. Try again in a minute, or pick a common question below: those are answered at once.",
+      savedAnswer: "Saved answer, data as of {0}", savedEdit: "Saved change, made as before", savedTitle: "Answered from an earlier answer to the same question, with the numbers read again. No AI model was used.", askFresh: "Ask fresh", askFreshTitle: "Have the assistant work this out again from scratch",
     },
     fr: {
       title: "Demander à Lenspack", sub: "Tableau de bord Superset", close: "Fermer", placeholder: "Demandez un graphique, une modification ou un chiffre…", send: "Envoyer",
@@ -163,6 +169,8 @@
       denied: "L'accès au micro est bloqué. Autorisez-le pour ce site dans le navigateur (l'icône à gauche de l'adresse), puis réessayez.", noMic: "Aucun micro trouvé.", sttFailed: "La transcription a échoué : {0}", sttOff: "La reconnaissance vocale n'est pas configurée sur ce serveur.",
       cost: "≈ {0} $", costTitle: "Coût estimé de cette réponse, d'après les prix publics", costTokens: "{0} : {1} jetons en entrée, {2} en sortie", costSpeech: "dont reconnaissance vocale : {0} $", costUnpriced: "certains appels n'ont pas de prix et ne sont pas comptés", sessionCost: "Cette session : ≈ {0} $ pour {1} réponses (estimation d'après les prix publics)",
       restarting: "Lenspack redémarre, reconnexion…", lost: "La connexion à Lenspack a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
+      busyWait: "Occupé, environ {0} s (n° {1} dans la file)…", waitEdit: "En attente d'une autre modification de ce tableau de bord…", busyFull: "Lenspack est très sollicité en ce moment. Réessayez dans une minute, ou choisissez une question courante ci-dessous : elles ont une réponse immédiate.",
+      savedAnswer: "Réponse enregistrée, données du {0}", savedEdit: "Modification enregistrée, refaite comme avant", savedTitle: "Réponse tirée d'une réponse précédente à la même question, avec les chiffres relus. Aucun modèle d'IA n'a été utilisé.", askFresh: "Redemander", askFreshTitle: "Faire refaire la réponse par l'assistant depuis le début",
     },
     hi: {
       title: "Lenspack से पूछें", sub: "Superset डैशबोर्ड", close: "बंद करें", placeholder: "चार्ट, बदलाव या कोई संख्या पूछें…", send: "भेजें",
@@ -173,6 +181,8 @@
       mic: "बोलें (शुरू और बंद करने के लिए क्लिक करें, या दबाकर रखें)", micNeedsHttps: "माइक के लिए सुरक्षित (https) पेज चाहिए", micUnsupported: "यह ब्राउज़र आवाज़ रिकॉर्ड नहीं कर सकता",
       listening: "सुन रहे हैं… {0}", transcribing: "लिखा जा रहा है…", tooShort: "कुछ रिकॉर्ड नहीं हुआ। माइक दबाकर रखें या क्लिक करें, बोलें, फिर रोकें।", heard: "टेक्स्ट जाँचें, फिर भेजें।", nothingHeard: "कोई आवाज़ पहचानी नहीं गई। माइक के थोड़ा पास से फिर कोशिश करें।",
       denied: "माइक की अनुमति बंद है। ब्राउज़र में इस साइट के लिए अनुमति दें (पते के बाईं ओर का आइकन), फिर कोशिश करें।", noMic: "कोई माइक नहीं मिला।", sttFailed: "लिखना नहीं हो सका: {0}", sttOff: "इस सर्वर पर स्पीच-टू-टेक्स्ट सेट नहीं है।",
+      busyWait: "व्यस्त, लगभग {0} सेकंड (कतार में {1}वें)…", waitEdit: "इस डैशबोर्ड पर दूसरे बदलाव के पूरा होने का इंतज़ार…", busyFull: "Lenspack अभी बहुत व्यस्त है। एक मिनट बाद फिर कोशिश करें, या नीचे कोई आम सवाल चुनें: उनका जवाब तुरंत मिलता है।",
+      savedAnswer: "सहेजा गया जवाब, डेटा {0} तक का", savedEdit: "सहेजा गया बदलाव, पहले की तरह किया गया", savedTitle: "यह जवाब इसी सवाल के पिछले जवाब से बना है, संख्याएँ फिर से पढ़ी गईं। किसी AI मॉडल का उपयोग नहीं हुआ।", askFresh: "नए सिरे से पूछें", askFreshTitle: "सहायक से जवाब शुरू से दोबारा बनवाएँ",
       cost: "≈ ${0}", costTitle: "इस जवाब की अनुमानित लागत, सूची कीमतों के आधार पर", costTokens: "{0}: {1} टोकन इनपुट, {2} आउटपुट", costSpeech: "इसमें स्पीच-टू-टेक्स्ट ${0} शामिल है", costUnpriced: "कुछ कॉल की कीमत नहीं है, वे गिनी नहीं गईं", sessionCost: "इस सत्र में: ≈ ${0}, {1} जवाब (सूची कीमतों से अनुमान)",
       restarting: "Lenspack फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले Lenspack से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
     },
@@ -188,6 +198,8 @@
       listening: "Em escuta… {0}", transcribing: "Transcrição em curso…", tooShort: "Nada foi gravado. Mantenha pressionado ou clique no microfone, fale e depois pare.", heard: "Verifique o texto e depois envie.", nothingHeard: "Nenhuma fala reconhecida. Tente de novo um pouco mais perto do microfone.",
       denied: "O acesso ao microfone está bloqueado. Permita-o para este site no navegador (o ícone à esquerda do endereço) e tente de novo.", noMic: "Nenhum microfone encontrado.", sttFailed: "A transcrição falhou: {0}", sttOff: "A transcrição de voz não está configurada neste servidor.",
       restarting: "Lenspack em reinício, reconexão em curso…", lost: "A conexão com o Lenspack foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
+      busyWait: "Ocupado, cerca de {0} s (n.º {1} na fila)…", waitEdit: "À espera de outra alteração neste painel…", busyFull: "O Lenspack está muito ocupado neste momento. Tente de novo dentro de um minuto, ou escolha uma pergunta frequente abaixo: essas têm resposta imediata.",
+      savedAnswer: "Resposta guardada, dados de {0}", savedEdit: "Alteração guardada, refeita como antes", savedTitle: "Resposta tirada de uma resposta anterior à mesma pergunta, com os números lidos de novo. Nenhum modelo de IA foi usado.", askFresh: "Perguntar de novo", askFreshTitle: "Pedir ao assistente que refaça a resposta desde o início",
       cost: "≈ US$ {0}", costTitle: "Custo estimado desta resposta, segundo os preços de tabela", costTokens: "{0}: {1} tokens de entrada, {2} de saída", costSpeech: "inclui transcrição de voz: US$ {0}", costUnpriced: "algumas chamadas não têm preço e não foram contadas", sessionCost: "Esta sessão: ≈ US$ {0} em {1} respostas (estimativa segundo os preços de tabela)",
     },
   };
@@ -847,26 +859,97 @@
       if (!ex || typeof ex !== "object") return [];
       return ex[uiLang()] || ex.en || Object.values(ex)[0] || [];
     }
+    // A reply served from a saved answer says so, with when its data was read, and offers to ask afresh.
+    function savedLine(r, question) {
+      const d = el("div", "lpc-saved");
+      d.title = t("savedTitle");
+      d.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+      const when = new Date(r.dataAsOf);
+      const lang = uiLang() === "auto" ? undefined : uiLang();
+      const today = when.toDateString() === new Date().toDateString();
+      const at = isNaN(when) ? "" : today ? when.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) : when.toLocaleString(lang, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+      d.append(el("span", "", r.kind === "edit" ? t("savedEdit") : t("savedAnswer", at)));
+      if (question) {
+        const b = el("button", "lpc-undo", t("askFresh"));
+        b.type = "button";
+        b.title = t("askFreshTitle");
+        b.onclick = () => {
+          if (busy || offline) return;
+          b.disabled = true;
+          send(question, true);
+        };
+        d.append(b);
+      }
+      return d;
+    }
+    // The queue was full: a friendly line, Try again, and the suggestion chips, which saved answers answer at once.
+    function busyLine(question, userB) {
+      const d = el("div", "lpc-note");
+      d.append(el("span", "", t("busyFull") + " "));
+      const again = el("button", "lpc-undo", t("retry"));
+      again.type = "button";
+      again.onclick = () => {
+        if (busy || offline) return;
+        d.remove();
+        userB.remove();
+        send(question);
+      };
+      d.append(again);
+      const chips = el("div", "lpc-chips");
+      fetch(`${base}/suggestions?lang=${encodeURIComponent(uiLang())}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => {
+          for (const q of ((r && r.suggestions) || []).slice(0, 4)) {
+            const c = el("button", "lpc-chip", q);
+            c.onclick = () => {
+              if (busy || offline) return;
+              d.remove();
+              userB.remove();
+              send(q);
+            };
+            chips.append(c);
+          }
+          if (chips.children.length) d.append(chips);
+        })
+        .catch(() => {});
+      return d;
+    }
     function empty() {
       if (history.length) return;
       const e = el("div", "lpc-empty");
       e.append(el("p", "", t("intro")));
       const chips = el("div", "lpc-chips");
-      for (const q of examplesNow()) {
+      const chip = (q, first) => {
         const c = el("button", "lpc-chip", q);
         c.disabled = offline;
         c.onclick = () => send(q);
-        chips.append(c);
-      }
+        if (first) chips.prepend(c);
+        else chips.append(c);
+      };
+      const shown = examplesNow();
+      for (const q of shown) chip(q);
       e.append(chips);
       log.append(e);
+      // The questions asked most on this board (by people with your access) come first: one click answers from the saved answer.
+      fetch(`${base}/suggestions?lang=${encodeURIComponent(uiLang())}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => {
+          const seen = new Set(shown.map((q) => q.trim().toLowerCase()));
+          const top = ((r && r.suggestions) || []).filter((q) => typeof q === "string" && !seen.has(q.trim().toLowerCase())).slice(0, 4);
+          if (!top.length || !chips.isConnected) return;
+          for (const q of top.reverse()) chip(q, true);
+          while (chips.children.length > 6) chips.lastChild.remove();
+        })
+        .catch(() => {});
     }
     const replay = () => {
-      for (const m of history) {
+      history.forEach((m, i) => {
         bubble(m.role, m.parts.map((p) => p.text || "").join(""));
         if (m.role === "assistant") showExplain(m.id);
         if (m.metadata && m.metadata.cost) log.append(costLine(m.metadata.cost));
-      }
+        const asked = history[i - 1];
+        if (m.metadata && m.metadata.reuse) log.append(savedLine(m.metadata.reuse, asked && asked.role === "user" ? asked.parts.map((p) => p.text || "").join("") : ""));
+      });
     };
     replay();
     if (saved.notice) note(saved.notice, "sync");
@@ -901,7 +984,8 @@
         loadInfo();
       }
     }
-    async function send(text) {
+    // fresh: "Ask fresh" on a saved answer; the full assistant answers, whatever is saved.
+    async function send(text, fresh) {
       text = (text || "").trim();
       if (!text || busy || offline) return;
       busy = true;
@@ -956,7 +1040,7 @@
       };
       try {
         const spoken = clips.slice();
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}), ...selectionsNow() }) });
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}), ...selectionsNow(), ...(fresh ? { fresh: true } : {}) }) });
         if (!res.ok || !res.body) {
           let msg = `${res.status}`;
           try {
@@ -967,6 +1051,8 @@
         // The stream ends with a finish event and [DONE]; a stream that stops short was cut (Lenspack restarted).
         let finished = false;
         let usage = null;
+        let reused = null;
+        let full = null;
         let explained = null;
         const reader = res.body.getReader();
         const dec = new TextDecoder();
@@ -1046,6 +1132,13 @@
                 case "data-usage":
                   if (ev.data && ev.data.summary) usage = ev.data.summary;
                   break;
+                case "data-queue":
+                  // Waiting for a place: the place and about how long; the queue full: said below, with the suggestions.
+                  if (ev.data && ev.data.state === "waiting") status.textContent = ev.data.reason === "edit" ? t("waitEdit") : t("busyWait", ev.data.etaSeconds, ev.data.position);
+                  else if (ev.data && ev.data.state === "full") full = ev.data;
+                  break;
+                case "data-reuse":
+                  if (ev.data && ev.data.tier) reused = { tier: ev.data.tier, kind: ev.data.kind, dataAsOf: ev.data.dataAsOf };
                 case "data-answer-card":
                   explained = ev.data;
                   break;
@@ -1059,10 +1152,20 @@
         if (frame) cancelAnimationFrame(frame);
         paint();
         if (!finished) throw Object.assign(new Error("stream cut"), { lost: true });
+        if (full) {
+          // Too busy: the question leaves the history, and the suggestions (answered at once, from saved answers) stay clickable.
+          history.pop();
+          persist();
+          status.textContent = "";
+          log.append(busyLine(text, userB));
+          scroll();
+          return;
+        }
         // The reply is the text after the last tool call; when the model wrote nothing
         // after it, fall back to its last narration so the turn is not empty.
         const reply = answer.trim() ? answer : segments[segments.length - 1] || "";
-        history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }], ...(usage ? { metadata: { cost: usage } } : {}) });
+        const metadata = { ...(usage ? { cost: usage } : {}), ...(reused ? { reuse: reused } : {}) };
+        history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }], ...(usage || reused ? { metadata } : {}) });
         if (explained) showExplain(history[history.length - 1].id, explained);
         // The clips were counted in this turn (the server claims each once).
         clips.splice(0, spoken.length);
@@ -1071,6 +1174,10 @@
           spent.usd = Math.round((spent.usd + (usage.costUsd || 0)) * 1e6) / 1e6;
           spent.turns += 1;
           renderMenu();
+          scroll();
+        }
+        if (reused) {
+          log.append(savedLine(reused, text));
           scroll();
         }
         status.textContent = "";
