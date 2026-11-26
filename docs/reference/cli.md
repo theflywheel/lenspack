@@ -12,7 +12,7 @@ The `lenspack` command comes from `@lenspack/serve` (and is the image's entry po
 | <a id="lenspack-serve"></a>`lenspack serve --config lenspack.yaml [--port 8787] [--host …] [--ui dir]` | the standalone server: the board API, the board app, the chat and the admin panel. The word `serve` may be left out: `lenspack --config lenspack.yaml` |
 | `lenspack superset --config superset.yaml` | the chat inside Apache Superset (from `@lenspack/superset`). See [Install into Superset](../hosts/superset/install.md) |
 | `lenspack check --config lenspack.yaml` | reads every pack (listing every problem), then draws every board against its source; exits 1 on any error. Run it before a restart |
-| `lenspack sources --config lenspack.yaml [--source name]` | what each source holds: tables or indexes, fields, types and row counts. A first step when writing a pack |
+| `lenspack sources --config lenspack.yaml [--source name]` | what each source holds: tables or indexes, fields, types and row counts. It reads only `sources:`, so it works before any pack is written: a first step when writing one |
 | `lenspack hash-password` | a scrypt hash of the password read from standard input, for `LENSPACK_ADMIN_PASSWORD_HASH`. The password must be at least 12 characters; reading it from standard input keeps it out of the process list and shell history |
 | `lenspack dss ChartApiConfig.json [--dashboards MasterDashboardConfig.json] [--placeholders PVAR,…] [--pack name] --out dir` | turns another system's chart configs into a pack, boards and a report. See [Importers](../extending/importers.md) |
 

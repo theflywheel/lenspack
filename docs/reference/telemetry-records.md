@@ -106,7 +106,7 @@ Clients post events to `<api>/_telemetry`. Inside Superset that is `/lenspack/ap
 | `transcript` | `turnId`, `transcript` (what speech to text returned), `sent` (what was sent): the edit distance is computed on the server |
 | `abandoned` | `how` (for example `page-hidden`), `stage` |
 | `explain-opened`, `quick-reply`, `chart-exported`, `board-shared` | optional `how`, `stage`, `choice` and `data` |
-| `personal-dashboard`, `saved-layout` | sent by the Superset host itself, not the browser: `how` (`create`, `copy`, `delete`; `save`, `apply`, `rename`, `delete`) and `data` with ids and counts only (see [Personal dashboards](../features/personal-dashboards.md#usage-telemetry)) |
+| `personal-dashboard`, `saved-layout` | sent by the Superset host itself, not the browser: `how` (`create`, `copy`, `delete`; `save`, `apply`, `rename`, `delete`) and `data` with ids and counts only: the dashboard's id (for a copy, also the original's id and how many charts were copied), or the layout's id (for an apply, how many widgets were left out). Kept by the `personal-dashboards` item, which is off whenever the `personalDashboards` switch is (see [Personal dashboards](../features/personal-dashboards.md#usage-telemetry)) |
 
 `data` is a flat map of up to 20 keys with short values. Keys that look like secrets (key, token, password and the
 like) are dropped.

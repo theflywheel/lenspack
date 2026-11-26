@@ -78,7 +78,8 @@ The table is read again when the board is opened, at most every 30 seconds.
 
 - Figures: turns today, cost today, saved-answer rate, failure rate, answer rate, spoken share, active users and the
   95th-percentile reply time.
-- Lines: turns per day, cost per day by model, daily active users by country, and the spoken share.
+- Lines: turns per day, cost per day by model, daily active users by the `country` label from
+  [`context:`](telemetry.md#tagging-records-with-your-own-context), and the spoken share.
 - Bars: weekly active users by role, top users, top boards by cost, outcomes and answer rate by language, the
   95th-percentile reply time by kind of answer, and thumbs-down reasons.
 - A pie of direct, derived and chart answers.

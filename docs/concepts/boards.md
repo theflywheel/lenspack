@@ -10,7 +10,8 @@ can never hold code. It is for anyone building boards or reading their JSON.
   - **kpi**: one number, optionally with its trend and the previous period;
   - **chart**: `bar`, `line`, `area`, `pie`, `heatmap` or `map`;
   - **table**: rows or groups, a page at a time;
-  - **text**: a note, always drawn as plain text;
+  - **text**: a short note, with a little formatting (bold, italics, lists, code). It is never drawn as HTML,
+    and a link in it shows as its text only;
 - **filters**: the board's filter bar (see [Filters](filters.md#2-a-boards-filter-bar));
 - a **layout** on a 12-column grid.
 
@@ -48,8 +49,9 @@ version, so nothing is lost. The chat can list and restore versions too. See
 ## What a board can never contain
 
 - **No SQL and no table names.** Widgets name pack keys only.
-- **No URLs.** Widgets have no sources of their own; the pack does.
-- **No markup.** Text widgets are drawn as text nodes.
+- **No URLs.** Widgets have no sources of their own; the pack does. A link written in a note shows as its text, not
+  as a link.
+- **No markup.** A note's formatting is built as page elements, never as HTML from the text.
 - **No colours.** A widget names a scheme (`default` or `sequential`); the renderer maps it to its palette.
 
 So any renderer can draw any board, and a board copied between deployments carries no code with it.

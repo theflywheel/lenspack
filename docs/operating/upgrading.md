@@ -9,7 +9,11 @@ packages. It is for operators and developers.
    [Upgrading Lenspack in Superset](../hosts/superset/upgrading.md).
 2. Pull the new image (`ghcr.io/theflywheel/lenspack:<commit>`) or rebuild from the repository.
 3. Run `lenspack check --config lenspack.yaml` with the new image against your config: a pack or config the new
-   release reads differently fails here, with every problem listed, before anyone notices.
+   release reads differently fails here, with every problem listed, before anyone notices. There is no such check
+   for `superset.yaml`: start the new server and read its first log lines. A file it cannot read (bad YAML, or an
+   `env:` variable that is not set) stops it with the reason, and anything it left out of a dataset is a warning
+   line. A misspelt key is not reported, so check renamed keys against the
+   [configuration reference](../reference/config.md#supersetyaml).
 4. Restart. The state directory carries over. What a restart loses is in
    [What survives a restart](state.md#what-survives-a-restart).
 
@@ -34,8 +38,8 @@ rules](../features/compute.md#how-zeros-and-gaps-are-treated): a percentage or a
 
 ## Code using the packages
 
-**After 0.1.0** (on the main branch since 24 November 2026; no version has been released since 0.1.0): the pack
-loader `@lenspack/spec` is now `@lenspack/pack` (published as `@theflywheel/lenspack-pack`).
+**Unreleased** (see the [changelog](../../CHANGELOG.md)): the pack loader `@lenspack/spec` is now `@lenspack/pack`
+(published as `@theflywheel/lenspack-pack`).
 Its exports are unchanged; change the import path and the dependency name.
 
 The packages now sit in folders by job (`packages/kernel`, `sources`, `packs`, `hosts`; see

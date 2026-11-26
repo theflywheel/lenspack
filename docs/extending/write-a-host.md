@@ -65,6 +65,12 @@ Implement `BoardStore` from `@lenspack/core`, or use one that ships: `memoryStor
 Postgres) from `@lenspack/sql`. Wrap it to mirror another system, as the Superset host's `supersetBoards` does: send
 every change to the other system before it counts, and undo it if refused.
 
+Small records a host keeps beside its boards (the Superset host's personal dashboards and saved layouts) go through
+`RecordStore` from `@lenspack/core`: read fresh on each use and written whole, so two processes on one disk see each
+other's changes. Copies on separate disks need a database-backed store with the same interface (see
+[Stores](../architecture/stores.md)). To offer [personal dashboards](../features/personal-dashboards.md) in your
+host, implement `PersonalPort`.
+
 ## Rules your host must keep
 
 - **Every caller goes through `decide()`.** A host with more than one caller never reads data outside it.

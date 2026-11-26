@@ -112,7 +112,7 @@ lenspack check --config lenspack.yaml     # loads every pack, draws every board,
 Or in code:
 
 ```ts
-import { loadPack, catalogueFrom } from "@lenspack/pack";
+import { loadPack } from "@lenspack/pack";
 import { compile } from "@lenspack/sql";
 
 const pack = await loadPack("./billing.yaml");           // throws PackError with every problem listed

@@ -21,12 +21,9 @@ it was.
 ## Who may do what
 
 Lenspack talks to Superset through its own admin account, so the rules below are Lenspack's, checked on every
-request before anything is written to Superset. They never allow more than Superset does. They live in
-`@lenspack/policy`, as plain functions that the chat tools and the panel's routes both call, like the rest of
-Lenspack's [access rules](../access/README.md): who counts as an admin is `adminRights()`, what a person may do on a
-dashboard is `boardRights()` (which also applies the edit scope below), and the data a person reads on a dashboard
-is `decide()` with that dashboard, so dashboard roles count there and only there. The rules for making, copying,
-deleting, saving and applying are in `packages/kernel/policy/src/personal.ts`.
+request before anything is written to Superset. They never allow more than Superset does. The chat and the panel
+check the same rules, so they always agree. (Where the rules live in the code is in
+[The kernel](../architecture/kernel.md#policy).)
 
 | | who may | |
 |---|---|---|
@@ -51,20 +48,18 @@ Some details:
   uses something they can't see (a dataset or field hidden from them under `hostPolicy: superset`) is left out,
   and the reply names it. Filters the target can't have are left out the same way. The dashboard keeps its own
   title.
-- **A copy keeps every chart.** Superset's copy keeps only the charts its layout places, so a chart that is on
-  the original but missing from its layout is placed first, where Superset draws such charts: the first tab of a
-  dashboard with tabs, else the end of the grid. The layout is checked before the copy is made; one Superset
-  could not draw is refused, unless the original already had the same problem.
+- **A copy keeps every chart**, including one the original's layout had lost, which is placed where Superset draws
+  such charts. A dashboard Superset could not draw is not copied, unless the original already had the same problem.
 - **Your own dashboards are yours.** Superset lets anyone open a draft dashboard that has no dashboard roles if
   they know its address. Lenspack doesn't: a dashboard made or copied through Lenspack is hidden from everyone but
-  its owner and admins (`hiddenPersonalBoards()` in policy, applied through `boardRights()`), in the chat, the board
-  API, the dashboard lists and the copy menu. Sharing one isn't built yet.
+  its owner and admins, in the chat, the board API, the dashboard lists and the copy menu. Sharing one isn't built
+  yet.
 - **A copy starts private.** A new dashboard or a copy is a draft (not published) with no dashboard roles. A copy
   of a dashboard that some people open through its dashboard roles (Superset's `DASHBOARD_RBAC`) does not carry
   those roles, so it does not give them, or its owner, the access the original's roles gave. The owner reads on it
   only what their own Superset access allows.
-- **The Superset plugin** must be the version that signs the user's Superset id (claim `i`). With an older
-  plugin, making or copying a dashboard is refused with a message saying to update it.
+- **The Superset plugin** must be recent enough to sign the person's Superset id. With an older plugin, making or
+  copying a dashboard is refused with a message saying to update it.
 
 ## In the panel
 
@@ -91,24 +86,15 @@ The chat understands the same requests, through tools that check the same rules:
 - "Save this layout as Morning briefing", "Apply my Morning briefing layout", "Rename it to Daily", "Delete
   the Daily layout".
 
-The tools are `list_my_dashboards`, `create_dashboard`, `copy_dashboard`, `delete_dashboard`, `save_layout`,
-`apply_layout`, `rename_layout` and `delete_layout` (in `packages/kernel/agent/src/personal.ts`). A host gives
-the chat its own way to do these things through a small interface, `PersonalPort` in `@lenspack/core`; the
-Superset host is the only one that does today.
-
 ## Saved layouts and version history
 
-Every change to a dashboard through Lenspack is a new version of its board, and the chat (`list_versions`,
-`restore_version`), the board API (`GET .../versions`, `POST .../revert`) and the panel's Undo can go back to an
-earlier one. In Superset this history is kept in memory by the server and starts again when it restarts. It has no
-screen of its own in Superset; it is the undo that Superset itself doesn't have. See [Dashboard edits, versions and
-undo](dashboard-edits.md#versions-and-undo).
+Every change through Lenspack is a new version of the dashboard's board, and the chat or the panel's Undo can go
+back to an earlier one. In Superset this history is kept in memory and starts again when the server restarts (see
+[Dashboard edits, versions and undo](dashboard-edits.md#versions-and-undo)).
 
-Saved layouts are a different thing: named copies of a whole board that a person keeps, in a file, until they
-delete them, and can apply to any dashboard they may edit. Applying one is a single change, so it is a single
-version: Undo, "restore the previous version" or `POST .../revert` take the dashboard back to how it was. A
-saved layout records the dashboard it came from, when it was saved, and the pack and pack version it was made
-with.
+Saved layouts are a different thing: named copies of a whole board that a person keeps until they delete them.
+Applying one is a single change, so Undo, or "restore the previous version", takes the dashboard back to how it
+was.
 
 ## Where the chat may edit: `editScope`
 
@@ -141,10 +127,6 @@ other switches:
 | on | off | `own` | nobody but exempt admins: Lenspack warns about this at startup and on the settings page |
 
 A dashboard someone made directly in Superset, not through Lenspack, counts as shared under `own`.
-
-How it is decided: when `own` is on, the Superset host tells policy which dashboards are the person's own (from
-the list of dashboards made or copied through Lenspack), and `boardRights()` narrows the edit on every other one,
-with the reason the chat gives. The board API and the chat both ask `boardRights()`, so they always agree.
 
 ## Settings
 
@@ -183,16 +165,14 @@ with `{ok: false, code, error}`; `error` is a sentence to show the person.
 
 ## Where it is kept
 
-- `personal-dashboards.json` in the state directory: which Superset dashboards are someone's own, made through
-  Lenspack (who, when, copied from which dashboard, and the charts made for it).
-- `saved-layouts.json`: the saved layouts, each with its owner's Superset username, name, source dashboard, time,
-  pack and pack version, and the board. A `sharing` field is reserved for sharing a layout with others later;
-  nothing reads it yet.
+Two files in the state directory, written whole:
 
-Both files are behind a small store interface (`RecordStore` in `@lenspack/core`), read fresh on each use and written
-whole, so two server processes on one disk see each other's changes. Several copies of the server on separate disks need
-a database-backed store with the same interface (see [Stores](../architecture/stores.md)). A dashboard deleted in
-Superset is dropped from the list the next time its owner opens the menu.
+- `personal-dashboards.json`: which Superset dashboards are someone's own (who, when, copied from which dashboard,
+  and the charts made for it);
+- `saved-layouts.json`: the saved layouts, each with its owner, name, source dashboard, time, pack version and board.
+
+A dashboard deleted in Superset drops off the list the next time its owner opens the menu. Running more than one
+server copy is covered in [Stores](../architecture/stores.md).
 
 ## Audit and telemetry
 
@@ -201,17 +181,9 @@ scope, is written to the audit log with the Superset user and the outcome (`ok`,
 
 ### Usage telemetry
 
-With [usage telemetry](telemetry.md) on, each action that succeeds is also one telemetry event, kept by the item
-`personal-dashboards` ("Own dashboards made, copied and deleted; saved layouts used", in the Trust and reuse
-section, on by default, and off whenever `personalDashboards` is off):
-
-| event | `how` | `data` |
-|---|---|---|
-| `personal-dashboard` | `create`, `copy`, `delete` | the dashboard's id; for a copy, also the original's id and how many charts were copied |
-| `saved-layout` | `save`, `apply`, `rename`, `delete` | the layout's id; for an apply, how many widgets were left out |
-
-Events carry ids and counts only, never titles or layout names. Like other events, each records the user and
-their Superset role names (shown to admins with the usage right) and the dashboard it was on.
+With [usage telemetry](telemetry.md) on, each action that succeeds is also one event (`personal-dashboard` or
+`saved-layout`), switched by the `personal-dashboards` item. Events carry ids and counts only, never titles or
+layout names. The fields are in [Telemetry records](../reference/telemetry-records.md).
 
 ---
 

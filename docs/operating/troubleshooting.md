@@ -15,6 +15,18 @@ links to the page that explains the behaviour.
 | a warning at every start about `hostPolicy: off` | everyone reads every listed dataset in full | turn it back to `superset` once your roles are checked. See [Access inside Superset](../access/superset.md#turning-it-off-hostpolicy-off) |
 | Superset's own app mutator stops working after adding the plugin | the plugin's import sets `FLASK_APP_MUTATOR` | call `lenspack_app_mutator(app)` from yours. See [Install](../hosts/superset/install.md#1-add-the-plugin-to-superset) |
 
+## Installing in Superset
+
+| you see | cause | do this |
+|---|---|---|
+| the server stops: "No Superset account for Lenspack: set SUPERSET_ADMIN_PASSWORD …" | first start (or a new Superset metadata database) with no admin password to make Lenspack's account | set `SUPERSET_ADMIN_PASSWORD` (and `SUPERSET_ADMIN_USERNAME` if the admin isn't `admin`) and start again, or set `LENSPACK_SUPERSET_PASSWORD` for an account you manage. See [Install](../hosts/superset/install.md#3-run-the-server) |
+| "Superset sign-in failed (401): check the service account" | a wrong admin or service-account password | check `SUPERSET_ADMIN_USERNAME` and `SUPERSET_ADMIN_PASSWORD`, or `LENSPACK_SUPERSET_PASSWORD` |
+| "Superset POST /api/v1/lenspack/bootstrap → 404", or "Superset returned no identity key: is lenspack_superset.py loaded?" | the plugin is not loaded in Superset | check the file is on Superset's Python path, `superset_config.py` imports it, and nothing sets `FLASK_APP_MUTATOR` again after the import; restart Superset. See [Install](../hosts/superset/install.md#1-add-the-plugin-to-superset) |
+| the bootstrap answers 403 or 400 | the admin account is not a Superset admin (403), or `superset.username` differs from the plugin's `LENSPACK_SERVICE_USER` (400) | use an admin account; make the two names agree |
+| no **Ask Lenspack** button | open `/lenspack/healthz` on Superset while signed in: a 404 means the plugin is not loaded (row above); a 502 "Lenspack is not reachable" means Superset cannot reach the server | for a 502, check the server is running, on Superset's network under the name `lenspack`, or that `LENSPACK_INTERNAL_URL` points to it. If `/lenspack/healthz` answers and there is still no button, something set up after the plugin serves its own `tail_js_custom_extra.html`: add the plugin's button script (`TAIL_JS` in `lenspack_superset.py`) to that template |
+| the button opens an empty panel, and its scripts answer 404 | the server does not know it sits under `/lenspack` | set `publicPath: /lenspack` or `LENSPACK_PUBLIC_PATH=/lenspack`. See [Install](../hosts/superset/install.md#2-write-supersetyaml) |
+| the server stops: 'Superset dataset "orders": not found', or "more than one matches; name the schema" | a name in `datasets:` matches no dataset, or several | fix the name, or write `schema.table`. See [Install](../hosts/superset/install.md#2-write-supersetyaml) |
+
 ## Signing in
 
 | you see | cause | do this |

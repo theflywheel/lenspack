@@ -23,6 +23,9 @@ pnpm seed commerce ./commerce.duckdb      # 5,000 made-up orders in a DuckDB fil
 pnpm demo                                 # http://localhost:5173: a board you can edit
 ```
 
+![The shop overview board from the quick start: three KPIs, weekly revenue, revenue by country and line revenue by
+category, on made-up data](docs/images/quickstart-board.png)
+
 The chat needs a model key; the [Quick start](docs/getting-started/quickstart.md) shows how to give it one, and what
 to ask.
 

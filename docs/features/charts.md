@@ -14,7 +14,7 @@ people building boards and pack authors who want a chart to be possible.
 | **chart: heatmap** | one measure over two dimensions, shaded | `breakdown` with a split (`by`) |
 | **chart: map** | one dot per location, coloured and sized | `points` |
 | **table** | rows, or groups with several measures, a page at a time (5 to 200 rows a page, 10 by default) | `rows`, `breakdown` |
-| **text** | a note, drawn as plain text, up to 2,000 characters | none |
+| **text** | a note of up to 2,000 characters, with bold, italics, lists and code; no links or HTML | none |
 
 A widget names a colour **scheme** (`default` or `sequential`), never a colour: each renderer maps the scheme to its
 own palette. Widths are `full`, `half`, `third`, `quarter` or a number of the grid's 12 columns. See

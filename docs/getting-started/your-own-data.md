@@ -27,7 +27,7 @@ store: { kind: duckdb, path: ./boards.duckdb }   # boards never live in a source
 A SQL source is a connection URL, and its scheme picks the driver. Connect with a database role that can only
 read. See [SQL databases](../sources/sql.md) for every URL form, or [Elasticsearch](../sources/elasticsearch.md).
 
-See what the database holds:
+See what the database holds. This reads only `sources:`, so it works before the pack file exists:
 
 ```bash
 lenspack sources --config lenspack.yaml     # tables, columns, types and row counts
@@ -100,7 +100,10 @@ docker run -v "$PWD/config:/config:ro" -v lenspack-data:/data -p 8787:8787 \
   -e DATABASE_URL -e LENSPACK_ADMIN_PASSWORD lenspack
 ```
 
-It reads `/config/lenspack.yaml` and keeps its state in `/data`. See [Deploying](../operating/deploying.md).
+It reads `/config/lenspack.yaml` and keeps its state in `/data`. The config folder is mounted read-only, so move the
+board store onto the volume first: in the config, `store: { kind: duckdb, path: /data/boards.duckdb }`, and
+`state: /data` for settings and the audit log. You can also pull a published image instead of building one,
+`ghcr.io/theflywheel/lenspack:latest`. See [Deploying](../operating/deploying.md).
 
 ---
 

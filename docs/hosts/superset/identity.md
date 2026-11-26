@@ -34,8 +34,8 @@ a `superset-<id>` board Superset signed nothing for.
 
 Both sides refuse a path with a `.` or `..` segment or an encoded slash (`%2e`, `%2f`, `%5c`; 400). Binding a
 dashboard (`/_superset/bind`), and the personal-dashboard and saved-layout routes (`/_superset/my...?dashboard=<id>`),
-work only for the dashboard Superset checked. A plugin from before `b` and `p` signs
-only `d`, and the server then checks `superset-<d>` against its route.
+work only for the dashboard Superset checked. An older plugin signs only the dashboard
+id. The server still checks it, but update the plugin.
 
 ## Who may edit
 

@@ -31,7 +31,7 @@ The standalone server's config. The blocks, in brief:
 | `features` | starting values for switches | [Feature switches](../operating/switches.md) |
 | `brand` | the assistant's name and button label: `{ name, buttonLabel, i18n, icon, poweredBy }` | [Naming the assistant](../features/naming.md) |
 | `telemetry` | usage records: `{ dir, retentionDays, groups, items }` (`questionText` is the older name of `items.question-text`) | [Telemetry](../features/telemetry.md) |
-| `context` | what a board, a dataset or `role:<name>` belongs to (campaign, campaign type, country), for telemetry | [Telemetry](../features/telemetry.md#tagging-records-with-your-own-context) |
+| `context` | your own labels for a board, a dataset or `role:<name>` (the fields are named `campaign`, `campaignType` and `country`), for telemetry | [Telemetry](../features/telemetry.md#tagging-records-with-your-own-context) |
 
 ### Packs
 

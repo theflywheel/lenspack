@@ -59,6 +59,9 @@ note is `zod`, which defines every document's schema.
   board). Both know nothing of HTTP, so any host can use them.
 - `clarify`, the tool that asks which reading was meant, and the open-questions log.
 - Proposals: where `propose_measure` writes, as unverified.
+- The personal-dashboard tools (`list_my_dashboards`, `create_dashboard`, `copy_dashboard`, `delete_dashboard`,
+  `save_layout`, `apply_layout`, `rename_layout`, `delete_layout`), which a host offers by implementing
+  `PersonalPort` from `@lenspack/core`. The Superset host is the only one that does today.
 
 ## policy
 
@@ -68,9 +71,13 @@ return a decision; the engine enforces it.
 - `principalOf`: an identity from the host, settled into a principal with rights.
 - `decide`: what a caller may use of one pack: the pack and catalogue as they see it, their row scope, their
   hidden keys and kept entities.
-- `boardRights`: whether a caller may view or edit a board.
+- `boardRights`: whether a caller may view or edit a board. It also applies `editScope` and hides people's own
+  dashboards from everyone but their owner and admins (`hiddenPersonalBoards`).
 - `adminRights` and `mayAdminister`: whether a caller may use the admin pages and see user names.
 - `answerView` and `showsStatement`: what the answer card may show a caller.
+- The rules for [personal dashboards and saved layouts](../features/personal-dashboards.md) (making, copying,
+  deleting, saving and applying, and the limits), in `personal.ts`. The data a person reads on a dashboard is
+  `decide()` with that dashboard, so dashboard roles count there and only there.
 
 See [Policy](../concepts/policy.md) and [Who sees what](../access/README.md).
 

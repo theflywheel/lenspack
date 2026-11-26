@@ -33,12 +33,16 @@ Reads and writes need a Superset admin's signed identity (see [Who is asking](id
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}`; `null` drops the admin's value |
 | `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes, prewarm}` for [saved answers](../../features/saved-answers.md); `null` resets a field |
 | `PUT /_superset/settings/queue` | any of `{maxConcurrent, maxWaiting, maxWaitSeconds}` for [busy hours](../../features/busy-hours.md) |
+| `PUT /_superset/settings/chat` | `{model, effort}`: the chat model used when the panel asks for none, and its reasoning effort; `{model: null}` goes back to the default |
+| `PUT /_superset/settings/telemetry` | any of `{"telemetry", "groups.<section>", "items.<item>": true \| false \| null, "retentionDays": n}`; turning on a privacy-sensitive item also needs `"confirm": true`, or the answer is `409` and nothing changes. See [Telemetry](../../features/telemetry.md#privacy-sensitive-items) |
 | `GET /_superset/cache` and below | saved answers: stats, queue, last refresh, entries, pin, unpin, evict, suggestions, chart candidates, settled boards |
 | `POST /_superset/cache/prewarm`, `POST /_superset/cache/data-changed` | refresh the most-asked saved answers now, or a few seconds after a data load |
 | `PUT /_superset/settings/brand` | any of `{name, buttonLabel, i18n, icon, poweredBy}` ([naming the assistant](../../features/naming.md)); `null` hands a field back to the deployment |
 | `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}` for [personal dashboards](../../features/personal-dashboards.md); `null` resets |
 | `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
+| `GET /_superset/turns?limit=N` | the newest chat turns with their cost, and the totals for today and the last 7 days |
 | `GET /_superset/audit?month=YYYY-MM&limit=N` | the audit log |
+| `GET /_superset/telemetry`, `GET /_superset/telemetry/checklist` | the usage records and the switchboard. See [Telemetry](../../features/telemetry.md#reading-it) |
 
 `/_superset/info` is for every signed-in user and returns what the chat panel needs, including `features` (the
 effective switches) and the example questions. The whole list of routes is in
@@ -58,8 +62,9 @@ the page; the rest by the server.
 
 Each chat turn, transcription and client event (a thumbs up or down, an answer left early) leaves a record in
 `telemetry.jsonl` in the state directory. The record holds the user and the role names the plugin signs. The
-deployment's `context:` section tags boards, datasets and roles with a campaign, campaign type and country, for
-reading usage by them (see [Telemetry](../../features/telemetry.md#tagging-records-with-your-own-context)):
+deployment's `context:` section tags boards, datasets and roles with your own labels (the fields are named `campaign`,
+`campaignType` and `country`), for reading usage by them (see
+[Telemetry](../../features/telemetry.md#tagging-records-with-your-own-context)):
 
 ```yaml
 context:

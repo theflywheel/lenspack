@@ -42,9 +42,9 @@ overlay:
 
 ## Numbers, from Superset
 
-`supersetConnector` turns a resolved query into Superset query objects and runs them through
-`/api/v1/chart/data`, so a metric means the same in both, and Superset's row-level security applies. There are no
-joins (a Superset chart reads one dataset); share, Other and further measures are composed by the engine as usual.
+Lenspack asks Superset's chart-data API (`/api/v1/chart/data`) for every number, so a metric means the same in the
+chat as on the dashboard, and Superset's row-level security applies. There are no joins, because a Superset chart
+reads one dataset. Shares, the "Other" group and extra measures are worked out by Lenspack afterwards.
 
 **Time zones.** Superset cuts time into days with no time zone. A dataset whose time column holds calendar dates
 (`DATE`, or ClickHouse's `Date` and `Date32`) needs none: the catalogue marks it `type: date`, its days, weeks and
@@ -54,9 +54,15 @@ refused, and the refusal says what works: a date column, or a pack that keeps UT
 
 ## Dashboards are boards
 
-`dashboardToBoard` reads a dashboard: charts become widgets, markdown becomes text, and `position_json` becomes
-the grid. A chart Lenspack cannot say exactly (custom SQL filters, ad hoc metrics, a heatmap shaded per row or
-column) is kept as Superset's: a widget the model can move, resize or remove but not rewrite.
+Lenspack reads a dashboard as a board: charts become widgets, markdown blocks become text widgets, and the layout
+becomes the grid. A chart Lenspack cannot say exactly (custom SQL filters, ad hoc metrics, a heatmap shaded per row or
+column) is kept as Superset's: a widget the model can move, resize or remove but not rewrite. So is a chart whose
+dataset is not in `datasets:`, and the chat cannot answer questions from that dataset.
+
+**Notes.** A board holds no URLs, but Superset draws a markdown block with links. So a note Lenspack writes or
+changes is made plain before it is saved: a link becomes its text, and HTML and bare web or e-mail addresses are not
+drawn as tags or links. Bold, lists and the rest of the formatting are kept. A markdown block someone wrote in Superset
+keeps its text while Lenspack leaves the note unchanged.
 
 **Superset stays the record.** `supersetBoards` wraps a board store: reads pick up edits made in Superset, every
 Lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. `pushBoard` sends only
@@ -77,12 +83,11 @@ columns Lenspack keeps the layout and changes it in place (`layout.ts`):
 - **a move is refused**, with a message saying to move the chart in Superset. Moving charts between rows and tabs
   needs a board that knows tabs, which is not built yet. Tabs themselves are made, renamed and removed in Superset.
 
-Before every save the whole layout is checked (`layoutProblems`): each component listed by one parent, every child
-present and allowed in its parent, `parents` matching the tree, `ROOT_ID` holding one grid or tabs, every chart
-reachable. A layout that fails a check it passed before is not saved, and the chat says so. Problems the dashboard
-already had are logged and left as they are. `placeCharts` puts charts a layout does not draw where Superset draws
-them; use it whenever a layout gains charts outside Lenspack's edits (a copy of a dashboard). A saved edit is kept
-apart by the tab the viewer had open, so "add a chart here" lands on that tab.
+Before each save, Lenspack checks that Superset can still draw the whole dashboard. If an edit would break it, nothing
+is saved and the chat says so. Problems the dashboard already had are logged and left as they are. `placeCharts` puts
+charts a layout does not draw where Superset draws them; use it whenever a layout gains charts outside Lenspack's edits
+(a copy of a dashboard). A saved edit is kept apart by the tab the viewer had open, so "add a chart here" lands on that
+tab.
 
 **Gaps.** A previous-period KPI is drawn by Superset without its comparison.
 
@@ -110,9 +115,9 @@ customizations" and a timestamp switch; Lenspack leaves both untouched.
 ## Heatmaps
 
 A heatmap widget is Superset's `heatmap_v2`: a breakdown's dimension on `x_axis`, its split as `groupby`, one saved
-metric, rows A to Z, one scale across the grid. A heatmap over time is refused before the change (capability
-`timeHeatmap: false`): Superset sorts a time axis by the raw column while grouping by its weeks or months, which
-ClickHouse refuses (Postgres accepts it), so use a breakdown over a day or date label column instead.
+metric, rows A to Z, one scale across the grid. Lenspack won't make a heatmap with weeks or months on an axis, because
+Superset can't draw one over some databases (ClickHouse refuses the query it sends). Use a day or date-label column
+instead.
 
 ## Maps
 

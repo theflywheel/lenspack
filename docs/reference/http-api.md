@@ -9,7 +9,8 @@ caller may not open answers `404`, the same as one that is not there.
 
 ## Health
 
-`GET /healthz` answers `{ "ok": true, … }` without sign-in. Use it for liveness checks.
+`GET /healthz` answers `{ "ok": true, … }` without sign-in, on `lenspack serve` and the Superset host (the demo has
+none). Use it for liveness checks.
 
 ## The board API
 
@@ -160,7 +161,7 @@ The Superset host's settings, beside the panel:
 |---|---|
 | `GET /_superset/info` | what the chat panel needs to know: speech, languages, switches (any signed-in person) |
 | `GET /_superset/settings` | every setting, for admins |
-| `PUT /_superset/settings/features`, `…/cache`, `…/queue`, `…/speech`, `…/language` | changes those settings. See [Feature switches](../operating/switches.md) |
+| `PUT /_superset/settings/features`, `…/cache`, `…/queue`, `…/speech`, `…/language`, `…/chat`, `…/telemetry` | changes those settings. What each one takes is in [Settings and switches](../hosts/superset/settings.md#the-routes-behind-it) |
 | `PUT /_superset/settings/brand` | the assistant's name, button label, per-language words, icon and "Powered by" line; `null` hands a field back. See [Naming the assistant](../features/naming.md) |
 | `PUT /_superset/settings/personal`, `…/edit-scope` | personal-dashboard limits and where the chat may edit. See [Personal dashboards](../features/personal-dashboards.md#routes) |
 | `GET /_superset/settings/speech/models` | the transcription models on offer |
@@ -219,10 +220,10 @@ Inside Superset, the plugin adds routes to Superset itself, and the Lenspack ser
 | route | what it does |
 |---|---|
 | `/lenspack/…` | forwards to the Lenspack server, with the signed identity of the person asking |
-| `GET /api/v1/lenspack/identity-key` | the key Lenspack checks signed identities with |
-| `GET /api/v1/lenspack/access?user=&datasets=&dashboards=` | a person's dataset access, row-level security and dashboard access, for Lenspack's own account only |
+| `GET /api/v1/lenspack/identity-key` | the key Lenspack checks signed identities with (admins and Lenspack's own account) |
+| `GET /api/v1/lenspack/access?user=&datasets=&dashboards=` | a person's dataset access, row-level security and dashboard access (admins and Lenspack's own account) |
 | `GET /api/v1/lenspack/version` | Superset's version, read by the server at start (admins and Lenspack's own account) |
-| `POST /api/v1/lenspack/bootstrap` | the one-time step that makes Lenspack's own account |
+| `POST /api/v1/lenspack/bootstrap` | the one-time step that makes Lenspack's own account (admins only) |
 | `/ai-assistant/` | the settings page, with its `chat`, `speech`, `speech-hold`, `language` and `features` forms |
 
 **On the Lenspack server**, below `publicPath`: the board API above (a dashboard is the board `superset-<id>`), the

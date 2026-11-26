@@ -28,8 +28,8 @@ Lenspack keeps three things apart:
 
 1. **A pack**, written once by someone who knows the data and reviewed like code. It names the tables, how they
    join, what you can group by (dimensions) and what you can count (measures). It is a closed vocabulary.
-2. **A board**: a dashboard as a small document of widgets, filters and layout. Nothing in it is code, SQL, markup
-   or a colour value, so any charting library can draw it: the board never changes, only the renderer does.
+2. **A board**: a dashboard as a small document of widgets, filters and layout. It holds no code or SQL, so any
+   charting library can draw it. You can change how boards look without touching the boards.
 3. **A compiler** that turns a request naming pack keys into a safe query, or refuses it.
 
 The model sits on top. It asks for numbers by naming keys, such as `revenue` by `country` for the last 30 days, and it
@@ -70,9 +70,13 @@ entities:
 measures:
   - { key: revenue, entity: orders,
       agg: sum, sql: total_cents / 100.0 }
-  - { key: refund_rate, entity: orders,
-      agg: avg, sql: "CASE WHEN status = 'refunded' THEN 1 ELSE 0 END" }
+  - { key: orders, entity: orders, agg: count }
+  - { key: refunds, entity: orders, agg: count,
+      where: [{ field: status, value: refunded }] }
 ```
+
+Measures stay simple. The refund rate is `refunds / orders`, worked out after the database answers, so it is never
+added up by mistake.
 
 **2. Point a model at it.** The chat on your dashboards, inside Apache Superset or Lenspack's own server; any MCP
 client; or the same tools inside your own agent. A small, cheap model is enough for most turns, and a stronger one
@@ -136,7 +140,7 @@ The full list is in [Claims the build checks](../architecture/claims.md).
 - Who sees what comes from the app Lenspack runs inside, and Lenspack can only narrow it.
 - Raw SQL is off by default. Switched on, it is read-only, timeboxed and capped, and its results can never become a
   widget.
-- No URLs, no markup and no colour values in any board.
+- No URLs, no HTML and no colour values in any board.
 
 The safety model in full: [Why the model cannot break things](../architecture/safety.md).
 

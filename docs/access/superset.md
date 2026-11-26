@@ -10,9 +10,9 @@ Lenspack reads data through its own Superset account, an Admin. By default (`hos
 answer to what the person asking may see in Superset: their own dataset permissions and row-level security (RLS),
 and the dashboards they may open. **When it cannot tell, it shows less, never more.**
 
-In Lenspack's terms: a dataset their roles may not read is a kept entity, each simple RLS clause on a dataset they
-may read is scope on that entity, and a dashboard they may not open is a kept board. All of it goes through the same
-`decide()` as every host (see [Who sees what](README.md#how-the-layers-combine)).
+So Lenspack hides from each person the datasets and dashboards Superset hides from them, and adds their row-level
+security rules to every query. It uses the same rules as every other host (see
+[Who sees what](README.md#how-the-layers-combine)).
 
 `hostPolicy` is `superset` by default. A deployment upgraded from a release that defaulted to `off` should read
 [Upgrading](../hosts/superset/upgrading.md#changes-that-need-attention).

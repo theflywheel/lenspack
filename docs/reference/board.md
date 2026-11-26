@@ -39,7 +39,7 @@ Every widget has a `title` (1–120 characters) and one of four kinds:
 | `chart` | `chart`: `bar`, `line`, `pie`, `area`, `heatmap` (one measure over two dimensions as shaded cells: columns are a breakdown's dimension or a series' buckets, rows its `by`) or `map` (a points query). `query`. `options`: `legend` (default true) and `colorScheme` (`default` or `sequential`: a name, never a colour; the renderer owns the palette). |
 | `kpi` | `query`: a value query, or a series whose latest bucket is drawn with its trend. `format` optional. A summary of the buckets (the mean per day, the total) is a value query whose compute ends with `over_time`. |
 | `table` | `query`. `pageSize` 5–200 (default 10): a rows query pages through the source, a breakdown through the groups it fetched. |
-| `text` | `body`, up to 2000 characters, drawn as plain text, never as markup. |
+| `text` | `body`, up to 2000 characters, in a little markdown: bold, italics, lists, code and quotes (a heading becomes a bold line). Built as page elements, never as HTML; a link shows as its text. |
 
 A query is any of the five shapes in [Query format](query.md). An older KPI that carried `aggregate` is read as a value
 query with an `over_time` step, so saved boards keep working.

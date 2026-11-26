@@ -16,23 +16,31 @@ are mounted at run time, so one image serves every deployment.
 | default command | `serve --config /config/lenspack.yaml` |
 | ports | 8787 (`lenspack serve`), 8795 (`lenspack superset`) |
 | volume | `/data`, the state directory (`LENSPACK_STATE_DIR=/data`) |
-| environment set | `NODE_ENV=production`, `LENSPACK_UI=examples/demo/dist` (the board app is included), `LENSPACK_HOST=0.0.0.0` |
+| environment set | `NODE_ENV=production`, `LENSPACK_UI=examples/demo/dist` (the board app is included), `LENSPACK_HOST=0.0.0.0`, `LENSPACK_STATE_DIR=/data` |
 
 The old paths `packages/serve` and `packages/superset` are links to their new folders, so commands written for
 earlier images still work.
 
+Because the image sets `LENSPACK_UI`, a `ui:` folder in `lenspack.yaml` is ignored; `--ui` on the command line, or
+your own `LENSPACK_UI`, still wins. `ui:` settings such as `title` and `intro` still apply.
+
 ```sh
-docker build -t lenspack .
+docker pull ghcr.io/theflywheel/lenspack:latest   # or build your own: docker build -t lenspack .
 
 # the standalone server
 docker run -v "$PWD/config:/config:ro" -v lenspack-data:/data -p 8787:8787 \
-  -e DATABASE_URL -e LENSPACK_ADMIN_PASSWORD -e ANTHROPIC_API_KEY lenspack
+  -e DATABASE_URL -e LENSPACK_ADMIN_PASSWORD -e ANTHROPIC_API_KEY ghcr.io/theflywheel/lenspack:latest
 
-# inside Superset
-docker run -v "$PWD/config:/config:ro" -v lenspack-data:/data -p 8795:8795 \
-  -e LENSPACK_SUPERSET_URL=http://superset:8088 -e ANTHROPIC_API_KEY \
-  lenspack superset --config /config/superset.yaml
+# inside Superset: on Superset's network, named lenspack, with no published port
+docker run --name lenspack --network <superset's network> -v "$PWD/config:/config:ro" -v lenspack-data:/data \
+  -e LENSPACK_SUPERSET_URL=http://superset:8088 -e LENSPACK_PUBLIC_PATH=/lenspack \
+  -e ANTHROPIC_API_KEY -e SUPERSET_ADMIN_PASSWORD \
+  ghcr.io/theflywheel/lenspack:latest superset --config /config/superset.yaml
 ```
+
+Inside Superset, `SUPERSET_ADMIN_PASSWORD` is needed on the first start only, to make Lenspack's own Superset account. A
+complete Compose example, and the same on Kubernetes, are in [Install in
+Superset](../hosts/superset/install.md#3-run-the-server).
 
 Mount the config read-only and keep `/data` on a volume. Inside Superset, `/data` is the state directory by default.
 For `lenspack serve`, `/data` holds the password sign-in's files; set `state: /data` (and `cache:`, `usage:`,

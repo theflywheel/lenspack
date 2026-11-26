@@ -1,11 +1,10 @@
 # Features
 
-This page lists everything Lenspack does for the people who use it, one page per feature, with which hosts have it
-and whether it is released. It is for anyone deciding whether Lenspack fits, and for admins turning features on
-and off.
+This page lists everything Lenspack does for the people who use it, one page per feature, with which hosts have it. It
+is for anyone deciding whether Lenspack fits, and for admins turning features on and off.
 
-Every feature listed here is on the main branch. No version has been released since 0.1.0, so what changed lately is in
-the [changelog](../../CHANGELOG.md). Features still in review get their pages when they merge.
+Every feature listed here is on the main branch; what changed lately, and what is not yet in a release, is in the
+[changelog](../../CHANGELOG.md). Features still in review get their pages when they merge.
 
 ## Answering
 

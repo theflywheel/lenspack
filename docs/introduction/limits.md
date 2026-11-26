@@ -28,8 +28,9 @@ many rows per order would count orders twice; the compiler refuses it and sugges
 a database without one is refused rather than estimated another way. A rate is never added up. See [Entities and
 joins](../concepts/entities.md#fan-out) and [the compute step](../features/compute.md#how-zeros-and-gaps-are-treated).
 
-**A board holds no code.** No URLs, no markup and no colour values. Text widgets are drawn as plain text, and a
-colour scheme is a name the renderer maps to its own palette. See [Boards and widgets](../concepts/boards.md).
+**A board holds no code.** No URLs, no markup and no colour values. A note takes a little formatting but never HTML, and
+a link in it shows as its text only. A colour scheme is a name the renderer maps to its own palette. See [Boards and
+widgets](../concepts/boards.md).
 
 ## Not built yet
 

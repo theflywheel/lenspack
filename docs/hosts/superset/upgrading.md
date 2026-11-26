@@ -6,16 +6,26 @@ do. It is for whoever runs Superset. Upgrading Superset itself between 5.0 and 6
 
 ## The steps
 
-1. **Read the changes below** for anything between your version and the new one.
-2. **Update the plugin file** (`lenspack_superset.py`) on Superset's Python path, and restart Superset. The plugin
+1. **Read the changes below**, and the [changelog](../../../CHANGELOG.md), for anything between your version and the
+   new one.
+2. **Copy what you would need to go back:** the state directory (`/data` in the image), the plugin file you run now,
+   and the image tag you run now. The server writes its state files whole, but an older server is not promised to
+   read files a newer one wrote.
+3. **Update the plugin file** (`lenspack_superset.py`) on Superset's Python path, and restart Superset. The plugin
    and the server are released together; a newer server keeps working with an older plugin, but features that need
    the plugin stay off (each is listed below).
-3. **Update the Lenspack server's image** and restart it. The state directory carries over: board links, settings,
+4. **Update the Lenspack server's image** and restart it. The state directory carries over: board links, settings,
    saved answers, definitions, open questions and the audit log.
-4. **Check the log** for Superset's version line and any warnings about datasets, and open a dashboard.
+5. **Check the log** for Superset's version line and any warnings about datasets, and open a dashboard.
 
 What a restart loses is listed in [What Lenspack keeps on disk](../../operating/state.md#what-survives-a-restart):
 inside Superset, mainly Lenspack's own version history (the undo list). Superset's dashboards are never affected.
+
+### Rolling back
+
+Stop the server, put back the state directory you copied, the old plugin file (then restart Superset) and the old
+image tag, and start the server again. Dashboards edited through Lenspack in the meantime stay as they are in
+Superset; only Lenspack's own records go back.
 
 ## Changes that need attention
 
@@ -36,8 +46,8 @@ cannot read dataset permissions or dashboard access, or render templates: every 
 templated clause keeps its dataset from the user, and only the dashboard a request is about is listed. Update the
 plugin.
 
-**Board and pack in the signed identity.** A plugin from before the identity carried the board and pack (`b`, `p`)
-signs only the dashboard id; the server then checks `superset-<id>` against its route. Update the plugin.
+**Board and pack in the signed identity.** An older plugin signs only the dashboard id. The server still checks it,
+but update the plugin.
 
 **Superset 6.1 and ClickHouse.** Superset 6.1 needs `clickhouse-connect` 0.13 or later, and the plugin's column-name
 fix. See [Versions](versions.md#clickhouse-column-names-on-superset-61).

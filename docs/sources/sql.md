@@ -80,7 +80,8 @@ A result over the cap is an error, never a shorter answer: a cut-off list reads 
 100,000 rows, above anything a compiled query asks for; `maxRows` on a source changes it. `run_sql` keeps its own rules
 on top (one `SELECT` or `WITH`, wrapped in `LIMIT n`).
 
-These are belts. The braces are a database role that can only read what Lenspack should see; give every source one.
+These guards are a second line. The first is a database role that can only read what Lenspack should see; give every
+source one.
 
 ## Capability matrix
 

@@ -69,9 +69,10 @@ Relative time is resolved against "now" when the query runs, so a saved board ke
   ending at `offset`. "Last month" is `{ period: "month", offset: -1 }`, month to date `{ period: "month" }`, the
   three whole months before this one `{ period: "month", offset: -1, count: 3 }`.
 - `compare: "previous_period"` reads the span just before the window. For `last` and `from`/`to` it is the same
-  length of time; for `period`, the `count` periods before it. A range that runs to now is compared as far into the
-  previous span as now is into the current one, in local days and time of day, and never past that span's end: this
-  month to the 28th at noon against last month to the 28th at noon, the 31st against the whole of a shorter month.
+  length of time; for `period`, the `count` periods before it. A range that runs to now is compared with the same
+  stretch of the previous span, in local days and time of day. For example, this month up to the 28th at noon is
+  compared with last month up to the 28th at noon. The comparison never runs past the previous span's end, so the
+  31st is compared with the whole of a shorter month.
 - Series buckets start at local midnight, local Monday and the local first of the month in the pack's `timeZone`,
   and hour buckets at local hours (30-minute zones included); a bucket's label is its local date. SQLite and MySQL
   bucket in UTC only, so a series in any other zone is refused there (`NOT_SUPPORTED`).

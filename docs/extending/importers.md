@@ -19,9 +19,9 @@ lenspack dss ChartApiConfig.json --dashboards MasterDashboardConfig.json --out p
 # writes packs/dss/pack.yaml, packs/dss/boards/<id>.json and packs/dss/report.md
 ```
 
-On a 140-chart health config: 124 charts translate (48 exactly, the rest with notes), 343 drawn numbers become 118
-measures, and `report.md` lists what did not translate (painless scripts, `date_range`, differences of measures) and
-the 13 target and stock numbers DSS stores once per hierarchy level. The `campaign` example pack has the same index
+On one real 140-chart configuration, 124 charts translate (48 exactly, the rest with notes), 343 drawn numbers become
+118 measures, and `report.md` lists what did not translate (painless scripts, `date_range`, differences of measures)
+and the 13 numbers DSS stores once per hierarchy level. The `campaign` example pack has the same index
 shapes, with made-up data.
 
 ## CCRS analytics (`@lenspack/ccrs`)

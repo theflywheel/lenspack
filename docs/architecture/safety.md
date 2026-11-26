@@ -18,8 +18,10 @@ Anything else is refused before it reaches a database.
 
 ## What a board can never contain
 
-- **URLs.** Widgets have no sources; the pack does.
-- **Markup.** Text widgets are drawn as text nodes.
+- **URLs.** Widgets have no sources; the pack does. A link written in a note shows as its text: the board app
+  draws no links in notes, and on a Superset dashboard a note Lenspack writes is made plain before it is saved. (A
+  markdown block someone writes in Superset itself is Superset's, and Superset draws it.)
+- **Markup.** A note's formatting (bold, lists) is built as page elements, never as HTML from the text.
 - **Colours.** A board names a scheme; the renderer maps it to CSS variables.
 - **Coordinates.** Placement is intent (`top`, `bottom`, `after:<id>`); the server packs the grid, so an overlap
   cannot be written down.

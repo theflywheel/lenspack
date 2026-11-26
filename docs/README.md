@@ -51,7 +51,9 @@ Why Lenspack exists, who it is for, and what it deliberately leaves out.
 - [What you get](introduction/offerings.md): the parts of the product, one paragraph each.
 - [What Lenspack does not do](introduction/limits.md): the lines it never crosses, and what is not built yet.
 
-### Getting started
+### 2. Getting started
+
+From a first look to your own data.
 
 - [Choose a path](getting-started/README.md)
 - [Quick start](getting-started/quickstart.md): a board and a chat on made-up data, in minutes.
@@ -60,7 +62,7 @@ Why Lenspack exists, who it is for, and what it deliberately leaves out.
   with a check after each step.
 - [Your own data](getting-started/your-own-data.md): a config file, a small pack, and a running server.
 
-### 2. Concepts
+### 3. Concepts
 
 The handful of ideas everything else is built from, with one running example.
 
@@ -79,7 +81,7 @@ The handful of ideas everything else is built from, with one running example.
 - [Definitions and open questions](concepts/definitions.md): settling what a word means for your deployment.
 - [Saved answers](concepts/saved-answers.md): answering a repeated question without the model.
 
-### 3. Architecture
+### 4. Architecture
 
 How the code is laid out and how a request moves through it.
 
@@ -92,7 +94,7 @@ How the code is laid out and how a request moves through it.
 - [Why the model cannot break things](architecture/safety.md): the safety model.
 - [Claims the build checks](architecture/claims.md): what the test suite holds true on every build.
 
-### 4. Features
+### 5. Features
 
 - [All features](features/README.md): what each does and which hosts have it.
 - [Answering questions](features/answering.md)
@@ -110,7 +112,7 @@ How the code is laid out and how a request moves through it.
 - [Languages](features/languages.md)
 - [Naming the assistant](features/naming.md)
 
-### 5. Hosts
+### 6. Hosts
 
 - [Choose a host](hosts/README.md)
 - [Apache Superset](hosts/superset/README.md): [install](hosts/superset/install.md),
@@ -122,13 +124,13 @@ How the code is laid out and how a request moves through it.
 - [React components](hosts/react.md)
 - [MCP server](hosts/mcp.md)
 
-### 6. Sources
+### 7. Sources
 
 - [Sources overview](sources/README.md)
 - [SQL databases](sources/sql.md): Postgres, ClickHouse, DuckDB, SQLite, MySQL and MariaDB.
 - [Elasticsearch and OpenSearch](sources/elasticsearch.md)
 
-### 7. Extending
+### 8. Extending
 
 - [Extension points](extending/README.md)
 - [Write a pack](extending/write-a-pack.md)
@@ -137,7 +139,7 @@ How the code is laid out and how a request moves through it.
 - [Add a model provider](extending/model-adapter.md)
 - [Importers](extending/importers.md): packs and boards from another system's configuration.
 
-### 8. Access and policy
+### 9. Access and policy
 
 - [Who sees what](access/README.md): the layers, from the host down to the query.
 - [Sign-in](access/sign-in.md)
@@ -146,7 +148,7 @@ How the code is laid out and how a request moves through it.
 - [Row scope and tenancy](access/scope-and-tenancy.md)
 - [Access inside Superset](access/superset.md)
 
-### 9. Operating it
+### 10. Operating it
 
 - [Operating overview](operating/README.md)
 - [Configuration](operating/configuration.md)
@@ -159,7 +161,7 @@ How the code is laid out and how a request moves through it.
 - [Upgrading](operating/upgrading.md)
 - [Troubleshooting](operating/troubleshooting.md)
 
-### 10. Reference
+### 11. Reference
 
 - [Reference index](reference/README.md)
 - [Configuration keys](reference/config.md)
@@ -185,7 +187,7 @@ For people changing Lenspack itself.
 
 ## How these pages are written
 
-- **Learn first, look up later.** Sections 1 to 4 explain; section 10 lists. Each explanation links to the
+- **Learn first, look up later.** Sections 1 to 5 explain; section 11 lists. Each explanation links to the
   reference entry it relies on, and each reference entry links back to the page that explains it.
 - **One idea per page.** Every page starts by saying what it covers and who it is for, and ends with where to
   go next. Following **Next** from the first page walks the contents in order.
