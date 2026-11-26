@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
-import { type Connector, type Ctx, checkOps, explain, run, valuesQuery } from "@lenspack/engine";
+import { type Connector, type Ctx, type SourceCall, type WidgetData, checkOps, explain, nowOf, run, tracedConnector, valuesQuery } from "@lenspack/engine";
 import { shownConfig, showsStatement, withoutKeys } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -64,7 +64,18 @@ export type BoardToolsOptions = {
   held?: boolean;
   /** Told of every edit a tool applied or refused (an audit log). Never throws into the tool. */
   onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; held?: boolean; error?: string }) => void;
+  /**
+   * Told of every data call that answered (query, run_sql): what was asked, what the source ran
+   * and what came back, so the answer can show how it was worked out. Set, each query is traced
+   * as it runs; nothing is run again for it. Never throws into the tool.
+   */
+  onData?: (e: DataCall) => void;
 };
+
+/** One data call a tool made, as onData hears it. */
+export type DataCall =
+  | { tool: "query"; query: Query; data: WidgetData; sources: SourceCall[]; now: Date }
+  | { tool: "run_sql"; sql: string; rows: Record<string, unknown>[]; rowCount: number; truncated: boolean };
 
 /** The shape the Vercel AI SDK's `tool()` accepts, keyed by name: spread it into `tools:`. */
 export const toVercelAI = (tools: Tool[]) =>
@@ -190,6 +201,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   // What the model may name: verified keys this caller may use.
   const catalogue = withoutKeys(verifiedOnly(catalogueFrom(pack)), ctx.hidden);
   const proposals = opts.proposals ?? memoryProposals();
+  const observed = (e: DataCall) => {
+    try {
+      opts.onData?.(e);
+    } catch {
+      /* an explanation must not break an answer */
+    }
+  };
 
   // Models call several edit tools in one step and the SDK runs them in
   // parallel; each patch reads the board, so unserialised they would race and
@@ -294,8 +312,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       inputSchema: QUERY,
       async execute(a) {
         const query = assembleQuery(a, pack);
-        const data = await run(query, { pack, connector, ctx, timeoutMs: opts.timeoutMs });
+        // Traced only when someone listens: what the source ran, from the run itself.
+        const sources: SourceCall[] = [];
+        // One clock for the run and its description, so "the last 30 days" is named as the dates it read.
+        const now = nowOf(ctx);
+        const data = await run(query, { pack, connector: opts.onData ? tracedConnector(connector, sources) : connector, ctx: { ...ctx, now }, timeoutMs: opts.timeoutMs });
         if (data.error) return { ok: false, error: data.error, ...(data.hint ? { didYouMean: data.hint } : {}) };
+        observed({ tool: "query", query, data, sources, now });
         const { text } = await explain(query, { pack, connector, ctx });
         const closest = data.total === 0 ? await closestValues(query) : "";
         return { ...queryResult(query, data), ...(closest ? { didYouMean: closest } : {}), ...statement(text) };
@@ -560,7 +583,12 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         name: "run_sql",
         description: `Read-only SQL for a question the pack cannot express. One SELECT or WITH statement, capped rows, timeboxed. Results are for answering, never for widgets: if the answer is worth keeping, propose_measure it. Tables:\n${raw.describe}`,
         inputSchema: z.object({ sql: z.string() }),
-        execute: async ({ sql }) => ({ ok: true, ...(await raw.run(sql, { timeoutMs: opts.timeoutMs })) }),
+        execute: async ({ sql }) => {
+          const result = (await raw.run(sql, { timeoutMs: opts.timeoutMs })) as { rows?: Record<string, unknown>[]; rowCount?: number; truncated?: boolean; sql?: string };
+          const rows = Array.isArray(result.rows) ? result.rows : [];
+          observed({ tool: "run_sql", sql: typeof result.sql === "string" ? result.sql : sql, rows, rowCount: result.rowCount ?? rows.length, truncated: !!result.truncated });
+          return { ok: true, ...result };
+        },
       }),
     );
 

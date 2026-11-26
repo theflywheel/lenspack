@@ -55,7 +55,7 @@ A saved answer is used only for the same:
 - **pack and its definitions.** A change to the pack file (a measure, a dimension, a definition, a correctness filter) changes its fingerprint, and every answer saved under the old one stops being served.
 - **assistant version.** When the assistant's instructions change (`PROMPT_VERSION`), old answers stop being served.
 - **board filters.** An answer is saved per board, under that board's filters. Adding, changing or removing a filter starts afresh.
-- **the viewer's filter selections.** What a person has picked in the dashboard's filters (`?f_<field>=` on the chat request, or `selections` in its body) is part of the question: "how many today?" with one province picked is not the same question as with none.
+- **the viewer's filter selections.** What a person has picked in the dashboard's filters (the `selections` the chat panels send with each question, or `?f_<field>=` on the chat request) is part of the question: "how many today?" with one province picked is not the same question as with none.
 - **language rules.** A reply in a chosen language is not served to someone who chose another.
 
 And it expires:
@@ -80,6 +80,7 @@ A reply from a saved answer looks like any other, with one line under it:
 - For a change to the board, the line reads "Saved change, made as before".
 - **Ask fresh** sends the same question to the full assistant, whatever is saved. Its answer replaces the saved one.
 - The query steps still appear, with their results, so the person can see where the numbers came from.
+- When the queries ran again (tier 2 and later), "How this was worked out" is shown as for any answer ([explain.md](explain.md)). A reply sent unchanged (tier 1) has none; "Ask fresh" gives one.
 - The cost line shows what the reply actually cost: nothing for tiers 1 to 3 without a rewrite, a fraction of a cent otherwise.
 
 This appears in both chat panels: the one inside Superset and the one in the board app, in light and dark themes.

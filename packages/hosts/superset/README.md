@@ -358,6 +358,7 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `maps` | map queries are refused (existing deck_scatter charts stay in Superset) | the server |
 | `reviewer` | no second model call checking each change: edits are saved as they are made, and a wrong one is not caught before the reply | the server |
 | `cache` | no saved answers: every question goes to the model, even one answered a minute ago ([docs/caching.md](../../../docs/caching.md)) | the server |
+| `explain` | no "How this was worked out" under answers, and none in the audit log; `explain: { sql: false }` in the config keeps it without the SQL ([docs/explain.md](../../../docs/explain.md)) | the server |
 
 `/_superset/info` returns `features` (the effective booleans) for the page. `GET /_superset/settings` returns
 `features: {values, defaults, source, options, writable}`: `defaults` is what the deployment says without the

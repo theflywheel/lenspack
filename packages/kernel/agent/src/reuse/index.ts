@@ -89,6 +89,8 @@ export type ReuseTurn = {
   /** Suggested questions with the query each was checked with: answered by that query directly. */
   examples?: { question: string; query: Query }[];
   onEdit?: BoardToolsOptions["onEdit"];
+  /** Hears every data call a replay makes (the host's answer card). */
+  onData?: BoardToolsOptions["onData"];
 };
 
 /** What the full assistant did in a turn, for the store to keep (or not). */
@@ -200,7 +202,7 @@ export function reuseLayer(o: ReuseOptions) {
   }
 
   const tools = (t: ReuseTurn, boards?: BoardStore, held = false) =>
-    new Map(boardTools({ pack: t.pack, connector: t.connector, store: boards ?? t.store, boardId: t.board, ctx: t.ctx, proposals: t.proposals, readOnly: t.readOnly, held, onEdit: t.onEdit }).map((x) => [x.name, x]));
+    new Map(boardTools({ pack: t.pack, connector: t.connector, store: boards ?? t.store, boardId: t.board, ctx: t.ctx, proposals: t.proposals, readOnly: t.readOnly, held, onEdit: t.onEdit, onData: t.onData }).map((x) => [x.name, x]));
 
   /** Runs a plan's data calls again under the asker's own access. Null when one fails: the full assistant answers instead. */
   async function rerun(t: ReuseTurn, plan: Call[]): Promise<Call[] | null> {

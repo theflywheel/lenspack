@@ -11,6 +11,7 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { type AnswerCardData, ExplainBlock } from "./explain";
 import { Markdown } from "./markdown";
 
 // The chat panel beside the board.
@@ -152,6 +153,7 @@ export function ChatPanel({
   onModelChange,
   effort,
   onEffortChange,
+  selections,
 }: {
   base: string;
   suggestions: string[];
@@ -167,6 +169,8 @@ export function ChatPanel({
   /** A level the model takes, or "" for its default. */
   effort: string;
   onEffortChange: (e: string) => void;
+  /** The board's filter selections now: sent with each question, as the turn's context. */
+  selections?: () => Record<string, string>;
 }) {
   const efforts = models.find((m) => m.name === model)?.efforts;
   // A turn waiting for a place in the server's queue: its place and about how long (queue.ts).
@@ -252,7 +256,8 @@ export function ChatPanel({
     startVersion.current = b.board?.version ?? null;
     // The model sees the board as it is now; a notice pending for edits before this is moot.
     if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
-    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(fresh ? { fresh: true } : {}) };
+    const picked = selections?.() ?? {};
+    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(Object.keys(picked).length ? { selections: picked } : {}), ...(fresh ? { fresh: true } : {}) };
     void sendMessage({ text }, Object.keys(body).length ? { body } : undefined);
     setInput("");
   };
@@ -351,6 +356,8 @@ export function ChatPanel({
                 ) : p.type === "data-review" ? (
                   // Only the last check: an earlier one's findings were fixed, or the board was left as it was.
                   p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
+                ) : p.type === "data-answer-card" ? (
+                  <ExplainBlock key={i} x={p.data as AnswerCardData} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
                 ) : p.type === "data-queue" && (p.data as { state?: string }).state === "full" ? (

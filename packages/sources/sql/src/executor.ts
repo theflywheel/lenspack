@@ -96,6 +96,8 @@ export function sqlConnector(executor: Executor, opts: { introspect?: () => Prom
     },
     async execute(plan, opts) {
       const compiled = plan.native as Compiled;
+      // The statement with its bound values, for whoever asks what ran (an answer's explanation).
+      opts?.ran?.({ language: "sql", text: compiled.sql, ...(compiled.params.length ? { params: compiled.params } : {}) });
       return shapeBound(await executor.query(compiled.sql, compiled.params, opts), compiled.bound);
     },
   };

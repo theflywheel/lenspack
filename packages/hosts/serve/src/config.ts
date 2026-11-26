@@ -41,6 +41,13 @@ const sourceSchema = z.union([
   z.object({ kind: z.enum(["duckdb", "sqlite"]), path: z.string().min(1), ...limits }),
 ]);
 
+/** `explain:` in lenspack.yaml or superset.yaml. */
+export const explainSchema = z.union([z.boolean(), z.object({ sql: z.boolean().optional() }).strict()]);
+export type ExplainConfig = z.infer<typeof explainSchema>;
+
+/** The config's explain setting as the board API reads it: on unless false, the SQL shown unless sql is false. */
+export const explainFrom = (c: ExplainConfig | undefined): { on: boolean; sql: boolean } => ({ on: c !== false, sql: !(typeof c === "object" && c.sql === false) });
+
 export const configSchema = z.object({
   sources: z.record(z.string().regex(/^[a-z][a-z0-9_]*$/), sourceSchema),
   packs: z
@@ -105,6 +112,8 @@ export const configSchema = z.object({
     .optional(),
   /** The turn queue (docs/caching.md): { maxConcurrent, maxWaiting, maxWaitSeconds }. Absent: 8 at a time, 50 waiting, 60 s. */
   queue: z.object({ maxConcurrent: z.number().int().optional(), maxWaiting: z.number().int().optional(), maxWaitSeconds: z.number().int().optional() }).strict().optional(),
+  /** "How this was worked out" under each answer: false turns it off; `{ sql: false }` keeps the words and rows but not the SQL. */
+  explain: explainSchema.optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
   proposals: z.string().optional(),
 });

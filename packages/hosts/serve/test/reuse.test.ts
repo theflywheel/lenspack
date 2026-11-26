@@ -190,6 +190,8 @@ describe("answer and plan reuse", () => {
     expect(again.saved).toMatchObject({ tier: "t2" });
     expect(again.saved.how).toMatch(/^template/);
     expect(again.reply).toBe(`${(n * 2).toLocaleString("en-US")} households were delivered.`);
+    // The queries it ran again are explained, as in a full turn ("How this was worked out").
+    expect(again.parts.find((p) => p.type === "data-answer-card")?.data).toMatchObject({ calls: [expect.anything()] });
     // The fresh answer is now the saved one: asked again at once, it is T1.
     const third = await ask(b, "How many households were delivered?");
     expect(third.saved.tier).toBe("t1");
