@@ -5,8 +5,8 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type ProposalStore, type TurnDefinitions, boardTools, clarifyOf, clarifyTool, definitionsKey, quickReplyOf, toVercelAI } from "@lenspack/agent";
-import { type Principal, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
+import { type AnswerCard, type ProposalStore, type TurnDefinitions, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, quickReplyOf, selectionsFrom, toVercelAI } from "@lenspack/agent";
+import { type Principal, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -105,6 +105,11 @@ export type AppOptions = {
    * its version, the clarify switch and the open-questions log. Absent, the pack is used as its file says.
    */
   definitions?: TurnDefinitions;
+  /**
+   * What the deployment allows of the answer card ("How this was worked out"), read per turn: on
+   * unless `on` is false; the statements shown unless `sql` is false. Policy only narrows it.
+   */
+  explain?: () => { on?: boolean; sql?: boolean } | undefined;
 };
 
 /**
@@ -613,7 +618,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const defsVersion = await definitionsVersion(defs, h.name, h.pack);
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; selections?: unknown };
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     // A quick reply picked under a clarifying question: counted against that reading in the open-questions log.
@@ -623,11 +628,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
+    // The answer card (kernel/agent answer.ts), from the data calls the tools make; policy decides what it shows.
+    const shown = answerView(h.ctx, opts.explain?.());
+    const card = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
     const tools = toVercelAI([
-      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged,
+      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, onData: card?.onData,
         onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }),
       ...(clarifying && defs ? [clarifyTool({ note: (n) => defs.note(h.name, n), question: instruction })] : []),
     ]);
@@ -693,7 +701,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       execute: ({ writer }) => withMeter(scope, async () => {
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
-        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[]; language?: string; definitions?: string; clarify?: unknown; quickReply?: unknown } = {
+        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[]; language?: string; definitions?: string; clarify?: unknown; quickReply?: unknown; card?: AnswerCard } = {
           instruction: instruction.slice(0, 2000),
           calls: [],
           refusals: [],
@@ -779,7 +787,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             turn.reviews.push({ round, satisfied: verdict.satisfied, unavailable: verdict.unavailable, findings: verdict.findings, note: verdict.note, ...(verdict.reading ? { reading: verdict.reading } : {}) });
             // An unstated or wrong reading the reviewer saw joins the open-questions log, for an admin to settle.
             if (verdict.reading && defs && verdict.reading.readings.length >= 2)
-              defs.note(h.name, { pattern: verdict.reading.question, readings: verdict.reading.readings.map((label) => ({ label, explanation: "" })), example: instruction, source: "reviewer" });
+              void defs.note(h.name, { pattern: verdict.reading.question, readings: verdict.reading.readings.map((label) => ({ label, explanation: "" })), example: instruction, source: "reviewer" });
             if (!fixing && material.length) {
               // The change would mislead: one round to correct it, with the findings as the instruction.
               misleading = material;
@@ -831,6 +839,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
                 say(`The change could not be saved: ${why}`);
               }
             }
+          }
+          // To the person who asked, under their answer, and into the turn's audit line (bounded).
+          const answered = card?.record();
+          if (answered) {
+            turn.card = answered;
+            writer.write({ type: "data-answer-card", data: answered });
           }
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);

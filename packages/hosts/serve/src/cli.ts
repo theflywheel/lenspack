@@ -9,7 +9,7 @@ import { buildBoard, seedBoards } from "./app";
 import { type AuditEvent, auditFileSince, fileAudit, rotatingAudit } from "./audit";
 import { authFrom, effectiveAuth, principalOf } from "./auth";
 import { adminSettings } from "./admin";
-import { openConfig, readConfig, resolveSecrets } from "./config";
+import { explainFrom, openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
 
@@ -71,7 +71,7 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
+        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, explain: () => explainFrom(config.explain), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
         log,
         routes: (rt) => {
           if (!review) return () => {};

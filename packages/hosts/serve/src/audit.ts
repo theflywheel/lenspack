@@ -162,6 +162,8 @@ export type TurnRow = {
   sttUsd: number;
   /** Calls with no price; their cost is not in costUsd. */
   unpriced: number;
+  /** What the turn's data calls asked, in plain words (its "how this was worked out"), when it read any. */
+  explained?: string[];
 };
 
 export type Totals = { turns: number; costUsd: number; sttUsd: number; tokensIn: number; tokensOut: number; unpriced: number };
@@ -177,6 +179,7 @@ type Detail = {
   models?: string[];
   tokens?: { in?: number; out?: number };
   cost?: { total?: { usd?: number; inputTokens?: number; outputTokens?: number; unpriced?: number }; models?: Line[] };
+  card?: { calls?: { description?: unknown }[] };
 };
 
 const round = (usd: number) => Math.round(usd * 1e6) / 1e6;
@@ -202,8 +205,15 @@ export function turnRow(e: AuditEvent): TurnRow | null {
     costUsd: d.costUsd ?? d.cost?.total?.usd ?? 0,
     sttUsd: d.sttUsd ?? round(stt),
     unpriced: d.unpriced ?? d.cost?.total?.unpriced ?? 0,
+    ...explainedOf(d),
   };
 }
+
+/** The descriptions of a turn's data calls, from its explanation; the statements and rows stay in the audit line. */
+const explainedOf = (d: Detail): { explained?: string[] } => {
+  const words = (Array.isArray(d.card?.calls) ? d.card.calls : []).map((c) => c?.description).filter((w): w is string => typeof w === "string");
+  return words.length ? { explained: words } : {};
+};
 
 const empty = (): Totals => ({ turns: 0, costUsd: 0, sttUsd: 0, tokensIn: 0, tokensOut: 0, unpriced: 0 });
 const add = (t: Totals, r: TurnRow) => {
