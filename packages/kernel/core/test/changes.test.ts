@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { changesSince, describeChanges, listInWords } from "../src/changes";
+import { changesSince, describeChanges, listInWords, recentRemovals } from "../src/changes";
 import { memoryStore } from "../src/store";
 import { catalogue, packRef } from "./fixtures";
 
@@ -83,4 +83,34 @@ describe("changesSince", () => {
 it("lists in words", () => {
   expect(listInWords(["a"])).toBe("a");
   expect(listInWords(["a", "b", "c"])).toBe("a, b and c");
+});
+
+describe("recentRemovals", () => {
+  it("lists what was taken off the board, newest first, with its version and what made the change", async () => {
+    const { store } = await boardWithThree();
+    for (const [id, source] of [["a", "chat"], ["b", "ops"]] as const) {
+      const r = await store.patch({ id: "x", catalogue, source, ops: [{ op: "remove_widget", id }] });
+      if (!r.ok) throw new Error(r.error);
+    }
+    const out = recentRemovals(await store.versions("x"));
+    expect(out.map((r) => [r.title, r.version, r.source])).toEqual([
+      ["Beta", 4, "ops"],
+      ["Alpha", 3, "chat"],
+    ]);
+    expect(out[0]!.at).toBeInstanceOf(Date);
+  });
+
+  it("leaves out a widget put back since, older removals past `since`, and more than `limit`", async () => {
+    const { store } = await boardWithThree();
+    const removed = await store.patch({ id: "x", catalogue, source: "chat", ops: [{ op: "remove_widget", id: "a" }] });
+    if (!removed.ok) throw new Error(removed.error);
+    await store.revertTo("x", 2);
+    expect(recentRemovals(await store.versions("x"))).toEqual([]);
+    for (const id of ["b", "c"]) {
+      const r = await store.patch({ id: "x", catalogue, source: "chat", ops: [{ op: "remove_widget", id }] });
+      if (!r.ok) throw new Error(r.error);
+    }
+    expect(recentRemovals(await store.versions("x"), { limit: 1 }).map((r) => r.title)).toEqual(["Gamma"]);
+    expect(recentRemovals(await store.versions("x"), { since: new Date(Date.now() + 60_000) })).toEqual([]);
+  });
 });
