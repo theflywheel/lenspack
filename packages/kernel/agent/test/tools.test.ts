@@ -4,6 +4,7 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { pack, seedFixture } from "../../../sources/sql/test/fixture-pack";
+import { stayedNote } from "../src/personal";
 import { memoryProposals } from "../src/proposals";
 import { type Tool, boardTools } from "../src/tools";
 
@@ -400,5 +401,12 @@ describe("board tools", () => {
     expect((await run("restore_version", { to: "v3" })).applied).toBe(true);
     expect(Object.keys((await store.get("r"))!.config.widgets)).toHaveLength(2);
     expect((await run("restore_version", { to: "99" })).applied).toBe(false);
+  });
+});
+
+describe("applying a saved layout", () => {
+  it("tells the person when charts made in Superset stayed behind, and suggests their own copy when most did", () => {
+    expect(stayedNote({ widgets: 3, of: 4, stayed: 1 }, "Campaign")).toBe("Charts made in Superset stay with the dashboard they were made on, so this layout carried 3 of its 4 charts here.");
+    expect(stayedNote({ widgets: 1, of: 4, stayed: 3 }, "Campaign")).toMatch(/carried 1 of its 4 charts here\. To keep them, open “Campaign” and make your own copy of it instead\.$/);
   });
 });

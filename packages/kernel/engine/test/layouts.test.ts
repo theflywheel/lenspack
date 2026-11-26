@@ -34,5 +34,8 @@ describe("a saved layout on another board", () => {
     const r = fitSavedLayout(saved, emptyBoard(pack, "Blank"), pack, { ctx: { tenant: "t1" }, savedLocked: ["c12"] });
     expect(r.skipped.map((s) => s.title).sort()).toEqual(["A host chart", "Gone"]);
     expect(Object.keys(r.config.widgets)).toEqual(["k"]);
+    // How much it carried: one of three, one left with its own dashboard (the other could not be drawn at all).
+    expect(r.carried).toEqual({ widgets: 1, of: 3, stayed: 1 });
+    expect(fitSavedLayout(saved, target, pack, { ctx: { tenant: "t1" }, savedLocked: ["c12"], targetLocked: ["c12"] }).carried).toEqual({ widgets: 2, of: 3, stayed: 0 });
   });
 });

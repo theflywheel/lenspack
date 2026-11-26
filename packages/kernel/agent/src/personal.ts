@@ -32,6 +32,15 @@ export type PersonalToolsOptions = {
 
 const result = <T extends object>(r: { ok: true } & T | { ok: false; error: string; code?: string }) => (r.ok ? r : { ok: false, applied: false, error: r.error, ...(r.code ? { code: r.code } : {}) });
 
+/**
+ * What to tell the person when charts made in the host stayed with the dashboard they were made on: a layout is not
+ * a template for those. When most were left out, their own copy of that dashboard is the better way to keep them.
+ */
+export function stayedNote(c: { widgets: number; of: number; stayed: number }, from: string): string {
+  const base = `Charts made in Superset stay with the dashboard they were made on, so this layout carried ${c.widgets} of its ${c.of} charts here.`;
+  return c.stayed * 2 > c.of ? `${base} To keep them, open “${from}” and make your own copy of it instead.` : base;
+}
+
 export function personalTools(o: PersonalToolsOptions): Tool[] {
   const { port } = o;
   return [
@@ -76,7 +85,7 @@ export function personalTools(o: PersonalToolsOptions): Tool[] {
     defineTool({
       name: "apply_layout",
       description:
-        "Put one of the user's saved layouts on this dashboard, as one change that can be undone. Charts whose measures or datasets the user can't use here are left out and named in the result: say which. Only on a dashboard they may edit; otherwise they can make their own copy first (copy_dashboard).",
+        "Put one of the user's saved layouts on this dashboard, as one change that can be undone. Charts whose measures or datasets the user can't use here are left out and named in the result: say which. Charts made in Superset stay with the dashboard they were made on (a layout is not a template for them): when the result has a stayed note, tell the user plainly, in their language. Only on a dashboard they may edit; otherwise they can make their own copy first (copy_dashboard).",
       inputSchema: z.object({ layout: str().describe("The saved layout's name or id") }),
       execute: ({ layout }) =>
         o.edit(async () => {
@@ -95,6 +104,8 @@ export function personalTools(o: PersonalToolsOptions): Tool[] {
             ...(fit.skipped.length ? { skipped: fit.skipped.map((s) => `“${s.title}”: ${s.why}`) } : {}),
             ...(fit.skippedFilters.length ? { skippedFilters: fit.skippedFilters.map((s) => `“${s.label}”: ${s.why}`) } : {}),
             ...(fit.packChanged ? { note: "The layout was saved against an earlier version of the metrics; charts that no longer fit were left out." } : {}),
+            carried: `${fit.carried.widgets} of ${fit.carried.of} charts`,
+            ...(fit.carried.stayed ? { stayed: stayedNote(fit.carried, got.layout.source.title) } : {}),
             board: o.shown(saved.config),
           };
         }),
