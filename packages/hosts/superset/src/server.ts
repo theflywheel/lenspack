@@ -22,7 +22,7 @@ import YAML from "yaml";
 import { identityKeeper, identityKey, serviceAccount } from "./bootstrap";
 import { type Overlay, fetchDatasets, packFromDatasets, packScope } from "./catalogue";
 import { supersetClient } from "./client";
-import { supersetConnector } from "./connector";
+import { supersetConnector, timeZoneWarnings } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
 import { supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, supersetAuth, supersetRights } from "./identity";
@@ -158,7 +158,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const built = packFromDatasets(datasets, config.overlay);
   const { pack, packYaml, binding } = built;
   // Mistakes in the overlay (a measure on a column that isn't there) leave that part out; they are said like the rest.
-  const warnings = [...built.problems, ...built.warnings];
+  // In a pack outside UTC, a dataset whose series Superset can't draw in that zone is said now, not found one question at a time.
+  const warnings = [...built.problems, ...built.warnings, ...timeZoneWarnings(pack, binding)];
   for (const w of warnings) log(`warning: ${w}`);
   log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
   // The pack's own context: its row scope, which every query anyone runs carries (decide() adds it to theirs).

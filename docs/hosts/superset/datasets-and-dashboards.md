@@ -187,14 +187,26 @@ reads one dataset. Shares, the "Other" group and extra measures are worked out b
 (`DATE`, or ClickHouse's `Date` and `Date32`) needs none: the catalogue marks it `type: date`, its days, weeks and
 months are drawn in a pack with any `timeZone`, and a window is sent as the dates it holds in that zone ("the last 7
 days" ends today in the pack's zone). In a pack outside UTC, a series over a time column with a time of day is
-refused, and the refusal says what works: a date column, or a pack that keeps UTC.
+refused, and the refusal says what works: a date column, or a pack that keeps UTC. Lenspack says this at start-up
+too: a warning in the log and in the settings API's `warnings` names each dataset and column it affects, so it is
+not found one question at a time.
 
 ## Dashboards are boards
 
 Lenspack reads a dashboard as a board: charts become widgets, markdown blocks become text widgets, and the layout
-becomes the grid. A chart Lenspack cannot say exactly (custom SQL filters, ad hoc metrics, a heatmap shaded per row or
-column) is kept as Superset's: a widget the model can move, resize or remove but not rewrite. So is a chart whose
-dataset is not in `datasets:`, and the chat cannot answer questions from that dataset.
+becomes the grid. A chart Lenspack cannot say exactly (custom SQL filters, ad hoc metrics other than the simple ones
+below, a heatmap shaded per row or column) is kept as Superset's: a widget the model can move, resize or remove but
+not rewrite. So is a chart whose dataset is not in `datasets:`, and the chat cannot answer questions from that dataset.
+
+**Ad hoc metrics.** Charts made in Superset often use an ad hoc metric rather than a saved one. One that is a single
+plain aggregate is read as the pack measure with the same aggregation and column, a saved metric or an overlay
+measure (a saved metric first): `SUM(col)`, `COUNT(*)` (or ClickHouse's `count()`), `COUNT(col)`,
+`COUNT(DISTINCT col)`, `MIN(col)`, `MAX(col)` and `AVG(col)`, in any case, with spaces or a quoted column
+(`` `col` ``, `"col"`), and the same aggregates made in Superset's own metric editor. So a tile with
+`SUM(quantity)` reads as the saved metric `items_sold` whose SQL is `SUM(quantity)`, and the chat can answer about it.
+Anything else (`SUM(a) / NULLIF(COUNT(*), 0)`, a `CASE`, an aggregate of a column Superset computes from an
+expression, or one no measure matches) stays Superset's. A chart's simple filters on a dimension (`=`, `!=`, `IN`,
+`NOT IN`, `>=`, `<=`) are read as the widget's filters; a custom SQL filter stays Superset's.
 
 **Notes.** A board holds no URLs, but Superset draws a markdown block with links. So a note Lenspack writes or
 changes is made plain before it is saved: a link becomes its text, and HTML and bare web or e-mail addresses are not

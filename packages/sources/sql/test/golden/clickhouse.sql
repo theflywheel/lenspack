@@ -260,6 +260,15 @@ LEFT JOIN (SELECT *, (upper(tier)) AS "__d_tier" FROM "Owners") AS "owners" ON "
 WHERE ("things"."__d_colour" = {p4:String}) AND ("things"."__d_colour" <> {p5:String}) AND ("things"."__d_size" >= {p6:Int64}) AND ("things"."__d_size" <= {p7:Int64}) AND ("things"."__d_colour" IN ({p8:String}, {p9:String})) AND (("things"."__d_size" >= {p10:Int64}) AND ("things"."__d_size" <= {p11:Int64})) AND hasAny(splitByChar('|', ifNull(CAST("things"."__d_path" AS String), '')), [{p12:String}, {p13:String}]) AND ((("things"."__d_path" = {p14:String}) OR ("things"."__d_path" LIKE {p15:String}))) AND (CAST("things"."__d_colour" AS String) ILIKE {p16:String}) AND ("owners"."__d_tier" = {p17:String})
 LIMIT 1;
 
+-- {"kind":"breakdown","dimension":"colour","measure":"things","limit":10,"sort":"desc","filters":[{"dimension":"colour","op":"not_in","value":["blue","green"]}]}
+-- params: ["ke_1","ke\\\\_1.%","test","blue","green"]
+SELECT "things"."__d_colour" AS "group", count(*) AS "value", count(*) AS "n"
+FROM (SELECT *, "made_at" AS "__t", (colour) AS "__d_colour" FROM "app"."things" WHERE ((("tenant_id" = {p1:String}) OR ("tenant_id" LIKE {p2:String}))) AND (deleted = false) AND ("kind" IS NULL OR "kind" <> {p3:String})) AS "things"
+WHERE ("things"."__d_colour" NOT IN ({p4:String}, {p5:String}))
+GROUP BY "things"."__d_colour"
+ORDER BY "value" DESC NULLS LAST, "group" ASC NULLS LAST
+LIMIT 10;
+
 -- {"kind":"rows","entity":"things","columns":["colour","size","origin"],"limit":4,"orderBy":{"key":"size","dir":"desc"}}
 -- params: ["ke_1","ke\\\\_1.%","test"]
 SELECT "things"."__d_colour" AS "colour", "things"."__d_size" AS "size", "things"."__d_origin" AS "origin"

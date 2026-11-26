@@ -2,7 +2,7 @@ import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query
 import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, computeRefusal, rowCap, windowDates } from "@lenspack/engine";
 import { type Pack, datedTime, maybeFragmentFor, natureOf } from "@lenspack/pack";
 
-import type { AdhocSpec, Binding } from "./catalogue";
+import { type AdhocSpec, type Binding, type SimpleAgg, aggregateKey, simpleAggregate } from "./catalogue";
 
 // One translation, two directions of use. A lenspack query becomes a Superset
 // query object (for /api/v1/chart/data, which the connector runs) and a chart's
@@ -92,6 +92,24 @@ export function metricSignature(m: unknown): string | null {
 }
 export const metricLabel = (m: Metric) => (typeof m === "string" ? m : m.label);
 
+// Superset's own metric editor's aggregates (a SIMPLE ad hoc metric), as simple aggregates.
+const SIMPLE_AGGREGATE: Record<string, SimpleAgg> = { SUM: "sum", COUNT: "count", COUNT_DISTINCT: "count_distinct", MIN: "min", MAX: "max", AVG: "avg" };
+
+/**
+ * The simple aggregate an ad hoc metric is: Superset's own kind (an aggregate of a column), or SQL that is one plain
+ * aggregate (SUM(nets), COUNT(*), COUNT(DISTINCT household_id)). Null for anything else, which stays Superset's.
+ */
+export function adhocAggregate(m: unknown): { agg: SimpleAgg; column: string | null } | null {
+  if (!m || typeof m !== "object") return null;
+  const x = m as { expressionType?: string; column?: { column_name?: string }; aggregate?: string; sqlExpression?: string };
+  if (x.expressionType === "SIMPLE" && x.column?.column_name && x.aggregate) {
+    const agg = SIMPLE_AGGREGATE[x.aggregate.toUpperCase()];
+    return agg ? { agg, column: x.column.column_name } : null;
+  }
+  if (x.expressionType === "SQL" && typeof x.sqlExpression === "string") return simpleAggregate(x.sqlExpression);
+  return null;
+}
+
 // ---- filters ----------------------------------------------------------------
 
 type Op = FilterClause["op"];
@@ -107,6 +125,8 @@ export function filterParts(col: string, op: Op, value: unknown): { simple?: Que
       return { simple: [{ col, op: "!=", val: value }] };
     case "in":
       return { simple: [{ col, op: "IN", val: list }] };
+    case "not_in":
+      return { simple: [{ col, op: "NOT IN", val: list }] };
     case "gte":
       return { simple: [{ col, op: ">=", val: value }] };
     case "lte":
@@ -122,7 +142,7 @@ export function filterParts(col: string, op: Op, value: unknown): { simple?: Que
   }
 }
 
-const SIMPLE_OP: Record<string, string> = { "==": "==", "!=": "!=", IN: "IN", ">=": ">=", "<=": "<=", ILIKE: "ILIKE" };
+const SIMPLE_OP: Record<string, string> = { "==": "==", "!=": "!=", IN: "IN", "NOT IN": "NOT IN", ">=": ">=", "<=": "<=", ILIKE: "ILIKE" };
 
 export function adhocFilters(col: string, op: Op, value: unknown): AdhocFilter[] {
   const p = filterParts(col, op, value);
@@ -705,13 +725,15 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
   const datasetId = chart.datasource_id ?? Number(String(p.datasource ?? "").split("__")[0]);
   const entity = binding.entityOf.get(datasetId);
   if (!entity) return { widget: null, reason: "its dataset is not in the pack" };
-  // A saved metric by name; an ad hoc one made in Superset when it is exactly an overlay measure of this dataset.
+  // A saved metric by name; an ad hoc one made in Superset when it is exactly an overlay measure of this dataset, or
+  // a simple aggregate (SUM(nets), COUNT(*), COUNT(DISTINCT household_id)) that a measure of this dataset also is.
   const measureKey = (m: unknown): string | null => {
     if (typeof m === "string") return binding.measureOf.get(entity)?.get(m) ?? null;
     const sig = metricSignature(m);
     if (!sig) return null;
     for (const [key, b] of binding.metrics) if (b.entity === entity && b.adhoc && metricSignature(adhocMetric(b.adhoc, key)) === sig) return key;
-    return null;
+    const simple = adhocAggregate(m);
+    return simple ? (binding.aggregates?.get(entity)?.get(aggregateKey(simple)) ?? null) : null;
   };
   const dimKey = (c: unknown): string | null => (typeof c === "string" ? (binding.dimensionOf.get(entity)?.get(c) ?? null) : null);
   const ds = binding.datasets.get(entity)!;
@@ -732,7 +754,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
     }
     const key = dimKey(f.subject);
     if (!key) return { widget: null, reason: `it filters on ${named(f.subject)}, which is not a pack dimension` };
-    const op = ({ "==": "eq", "!=": "neq", IN: "in", ">=": "gte", "<=": "lte" } as Record<string, FilterClause["op"]>)[f.operator ?? ""];
+    const op = ({ "==": "eq", "!=": "neq", IN: "in", "NOT IN": "not_in", ">=": "gte", "<=": "lte" } as Record<string, FilterClause["op"]>)[f.operator ?? ""];
     if (!op) return { widget: null, reason: `its filter operator ${f.operator} has no form the assistant can write` };
     filters.push({ dimension: key, op, value: f.comparator as never });
   }
@@ -742,7 +764,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
   switch (chart.viz_type) {
     case "big_number_total": {
       const m = measureKey(p.metric);
-      if (!m) return { widget: null, reason: "its metric is not a saved metric of the dataset" };
+      if (!m) return { widget: null, reason: "its metric is neither a saved metric of the dataset nor a simple aggregate one of its measures matches" };
       return { widget: { title, kind: "kpi", query: { kind: "value", measure: m, ...common } } as Widget };
     }
     case "big_number": {
@@ -764,7 +786,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
     case "echarts_area": {
       const kind = chart.viz_type === "echarts_area" ? "area" : chart.viz_type === "echarts_timeseries_bar" ? "bar" : "line";
       const ms = metricKeys(p.metrics ?? []);
-      if (!ms.length || ms.some((m) => !m)) return { widget: null, reason: "a metric is not a saved metric of the dataset" };
+      if (!ms.length || ms.some((m) => !m)) return { widget: null, reason: "a metric is neither a saved metric of the dataset nor a simple aggregate one of its measures matches" };
       const by = p.groupby?.length ? dimKey(p.groupby[0]) : undefined;
       if (by === null || (p.groupby?.length ?? 0) > 1) return { widget: null, reason: "it is split by something other than one pack dimension" };
       const [measure, ...rest] = ms as string[];
@@ -788,7 +810,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
         return { widget: { title, kind: "table", pageSize: 10, query: { kind: "rows", entity, columns: cols, limit: Math.max(1, Math.min(1000, p.row_limit ?? 50)), ...common } } as Widget };
       }
       const ms = metricKeys(p.metrics ?? []);
-      if (!ms.length || ms.some((m) => !m)) return { widget: null, reason: "a metric is not a saved metric of the dataset" };
+      if (!ms.length || ms.some((m) => !m)) return { widget: null, reason: "a metric is neither a saved metric of the dataset nor a simple aggregate one of its measures matches" };
       const groups = (p.groupby ?? []).map(dimKey);
       if (groups.some((g: string | null) => !g) || groups.length > 2) return { widget: null, reason: "its groups are not pack dimensions" };
       const [measure, ...rest] = ms as string[];
@@ -798,7 +820,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
     }
     case "heatmap_v2": {
       const m = measureKey(p.metric);
-      if (!m) return { widget: null, reason: "its metric is not a saved metric of the dataset" };
+      if (!m) return { widget: null, reason: "its metric is neither a saved metric of the dataset nor a simple aggregate one of its measures matches" };
       const rowsCol = [p.groupby].flat().filter((g: unknown) => g != null && g !== "");
       if (rowsCol.length !== 1) return { widget: null, reason: "its rows are not one column" };
       const by = dimKey(rowsCol[0]);

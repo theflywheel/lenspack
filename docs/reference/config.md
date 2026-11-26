@@ -90,7 +90,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `packs[].access[].only` | list of string |  |  |
 | `packs[].access[].scope` | list of object |  |  |
 | `packs[].access[].scope[].dimension` | string | yes |  |
-| `packs[].access[].scope[].op` | `eq`, `neq`, `in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
+| `packs[].access[].scope[].op` | `eq`, `neq`, `in`, `not_in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
 | `packs[].access[].scope[].value` | string or number or boolean or list of string or number or boolean | yes |  |
 | `store` | object |  | `{"kind":"memory"}` |
 | `store (kind: memory).kind` | `"memory"` | yes |  |
@@ -128,7 +128,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `auth (kind: tokens).users[].tenant` | string |  |  |
 | `auth (kind: tokens).users[].scope` | list of object |  |  |
 | `auth (kind: tokens).users[].scope[].dimension` | string | yes |  |
-| `auth (kind: tokens).users[].scope[].op` | `eq`, `neq`, `in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
+| `auth (kind: tokens).users[].scope[].op` | `eq`, `neq`, `in`, `not_in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
 | `auth (kind: tokens).users[].scope[].value` | string or number or boolean or list of string or number or boolean | yes |  |
 | `auth (kind: tokens).users[].packs` | list of string |  |  |
 | `auth (kind: tokens).users[].roles` | list of string |  |  |

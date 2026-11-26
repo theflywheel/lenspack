@@ -67,15 +67,15 @@ export const QUERY_SHAPE = {
   split: str().describe("For breakdown: a second dimension within each group, drawn as stacked bars, or as the rows of a heatmap (dimension is then its columns)"),
   order_by: str().describe('For rows: the column to order the list by, e.g. a time column to list newest first; empty keeps the source order'),
   order: oneOf(["asc", "desc"], "desc").describe('For rows with order_by: "desc" = newest or largest first (default), "asc" = oldest or smallest first'),
-  filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; size >= 18". Ops: =, !=, >=, <=, in (comma-separated), contains, between <a> and <b>'),
+  filters: str().describe('Optional: clauses separated by ";", e.g. "channel = web; language in en, fr; status != failed; region not in east, west; size >= 18". Ops: =, !=, >=, <=, in and not in (comma-separated), contains, between <a> and <b>'),
   filter_dimension: str().describe("Optional: narrow by this dimension"),
   filter_value: str().describe("Optional: the value the filter dimension must equal"),
 };
 export const QUERY = z.object(QUERY_SHAPE);
 export type QueryArgs = z.infer<typeof QUERY>;
 
-const OPS = { "=": "eq", "!=": "neq", ">=": "gte", "<=": "lte", in: "in", contains: "contains", between: "between" } as const;
-const CLAUSE = /^([a-z][a-z0-9_]*)\s*(?:(!=|>=|<=|=)|\s(in|contains|between)\s)\s*(.+)$/i;
+const OPS = { "=": "eq", "!=": "neq", ">=": "gte", "<=": "lte", in: "in", "not in": "not_in", contains: "contains", between: "between" } as const;
+const CLAUSE = /^([a-z][a-z0-9_]*)\s*(?:(!=|>=|<=|=)|\s(not\s+in|in|contains|between)\s)\s*(.+)$/i;
 const unquote = (v: string) => v.trim().replace(/^(["'])(.*)\1$/, "$2");
 
 // Nested filter objects are what weaker models corrupt, so filters arrive as
@@ -88,13 +88,14 @@ function parseFilters(text: string, pack: Pack): FilterClause[] {
     .map((clause) => {
       const m = CLAUSE.exec(clause);
       // An unquoted value starting with an operator is a misread op ("==", "=<"), not a value.
-      if (!m || /^[=<>!]/.test(m[4]!)) throw new Error(`Cannot read the filter "${clause}": write <dimension> <op> <value>, op one of =, !=, >=, <=, in, contains, between <a> and <b>`);
+      if (!m || /^[=<>!]/.test(m[4]!)) throw new Error(`Cannot read the filter "${clause}": write <dimension> <op> <value>, op one of =, !=, >=, <=, in, not in, contains, between <a> and <b>`);
       const dimension = m[1]!;
-      const op = OPS[(m[2] ?? m[3]!.toLowerCase()) as keyof typeof OPS];
-      const values = (op === "in" ? m[4]!.split(",") : op === "between" ? m[4]!.split(/\s+and\s+/i) : [m[4]!]).map(unquote).filter(Boolean);
+      const op = OPS[(m[2] ?? m[3]!.toLowerCase().replace(/\s+/g, " ")) as keyof typeof OPS];
+      const list = op === "in" || op === "not_in";
+      const values = (list ? m[4]!.split(",") : op === "between" ? m[4]!.split(/\s+and\s+/i) : [m[4]!]).map(unquote).filter(Boolean);
       if (op === "between" ? values.length !== 2 : !values.length) throw new Error(`Cannot read the filter "${clause}": ${op === "between" ? "between needs <a> and <b>" : "it has no value"}`);
       const typed = op === "contains" ? values : values.map((v) => typedValue(pack, dimension, v, clause));
-      return { dimension, op, value: op === "in" || op === "between" ? typed : typed[0]! };
+      return { dimension, op, value: list || op === "between" ? typed : typed[0]! };
     });
 }
 
