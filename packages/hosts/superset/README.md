@@ -401,6 +401,7 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `reviewer` | no second model call checking each change: edits are saved as they are made, and a wrong one is not caught before the reply | the server |
 | `cache` | no saved answers: every question goes to the model, even one answered a minute ago ([docs/caching.md](../../../docs/caching.md)) | the server |
 | `explain` | no "How this was worked out" under answers, and none in the audit log; `explain: { sql: false }` in the config keeps it without the SQL ([docs/explain.md](../../../docs/explain.md)) | the server |
+| `telemetry` | no usage records, no thumbs under answers; `/api/_telemetry` answers 404 ([docs/telemetry.md](../../../docs/telemetry.md)) | the server |
 | `clarify` | the assistant never asks which reading is meant and logs no open questions | the server |
 | `review.daily` | (off by default) no daily review of the day's questions | the server |
 | `review.compare` | open questions' readings are not run on the data after a review | the server |
@@ -415,3 +416,22 @@ and help text. A page holding an old copy picks up a change on its next dashboar
 
 Gaps: a previous-period KPI is drawn by Superset
 without its comparison; tabs and columns in a dashboard are kept, and new widgets are added below them.
+
+## Usage telemetry
+
+Each chat turn, transcription and client event (a thumbs up or down, an answer left early) leaves a record in
+`telemetry.jsonl` in the state directory. The record holds the user and the role names the plugin signs. The
+deployment's `context:` section maps boards, datasets and roles to a campaign, campaign type and country:
+
+```yaml
+context:
+  superset-12: { campaign: Round 2 }
+  "role:Supervisor-North": { country: Country A }
+```
+
+Admins read the records at `/_superset/telemetry`. What is recorded is switched item by item on the admin panel's
+Telemetry tab (`/lenspack/_superset/admin/#telemetry`), which is also the checklist at
+`/_superset/telemetry/checklist`. Question text, transcript text, kept recordings and device detail start off. The
+AI assistant settings page keeps how long records and recordings are kept and the consent notice. What is recorded,
+and the privacy choices, are in [docs/telemetry.md](../../../docs/telemetry.md).
+

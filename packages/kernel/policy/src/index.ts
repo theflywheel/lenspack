@@ -377,3 +377,58 @@ export function boardRights(who: Principal, b: Ownership & { id?: string }): { v
     edit: b.owner ? b.owner === who.user && sameTenant && who.edit : !!who.maintain,
   };
 }
+
+// --- the deployment's own records -------------------------------------------------
+//
+// What a caller may do with what the deployment keeps about its own use: the settings page, the usage telemetry log,
+// kept recordings of spoken questions, and the user names in them. Today these follow the host's admin role, as the
+// settings page always has (adminRights); the coming policy document narrows them per role. Nothing here can widen them.
+
+export type RecordRights = {
+  /** The settings page and its changes. */
+  settings: boolean;
+  /** The usage telemetry log (docs/telemetry.md). */
+  telemetry: boolean;
+  /** User names in that log, as written; without this right a reader sees a stable stand-in for each name. */
+  usernames: boolean;
+  /** Kept recordings: list, play, delete, export. */
+  audio: boolean;
+};
+
+/** What a caller may read of the deployment's records. User names need the usage right too, which already means "may see who used it". */
+export function recordRights(who: Identity): RecordRights {
+  const { administer, users } = adminRights(principalOf(who));
+  return { settings: administer, telemetry: administer, usernames: users, audio: administer };
+}
+
+/** Whether a caller may report on a turn (feedback, a corrected transcript, a left answer): only their own, in their own tenant. */
+export const reportsOn = (who: Pick<Identity, "user" | "tenant">, turn: { user: string; tenant?: string | null }) => turn.user === who.user && (turn.tenant ?? "") === (who.tenant ?? "");
+
+// --- the deployment's context --------------------------------------------------------
+//
+// What a board, a dataset or a role belongs to in the deployment's own terms: a campaign, its type and a country.
+// Lenspack does not model an organisation; the deployment says this once, here, and readers (usage telemetry first)
+// take it from here. It is a section of the deployment's policy, ready for the coming policy document.
+
+export const CONTEXT_FIELDS = ["campaign", "campaignType", "country"] as const;
+export type ContextField = (typeof CONTEXT_FIELDS)[number];
+const contextText = z.string().min(1).max(120);
+
+/**
+ * Keys: a board id ("superset-12"), a dataset name, "role:<name>" for a role or group, or "*" for everything else.
+ * Values: any of campaign, campaignType and country, each a short text.
+ */
+export const deploymentContextSchema = z.record(z.string().min(1).max(200), z.object({ campaign: contextText.optional(), campaignType: contextText.optional(), country: contextText.optional() }).strict());
+export type DeploymentContext = z.infer<typeof deploymentContextSchema>;
+
+/**
+ * The campaign, campaign type and country one moment of use counts for. Each field comes from the first key that
+ * sets it, in this order: the board, each dataset (in the order used), each of the caller's roles ("role:<name>"),
+ * then "*". Nothing matching leaves the field null.
+ */
+export function contextFor(map: DeploymentContext, at: { board?: string | null; datasets?: string[]; roles?: string[] }): Record<ContextField, string | null> {
+  const keys = [...(at.board ? [at.board] : []), ...(at.datasets ?? []), ...(at.roles ?? []).map((r) => `role:${r}`), "*"];
+  const out = { campaign: null, campaignType: null, country: null } as Record<ContextField, string | null>;
+  for (const field of CONTEXT_FIELDS) out[field] = keys.map((k) => map[k]?.[field]).find((v): v is string => typeof v === "string") ?? null;
+  return out;
+}

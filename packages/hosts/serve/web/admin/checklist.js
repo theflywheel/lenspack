@@ -1,4 +1,4 @@
-// The telemetry checklist's text: the marks, the summary line and the Markdown copy. Plain functions with
+// The telemetry checklist's text: the marks, the summary line and the Markdown copy (with each switch's state). Plain functions with
 // no page access, so the panel draws them and the tests check them on the same data.
 (function (root) {
   "use strict";
@@ -32,22 +32,28 @@
 
   const cell = (v) => String(v === null || v === undefined || v === "" ? "—" : v).replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 
-  /** The checklist as Markdown, for a pilot report: the summary, the switches, then one table per section. */
+  /** A switch's state in words: on, off, or no switch (an item that cannot be switched). */
+  const state = (sw, t) => (!sw ? "—" : sw.key || sw.feature ? (sw.on ? t("tlOn") : t("tlOff")) : t("tlNoSwitch"));
+
+  /** The checklist as Markdown, for a pilot report: the summary, telemetry's own switch, then one table per section with each switch as it stands. */
   function markdown(data, t, o) {
     const fmtDate = (o && o.date) || ((iso) => (iso ? String(iso).slice(0, 16).replace("T", " ") : "—"));
     const fmtNum = (o && o.num) || ((n) => (n === null || n === undefined ? "—" : String(n)));
     const out = [`# ${t("tlTitle")}`, "", `${t("tlGenerated", fmtDate(data.generatedAt))}`, "", `**${summary(data, t)}**`, ""];
-    const sw = Object.entries(data.switches || {});
-    if (sw.length) {
-      out.push(`## ${t("tlSwitches")}`, "");
-      for (const [k, v] of sw) out.push(`- ${t(`tlSw_${k}`) === `tlSw_${k}` ? k : t(`tlSw_${k}`)}: ${typeof v === "boolean" ? (v ? t("tlOn") : t("tlOff")) : v}`);
-      out.push("");
-    }
+    const master = data.telemetry ? data.telemetry.on : data.switches && data.switches.telemetry;
+    const days = (data.settings && data.settings.retentionDays) || (data.switches && data.switches.retentionDays);
+    out.push(`- ${t("tlMaster")}: ${master ? t("tlOn") : t("tlOff")}`);
+    if (days) out.push(`- ${t("tlRetention")}: ${days}`);
+    if (data.note) out.push("", `_${data.note}_`);
+    out.push("");
     for (const g of data.groups || []) {
-      out.push(`## ${g.title}`, "", `| | ${t("tlItem")} | ${t("tlDecision")} | ${t("tl7d")} | ${t("tlLastSeen")} | ${t("tlNotes")} |`, "|---|---|---|---|---|---|");
+      out.push(`## ${g.title} (${g.on === false ? t("tlOff") : t("tlOn")})`, "", `| ${t("tlColOn")} | ${t("tlItem")} | ${t("tlStatus")} | ${t("tl7d")} | ${t("tlLastSeen")} | ${t("tlDecision")} | ${t("tlNotes")} |`, "|---|---|---|---|---|---|---|");
       for (const it of g.items || []) {
-        const notes = [it.privacy, it.status !== "recording" && it.status !== "not-telemetry" && it.howToEnable ? `${t("tlHow")}: ${it.howToEnable}` : ""].filter(Boolean).join(" ");
-        out.push(`| ${MARKS[it.status] || "?"} | ${cell(it.label)} | ${cell(it.decision)} | ${cell(fmtNum(it.count7d))} | ${cell(it.lastSeen ? fmtDate(it.lastSeen) : "")} | ${cell(notes)} |`);
+        const sw = it.switch;
+        const off = it.status === "off" && it.offSince ? t("tlOffSince", fmtDate(it.offSince), it.offBy) : "";
+        const why = sw && !sw.editable && sw.reason ? sw.reason : "";
+        const notes = [off, why, (it.privacy || []).join("; "), it.status !== "recording" && it.status !== "not-telemetry" && it.howToEnable && it.howToEnable !== why ? `${t("tlHow")}: ${it.howToEnable}` : ""].filter(Boolean).join(" ");
+        out.push(`| ${state(sw, t)} | ${cell(it.label)} | ${MARKS[it.status] || "?"} ${cell(t(`st_${it.status}`))} | ${cell(it.status === "not-telemetry" ? null : fmtNum(it.count7d))} | ${cell(it.lastSeen ? fmtDate(it.lastSeen) : "")} | ${cell(it.decision)} | ${cell(notes)} |`);
       }
       out.push("");
     }
@@ -55,5 +61,5 @@
     return out.join("\n");
   }
 
-  root.LenspackChecklist = { ORDER, MARKS, counts, summary, markdown };
+  root.LenspackChecklist = { ORDER, MARKS, counts, summary, markdown, state };
 })(typeof window !== "undefined" ? window : globalThis);

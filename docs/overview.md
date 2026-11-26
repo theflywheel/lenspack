@@ -119,6 +119,9 @@ Most questions on a dashboard are asked again and again, and a dashboard stops c
 ## Keeping answers right after launch
 
 People ask questions the pack never thought of, and some have two sane readings. The admin panel keeps a log of those open questions with each reading's figures side by side, and lets admins add definitions on top of the pack without a release. An optional daily review has a strong model read the day's questions and propose fixes, which wait for an admin. The panel's Overview is itself a Lenspack board about how the server is used. How it all works, what it costs and what keeps it safe: [review.md](review.md).
+## Knowing how it is used
+
+Every chat turn leaves one record: who asked, on which board, what kind of question it was, how it ended, how long it took and what it cost. People can rate answers with a thumbs up or down. Admins read the records from the settings routes. Each item recorded has its own switch on the admin panel's Telemetry tab; the privacy-sensitive ones (question text, recordings, device detail) start off. What is kept, for how long, and who may read it: [telemetry.md](telemetry.md).
 
 ## The demo app
 
