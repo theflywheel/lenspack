@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { type EventRecord, type TelemetryLine, type TelemetryStore, type ToolFact, type TranscriptRecord, type TurnRecord, type TurnStart, classifyKind, classifyOutcome, factsFromSteps, scriptLanguage, textSimilarity, turnTelemetry, wordEditDistance } from "../src";
+import { type EventRecord, type TelemetryLine, type TelemetryStore, type ToolFact, type TranscriptRecord, type TurnRecord, type TurnStart, TELEMETRY_ITEMS, classifyKind, classifyOutcome, factsFromSteps, scriptLanguage, switchable, textSimilarity, turnTelemetry, wordEditDistance } from "../src";
 
 function memoryStore(clock: () => number): TelemetryStore & { lines: TelemetryLine[] } {
   const lines: TelemetryLine[] = [];
@@ -34,11 +34,14 @@ function memoryStore(clock: () => number): TelemetryStore & { lines: TelemetryLi
 
 const hash = (t: string) => createHash("sha256").update(`test-key:${t}`).digest("hex").slice(0, 24);
 const ana = { user: "ana", roles: ["Gamma"] };
+// Every item on, so each test sees every field; the switches have their own tests (switchboard.test.ts).
+const ALL: ReadonlySet<string> = new Set(TELEMETRY_ITEMS.filter(switchable).map((s) => s.id));
+const NO_TEXT: ReadonlySet<string> = new Set([...ALL].filter((id) => id !== "question-text" && id !== "transcript-text"));
 
-function recorder(opts: { questionText?: () => boolean; transcriptWaitMs?: number } = {}) {
+function recorder(opts: { items?: () => ReadonlySet<string>; transcriptWaitMs?: number } = {}) {
   let t = Date.parse("2026-11-20T10:00:00Z");
   const store = memoryStore(() => t);
-  const tel = turnTelemetry({ store, hash, now: () => new Date(t), context: () => ({ b1: { campaign: "Round 1" }, "role:Gamma": { country: "A" } }), ...opts });
+  const tel = turnTelemetry({ store, hash, now: () => new Date(t), context: () => ({ b1: { campaign: "Round 1" }, "role:Gamma": { country: "A" } }), items: () => ALL, ...opts });
   let n = 0;
   const start = (question: string, o: Partial<TurnStart> = {}): TurnStart => ({ turnId: `t${++n}`, who: ana, board: "b1", pack: "p", question, transcriptIds: [], newConversation: false, languagePicked: "auto", client: { device: "mobile", network: "3g", viewport: "narrow", userAgent: "Mozilla/5.0 (should not be kept)" }, builder: "m", effort: null, readOnly: false, datasetOf: () => undefined, ...o });
   const ask = async (question: string, o: Partial<TurnStart> = {}) => {
@@ -150,7 +153,7 @@ describe("repeats and sessions", () => {
 
   it("keeps the viewer's dashboard selections as the turn's context, hashed when question text is off", async () => {
     let keep = true;
-    const { ask, turns } = recorder({ questionText: () => keep });
+    const { ask, turns } = recorder({ items: () => (keep ? ALL : NO_TEXT) });
     await ask("visits here", { selections: { Region: "North" } });
     keep = false;
     await ask("visits here", { selections: { Region: "North" } });
@@ -206,7 +209,7 @@ describe("a spoken question", () => {
 describe("question text off", () => {
   it("keeps a keyed hash of questions and transcripts instead of their words, and still counts edits and repeats", async () => {
     let keep = true;
-    const { ask, heard, move, store, turns } = recorder({ questionText: () => keep });
+    const { ask, heard, move, store, turns } = recorder({ items: () => (keep ? ALL : NO_TEXT) });
     await ask("How many visits?");
     keep = false;
     await heard("clip-h", "how many visit");
@@ -214,12 +217,15 @@ describe("question text off", () => {
     await ask("how many visits", { transcriptIds: ["clip-h"] });
     const [shown, hidden] = turns();
     expect(shown!.question).toBe("How many visits?");
-    expect(hidden).toMatchObject({ question: null, transcript: null, transcriptEditDistance: 1 });
+    // Left out of the record, not filled with nulls.
+    expect(hidden).toMatchObject({ transcriptEditDistance: 1 });
+    expect("question" in hidden!).toBe(false);
+    expect("transcript" in hidden!).toBe(false);
     // Equal questions share a hash, whatever the case and punctuation, so repeats can still be counted.
     expect(hidden!.questionHash).toBe(shown!.questionHash);
     expect(hidden!.rephraseOf).toBe(shown!.turnId);
     const t = store.lines.find((l): l is TranscriptRecord => l.type === "transcript")!;
-    expect(t.transcript).toBe(null);
+    expect("transcript" in t).toBe(false);
     expect(t.transcriptHash).toBe(hidden!.transcriptHash);
     expect(JSON.stringify(store.lines).match(/how many visit/gi)?.length).toBe(1);
   });
@@ -229,7 +235,7 @@ describe("events", () => {
   it("are taken from a user on their own turns only, in their own tenant, and checked", async () => {
     const { tel, ask, events, turns } = recorder();
     await ask("how many visits");
-    expect(await tel.event(ana, { type: "feedback", turnId: "t1", rating: "down", reason: "wrong-number", comment: "the total is off" })).toEqual({ ok: true });
+    expect(await tel.event(ana, { type: "feedback", turnId: "t1", rating: "down", reason: "wrong-number", comment: "the total is off" })).toEqual({ ok: true, recorded: true });
     expect(await tel.event({ user: "ben", roles: [] }, { type: "feedback", turnId: "t1", rating: "up" })).toEqual({ ok: false, status: 403, error: "that turn is not yours" });
     expect(await tel.event({ ...ana, tenant: "other" }, { type: "feedback", turnId: "t1", rating: "up" })).toMatchObject({ ok: false, status: 403 });
     expect(await tel.event(ana, { type: "feedback", turnId: "t99", rating: "up" })).toMatchObject({ ok: false, status: 404 });
@@ -239,8 +245,8 @@ describe("events", () => {
     expect(await tel.event(ana, { type: "Not A Type" })).toMatchObject({ ok: false, status: 400 });
     expect(await tel.event(ana, { type: "explain-opened", turnId: "t1", data: { nested: { no: 1 } } })).toMatchObject({ ok: false, status: 400 });
     // Another part of the panel reports its own event; a field that looks like a secret is dropped.
-    expect(await tel.event(ana, { type: "explain-opened", turnId: "t1", data: { step: 2, apiKey: "sk-should-not-be-kept" } })).toEqual({ ok: true });
-    expect(await tel.event(ana, { type: "transcript", turnId: "t1", transcript: "how many visit", sent: "how many visits today" })).toEqual({ ok: true });
+    expect(await tel.event(ana, { type: "explain-opened", turnId: "t1", data: { step: 2, apiKey: "sk-should-not-be-kept" } })).toEqual({ ok: true, recorded: true });
+    expect(await tel.event(ana, { type: "transcript", turnId: "t1", transcript: "how many visit", sent: "how many visits today" })).toEqual({ ok: true, recorded: true });
     const [fb, ex, tr] = events();
     expect(fb).toMatchObject({ event: "feedback", rating: "down", reason: "wrong-number", comment: "the total is off", sessionId: turns()[0]!.sessionId, board: "b1" });
     expect(ex).toMatchObject({ event: "explain-opened", data: { step: 2 } });
@@ -251,7 +257,7 @@ describe("events", () => {
   it("can be about a turn still running: its owner is known before its record is written", async () => {
     const { tel, start } = recorder();
     const cap = (await tel.begin(start("how many visits")))!;
-    expect(await tel.event(ana, { type: "explain-opened", turnId: cap.turnId })).toEqual({ ok: true });
+    expect(await tel.event(ana, { type: "explain-opened", turnId: cap.turnId })).toEqual({ ok: true, recorded: true });
     expect(await tel.event({ user: "ben", roles: [] }, { type: "explain-opened", turnId: cap.turnId })).toMatchObject({ status: 403 });
   });
 });

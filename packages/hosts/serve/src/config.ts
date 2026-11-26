@@ -96,12 +96,18 @@ export const configSchema = z.object({
   host: z.string().optional(),
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
-  /** Usage telemetry (docs/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays; questionText false keeps a hash of each question instead of its words. */
+  /**
+   * Usage telemetry (docs/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. groups and
+   * items switch sections and items on or off (every key and its default are in docs/telemetry.md); questionText is
+   * the older name of items.question-text.
+   */
   telemetry: z
     .object({
       dir: z.string().min(1),
       retentionDays: z.number().int().min(1).max(3650).default(90),
-      questionText: z.boolean().default(true),
+      groups: z.record(z.string(), z.boolean()).optional(),
+      items: z.record(z.string(), z.boolean()).optional(),
+      questionText: z.boolean().optional(),
     })
     .optional(),
   /** The deployment's context (@lenspack/policy): what a board, dataset or role:<name> belongs to (campaign, campaignType, country). */

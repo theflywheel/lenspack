@@ -406,7 +406,9 @@ context:
   "role:Supervisor-North": { country: Country A }
 ```
 
-Admins read the records at `/_superset/telemetry` and a checklist of what is being recorded at
-`/_superset/telemetry/checklist`. Retention, question text and kept recordings are on the settings page. What is
-recorded, and the privacy choices, are in [docs/telemetry.md](../../../docs/telemetry.md).
+Admins read the records at `/_superset/telemetry`. What is recorded is switched item by item on the admin panel's
+Telemetry tab (`/lenspack/_superset/admin/#telemetry`), which is also the checklist at
+`/_superset/telemetry/checklist`. Question text, transcript text, kept recordings and device detail start off. The
+AI assistant settings page keeps how long records and recordings are kept and the consent notice. What is recorded,
+and the privacy choices, are in [docs/telemetry.md](../../../docs/telemetry.md).
 

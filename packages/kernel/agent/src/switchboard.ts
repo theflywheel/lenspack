@@ -2,31 +2,31 @@ import type { ContextField } from "@lenspack/policy";
 
 import type { EventRecord, TelemetryLine, TranscriptRecord, TurnRecord } from "./telemetry";
 
-// What usage telemetry can record, as switches: one per signal (a measure the pilot is judged on), grouped as the
-// pilot's metrics are, with a switch per group and one for all of telemetry. Each signal names the record fields it
-// adds and the client events it keeps; a field is written when at least one signal that needs it is on, and left
+// What usage telemetry can record, as switches: one per item (a measure the pilot is judged on), grouped as the
+// pilot's metrics are, with a switch per group and one for all of telemetry. Each item names the record fields it
+// adds and the client events it keeps; a field is written when at least one item that needs it is on, and left
 // out of the record otherwise. The few fields every record keeps while telemetry is on (its id, its time, the pack
-// and board, the tenant) only place it; even the user name is a signal's, so with every user signal off the
+// and board, the tenant) only place it; even the user name is an item's, so with every user item off the
 // records carry no names.
 //
-// The switches are deployment config (telemetry.groups and telemetry.signals) that admins change on the Telemetry
+// The switches are deployment config (telemetry.groups and telemetry.items) that admins change on the Telemetry
 // tab without a restart. This file is the catalogue and the rules; the host keeps the values.
 
-export type SignalSource = "turn-record" | "client-event" | "transcript" | "audio" | "superset-logs" | "feature" | "config";
+export type ItemSource = "turn-record" | "client-event" | "transcript" | "audio" | "superset-logs" | "feature" | "config";
 
-export type Signal = {
+export type TelemetryItem = {
   id: string;
   label: string;
   /** The decision this measure helps make. */
   decision: string;
-  source: SignalSource;
+  source: ItemSource;
   /** On unless the deployment or an admin turns it off; the privacy-sensitive ones start off. */
   default: boolean;
   /** Turn record fields it adds. */
   turn?: (keyof TurnRecord)[];
   /** Transcript record fields it adds. */
   transcript?: (keyof TranscriptRecord)[];
-  /** Client events it keeps (an event no signal keeps is not recorded), and the event fields it adds. */
+  /** Client events it keeps (an event no item keeps is not recorded), and the event fields it adds. */
   events?: string[];
   event?: (keyof EventRecord)[];
   /** Privacy-sensitive: turning it on needs a confirm step that shows this note. */
@@ -51,7 +51,7 @@ export type Signal = {
   notTelemetry?: string;
 };
 
-export type SignalGroup = { id: string; title: string; signals: Signal[] };
+export type TelemetryGroup = { id: string; title: string; items: TelemetryItem[] };
 
 const turnLine = (p: (l: Extract<TelemetryLine, { type: "turn" }>) => boolean = () => true) => (l: TelemetryLine) => l.type === "turn" && p(l);
 const eventLine = (...names: string[]) => (l: TelemetryLine) => l.type === "event" && names.includes(l.event);
@@ -64,11 +64,11 @@ export const CORE_FIELDS = {
   event: ["type", "v", "event", "at", "turnId", "pack", "board", "data"],
 } as const;
 
-export const SIGNAL_GROUPS: SignalGroup[] = [
+export const TELEMETRY_GROUPS: TelemetryGroup[] = [
   {
     id: "users",
     title: "Users",
-    signals: [
+    items: [
       { id: "users-active", label: "Daily and weekly active users", decision: "Is the pilot reaching people, and is use growing?", source: "turn-record", default: true, turn: ["user"], transcript: ["user"], event: ["user"], privacy: NAMES, seen: turnLine() },
       { id: "users-by-role", label: "Active users by role", decision: "Which roles use it, and who needs training or a different entry point?", source: "turn-record", default: true, turn: ["user", "roles"], transcript: ["user", "roles"], event: ["user", "roles"], privacy: NAMES, seen: turnLine(), roles: true },
       { id: "users-by-country", label: "Active users by country", decision: "Where to put support and the next rollout.", source: "turn-record", default: true, turn: ["user", "country"], privacy: NAMES, seen: turnLine(), context: ["country"] },
@@ -78,7 +78,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "volume-cost",
     title: "Volume and cost",
-    signals: [
+    items: [
       { id: "volume-per-user", label: "Questions per user", decision: "How much each person leans on it; sizing and budgets.", source: "turn-record", default: true, turn: ["user"], privacy: NAMES, seen: turnLine() },
       { id: "cost-per-question", label: "Cost per question (model, voice, review)", decision: "Which model to run, and whether the review step pays for itself.", source: "turn-record", default: true, turn: ["costUsd", "modelUsd", "speechUsd", "reviewUsd", "unpricedCalls", "tokensIn", "tokensOut", "models", "builder", "effort", "reviewRan", "reviewMaterial", "fixRound"], seen: turnLine() },
       { id: "cost-per-user", label: "Cost per user", decision: "The budget per supervisor for a campaign.", source: "turn-record", default: true, turn: ["user", "costUsd"], privacy: NAMES, seen: turnLine() },
@@ -88,7 +88,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "quality",
     title: "Quality",
-    signals: [
+    items: [
       { id: "quality-answer-rate", label: "Answer rate by campaign type and language", decision: "Where the pack or the model falls short.", source: "turn-record", default: true, turn: ["outcome", "outcomeReason", "campaignType", "questionLanguage", "toolCalls", "queries", "queriesFailed"], seen: turnLine(), context: ["campaignType"] },
       { id: "quality-unanswered", label: "Top unanswered questions", decision: "What to add to the pack next.", source: "turn-record", default: true, turn: ["outcome", "outcomeReason", "questionHash"], seen: turnLine((l) => l.outcome !== "answered") },
       { id: "quality-thumbs-down", label: "Thumbs down and their reasons", decision: "Which answers people do not trust, and why.", source: "client-event", default: true, events: ["feedback"], event: ["rating", "reason", "commentHash", "sessionId"], seen: eventLine("feedback") },
@@ -98,7 +98,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "asks",
     title: "What people ask",
-    signals: [
+    items: [
       { id: "asks-top-by-role", label: "Top 10 questions by role", decision: "What to put on dashboards and in suggested questions.", source: "turn-record", default: true, turn: ["questionHash", "roles", "selections"], seen: turnLine(), roles: true },
       { id: "asks-repeated-direct", label: "Repeated direct questions", decision: "Which numbers deserve a chart instead of a question.", source: "turn-record", default: true, turn: ["kind", "questionHash"], seen: turnLine((l) => l.kind === "direct") },
       { id: "asks-repeated-derived", label: "Repeated derived questions", decision: "Which rates or comparisons to add as measures.", source: "turn-record", default: true, turn: ["kind", "questionHash", "computeSteps"], seen: turnLine((l) => l.kind === "derived") },
@@ -120,7 +120,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "speed",
     title: "Speed",
-    signals: [
+    items: [
       { id: "speed-p95", label: "Slowest answers (95th percentile) by kind", decision: "Whether answers are fast enough on field networks.", source: "turn-record", default: true, turn: ["totalMs", "firstTokenMs", "kind"], seen: turnLine() },
       {
         id: "speed-abandoned",
@@ -140,7 +140,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "voice",
     title: "Voice and language",
-    signals: [
+    items: [
       { id: "voice-share", label: "Share of questions spoken", decision: "Whether voice is worth keeping and improving.", source: "turn-record", default: true, turn: ["input", "transcriptId", "transcriptIds"], seen: turnLine((l) => l.input === "spoken"), voice: true },
       { id: "voice-edit-rate", label: "Transcripts edited before sending", decision: "Which languages speech to text gets wrong.", source: "turn-record", default: true, turn: ["transcriptEditDistance", "transcriptId", "transcriptHash", "questionWords"], transcript: ["transcriptHash", "words"], events: ["transcript"], event: ["transcriptEditDistance", "transcriptWords"], seen: (l) => (l.type === "turn" && typeof l.transcriptEditDistance === "number") || (l.type === "event" && l.event === "transcript"), voice: true },
       { id: "voice-reask", label: "Typed again after speaking", decision: "Whether voice failures push people back to typing.", source: "turn-record", default: true, turn: ["reAskAfterVoice"], seen: turnLine((l) => typeof l.reAskAfterVoice === "string"), voice: true },
@@ -169,7 +169,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
         source: "audio",
         default: false,
         transcript: ["audio"],
-        sensitive: "Keeps the recording of each spoken question for the days set below, for admins to play, export and delete. A voice can identify the person speaking. Each user is shown the consent notice once before the mic records.",
+        sensitive: "Keeps the recording of each spoken question for the days set under Speech on the settings page, for admins to play, export and delete. A voice can identify the person speaking. Each user is shown the consent notice once before the mic records.",
         consent: true,
         privacy: ["stores audio"],
         voice: true,
@@ -179,7 +179,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "conversation",
     title: "Conversation",
-    signals: [
+    items: [
       { id: "conv-rephrase", label: "Questions asked again in other words", decision: "Where the first answer misses.", source: "turn-record", default: true, turn: ["rephraseOf"], seen: turnLine((l) => typeof l.rephraseOf === "string") },
       { id: "conv-follow-ups", label: "Follow-ups per conversation", decision: "Whether people explore or ask once and leave.", source: "turn-record", default: true, turn: ["sessionId"], event: ["sessionId"], seen: turnLine() },
     ],
@@ -187,7 +187,7 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "trust-reuse",
     title: "Trust and reuse",
-    signals: [
+    items: [
       { id: "trust-explain", label: "How an answer was worked out, opened", decision: "Whether people check where numbers come from.", source: "client-event", default: true, events: ["explain-opened"], seen: eventLine("explain-opened") },
       { id: "trust-export-share", label: "Charts exported or boards shared in Lenspack", decision: "Whether answers travel beyond the person who asked.", source: "client-event", default: true, events: ["chart-exported", "board-shared"], event: ["choice"], seen: eventLine("chart-exported", "board-shared") },
       { id: "trust-superset-actions", label: "Exports and shares in Superset on Lenspack's dashboards", decision: "Whether dashboards Lenspack built get used.", source: "superset-logs", default: true, privacy: NAMES },
@@ -201,89 +201,89 @@ export const SIGNAL_GROUPS: SignalGroup[] = [
   {
     id: "device-network",
     title: "Device and network",
-    signals: [
+    items: [
       { id: "device-class", label: "Phone, tablet or desktop, and screen width", decision: "Which screens to design for first.", source: "turn-record", default: false, turn: ["device", "viewport"], sensitive: "Records each user's kind of device and screen width class with every question. Together with the user name this describes the equipment people use.", privacy: ["device class per user"], seen: turnLine((l) => typeof l.device === "string" || typeof l.viewport === "string") },
       { id: "device-network", label: "Network type and data saver", decision: "How light answers must be for field networks.", source: "turn-record", default: false, turn: ["network", "saveData"], sensitive: "Records each user's network type (wifi, cellular, 2g to 4g) and whether data saver is on, with every question.", privacy: ["network type per user"], seen: turnLine((l) => typeof l.network === "string") },
     ],
   },
 ];
 
-export const SIGNALS: Signal[] = SIGNAL_GROUPS.flatMap((g) => g.signals);
-const BY_ID = new Map(SIGNALS.map((s) => [s.id, s]));
-const GROUP_OF = new Map(SIGNAL_GROUPS.flatMap((g) => g.signals.map((s) => [s.id, g.id] as const)));
-export const signalById = (id: string) => BY_ID.get(id);
+export const TELEMETRY_ITEMS: TelemetryItem[] = TELEMETRY_GROUPS.flatMap((g) => g.items);
+const BY_ID = new Map(TELEMETRY_ITEMS.map((s) => [s.id, s]));
+const GROUP_OF = new Map(TELEMETRY_GROUPS.flatMap((g) => g.items.map((s) => [s.id, g.id] as const)));
+export const itemById = (id: string) => BY_ID.get(id);
 export const groupOf = (id: string) => GROUP_OF.get(id);
 
-/** Whether a signal has a switch of its own: not one that cannot be telemetry, nor one a feature owns outright. */
-export const switchable = (s: Signal) => !s.notTelemetry && !s.owned;
+/** Whether an item has a switch of its own: not one that cannot be telemetry, nor one a feature owns outright. */
+export const switchable = (s: TelemetryItem) => !s.notTelemetry && !s.owned;
 
-/** The switches' values: telemetry as a whole, each group, each signal. */
-export type SwitchValues = { telemetry: boolean; groups: Record<string, boolean>; signals: Record<string, boolean> };
+/** The switches' values: telemetry as a whole, each group, each item. */
+export type SwitchValues = { telemetry: boolean; groups: Record<string, boolean>; items: Record<string, boolean> };
 
-/** Every switch at its default: all groups on, each signal as the catalogue says (privacy-sensitive ones off). */
-export function signalDefaults(): { groups: Record<string, boolean>; signals: Record<string, boolean> } {
+/** Every switch at its default: all groups on, each item as the catalogue says (privacy-sensitive ones off). */
+export function switchDefaults(): { groups: Record<string, boolean>; items: Record<string, boolean> } {
   return {
-    groups: Object.fromEntries(SIGNAL_GROUPS.map((g) => [g.id, true])),
-    signals: Object.fromEntries(SIGNALS.filter(switchable).map((s) => [s.id, s.default])),
+    groups: Object.fromEntries(TELEMETRY_GROUPS.map((g) => [g.id, true])),
+    items: Object.fromEntries(TELEMETRY_ITEMS.filter(switchable).map((s) => [s.id, s.default])),
   };
 }
 
 /**
- * Why a signal records nothing whatever its switch says, or null: it cannot be telemetry, the feature that owns it
+ * Why an item records nothing whatever its switch says, or null: it cannot be telemetry, the feature that owns it
  * is off (or not in this version), or it needs voice, which is off.
  */
-export function signalBlock(s: Signal, features: Record<string, boolean>): { kind: "not-telemetry" | "feature" | "voice"; feature?: string } | null {
+export function itemBlock(s: TelemetryItem, features: Record<string, boolean>): { kind: "not-telemetry" | "feature" | "voice"; feature?: string } | null {
   if (s.notTelemetry) return { kind: "not-telemetry" };
   if (s.feature && !features[s.feature]) return { kind: "feature", feature: s.feature };
   if (s.voice && features.voice === false) return { kind: "voice", feature: "voice" };
   return null;
 }
 
-/** The signals recording now: telemetry on, the group on, the signal on, and nothing blocking it. */
-export function signalsOn(sw: SwitchValues, features: Record<string, boolean> = {}): Set<string> {
+/** The items recording now: telemetry on, the group on, the item on, and nothing blocking it. */
+export function itemsOn(sw: SwitchValues, features: Record<string, boolean> = {}): Set<string> {
   const on = new Set<string>();
   if (!sw.telemetry) return on;
-  for (const g of SIGNAL_GROUPS) {
+  for (const g of TELEMETRY_GROUPS) {
     if (sw.groups[g.id] === false) continue;
-    for (const s of g.signals) {
-      if (s.owned || signalBlock(s, features)) continue;
-      if (sw.signals[s.id] ?? s.default) on.add(s.id);
+    for (const s of g.items) {
+      if (s.owned || itemBlock(s, features)) continue;
+      if (sw.items[s.id] ?? s.default) on.add(s.id);
     }
   }
   return on;
 }
 
-/** The fields a record of one kind keeps with these signals on: the core ones, and each on signal's. */
+/** The fields a record of one kind keeps with these items on: the core ones, and each on item's. */
 export function keptFields(kind: keyof typeof CORE_FIELDS, on: ReadonlySet<string>): Set<string> {
   const out = new Set<string>(CORE_FIELDS[kind]);
   for (const id of on) for (const f of BY_ID.get(id)?.[kind] ?? []) out.add(f as string);
   return out;
 }
 
-/** A record with only the fields its on signals need: a switched-off signal's fields are left out, not nulled. */
+/** A record with only the fields its on items need: a switched-off item's fields are left out, not nulled. */
 export function onlyKept<T extends object>(kind: keyof typeof CORE_FIELDS, line: T, on: ReadonlySet<string>): Partial<T> {
   const keep = keptFields(kind, on);
   return Object.fromEntries(Object.entries(line).filter(([k]) => keep.has(k))) as Partial<T>;
 }
 
-/** The signal that keeps a client event (by type, and stage for an abandoned transcript), if any. */
-export function signalForEvent(type: string, stage?: string | null): Signal | undefined {
+/** The item that keeps a client event (by type, and stage for an abandoned transcript), if any. */
+export function itemForEvent(type: string, stage?: string | null): TelemetryItem | undefined {
   const key = type === "abandoned" && stage === "after-transcription" ? "abandoned:after-transcription" : type;
-  return SIGNALS.find((s) => s.events?.includes(key));
+  return TELEMETRY_ITEMS.find((s) => s.events?.includes(key));
 }
 
-/** Every client event type some signal keeps. */
-export const EVENT_TYPES = [...new Set(SIGNALS.flatMap((s) => s.events ?? []).map((e) => e.split(":")[0]!))];
+/** Every client event type some item keeps. */
+export const EVENT_TYPES = [...new Set(TELEMETRY_ITEMS.flatMap((s) => s.events ?? []).map((e) => e.split(":")[0]!))];
 
-/** The switches as a config block: telemetry.groups and telemetry.signals, every key with its default. */
+/** The switches as a config block: telemetry.groups and telemetry.items, every key with its default. */
 export function switchesYaml(): string {
-  const d = signalDefaults();
+  const d = switchDefaults();
   const lines = ["telemetry:", "  groups:"];
-  for (const g of SIGNAL_GROUPS) lines.push(`    ${g.id}: ${d.groups[g.id]}`);
-  lines.push("  signals:");
-  for (const g of SIGNAL_GROUPS) {
+  for (const g of TELEMETRY_GROUPS) lines.push(`    ${g.id}: ${d.groups[g.id]}`);
+  lines.push("  items:");
+  for (const g of TELEMETRY_GROUPS) {
     lines.push(`    # ${g.title}`);
-    for (const s of g.signals.filter(switchable)) lines.push(`    ${s.id}: ${s.default}${s.sensitive ? "   # privacy-sensitive: confirm to turn on" : ""}`);
+    for (const s of g.items.filter(switchable)) lines.push(`    ${s.id}: ${s.default}${s.sensitive ? "   # privacy-sensitive: confirm to turn on" : ""}`);
   }
   return lines.join("\n");
 }

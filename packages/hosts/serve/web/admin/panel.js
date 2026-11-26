@@ -47,11 +47,15 @@
       sLede: "Switches for this server. A change applies to the next question. Where a value comes from: default, the config file, the environment, or this page.",
       source_default: "default", source_config: "config", source_env: "environment", source_settings: "set here", reset: "Reset to the deployment's value",
       // Telemetry
-      tabTelemetry: "Telemetry", tlTitle: "What this deployment records", tlLede: "Every signal Lenspack can record for this deployment, the decision it feeds, and whether it is coming in. Print it or copy it into a pilot report.",
+      tabTelemetry: "Telemetry", tlTitle: "What this deployment records", tlLede: "Every item Lenspack can record for this deployment, each with its switch. A change applies to the next question. Print it or copy it into a pilot report.",
       tlGenerated: "Checked {0}.", tlSumRecording: "{0} of {1} recording", tlSumNoData: "{0} on but no data", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumNot: "{0} not telemetry",
-      tlSwitches: "Switches", tlSwLede: "What is recorded, and for how long. A change applies to the next question.", tlOn: "on", tlOff: "off",
-      tlSw_telemetry: "Record telemetry", tlSw_questionText: "Keep question text", tlSw_audio: "Keep audio", tlSw_retentionDays: "Keep for (days)",
-      tlItem: "Signal", tlDecision: "Decision it drives", tl7d: "Last 7 days", tlLastSeen: "Last seen", tlNotes: "Notes", tlHow: "How to enable", tlFields: "Fields", tlPrivacy: "Privacy",
+      tlMaster: "Record telemetry", tlRetention: "Keep records for (days)", tlNote: "Switching something off stops new records. What was already recorded stays until it ages out (the days set here) or is deleted per user.", tlOn: "on", tlOff: "off", tlNoSwitch: "no switch",
+      tlColOn: "On", tlItem: "Item", tlStatus: "Status", tl7d: "7 days", tlLastSeen: "Last seen", tlDecision: "Drives", tlPrivacyCol: "Privacy", tlDetailsCol: "Details", tlNotes: "Notes",
+      tlDetails: "Details for {0}", tlSection: "Record the {0} section", tlShowHide: "Show or hide {0}", tlGroupCount: "{0} of {1} recording", tlSince: "since {0} · {1}", tlOffSince: "Off since {0}, by {1}.",
+      tlHow: "How to enable", tlFields: "Fields read", tlPrivacy: "Privacy", tlWhy: "Why it can't be switched here", tlSource: "Source", tlDefault: "Default", tlSensitive: "Privacy-sensitive: turning it on asks you to confirm.",
+      tlOwned: "Change it with the {0} switch on the Settings tab.", tlGoSettings: "Open Settings",
+      tlConfirmTitle: "Turn on {0}?", tlConfirmLede: "This item is privacy-sensitive. Here is what it records:", tlConsent: "Each user sees this notice once, and agrees, before the mic records:", tlNoConsent: "No consent notice is set yet. Set one under Speech on the Settings page so users are told before they are recorded.", tlConfirmOn: "Turn on",
+      tlSavedOn: "Saved. Applies to the next question.", tlSavedOff: "Saved. What was already recorded is kept until it ages out.",
       st_recording: "recording", "st_enabled-no-data": "on, no data yet", st_off: "off", "st_needs-config": "needs configuration", "st_not-telemetry": "not telemetry",
       tlLegend: "✓ recording · ◐ on but no data · ○ off · ⚠ needs configuration · — not telemetry", tlPrint: "Print", tlCopy: "Copy as Markdown", tlCopied: "Copied.",
       tlAbsent: "Telemetry is not available on this server.", tlAbsentHelp: "This server does not report its telemetry yet. The checklist appears here once it does.", tlSwitchAbsent: "This server cannot change that setting from here.",
@@ -91,12 +95,16 @@
       suggestionsLede: "Les questions les plus posées sur chaque tableau : le chat les propose en suggestions.", candidatesLede: "Posées souvent, sans graphique qui y réponde sur leur tableau.", askedN: "posée {0} fois", settledH: "Tableaux stables", settledLede: "Aucun changement depuis une semaine.", lastEdit: "dernier changement {0}",
       sLede: "Les interrupteurs de ce serveur. Un changement s'applique à la question suivante. Origine de chaque valeur : défaut, fichier de configuration, environnement ou cette page.",
       source_default: "défaut", source_config: "configuration", source_env: "environnement", source_settings: "réglé ici", reset: "Revenir à la valeur du déploiement",
-      tabTelemetry: "Télémétrie", tlTitle: "Ce que ce déploiement enregistre", tlLede: "Chaque signal que Lenspack peut enregistrer pour ce déploiement, la décision qu'il éclaire, et s'il arrive bien. À imprimer ou à copier dans un rapport de pilote.",
+      tabTelemetry: "Télémétrie", tlTitle: "Ce que ce déploiement enregistre", tlLede: "Chaque élément que Lenspack peut enregistrer pour ce déploiement, avec son interrupteur. Un changement s'applique à la question suivante. À imprimer ou à copier dans un rapport de pilote.",
       tlGenerated: "Vérifié le {0}.", tlSumRecording: "{0} sur {1} enregistrés", tlSumNoData: "{0} activés sans données", tlSumConfig: "{0} à configurer", tlSumOff: "{0} désactivés", tlSumNot: "{0} hors télémétrie",
-      tlSwitches: "Interrupteurs", tlSwLede: "Ce qui est enregistré, et pour combien de temps. Un changement s'applique à la question suivante.", tlOn: "activé", tlOff: "désactivé",
-      tlSw_telemetry: "Enregistrer la télémétrie", tlSw_questionText: "Garder le texte des questions", tlSw_audio: "Garder l'audio", tlSw_retentionDays: "Conserver (jours)",
-      tlItem: "Signal", tlDecision: "Décision éclairée", tl7d: "7 derniers jours", tlLastSeen: "Vu pour la dernière fois", tlNotes: "Remarques", tlHow: "Pour l'activer", tlFields: "Champs", tlPrivacy: "Confidentialité",
-      st_recording: "enregistré", "st_enabled-no-data": "activé, pas encore de données", st_off: "désactivé", "st_needs-config": "à configurer", "st_not-telemetry": "hors télémétrie",
+      tlMaster: "Enregistrer la télémétrie", tlRetention: "Conserver (jours)", tlNote: "Désactiver un élément arrête les nouveaux enregistrements. Ce qui a déjà été enregistré reste jusqu'à expiration (les jours réglés ici) ou suppression par utilisateur.", tlOn: "activé", tlOff: "désactivé", tlNoSwitch: "sans interrupteur",
+      tlColOn: "Actif", tlItem: "Élément", tlStatus: "État", tl7d: "7 jours", tlLastSeen: "Dernier", tlDecision: "Sert à", tlPrivacyCol: "Confidentialité", tlDetailsCol: "Détails", tlNotes: "Remarques",
+      tlDetails: "Détails : {0}", tlSection: "Enregistrer la section {0}", tlShowHide: "Afficher ou masquer {0}", tlGroupCount: "{0} sur {1} enregistrés", tlSince: "depuis le {0} · {1}", tlOffSince: "Désactivé depuis le {0}, par {1}.",
+      tlHow: "Pour l'activer", tlFields: "Champs lus", tlPrivacy: "Confidentialité", tlWhy: "Pourquoi il ne se règle pas ici", tlSource: "Source", tlDefault: "Par défaut", tlSensitive: "Sensible pour la vie privée : l'activer demande une confirmation.",
+      tlOwned: "Se règle avec l'interrupteur {0} dans l'onglet Réglages.", tlGoSettings: "Ouvrir les réglages",
+      tlConfirmTitle: "Activer « {0} » ?", tlConfirmLede: "Cet élément touche à la vie privée. Voici ce qu'il enregistre :", tlConsent: "Chaque utilisateur voit cet avis une fois, et l'accepte, avant que le micro n'enregistre :", tlNoConsent: "Aucun avis de consentement n'est défini. Ajoutez-en un sous Voix dans les réglages pour prévenir les utilisateurs avant tout enregistrement.", tlConfirmOn: "Activer",
+      tlSavedOn: "Enregistré. S'applique à la question suivante.", tlSavedOff: "Enregistré. Ce qui a déjà été enregistré est gardé jusqu'à expiration.",
+      st_recording: "enregistré", "st_enabled-no-data": "activé, sans données", st_off: "désactivé", "st_needs-config": "à configurer", "st_not-telemetry": "hors télémétrie",
       tlLegend: "✓ enregistré · ◐ activé sans données · ○ désactivé · ⚠ à configurer · — hors télémétrie", tlPrint: "Imprimer", tlCopy: "Copier en Markdown", tlCopied: "Copié.",
       tlAbsent: "La télémétrie n'est pas disponible sur ce serveur.", tlAbsentHelp: "Ce serveur ne communique pas encore sa télémétrie. La liste apparaîtra ici dès qu'il le fera.", tlSwitchAbsent: "Ce réglage ne peut pas être modifié d'ici sur ce serveur.",
     },
@@ -118,6 +126,62 @@
     clarify: ["Clarifier l'intention", "Quand une question se lit de deux façons aux chiffres différents, l'assistant demande laquelle (avec des boutons) ou dit laquelle il a utilisée, et note la question pour un administrateur."],
     "review.daily": ["Revue quotidienne", "Chaque jour, un modèle puissant lit les questions et réponses et propose des corrections des définitions, à accepter ou refuser. Coûte au plus le plafond réglé. Désactivée par défaut."],
     "review.compare": ["Comparer les lectures", "Après la revue, les lectures de chaque question ouverte sont calculées sur les données, sans modèle, pour comparer les chiffres."],
+  };
+
+  // The telemetry catalogue in French (sections, items, and the privacy notes of the sensitive ones); English comes from the server.
+  const TL_FR = {
+    groups: { users: "Utilisateurs", "volume-cost": "Volume et coût", quality: "Qualité", asks: "Ce que l'on demande", speed: "Rapidité", voice: "Voix et langue", conversation: "Conversation", "trust-reuse": "Confiance et réutilisation", "device-network": "Appareil et réseau" },
+    items: {
+      "users-active": ["Utilisateurs actifs par jour et par semaine", "Le pilote touche-t-il les gens, et l'usage progresse-t-il ?"],
+      "users-by-role": ["Utilisateurs actifs par rôle", "Quels rôles s'en servent, et qui a besoin de formation ou d'un autre point d'entrée ?"],
+      "users-by-country": ["Utilisateurs actifs par pays", "Où mettre le support et le prochain déploiement."],
+      "users-return": ["Utilisateurs qui reviennent à la campagne suivante", "Garde-t-il ses utilisateurs d'une campagne à l'autre ?"],
+      "volume-per-user": ["Questions par utilisateur", "À quel point chacun s'en sert ; dimensionnement et budgets."],
+      "cost-per-question": ["Coût par question (modèle, voix, vérification)", "Quel modèle utiliser, et si la vérification vaut son coût."],
+      "cost-per-user": ["Coût par utilisateur", "Le budget par superviseur pour une campagne."],
+      "cost-voice": ["Coût de la reconnaissance vocale", "Si la voix reste abordable à l'échelle d'une campagne."],
+      "quality-answer-rate": ["Taux de réponse par type de campagne et langue", "Où le pack ou le modèle est en défaut."],
+      "quality-unanswered": ["Questions sans réponse les plus fréquentes", "Ce qu'il faut ajouter au pack ensuite."],
+      "quality-thumbs-down": ["Pouces vers le bas et leurs raisons", "Quelles réponses inspirent peu confiance, et pourquoi."],
+      "quality-clarify": ["Questions de clarification : répondues ou abandonnées", "Si redemander aide ou fait fuir."],
+      "asks-top-by-role": ["Les 10 questions les plus posées par rôle", "Ce qu'il faut mettre sur les tableaux et dans les suggestions."],
+      "asks-repeated-direct": ["Questions directes répétées", "Quels chiffres méritent un graphique plutôt qu'une question."],
+      "asks-repeated-derived": ["Questions dérivées répétées", "Quels taux ou comparaisons ajouter comme mesures."],
+      "asks-mix": ["Part des questions directes, dérivées et graphiques", "Si l'on s'en sert pour demander ou pour construire."],
+      "question-text": ["Texte des questions", "Lire les mots derrière les questions fréquentes et sans réponse."],
+      "speed-p95": ["Réponses les plus lentes (95e centile) par type", "Si les réponses sont assez rapides sur les réseaux de terrain."],
+      "speed-abandoned": ["Réponses quittées avant la fin", "Où l'attente fait perdre des gens."],
+      "speed-queue": ["Attente d'une place libre", "Quand ajouter de la capacité aux pics de campagne."],
+      "speed-time-saved": ["Temps gagné par rapport à avant", "Si l'outil vaut le changement."],
+      "voice-share": ["Part des questions dites à voix haute", "Si la voix vaut d'être gardée et améliorée."],
+      "voice-edit-rate": ["Transcriptions corrigées avant envoi", "Quelles langues la reconnaissance vocale comprend mal."],
+      "voice-reask": ["Retapé après avoir parlé", "Si les échecs de la voix ramènent au clavier."],
+      "voice-not-sent": ["Transcriptions jamais envoyées", "Si l'on abandonne après avoir vu la transcription."],
+      "language-mix": ["Langues utilisées", "Quelles langues bien prendre en charge."],
+      "voice-wer-proxy": ["Taux d'erreur de mots (estimé d'après les corrections)", "Quel modèle de reconnaissance utiliser par langue."],
+      "voice-wer-true": ["Vrai taux d'erreur de mots", "Quel modèle de reconnaissance utiliser par langue."],
+      "transcript-text": ["Texte des transcriptions", "Voir ce que la reconnaissance a entendu, pour trouver les mots qu'elle rate."],
+      "voice-audio": ["Enregistrements conservés", "De quoi tester les modèles de reconnaissance sur du vrai son de terrain."],
+      "conv-rephrase": ["Questions reposées autrement", "Où la première réponse manque sa cible."],
+      "conv-follow-ups": ["Relances par conversation", "Si l'on explore ou si l'on pose une question puis part."],
+      "trust-explain": ["« Comment c'est calculé » ouvert", "Si l'on vérifie d'où viennent les chiffres."],
+      "trust-export-share": ["Graphiques exportés ou tableaux partagés dans Lenspack", "Si les réponses circulent au-delà de qui les a demandées."],
+      "trust-superset-actions": ["Exports et partages dans Superset sur les tableaux de Lenspack", "Si les tableaux construits par Lenspack servent."],
+      "reuse-hit-rate": ["Réponses gardées réutilisées, par niveau", "Ce que la réutilisation fait gagner, et si ses niveaux sont justes."],
+      "reuse-saved": ["Argent économisé par les réponses gardées", "Si la réutilisation est rentable."],
+      "review-runs": ["Passages de la revue quotidienne", "À quelle fréquence les réponses sont vérifiées après coup."],
+      "review-proposals": ["Propositions de la revue quotidienne", "Quels changements de définitions la revue suggère, et lesquels sont acceptés."],
+      "review-open-questions": ["Questions ouvertes (deux lectures)", "Ce qui attend une décision humaine."],
+      "device-class": ["Téléphone, tablette ou ordinateur, et largeur d'écran", "Pour quels écrans concevoir d'abord."],
+      "device-network": ["Type de réseau et économiseur de données", "À quel point les réponses doivent être légères sur le terrain."],
+    },
+    sensitive: {
+      "question-text": "Garde les mots de chaque question telle qu'envoyée, les valeurs des filtres du tableau et les commentaires. Une question peut nommer des lieux, des personnes ou des chiffres. Désactivé, seule une empreinte chiffrée est gardée : les questions répétées se comptent toujours.",
+      "transcript-text": "Garde mot pour mot ce que la reconnaissance vocale a entendu, à côté de la question envoyée. Une question dite peut nommer des lieux, des personnes ou des chiffres. Désactivé, une empreinte chiffrée suffit à compter les corrections.",
+      "voice-audio": "Garde l'enregistrement de chaque question dite pendant le nombre de jours réglé sous Voix dans les réglages, pour que les administrateurs l'écoutent, l'exportent et le suppriment. Une voix peut identifier la personne. Chaque utilisateur voit l'avis de consentement une fois avant que le micro n'enregistre.",
+      "device-class": "Enregistre le type d'appareil et la largeur d'écran de chaque utilisateur à chaque question. Avec le nom d'utilisateur, cela décrit l'équipement de chacun.",
+      "device-network": "Enregistre le type de réseau de chaque utilisateur (wifi, mobile, 2g à 4g) et si l'économiseur de données est actif, à chaque question.",
+    },
   };
 
   // ---- State and helpers ------------------------------------------------------------------------
@@ -685,31 +749,93 @@
     if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
     return data && Array.isArray(data.groups) ? data : null;
   }
-  /** A telemetry switch (on/off, or the retention), changed through the host's Settings routes: PUT <prefix>/settings/telemetry. */
-  async function setTelemetrySwitch(key, value) {
-    const res = await fetch("../settings/telemetry", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ [key]: value }), credentials: "same-origin" });
+  /**
+   * A change to the switchboard through the host's Settings routes: PUT <prefix>/settings/telemetry {"<switch>": value}.
+   * A privacy-sensitive item the server wants confirmed (409 with confirm) opens the confirm step, then goes again.
+   */
+  async function setTelemetrySwitch(body) {
+    const put = (b) => fetch("../settings/telemetry", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
+    let res = await put(body);
     if (res.status === 404) throw new Error(t("tlSwitchAbsent"));
     let data = null;
     try { data = await res.json(); } catch (e) { /* not JSON */ }
+    if (res.status === 409 && data && data.confirm) {
+      if (!(await confirmSensitive(data.confirm.key.replace(/^items\./, ""), data.confirm.label, data.confirm.sensitive, data.confirm.consent, data.confirm.key === "items.voice-audio"))) return null;
+      res = await put({ ...body, confirm: true });
+      data = null;
+      try { data = await res.json(); } catch (e) { /* not JSON */ }
+    }
     if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
     return data;
   }
+  const tlLabel = (it) => (lang === "fr" && TL_FR.items[it.id] ? TL_FR.items[it.id][0] : it.label);
+  const tlDecision = (it) => (lang === "fr" && TL_FR.items[it.id] ? TL_FR.items[it.id][1] : it.decision);
+  const tlGroup = (g) => (lang === "fr" && TL_FR.groups[g.id]) || g.title;
+  const tlSensitive = (id, text) => (lang === "fr" && TL_FR.sensitive[id]) || text;
+  /** The confirm step before a privacy-sensitive item turns on: its privacy note, and for recordings the consent notice. Resolves true to go ahead. */
+  function confirmSensitive(id, label, sensitive, consent, audio) {
+    return new Promise((resolve) => {
+      const title = h("h2", { id: "tl-confirm-t", style: "font-size:15px;margin:0 0 10px" }, t("tlConfirmTitle", label));
+      const yes = h("button", { class: "btn", type: "button", onclick: () => { d.close(); resolve(true); } }, t("tlConfirmOn"));
+      const d = h("dialog", { class: "modal tl-confirm", "aria-labelledby": "tl-confirm-t" },
+        title,
+        h("p", {}, t("tlConfirmLede")),
+        h("blockquote", {}, tlSensitive(id, sensitive)),
+        audio ? (consent ? [h("p", {}, t("tlConsent")), h("blockquote", {}, consent)] : h("p", { class: "mute" }, t("tlNoConsent"))) : null,
+        h("div", { class: "actions" },
+          h("button", { class: "btn quiet", type: "button", onclick: () => { d.close(); resolve(false); } }, t("cancel")),
+          yes));
+      d.addEventListener("cancel", () => resolve(false));
+      document.body.append(d);
+      d.showModal();
+      yes.focus();
+      d.addEventListener("close", () => d.remove());
+    });
+  }
+  /** One tooltip for the table's truncated text and privacy marks, on hover and on keyboard focus. */
+  let tlPop = null;
+  function showTip(e) {
+    const el = e.currentTarget;
+    const text = el.dataset.tip;
+    if (!text) return;
+    if (!tlPop) tlPop = h("div", { class: "tl-pop", role: "tooltip", id: "tl-pop" });
+    tlPop.textContent = text;
+    document.body.append(tlPop);
+    const r = el.getBoundingClientRect();
+    const w = Math.min(340, window.innerWidth - 24);
+    tlPop.style.maxWidth = `${w}px`;
+    tlPop.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - w - 12))}px`;
+    const below = r.bottom + 6;
+    tlPop.style.top = `${below + tlPop.offsetHeight > window.innerHeight - 8 ? r.top - tlPop.offsetHeight - 6 : below}px`;
+    el.setAttribute("aria-describedby", "tl-pop");
+  }
+  function hideTip(e) {
+    if (tlPop) tlPop.remove();
+    if (e && e.currentTarget && e.currentTarget.removeAttribute) e.currentTarget.removeAttribute("aria-describedby");
+  }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
+  const tip = (cls, text, kid, extra) => h("span", { class: `tl-tip ${cls || ""}`, tabindex: "0", "data-tip": text, onmouseenter: showTip, onmouseleave: hideTip, onfocus: showTip, onblur: hideTip, ...(extra || {}) }, kid);
+  const LOCK = () => {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("fill", "currentColor");
+    path.setAttribute("d", "M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm-2 3.5a2 2 0 1 1 4 0V6H6V4.5Z");
+    svg.append(path);
+    return svg;
+  };
+  const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString(lang, { day: "numeric", month: "short" }) : "—");
+  const collapsedGroups = () => { try { return new Set(JSON.parse(store.get("tl-collapsed") || "[]")); } catch (e) { return new Set(); } };
+
   async function telemetry() {
     const C = window.LenspackChecklist;
     let data = null;
     try { data = C ? await telemetryApi() : null; } catch (e) { data = null; }
     if (!data) return [card(t("tlTitle"), null, h("p", { class: "empty" }, t("tlAbsent")), h("p", { class: "mute" }, t("tlAbsentHelp")))];
-    const swLabel = (k) => (t(`tlSw_${k}`) === `tlSw_${k}` ? k : t(`tlSw_${k}`));
-    const switches = Object.entries(data.switches || {}).map(([k, v]) => {
-      if (typeof v === "boolean") {
-        const input = h("input", { type: "checkbox", checked: v, "aria-label": swLabel(k), onchange: act(() => setTelemetrySwitch(k, input.checked), t("saved")) });
-        return h("label", { class: "switch" }, input, h("div", { style: "flex:1" }, h("div", { class: "row" }, h("span", { class: "lbl" }, swLabel(k)), h("code", {}, k))));
-      }
-      const input = h("input", { type: typeof v === "number" ? "number" : "text", min: typeof v === "number" ? "1" : null, value: String(v ?? ""), style: "width:110px" });
-      return h("div", { class: "switch" }, h("div", { style: "flex:1" }, h("div", { class: "row" }, h("span", { class: "lbl" }, swLabel(k)), h("code", {}, k))),
-        h("div", { class: "row" }, input, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => setTelemetrySwitch(k, typeof v === "number" ? Number(input.value) : input.value), t("saved")) }, t("save"))));
-    });
-    const md = () => C.markdown(data, t, { date: (iso) => when(iso), num: (n) => nf(n) });
+    const view = { ...data, groups: data.groups.map((g) => ({ ...g, title: tlGroup(g), items: g.items.map((it) => ({ ...it, label: tlLabel(it), decision: tlDecision(it) })) })) };
+    const md = () => C.markdown(view, t, { date: (iso) => when(iso), num: (n) => nf(n) });
     const copy = async () => {
       const text = md();
       try {
@@ -723,29 +849,100 @@
       }
       toast(t("tlCopied"));
     };
-    const item = (it) => {
-      const notRec = it.status !== "recording" && it.status !== "not-telemetry";
-      return h("li", { class: `ck ck-${it.status}` },
-        h("span", { class: "ck-mark", title: t(`st_${it.status}`), "aria-label": t(`st_${it.status}`) }, C.MARKS[it.status] || "?"),
-        h("div", { class: "ck-body" },
-          h("div", { class: "ck-head" }, h("b", {}, it.label), pill(t(`st_${it.status}`), it.status === "recording" ? "ok" : it.status === "needs-config" ? "warn" : it.status === "enabled-no-data" ? "acc" : "")),
-          h("div", { class: "ck-decision" }, it.decision),
-          h("div", { class: "ck-meta mute" },
-            it.status === "not-telemetry" ? null : h("span", {}, `${t("tl7d")}: `, h("b", {}, nf(it.count7d))),
-            it.status === "not-telemetry" ? null : h("span", {}, `${t("tlLastSeen")}: ${it.lastSeen ? when(it.lastSeen) : "—"}`),
-            it.source ? h("span", {}, h("code", {}, it.source)) : null,
-            (it.fields || []).length ? h("span", { class: "ck-fields" }, `${t("tlFields")}: `, ...(it.fields || []).map((f) => h("code", {}, f))) : null),
-          it.privacy ? h("div", { class: "ck-privacy" }, h("b", {}, `${t("tlPrivacy")}: `), it.privacy) : null,
-          notRec && it.howToEnable ? h("div", { class: "ck-how" }, h("b", {}, `${t("tlHow")}: `), it.howToEnable) : null));
+    // A change: saved, said (turning off keeps what was recorded), and the table drawn again from the server's answer.
+    const change = (body, on, input) => async () => {
+      if (input) input.disabled = true;
+      try {
+        const r = await setTelemetrySwitch(body);
+        if (r !== null) toast(on ? t("tlSavedOn") : t("tlSavedOff"));
+      } catch (e) {
+        toast(e.message, true);
+      }
+      await render();
     };
+    const toggle = (it, input) => {
+      const on = input.checked;
+      const key = it.switch.key;
+      if (on && it.switch.sensitive) {
+        input.checked = false;
+        return confirmSensitive(it.id, it.label, it.switch.sensitive, it.switch.consent, it.id === "voice-audio").then((ok) => (ok ? change({ [key]: true, confirm: true }, true, input)() : null));
+      }
+      return change({ [key]: on }, on, input)();
+    };
+    const statusCls = (st) => (st === "recording" ? "ok" : st === "needs-config" ? "warn" : st === "enabled-no-data" ? "acc" : "");
+    const collapsed = collapsedGroups();
+    const groupBody = (g) => {
+      const gid = `tl-g-${g.id}`;
+      const rec = g.items.filter((i) => i.status === "recording").length;
+      const body = h("tbody", { class: collapsed.has(g.id) ? "collapsed" : "", id: `${gid}-rows` });
+      const chev = h("button", { class: "tl-chev", type: "button", "aria-expanded": String(!collapsed.has(g.id)), "aria-controls": `${gid}-rows`, "aria-label": t("tlShowHide", g.title), onclick: () => {
+        const open = body.classList.toggle("collapsed");
+        chev.setAttribute("aria-expanded", String(!open));
+        const now = collapsedGroups();
+        if (open) now.add(g.id); else now.delete(g.id);
+        store.set("tl-collapsed", JSON.stringify([...now]));
+      } }, "▾");
+      const gsw = h("input", { class: "tg", type: "checkbox", role: "switch", checked: g.on, "aria-label": t("tlSection", g.title), onchange: () => change({ [`groups.${g.id}`]: gsw.checked }, gsw.checked, gsw)() });
+      body.append(h("tr", { class: "tl-g" }, h("th", { colspan: "8", scope: "rowgroup", id: gid },
+        h("div", { class: "tl-gin" }, chev, gsw, h("span", {}, g.title), h("span", { class: "tl-gn" }, t("tlGroupCount", rec, g.items.length)),
+          !g.on && g.changed ? h("span", { class: "tl-gsince" }, t("tlSince", shortDate(g.changed.at), g.changed.by)) : null))));
+      for (const it of g.items) {
+        const did = `tl-d-${it.id}`;
+        const sw = it.switch || {};
+        const input = h("input", { class: "tg", type: "checkbox", role: "switch", checked: sw.on, disabled: !sw.editable, "aria-label": it.label, "aria-describedby": sw.editable ? null : `${did}-why`, title: sw.editable ? null : sw.reason, onchange: () => toggle(it, input) });
+        const x = h("button", { class: "tl-x", type: "button", "aria-expanded": "false", "aria-controls": did, "aria-label": t("tlDetails", it.label) }, "›");
+        const off = it.status === "off" && it.offSince;
+        const privacy = [sw.sensitive ? tlSensitive(it.id, sw.sensitive) : null, ...(it.privacy || [])].filter(Boolean).join(" · ");
+        const row = h("tr", { class: `tl-i${it.status === "off" || it.status === "not-telemetry" ? " is-off" : ""}` },
+          h("td", { class: "c-on" }, input, h("span", { class: "print-on" }, sw.key || sw.feature ? (sw.on ? t("tlOn") : t("tlOff")) : t("tlNoSwitch"))),
+          h("th", { class: "c-name", scope: "row" }, it.label),
+          h("td", { class: "c-st" }, pill(t(`st_${it.status}`), statusCls(it.status)), off ? h("span", { class: "tl-since" }, t("tlSince", shortDate(it.offSince), it.offBy)) : null),
+          h("td", { class: "c-n" }, it.status === "not-telemetry" ? "—" : nf(it.count7d)),
+          h("td", { class: "c-seen" }, it.lastSeen ? shortDate(it.lastSeen) : "—"),
+          h("td", { class: "c-dr" }, tip("", it.decision, it.decision)),
+          h("td", { class: "c-pv" }, privacy ? tip("tl-pv", privacy, LOCK(), { role: "img", "aria-label": `${t("tlPrivacy")}: ${privacy}` }) : null),
+          h("td", { class: "c-x" }, x));
+        // The row's detail, collapsed: the long text, and on a phone the columns that do not fit.
+        const dl = h("dl", { class: "tl-dl" },
+          h("dt", {}, t("tlDecision")), h("dd", {}, it.decision),
+          h("div", { class: "p-only" }, h("dt", {}, t("tl7d")), h("dd", {}, it.status === "not-telemetry" ? "—" : nf(it.count7d)), h("dt", {}, t("tlLastSeen")), h("dd", {}, it.lastSeen ? when(it.lastSeen) : "—")),
+          off ? [h("dt", {}, t("tlStatus")), h("dd", {}, t("tlOffSince", when(it.offSince), it.offBy))] : null,
+          !sw.editable && sw.reason ? [h("dt", {}, t("tlWhy")), h("dd", { id: `${did}-why` }, sw.reason, sw.feature ? [" ", h("button", { class: "btn sm quiet", type: "button", onclick: () => document.querySelector('#tabs [data-tab="settings"]').click() }, t("tlGoSettings"))] : null)] : null,
+          it.status !== "recording" && it.howToEnable && it.howToEnable !== sw.reason ? [h("dt", {}, t("tlHow")), h("dd", {}, h("span", { class: "tl-warn" }, it.howToEnable))] : null,
+          privacy ? [h("dt", {}, t("tlPrivacy")), h("dd", {}, privacy, sw.sensitive ? h("div", { class: "mute" }, t("tlSensitive")) : null)] : null,
+          (it.fields || []).length ? [h("dt", {}, t("tlFields")), h("dd", {}, (it.fields || []).map((f) => h("code", {}, f)))] : null,
+          h("dt", {}, t("tlSource")), h("dd", {}, h("code", {}, it.source)),
+          sw.key ? [h("dt", {}, t("tlDefault")), h("dd", {}, sw.default ? t("tlOn") : t("tlOff"), " · ", h("code", {}, `telemetry.${sw.key}`))] : null);
+        const detail = h("tr", { class: "tl-d", id: did, hidden: true }, h("td", { colspan: "8" }, dl));
+        x.onclick = () => {
+          const open = detail.hidden;
+          detail.hidden = !open;
+          x.setAttribute("aria-expanded", String(open));
+        };
+        body.append(row, detail);
+      }
+      return body;
+    };
+    const master = h("input", { class: "tg", type: "checkbox", role: "switch", checked: data.telemetry ? data.telemetry.on : data.switches.telemetry, "aria-label": t("tlMaster"), onchange: () => change({ telemetry: master.checked }, master.checked, master)() });
+    const days = h("input", { type: "number", min: "1", max: "3650", value: String((data.settings && data.settings.retentionDays) || data.switches.retentionDays || 90), "aria-label": t("tlRetention") });
+    const masterSince = data.telemetry && !data.telemetry.on && data.telemetry.changed ? data.telemetry.changed : null;
     return [
-      h("div", { class: "spread no-print-gap" },
+      h("div", { class: "tl-head" },
         h("div", {}, h("h2", { class: "tl-title" }, t("tlTitle")), h("p", { class: "lede mute", style: "margin:2px 0 0" }, t("tlLede"))),
         h("div", { class: "row no-print" }, h("button", { class: "btn sm ghost", type: "button", onclick: () => window.print() }, t("tlPrint")), h("button", { class: "btn sm", type: "button", onclick: copy }, t("tlCopy")))),
       h("p", { class: "tl-summary" }, C.summary(data, t)),
-      h("p", { class: "mute", style: "margin:-6px 0 14px;font-size:12.5px" }, t("tlGenerated", when(data.generatedAt)), " ", t("tlLegend")),
-      switches.length ? card(t("tlSwitches"), t("tlSwLede"), h("div", { class: "tl-switches" }, switches)) : null,
-      ...(data.groups || []).map((g) => h("section", { class: "card ck-group" }, h("h2", {}, g.title, h("span", { class: "mute", style: "font-weight:400;margin-left:8px;font-size:12.5px" }, `${(g.items || []).filter((i) => i.status === "recording").length}/${(g.items || []).length}`)), h("ul", { class: "ck-list" }, (g.items || []).map(item)))),
+      h("div", { class: "tl-bar" },
+        h("label", {}, master, h("b", {}, t("tlMaster")), h("span", { class: "print-on" }, data.telemetry && data.telemetry.on ? t("tlOn") : t("tlOff")), masterSince ? h("span", { class: "mute", style: "font-size:12px" }, t("tlSince", shortDate(masterSince.at), masterSince.by)) : null),
+        h("label", {}, h("span", {}, t("tlRetention")), days, h("button", { class: "btn sm quiet no-print", type: "button", onclick: change({ retentionDays: Number(days.value) }, true) }, t("save"))),
+        h("p", { class: "tl-note" }, t("tlNote"))),
+      h("div", { class: "tl-wrap" }, h("table", { class: "tl" },
+        h("caption", { class: "vh" }, t("tlTitle")),
+        h("thead", {}, h("tr", {},
+          h("th", { class: "c-on", scope: "col" }, t("tlColOn")), h("th", { class: "c-name", scope: "col" }, t("tlItem")), h("th", { class: "c-st", scope: "col" }, t("tlStatus")),
+          h("th", { class: "c-n", scope: "col" }, t("tl7d")), h("th", { class: "c-seen", scope: "col" }, t("tlLastSeen")), h("th", { class: "c-dr", scope: "col" }, t("tlDecision")),
+          h("th", { class: "c-pv", scope: "col" }, h("span", { class: "vh" }, t("tlPrivacyCol"))), h("th", { class: "c-x", scope: "col" }, h("span", { class: "vh" }, t("tlDetailsCol"))))),
+        view.groups.map(groupBody))),
+      h("p", { class: "tl-legend" }, t("tlGenerated", when(data.generatedAt)), " ", t("tlLegend")),
     ];
   }
 

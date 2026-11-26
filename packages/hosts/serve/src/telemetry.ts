@@ -2,7 +2,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { type TelemetryLine, type TelemetryOptions, type TelemetryQuery, type TelemetryStore, turnTelemetry } from "@lenspack/agent";
+import { type TelemetryLine, type TelemetryOptions, type TelemetryQuery, type TelemetryStore, switchDefaults, itemsOn, turnTelemetry } from "@lenspack/agent";
 
 import { rotatingLog } from "./audit";
 import { writeWhole } from "./settings";
@@ -109,4 +109,16 @@ export function keyedHash(dir: string): (text: string) => string {
 export function fileTelemetry(dir: string, opts: Omit<TelemetryOptions, "store" | "hash"> & { retentionDays?: () => number } = {}) {
   const store = fileTelemetryStore({ dir, retentionDays: opts.retentionDays, now: opts.now });
   return { store, telemetry: turnTelemetry({ ...opts, store, hash: keyedHash(dir) }) };
+}
+
+/**
+ * The items a config's telemetry section turns on, for a server with no settings page to change them: the
+ * catalogue's defaults, then telemetry.groups and telemetry.items. Unknown names are refused.
+ */
+export function staticItems(c: { groups?: Record<string, boolean>; items?: Record<string, boolean>; questionText?: boolean }): () => ReadonlySet<string> {
+  const d = switchDefaults();
+  for (const k of Object.keys(c.groups ?? {})) if (!(k in d.groups)) throw new Error(`telemetry.groups.${k} is not a telemetry section; see docs/telemetry.md`);
+  for (const k of Object.keys(c.items ?? {})) if (!(k in d.items)) throw new Error(`telemetry.items.${k} is not a telemetry item with a switch; see docs/telemetry.md`);
+  const on = itemsOn({ telemetry: true, groups: { ...d.groups, ...c.groups }, items: { ...d.items, ...(c.questionText !== undefined ? { "question-text": c.questionText } : {}), ...c.items } }, { voice: true, cache: true, clarify: true });
+  return () => on;
 }

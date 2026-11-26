@@ -549,16 +549,17 @@ def lenspack_app_mutator(app):
                 return redirect("/ai-assistant/")
             return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": hold}))
 
-        # Kept recordings of spoken questions (off unless turned on here, in the config or by LENSPACK_SPEECH_KEEP_AUDIO).
+        # Kept recordings of spoken questions: how long, how much, and the consent notice. Whether they are kept at all is
+        # the voice-audio item on the admin panel's Telemetry tab, which asks the admin to confirm first.
         @expose("/speech-audio", methods=["POST"])
         @has_access
         def speech_audio(self):
             if not security_manager.is_admin():
                 abort(403)
             if request.form.get("reset"):
-                body = {"keepAudio": None, "audioRetentionDays": None, "maxStoredMb": None, "consentNotice": None}
+                body = {"audioRetentionDays": None, "maxStoredMb": None, "consentNotice": None}
             else:
-                body = {"keepAudio": request.form.get("keepAudio") == "on", "consentNotice": request.form.get("consentNotice", "")}
+                body = {"consentNotice": request.form.get("consentNotice", "")}
                 try:
                     body["audioRetentionDays"] = int(request.form.get("audioRetentionDays", ""))
                     body["maxStoredMb"] = int(request.form.get("maxStoredMb", ""))
@@ -600,13 +601,13 @@ def lenspack_app_mutator(app):
             if not security_manager.is_admin():
                 abort(403)
             if request.form.get("reset"):
-                return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": None, "questionText": None}))
+                return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": None}))
             try:
                 days = int(request.form.get("retentionDays", ""))
             except ValueError:
                 flash("Usage telemetry: enter a whole number of days.", FLASH_BAD)
                 return redirect("/ai-assistant/")
-            return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": days, "questionText": request.form.get("questionText") == "on"}))
+            return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": days}))
 
         @expose("/language", methods=["POST"])
         @has_access
@@ -794,12 +795,11 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
       {% endif %}
       {% if sp.keepAudio is defined %}
         <h3 style="font-size:13.5px;margin:14px 0 6px">Kept recordings</h3>
-        <p class="mute" style="margin:0 0 6px">Off by default. On, each spoken question's recording is kept in Lenspack's state folder for checking speech to text, deleted after the days below or, oldest first, when over the size cap. Only Superset admins can play one, and each play is in the audit log. The speech provider receives the recording either way.
+        <p class="mute" style="margin:0 0 6px">{% if sp.keepAudio %}<b>On.</b>{% else %}<b>Off.</b>{% endif %} Turned on or off as "Kept recordings" on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>, which shows what it means first. On, each spoken question's recording is kept in Lenspack's state folder for checking speech to text, deleted after the days below or, oldest first, when over the size cap. Only Superset admins can play one, and each play is in the audit log. The speech provider receives the recording either way.
           {% if sp.stored %}Kept now: {{ sp.stored.files }} recording(s), {{ (sp.stored.bytes / 1048576)|round(1) }} MB.{% endif %}</p>
         <form class="lp-form" method="post" action="/ai-assistant/speech-audio">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label><input type="checkbox" name="keepAudio" {% if sp.keepAudio %}checked{% endif %} {% if not sp.writable %}disabled{% endif %}> Keep recordings</label>
-          <label class="mute">for <input type="number" name="audioRetentionDays" min="1" max="3650" value="{{ sp.audioRetentionDays }}" style="width:70px" {% if not sp.writable %}disabled{% endif %}> days</label>
+          <label class="mute">Keep for <input type="number" name="audioRetentionDays" min="1" max="3650" value="{{ sp.audioRetentionDays }}" style="width:70px" {% if not sp.writable %}disabled{% endif %}> days</label>
           <label class="mute">at most <input type="number" name="maxStoredMb" min="1" max="100000" value="{{ sp.maxStoredMb }}" style="width:90px" {% if not sp.writable %}disabled{% endif %}> MB</label>
           <label class="mute" style="flex-basis:100%">Notice each person acknowledges once before recording (optional)<br><textarea name="consentNotice" rows="2" maxlength="2000" style="width:100%" {% if not sp.writable %}disabled{% endif %}>{{ sp.consentNotice or '' }}</textarea></label>
           <button type="submit" {% if not sp.writable %}disabled{% endif %}>Save</button>
@@ -845,11 +845,11 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
   <div class="lp-card">
     <h2>Usage telemetry</h2>
     <p class="mute" style="margin:0 0 8px">One record per question (who asked, the kind of question, how it went, time and cost) and the thumbs under each answer, in <code>{{ tl.file }}</code>.
-      {% if not tl.enabled %}<span class="bad">Off (Off switches).</span>{% endif %} Read it as an admin at <code>/lenspack/_superset/telemetry</code>.</p>
+      {% if not tl.enabled %}<span class="bad">Off (Off switches).</span>{% endif %} Read it as an admin at <code>/lenspack/_superset/telemetry</code>.
+      What is recorded, item by item, is switched on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>.</p>
     <form class="lp-form" method="post" action="/ai-assistant/telemetry">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="mute">Keep for <input type="number" name="retentionDays" min="1" max="3650" value="{{ tl.retentionDays }}" style="width:80px" {% if not tl.writable %}disabled{% endif %}> days</label>
-      <label><input type="checkbox" name="questionText" {% if tl.questionText %}checked{% endif %} {% if not tl.writable %}disabled{% endif %}> Keep the words of each question (off: a hash only)</label>
       <button type="submit" {% if not tl.writable %}disabled{% endif %}>Save</button>
       {% if tl.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not tl.writable %}disabled{% endif %}>Back to defaults</button>{% endif %}
     </form>

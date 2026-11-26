@@ -496,7 +496,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
         const r = await opts.telemetry.event(asker, body as Record<string, unknown>);
-        return r.ok ? json(res, 202, { ok: true }) : json(res, r.status, { error: r.error });
+        return r.ok ? json(res, 202, { ok: true, recorded: r.recorded }) : json(res, r.status, { error: r.error });
       }
       const h = byName.get(packName);
       const d = h ? decisionFor(h) : null;
