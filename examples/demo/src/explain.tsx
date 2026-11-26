@@ -80,13 +80,16 @@ function Rows({ c }: { c: Call }) {
   );
 }
 
-export function ExplainBlock({ x }: { x: AnswerCardData }) {
+export function ExplainBlock({ x, onOpen }: { x: AnswerCardData; onOpen?: () => void }) {
   const [open, setOpen] = React.useState(false);
   const id = React.useId();
   if (!x.calls?.length) return null;
   return (
     <div className="min-w-0 max-w-full text-xs" data-testid="explain">
-      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)} className="inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[var(--declared)] hover:bg-muted">
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => {
+          if (!open) onOpen?.();
+          setOpen(!open);
+        }} className="inline-flex items-center gap-1 rounded px-1 py-0.5 font-medium text-[var(--declared)] hover:bg-muted">
         <span aria-hidden="true" className={`inline-block transition-transform ${open ? "rotate-90" : ""}`}>▸</span>
         How this was worked out
       </button>

@@ -20,21 +20,22 @@
 // docs/caching.md.
 
 import { type BoardConfig, type BoardStore, type Query, stagedStore } from "@lenspack/core";
-import type { Connector, Ctx } from "@lenspack/engine";
+import type { Connector } from "@lenspack/engine";
 import type { Pack } from "@lenspack/pack";
 
 import type { ProposalStore } from "../proposals";
 import { type BoardToolsOptions, boardTools, checkedQuery } from "../tools";
+import type { TurnView } from "../view";
 import { retemplate } from "./numbers";
 import { PHRASE_PROMPT, REWRITE_PROMPT, ROUTER_PROMPT, parseRoute, phraseMessage, rewriteMessage, routerMessage, slotName } from "./router";
 import { dueTimes } from "./schedule";
 import type { CacheSettings } from "./settings";
 import { type Call, type Slot, fill, slotInto, slotsOf, timePhrase } from "./slots";
-import { type AnswerStore, type Entry, type Tier, accessOf, emptyTiers, fileAnswerStore } from "./store";
+import { type AnswerStore, type Entry, type KeptCtx, type Tier, accessOf, emptyTiers, fileAnswerStore } from "./store";
 import { canonical, guessLanguage, normalise, shortHash, similarity, standalone } from "./text";
 
 export { CACHE_DEFAULTS, type CacheSettings, type CacheSettingsStore, PREWARM_DEFAULTS, type PrewarmSettings, type SettingsLike, cacheSettings, cacheSettingsFrom, prewarmFrom } from "./settings";
-export { type Access, type AnswerStore, type BoardInfo, type Entry, type Stats, type Tier, accessOf, ctxOf, emptyTiers, fileAnswerStore } from "./store";
+export { type Access, type AnswerStore, type BoardInfo, type Entry, type KeptCtx, type Stats, type Tier, accessOf, ctxOf, emptyTiers, fileAnswerStore } from "./store";
 export { numbersIn, retemplate, shapeOf } from "./numbers";
 export { guessLanguage, normalise, similarity, standalone } from "./text";
 export { type Call, type Slot, fill, slotInto, slotsOf, timePhrase } from "./slots";
@@ -60,8 +61,8 @@ export type ReuseTurn = {
   board: string;
   /** The board as the asker is shown it, at the start of the turn. */
   config: BoardConfig;
-  /** The asker's engine context: tenant, row scope, hidden keys and datasets. */
-  ctx: Ctx;
+  /** The asker's engine context: tenant, row scope, hidden keys and datasets, and a board grant if one opened any. */
+  ctx: KeptCtx;
   /** The pack's source, metered for this turn by the host if it meters. */
   connector: Connector;
   store: BoardStore;
@@ -75,6 +76,8 @@ export type ReuseTurn = {
   rules?: unknown;
   /** The viewer's filter selections on the dashboard: part of what an answer is an answer to. */
   selections?: Record<string, unknown>;
+  /** Where the viewer is on the host's page (their open tab): part of what an edit is ("add a chart here"), not of what an answer is. */
+  view?: TurnView;
   /** The host's assistant prompt version: a new one makes every saved answer stale. */
   promptVersion?: string;
   readOnly?: string;
@@ -134,7 +137,11 @@ export type ReuseOptions = {
 
 export type Reuse = ReturnType<typeof reuseLayer>;
 
-const scopeOf = (ctx: Ctx) => shortHash(canonical({ tenant: ctx.tenant ?? null, scope: ctx.scope ?? [], hidden: [...(ctx.hidden ?? [])].sort(), entities: [...(ctx.hiddenEntities ?? [])].sort() }));
+// The access an entry is kept under. A board grant (entities read on one board only) is part of it, so an answer or
+// edit made under one is never served on another board, or to a caller without the same grant. Without a grant the
+// key is as it always was.
+const scopeOf = (ctx: KeptCtx) =>
+  shortHash(canonical({ tenant: ctx.tenant ?? null, scope: ctx.scope ?? [], hidden: [...(ctx.hidden ?? [])].sort(), entities: [...(ctx.hiddenEntities ?? [])].sort(), ...(ctx.onBoard ? { onBoard: { board: ctx.onBoard.board, entities: [...ctx.onBoard.entities].sort() } } : {}) }));
 const packHashes = new WeakMap<Pack, string>();
 const packHash = (p: Pack) => {
   let h = packHashes.get(p);
@@ -175,7 +182,7 @@ export function reuseLayer(o: ReuseOptions) {
   const keys = (t: ReuseTurn, kind: "answer" | "edit") => ({
     scope: scopeOf(t.ctx),
     // The board's filters and the viewer's selections are part of an answer's version; an edit's board is its content hash.
-    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : {}) })),
+    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : t.view?.tabs?.length ? { view: t.view.tabs } : {}) })),
     replyLang: t.picked ?? "auto",
   });
   const expired = (e: Entry) => !e.pinned && now().getTime() - Date.parse(e.createdAt) > o.settings().ttlHours * 3_600_000;
@@ -202,7 +209,7 @@ export function reuseLayer(o: ReuseOptions) {
   }
 
   const tools = (t: ReuseTurn, boards?: BoardStore, held = false) =>
-    new Map(boardTools({ pack: t.pack, connector: t.connector, store: boards ?? t.store, boardId: t.board, ctx: t.ctx, proposals: t.proposals, readOnly: t.readOnly, held, onEdit: t.onEdit, onData: t.onData }).map((x) => [x.name, x]));
+    new Map(boardTools({ pack: t.pack, connector: t.connector, store: boards ?? t.store, boardId: t.board, ctx: t.ctx, proposals: t.proposals, readOnly: t.readOnly, held, onEdit: t.onEdit, onData: t.onData, ...(t.view ? { view: t.view } : {}) }).map((x) => [x.name, x]));
 
   /** Runs a plan's data calls again under the asker's own access. Null when one fails: the full assistant answers instead. */
   async function rerun(t: ReuseTurn, plan: Call[]): Promise<Call[] | null> {
@@ -643,7 +650,7 @@ export function reuseLayer(o: ReuseOptions) {
     },
 
     /** The most-asked questions on a board, for the chat's suggestion chips; scope null: every scope (admins). */
-    async suggestions(q: { board: string; pack?: string; scope?: Ctx | null; lang?: string | null; limit?: number }): Promise<string[]> {
+    async suggestions(q: { board: string; pack?: string; scope?: KeptCtx | null; lang?: string | null; limit?: number }): Promise<string[]> {
       const scope = q.scope ? scopeOf(q.scope) : null;
       const since = now().getTime() - 30 * 86_400_000;
       const lang = q.lang && q.lang !== "auto" ? q.lang.slice(0, 2) : null;

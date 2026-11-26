@@ -1,11 +1,12 @@
 import { existsSync, readFileSync, renameSync } from "node:fs";
 
-import type { Board, BoardConfig, BoardStore } from "@lenspack/core";
+import type { Board, BoardConfig, BoardOp, BoardStore, BoardTab, BoardView } from "@lenspack/core";
 import type { Pack } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
-import { type DashboardState, dashboardToBoard, pushBoard, readDashboard } from "./dashboard";
+import { type DashboardState, MOVE_REFUSAL, type PlacementHint, dashboardToBoard, pushBoard, readDashboard } from "./dashboard";
+import { type Position, hasTabs, nestedLayout, tabsOf } from "./layout";
 import { diskProblem, writeWhole } from "@lenspack/serve";
 
 // Superset stays the record. A board bound to a dashboard is read from
@@ -24,12 +25,26 @@ export type SupersetBoardsOptions = {
   dashboards: Record<string, number>;
   /** Where widget ↔ chart ids are kept between restarts. */
   stateFile: string;
+  /** The Superset user ids a board's new charts belong to: its owner's, on a person's own dashboard. Else Lenspack's account. */
+  ownersOf?: (boardId: string) => number[] | undefined | Promise<number[] | undefined>;
   /** How often a read checks Superset for edits made there. Default 3s. */
   checkEveryMs?: number;
   log?: (line: string) => void;
 };
 
-export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull(id: string, force?: boolean): Promise<void>; seed(): Promise<void>; notes: Map<string, string[]> } {
+export type SupersetBoards = BoardStore & {
+  pull(id: string, force?: boolean): Promise<void>;
+  seed(): Promise<void>;
+  notes: Map<string, string[]>;
+  /** The board's widgets that stand for Superset charts Lenspack can't redraw. */
+  lockedOf(id: string): string[];
+  /** The charts Lenspack made on the board's dashboard. */
+  createdOf(id: string): number[];
+  /** Drops a board whose dashboard is gone (deleted): its links and its versions here. */
+  forget(id: string): Promise<void>;
+};
+
+export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
   const { inner, client, pack, binding } = opts;
   const log = opts.log ?? (() => {});
   const { states, save } = savedStates(opts.stateFile, log);
@@ -43,6 +58,18 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
     return next;
   };
   const bound = (id: string) => opts.dashboards[id] !== undefined;
+  // Each board's layout as last read from or written to Superset: its tabs, and whether a move can be written.
+  const positions = new Map<string, Position>();
+  // Where an edit asked for a new widget, kept from the edit (admit) to its save, which may come later (a staged turn).
+  const hints = new Map<string, Map<string, PlacementHint & { at: number }>>();
+  const HINT_MS = 30 * 60_000;
+  const hintsFor = (id: string) => {
+    const now = Date.now();
+    const all = hints.get(id) ?? new Map();
+    for (const [w, h] of all) if (now - h.at > HINT_MS) all.delete(w);
+    hints.set(id, all);
+    return all;
+  };
 
   async function pullNow(id: string, force: boolean) {
     const dashId = opts.dashboards[id]!;
@@ -50,6 +77,7 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
     const prior = states[id];
     if (!force && prior?.changedOn === head.result.changed_on && (await inner.get(id))) return;
     const read = await readDashboard(client, dashId);
+    positions.set(id, read.position);
     const { config, state, notes: n } = dashboardToBoard(read, pack, binding, prior ?? { dashboardId: dashId, charts: {}, created: [], locked: [], markdown: {} });
     states[id] = state;
     notes.set(id, n);
@@ -73,7 +101,7 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
   }
 
   /** Runs a change here, sends it to Superset, and undoes it here if Superset refuses. */
-  async function through<T extends { config: BoardConfig } | null>(id: string, change: () => Promise<T>): Promise<T> {
+  async function through<T extends { config: BoardConfig } | null>(id: string, change: () => Promise<T>, o: { moves?: "keep" } = {}): Promise<T> {
     if (!bound(id)) return change();
     return serial(id, async () => {
       await pullNow(id, false).catch(() => {});
@@ -81,7 +109,10 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
       const result = await change();
       if (!result) return result;
       try {
-        states[id] = await pushBoard(client, before.config, result.config, pack, binding, states[id]!, (s) => log(`${id}: ${s}`));
+        const waiting = hintsFor(id);
+        const owners = await opts.ownersOf?.(id);
+        states[id] = await pushBoard(client, before.config, result.config, pack, binding, states[id]!, { hints: Object.fromEntries(waiting), moves: o.moves, written: (p) => positions.set(id, p), log: (s) => log(`${id}: ${s}`), ...(owners ? { owners } : {}) });
+        for (const w of Object.keys(result.config.widgets)) if (!before.config.widgets[w]) waiting.delete(w);
         save();
         lastCheck.set(id, Date.now());
         return result;
@@ -92,8 +123,41 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
     });
   }
 
+  /** Refuses a move a layout with tabs or columns can't take yet; notes where each new widget was asked for. */
+  async function admit(id: string, ops: BoardOp[], view?: BoardView): Promise<string | null> {
+    if (!bound(id)) return null;
+    if (!positions.has(id)) await serial(id, () => pullNow(id, true)).catch(() => {});
+    const pos = positions.get(id);
+    if (pos && nestedLayout(pos) && ops.some((op) => op.op === "move_widget")) return MOVE_REFUSAL;
+    const waiting = hintsFor(id);
+    for (const op of ops) if (op.op === "add_widget") waiting.set(op.id, { place: op.placement?.place ?? "bottom", ...(view?.tabs?.length ? { tabs: view.tabs } : {}), at: Date.now() });
+    return null;
+  }
+
   return {
     notes,
+    lockedOf: (id) => [...(states[id]?.locked ?? [])],
+    createdOf: (id) => [...(states[id]?.created ?? [])],
+    async forget(id) {
+      await serial(id, async () => {
+        delete opts.dashboards[id];
+        delete states[id];
+        notes.delete(id);
+        lastCheck.delete(id);
+        positions.delete(id);
+        save();
+        await inner.delete(id);
+      });
+    },
+    admit,
+    async tabs(id): Promise<BoardTab[]> {
+      if (!bound(id)) return [];
+      const pos = positions.get(id);
+      const state = states[id];
+      if (!pos || !state || !hasTabs(pos)) return [];
+      const widgetOf = new Map<string, string>([...Object.entries(state.placements ?? {}), ...Object.entries(state.markdown)].map(([w, c]) => [c, w]));
+      return tabsOf(pos).map((t) => ({ id: t.id, title: t.titles.join(" › "), widgets: t.components.map((c) => widgetOf.get(c)).filter((w): w is string => !!w) }));
+    },
     async seed() {
       for (const id of Object.keys(opts.dashboards)) await serial(id, () => pullNow(id, true));
     },
@@ -106,6 +170,8 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
     create: (input) => inner.create(input),
     async patch(input) {
       if (!bound(input.id)) return inner.patch(input);
+      const cannot = await admit(input.id, input.ops, input.view);
+      if (cannot) return { ok: false as const, error: cannot };
       try {
         let refused: Awaited<ReturnType<BoardStore["patch"]>> | null = null;
         const board = await through(input.id, async () => {
@@ -123,7 +189,8 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
     },
     replaceConfig: (input) => (input.source === "superset" ? inner.replaceConfig(input) : through(input.id, () => inner.replaceConfig(input))),
     versions: (id) => inner.versions(id),
-    revertTo: (id, version) => through(id, () => inner.revertTo(id, version)),
+    // A restore puts back what was removed and keeps charts where they are now: a layout with tabs can't take a move yet.
+    revertTo: (id, version) => through(id, () => inner.revertTo(id, version), { moves: "keep" }),
     share: (id, shared) => inner.share(id, shared),
     async delete(id) {
       if (bound(id)) throw new Error("A Superset dashboard is deleted in Superset");

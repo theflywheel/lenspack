@@ -16,8 +16,8 @@ FEATURE_FLAGS = {"ENABLE_TEMPLATE_PROCESSING": True} (Superset renders RLS templ
 and ends with `from lenspack_superset import *`. RlsClauses and Route need only the module. ProxyEndpoint makes
 users and dashboards and sends /lenspack/... requests through Flask's test client, with the forward to Lenspack
 caught. AccessEndpoint makes a throwaway SQLite database, a dataset, a role with access to it, users and RLS rules
-in Superset's metadata, and calls /api/v1/lenspack/access (and /api/v1/lenspack/version) through Flask's test
-client. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. ClickHouseLabels
+in Superset's metadata, and dashboards with and without dashboard roles, and calls /api/v1/lenspack/access (and
+/api/v1/lenspack/version) through Flask's test client; it turns DASHBOARD_RBAC on and off itself where a case needs it. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. ClickHouseLabels
 checks the ClickHouse column-name suffix, and runs a query against ClickHouse when one is given (above).
 """
 
@@ -53,6 +53,14 @@ class RlsClauses(unittest.TestCase):
         ]
         rendered = lp.lenspack_rls_clauses(filters, lambda c: c.replace("{{ who }}", "y"))
         self.assertEqual(rendered, ["a = 1", "(r = 'x') OR (r = 'y')", "t = 2"])
+
+
+class StampNonce(unittest.TestCase):
+    def test_adds_the_nonce_to_script_tags_only(self):
+        page = b'<script src="a.js"></script><Script>x()</Script><scripts><script nonce="n0"></script><script/>'
+        self.assertEqual(lp.lenspack_stamp_nonce(page, "n1"), b'<script nonce="n1" src="a.js"></script><Script nonce="n1">x()</Script><scripts><script nonce="n0"></script><script nonce="n1"/>')
+        self.assertEqual(lp.lenspack_stamp_nonce(page, ""), page)
+        self.assertEqual(lp.lenspack_stamp_nonce(b"<script>", 'a"b'), b'<script nonce="a&quot;b">')
 
 
 class Route(unittest.TestCase):
@@ -128,8 +136,9 @@ class ProxyEndpoint(unittest.TestCase):
     def tearDownClass(cls):
         cls.ctx.pop()
 
-    def send(self, method, path, **kw):
-        """The response, and the (url, claims) forwarded to Lenspack, or None when nothing was forwarded."""
+    def send(self, method, path, upstream=("application/json", [b"{}"]), **kw):
+        """The response, and the (url, claims) forwarded to Lenspack, or None when nothing was forwarded. Lenspack
+        answers with upstream: (content type, the chunks of its body)."""
         import base64
         import json
         from unittest import mock
@@ -139,7 +148,7 @@ class ProxyEndpoint(unittest.TestCase):
         def fake(method_, url, **kwargs):
             body = kwargs["headers"]["x-lenspack-identity"].split(".")[0]
             forwarded.append((url, json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))))
-            return mock.Mock(status_code=200, headers={"content-type": "application/json"}, iter_content=lambda chunk_size=None: iter([b"{}"]), close=lambda: None)
+            return mock.Mock(status_code=200, headers={"content-type": upstream[0]}, iter_content=lambda chunk_size=None: iter(upstream[1]), close=lambda: None)
 
         with mock.patch("requests.request", side_effect=fake):
             r = self.client.open(path, method=method, **kw)
@@ -174,12 +183,93 @@ class ProxyEndpoint(unittest.TestCase):
             self.assertNotEqual(claims.get("d"), self.mine, path)
             self.assertFalse(claims.get("e", False), path)
 
+    def test_signs_the_users_role_names_on_every_request_telemetry_reads(self):
+        # Telemetry records the Superset role names: on a dashboard's board, on the telemetry and speech routes alike.
+        for method, path in [("POST", f"/lenspack/api/hcm/superset-{self.mine}/chat"), ("POST", "/lenspack/api/_telemetry"), ("POST", "/lenspack/api/_stt"), ("GET", "/lenspack/_superset/info")]:
+            r, (url, claims) = self.send(method, path, json={})
+            r.get_data()
+            self.assertEqual(r.status_code, 200, path)
+            self.assertEqual(claims["r"], ["Gamma"], path)
+
+    def test_an_identity_without_roles_has_no_r_claim(self):
+        # Older callers sign no roles; Lenspack then records none (backward compatible both ways).
+        import base64
+        import json
+
+        body = lp.lenspack_sign("alice", False).split(".")[0]
+        self.assertNotIn("r", json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))))
+
     def test_digits_are_an_id_never_a_slug(self):
         # The lookalike's slug is OTHER's id, and the owner owns the lookalike: the rights are still OTHER's.
         _, (_, claims) = self.send("GET", f"/lenspack/api/hcm/superset-{self.other}")
         self.assertEqual((claims["d"], claims["e"]), (self.other, False))
         _, (_, claims) = self.send("GET", "/lenspack/_superset/bind", query_string={"dashboard": str(self.other)})
         self.assertEqual((claims["d"], claims["e"]), (self.other, False))
+
+    # A page as Lenspack serves one: scripts by src and inline, in any case, one that has a nonce already, and
+    # look-alikes that are not script tags.
+    PAGE = [b'<!doctype html><title>x</title><link rel="stylesheet" href="panel.css">\n<script>/*vars*/</script>\n',
+            b'<SCRIPT src="checklist.js"></SCRIPT>\n<script\tsrc="panel.js" defer></script>\n<script nonce="theirs">1</script>\n',
+            b'<scripts></scripts><p data-x="<script">text</p><script data-nonce="x" src="a.js"></script>']
+
+    @staticmethod
+    def nonce_of(response):
+        import re
+
+        m = re.search(r"'nonce-([^']+)'", response.headers.get("Content-Security-Policy", ""))
+        return m.group(1) if m else None
+
+    def test_a_page_s_scripts_get_the_request_s_nonce(self):
+        if not self.app.config.get("TALISMAN_ENABLED"):
+            self.skipTest("Talisman is off in this config")
+        r, _ = self.send("GET", "/lenspack/_superset/admin/", upstream=("text/html; charset=utf-8", self.PAGE))
+        self.assertEqual(r.status_code, 200)
+        nonce = self.nonce_of(r)
+        self.assertTrue(nonce, r.headers.get("Content-Security-Policy"))
+        html = r.get_data(as_text=True)
+        self.assertEqual(html, b"".join(self.PAGE).decode().replace("<script>", f'<script nonce="{nonce}">').replace("<SCRIPT src", f'<SCRIPT nonce="{nonce}" src').replace("<script\tsrc", f'<script nonce="{nonce}"\tsrc').replace("<script data-nonce", f'<script nonce="{nonce}" data-nonce'))
+        self.assertIn('<script nonce="theirs">', html)
+        self.assertEqual(int(r.headers["Content-Length"]), len(r.get_data()))
+
+    def test_anything_else_streams_through_untouched(self):
+        body = [b'{"html": "<script src=x>', b'</script>"}']
+        r, _ = self.send("GET", "/lenspack/_superset/dashboards", upstream=("application/json", body))
+        self.assertEqual(r.get_data(), b"".join(body))
+        r, _ = self.send("POST", "/lenspack/api/hcm/chat", upstream=("text/event-stream", [b"data: <script>\n\n"]), json={})
+        self.assertEqual(r.get_data(), b"data: <script>\n\n")
+        self.assertNotIn("Content-Length", r.headers)  # streamed as it came, not read whole
+
+    def test_without_a_nonce_a_page_is_untouched(self):
+        # As with Talisman off: no Content-Security-Policy, so no nonce to add.
+        # Talisman reads a view's own options from the view function, per request.
+        view = self.app.view_functions["lenspack_proxy"]
+        view.talisman_view_options = {"content_security_policy": None}
+        try:
+            r, _ = self.send("GET", "/lenspack/_superset/admin/", upstream=("text/html", self.PAGE))
+        finally:
+            del view.talisman_view_options
+        self.assertIsNone(self.nonce_of(r))
+        self.assertEqual(r.get_data(), b"".join(self.PAGE))
+
+
+    def test_signs_the_users_superset_id(self):
+        # Lenspack makes a person's own dashboards theirs in Superset by this id.
+        _, (_, claims) = self.send("GET", f"/lenspack/api/hcm/superset-{self.mine}")
+        self.assertEqual(claims["i"], self.owner.id)
+        _, (_, claims) = self.send("GET", "/lenspack/_superset/info")
+        self.assertEqual(claims["i"], self.owner.id)
+
+    def test_own_dashboard_routes_carry_the_rights_on_the_dashboard_named(self):
+        # Copy this one, save its layout, apply a layout here: ?dashboard= is signed like bind's.
+        for path in ["/lenspack/_superset/my", "/lenspack/_superset/my/dashboards", "/lenspack/_superset/my/layouts", "/lenspack/_superset/my/layouts/l_abc/apply"]:
+            method = "GET" if path.endswith("/my") else "POST"
+            _, (_, claims) = self.send(method, path, query_string={"dashboard": str(self.mine)}, json={})
+            self.assertEqual((claims["d"], claims["e"], claims["v"]), (self.mine, True, True), path)
+            _, (_, claims) = self.send(method, path, query_string={"dashboard": str(self.other)}, json={})
+            self.assertEqual((claims["d"], claims["e"]), (self.other, False), path)
+        # Elsewhere ?dashboard= means nothing.
+        _, (_, claims) = self.send("GET", "/lenspack/_superset/info", query_string={"dashboard": str(self.mine)})
+        self.assertNotIn("d", claims)
 
 
 class AccessEndpoint(unittest.TestCase):
@@ -236,9 +326,26 @@ class AccessEndpoint(unittest.TestCase):
         roled = Dashboard(dashboard_title=f"lp roled {os.getpid()}", published=True, slices=[])
         roled.roles = [board_role]
         user("carol", [gamma, board_role])
-        db.session.add_all([chart, mine, roled])
+        # Dashboard roles on a dashboard with a chart on the table: dave is in its role and reads no dataset, and an
+        # RLS rule of that role narrows the table for him. The same chart on an unpublished dashboard with the same
+        # role: Superset opens it to its owners and admins only.
+        charted_role = sm.find_role("LenspackCharted") or sm.add_role("LenspackCharted")
+        dave = user("dave", [gamma, charted_role])
+        rule = RowLevelSecurityFilter(name=f"lp_charted_{os.getpid()}", filter_type=RowLevelSecurityFilterType.REGULAR, clause="team = '{{ current_username() }}'")
+        rule.roles = [charted_role]
+        rule.tables = [table]
+        db.session.add(rule)
+        charted = Dashboard(dashboard_title=f"lp charted {os.getpid()}", published=True, slices=[chart])
+        charted.roles = [charted_role]
+        draft = Dashboard(dashboard_title=f"lp draft {os.getpid()}", published=False, slices=[chart])
+        draft.roles = [charted_role]
+        # An owner of the draft who is not in its role: owners open a dashboard whether or not it is published.
+        erin = user("erin", [gamma])
+        draft.owners = [erin]
+        db.session.add_all([chart, mine, roled, charted, draft])
         db.session.commit()
-        cls.dash, cls.roled = str(mine.id), str(roled.id)
+        cls.dash, cls.roled, cls.charted, cls.draft = str(mine.id), str(roled.id), str(charted.id), str(draft.id)
+        del dave
         cls.client = cls.app.test_client()
         cls.admin = cls.token("lp_admin")
 
@@ -278,6 +385,50 @@ class AccessEndpoint(unittest.TestCase):
         self.assertEqual(dashboards("bob"), {self.dash: False, self.roled: not rbac, "999999": False})
         self.assertEqual(dashboards("carol"), {self.dash: False, self.roled: True, "999999": False})
         self.assertEqual(dashboards("lp_admin"), {self.dash: True, self.roled: True, "999999": False})
+
+    def on_dashboards(self, user, rbac):
+        """The access answer for one user about the table and every test dashboard, with DASHBOARD_RBAC on or off."""
+        from superset.extensions import feature_flag_manager
+
+        flags = feature_flag_manager._feature_flags
+        before = dict(flags)
+        flags["DASHBOARD_RBAC"] = rbac
+        try:
+            ids = ",".join([self.dash, self.roled, self.charted, self.draft, "999999"])
+            r = self.client.get(f"/api/v1/lenspack/access?user={user}&datasets={self.table},999999&dashboards={ids}", headers=self.admin)
+        finally:
+            flags.clear()
+            flags.update(before)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return r.get_json()["result"]
+
+    def test_dashboard_roles_open_a_dashboard_s_chart_datasets_on_that_dashboard_only(self):
+        r = self.on_dashboards("dave", True)
+        self.assertTrue(r["dashboardRbac"])
+        table = int(self.table)
+        # The charted dashboard opens through its role and reads the table there; nowhere else does.
+        self.assertEqual(r["dashboardDatasets"], {self.dash: [], self.roled: [], self.charted: [table], self.draft: [], "999999": []})
+        self.assertEqual((r["dashboards"][self.charted], r["dashboards"][self.draft], r["dashboards"][self.dash]), (True, False, False))
+        # Not readable in general; its RLS for dave comes with it, rendered as dave, as Superset applies RLS there too.
+        self.assertEqual(r["datasets"][self.table], {"access": False, "rls": ["team = 'dave'"]})
+        self.assertEqual(r["datasets"]["999999"], {"access": False, "rls": []})
+
+    def test_superset_grants_nothing_through_a_dashboard_with_dashboard_roles_off(self):
+        r = self.on_dashboards("dave", False)
+        self.assertFalse(r["dashboardRbac"])
+        self.assertEqual(r["dashboardDatasets"], {self.dash: [], self.roled: [], self.charted: [], self.draft: [], "999999": []})
+        self.assertEqual(r["datasets"][self.table], {"access": False, "rls": []})
+
+    def test_only_the_role_s_members_and_owners_get_a_dashboard_s_datasets(self):
+        table = int(self.table)
+        # alice reads the table everywhere: nothing is listed for her as only-on-a-dashboard.
+        self.assertEqual(self.on_dashboards("alice", True)["dashboardDatasets"][self.charted], [])
+        # bob and carol are in neither role of the charted dashboard.
+        for user in ("bob", "carol"):
+            self.assertEqual(set(map(tuple, self.on_dashboards(user, True)["dashboardDatasets"].values())), {()}, user)
+        # erin owns the unpublished draft (not in its role): Superset opens it to her and its chart reads the table.
+        erin = self.on_dashboards("erin", True)
+        self.assertEqual((erin["dashboardDatasets"][self.draft], erin["dashboardDatasets"][self.charted]), ([table], []))
 
     def test_the_identity_header_carries_the_role_names(self):
         import base64

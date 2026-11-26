@@ -134,6 +134,19 @@ The scope is the pack's own (its `ctx.scope`), then the caller's, then their rul
 
 By default (`hostPolicy: superset`), each user's Superset access is their identity: a dataset their roles may not read is a kept entity, each simple RLS clause on a dataset they may read is scope on that entity, and a dashboard they may not open is a kept board. A clause that doesn't translate (anything beyond `=`, `IN`, `AND` and one-column `OR`) keeps the dataset from them, with the reason logged. Superset also says why in words for the user, so a refusal reads "not available to you: your Superset access doesn't include it" (`ACCESS_HIDDEN`) rather than "not in the pack", and a user who may read nothing is told so before any model is asked. Details in [packages/hosts/superset/README.md](../packages/hosts/superset/README.md#what-each-user-sees).
 
+### Dashboard roles (DASHBOARD_RBAC)
+
+Superset can give a dashboard its own roles (the `DASHBOARD_RBAC` feature flag). A user in one of those roles can open the dashboard and see its charts, even without access to the datasets behind them. Lenspack follows the same rule, as Superset decides it:
+
+- **On that dashboard**, the user can ask about the data of the dashboard's charts: the chat, the board's own data and its filter menus read those datasets for them. Row-level security still applies, as it does in Superset, so they get the same rows the dashboard's charts show them.
+- **Only the datasets behind the dashboard's charts.** A dataset that only a dashboard filter reads is not opened: Superset lets that filter list its values, and nothing more.
+- **Nowhere else.** On another dashboard, in the list of everything they can ask about, and in compiled queries outside a dashboard, those datasets stay closed to them, with the usual "your Superset access doesn't include it".
+- **Who counts.** Superset's own check decides: dashboard roles must be on and the dashboard must have roles; the user must be in one of them and the dashboard published, or be its owner, or an admin.
+- **Saved answers** made on a dashboard this way are kept apart: they are never used on another dashboard, or for a user who reads the dashboard's data some other way.
+- **When Lenspack can't tell**, nothing opens. If Superset can't be asked, or its plugin is older than this change, a dashboard role opens the dashboard but none of its data in the chat. With `DASHBOARD_RBAC` off, Superset grants nothing through a dashboard, and neither does Lenspack.
+
+Superset 5.0 and 6.1 grant the same here. 6.1 also lets a dashboard's users drill into its data (drill to detail, drill by); that reads the same datasets, so it adds nothing to the list. The plugin asks Superset's own check (`raise_for_access`, for one of the dashboard's charts) as the user, so a Superset change to the rule follows by itself.
+
 `hostPolicy: off` (or `LENSPACK_HOST_POLICY=off`) answers everyone with Lenspack's service account, so anyone signed in reads every configured dataset in full. It was the default before; it is now an explicit choice, and Lenspack warns at every start while it is on.
 
 ### CCRS
@@ -156,10 +169,11 @@ The access suite starts real Superset 6.1 and 5.0, each with a Postgres database
 | `lp_inlist` | Gamma, both datasets | RLS `region IN ('North', 'East')` on `visits` |
 | `lp_complex` | Gamma, both datasets | RLS `region LIKE 'N%'` on `visits`, which Lenspack can't translate |
 | `lp_templ` | Gamma, both datasets | RLS `team = '{{ current_username() }}'` on `visits` |
-| `lp_rbac` | Gamma and dashboard B's role | opens B through its dashboard role, reads no dataset |
+| `lp_rbac` | Gamma and the roles of dashboards B and C | opens B and C through their dashboard roles, reads no dataset; RLS `region IN ('North', 'South')` on `stock` through B's role |
+| `lp_rbac_off` | the same as `lp_rbac` | used only while dashboard roles are turned off |
 | `lp_noroles` | none | signs in, nothing else |
 
-Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard B holds a stock chart and opens only for its dashboard role (`DASHBOARD_RBAC`). Every number in the sample data is a different power of two, so a total shows exactly which rows were counted.
+Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard B holds a stock chart and C a visits chart; each opens only for its dashboard role (`DASHBOARD_RBAC`). The suite can turn `DASHBOARD_RBAC` off without restarting Superset. Every number in the sample data is a different power of two, so a total shows exactly which rows were counted.
 
 ### What each case proves
 
@@ -181,14 +195,19 @@ Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard 
   - A dataset the user may not read is missing from the catalogue, the chat's `list_metrics` and the entity list, and every query on it is refused with "your Superset access doesn't include it". A measure that isn't in the pack keeps the pack's own message.
   - RLS narrows chat queries, filter menus and board widgets to the exact rows expected for each user, and a user's own filter never widens them.
   - The `LIKE` rule keeps `visits` from `lp_complex` entirely. The templated rule is rendered by Superset and narrows `lp_templ` to their own team's rows.
-  - A dashboard role opens a dashboard, not its datasets.
   - A user who may read nothing is told so before any model is asked.
   - While Lenspack can't reach Superset, a user it hasn't checked yet sees nothing. Once Superset is back, they see their data again.
+- **Dashboard roles.**
+  - On B, `lp_rbac` (no dataset access) gets B's stock data through the chat, the board and the filter menu: the same rows Superset's own chart data API serves them for B's chart, with B's role's RLS applied. A filter of their own never widens it.
+  - Stock on C, visits on B, the list of everything they can ask about, and a compiled query outside a dashboard are all refused. Superset refuses B's chart asked for as if it were on C.
+  - A saved answer `lp_rbac` gets on B is never given to an admin on B, to `lp_rbac` on C, or to a viewer on A.
+  - With `DASHBOARD_RBAC` off, B no longer opens for them, Superset refuses its chart data, and Lenspack shows none of B's data even on a request signed as able to view B.
 - **Admin surfaces.** Settings, the audit log, cost per answer and usage are for Superset admins only. A dashboard owner gets 403, and so does Superset's own AI assistant page.
 - **Caching and saved answers.**
   - Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
   - Five users with different access (all datasets, `visits` only, North only, North and East, their own team) ask the same question. Nobody is answered from another's saved answer: not when the same question comes again within minutes (sent as saved, no model), not when the saved queries run again on fresh data, and not when the question names another region (the region swapped into the saved queries). Each answer has exactly that user's rows.
 - **Pending.**
+  - A personal copy of B does not carry B's dashboard-role access (needs personal dashboards).
   - Personal dashboards and saved configurations (another change in progress): a viewer may create one; only its owner deletes it; a saved configuration applies only to dashboards the user controls; another user's personal dashboard is neither listed, opened nor edited.
 
 These cases check outcomes, not how Lenspack gets them. They keep holding when queries move to running as the user inside Superset. The `LIKE` case would then get stronger: Superset would apply the rule itself, so `lp_complex` would see the North rows instead of no `visits` at all.

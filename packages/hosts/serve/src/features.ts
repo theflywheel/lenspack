@@ -7,7 +7,7 @@
 
 import type { SettingsStore } from "./settings";
 
-export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "cache", "explain", "clarify", "review.daily", "review.compare"] as const;
+export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "cache", "explain", "clarify", "review.daily", "review.compare", "telemetry", "personalDashboards"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type FeatureValues = Partial<Record<Feature, boolean>>;
 
@@ -31,7 +31,12 @@ export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
     label: "How this was worked out",
     help: "A drill-down under each answer: each data call in plain words, the SQL it ran, and the rows behind it. Off hides it and keeps it out of the audit log; explain.sql: false in the config keeps it but leaves out the SQL.",
   },
+  personalDashboards: {
+    label: "Own dashboards and saved layouts",
+    help: "Anyone may make dashboards of their own (blank, or a copy of one they can view) and save layouts to apply to dashboards they control. Off hides the menus and refuses these requests; dashboards already made stay in Superset.",
+  },
   turnCost: { label: "Cost per answer", help: "A line under each reply with what the turn cost (an estimate from list prices), and a running total in the chat menu. Off hides them; the audit log still records each turn's cost." },
+  telemetry: { label: "Usage telemetry", help: "One record per question in telemetry.jsonl (who asked, what kind of question, how it went, how long it took, what it cost) and the thumbs under each answer. Off stops recording and hides the thumbs; the audit log is unaffected." },
   cache: { label: "Saved answers", help: "A question asked before is answered from its saved plan, with fresh data and no model call (the reply says so and offers Ask fresh); the most-asked questions become suggestions. Off: every question runs the full assistant." },
   clarify: { label: "Clarify intent", help: "When a question can be read two ways that give different numbers, the assistant asks which one (with buttons) or says which reading it used, and logs the question for an admin. Off answers with its best guess and logs nothing." },
   "review.daily": { label: "Daily review", help: "Once a day, a strong model reads the day's questions and answers and proposes fixes to the definitions, for an admin to accept or reject. Costs up to the cap set in the review settings. Off by default." },

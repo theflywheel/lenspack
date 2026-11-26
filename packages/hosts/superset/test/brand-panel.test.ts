@@ -167,3 +167,40 @@ describe("the dashboard button's name", () => {
     expect((await overlay(resolveBrand({ name: "Campaign assistant" }), "pt_BR")).lastChild!.textContent).toBe("Perguntar ao Campaign assistant");
   });
 });
+
+describe("the dashboards menus' name (mine.js)", () => {
+  type Mine = { attach(ctx: Record<string, unknown>): { onTool(name: string, o: unknown): void } };
+  const offer = (lang: string, name?: () => string) => {
+    delete (window as unknown as Record<string, unknown>).LenspackMine;
+    new Function(web("mine.js"))();
+    const head = document.createElement("div");
+    const before = document.createElement("button");
+    const log = document.createElement("div");
+    head.append(before);
+    const mine = (window as unknown as { LenspackMine: Mine }).LenspackMine.attach({ head, before, api: "http://x/lenspack", pack: "p", board: "superset-9", lang: () => lang, log, scroll: () => {}, features: () => ({}), note: () => {}, send: () => {}, ...(name ? { name } : {}) });
+    mine.onTool("update_widget", { readOnly: true, offer: "copy_dashboard", ownOnly: true });
+    return log.querySelector(".lpm-offer span")!.textContent;
+  };
+
+  it.each([
+    ["en", "Campaign assistant changes only your own dashboards here."],
+    ["fr", "Ici, Campaign assistant ne modifie que vos propres tableaux de bord."],
+    ["hi", "यहाँ Campaign assistant सिर्फ़ आपके अपने डैशबोर्ड बदलता है।"],
+    ["pt", "Aqui, Campaign assistant só altera os seus próprios painéis."],
+  ])("says the deployment's name (%s)", (lang, text) => {
+    expect(offer(lang, () => "Campaign assistant")).toBe(text);
+  });
+
+  it("says Lenspack when no name is given", () => {
+    expect(offer("en")).toBe("Lenspack changes only your own dashboards here.");
+  });
+
+  it("is given the name in the panel's language by the chat panel", () => {
+    let ctx: { name?: () => string } = {};
+    (window as unknown as Record<string, unknown>).LenspackMine = { attach: (c: typeof ctx) => ((ctx = c), { onTool() {}, relabel() {}, start() {}, turn() {} }), TOOLS: {} };
+    supersetLocale("fr");
+    mountChat(resolveBrand({ name: "Campaign assistant", i18n: { fr: { name: "Assistant de campagne" } } }));
+    expect(ctx.name?.()).toBe("Assistant de campagne");
+    delete (window as unknown as Record<string, unknown>).LenspackMine;
+  });
+});

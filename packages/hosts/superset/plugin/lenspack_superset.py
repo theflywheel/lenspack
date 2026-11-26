@@ -9,7 +9,9 @@ It adds:
     only, with a signed header saying who is asking, whether they are an admin, and whether Superset would
     let them view and edit the dashboard the request is about. The dashboard is read from the path the way
     Lenspack reads it (api/<pack>/superset-<id>/...), the header names that board and pack, and a path with a
-    "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered.
+    "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered. Pages Lenspack
+    serves (its admin panel) get the request's Content-Security-Policy nonce on their scripts, which Superset's
+    default policy needs before a browser runs them.
     Lenspack trusts nothing else, so its port never needs to be reachable from outside.
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
   - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log, and a link to Lenspack's own
@@ -20,9 +22,10 @@ It adds:
     makes Lenspack's own service account (admins only), the second hands it the signing key, derived from
     SECRET_KEY (admins and that account only);
   - /api/v1/lenspack/access?user=&datasets=&dashboards=, which Lenspack calls with hostPolicy: superset (the
-    default): whether that user may read each dataset and the row-level security clauses on it, and whether they
-    may open each dashboard, as Superset's security manager decides them for that user, Jinja rendered (admins
-    and Lenspack's account only);
+    default): whether that user may read each dataset and the row-level security clauses on it, whether they
+    may open each dashboard, and, with dashboard roles on (DASHBOARD_RBAC), which datasets they may read only on
+    each dashboard, as Superset's security manager decides them for that user, Jinja rendered (admins and
+    Lenspack's account only);
   - /api/v1/lenspack/version: Superset's version, which Lenspack reads on start (admins and Lenspack's account);
   - a fix for concurrent list requests in Flask-AppBuilder;
   - on Superset 6.1, ClickHouse column aliases with a hash suffix again, as up to 6.0 (see
@@ -147,8 +150,11 @@ def lenspack_identity_key() -> str:
     return hmac.new(secret.encode() if isinstance(secret, str) else secret, b"lenspack-identity-v1", hashlib.sha256).hexdigest()
 
 
-def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None, pack=None) -> str:
+def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None, pack=None, user_id=None) -> str:
     claims = {"u": user, "a": bool(admin), "t": int(time.time())}
+    if isinstance(user_id, int) and not isinstance(user_id, bool) and user_id > 0:
+        # i: the user's Superset id, so a dashboard Lenspack makes for them can be theirs in Superset.
+        claims["i"] = user_id
     if roles is not None:
         claims["r"] = sorted(roles)
     if dashboard is not None:
@@ -164,6 +170,12 @@ _DOT_SEGMENTS = {".", ".."}
 # Left after Flask decoded the path once, these were encoded twice: an encoded dot, slash or backslash.
 _ENCODED = re.compile(r"%(?:2e|2f|5c)", re.IGNORECASE)
 _DASHBOARD_BOARD = re.compile(r"superset-(\d+)")
+
+
+def lenspack_reads_dashboard_arg(path: str) -> bool:
+    """Paths whose dashboard is ?dashboard=<id> instead of a board in the path: binding a dashboard, and the
+    routes for a person's own dashboards and saved layouts (copy this one, save its layout, apply one here)."""
+    return path == "_superset/bind" or path == "_superset/my" or path.startswith("_superset/my/")
 
 
 def lenspack_route(path: str):
@@ -185,6 +197,20 @@ def lenspack_route(path: str):
     return route
 
 
+# A <script> start tag with no nonce attribute yet: "<script" then a space, ">" or "/", in any case ("<scripts" is not one).
+_SCRIPT_TAG = re.compile(rb"<script(?=[\s>/])(?![^>]*?[\s\"']nonce\s*=)", re.IGNORECASE)
+
+
+def lenspack_stamp_nonce(html: bytes, nonce: str) -> bytes:
+    """The page with this request's CSP nonce on every <script> tag that has none. Superset's Content-Security-Policy
+    (Talisman, on by default) has script-src 'self' 'strict-dynamic' 'nonce-...': with 'strict-dynamic' browsers ignore
+    'self', so a page's own scripts run only if they carry the nonce. Scripts those create are trusted in turn."""
+    if not nonce:
+        return html
+    attr = b' nonce="' + nonce.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").encode() + b'"'
+    return _SCRIPT_TAG.sub(lambda m: m.group(0) + attr, html)
+
+
 def lenspack_rls_clauses(filters, render) -> list:
     """RLS filters as Superset applies them: each rendered; a group key's clauses ORed, the rest and the groups ANDed."""
     clauses, groups = [], {}
@@ -197,8 +223,10 @@ def lenspack_rls_clauses(filters, render) -> list:
     return clauses + [g[0] if len(g) == 1 else " OR ".join(f"({c})" for c in g) for g in groups.values()]
 
 
-def lenspack_dataset_access(user, ids) -> dict:
-    """Per dataset id: may this user read it, and its RLS clauses for them. A missing dataset is not readable."""
+def lenspack_dataset_access(user, ids, also_rls=()) -> dict:
+    """Per dataset id: may this user read it, and its RLS clauses for them. A missing dataset is not readable.
+    also_rls: datasets the user may not read in general but may read on a dashboard (lenspack_dashboard_datasets):
+    their RLS clauses are rendered too, as Superset applies RLS there as well."""
     from superset.connectors.sqla.models import SqlaTable
     from superset.extensions import db, security_manager
     from superset.jinja_context import get_template_processor
@@ -208,11 +236,59 @@ def lenspack_dataset_access(user, ids) -> dict:
     with override_user(user):
         for ds_id in ids:
             ds = db.session.query(SqlaTable).filter_by(id=ds_id).one_or_none()
-            if ds is None or not security_manager.can_access_datasource(ds):
+            access = ds is not None and security_manager.can_access_datasource(ds)
+            if ds is None or not (access or ds_id in also_rls):
                 out[str(ds_id)] = {"access": False, "rls": []}
                 continue
             processor = get_template_processor(database=ds.database, table=ds)
-            out[str(ds_id)] = {"access": True, "rls": lenspack_rls_clauses(security_manager.get_rls_filters(ds), processor.process_template)}
+            out[str(ds_id)] = {"access": bool(access), "rls": lenspack_rls_clauses(security_manager.get_rls_filters(ds), processor.process_template)}
+    return out
+
+
+class _ChartOnDashboard:
+    """What Superset's raise_for_access reads of a chart's data request (a QueryContext): the dataset it reads, and
+    form data naming the dashboard and the chart it is drawn on, as a dashboard's charts send them."""
+
+    def __init__(self, datasource, dashboard_id, slice_id):
+        self.datasource = datasource
+        self.form_data = {"dashboardId": dashboard_id, "slice_id": slice_id}
+
+
+def lenspack_dashboard_datasets(user, dashboard_ids, dataset_ids) -> dict:
+    """Per dashboard id: the datasets of dataset_ids this user may not read in general but may read on that dashboard,
+    as Superset decides it for a chart's data on a dashboard. Superset's own raise_for_access is asked, as the user,
+    for a data request from one of the dashboard's charts on each dataset. With DASHBOARD_RBAC on, Superset lets it
+    through when the dashboard has dashboard roles, the user may open the dashboard (a member of one of its roles
+    and the dashboard published, or an owner, or an admin), and the chart is on the dashboard and reads that dataset.
+    So only datasets behind the dashboard's charts count. A dataset only a native filter of the dashboard reads is
+    left out: Superset lets that filter list its values, nothing else. Missing dashboards and datasets count as none."""
+    from superset.connectors.sqla.models import SqlaTable
+    from superset.exceptions import SupersetSecurityException
+    from superset.extensions import db, security_manager
+    from superset.models.dashboard import Dashboard
+    from superset.utils.core import override_user
+
+    wanted = set(dataset_ids)
+    out = {}
+    with override_user(user):
+        for dash_id in dashboard_ids:
+            dash = db.session.query(Dashboard).filter_by(id=dash_id).one_or_none()
+            found = []
+            # One chart per dataset: what Superset checks is the same for every chart on the dashboard that reads it.
+            charts = {}
+            for slc in (dash.slices if dash is not None else []):
+                if slc.datasource_type == "table" and slc.datasource_id in wanted:
+                    charts.setdefault(slc.datasource_id, slc)
+            for ds_id, slc in sorted(charts.items()):
+                ds = db.session.query(SqlaTable).filter_by(id=ds_id).one_or_none()
+                if ds is None or security_manager.can_access_datasource(ds):
+                    continue  # readable everywhere already, or gone
+                try:
+                    security_manager.raise_for_access(query_context=_ChartOnDashboard(ds, dash.id, slc.id))
+                except SupersetSecurityException:
+                    continue
+                found.append(ds_id)
+            out[str(dash_id)] = found
     return out
 
 
@@ -331,14 +407,14 @@ def lenspack_app_mutator(app):
         if route["dashboard"] is not None:
             wanted = str(route["dashboard"])
         else:
-            wanted = request.args.get("dashboard") if path == "_superset/bind" else None
+            wanted = request.args.get("dashboard") if lenspack_reads_dashboard_arg(path) else None
         rights = dashboard_rights(wanted) if wanted else None
         if rights and not rights["view"]:
             return jsonify({"error": "You don't have access to this dashboard in Superset."}), 403
         admin = is_admin(user)
         roles = role_names(user)
         headers = {
-            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"]) if rights else lenspack_sign(user.username, admin, roles=roles),
+            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"], user_id=getattr(user, "id", None)) if rights else lenspack_sign(user.username, admin, roles=roles, user_id=getattr(user, "id", None)),
             "x-forwarded-proto": request.scheme,
             "x-forwarded-host": request.host,
             "x-forwarded-prefix": LENSPACK_PATH,
@@ -360,6 +436,20 @@ def lenspack_app_mutator(app):
         except requests.RequestException as e:
             return jsonify({"error": f"Lenspack is not reachable: {type(e).__name__}"}), 502
 
+        out = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP]
+        # Chat replies stream: no buffering in a proxy in front of Superset, no compression here.
+        out += [("X-Accel-Buffering", "no"), ("Cache-Control", upstream.headers.get("cache-control", "no-store"))]
+
+        # A page (the admin panel, the chat page): its scripts need this request's nonce under Superset's
+        # Content-Security-Policy. Pages are small, so read it whole; everything else streams as it comes.
+        nonce = getattr(request, "csp_nonce", None)
+        if nonce and request.method != "HEAD" and upstream.headers.get("content-type", "").lower().startswith("text/html"):
+            try:
+                page = lenspack_stamp_nonce(b"".join(upstream.iter_content(chunk_size=None)), nonce)
+            finally:
+                upstream.close()
+            return Response(page, status=upstream.status_code, headers=out)
+
         def body():
             try:
                 for chunk in upstream.iter_content(chunk_size=None):
@@ -367,9 +457,6 @@ def lenspack_app_mutator(app):
             finally:
                 upstream.close()
 
-        out = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP]
-        # Chat replies stream: no buffering in a proxy in front of Superset, no compression here.
-        out += [("X-Accel-Buffering", "no"), ("Cache-Control", upstream.headers.get("cache-control", "no-store"))]
         return Response(stream_with_context(body()), status=upstream.status_code, headers=out, direct_passthrough=True)
 
     methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]
@@ -429,9 +516,11 @@ def lenspack_app_mutator(app):
         return jsonify({"result": {"username": username, "account": made}})
 
     # What one user may read, as Superset decides it for them: the datasets their roles may access, and the
-    # row-level security clauses on each, rendered as that user (Jinja such as current_username() included), and
-    # the dashboards they may open. Lenspack reads data as its own account, so it narrows each user's queries by
-    # this, and lists them only the dashboards they may open (hostPolicy: superset).
+    # row-level security clauses on each, rendered as that user (Jinja such as current_username() included), the
+    # dashboards they may open, and with DASHBOARD_RBAC on, the datasets they may read only on a dashboard (its
+    # charts' datasets, on a dashboard they open through its dashboard roles). Lenspack reads data as its own
+    # account, so it narrows each user's queries by this, and lists them only the dashboards they may open
+    # (hostPolicy: superset).
     def access_view():
         caller = api_user()
         if caller is None:
@@ -444,7 +533,20 @@ def lenspack_app_mutator(app):
         def ids(name):
             return [int(x) for x in (request.args.get(name) or "").split(",") if x.strip().isdigit()][:500]
 
-        return jsonify({"result": {"datasets": lenspack_dataset_access(target, ids("datasets")), "dashboards": lenspack_dashboard_access(target, ids("dashboards"))}})
+        from superset import is_feature_enabled
+
+        datasets, dashboards = ids("datasets"), ids("dashboards")
+        # Dashboard roles (DASHBOARD_RBAC): on a dashboard a user opens through one, its charts' datasets are readable
+        # to them there, even without access to those datasets. Off, Superset grants nothing through a dashboard.
+        rbac = bool(is_feature_enabled("DASHBOARD_RBAC"))
+        via = lenspack_dashboard_datasets(target, dashboards, datasets) if rbac else {str(d): [] for d in dashboards}
+        on_dashboards = {ds for found in via.values() for ds in found}
+        return jsonify({"result": {
+            "datasets": lenspack_dataset_access(target, datasets, also_rls=on_dashboards),
+            "dashboards": lenspack_dashboard_access(target, dashboards),
+            "dashboardRbac": rbac,
+            "dashboardDatasets": via,
+        }})
 
     # Superset's version, for what differs between 5 and 6 on Lenspack's side (the default basemap of maps).
     # Superset 6.1 has its own /version, 5.x and 6.0 do not.
@@ -490,7 +592,7 @@ def lenspack_app_mutator(app):
         route_base = "/ai-assistant"
         default_view = "index"
         # The forms below use the page's own permission (can_index), so no new permissions to sync.
-        method_permission_name = {"index": "index", "chat": "index", "speech": "index", "speech_hold": "index", "language": "index", "features": "index"}
+        method_permission_name = {"index": "index", "chat": "index", "speech": "index", "speech_hold": "index", "speech_audio": "index", "audio_delete": "index", "audio_export": "index", "language": "index", "features": "index", "telemetry": "index"}
 
         @expose("/")
         @has_access
@@ -556,6 +658,66 @@ def lenspack_app_mutator(app):
                 flash("Space-bar hold: enter a whole number of milliseconds.", FLASH_BAD)
                 return redirect("/ai-assistant/")
             return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": hold}))
+
+        # Kept recordings of spoken questions: how long, how much, and the consent notice. Whether they are kept at all is
+        # the voice-audio item on the admin panel's Telemetry tab, which asks the admin to confirm first.
+        @expose("/speech-audio", methods=["POST"])
+        @has_access
+        def speech_audio(self):
+            if not security_manager.is_admin():
+                abort(403)
+            if request.form.get("reset"):
+                body = {"audioRetentionDays": None, "maxStoredMb": None, "consentNotice": None}
+            else:
+                body = {"consentNotice": request.form.get("consentNotice", "")}
+                try:
+                    body["audioRetentionDays"] = int(request.form.get("audioRetentionDays", ""))
+                    body["maxStoredMb"] = int(request.form.get("maxStoredMb", ""))
+                except ValueError:
+                    flash("Kept recordings: enter whole numbers of days and MB.", FLASH_BAD)
+                    return redirect("/ai-assistant/")
+            return saved("Kept recordings", call("PUT", "/_superset/settings/speech", body))
+
+        @expose("/audio-delete", methods=["POST"])
+        @has_access
+        def audio_delete(self):
+            if not security_manager.is_admin():
+                abort(403)
+            from urllib.parse import quote
+
+            user = request.form.get("user", "").strip()
+            done, error = call("DELETE", f"/_superset/audio?user={quote(user)}" if user else "/_superset/audio?all=1")
+            if error is None:
+                flash(f"Deleted {done.get('deleted', 0)} kept recording(s){' of ' + user if user else ''}.", FLASH_OK)
+            else:
+                flash(f"Recordings not deleted: {error}", FLASH_BAD)
+            return redirect("/ai-assistant/")
+
+        @expose("/audio-export", methods=["POST"])
+        @has_access
+        def audio_export(self):
+            if not security_manager.is_admin():
+                abort(403)
+            done, error = call("POST", "/_superset/audio/export", {})
+            if error is None:
+                flash(f"Manifest written: {done.get('clips', 0)} clip(s) in {done.get('file')}, {done.get('flagged', 0)} set aside in {done.get('flaggedFile')}.", FLASH_OK)
+            else:
+                flash(f"Manifest not written: {error}", FLASH_BAD)
+            return redirect("/ai-assistant/")
+
+        @expose("/telemetry", methods=["POST"])
+        @has_access
+        def telemetry(self):
+            if not security_manager.is_admin():
+                abort(403)
+            if request.form.get("reset"):
+                return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": None}))
+            try:
+                days = int(request.form.get("retentionDays", ""))
+            except ValueError:
+                flash("Usage telemetry: enter a whole number of days.", FLASH_BAD)
+                return redirect("/ai-assistant/")
+            return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": days}))
 
         @expose("/language", methods=["POST"])
         @has_access
@@ -742,6 +904,29 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
           {% if sp.holdMs is not none and sp.holdMs != sp.defaultHoldMs %}<button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to default</button>{% endif %}
         </form>
       {% endif %}
+      {% if sp.keepAudio is defined %}
+        <h3 style="font-size:13.5px;margin:14px 0 6px">Kept recordings</h3>
+        <p class="mute" style="margin:0 0 6px">{% if sp.keepAudio %}<b>On.</b>{% else %}<b>Off.</b>{% endif %} Turned on or off as "Kept recordings" on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>, which shows what it means first. On, each spoken question's recording is kept in Lenspack's state folder for checking speech to text, deleted after the days below or, oldest first, when over the size cap. Only Superset admins can play one, and each play is in the audit log. The speech provider receives the recording either way.
+          {% if sp.stored %}Kept now: {{ sp.stored.files }} recording(s), {{ (sp.stored.bytes / 1048576)|round(1) }} MB.{% endif %}</p>
+        <form class="lp-form" method="post" action="/ai-assistant/speech-audio">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="mute">Keep for <input type="number" name="audioRetentionDays" min="1" max="3650" value="{{ sp.audioRetentionDays }}" style="width:70px" {% if not sp.writable %}disabled{% endif %}> days</label>
+          <label class="mute">at most <input type="number" name="maxStoredMb" min="1" max="100000" value="{{ sp.maxStoredMb }}" style="width:90px" {% if not sp.writable %}disabled{% endif %}> MB</label>
+          <label class="mute" style="flex-basis:100%">Notice each person acknowledges once before recording (optional)<br><textarea name="consentNotice" rows="2" maxlength="2000" style="width:100%" {% if not sp.writable %}disabled{% endif %}>{{ sp.consentNotice or '' }}</textarea></label>
+          <button type="submit" {% if not sp.writable %}disabled{% endif %}>Save</button>
+          <button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to defaults</button>
+        </form>
+        <form class="lp-form" method="post" action="/ai-assistant/audio-delete" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="text" name="user" placeholder="Superset username (empty: everyone's)" aria-label="Superset username" style="width:240px" {% if not sp.writable %}disabled{% endif %}>
+          <button class="ghost" type="submit" {% if not sp.writable %}disabled{% endif %}>Delete stored audio</button>
+        </form>
+        <form class="lp-form" method="post" action="/ai-assistant/audio-export" style="margin-top:8px">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="ghost" type="submit" {% if not sp.writable or not sp.stored or not sp.stored.files %}disabled{% endif %}>Export for evaluation</button>
+          <span class="mute">writes manifest.jsonl beside the recordings, in the speech benchmark's format (evals/speech)</span>
+        </form>
+      {% endif %}
       {% if stt_bench %}<details style="margin-top:8px"><summary class="mute">Measured word error rate (with a language hint) and median latency</summary>
         <table class="bench"><tr><th>Model</th><th>Field fr A</th><th>Field fr B</th><th>FLEURS fr</th><th>FLEURS hi</th><th>Latency</th></tr>
           {% for id, r in stt_bench|dictsort %}<tr><td><code>{{ id }}</code>{% if id == sp.model %} <b>(current)</b>{% endif %}</td><td>{{ r[0] }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td><td>{{ r[3] }}</td><td>{{ r[4] }}</td></tr>{% endfor %}
@@ -763,6 +948,21 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
       <label>Board language <select name="board" {% if not lg.writable %}disabled{% endif %}>{% for o in (opts.board or ['en', 'fr', 'hi', 'pt']) %}<option value="{{ o }}" {% if o == lg.board %}selected{% endif %}>{{ names.get(o, o) }}</option>{% endfor %}</select></label>
       <button type="submit" {% if not lg.writable %}disabled{% endif %}>Save</button>
       {% if lg.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not lg.writable %}disabled{% endif %}>Back to defaults</button>{% endif %}
+    </form>
+  </div>
+  {% endif %}
+
+  {% if settings.telemetry %}{% set tl = settings.telemetry %}
+  <div class="lp-card">
+    <h2>Usage telemetry</h2>
+    <p class="mute" style="margin:0 0 8px">One record per question (who asked, the kind of question, how it went, time and cost) and the thumbs under each answer, in <code>{{ tl.file }}</code>.
+      {% if not tl.enabled %}<span class="bad">Off (Off switches).</span>{% endif %} Read it as an admin at <code>/lenspack/_superset/telemetry</code>.
+      What is recorded, item by item, is switched on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>.</p>
+    <form class="lp-form" method="post" action="/ai-assistant/telemetry">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="mute">Keep for <input type="number" name="retentionDays" min="1" max="3650" value="{{ tl.retentionDays }}" style="width:80px" {% if not tl.writable %}disabled{% endif %}> days</label>
+      <button type="submit" {% if not tl.writable %}disabled{% endif %}>Save</button>
+      {% if tl.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not tl.writable %}disabled{% endif %}>Back to defaults</button>{% endif %}
     </form>
   </div>
   {% endif %}
@@ -948,5 +1148,5 @@ LAYOUT_HTML = r"""<!DOCTYPE html>
 __all__ = [
     "LENSPACK_PATH", "LENSPACK_INTERNAL_URL", "LENSPACK_SERVICE_USER", "LENSPACK_TEMPLATES", "STT_BENCH", "FLASK_APP_MUTATOR",
     "lenspack_app_mutator", "lenspack_sign", "lenspack_identity_key", "lenspack_rls_clauses", "lenspack_dataset_access",
-    "lenspack_settings_layout", "superset_version", "lenspack_clickhouse_label_suffix",
+    "lenspack_settings_layout", "superset_version", "lenspack_clickhouse_label_suffix", "lenspack_reads_dashboard_arg",
 ]

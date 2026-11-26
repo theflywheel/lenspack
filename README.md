@@ -279,6 +279,7 @@ More in [docs/security.md](docs/security.md).
 - [Query IR](docs/query-ir.md), [SQL drivers](docs/drivers.md), [chat models](docs/llm.md)
 - [Security model](docs/security.md)
 - [Review, open questions and the admin panel](docs/review.md): settling questions with two readings, the daily review, and usage as a board
+- [Your own dashboards and saved layouts](docs/my-dashboards.md) in Superset: a copy to change when you can only view, and layouts kept by name
 - [Naming the assistant](docs/brand.md): another name and button label for a deployment, in each language
 
 ## Status

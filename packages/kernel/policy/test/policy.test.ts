@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardRights, decide, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
+import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -153,6 +153,55 @@ describe("decide", () => {
     expect(d.board(filtered).config.filters).toEqual([{ field: "delivered_by", default: { values: ["(hidden)"] } }, { field: "visit_type", default: { values: ["home"] } }]);
   });
 
+  describe("entities the host opens on one board only (Superset's dashboard roles)", () => {
+    const why = "your Superset access doesn't include it. A Superset admin can give you access.";
+    const onB = { entity: "project", ...north };
+    // Reads neither entity in general; on board superset-2, the host opens project, with a row scope on it.
+    const rbac = as([], { hiddenEntities: ["task", "project"], hiddenReason: why, boardEntities: { "superset-2": { entities: ["project"], scope: [onB] } } });
+
+    it("reads them on that board, with their row scope, and marks the context with the grant", () => {
+      const d = decide(rbac, pack, { board: "superset-2" })!;
+      expect(d.ctx.hiddenEntities).toEqual(new Set(["task"]));
+      expect(d.hidden.has("household_target")).toBe(false);
+      expect(d.hidden.has("visits")).toBe(true);
+      expect(d.scope).toEqual([onB]);
+      expect(d.ctx.onBoard).toEqual({ board: "superset-2", entities: ["project"] });
+      expect(d.catalogue(catalogueFrom(pack)).entities.map((e) => e.key)).toEqual(["project"]);
+      expect(d.notice).toBeNull();
+    });
+
+    it("reads nothing more anywhere else: another board, no board (the catalogue), or a board the caller may not open", () => {
+      for (const board of ["superset-3", undefined, "explain", "b_1"]) {
+        const d = decide(rbac, pack, { board })!;
+        expect([board, d.ctx.hiddenEntities, d.ctx.onBoard, d.scope]).toEqual([board, new Set(["task", "project"]), undefined, []]);
+        expect(d.notice).toBe(`None of this assistant's data is available to you: ${why}`);
+      }
+      const shut = principalOf({ ...rbac, hiddenBoards: ["superset-2"] });
+      expect(decide(shut, pack, { board: "superset-2" })!.ctx.hiddenEntities).toEqual(new Set(["task", "project"]));
+    });
+
+    it("can't open what the host doesn't keep in the first place, and takes no scope for what it doesn't open", () => {
+      const reads = as([], { hiddenEntities: ["task"], boardEntities: { "superset-2": { entities: ["project", "nope"], scope: [onB, { entity: "task", ...village }, north] } } });
+      expect(boardGrant(reads, "superset-2")).toBeNull();
+      const d = decide(reads, pack, { board: "superset-2" })!;
+      expect([d.ctx.onBoard, d.scope, d.ctx.hiddenEntities]).toEqual([undefined, [], new Set(["task"])]);
+      const opens = as([], { hiddenEntities: ["task", "project"], boardEntities: { "superset-2": { entities: ["project"], scope: [onB, { entity: "task", ...village }, north] } } });
+      expect(boardGrant(opens, "superset-2")).toEqual({ entities: ["project"], scope: [onB] });
+      // A board id that is an Object property name is no grant.
+      expect(boardGrant(opens, "constructor")).toBeNull();
+    });
+
+    it("still narrows by the pack's own rules", () => {
+      const d = decide(principalOf({ ...rbac, roles: ["auditor"] }), pack, { rules: RULES, board: "superset-2" })!;
+      expect(d.hidden.has("household_target")).toBe(true);
+      expect(d.ctx.onBoard).toEqual({ board: "superset-2", entities: ["project"] });
+    });
+
+    it("comes through principalOf", () => {
+      expect(principalOf({ user: "u", boardEntities: { b: { entities: ["x"] } } }).boardEntities).toEqual({ b: { entities: ["x"] } });
+    });
+  });
+
   it("stops at an unknown key, so a typo cannot leave a key showing", () => {
     expect(() => hiddenKeys(pack, { hide: ["deliverd_by"] })).toThrow(/deliverd_by/);
   });
@@ -183,6 +232,42 @@ describe("holds", () => {
     expect(holds({ grants: ["/x"] }, "/x")).toBe(true);
     expect(holds({ grants: ["/x"] }, "/y")).toBe(false);
     expect(holds({ grants: [] })).toBe(false);
+  });
+});
+
+describe("the deployment's own records", () => {
+  it("are the host's admins' to read, with user names only for those with the usage right", () => {
+    expect(recordRights({ user: "a", roles: ["admin"], usage: true })).toEqual({ settings: true, telemetry: true, usernames: true, audio: true });
+    expect(recordRights({ user: "a", roles: ["admin"], usage: false })).toEqual({ settings: true, telemetry: true, usernames: false, audio: true });
+    expect(recordRights({ user: "b", roles: ["Gamma"], maintain: true })).toEqual({ settings: false, telemetry: false, usernames: false, audio: false });
+    expect(recordRights({ user: "c" })).toEqual({ settings: false, telemetry: false, usernames: false, audio: false });
+  });
+  it("are reported on by the user whose turn it was, in their own tenant", () => {
+    expect(reportsOn({ user: "ana" }, { user: "ana" })).toBe(true);
+    expect(reportsOn({ user: "ben" }, { user: "ana" })).toBe(false);
+    expect(reportsOn({ user: "ana", tenant: "t2" }, { user: "ana", tenant: "t1" })).toBe(false);
+    expect(reportsOn({ user: "ana", tenant: "t1" }, { user: "ana", tenant: "t1" })).toBe(true);
+  });
+});
+
+describe("the deployment's context", () => {
+  const map = deploymentContextSchema.parse({
+    "superset-12": { campaign: "Round 2" },
+    visits_a: { campaign: "Round 1", campaignType: "door-to-door", country: "A" },
+    "role:Supervisor-B": { country: "B" },
+    "*": { country: "Z" },
+  });
+  it("takes each field from the board, then the datasets, then the roles, then *", () => {
+    expect(contextFor(map, { board: "superset-12", datasets: ["visits_a"], roles: [] })).toEqual({ campaign: "Round 2", campaignType: "door-to-door", country: "A" });
+    expect(contextFor(map, { board: "superset-9", datasets: [], roles: ["Supervisor-B"] })).toEqual({ campaign: null, campaignType: null, country: "B" });
+    expect(contextFor(map, { board: null, datasets: [], roles: [] })).toEqual({ campaign: null, campaignType: null, country: "Z" });
+    expect(contextFor({}, { board: "x" })).toEqual({ campaign: null, campaignType: null, country: null });
+  });
+  it("refuses a mapping it can't read", () => {
+    expect(deploymentContextSchema.safeParse({ x: { region: "A" } }).success).toBe(false);
+    expect(deploymentContextSchema.safeParse({ x: "A" }).success).toBe(false);
+    expect(deploymentContextSchema.safeParse({ x: { country: 3 } }).success).toBe(false);
+    expect(deploymentContextSchema.safeParse({ x: { country: "" } }).success).toBe(false);
   });
 });
 

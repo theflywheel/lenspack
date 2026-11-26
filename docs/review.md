@@ -165,17 +165,32 @@ The usage chat's turns are logged and costed like any other. They are marked int
 
 ## What is recorded
 
-The **Telemetry** tab is a checklist of every signal Lenspack can record for a deployment, grouped by section. Each line shows:
+The **Telemetry** tab is the deployment's telemetry switchboard: a compact table of every item Lenspack can record,
+one row per item, grouped by section. Each row shows:
 
-- a mark: ✓ recording, ◐ on but no data yet, ○ off, ⚠ needs configuration, — not telemetry (kept for another reason, such as the audit log);
-- the decision the signal feeds ("whether voice is worth its cost");
+- its switch. An item that cannot be switched here has a disabled switch with the reason: it is not telemetry, it needs configuring first, or a feature that is off owns it (with a link to that feature's switch on the Settings tab);
+- a status: ✓ recording, ◐ on but no data yet, ○ off (since when, and by whom), ⚠ needs configuration, — not telemetry;
 - how many it saw in the last seven days, and when it last saw one;
-- privacy notes;
-- for anything not recording, how to turn it on.
+- the decision the item feeds ("whether voice is worth its cost"), cut short with the full text on hover or focus;
+- a lock for the privacy-sensitive items, with the note on hover or focus.
 
-A line at the top sums it up, for example "23 of 31 recording · 4 need configuration · 2 off · 2 not telemetry". The telemetry switches (record telemetry, keep question text, keep audio, and how long to keep it) can be changed from the tab. The page prints cleanly for a pilot report, and **Copy as Markdown** copies the same checklist as text.
+Each row opens a detail with the longer text: the fields it reads, where it comes from, its default and config key,
+how to turn it on, and its privacy note. Each section's header row has the section's switch and folds the section
+away. Above the table are a summary line ("28 of 42 recording · 4 on but no data · 1 need configuration · 7 off · 2
+not telemetry"), the switch for telemetry as a whole, and how long records are kept. On a phone the table keeps the
+switch, the name and the status, and the rest moves into the detail.
 
-The checklist comes from the server's telemetry (`<prefix>/telemetry/checklist`). A server that does not report its telemetry shows "Telemetry is not available on this server".
+A change applies to the next question. Turning something off keeps what was already recorded until it ages out; the
+tab says so. Turning on a privacy-sensitive item (question text, transcript text, kept recordings, device and network
+detail) shows what it records, and for kept recordings the consent notice, and asks to confirm. Only admins can
+change switches, and every change is in the audit log.
+
+The page prints cleanly for a pilot report, and **Copy as Markdown** copies the same table as text, with each
+switch as it stands. Both follow the panel's language (English or French) and its light or dark theme.
+
+The table comes from the server (`<prefix>/telemetry/checklist`, changed with `PUT <prefix>/settings/telemetry`; see
+[telemetry.md](telemetry.md#the-switchboard)). A server that does not report its telemetry shows "Telemetry is not
+available on this server".
 
 ## Cost controls
 
@@ -210,7 +225,7 @@ All four are in the Settings tab and in `LENSPACK_FEATURES`, for example `LENSPA
 
 ## Setting it up
 
-**Superset.** Nothing to add. The state directory the host already uses holds the definitions, questions, runs and usage tables. Open the Lenspack settings page in Superset and follow the link to the admin panel.
+**Superset.** Nothing to add. The state directory the host already uses holds the definitions, questions, runs and usage tables. Open the Lenspack settings page in Superset and follow the link to the admin panel. The panel works with Superset's default Content-Security-Policy: the plugin stamps the page's nonce on its scripts.
 
 **Standalone server.** Add a writable directory to `lenspack.yaml`:
 

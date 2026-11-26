@@ -1,12 +1,14 @@
 import { z } from "zod";
 
-import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type PersonalPort, type Filter, type Query, type Widget, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
 import { type Connector, type Ctx, type SourceCall, type WidgetData, checkOps, explain, nowOf, run, tracedConnector, valuesQuery } from "@lenspack/engine";
 import { shownConfig, showsStatement, visibleCatalogue } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 
 import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, parseClear, patchQuery, str } from "./args";
+import { personalTools } from "./personal";
 import { type Proposal, type ProposalStore, memoryProposals } from "./proposals";
+import type { TurnView } from "./view";
 
 export type Tool<A extends z.ZodRawShape = z.ZodRawShape> = {
   name: string;
@@ -62,6 +64,11 @@ export type BoardToolsOptions = {
    * it will have if it is saved, not one the board already has.
    */
   held?: boolean;
+  /**
+   * The caller's own dashboards and saved layouts (a host that has them): adds the tools to make, copy and
+   * delete a dashboard and to save and apply layouts, and lets a read-only refusal offer a copy.
+   */
+  personal?: PersonalPort;
   /** Told of every edit a tool applied or refused (an audit log). Never throws into the tool. */
   onEdit?: (e: { outcome: "ok" | "refused"; ops: string[]; version?: number; held?: boolean; error?: string }) => void;
   /**
@@ -70,6 +77,8 @@ export type BoardToolsOptions = {
    * as it runs; nothing is run again for it. Never throws into the tool.
    */
   onData?: (e: DataCall) => void;
+  /** Where the viewer is on the host's page (the tab they have open): passed with every edit, so a store that keeps a host's layout can place a new widget there. */
+  view?: TurnView;
 };
 
 /** One data call a tool made, as onData hears it. */
@@ -224,7 +233,9 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
   const apply = (edit: BoardOp[] | (() => Promise<BoardOp[] | { applied: boolean; [k: string]: unknown }>)) => {
     if (opts.readOnly) {
       told({ outcome: "refused", ops: Array.isArray(edit) ? edit.map((o) => o.op) : [], error: "read-only" });
-      return Promise.resolve({ applied: false as const, error: opts.readOnly, readOnly: true as const });
+      // A host with personal dashboards offers a copy the caller can change instead.
+      const offer = opts.personal?.offersCopy ? { offer: "copy_dashboard" as const, error: `${opts.readOnly} You can also have your own copy of this dashboard to change: say “make me my own copy”.`, ...(opts.personal.ownOnly ? { ownOnly: true as const } : {}) } : {};
+      return Promise.resolve({ applied: false as const, error: opts.readOnly, readOnly: true as const, ...offer });
     }
     const work = async () => {
       const ops = Array.isArray(edit) ? edit : await edit();
@@ -238,7 +249,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       }
       const layoutEdit = ops.some((op) => op.op === "move_widget" || op.op === "resize_widget" || op.op === "remove_widget");
       const before = layoutEdit ? (await store.get(boardId))?.config : undefined;
-      const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
+      const result = await store.patch({ id: boardId, ops, catalogue, source: "chat", ...(opts.view ? { view: opts.view } : {}) });
       if (!result.ok) {
         told({ outcome: "refused", ops: names, error: result.error });
         return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
@@ -575,6 +586,9 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       },
     }),
   ];
+
+  if (opts.personal)
+    tools.push(...personalTools({ port: opts.personal, pack, connector, store, boardId, ctx, readOnly: opts.readOnly, shown, edit: apply, afterEdits, held: opts.held }));
 
   const raw = opts.rawSql;
   if (opts.runSql && raw)

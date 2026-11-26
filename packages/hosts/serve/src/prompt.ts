@@ -134,7 +134,7 @@ export function userChangesText(changes: BoardChange[] = []) {
  * Stable first, so a provider's prompt cache keeps the long first part across
  * edits. o.name is the assistant's name (brand.name), how it introduces itself.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; name?: string } = {}): [stable: string, board: string] => [
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; layout?: string; name?: string } = {}): [stable: string, board: string] => [
   `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
@@ -167,5 +167,5 @@ Rules:
 - Never address the user by name.${o.clarify ? `\n${CLARIFY_RULE}` : ""}
 - After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
 - An informational answer (what the data holds) may use a short bullet list and **bold** for names; keep it brief. Several numbers side by side for a few groups may be one compact markdown table (at most 6 rows and 4 columns, figures formatted as on the board); anything larger belongs on the board as a table widget. Never use markdown headings.`,
-  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}${languageText(language)}`,
+  `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}${o.layout ?? ""}` : ""}${userChangesText(changes)}${languageText(language)}`,
 ];

@@ -11,6 +11,7 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
+import { Feedback, clientInfo, reportEvent } from "./feedback";
 import { type AnswerCardData, ExplainBlock } from "./explain";
 import { Markdown } from "./markdown";
 import { assistantName } from "./page";
@@ -274,8 +275,9 @@ export function ChatPanel({
     if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
     // A quick reply names the clarifying question it answers, so the server counts the choice.
     const picked = selections?.() ?? {};
-    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(quickReply?.question ? { quickReply } : {}), ...(Object.keys(picked).length ? { selections: picked } : {}), ...(fresh ? { fresh: true } : {}) };
-    void sendMessage({ text }, Object.keys(body).length ? { body } : undefined);
+    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(quickReply?.question ? { quickReply } : {}), ...(Object.keys(picked).length ? { selections: picked } : {}), ...(fresh ? { fresh: true } : {}), client: clientInfo() };
+    // client: the device, network and viewport classes usage telemetry records (docs/telemetry.md).
+    void sendMessage({ text }, { body });
     setInput("");
   };
   const noticesAt = (at: number) =>
@@ -377,7 +379,7 @@ export function ChatPanel({
                   // A clarifying question's readings: buttons under the latest reply only, each sending its reading.
                   mi === messages.length - 1 && !busy ? <QuickReplies key={i} q={p.data as ClarifyData} onPick={(o, q) => void ask(o.text, false, { question: q.question, option: o.label })} /> : null
                 ) : p.type === "data-answer-card" ? (
-                  <ExplainBlock key={i} x={p.data as AnswerCardData} />
+                  <ExplainBlock key={i} x={p.data as AnswerCardData} onOpen={() => reportEvent("explain-opened", (m.parts as Part[]).find((q) => q.type === "data-turn")?.data as { turnId?: string } | undefined)} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
                 ) : p.type === "data-queue" && (p.data as { state?: string }).state === "full" ? (
@@ -388,6 +390,11 @@ export function ChatPanel({
                   <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
                 ) : null,
               )}
+              {/* Thumbs once the answer is complete; the turn's id comes in its data-turn part (telemetry on). */}
+              {m.role === "assistant" && !(busy && mi === messages.length - 1) && (() => {
+                const turn = (m.parts as Part[]).find((p) => p.type === "data-turn")?.data as { turnId?: string } | undefined;
+                return turn?.turnId ? <Feedback turnId={turn.turnId} /> : null;
+              })()}
               {m.role === "assistant" && receipts[m.id] && (
                 <div className="rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground" data-testid="receipt">
                   <span className="font-medium text-foreground">Receipt</span>

@@ -219,13 +219,28 @@ export type TelemetryLine = {
   review?: { ran?: boolean; material?: number | boolean; fixRound?: boolean };
   reuse?: string | { tier?: string | number; savedUsd?: number } | null;
   rephraseOf?: string | null;
-  reAskAfterVoice?: boolean;
+  reAskAfterVoice?: boolean | string | null;
   client?: { device?: string; network?: string; viewport?: string };
+  // The turn record as @lenspack/agent writes it (docs/telemetry.md): flat fields.
+  questionLanguage?: string | null;
+  replyLanguage?: string | null;
+  device?: string | null;
+  network?: string | null;
+  tokensIn?: number;
+  tokensOut?: number;
+  modelUsd?: number;
+  speechUsd?: number;
+  reviewUsd?: number;
+  reviewRan?: boolean;
+  reviewMaterial?: number;
+  fixRound?: boolean;
+  queueMs?: number | null;
   speechSeconds?: number;
   saved?: boolean;
   internal?: boolean;
   // events
   thumbs?: "up" | "down";
+  rating?: "up" | "down" | null;
   value?: string;
   reason?: string;
   choice?: string;
@@ -239,7 +254,8 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
   for (const l of lines) {
     if (!l.turnId || !l.at) continue;
     if (isTurn(l)) {
-      const total = typeof l.costUsd === "object" && l.costUsd ? l.costUsd : { total: l.costUsd, ...l.cost };
+      const total = typeof l.costUsd === "object" && l.costUsd ? l.costUsd : { total: l.costUsd, model: l.modelUsd, speech: l.speechUsd, review: l.reviewUsd, ...l.cost };
+      const review = l.review ?? { ran: l.reviewRan, material: l.reviewMaterial, fixRound: l.fixRound };
       const tier = typeof l.reuse === "string" ? l.reuse : l.reuse?.tier !== undefined ? String(l.reuse.tier) : null;
       const kind = l.kind ?? "direct";
       const row: UsageRow = {
@@ -255,26 +271,26 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
         campaign_type: str(l.campaignType),
         country: str(l.country),
         model: l.models?.[0] ?? null,
-        language: l.language ?? "auto",
+        language: l.language ?? l.questionLanguage ?? "auto",
         input: l.input === "spoken" ? "spoken" : "typed",
         kind: l.saved || kind === "chart" ? "edit" : "answer",
         answer_kind: kind,
         outcome: l.outcome ?? "answered",
         cache_tier: tier && tier !== "miss" ? tier : null,
         question: tidy(l.question, 200),
-        device: str(l.client?.device),
-        network: str(l.client?.network),
+        device: str(l.client?.device ?? l.device),
+        network: str(l.client?.network ?? l.network),
         usd: num(total.total),
         model_usd: num(total.model),
         review_usd: num(total.review),
         speech_usd: num(total.speech),
-        tokens_in: num(l.tokens?.in),
-        tokens_out: num(l.tokens?.out),
+        tokens_in: num(l.tokens?.in ?? l.tokensIn),
+        tokens_out: num(l.tokens?.out ?? l.tokensOut),
         saved_usd: typeof l.reuse === "object" && l.reuse ? num(l.reuse.savedUsd) : 0,
         refused: 0,
-        reviewed: flag(l.review?.ran),
-        material: typeof l.review?.material === "number" ? l.review.material : flag(l.review?.material),
-        fix_round: flag(l.review?.fixRound),
+        reviewed: flag(review.ran),
+        material: typeof review.material === "number" ? review.material : flag(review.material),
+        fix_round: flag(review.fixRound),
         logged: flag(l.outcome === "clarify"),
         cache_hit: flag(tier && tier !== "miss"),
         rephrase: flag(l.rephraseOf),
@@ -295,7 +311,7 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
       for (const f of used) t.features.push({ turn_id: l.turnId, feature: f, at: l.at });
     } else {
       const event = l.event ?? l.type ?? "event";
-      t.events.push({ turn_id: l.turnId, event: event.slice(0, 60), value: str(l.thumbs ?? l.value ?? l.choice), reason: str(l.reason), at: l.at, user_name: str(l.user) });
+      t.events.push({ turn_id: l.turnId, event: event.slice(0, 60), value: str(l.thumbs ?? l.rating ?? l.value ?? l.choice), reason: str(l.reason), at: l.at, user_name: str(l.user) });
     }
   }
   return t;

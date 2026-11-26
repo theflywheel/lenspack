@@ -12,6 +12,7 @@ import { authFrom, effectiveAuth, principalOf } from "./auth";
 import { adminSettings } from "./admin";
 import { brandSettings } from "./brand";
 import { cacheRoutes } from "./reuse";
+import { fileTelemetry, staticItems } from "./telemetry";
 import { explainFrom, openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
@@ -76,6 +77,9 @@ async function main() {
       const reuse = config.cache ? (admin ? admin.reuse : reuseLayer({ store: resolve(dir, cacheFile ?? "reuse.json"), settings: () => ({ ...cache.get(), on: true }), log })) : undefined;
       const gate = admin ? admin.gate : localTurnGate(queueSettings(null, config.queue).get);
       const cachePage = reuse ? cacheRoutes({ prefix: "/_lenspack", reuse, queue: gate, audit: auditLog ?? null, adminName: "admin" }) : null;
+      // Usage telemetry, when the config has a telemetry: section (docs/telemetry.md).
+      const tc = config.telemetry;
+      const telemetry = tc ? fileTelemetry(resolve(dir, tc.dir), { retentionDays: () => tc.retentionDays, items: staticItems(tc), context: () => config.context ?? {} }).telemetry : undefined;
       const open = principalOf({ user: "local", roles: ["admin"], edit: true, maintain: true, usage: true });
       startRuntime({
         hosts,
@@ -85,7 +89,7 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, reuse, queue: gate, explain: () => explainFrom(config.explain), brand: brand.get, ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
+        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, reuse, queue: gate, explain: () => explainFrom(config.explain), brand: brand.get, ...(telemetry ? { telemetry } : {}), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
         log,
         routes: (rt) => {
           if (!review && !cachePage) return () => {};

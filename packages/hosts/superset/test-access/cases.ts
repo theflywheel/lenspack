@@ -8,12 +8,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { type Identity, signIdentity } from "../src/identity";
+import { type Position, layoutProblems, reachable } from "../src/layout";
 import { type ChatResult, PACK, type Session, type Stack, http, readChat, startStack } from "./stack";
 
 const VISITS = { North: 3, South: 4, East: 8, West: 16 };
 const STOCK = { North: 32, South: 64, East: 128, West: 256 };
 const ALL_MEASURES = ["stock_count", "stock_total", "visit_count", "visit_total"];
-const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_noroles", "lp_outage"] as const;
+const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_rbac_off", "lp_noroles", "lp_outage"] as const;
 type User = (typeof USERS)[number];
 
 const READ_ONLY = /can view this dashboard but not edit it in Superset/;
@@ -31,6 +32,7 @@ export function accessSuite(version: string) {
     const s = {} as Record<User, Session>;
     let A: string;
     let B: string;
+    let C: string;
     let modelCallsBefore = 0;
 
     const chat = async (who: User, board: string, tool: string, args: object): Promise<ChatResult> =>
@@ -44,6 +46,8 @@ export function accessSuite(version: string) {
     const signed = (over: Partial<Identity>, key = stack.identityKey) => signIdentity({ u: "lp_viewer", a: false, r: ["Gamma", "lp_stock", "lp_visits"], t: Math.floor(Date.now() / 1000), ...over }, key);
     const direct = (method: string, path: string, header?: string, body?: object) => http(stack.lenspack, method, path, { headers: header ? { "x-lenspack-identity": header } : {}, ...(body ? { body } : {}) });
     const dashboardTitle = async (id: number) => (await s.lp_admin.send("GET", `/api/v1/dashboard/${id}`)).json.result.dashboard_title as string;
+    /** The personal dashboards a user has (the panel's list). */
+    const mine = async (who: User) => ((await s[who].lp("GET", "_superset/my")).json.dashboards as { dashboard: number }[]).map((d) => d.dashboard);
     const widgetOps = (widgets: [string, string, string][]) => ({
       ops: widgets.map(([id, title, measure]) => ({ op: "add_widget", id, widget: { title, kind: "chart", chart: "bar", query: { kind: "breakdown", dimension: "region", measure } }, placement: { place: "bottom", width: "half" } })),
     });
@@ -52,12 +56,15 @@ export function accessSuite(version: string) {
       stack = await startStack(version);
       A = `superset-${stack.fixtures.dashboards.a}`;
       B = `superset-${stack.fixtures.dashboards.b}`;
+      C = `superset-${stack.fixtures.dashboards.c}`;
       for (const u of USERS) s[u] = await stack.as(u);
       // The dashboards start empty: the admin puts a chart of each dataset on A and a stock chart on B, through Lenspack.
       const a = await s.lp_admin.lp("POST", `api/${PACK}/${A}/ops`, widgetOps([["visits_by_region", "Visits by region", "visit_total"], ["stock_by_region", "Stock by region", "stock_total"]]));
       expect(a.status, a.text).toBe(200);
       const b = await s.lp_admin.lp("POST", `api/${PACK}/${B}/ops`, widgetOps([["stock_b", "Stock by region", "stock_total"]]));
       expect(b.status, b.text).toBe(200);
+      const c = await s.lp_admin.lp("POST", `api/${PACK}/${C}/ops`, widgetOps([["visits_c", "Visits by region", "visit_total"]]));
+      expect(c.status, c.text).toBe(200);
     }, 900_000);
 
     afterAll(async () => {
@@ -97,13 +104,14 @@ export function accessSuite(version: string) {
       it("lists only the dashboards the user may open", async () => {
         const boards = async (who: User) => sorted(((await s[who].lp("GET", `api/${PACK}`)).json.boards as { id: string }[]).map((b) => b.id));
         const dashboards = async (who: User) => sorted(((await s[who].lp("GET", "_superset/dashboards")).json as { id: number }[]).map((d) => `superset-${d.id}`));
-        expect(await boards("lp_admin")).toEqual(sorted([A, B]));
+        expect(await boards("lp_admin")).toEqual(sorted([A, B, C]));
         expect(await boards("lp_viewer")).toEqual([A]);
-        expect(await boards("lp_rbac")).toEqual([B]);
+        expect(await boards("lp_rbac")).toEqual(sorted([B, C]));
         expect(await boards("lp_noroles")).toEqual([]);
-        expect(await dashboards("lp_admin")).toEqual(sorted([A, B]));
+        // The dashboard with tabs opens for its owner (an admin) only, and is not bound to a board yet (its cases bind it).
+        expect(await dashboards("lp_admin")).toEqual(sorted([A, B, C, `superset-${stack.fixtures.dashboards.t}`]));
         expect(await dashboards("lp_viewer")).toEqual([A]);
-        expect(await dashboards("lp_rbac")).toEqual([B]);
+        expect(await dashboards("lp_rbac")).toEqual(sorted([B, C]));
         expect(await dashboards("lp_noroles")).toEqual([]);
       });
 
@@ -193,6 +201,79 @@ export function accessSuite(version: string) {
         } finally {
           expect((await s.lp_admin.lp("PUT", "_superset/settings/features", { boardEdits: null })).status).toBe(200);
         }
+      });
+    });
+
+    // Superset's tabs: the layout as Superset keeps it (position_json, read back through Superset's own API), after
+    // Lenspack's board API and chat change the dashboard. Every change lands where Superset draws it.
+    describe("a dashboard with tabs", () => {
+      let T: string;
+      const layout = async () => JSON.parse((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.t}`)).json.result.position_json) as Position;
+      const ops = (list: object[]) => s.lp_admin.lp("POST", `api/${PACK}/${T}/ops`, { ops: list });
+      /** The tabs above each chart Superset draws, by chart title ("TAB-overview>TAB-trend"). */
+      const tabsOf = (pos: Position) => {
+        const drawn = reachable(pos);
+        return Object.fromEntries(Object.values(pos).filter((c: any) => c?.type === "CHART" && drawn.has(c.id)).map((c: any) => [c.meta.sliceName, (c.parents as string[]).filter((p) => p.startsWith("TAB-")).join(">")]));
+      };
+      const kpi = (id: string, title: string, place = "bottom") => ({ op: "add_widget", id, widget: { title, kind: "kpi", query: { kind: "value", measure: "stock_total" } }, placement: { place, width: "quarter" } });
+
+      beforeAll(async () => {
+        // Bound on first use, as the overlay binds any dashboard it is opened on.
+        const bound = await s.lp_admin.lp("GET", `_superset/bind?dashboard=${stack.fixtures.dashboards.t}`);
+        expect(bound.status, bound.text).toBe(200);
+        T = bound.json.board;
+      });
+
+      it("adds a chart to the first tab, never under the grid the tabs left behind", async () => {
+        const r = await ops([kpi("stock_kpi", "Stock total")]);
+        expect(r.json, r.text).toMatchObject({ ok: true });
+        const pos = await layout();
+        expect(tabsOf(pos)).toEqual({ "Stock total": "TAB-overview" });
+        expect((pos.GRID_ID as { children: string[] }).children).toEqual([]);
+        expect(layoutProblems(pos)).toEqual([]);
+      });
+
+      it("puts what the chat adds on the tab the viewer has open, or after the widget it names", async () => {
+        const said = await s.lp_admin.lp("POST", `api/${PACK}/${T}/chat?review=off`, {
+          messages: [{ id: "tabs1", role: "user", parts: [{ type: "text", text: `TOOL add_widget ${JSON.stringify({ id: "visits_kpi", title: "Visits total", kind: "kpi", query_kind: "value", measure: "visit_total", place: "bottom", width: "quarter" })}` }] }],
+          view: { tabs: ["TAB-overview", "TAB-trend"] },
+        });
+        expect(toolOutput(readChat(said))).toMatchObject({ applied: true });
+        expect((await ops([kpi("stock_kpi_2", "Stock again", "after:stock_kpi")])).json).toMatchObject({ ok: true });
+        const pos = await layout();
+        expect(tabsOf(pos)).toEqual({ "Stock total": "TAB-overview", "Visits total": "TAB-overview>TAB-trend", "Stock again": "TAB-overview" });
+        expect(layoutProblems(pos)).toEqual([]);
+        const charts = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.t}/charts`)).json.result.map((c: { slice_name: string }) => c.slice_name);
+        expect(sorted(charts)).toEqual(["Stock again", "Stock total", "Visits total"]);
+      });
+
+      it("resizes a chart where it is", async () => {
+        expect((await ops([{ op: "resize_widget", id: "visits_kpi", width: "half" }])).json).toMatchObject({ ok: true });
+        const pos = await layout();
+        const chart = Object.values(pos).find((c: any) => c?.meta?.sliceName === "Visits total") as unknown as { meta: { width: number } };
+        expect(chart.meta.width).toBe(6);
+        expect(tabsOf(pos)["Visits total"]).toBe("TAB-overview>TAB-trend");
+      });
+
+      it("refuses a move plainly and changes nothing", async () => {
+        const before = await layout();
+        const r = await ops([{ op: "move_widget", id: "visits_kpi", placement: { place: "top", width: "half" } }]);
+        expect(r.json).toMatchObject({ ok: false });
+        expect(r.json.error).toMatch(/can't move charts on it yet/);
+        expect(await layout()).toEqual(before);
+      });
+
+      it("a restore puts a removed chart back on its tab, at its size", async () => {
+        const versions = (await s.lp_admin.lp("GET", `api/${PACK}/${T}/versions`)).json as { version: number }[];
+        expect((await ops([{ op: "remove_widget", id: "visits_kpi" }])).json).toMatchObject({ ok: true });
+        expect(tabsOf(await layout())["Visits total"]).toBeUndefined();
+        expect((await s.lp_admin.lp("POST", `api/${PACK}/${T}/revert`, { version: versions[0]!.version })).status).toBe(200);
+        const pos = await layout();
+        expect(tabsOf(pos)["Visits total"]).toBe("TAB-overview>TAB-trend");
+        expect((Object.values(pos).find((c: any) => c?.meta?.sliceName === "Visits total") as unknown as { meta: { width: number } }).meta.width).toBe(6);
+        expect(layoutProblems(pos)).toEqual([]);
+        const charts = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.t}/charts`)).json.result.map((c: { slice_name: string }) => c.slice_name);
+        expect(sorted(charts)).toEqual(["Stock again", "Stock total", "Visits total"]);
       });
     });
 
@@ -291,17 +372,17 @@ export function accessSuite(version: string) {
             else expect([who, widget, d[widget]!.rows, d[widget]!.error]).toEqual([who, widget, [], expect.stringMatching(/is not available to you/)]);
           }
         }
-        // Dashboard roles open a dashboard, not its datasets: Lenspack shows lp_rbac no stock (Superset itself would, on that dashboard).
-        expect((await data("lp_rbac", B)).stock_b!.rows).toEqual([]);
       });
 
       it("says up front, before any model call, when every dataset is kept from the user", async () => {
-        const notice = (await catalogue("lp_rbac")).accessNotice;
-        expect(notice).toMatch(NO_ACCESS);
-        expect((await s.lp_rbac.lp("GET", `api/${PACK}/${B}`)).json.accessNotice).toMatch(NO_ACCESS);
+        // lp_rbac reads no dataset outside the dashboards their roles open (see "dashboard roles" below).
+        expect((await catalogue("lp_rbac")).accessNotice).toMatch(NO_ACCESS);
         expect((await catalogue("lp_noroles")).accessNotice).toMatch(NO_ACCESS);
+        // On a dashboard Superset says they may view, a user who reads nothing there is told so, and no model is asked.
+        const forA = signed({ u: "lp_noroles", r: [], d: stack.fixtures.dashboards.a, b: A, p: PACK, e: false, v: true });
+        expect((await direct("GET", `/api/${PACK}/${A}`, forA)).json.accessNotice).toMatch(NO_ACCESS);
         modelCallsBefore = stack.modelCalls();
-        const r = await chat("lp_rbac", B, "query", BREAKDOWN("stock_total"));
+        const r = readChat(await direct("POST", `/api/${PACK}/${A}/chat?review=off`, forA, { messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: `TOOL query ${JSON.stringify(BREAKDOWN("visit_total"))}` }] }] }));
         expect(r.status).toBe(403);
         expect(r.error).toMatch(NO_ACCESS);
         expect(stack.modelCalls()).toBe(modelCallsBefore);
@@ -415,12 +496,285 @@ export function accessSuite(version: string) {
       });
     });
 
-    describe("personal dashboards and saved configurations (pending: built in a parallel PR)", () => {
-      // TODO(personal dashboards PR): turn each into a case once personal dashboards and saved configurations land.
-      it.todo("a viewer may create a personal dashboard (and copy one they can open)");
-      it.todo("a user may delete only their own personal dashboard");
-      it.todo("a saved configuration applies only to dashboards the user controls");
-      it.todo("another user's personal dashboard is neither listed nor opened nor edited");
+    describe("dashboard roles (DASHBOARD_RBAC)", () => {
+      // Superset's rule: with DASHBOARD_RBAC on, a user who opens a dashboard through its dashboard roles may read the
+      // data of the charts on it, without access to their datasets; RLS still applies. lp_rbac reads no dataset, opens
+      // B (a stock chart; RLS North and South through B's role) and C (a visits chart), and not A.
+      const B_STOCK = { North: 32, South: 64 };
+      const dataOf = async (who: User, board: string) => (await s[who].lp("GET", `api/${PACK}/${board}/data`)).json as Record<string, { rows: { group: string; value: number }[]; error?: string }>;
+      /** The rows of a chart as Superset itself serves them to a user on a dashboard (its chart data API, as the dashboard asks), or the status it refused with. */
+      const supersetRows = async (who: User, dashboard: number, widget: string) => {
+        const charts = (await s.lp_admin.send("GET", `/api/v1/dashboard/${dashboard}/charts`)).json.result as { id: number; slice_name: string }[];
+        const board = `superset-${dashboard}`;
+        const title = ((await s.lp_admin.lp("GET", `api/${PACK}/${board}`)).json.board.config.widgets[widget] as { title: string }).title;
+        const chart = charts.find((c) => c.slice_name === title) ?? charts[0]!;
+        const saved = (await s.lp_admin.send("GET", `/api/v1/chart/${chart.id}`)).json.result.query_context as string;
+        const qc = JSON.parse(saved) as { form_data?: object; queries: { metrics?: unknown[] }[] };
+        return chartRows(await s[who].send("POST", "/api/v1/chart/data", { body: { ...qc, form_data: { ...(qc.form_data ?? {}), dashboardId: dashboard, slice_id: chart.id } } }));
+      };
+      const chartRows = (r: { status: number; json: any }) => {
+        if (r.status !== 200) return { refused: r.status };
+        const rows = r.json.result[0].data as Record<string, unknown>[];
+        return Object.fromEntries(rows.map((row) => [row.region, Object.entries(row).find(([k, v]) => k !== "region" && typeof v === "number")?.[1]]));
+      };
+      /** A request to Lenspack signed as Superset signs one for this dashboard, saying the user may view it. */
+      const viewing = (u: User, dashboard: number, roles: string[]) => signed({ u, r: roles, d: dashboard, b: `superset-${dashboard}`, p: PACK, e: false, v: true });
+
+      it("on B, a dashboard-role user with no dataset access reads B's chart data: the rows Superset's own chart shows them, RLS included", async () => {
+        // Superset itself, as B asks for its chart.
+        expect(await supersetRows("lp_rbac", stack.fixtures.dashboards.b, "stock_b")).toEqual(B_STOCK);
+        // Lenspack: the chat, the board's own data and the filter menu on B.
+        expect(byGroup(toolOutput(await chat("lp_rbac", B, "query", BREAKDOWN("stock_total"))).rows)).toEqual(B_STOCK);
+        expect(byGroup((await dataOf("lp_rbac", B)).stock_b!.rows)).toEqual(B_STOCK);
+        expect(sorted(((await s.lp_rbac.lp("GET", `api/${PACK}/${B}/options?field=region`)).json as { value: string }[]).map((v) => v.value))).toEqual(["North", "South"]);
+        // Never more than RLS lets through, whatever the question asks.
+        expect(byGroup(toolOutput(await chat("lp_rbac", B, "query", { ...BREAKDOWN("stock_total"), filters: "region = West" })).rows)).toEqual({});
+        // B's catalogue shows the stock dataset only, and no notice.
+        const onB = (await s.lp_rbac.lp("GET", `api/${PACK}/${B}`)).json;
+        expect(sorted(onB.catalogue.measures.map((m: { key: string }) => m.key))).toEqual(["stock_count", "stock_total"]);
+        expect(onB.accessNotice).toBeUndefined();
+        // The same on C for the visits chart there (no RLS on visits for them).
+        expect(await supersetRows("lp_rbac", stack.fixtures.dashboards.c, "visits_c")).toEqual(VISITS);
+        expect(byGroup(toolOutput(await chat("lp_rbac", C, "query", BREAKDOWN("visit_total"))).rows)).toEqual(VISITS);
+        expect(stack.log()).toMatch(/dashboard roles \(DASHBOARD_RBAC\) are on/);
+      });
+
+      it("is refused for the same dataset on another dashboard, for a dataset not behind the dashboard's charts, and outside any dashboard", async () => {
+        // Superset refuses B's stock chart asked for as if drawn on C.
+        const stockChart = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.b}/charts`)).json.result[0].id as number;
+        const qc = JSON.parse((await s.lp_admin.send("GET", `/api/v1/chart/${stockChart}`)).json.result.query_context);
+        const onC = chartRows(await s.lp_rbac.send("POST", "/api/v1/chart/data", { body: { ...qc, form_data: { ...qc.form_data, dashboardId: stack.fixtures.dashboards.c, slice_id: stockChart } } }));
+        expect(onC).toEqual({ refused: 403 });
+        // Lenspack: stock on C, visits on B.
+        for (const [board, measure] of [[C, "stock_total"], [B, "visit_total"]] as const) {
+          const out = toolOutput(await chat("lp_rbac", board, "query", BREAKDOWN(measure)));
+          expect([board, measure, out.ok, out.error]).toEqual([board, measure, false, expect.stringMatching(NO_ACCESS)]);
+        }
+        expect((await s.lp_rbac.lp("GET", `api/${PACK}/${C}`)).json.catalogue.measures.map((m: { key: string }) => m.key).sort()).toEqual(["visit_count", "visit_total"]);
+        // Outside a dashboard: the catalogue and a compiled query read nothing.
+        expect((await s.lp_rbac.lp("GET", `api/${PACK}`)).json.catalogue.measures).toEqual([]);
+        expect((await s.lp_rbac.lp("GET", `api/${PACK}/explain?${explainQuery("stock_total")}`)).json).toMatchObject({ ok: false, code: "ACCESS_HIDDEN" });
+        // A dashboard they may not open stays shut.
+        expect((await s.lp_rbac.lp("GET", `api/${PACK}/${A}/data`)).status).toBe(403);
+      });
+
+      it("never serves a saved answer made under a dashboard role on another board, or to another user", async () => {
+        const cache = (body: object) => s.lp_admin.lp("PUT", "_superset/settings/cache", body);
+        expect((await cache({ router: "off", freshMinutes: 10 })).status).toBe(200);
+        try {
+          // Stock rows by region: one per region, so each count says which regions were read.
+          const ask = (who: User, board: string) => chat(who, board, "query", BREAKDOWN("stock_count"));
+          const ALL = { North: 1, South: 1, East: 1, West: 1 };
+          const first = await ask("lp_rbac", B);
+          expect(byGroup(toolOutput(first).rows)).toEqual({ North: 1, South: 1 });
+          const again = await ask("lp_rbac", B);
+          expect(again.reuse?.tier).toBe("t1");
+          expect(byGroup(toolOutput(again).rows)).toEqual({ North: 1, South: 1 });
+          const entry = again.reuse!.entry;
+          // An admin on B asks the same: their own answer (all regions), never lp_rbac's.
+          const admin = await ask("lp_admin", B);
+          expect(admin.reuse?.entry).not.toBe(entry);
+          expect(byGroup(toolOutput(admin).rows)).toEqual(ALL);
+          // lp_rbac on C: refused, not served from B.
+          const onC = await ask("lp_rbac", C);
+          expect(onC.reuse?.entry).not.toBe(entry);
+          expect(toolOutput(onC).error).toMatch(NO_ACCESS);
+          // A user with full access on A: their own answer.
+          const viewer = await ask("lp_viewer", A);
+          expect(viewer.reuse?.entry).not.toBe(entry);
+          expect(byGroup(toolOutput(viewer).rows)).toEqual(ALL);
+          // And lp_rbac on B again: still their own.
+          expect((await ask("lp_rbac", B)).reuse?.entry).toBe(entry);
+        } finally {
+          await cache({ router: null, freshMinutes: null });
+        }
+      });
+
+      it("is refused when DASHBOARD_RBAC is off, even on a request signed as able to view the dashboard", async () => {
+        // lp_rbac_off has lp_rbac's roles and has not been asked about before, so Lenspack asks Superset afresh.
+        stack.dashboardRbac(false);
+        try {
+          const roles = ["Gamma", "lp_board_b", "lp_board_c"];
+          // Superset: B no longer opens for them, and its chart's data is refused.
+          expect((await s.lp_rbac_off.lp("GET", `api/${PACK}/${B}`)).status).toBe(403);
+          expect(await supersetRows("lp_rbac_off", stack.fixtures.dashboards.b, "stock_b")).toEqual({ refused: 403 });
+          // Lenspack, even when told the user may view B: nothing of B's data.
+          const forB = viewing("lp_rbac_off", stack.fixtures.dashboards.b, roles);
+          const d = (await direct("GET", `/api/${PACK}/${B}/data`, forB)).json;
+          expect([d.stock_b.rows, d.stock_b.error]).toEqual([[], expect.stringMatching(/is not available to you/)]);
+          const r = readChat(await direct("POST", `/api/${PACK}/${B}/chat?review=off`, forB, { messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: `TOOL query ${JSON.stringify(BREAKDOWN("stock_total"))}` }] }] }));
+          expect([r.status, r.error]).toEqual([403, expect.stringMatching(NO_ACCESS)]);
+          expect(stack.log()).toMatch(/dashboard roles \(DASHBOARD_RBAC\) are off/);
+        } finally {
+          stack.dashboardRbac(true);
+        }
+      });
+
+      it("a personal copy of B does not carry B's dashboard-role access: stock is refused on it", async () => {
+        const made = await s.lp_rbac.lp("POST", `_superset/my/dashboards?dashboard=${stack.fixtures.dashboards.b}`, { copy: true });
+        expect(made.status, made.text).toBe(200);
+        const copy = made.json.dashboard as number;
+        const board = `superset-${copy}`;
+        try {
+          // A private draft of theirs: no dashboard roles, not published.
+          const meta = (await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}`)).json.result;
+          expect([meta.roles, meta.published]).toEqual([[], false]);
+          // It is theirs, but nothing on it reads stock for them, in Superset or in Lenspack.
+          expect(await mine("lp_rbac")).toContain(copy);
+          // Superset refuses the copy's stock chart to them, as the copy asks for it.
+          const copyChart = (await s.lp_admin.send("GET", `/api/v1/dashboard/${copy}/charts`)).json.result[0].id as number;
+          const bChart = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.b}/charts`)).json.result[0].id as number;
+          const savedQc = async (chart: number) => (await s.lp_admin.send("GET", `/api/v1/chart/${chart}`)).json.result.query_context as string | null;
+          const qc = JSON.parse((await savedQc(copyChart)) ?? (await savedQc(bChart))!);
+          expect(chartRows(await s.lp_rbac.send("POST", "/api/v1/chart/data", { body: { ...qc, form_data: { ...qc.form_data, dashboardId: copy, slice_id: copyChart } } }))).toEqual({ refused: 403 });
+          // Opened, it shows no stock (or, with nothing at all to show, it is refused up front); asked, stock is refused.
+          const opened = await s.lp_rbac.lp("GET", `api/${PACK}/${board}`);
+          if (opened.status === 200) expect(opened.json.catalogue.measures.map((m: { key: string }) => m.key)).not.toContain("stock_total");
+          else expect([opened.status, opened.json.error]).toEqual([403, expect.stringMatching(NO_ACCESS)]);
+          const asked = await chat("lp_rbac", board, "query", BREAKDOWN("stock_total"));
+          expect(asked.status === 200 ? toolOutput(asked).error : asked.error).toMatch(NO_ACCESS);
+          // B itself still reads for them.
+          expect(byGroup(toolOutput(await chat("lp_rbac", B, "query", BREAKDOWN("stock_total"))).rows)).toEqual(B_STOCK);
+        } finally {
+          expect((await s.lp_rbac.lp("POST", "_superset/my/dashboards/delete", { dashboard: copy })).status).toBe(200);
+        }
+      });
+    });
+
+    describe("personal dashboards and saved configurations", () => {
+      const NOT_OWN = /only dashboards of your own/;
+      const NOBODY = /only dashboards of one.s own, and those are turned off/;
+      const make = async (who: User, title: string) => {
+        const r = await s[who].lp("POST", "_superset/my/dashboards", { title });
+        expect(r.status, r.text).toBe(200);
+        return r.json.dashboard as number;
+      };
+      const copyOf = async (who: User, dashboard: number) => s[who].lp("POST", `_superset/my/dashboards?dashboard=${dashboard}`, { copy: true });
+      const rename = (title: string) => ({ ops: [{ op: "set_title", title }] });
+      /** lp_viewer's copy of A, made in the first case and used by the rest. */
+      let viewerCopy = 0;
+
+      it("a viewer may create a personal dashboard (and copy one they can open)", async () => {
+        const blank = await make("lp_viewer", "Viewer blank");
+        const me = (await s.lp_viewer.send("GET", "/api/v1/me/")).json.result.id as number;
+        const meta = (await s.lp_admin.send("GET", `/api/v1/dashboard/${blank}`)).json.result;
+        expect([meta.owners.map((o: { id: number }) => o.id), meta.published, meta.roles]).toEqual([[me], false, []]);
+        const copied = await copyOf("lp_viewer", stack.fixtures.dashboards.a);
+        expect(copied.status, copied.text).toBe(200);
+        viewerCopy = copied.json.dashboard;
+        expect(copied.json.from).toBe(stack.fixtures.dashboards.a);
+        expect(sorted((await mine("lp_viewer")).map(String))).toEqual(sorted([String(blank), String(viewerCopy)]));
+        // The copy is theirs: it opens, with A's charts, and they may change it (A they may only view).
+        const onCopy = (await s.lp_viewer.lp("GET", `api/${PACK}/superset-${viewerCopy}`)).json;
+        expect(Object.keys(onCopy.board.config.widgets)).toHaveLength(Object.keys((await s.lp_admin.lp("GET", `api/${PACK}/${A}`)).json.board.config.widgets).length);
+        const r = await s.lp_viewer.lp("POST", `api/${PACK}/superset-${viewerCopy}/ops`, rename("Viewer copy"));
+        expect(r.status, r.text).toBe(200);
+        expect(await dashboardTitle(viewerCopy)).toBe("Viewer copy");
+        // B they can't open, so they can't copy it.
+        expect((await copyOf("lp_viewer", stack.fixtures.dashboards.b)).status).toBe(403);
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: blank })).status).toBe(200);
+      });
+
+      it("a user may delete only their own personal dashboard", async () => {
+        const one = await make("lp_viewer", "Viewer one");
+        const two = await make("lp_viewer", "Viewer two");
+        // Not someone else's, even for a user who may edit shared dashboards.
+        const refused = await s.lp_owner.lp("POST", "_superset/my/dashboards/delete", { dashboard: one });
+        expect([refused.status, refused.json.code]).toEqual([403, "not-yours"]);
+        // Nor a shared dashboard they don't own in Superset (A is lp_owner's).
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: stack.fixtures.dashboards.a })).status).toBe(403);
+        expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.a}`)).status).toBe(200);
+        expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${one}`)).status).toBe(200);
+        // Their owner may; so may an admin.
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: one })).status).toBe(200);
+        expect((await s.lp_admin.lp("POST", "_superset/my/dashboards/delete", { dashboard: two })).status).toBe(200);
+        for (const d of [one, two]) expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${d}`)).status).toBe(404);
+        expect(await mine("lp_viewer")).toEqual([viewerCopy]);
+      });
+
+      it("a saved configuration applies only to dashboards the user controls", async () => {
+        const saved = await s.lp_viewer.lp("POST", `_superset/my/layouts?dashboard=${stack.fixtures.dashboards.a}`, { name: "Viewer layout" });
+        expect(saved.status, saved.text).toBe(200);
+        const layout = saved.json.id as string;
+        const apply = (who: User, dashboard: number) => s[who].lp("POST", `_superset/my/layouts/${layout}/apply?dashboard=${dashboard}`, {});
+        try {
+          // Not on A, which they may only view.
+          const onA = await apply("lp_viewer", stack.fixtures.dashboards.a);
+          expect([onA.status, onA.json.code]).toEqual([403, "no-edit"]);
+          // On their own copy, yes.
+          const onCopy = await apply("lp_viewer", viewerCopy);
+          expect(onCopy.status, onCopy.text).toBe(200);
+          // Another user can't use it at all, even where they may edit.
+          expect((await apply("lp_owner", stack.fixtures.dashboards.a)).status).toBe(404);
+        } finally {
+          expect((await s.lp_viewer.lp("POST", `_superset/my/layouts/${layout}/delete`, {})).status).toBe(200);
+        }
+      });
+
+      it("another user's personal dashboard is neither listed nor opened nor edited", async () => {
+        const board = `superset-${viewerCopy}`;
+        expect(await mine("lp_owner")).not.toContain(viewerCopy);
+        expect(((await s.lp_owner.lp("GET", `api/${PACK}`)).json.boards as { id: string }[]).map((b) => b.id)).not.toContain(board);
+        expect(((await s.lp_owner.lp("GET", "_superset/dashboards")).json as { id: number }[]).map((d) => d.id)).not.toContain(viewerCopy);
+        // Not found, as for any board they may not open (its existence isn't confirmed).
+        expect((await s.lp_owner.lp("GET", `api/${PACK}/${board}`)).status).toBe(404);
+        expect([403, 404]).toContain((await s.lp_owner.lp("POST", `api/${PACK}/${board}/ops`, rename("Not yours"))).status);
+        // Superset lets anyone open a draft with no roles by its address; Lenspack keeps it to its owner, so it isn't copied either.
+        expect((await copyOf("lp_owner", viewerCopy)).status).toBe(403);
+        expect(await dashboardTitle(viewerCopy)).toBe("Viewer copy");
+        // Everyone's list is the admins' only.
+        expect((await s.lp_owner.lp("GET", "_superset/personal")).status).toBe(403);
+        const all = (await s.lp_admin.lp("GET", "_superset/personal")).json;
+        expect(JSON.stringify(all)).toContain(String(viewerCopy));
+      });
+
+      it("with editScope own, the chat changes only people's own dashboards; admins are exempt unless told otherwise", async () => {
+        const scope = (body: object) => s.lp_admin.lp("PUT", "_superset/settings/edit-scope", body);
+        // A user who isn't an admin may not change it.
+        expect((await s.lp_owner.lp("PUT", "_superset/settings/edit-scope", { scope: "own" })).status).toBe(403);
+        expect((await scope({ scope: "own" })).status).toBe(200);
+        const copied = await copyOf("lp_owner", stack.fixtures.dashboards.a);
+        expect(copied.status, copied.text).toBe(200);
+        const ownerCopy = `superset-${copied.json.dashboard}`;
+        try {
+          // lp_owner owns A in Superset, yet the chat and the board API leave it alone, and the chat offers a copy.
+          const r = await s.lp_owner.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A (owner, own scope)"));
+          expect([r.status, r.json.error]).toEqual([403, expect.stringMatching(NOT_OWN)]);
+          const out = JSON.stringify(toolOutput(await chat("lp_owner", A, "rename_board", { title: "own scope chat" })));
+          expect(out).toMatch(NOT_OWN);
+          expect(out).toMatch(/copy/i);
+          expect(await dashboardTitle(stack.fixtures.dashboards.a)).toBe("Access A");
+          // Their own copy they may change, through both.
+          expect((await s.lp_owner.lp("POST", `api/${PACK}/${ownerCopy}/ops`, rename("Owner copy"))).status).toBe(200);
+          expect(toolOutput(await chat("lp_owner", ownerCopy, "rename_board", { title: "Owner copy (chat)" }))).toMatchObject({ applied: true });
+          // An admin is exempt, and not once adminsExempt is false (from the next request, no restart).
+          expect((await s.lp_admin.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A"))).status).toBe(200);
+          expect((await scope({ adminsExempt: false })).status).toBe(200);
+          const admin = await s.lp_admin.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A (admin, not exempt)"));
+          expect([admin.status, admin.json.error]).toEqual([403, expect.stringMatching(NOT_OWN)]);
+          expect(await dashboardTitle(stack.fixtures.dashboards.a)).toBe("Access A");
+          // With personal dashboards off, nobody edits (not even on their own copy), and admins are warned.
+          expect((await scope({ adminsExempt: null })).status).toBe(200);
+          expect((await s.lp_admin.lp("PUT", "_superset/settings/features", { personalDashboards: false })).status).toBe(200);
+          try {
+            expect((await s.lp_admin.lp("GET", "_superset/settings")).json.editScope.warning).toMatch(/nobody but admins/);
+            const off = await s.lp_owner.lp("POST", `api/${PACK}/${ownerCopy}/ops`, rename("Owner copy (off)"));
+            expect([off.status, off.json.error]).toEqual([403, expect.stringMatching(NOBODY)]);
+          } finally {
+            expect((await s.lp_admin.lp("PUT", "_superset/settings/features", { personalDashboards: null })).status).toBe(200);
+          }
+        } finally {
+          expect((await scope({ scope: null, adminsExempt: null })).status).toBe(200);
+          await s.lp_owner.lp("POST", "_superset/my/dashboards/delete", { dashboard: copied.json.dashboard });
+        }
+        // Back to the default: lp_owner edits A again.
+        expect((await s.lp_owner.lp("POST", `api/${PACK}/${A}/ops`, rename("Access A"))).status).toBe(200);
+      });
+
+      it("leaves no personal dashboards behind", async () => {
+        expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: viewerCopy })).status).toBe(200);
+        expect(await mine("lp_viewer")).toEqual([]);
+      });
     });
   });
 }

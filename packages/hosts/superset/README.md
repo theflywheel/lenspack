@@ -55,6 +55,25 @@ signed-in user from Superset and puts the chat inside Superset's pages. It sits 
   most one dimension in `js_columns`, no time grain and no JavaScript; otherwise it stays Superset's. Shaded areas
   (`deck_polygon`) are not done: they need boundary shapes in a dataset column.
   `pushBoard` sends only what changed: `POST`/`PUT /api/v1/chart`, then the dashboard's layout, title and filters.
+- **Tabs.** A dashboard's layout is read from the top down, through tabs (top-level, inside the grid, or inside
+  other tabs) and columns, so the board lists every chart Superset draws, tab after tab. The chat is told what is
+  on each tab and which tab the viewer has open (the overlay sends it with each message). On a dashboard with tabs
+  or columns Lenspack keeps the layout and changes it in place (`layout.ts`):
+  - a new chart goes on the tab of the widget its placement names (`after:` or `below:`), else at the top or
+    bottom of the viewer's tab, else where Superset puts charts that have no place: the first top-level tab, or the
+    grid when the tabs sit inside it. Never under the grid that top-level tabs leave behind, where Superset draws
+    nothing;
+  - a resize changes the chart where it is (a row then wider than 12 columns wraps onto a new row in place);
+  - a removal takes out that one placement (a chart placed in two tabs keeps the other) and any row it empties;
+  - a restore puts a removed chart back where it was: the same chart, unless Lenspack made it, in its tab and row;
+  - **a move is refused**, with a message saying to move the chart in Superset. Moving charts between rows and tabs
+    needs a board that knows tabs, which is not built yet. Tabs themselves are made, renamed and removed in Superset.
+
+  Before every save the whole layout is checked (`layoutProblems`): each component listed by one parent, every
+  child present and allowed in its parent, `parents` matching the tree, `ROOT_ID` holding one grid or tabs, every
+  chart reachable. A layout that fails a check it passed before is not saved, and the chat says so. Problems the
+  dashboard already had are logged and left as they are. `placeCharts` puts charts a layout doesn't draw where
+  Superset draws them; use it whenever a layout gains charts outside Lenspack's edits (a copy of a dashboard).
 - **Superset stays the record.** `supersetBoards` wraps any `BoardStore`: reads pick up edits made in Superset,
   every lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. Lenspack's
   version history is the undo Superset lacks.
@@ -82,7 +101,8 @@ What is different between the two, as far as Lenspack is concerned:
 Everything else Lenspack uses is the same on both: the chart-data requests and their post-processing steps,
 the chart settings for every chart type it writes, native filters, dashboard layouts, row-level security and
 dataset permissions, and the content security policy (the button's script carries the page's nonce, which
-Superset 6.1's stricter policy requires). Flask-AppBuilder's shared-filter fault (below) is still there in
+Superset 6.1's stricter policy requires). Lenspack's admin panel works with Superset's default
+Content-Security-Policy too: the plugin stamps the page's nonce on the panel's scripts as it passes the page on. Flask-AppBuilder's shared-filter fault (below) is still there in
 Superset 6.1, so the plugin keeps its fix.
 
 **ClickHouse column names on Superset 6.1.** Up to 6.0, Superset gave every column in a ClickHouse query a short
@@ -149,8 +169,9 @@ One file, loaded by Superset's own config. It needs no fork, no custom image and
 - `GET /api/v1/lenspack/identity-key` and `POST /api/v1/lenspack/bootstrap`, which this server calls on start
   to fetch the signing key and to make its own account (below);
 - `GET /api/v1/lenspack/access?user=&datasets=&dashboards=`, which this server calls with `hostPolicy: superset`
-  (the default): for one user, whether they may read each dataset and the row-level security clauses on it, and
-  whether they may open each dashboard (below);
+  (the default): for one user, whether they may read each dataset and the row-level security clauses on it,
+  whether they may open each dashboard, and with dashboard roles on, which datasets they may read only on each
+  dashboard (below);
 - `GET /api/v1/lenspack/version`, Superset's version, which this server reads on start (admins and its own
   account);
 - a fix for Flask-AppBuilder (4.x in Superset 5, 5.x in Superset 6.1), whose list endpoints share filters between
@@ -183,12 +204,12 @@ so raise `SERVER_THREADS_AMOUNT` for more than about ten chats at once.
 ## Who is asking
 
 Browsers never reach this server directly. Superset forwards `/lenspack/...` to it for signed-in users and adds
-`x-lenspack-identity`: base64url JSON `{u, a, r, d, b, p, e, v, t}` (user, Superset admin, their Superset role
-names, the dashboard the request is about, its board `superset-<d>` and the pack in the path, whether Superset lets
-them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
+`x-lenspack-identity`: base64url JSON `{u, i, a, r, d, b, p, e, v, t}` (user, their Superset user id, Superset admin,
+their Superset role names, the dashboard the request is about, its board `superset-<d>` and the pack in the path,
+whether Superset lets them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
 Superset's `SECRET_KEY` on the Superset side; this server fetches it on start
 (`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid
-signature less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `chat.css` and
+signature less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `mine.js`, `chat.css` and
 `/healthz` are public.
 
 - **One dashboard per request.** The plugin reads the dashboard from the place where this server reads a board
@@ -196,14 +217,18 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
   from its own route and refuses the request (403) when it is not the board Superset signed for. The same happens
   when the pack differs, or when the path names a `superset-<id>` board that Superset signed nothing for. Both
   sides refuse a path with a `.` or `..` segment or an encoded slash (`%2e`, `%2f`, `%5c`; 400). Binding a
-  dashboard (`/_superset/bind`) works only for the dashboard Superset checked. A plugin from before `b` and `p`
+  dashboard (`/_superset/bind`), and the own-dashboard and saved-layout routes (`/_superset/my...?dashboard=<id>`),
+  work only for the dashboard Superset checked. A plugin from before `b` and `p`
   signs only `d`, and this server then checks `superset-<d>` against its route.
 - **Edits** follow `LENSPACK_EDIT_POLICY` (or `editPolicy` in the config). `superset`, the default: whoever
   Superset lets edit that dashboard, its owners with `can_write` on Dashboard and admins. That right counts on
   that dashboard's board only. Everyone else who can view it may still ask questions; the chat's edit tools then
   answer "you can view this dashboard but not edit it in Superset", which the model passes on. `signed-in`:
   anyone signed in may edit (the behaviour before). The `boardEdits` off switch (below) comes first: off, nobody
-  edits through the chat, admins included.
+  edits through the chat, admins included. Someone who can only view a dashboard can make their own copy and change that: see
+  [your own dashboards and saved layouts](../../../docs/my-dashboards.md). `editScope: own` (or
+  `LENSPACK_EDIT_SCOPE=own`) narrows chat edits further, to each person's own dashboards, so shared ones stay as
+  they are; admins are exempt unless `adminsExempt: false`.
 - **Settings** writes, the audit log and the usage page (`GET /api/_usage`, which names every user's spend) need
   a Superset admin. Owning a dashboard does not give them.
 - **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
@@ -245,8 +270,10 @@ every answer to what the person asking may see in Superset: their own dataset pe
 - **Dashboards.** The dashboards list (`/_superset/dashboards`) and the boards list (`GET /api/<pack>`) show
   only the dashboards the user may open in Superset (owners, admins, dashboard roles with `DASHBOARD_RBAC`, or
   access to one of its datasets). The dashboard a request is about is still checked on every request (see "Who is
-  asking"). Dashboard roles open a dashboard, not its datasets: Lenspack shows such a user only the datasets
-  their roles may read, which can be less than Superset draws on that dashboard.
+  asking").
+- **Dashboard roles.** With `DASHBOARD_RBAC` on, a user who opens a dashboard through its dashboard roles can ask
+  about the data of that dashboard's charts there, with their RLS, as Superset shows it to them, and nowhere else
+  (update the plugin for this; see [docs/access.md, "Dashboard roles"](../../../docs/access.md#dashboard-roles-dashboard_rbac)).
 - **What users are told.** A question about data their access keeps from them is answered with "not available to
   you: your Superset access doesn't include it. A Superset admin can give you access.", not with "the pack doesn't
   have it". The chat is told some data is kept from this user, so it doesn't guess what. A user who may read none
@@ -335,6 +362,8 @@ page, which calls:
 | `PUT /_superset/settings/queue` | any of `{maxConcurrent, maxWaiting, maxWaitSeconds}` for busy hours ([docs/caching.md](../../../docs/caching.md#busy-hours-the-queue)) |
 | `GET /_superset/cache` and below | saved answers: stats, queue, last refresh, entries, pin, unpin, evict, suggestions, chart candidates, settled boards ([docs/caching.md](../../../docs/caching.md#the-admin-api)) |
 | `POST /_superset/cache/prewarm`, `POST /_superset/cache/data-changed` | refresh the most-asked saved answers now, or a few seconds after a data load ([docs/caching.md](../../../docs/caching.md#pre-warming-ready-before-the-peak)) |
+| `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}`; `null` resets ([docs/my-dashboards.md](../../../docs/my-dashboards.md)) |
+| `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
 
 Reads and writes need a Superset admin's signed identity (above). Settings persist in `settings.json` beside
 the board state.
@@ -390,7 +419,9 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `maps` | map queries are refused (existing deck_scatter charts stay in Superset) | the server |
 | `reviewer` | no second model call checking each change: edits are saved as they are made, and a wrong one is not caught before the reply | the server |
 | `cache` | no saved answers: every question goes to the model, even one answered a minute ago ([docs/caching.md](../../../docs/caching.md)) | the server |
+| `personalDashboards` | no My dashboards or Saved layouts menus; the chat can't make, copy or delete dashboards or save or apply layouts (dashboards already made stay) | the server |
 | `explain` | no "How this was worked out" under answers, and none in the audit log; `explain: { sql: false }` in the config keeps it without the SQL ([docs/explain.md](../../../docs/explain.md)) | the server |
+| `telemetry` | no usage records, no thumbs under answers; `/api/_telemetry` answers 404 ([docs/telemetry.md](../../../docs/telemetry.md)) | the server |
 | `clarify` | the assistant never asks which reading is meant and logs no open questions | the server |
 | `review.daily` | (off by default) no daily review of the day's questions | the server |
 | `review.compare` | open questions' readings are not run on the data after a review | the server |
@@ -405,3 +436,22 @@ and help text. A page holding an old copy picks up a change on its next dashboar
 
 Gaps: a previous-period KPI is drawn by Superset
 without its comparison; tabs and columns in a dashboard are kept, and new widgets are added below them.
+
+## Usage telemetry
+
+Each chat turn, transcription and client event (a thumbs up or down, an answer left early) leaves a record in
+`telemetry.jsonl` in the state directory. The record holds the user and the role names the plugin signs. The
+deployment's `context:` section maps boards, datasets and roles to a campaign, campaign type and country:
+
+```yaml
+context:
+  superset-12: { campaign: Round 2 }
+  "role:Supervisor-North": { country: Country A }
+```
+
+Admins read the records at `/_superset/telemetry`. What is recorded is switched item by item on the admin panel's
+Telemetry tab (`/lenspack/_superset/admin/#telemetry`), which is also the checklist at
+`/_superset/telemetry/checklist`. Question text, transcript text, kept recordings and device detail start off. The
+AI assistant settings page keeps how long records and recordings are kept and the consent notice. What is recorded,
+and the privacy choices, are in [docs/telemetry.md](../../../docs/telemetry.md).
+

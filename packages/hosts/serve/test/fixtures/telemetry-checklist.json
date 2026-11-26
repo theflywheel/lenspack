@@ -1,479 +1,1357 @@
 {
-  "generatedAt": "2026-11-26T06:00:00Z",
+  "generatedAt": "2026-11-26T07:00:00.000Z",
+  "telemetry": {
+    "on": true,
+    "changed": null
+  },
+  "settings": {
+    "retentionDays": 90,
+    "audioRetentionDays": 30,
+    "consentNotice": "Recordings of spoken questions are kept for 30 days to check speech recognition, then deleted."
+  },
   "switches": {
     "telemetry": true,
-    "questionText": true,
-    "audio": false,
-    "retentionDays": 90
+    "retentionDays": 90,
+    "audioRetentionDays": 30,
+    "consentNotice": true
   },
   "groups": [
     {
-      "title": "Who uses it",
+      "id": "users",
+      "title": "Users",
+      "on": true,
+      "changed": null,
       "items": [
         {
-          "id": "dau",
+          "id": "users-active",
           "label": "Daily and weekly active users",
-          "decision": "Whether people come back after the first week; where to train next.",
-          "source": "turn",
+          "decision": "Is the pilot reaching people, and is use growing?",
+          "source": "turn-record",
+          "fields": [
+            "user"
+          ],
+          "privacy": [
+            "usernames visible to admins with the usage right"
+          ],
           "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.users-active",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "users-by-role",
+          "label": "Active users by role",
+          "decision": "Which roles use it, and who needs training or a different entry point?",
+          "source": "turn-record",
           "fields": [
             "user",
-            "at"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": "User names are kept on this server only."
-        },
-        {
-          "id": "roles",
-          "label": "Roles of the people asking",
-          "decision": "Which roles to design boards for.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
             "roles"
           ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "country",
-          "label": "Country and campaign",
-          "decision": "Which deployments need attention.",
-          "source": "turn",
+          "privacy": [
+            "usernames visible to admins with the usage right"
+          ],
           "status": "recording",
-          "fields": [
-            "country",
-            "campaign",
-            "campaignType"
-          ],
+          "howToEnable": null,
           "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.users-by-role",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "device",
-          "label": "Device and network",
-          "decision": "Whether to build for low bandwidth.",
-          "source": "client",
-          "status": "needs-config",
+          "id": "users-by-country",
+          "label": "Active users by country",
+          "decision": "Where to put support and the next rollout.",
+          "source": "turn-record",
           "fields": [
-            "device",
-            "network"
+            "user",
+            "country"
           ],
+          "privacy": [
+            "usernames visible to admins with the usage right"
+          ],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.users-by-country",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "users-return",
+          "label": "Users who come back next campaign",
+          "decision": "Does it keep its users from one campaign to the next?",
+          "source": "turn-record",
+          "fields": [
+            "user",
+            "campaign"
+          ],
+          "privacy": [
+            "usernames visible to admins with the usage right"
+          ],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.users-return",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        }
+      ]
+    },
+    {
+      "id": "volume-cost",
+      "title": "Volume and cost",
+      "on": true,
+      "changed": null,
+      "items": [
+        {
+          "id": "volume-per-user",
+          "label": "Questions per user",
+          "decision": "How much each person leans on it; sizing and budgets.",
+          "source": "turn-record",
+          "fields": [
+            "user"
+          ],
+          "privacy": [
+            "usernames visible to admins with the usage right"
+          ],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.volume-per-user",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "cost-per-question",
+          "label": "Cost per question (model, voice, review)",
+          "decision": "Which model to run, and whether the review step pays for itself.",
+          "source": "turn-record",
+          "fields": [
+            "costUsd",
+            "modelUsd",
+            "speechUsd",
+            "reviewUsd",
+            "unpricedCalls",
+            "tokensIn",
+            "tokensOut",
+            "models",
+            "builder",
+            "effort",
+            "reviewRan",
+            "reviewMaterial",
+            "fixRound"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.cost-per-question",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "cost-per-user",
+          "label": "Cost per user",
+          "decision": "The budget per supervisor for a campaign.",
+          "source": "turn-record",
+          "fields": [
+            "user",
+            "costUsd"
+          ],
+          "privacy": [
+            "usernames visible to admins with the usage right"
+          ],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.cost-per-user",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "cost-voice",
+          "label": "Speech to text cost",
+          "decision": "Whether voice is affordable at campaign scale.",
+          "source": "transcript",
+          "fields": [
+            "usd",
+            "seconds",
+            "model",
+            "ms",
+            "retried"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 388,
+          "lastSeen": "2026-11-26T07:00:00.000Z",
+          "switch": {
+            "key": "items.cost-voice",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        }
+      ]
+    },
+    {
+      "id": "quality",
+      "title": "Quality",
+      "on": true,
+      "changed": null,
+      "items": [
+        {
+          "id": "quality-answer-rate",
+          "label": "Answer rate by campaign type and language",
+          "decision": "Where the pack or the model falls short.",
+          "source": "turn-record",
+          "fields": [
+            "outcome",
+            "outcomeReason",
+            "campaignType",
+            "questionLanguage",
+            "toolCalls",
+            "queries",
+            "queriesFailed"
+          ],
+          "privacy": [],
+          "status": "needs-config",
+          "howToEnable": "Needs the deployment's context: map boards, datasets or roles to a campaignType (context: in the config).",
           "count7d": null,
           "lastSeen": null,
-          "privacy": "Coarse only: no device ids.",
-          "howToEnable": "Set client: true in the telemetry config so the page reports device and network type."
+          "switch": {
+            "key": "items.quality-answer-rate",
+            "on": true,
+            "default": true,
+            "editable": false,
+            "reason": "Needs the deployment's context: map boards, datasets or roles to a campaignType (context: in the config).",
+            "blockedBy": "needs-config",
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "session",
-          "label": "Chat sessions",
-          "decision": "How long a working session lasts.",
-          "source": "turn",
+          "id": "quality-unanswered",
+          "label": "Top unanswered questions",
+          "decision": "What to add to the pack next.",
+          "source": "turn-record",
+          "fields": [
+            "outcome",
+            "outcomeReason",
+            "questionHash"
+          ],
+          "privacy": [],
           "status": "recording",
+          "howToEnable": null,
+          "count7d": 151,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.quality-unanswered",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "quality-thumbs-down",
+          "label": "Thumbs down and their reasons",
+          "decision": "Which answers people do not trust, and why.",
+          "source": "client-event",
+          "fields": [
+            "rating",
+            "reason",
+            "commentHash",
+            "sessionId"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 71,
+          "lastSeen": "2026-11-26T07:00:00.000Z",
+          "switch": {
+            "key": "items.quality-thumbs-down",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "quality-clarify",
+          "label": "Clarifying questions: answered or dropped",
+          "decision": "Whether asking back helps or loses people.",
+          "source": "turn-record",
+          "fields": [
+            "outcome",
+            "sessionId",
+            "choice"
+          ],
+          "privacy": [],
+          "feature": "clarify",
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 42,
+          "lastSeen": "2026-11-26T03:59:00.000Z",
+          "switch": {
+            "key": "items.quality-clarify",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        }
+      ]
+    },
+    {
+      "id": "asks",
+      "title": "What people ask",
+      "on": true,
+      "changed": null,
+      "items": [
+        {
+          "id": "asks-top-by-role",
+          "label": "Top 10 questions by role",
+          "decision": "What to put on dashboards and in suggested questions.",
+          "source": "turn-record",
+          "fields": [
+            "questionHash",
+            "roles",
+            "selections"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.asks-top-by-role",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "asks-repeated-direct",
+          "label": "Repeated direct questions",
+          "decision": "Which numbers deserve a chart instead of a question.",
+          "source": "turn-record",
+          "fields": [
+            "kind",
+            "questionHash"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1509,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.asks-repeated-direct",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "asks-repeated-derived",
+          "label": "Repeated derived questions",
+          "decision": "Which rates or comparisons to add as measures.",
+          "source": "turn-record",
+          "fields": [
+            "kind",
+            "questionHash",
+            "computeSteps"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 205,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.asks-repeated-derived",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "asks-mix",
+          "label": "Mix of direct, derived and chart questions",
+          "decision": "Whether people use it to ask or to build.",
+          "source": "turn-record",
+          "fields": [
+            "kind",
+            "editsApplied",
+            "editsRefused"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.asks-mix",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "question-text",
+          "label": "Question text",
+          "decision": "Read the actual words behind the top and unanswered questions.",
+          "source": "turn-record",
+          "fields": [
+            "question",
+            "comment"
+          ],
+          "privacy": [
+            "stores question text"
+          ],
+          "status": "enabled-no-data",
+          "howToEnable": "On; nothing recorded in the last 7 days.",
+          "count7d": 0,
+          "lastSeen": null,
+          "switch": {
+            "key": "items.question-text",
+            "on": true,
+            "default": false,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": "Keeps each question's words as sent, the dashboard filter values and feedback comments. Questions can name places, people or figures. Off keeps a keyed hash instead, so repeated questions still count.",
+            "consent": null,
+            "changed": {
+              "at": "2026-11-20T08:00:00.000Z",
+              "by": "admin"
+            }
+          },
+          "offSince": null,
+          "offBy": null
+        }
+      ]
+    },
+    {
+      "id": "speed",
+      "title": "Speed",
+      "on": true,
+      "changed": null,
+      "items": [
+        {
+          "id": "speed-p95",
+          "label": "Slowest answers (95th percentile) by kind",
+          "decision": "Whether answers are fast enough on field networks.",
+          "source": "turn-record",
+          "fields": [
+            "totalMs",
+            "firstTokenMs",
+            "kind"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.speed-p95",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "speed-abandoned",
+          "label": "Answers left before they finished",
+          "decision": "Where waiting loses people.",
+          "source": "turn-record",
+          "fields": [
+            "abandoned",
+            "abandonedMs",
+            "how",
+            "stage"
+          ],
+          "privacy": [],
+          "status": "off",
+          "howToEnable": "Switched off. Turn it on here.",
+          "count7d": 27,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.speed-abandoned",
+            "on": false,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": {
+              "at": "2026-11-24T09:12:00.000Z",
+              "by": "admin2"
+            }
+          },
+          "offSince": "2026-11-24T09:12:00.000Z",
+          "offBy": "admin2"
+        },
+        {
+          "id": "speed-queue",
+          "label": "Time waiting for a free slot",
+          "decision": "When to add capacity at campaign peaks.",
+          "source": "turn-record",
+          "fields": [
+            "queueMs"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 37,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.speed-queue",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "speed-time-saved",
+          "label": "Time saved against the old way",
+          "decision": "Whether the tool is worth the change.",
+          "source": "config",
+          "fields": [],
+          "privacy": [],
+          "status": "not-telemetry",
+          "howToEnable": "Needs a baseline: time the same tasks done the old way in a small study, then compare with totalMs here.",
+          "count7d": null,
+          "lastSeen": null,
+          "switch": {
+            "key": null,
+            "on": false,
+            "default": false,
+            "editable": false,
+            "reason": "Needs a baseline: time the same tasks done the old way in a small study, then compare with totalMs here.",
+            "blockedBy": "not-telemetry",
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "title": "Voice and language",
+      "on": true,
+      "changed": null,
+      "items": [
+        {
+          "id": "voice-share",
+          "label": "Share of questions spoken",
+          "decision": "Whether voice is worth keeping and improving.",
+          "source": "turn-record",
+          "fields": [
+            "input",
+            "transcriptId",
+            "transcriptIds"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 368,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.voice-share",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "voice-edit-rate",
+          "label": "Transcripts edited before sending",
+          "decision": "Which languages speech to text gets wrong.",
+          "source": "turn-record",
+          "fields": [
+            "transcriptEditDistance",
+            "transcriptId",
+            "transcriptHash",
+            "questionWords",
+            "words",
+            "transcriptWords"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 368,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.voice-edit-rate",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "voice-reask",
+          "label": "Typed again after speaking",
+          "decision": "Whether voice failures push people back to typing.",
+          "source": "turn-record",
+          "fields": [
+            "reAskAfterVoice"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 31,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.voice-reask",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "voice-not-sent",
+          "label": "Transcripts never sent",
+          "decision": "Whether people give up after hearing the transcript.",
+          "source": "client-event",
+          "fields": [
+            "transcriptId",
+            "how",
+            "stage"
+          ],
+          "privacy": [],
+          "status": "enabled-no-data",
+          "howToEnable": "On; nothing recorded in the last 7 days.",
+          "count7d": 0,
+          "lastSeen": null,
+          "switch": {
+            "key": "items.voice-not-sent",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "language-mix",
+          "label": "Language mix",
+          "decision": "Which languages to support well.",
+          "source": "turn-record",
+          "fields": [
+            "questionLanguage",
+            "replyLanguage",
+            "languagePicked",
+            "languageRequested",
+            "languageDetected"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 1840,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.language-mix",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "voice-wer-proxy",
+          "label": "Word error rate (estimate from edits)",
+          "decision": "Which speech model to use per language.",
+          "source": "transcript",
+          "fields": [
+            "transcriptEditDistance",
+            "words",
+            "languageDetected",
+            "model"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 368,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.voice-wer-proxy",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "voice-wer-true",
+          "label": "True word error rate",
+          "decision": "Which speech model to use per language.",
+          "source": "config",
+          "fields": [],
+          "privacy": [],
+          "status": "not-telemetry",
+          "howToEnable": "Needs hand-made transcripts of real clips. Keep recordings and export the benchmark manifest to make them.",
+          "count7d": null,
+          "lastSeen": null,
+          "switch": {
+            "key": null,
+            "on": false,
+            "default": false,
+            "editable": false,
+            "reason": "Needs hand-made transcripts of real clips. Keep recordings and export the benchmark manifest to make them.",
+            "blockedBy": "not-telemetry",
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "transcript-text",
+          "label": "Transcript text",
+          "decision": "See what speech to text heard, to find the words it gets wrong.",
+          "source": "transcript",
+          "fields": [
+            "transcript",
+            "transcriptSent"
+          ],
+          "privacy": [
+            "stores transcripts"
+          ],
+          "status": "off",
+          "howToEnable": "Switched off. Turn it on here.",
+          "count7d": 0,
+          "lastSeen": null,
+          "switch": {
+            "key": "items.transcript-text",
+            "on": false,
+            "default": false,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": "Keeps what speech to text heard, word for word, beside the question that was sent. Spoken questions can name places, people or figures. Off keeps a keyed hash, so edits are still counted.",
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "voice-audio",
+          "label": "Kept recordings",
+          "decision": "Material for checking speech models on real field audio.",
+          "source": "audio",
+          "fields": [
+            "audio"
+          ],
+          "privacy": [
+            "stores audio"
+          ],
+          "status": "off",
+          "howToEnable": "Switched off. Turn it on here.",
+          "count7d": 0,
+          "lastSeen": null,
+          "switch": {
+            "key": "items.voice-audio",
+            "on": false,
+            "default": false,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": "Keeps the recording of each spoken question for the days set below, for admins to play, export and delete. A voice can identify the person speaking. Each user is shown the consent notice once before the mic records.",
+            "consent": "Recordings of spoken questions are kept for 30 days to check speech recognition, then deleted.",
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        }
+      ]
+    },
+    {
+      "id": "conversation",
+      "title": "Conversation",
+      "on": true,
+      "changed": null,
+      "items": [
+        {
+          "id": "conv-rephrase",
+          "label": "Questions asked again in other words",
+          "decision": "Where the first answer misses.",
+          "source": "turn-record",
+          "fields": [
+            "rephraseOf"
+          ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 80,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.conv-rephrase",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "conv-follow-ups",
+          "label": "Follow-ups per conversation",
+          "decision": "Whether people explore or ask once and leave.",
+          "source": "turn-record",
           "fields": [
             "sessionId"
           ],
+          "privacy": [],
+          "status": "recording",
+          "howToEnable": null,
           "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.conv-follow-ups",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         }
       ]
     },
     {
-      "title": "What they ask",
+      "id": "trust-reuse",
+      "title": "Trust and reuse",
+      "on": true,
+      "changed": null,
       "items": [
         {
-          "id": "question",
-          "label": "Question text",
-          "decision": "What people really ask, for the daily review and saved answers.",
-          "source": "turn",
+          "id": "trust-explain",
+          "label": "How an answer was worked out, opened",
+          "decision": "Whether people check where numbers come from.",
+          "source": "client-event",
+          "fields": [],
+          "privacy": [],
           "status": "recording",
-          "fields": [
-            "question"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": "Question text can name people or places; switch it off to keep counts only."
-        },
-        {
-          "id": "language",
-          "label": "Language of the question",
-          "decision": "Which languages to support well.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "language"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "kind",
-          "label": "Answer or board edit",
-          "decision": "Whether people read or build.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "kind"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "answerKind",
-          "label": "Direct, derived or chart",
-          "decision": "Where the compute step and charts earn their keep.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "answerKind"
-          ],
-          "count7d": 1790,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "datasets",
-          "label": "Datasets read",
-          "decision": "Which datasets matter; which can be retired.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "datasets"
-          ],
-          "count7d": 1790,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "board",
-          "label": "Board asked on",
-          "decision": "Which boards to improve first.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "board"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        }
-      ]
-    },
-    {
-      "title": "How well it answers",
-      "items": [
-        {
-          "id": "outcome",
-          "label": "Outcome of each turn",
-          "decision": "Answer rate: the headline quality number.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "outcome"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "refusals",
-          "label": "Refusals and their reasons",
-          "decision": "Which rules block real work.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "refused"
-          ],
-          "count7d": 212,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "review",
-          "label": "Reviewer checks and findings",
-          "decision": "Whether the reviewer is worth its cost.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "reviewed",
-            "material",
-            "fixRound"
-          ],
-          "count7d": 1330,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "clarify",
-          "label": "Clarifying questions asked",
-          "decision": "Which definitions are missing.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "clarify"
-          ],
-          "count7d": 64,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "rephrase",
-          "label": "Questions asked again in other words",
-          "decision": "Where the first answer missed.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "rephrase"
-          ],
+          "howToEnable": null,
           "count7d": 141,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
+          "lastSeen": "2026-11-26T06:26:40.000Z",
+          "switch": {
+            "key": "items.trust-explain",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "thumbs",
-          "label": "Thumbs up and down, with a reason",
-          "decision": "What people think of the answers.",
-          "source": "event",
-          "status": "enabled-no-data",
+          "id": "trust-export-share",
+          "label": "Charts exported or boards shared in Lenspack",
+          "decision": "Whether answers travel beyond the person who asked.",
+          "source": "client-event",
           "fields": [
-            "feedback",
-            "reason"
+            "choice"
           ],
+          "privacy": [],
+          "status": "enabled-no-data",
+          "howToEnable": "On; nothing recorded in the last 7 days.",
           "count7d": 0,
           "lastSeen": null,
-          "privacy": "",
-          "howToEnable": "Feedback buttons are on, but nobody has used them in 7 days."
+          "switch": {
+            "key": "items.trust-export-share",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "explain",
-          "label": "Explain opened",
-          "decision": "Whether people check how an answer was worked out.",
-          "source": "event",
-          "status": "needs-config",
-          "fields": [
-            "explain"
+          "id": "trust-superset-actions",
+          "label": "Exports and shares in Superset on Lenspack's dashboards",
+          "decision": "Whether dashboards Lenspack built get used.",
+          "source": "superset-logs",
+          "fields": [],
+          "privacy": [
+            "usernames visible to admins with the usage right"
           ],
-          "count7d": null,
-          "lastSeen": null,
-          "privacy": "",
-          "howToEnable": "Needs the explain feature, which is not on this server yet."
-        }
-      ]
-    },
-    {
-      "title": "Speed and cost",
-      "items": [
-        {
-          "id": "latency",
-          "label": "Reply time and time to first words",
-          "decision": "Whether to change the model or the cache.",
-          "source": "turn",
           "status": "recording",
-          "fields": [
-            "replyMs",
-            "firstTokenMs"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
+          "howToEnable": null,
+          "count7d": 9,
+          "lastSeen": "2026-11-25T16:40:00.000Z",
+          "switch": {
+            "key": "items.trust-superset-actions",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "cost",
-          "label": "Cost by model, reviewer and speech",
-          "decision": "Budget per user and per campaign.",
-          "source": "turn",
-          "status": "recording",
+          "id": "reuse-hit-rate",
+          "label": "Saved answers used, by tier",
+          "decision": "How much reuse saves, and whether its tiers are right.",
+          "source": "turn-record",
           "fields": [
-            "usd",
-            "modelUsd",
-            "reviewUsd",
-            "speechUsd"
+            "reuse"
           ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": "Estimates from list prices."
+          "privacy": [],
+          "feature": "cache",
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 460,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.reuse-hit-rate",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "tokens",
-          "label": "Tokens in and out",
-          "decision": "Prompt size against the pack's growth.",
-          "source": "turn",
-          "status": "recording",
+          "id": "reuse-saved",
+          "label": "Money saved by saved answers",
+          "decision": "Whether answer reuse pays for itself.",
+          "source": "turn-record",
           "fields": [
-            "tokensIn",
-            "tokensOut"
+            "reuse",
+            "reuseSavedUsd"
           ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
+          "privacy": [],
+          "feature": "cache",
+          "status": "recording",
+          "howToEnable": null,
+          "count7d": 460,
+          "lastSeen": "2026-11-26T06:59:00.000Z",
+          "switch": {
+            "key": "items.reuse-saved",
+            "on": true,
+            "default": true,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "cache",
-          "label": "Saved answers used",
-          "decision": "What the cache saves.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "cacheTier",
-            "savedUsd"
-          ],
-          "count7d": 402,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "model",
-          "label": "Model used",
-          "decision": "Which model to make the default.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "model"
-          ],
-          "count7d": 1840,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        }
-      ]
-    },
-    {
-      "title": "Voice",
-      "items": [
-        {
-          "id": "voiceShare",
-          "label": "Spoken questions",
-          "decision": "Whether voice is worth its cost.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "input"
-          ],
-          "count7d": 388,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "speechSeconds",
-          "label": "Seconds of speech",
-          "decision": "Speech-to-text spend.",
-          "source": "turn",
-          "status": "recording",
-          "fields": [
-            "speechMs"
-          ],
-          "count7d": 388,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "transcriptEdit",
-          "label": "Transcripts corrected before sending",
-          "decision": "How good speech-to-text is per language.",
-          "source": "event",
-          "status": "recording",
-          "fields": [
-            "transcriptEdit"
-          ],
-          "count7d": 57,
-          "lastSeen": "2026-11-25T17:40:00Z",
-          "privacy": ""
-        },
-        {
-          "id": "audio",
-          "label": "Audio kept for checking",
-          "decision": "Re-scoring speech-to-text on real clips.",
-          "source": "audio",
+          "id": "review-runs",
+          "label": "Daily review runs",
+          "decision": "How often answers are checked after the fact.",
+          "source": "feature",
+          "fields": [],
+          "privacy": [],
+          "feature": "review.daily",
           "status": "off",
-          "fields": [
-            "clip"
-          ],
+          "howToEnable": "Owned by the review.daily switch, which is off. Turn it on there first.",
           "count7d": null,
           "lastSeen": null,
-          "privacy": "Audio is personal data: keep it off unless the deployment has agreed to keep it, and set a short retention.",
-          "howToEnable": "Switch audio on in this tab, and set retention."
+          "switch": {
+            "key": null,
+            "on": false,
+            "default": true,
+            "editable": false,
+            "reason": "Owned by the review.daily switch, which is off. Turn it on there first.",
+            "blockedBy": "feature",
+            "feature": "review.daily",
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         },
         {
-          "id": "reaskVoice",
-          "label": "Typed again after speaking",
-          "decision": "Where speech fails.",
-          "source": "turn",
-          "status": "needs-config",
-          "fields": [
-            "reaskVoice"
-          ],
+          "id": "review-proposals",
+          "label": "Daily review proposals",
+          "decision": "Which definition changes the review suggests, and which admins accept.",
+          "source": "feature",
+          "fields": [],
+          "privacy": [],
+          "feature": "review.daily",
+          "status": "off",
+          "howToEnable": "Owned by the review.daily switch, which is off. Turn it on there first.",
           "count7d": null,
           "lastSeen": null,
-          "privacy": "",
-          "howToEnable": "Needs the client to report the input of the next question; set client: true."
+          "switch": {
+            "key": null,
+            "on": false,
+            "default": true,
+            "editable": false,
+            "reason": "Owned by the review.daily switch, which is off. Turn it on there first.",
+            "blockedBy": "feature",
+            "feature": "review.daily",
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "review-open-questions",
+          "label": "Open questions (two readings)",
+          "decision": "What is waiting on a person to settle.",
+          "source": "feature",
+          "fields": [],
+          "privacy": [],
+          "feature": "clarify",
+          "status": "enabled-no-data",
+          "howToEnable": "On; nothing in the last 7 days.",
+          "count7d": null,
+          "lastSeen": null,
+          "switch": {
+            "key": null,
+            "on": true,
+            "default": true,
+            "editable": false,
+            "reason": "Kept by the clarify feature; its own switch turns it off.",
+            "blockedBy": "feature",
+            "feature": "clarify",
+            "sensitive": null,
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         }
       ]
     },
     {
-      "title": "Not telemetry",
+      "id": "device-network",
+      "title": "Device and network",
+      "on": true,
+      "changed": null,
       "items": [
         {
-          "id": "audit",
-          "label": "Audit log of changes",
-          "decision": "Who changed what, for accountability. Kept whatever the telemetry switches say.",
-          "source": "audit",
-          "status": "not-telemetry",
+          "id": "device-class",
+          "label": "Phone, tablet or desktop, and screen width",
+          "decision": "Which screens to design for first.",
+          "source": "turn-record",
           "fields": [
-            "user",
-            "action",
-            "outcome"
+            "device",
+            "viewport"
           ],
-          "count7d": null,
-          "lastSeen": null,
-          "privacy": "Kept for the deployment's audit period."
-        },
-        {
-          "id": "ledger",
-          "label": "Usage ledger for the budget",
-          "decision": "Enforcing the monthly budget. Kept whatever the telemetry switches say.",
-          "source": "ledger",
-          "status": "not-telemetry",
-          "fields": [
-            "usd"
+          "privacy": [
+            "device class per user"
           ],
-          "count7d": null,
-          "lastSeen": null,
-          "privacy": ""
-        },
-        {
-          "id": "export",
-          "label": "Exports downloaded",
-          "decision": "Which data leaves the tool.",
-          "source": "event",
-          "status": "needs-config",
-          "fields": [
-            "export"
-          ],
-          "count7d": null,
-          "lastSeen": null,
-          "privacy": "",
-          "howToEnable": "Needs the export event, which this server does not send yet."
-        },
-        {
-          "id": "errors",
-          "label": "Client errors",
-          "decision": "Bugs seen in the field.",
-          "source": "client",
           "status": "off",
-          "fields": [
-            "error"
-          ],
-          "count7d": null,
+          "howToEnable": "Switched off. Turn it on here.",
+          "count7d": 0,
           "lastSeen": null,
-          "privacy": "Error text can include what was on screen.",
-          "howToEnable": "Switch client errors on in Settings."
+          "switch": {
+            "key": "items.device-class",
+            "on": false,
+            "default": false,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": "Records each user's kind of device and screen width class with every question. Together with the user name this describes the equipment people use.",
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
+        },
+        {
+          "id": "device-network",
+          "label": "Network type and data saver",
+          "decision": "How light answers must be for field networks.",
+          "source": "turn-record",
+          "fields": [
+            "network",
+            "saveData"
+          ],
+          "privacy": [
+            "network type per user"
+          ],
+          "status": "off",
+          "howToEnable": "Switched off. Turn it on here.",
+          "count7d": 0,
+          "lastSeen": null,
+          "switch": {
+            "key": "items.device-network",
+            "on": false,
+            "default": false,
+            "editable": true,
+            "reason": null,
+            "blockedBy": null,
+            "feature": null,
+            "sensitive": "Records each user's network type (wifi, cellular, 2g to 4g) and whether data saver is on, with every question.",
+            "consent": null,
+            "changed": null
+          },
+          "offSince": null,
+          "offBy": null
         }
       ]
     }
-  ]
+  ],
+  "note": "Switching something off stops new records. What was already recorded stays until it ages out (the retention below) or is deleted per user."
 }

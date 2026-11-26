@@ -7,6 +7,8 @@ everywhere they meet the assistant:
 - the button on each dashboard, and the header of the chat panel
 - messages in the chat that name the assistant: "Campaign assistant is restarting…", "too busy right now", and the
   notes under "How this was worked out"
+- the "My dashboards" menus, where they say who changes which dashboards ("Campaign assistant changes only your own
+  dashboards here")
 - the admin panel's title, and the names of browser tabs
 - the pages beside Superset, and the demo board app
 - the assistant itself: asked who it is, it gives this name

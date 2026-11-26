@@ -112,10 +112,13 @@ describe("answer and plan reuse", () => {
       { ...buildProvider({ name: "router", kind: "reuse-router", model: "small", pricing: { input: 1, output: 5 } }), available: true },
     ];
     reuse = reuseLayer({ store: join(dir, "state", "reuse.json"), settings: () => ({ ...CACHE_DEFAULTS, on: true, ...settings }), now: () => clock.now, timer: false });
-    // Who asks: x-user names them; user "north" may only see the Northern province.
+    // Who asks: x-user names them; user "north" may only see the Northern province. "kept" may not read the project
+    // entity; nor may "granted", except on the board the host opens it on (grantedOn: a dashboard role's board).
     const access = (req: { headers: Record<string, unknown> }) => {
       const user = String(req.headers["x-user"] ?? "a");
-      return { user, edit: true, maintain: true, ...(user === "north" ? { scope: [{ dimension: "province", op: "eq" as const, value: "Northern" }] } : {}) };
+      const kept = user === "kept" || user === "granted" ? { hiddenEntities: ["project"] } : {};
+      const granted = user === "granted" ? { boardEntities: { [grantedOn.board]: { entities: ["project"] } } } : {};
+      return { user, edit: true, maintain: true, ...(user === "north" ? { scope: [{ dimension: "province", op: "eq" as const, value: "Northern" }] } : {}), ...kept, ...granted };
     };
     appOptions = { providers, roles: { router: "router" }, reuse, access: access as never };
     const server = createServer(createApp([host], appOptions));
@@ -136,6 +139,7 @@ describe("answer and plan reuse", () => {
     clock.now = new Date(clock.now.getTime() + 86_400_000);
   });
 
+  const grantedOn = { board: "" };
   let boards = 0;
   const newBoard = async () => {
     const id = `b${++boards}`;
@@ -311,6 +315,38 @@ describe("answer and plan reuse", () => {
     const sug = async (user: string) => (await (await fetch(`${base}/${b}/suggestions`, { headers: { "x-user": user } })).json()).suggestions;
     expect(await sug("a")).toEqual(["How many households were delivered?"]);
     expect(await sug("north")).toEqual([]);
+  });
+
+  it("keys saved answers on a board grant: never served on another board, or to a caller without the same grant", async () => {
+    const b = await newBoard();
+    const other = await newBoard();
+    grantedOn.board = b;
+    answers();
+    const first = await ask(b, "How many households were delivered?", { user: "granted" });
+    expect(first.saved).toBeUndefined();
+    const entry = (await reuse.store.entries()).find((e) => e.board === b && e.access?.onBoard)!;
+    expect(entry.access).toMatchObject({ onBoard: { board: b, entities: ["project"] } });
+    expect(entry.access?.hiddenEntities).toBeUndefined();
+    // The same caller on the same board: served.
+    expect((await ask(b, "How many households were delivered?", { user: "granted" })).saved?.tier).toBe("t1");
+    // On that board, a caller who reads everything everywhere has the same entities open, but not by a grant: not served.
+    answers();
+    expect((await ask(b, "How many households were delivered?", { user: "a" })).saved?.entry).not.toBe(entry.id);
+    // A caller without the grant: not served.
+    answers();
+    expect((await ask(b, "How many households were delivered?", { user: "kept" })).saved?.entry).not.toBe(entry.id);
+    // The granted caller on another board reads as "kept" does there, and never gets the granted board's entry.
+    answers();
+    const elsewhere = await ask(other, "How many households were delivered?", { user: "granted" });
+    expect(elsewhere.saved?.entry).not.toBe(entry.id);
+    expect((await reuse.store.entries()).filter((e) => e.access?.onBoard).map((e) => e.board)).toEqual([b]);
+    // Suggestions follow the same key.
+    const sug = async (board: string, user: string) => (await (await fetch(`${base}/${board}/suggestions`, { headers: { "x-user": user } })).json()).suggestions;
+    expect(await sug(b, "granted")).toEqual(["How many households were delivered?"]);
+    grantedOn.board = "";
+    // The grant gone (the host no longer opens the board to them): their saved answer there is not theirs any more.
+    answers();
+    expect((await ask(b, "How many households were delivered?", { user: "granted" })).saved?.entry).not.toBe(entry.id);
   });
 
   it("invalidates on a board filter change, the language rules, the prompt or pack version, and the TTL", async () => {

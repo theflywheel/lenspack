@@ -153,19 +153,24 @@ describe("the admin panel", () => {
     expect(packs.usage).toEqual({ board: "overview", source: "telemetry" });
   });
 
-  it("serves the telemetry checklist's script, which sums up and copies the checklist as Markdown", async () => {
+  it("serves the telemetry checklist's script, which sums up and copies the checklist as Markdown with each switch's state", async () => {
     const js = await (await fetch(`${base}/checklist.js`, { headers: as("ana", true) })).text();
     const box: { window: { LenspackChecklist?: { summary: Function; markdown: Function; counts: Function } } } = { window: {} };
     runInNewContext(js, box);
     const C = box.window.LenspackChecklist!;
+    // Synthetic data, made by telemetryChecklist itself.
     const data = JSON.parse(readFileSync(fileURLToPath(new URL("./fixtures/telemetry-checklist.json", import.meta.url)), "utf8"));
-    const words: Record<string, string> = { tlSumRecording: "{0} of {1} recording", tlSumNoData: "{0} on but no data", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumNot: "{0} not telemetry", tlTitle: "What this deployment records" };
+    const words: Record<string, string> = { tlSumRecording: "{0} of {1} recording", tlSumNoData: "{0} on but no data", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumNot: "{0} not telemetry", tlTitle: "What this deployment records", tlOn: "on", tlOff: "off", tlNoSwitch: "no switch", tlOffSince: "Off since {0}, by {1}.", tlMaster: "Record telemetry", "st_off": "off" };
     const t = (k: string, ...a: unknown[]) => (words[k] ?? k).replace(/\{(\d)\}/g, (_, i) => String(a[Number(i)]));
-    expect(C.summary(data, t)).toBe("23 of 32 recording · 1 on but no data · 4 need configuration · 2 off · 2 not telemetry");
+    expect(C.summary(data, t)).toBe("28 of 42 recording · 4 on but no data · 1 need configuration · 7 off · 2 not telemetry");
     const md: string = C.markdown(data, t);
     expect(md.startsWith("# What this deployment records")).toBe(true);
-    expect(md.split("\n").filter((l) => /^\| [✓◐○⚠—] \|/.test(l))).toHaveLength(32);
-    expect(md).toContain("| ⚠ | Device and network |");
+    expect(md).toContain("- Record telemetry: on");
+    expect(md.split("\n").filter((l) => /^\| (on|off|no switch) \|/.test(l))).toHaveLength(42);
+    // The current state of each switch: a switched-off item, who turned it off, and items that have no switch.
+    expect(md).toMatch(/\| off \| Answers left before they finished \| ○ off \|.*Off since .*, by admin2\./);
+    expect(md).toMatch(/\| on \| Question text \| ◐ /);
+    expect(md).toMatch(/\| no switch \| Time saved against the old way \| — /);
   });
 
   it("draws the usage board from the telemetry, through the same board API as every board", async () => {
