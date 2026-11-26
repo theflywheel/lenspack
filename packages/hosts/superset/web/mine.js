@@ -120,7 +120,8 @@
 
   /**
    * ctx: { head, before, api, pack, board, lang(), send(text), note(text, cls), log, scroll(), features(), busy(),
-   * openDashboard(id)?, onChanged()?, name()? }; name() is the assistant's name in the panel's language ({name} below). Returns { onTool(name, output), relabel(), start() }.
+   * openDashboard(id)?, onChanged()?, name()?, supersetRoot? }; supersetRoot is where Superset runs on its host ("" or
+   * "/superset"), for links to its pages; name() is the assistant's name in the panel's language ({name} below). Returns { onTool(name, output), relabel(), start() }.
    */
   function attach(ctx) {
     if (!document.getElementById("lpm-css")) {
@@ -131,6 +132,8 @@
     }
     const t = (k, ...a) => fmt(String((S[ctx.lang()] || S.en)[k] || S.en[k] || k).replace(/\{name\}/g, () => (ctx.name && ctx.name()) || "Lenspack"), ...a);
     const dashboardId = Number(String(ctx.board).replace(/^superset-/, "")) || null;
+    // A Superset page's address below Superset's root ("/superset/dashboard/7/", or "/superset/superset/dashboard/7/" under /superset).
+    const supersetPage = (path) => `${ctx.supersetRoot || ""}${path}`;
     const my = (path, q) => `${ctx.api}/_superset/my${path || ""}${q ? `?${q}` : ""}`;
     const here = dashboardId ? `dashboard=${dashboardId}` : "";
     async function call(method, path, body, withHere) {
@@ -147,7 +150,7 @@
       try {
         sessionStorage.setItem(OPEN, String(id));
       } catch (e) {}
-      location.assign(`/superset/dashboard/${id}/`);
+      location.assign(supersetPage(`/superset/dashboard/${id}/`));
     }
     const pendFor = (id, text) => {
       try {
@@ -309,7 +312,7 @@
         const li = el("li");
         const row = el("div", "lpm-row");
         const a = el("a", "lpm-name", d.title);
-        a.href = ctx.openDashboard ? "#" : d.url || `/superset/dashboard/${d.dashboard}/`;
+        a.href = ctx.openDashboard ? "#" : d.url || supersetPage(`/superset/dashboard/${d.dashboard}/`);
         a.setAttribute("aria-label", t("open", d.title));
         if (d.dashboard === dashboardId) a.setAttribute("aria-current", "page");
         a.onclick = (e) => {
@@ -323,7 +326,7 @@
             await call("POST", "/dashboards/delete", { dashboard: d.dashboard });
             ctx.note(t("deleted", d.title), "sync");
             // Deleted the one this panel is on: go to Superset's list.
-            if (d.dashboard === dashboardId && !ctx.openDashboard) return location.assign("/dashboard/list/");
+            if (d.dashboard === dashboardId && !ctx.openDashboard) return location.assign(supersetPage("/dashboard/list/"));
             refresh(dashMenu, false);
           }, true);
         row.append(a, del);

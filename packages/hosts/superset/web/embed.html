@@ -35,8 +35,8 @@
 <script src="__BASE__/chat.js"></script>
 <script>
   const v = window.__lp;
-  // Superset's address: publicUrl, else this host (Lenspack mounted under Superset's own host), else this host on Superset's port.
-  const superset = v.supersetUrl || (v.base ? location.origin : `${location.protocol}//${location.hostname}:${v.supersetPort}`);
+  // Superset's address: publicUrl, else this host with Superset's root (Lenspack mounted under Superset's own host), else this host on Superset's port.
+  const superset = v.supersetUrl || (v.base ? location.origin + (v.supersetRoot || "") : `${location.protocol}//${location.hostname}:${v.supersetPort}`);
   const frame = document.getElementById("frame");
   const url = `${superset}/superset/dashboard/${v.dashboard}/`;
   document.getElementById("open").href = url;

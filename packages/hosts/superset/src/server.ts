@@ -28,6 +28,7 @@ import { supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, supersetAuth, supersetRights } from "./identity";
 import { personalDashboards } from "./personal";
 import { actorOf, personalRoutes } from "./personal-routes";
+import { plainPath, requestPaths } from "./paths";
 import { fileRecords } from "./records";
 import { supersetBoards } from "./store";
 import { supersetActions } from "./actions";
@@ -101,7 +102,7 @@ export type SupersetConfig = AdminConfig & {
   host?: string;
   /** Else LENSPACK_PORT, else 8795. */
   port?: number;
-  /** The path browsers reach this server under, when a proxy mounts it below Superset's own host (/lenspack). Else LENSPACK_PUBLIC_PATH. */
+  /** The path browsers reach this server under, when a proxy mounts it below Superset's own host (/lenspack). Else LENSPACK_PUBLIC_PATH. The fallback: a request through Superset's route says its own path (paths.ts), Superset's root included. */
   publicPath?: string;
   /** The board bookkeeping file; its directory holds the rest of the state. Else superset-boards.json in LENSPACK_STATE_DIR, else state/. */
   state?: string;
@@ -317,21 +318,28 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     res.writeHead(status, { "content-type": type, ...NO_STORE });
     res.end(body);
   };
-  const base = (config.publicPath ?? env.LENSPACK_PUBLIC_PATH ?? "").replace(/\/+$/, "");
+  // Where browsers reach this server when nothing says otherwise. Through the plugin, each request says it (with
+  // Superset's own root, when Superset runs below a path of its host): see paths.ts.
+  const configured = config.publicPath ?? env.LENSPACK_PUBLIC_PATH ?? "";
+  const base = plainPath(configured);
+  if (base === null) throw new Error(`${file}: publicPath (LENSPACK_PUBLIC_PATH) must be a plain path like /lenspack, not "${configured}"`);
+  const paths = (req: IncomingMessage) => requestPaths(req, base);
   // The assistant's name in the page's own words (brand), as text: escaped, never markup.
   const text = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const page = (name: string, vars: Record<string, unknown>) => {
+  const page = (name: string, vars: { base: string } & Record<string, unknown>) => {
     const brand = admin.brand.get();
-    return readFileSync(join(web, name), "utf8").replaceAll("__BASE__", base).replaceAll("__NAME__", text(brand.name)).replaceAll("__BUTTON__", text(brand.buttonLabel)).replace("/*__VARS__*/", `window.__lp=${scriptJson({ ...vars, brand })};`);
+    return readFileSync(join(web, name), "utf8").replaceAll("__BASE__", vars.base).replaceAll("__NAME__", text(brand.name)).replaceAll("__BUTTON__", text(brand.buttonLabel)).replace("/*__VARS__*/", `window.__lp=${scriptJson({ ...vars, brand })};`);
   };
   const supersetPort = config.superset?.publicPort ?? Number(new URL(supersetUrl).port);
   const panel = config.overlay?.panel === "dock" ? "dock" : "float";
   const examples = examplesByLanguage(config.overlay?.examples);
-  // Where browsers reach Superset: the config's publicUrl, else what Superset's route says it was reached as.
+  // Where browsers reach Superset: the config's publicUrl, else what Superset's route says it was reached as, with
+  // Superset's root (/superset when it runs below a path of its host).
   const pageVars = (req: IncomingMessage) => {
     const fwd = (h: string) => String(req.headers[h] ?? "").split(",")[0]!.trim();
-    const derived = fwd("x-forwarded-host") ? `${fwd("x-forwarded-proto") || "http"}://${fwd("x-forwarded-host")}` : null;
-    return { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset?.publicUrl?.replace(/\/+$/, "") ?? derived, base, examples };
+    const at = paths(req);
+    const derived = fwd("x-forwarded-host") ? `${fwd("x-forwarded-proto") || "http"}://${fwd("x-forwarded-host")}${at.root}` : null;
+    return { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset?.publicUrl?.replace(/\/+$/, "") ?? derived, supersetRoot: at.root, base: at.base, examples };
   };
   // The overlay runs on Superset's origin and calls this server: allow exactly that origin (publicUrl's, else
   // the same host on Superset's port). Mounted under Superset's own host (publicPath), the calls are same-origin.
@@ -363,7 +371,12 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     log,
   });
   const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined, callerFacts, rights);
-  const supersetBase = (req: IncomingMessage) => (base ? "" : (pageVars(req).supersetUrl ?? ""));
+  // The start of a link to a Superset page: Superset's root when this server is reached through Superset's host
+  // ("" or "/superset"), else Superset's address.
+  const supersetBase = (req: IncomingMessage) => {
+    const at = paths(req);
+    return at.base ? at.root : (pageVars(req).supersetUrl ?? "");
+  };
   const mine = personalRoutes({
     personal,
     rights,
@@ -460,7 +473,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           const r = await supersetActions(client, { dashboards: Object.values(dashboards), from: since, to: new Date() });
           return { available: r.available, ...(r.reason ? { reason: r.reason } : {}), count: r.actions.length, lastSeen: r.actions.reduce<string | null>((m, a) => (m === null || a.at > m ? a.at : m), null) };
         },
-        info: (url) => ({ pack: pack.pack, examples: examplesFor(examples, url.searchParams.get("lang")), examplesByLang: examples, panel }),
+        // supersetRoot: where Superset runs on its host ("" or "/superset"), for the overlay's links to Superset's pages.
+        info: (url, req) => ({ pack: pack.pack, examples: examplesFor(examples, url.searchParams.get("lang")), examplesByLang: examples, panel, supersetRoot: paths(req).root }),
         details: () => ({
           pack: pack.pack,
           datasets: datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: binding.entityOf.get(d.id) ?? null })),

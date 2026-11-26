@@ -17,7 +17,8 @@ and ends with `from lenspack_superset import *`. RlsClauses and Route need only 
 users and dashboards and sends /lenspack/... requests through Flask's test client, with the forward to Lenspack
 caught. AccessEndpoint makes a throwaway SQLite database, a dataset, a role with access to it, users and RLS rules
 in Superset's metadata, and dashboards with and without dashboard roles, and calls /api/v1/lenspack/access (and
-/api/v1/lenspack/version) through Flask's test client; it turns DASHBOARD_RBAC on and off itself where a case needs it. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. ClickHouseLabels
+/api/v1/lenspack/version) through Flask's test client; it turns DASHBOARD_RBAC on and off itself where a case needs it. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. UnderARoot draws Superset's home page and the
+settings page with Superset under /superset (base_url), and sends one form back. ClickHouseLabels
 checks the ClickHouse column-name suffix, and runs a query against ClickHouse when one is given (above).
 """
 
@@ -61,6 +62,22 @@ class StampNonce(unittest.TestCase):
         self.assertEqual(lp.lenspack_stamp_nonce(page, "n1"), b'<script nonce="n1" src="a.js"></script><Script nonce="n1">x()</Script><scripts><script nonce="n0"></script><script nonce="n1"/>')
         self.assertEqual(lp.lenspack_stamp_nonce(page, ""), page)
         self.assertEqual(lp.lenspack_stamp_nonce(b"<script>", 'a"b'), b'<script nonce="a&quot;b">')
+
+
+class Paths(unittest.TestCase):
+    """Superset's root as browsers reach it (request.script_root: "" at the root, "/superset" under SUPERSET_APP_ROOT)."""
+
+    def test_reads_the_root_and_builds_addresses_below_it(self):
+        for given, root in [("", ""), (None, ""), ("/", ""), ("/superset", "/superset"), ("/superset/", "/superset"), ("/bi/superset", "/bi/superset")]:
+            self.assertEqual(lp.lenspack_root(given), root, given)
+        self.assertEqual(lp.lenspack_url("", "/ai-assistant/"), "/ai-assistant/")
+        self.assertEqual(lp.lenspack_url("/superset", "/ai-assistant/"), "/superset/ai-assistant/")
+        self.assertEqual(lp.lenspack_url("/superset/", "ai-assistant/"), "/superset/ai-assistant/")
+
+    def test_a_root_that_is_not_a_plain_path_counts_as_none(self):
+        # It is written into a script and into attributes, so nothing that could leave them gets through.
+        for given in ['/x"><script>', "/a b", "/a/../b", "/./a", "superset", "//evil.example", "/a?b"]:
+            self.assertEqual(lp.lenspack_root(given), "", given)
 
 
 class Route(unittest.TestCase):
@@ -251,6 +268,29 @@ class ProxyEndpoint(unittest.TestCase):
         self.assertIsNone(self.nonce_of(r))
         self.assertEqual(r.get_data(), b"".join(self.PAGE))
 
+
+    def forwarded_headers(self, path, base_url="http://localhost"):
+        """The headers forwarded to Lenspack for one GET through the route, reached at base_url."""
+        from unittest import mock
+
+        seen = []
+
+        def fake(method_, url, **kwargs):
+            seen.append(kwargs["headers"])
+            return mock.Mock(status_code=200, headers={"content-type": "application/json"}, iter_content=lambda chunk_size=None: iter([b"{}"]), close=lambda: None)
+
+        with mock.patch("requests.request", side_effect=fake):
+            r = self.client.get(path, base_url=base_url)
+        self.assertEqual(r.status_code, 200, path)
+        return seen[0]
+
+    def test_says_where_the_browser_reached_it_superset_s_root_included(self):
+        # At the root, as before; under /superset (SUPERSET_APP_ROOT), Lenspack's address and Superset's own root.
+        h = self.forwarded_headers("/lenspack/_superset/info")
+        self.assertEqual((h["x-forwarded-prefix"], h["x-lenspack-superset-root"]), ("/lenspack", ""))
+        h = self.forwarded_headers("/lenspack/_superset/info", base_url="http://localhost/superset")
+        self.assertEqual((h["x-forwarded-prefix"], h["x-lenspack-superset-root"]), ("/superset/lenspack", "/superset"))
+        self.assertEqual(h["x-forwarded-host"], "localhost")
 
     def test_signs_the_users_superset_id(self):
         # Lenspack makes a person's own dashboards theirs in Superset by this id.
@@ -508,6 +548,93 @@ class SettingsPage(unittest.TestCase):
         self.assertIn("Chat language saved.", html)
         self.assertIn("Chat model not saved: nope", html)
         self.assertNotIn("A message left from another page", html)
+
+
+class UnderARoot(unittest.TestCase):
+    """Superset below a path of its host (SUPERSET_APP_ROOT=/superset on 6.1): every address the plugin gives a browser
+    starts with it. Flask's test client reaches the app the way Superset's own middleware hands requests on, with the
+    path in SCRIPT_NAME (base_url); at the root nothing changes."""
+
+    ROOT = "http://localhost/superset"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = superset_app()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        from superset.extensions import security_manager as sm
+
+        admin = sm.find_user(username="lp_root_admin") or sm.add_user("lp_root_admin", "lp", "Test", "lp_root_admin@example.invalid", [sm.find_role("Admin")], password=PASSWORD)
+        cls.client = cls.app.test_client()
+        with cls.client.session_transaction() as s:
+            s["_user_id"] = str(admin.id)
+            s["_fresh"] = True
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def settings_page(self, base_url):
+        import urllib.error
+        from unittest import mock
+
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no Lenspack in the tests")):
+            r = self.client.get("/ai-assistant/", base_url=base_url)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True)[:500])
+        return r.get_data(as_text=True)
+
+    def test_the_page_script_loads_lenspack_below_superset_s_root(self):
+        # The script Superset adds to every page (tail_js_custom_extra.html), on its home page.
+        for base_url, base in [("http://localhost", "/lenspack"), (self.ROOT, "/superset/lenspack")]:
+            r = self.client.get("/superset/welcome/", base_url=base_url)
+            html = r.get_data(as_text=True)
+            self.assertIn(f'var base = "{base}";', html, base_url)
+            self.assertIn('s.src = base + "/overlay.js";', html)
+            self.assertIn('fetch(base + "/healthz"', html)
+            self.assertNotIn('"/lenspack/overlay.js"', html)
+
+    def test_the_settings_page_s_links_follow_superset_s_root(self):
+        import re
+
+        for base_url, root in [("http://localhost", ""), (self.ROOT, "/superset")]:
+            html = self.settings_page(base_url)
+            self.assertIn(f'href="{root}/lenspack/_superset/admin/"', html)
+            if lp.lenspack_settings_layout(self.app) == "lenspack/layout.html":
+                self.assertIn(f'href="{root}/superset/welcome/"', html)
+                # No address that would leave Superset's root (Superset 6's page; on 5, Superset draws the menu bar).
+                if root:
+                    self.assertEqual(re.findall(r'(?:href|action|src)="(/(?!superset/)[^"]*)"', html), [], base_url)
+
+    def test_no_template_writes_an_address_from_the_host_s_root(self):
+        # The forms show only once Lenspack answers, so the templates themselves are read: every form, link and
+        # script address starts from Superset's root (lenspack_root, lenspack_path, lenspack_base).
+        import re
+
+        for name, template in [("settings", lp.SETTINGS_HTML), ("layout", lp.LAYOUT_HTML), ("page script", lp.TAIL_JS)]:
+            self.assertEqual(re.findall(r'(?:href|action|src)="/[^"]*"', template), [], name)
+            self.assertNotIn('"/lenspack', template, name)
+            self.assertNotIn('"/ai-assistant', template, name)
+        actions = re.findall(r'action="([^"]+)"', lp.SETTINGS_HTML)
+        self.assertGreaterEqual(len(actions), 9)
+        for action in actions:
+            self.assertTrue(action.startswith("{{ lenspack_root }}/ai-assistant/"), action)
+
+    def test_the_settings_page_s_forms_come_back_below_superset_s_root(self):
+        import urllib.error
+        from unittest import mock
+
+        before = self.app.config.get("WTF_CSRF_ENABLED", True)
+        self.app.config["WTF_CSRF_ENABLED"] = False
+        try:
+            for base_url, root in [("http://localhost", ""), (self.ROOT, "/superset")]:
+                with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no Lenspack in the tests")):
+                    r = self.client.post("/ai-assistant/telemetry", data={"retentionDays": "x"}, base_url=base_url)
+                self.assertEqual(r.status_code, 302, base_url)
+                self.assertTrue(r.headers["Location"].endswith(f"{root}/ai-assistant/"), (base_url, r.headers["Location"]))
+                if root:
+                    self.assertIn("/superset/ai-assistant/", r.headers["Location"])
+        finally:
+            self.app.config["WTF_CSRF_ENABLED"] = before
 
 
 class BrandLabel(unittest.TestCase):
