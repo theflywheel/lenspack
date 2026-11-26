@@ -6,7 +6,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, recentRemovals, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, type TurnLog, type TurnResult, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, memoryTurnLog, quickReplyOf, selectionsFrom, tabsText, toVercelAI, turnKeyOf, viewFrom, widgetChanges } from "@lenspack/agent";
-import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
+import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement, viewerSelections } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -775,7 +775,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // The answer card (kernel/agent answer.ts), from the data calls the tools make; policy decides what it shows.
     const shown = answerView(h.ctx, opts.explain?.());
     const name = opts.brand?.().name;
-    const card = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections), assistant: name });
+    // The viewer's dashboard selections (?f_<field>= or the body's), through policy: only fields of the pack this caller
+    // may use. One on any other field is dropped before anything reads it (the card, saved answers, telemetry).
+    const viewer = viewerSelections({ ...selectionsOf(url), ...selectionsFrom(body.selections) }, h.pack, h.ctx);
+    const selections = viewer.selections;
+    const card = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections, unusedSelections: viewer.dropped, assistant: name });
     // Where the viewer is on the host's page (the tab they have open), as the host page said; the tab names come from the store.
     const turnView = viewFrom(body.view);
     let tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
@@ -803,7 +807,6 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
     let before = summarise(config);
-    const selections = { ...selectionsOf(url), ...selectionsFrom(body.selections) };
     // Telemetry (@lenspack/agent): the turn's hooks, called below where each thing happens. Null while it is off.
     const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
     const entityOf = new Map([...h.pack.dimensions, ...h.pack.measures].flatMap((x) => (x.entity ? [[x.key, x.entity] as const] : [])));
@@ -836,7 +839,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
     const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
-    const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections), assistant: name });
+    const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections, unusedSelections: viewer.dropped, assistant: name });
     const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) }).catch(async (e) => {
       await endTurn(undefined, true);
       throw e;
