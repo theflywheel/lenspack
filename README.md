@@ -277,6 +277,7 @@ More in [docs/security.md](docs/security.md).
 - [Compute](docs/compute.md): rates, changes and averages over the pack's measures, worked out after the source answers
 - [Query IR](docs/query-ir.md), [SQL drivers](docs/drivers.md), [chat models](docs/llm.md)
 - [Security model](docs/security.md)
+- [Contextual ontologies](docs/ontology.md): a scoping proposal for shared meaning across packs, edited in the admin panel and fed by adapters
 
 ## Status
 
