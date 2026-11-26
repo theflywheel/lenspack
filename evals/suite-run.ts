@@ -2,7 +2,7 @@
 // pnpm eval:suite --suite <suite.yaml> [--truth truth.json] [--models a,b | --stub] [--repeats 1]
 //                 [--only ids] [--tiers T1,T8] [--judge <provider>] [--max-usd 1] [--effort low]
 //                 [--out dir] [--board-cache board.json] [--superset-url http://…] [--review]
-//                 [--reviewer <provider>] [--escalate <provider>]
+//                 [--reviewer <provider>] [--escalate <provider>] [--as-user <superset user>]
 //
 // Accuracy against frozen truth: every question gets a fresh board and one
 // chat turn (or several, for a multi-turn question) through the real chat
@@ -116,7 +116,7 @@ async function main() {
   // The rig: a deployment's Superset config, or an in-repo example on DuckDB.
   let rig: Rig;
   if (suite.config) {
-    rig = await supersetRig(resolve(dirOf(suitePath), suite.config), { dashboard: suite.board.dashboard, boardCache: arg("board-cache"), now, supersetUrl: arg("superset-url") });
+    rig = await supersetRig(resolve(dirOf(suitePath), suite.config), { dashboard: suite.board.dashboard, boardCache: arg("board-cache"), now, supersetUrl: arg("superset-url"), asUser: arg("as-user") });
   } else if (suite.example) {
     rig = await exampleRig(suite.example, { board: suite.board.example_board, now });
   } else throw new Error("the suite names neither a config nor an example");
@@ -201,7 +201,7 @@ async function main() {
   if (stopped) console.log(stopped);
 
   const stamp = `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}-${suite.suite}`;
-  const meta = { suite: suite.suite, suiteFile: basename(suitePath), pack: rig.host.pack.pack, truthComputed: truth.computed, fingerprint: truth.fingerprint ?? null, now: suite.now ?? null, effort: arg("effort") ?? null, review, reviewer: reviewerP?.name ?? null, escalate: escalateP?.name ?? null, judge: judgeName ?? null, repeats, stopped, spentUsd: spent };
+  const meta = { suite: suite.suite, suiteFile: basename(suitePath), pack: rig.host.pack.pack, truthComputed: truth.computed, fingerprint: truth.fingerprint ?? null, now: suite.now ?? null, effort: arg("effort") ?? null, review, reviewer: reviewerP?.name ?? null, escalate: escalateP?.name ?? null, judge: judgeName ?? null, asUser: rig.user?.name ?? null, repeats, stopped, spentUsd: spent };
   writeFileSync(join(outDir, `${stamp}.json`), JSON.stringify({ meta, results }, null, 1));
   const md = report(meta, results);
   writeFileSync(join(outDir, `${stamp}.md`), md);
