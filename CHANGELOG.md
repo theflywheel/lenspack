@@ -11,6 +11,11 @@ brought it.
 
 ### 26 November 2026
 
+- **Superset under a path.** Superset 6.1 running below a path of its host (`SUPERSET_APP_ROOT=/superset`) now
+  gets the button, the chat, the settings page and its menu entry, and links to dashboards, all below that path,
+  with no new setting. At the root nothing changes. Update the plugin file and the server image together. See
+  [Superset under a path](docs/hosts/superset/install.md#superset-under-a-path).
+  ([#99](https://github.com/theflywheel/lenspack/pull/99))
 - **Saved layouts in Superset behave as expected.** Applying a layout fits it to the dashboard as it is now, so a
   chart removed in Superset is not brought back, and Undo after an apply goes back to the right version. Charts made
   in Superset that Lenspack can't redraw stay with their own dashboard: the panel says so when saving, the reply says
