@@ -30,7 +30,7 @@ const root = fileURLToPath(new URL("../../../../", import.meta.url));
 export const LABEL = "lenspack-access-suite";
 export const PACK = "access";
 
-export type Fixtures = { datasets: { visits: number; stock: number }; dashboards: { a: number; b: number; c: number } };
+export type Fixtures = { datasets: { visits: number; stock: number }; dashboards: { a: number; b: number; c: number; t: number } };
 export type Reply = { status: number; headers: IncomingMessage["headers"]; text: string; json: any };
 
 async function freePort(): Promise<number> {

@@ -424,10 +424,28 @@
   // The deployment's off switches, from /_superset/info (overlay, inPlaceRefresh are read here).
   var features = {};
   var DASH = ".dashboard-content"; // the dashboard grid's root (Superset's production build has no data-test attributes)
+  // The tabs the viewer has open, outermost first. In view mode each tab's title holds Superset's
+  // anchor link, <span class="anchor-link-container" id="TAB-…">, in Superset 5 and 6 alike; a tab
+  // strip inside a tab that isn't shown doesn't count. Superset keeps the open tab in memory only:
+  // the in-place refresh keeps it (5.0 and 6.1 alike), a reload doesn't, so a reload asks for it
+  // back with #TAB-…, which Superset reads when a dashboard loads.
+  function openTabs() {
+    var out = [];
+    document.querySelectorAll(".ant-tabs-tab-active .anchor-link-container[id^='TAB-']").forEach(function (n) {
+      var tab = n.closest(".ant-tabs-tab");
+      if (tab && tab.getClientRects().length && out.indexOf(n.id) < 0) out.push(n.id);
+    });
+    return out;
+  }
+  function withOpenTab() {
+    var tabs = openTabs();
+    return location.pathname + location.search + (tabs.length ? "#" + tabs[tabs.length - 1] : location.hash);
+  }
   function refreshInPlace() {
     if (refreshing) return;
     if (features.inPlaceRefresh === false) return reloadWhenIdle();
-    var url = location.pathname + location.search + location.hash;
+    // A #TAB-… left from a reload would send the viewer back to that tab: the open one is kept without it.
+    var url = location.pathname + location.search + (/^#TAB-/.test(location.hash) ? "" : location.hash);
     var old = document.querySelector(DASH);
     if (!/\/superset\/dashboard\//.test(location.pathname) || !old) return reloadWhenIdle();
     refreshing = true;
@@ -459,6 +477,7 @@
   function reloadWhenIdle() {
     var goBtn = panel.querySelector(".lpc-go");
     if (goBtn && goBtn.disabled) return setTimeout(reloadWhenIdle, 500);
+    window.history.replaceState(window.history.state, "", withOpenTab());
     location.reload();
   }
   function open() {
@@ -479,6 +498,7 @@
           api: origin, pack: current.pack, board: current.board, title: current.title, examples: current.examples,
           onClose: close,
           onChanged: refreshInPlace,
+          tabs: openTabs,
           // A chat turn lost its connection: check now rather than at the next health check.
           onUnreachable: function () { lastHealth = 0; health(); },
         });

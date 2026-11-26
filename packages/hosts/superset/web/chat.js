@@ -1044,11 +1044,12 @@
       box.append(btn, body);
       return box;
     }
-    /** The viewer's dashboard filters, from the host page (opts.selections: () => {field: value}), sent as turn context. */
+    /** The viewer's dashboard filters and open tabs, from the host page (opts.selections: () => {field: value}, opts.tabs: () => [tab id]), sent as turn context. */
     function selectionsNow() {
       try {
         const picked = typeof opts.selections === "function" ? opts.selections() : null;
-        return picked && typeof picked === "object" && Object.keys(picked).length ? { selections: picked } : {};
+        const tabs = typeof opts.tabs === "function" ? opts.tabs() : null;
+        return { ...(picked && typeof picked === "object" && Object.keys(picked).length ? { selections: picked } : {}), ...(Array.isArray(tabs) && tabs.length ? { view: { tabs } } : {}) };
       } catch {
         return {};
       }
