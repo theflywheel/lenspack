@@ -67,6 +67,23 @@ function UsageLine({ u }: { u: UsageData }) {
   );
 }
 
+type QueueWait = { state: "waiting"; reason: "busy" | "edit"; position: number; etaSeconds: number };
+
+// The server's queue was full: say so kindly, and keep the common questions one click away (saved answers answer them at once).
+function BusyNote({ suggestions, onAsk }: { suggestions: string[]; onAsk?: (q: string) => void }) {
+  if (!suggestions.length || !onAsk) return null;
+  return (
+    <div className="space-y-1.5 rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground" data-testid="busy">
+      <p>Common questions, answered at once:</p>
+      {suggestions.slice(0, 4).map((q) => (
+          <Button key={q} variant="outline" size="sm" className="h-auto w-full justify-start whitespace-normal rounded-sm py-1 text-left text-xs font-normal" onClick={() => onAsk(q)}>
+          {q}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 type ReuseData = { tier: string; kind?: "answer" | "edit"; dataAsOf: string; savedUsd?: number; how?: string };
 
 // A reply served from a saved answer: when its data was read, and a way to have the assistant work it out again.
@@ -152,12 +169,21 @@ export function ChatPanel({
   onEffortChange: (e: string) => void;
 }) {
   const efforts = models.find((m) => m.name === model)?.efforts;
+  // A turn waiting for a place in the server's queue: its place and about how long (queue.ts).
+  const [queued, setQueued] = React.useState<QueueWait | null>(null);
   const chat = React.useMemo(
-    () => new Chat({ transport: new DefaultChatTransport({ api: `/api${base}/chat?model=${encodeURIComponent(model)}${effort ? `&effort=${encodeURIComponent(effort)}` : ""}` }) }),
+    () =>
+      new Chat({
+        transport: new DefaultChatTransport({ api: `/api${base}/chat?model=${encodeURIComponent(model)}${effort ? `&effort=${encodeURIComponent(effort)}` : ""}` }),
+        onData: (p) => (p.type === "data-queue" && (p.data as QueueWait).state === "waiting" ? setQueued(p.data as QueueWait) : undefined),
+      }),
     [base, model, effort],
   );
   const { messages, sendMessage, status, error } = useChat({ chat });
   const busy = status === "submitted" || status === "streaming";
+  // The turn got its place once anything else arrives.
+  const lastParts = (messages.at(-1)?.parts ?? []).length;
+  React.useEffect(() => setQueued(null), [lastParts, busy]);
   const [input, setInput] = React.useState("");
   const wasBusy = React.useRef(false);
   const bottom = React.useRef<HTMLDivElement>(null);
@@ -327,6 +353,8 @@ export function ChatPanel({
                   p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
+                ) : p.type === "data-queue" && (p.data as { state?: string }).state === "full" ? (
+                  <BusyNote key={i} suggestions={suggestions} onAsk={busy ? undefined : (q) => void ask(q)} />
                 ) : p.type === "data-reuse" ? (
                   <SavedNote key={i} r={p.data as ReuseData} onFresh={busy ? undefined : () => void ask(textOf(messages[mi - 1]), true)} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
@@ -353,7 +381,11 @@ export function ChatPanel({
             </React.Fragment>
           ))}
           {messages.length > 0 && noticesAt(messages.length)}
-          {busy && <p className="text-xs text-muted-foreground">Working…</p>}
+          {busy && (
+            <p className="text-xs text-muted-foreground" data-testid="turn-status">
+              {queued ? (queued.reason === "edit" ? "Waiting for another edit on this dashboard…" : `Busy, about ${queued.etaSeconds} s (number ${queued.position} in line)…`) : "Working…"}
+            </p>
+          )}
           {error && <p className="text-xs text-destructive">{error.message}</p>}
           <div ref={bottom} />
         </CardContent>

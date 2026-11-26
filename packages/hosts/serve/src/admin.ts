@@ -1,4 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { join } from "node:path";
+
+import { type CacheSettings, type QueueSettings, cacheSettings, localTurnGate, queueSettings, reuseLayer } from "@lenspack/agent";
+import { mayAdminister } from "@lenspack/policy";
 
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
 import { type AuditLog, turnsReport } from "./audit";
@@ -7,7 +11,7 @@ import { type FeatureValues, features as featureSwitches } from "./features";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, publicView } from "./llm";
 import type { Budget } from "./metering";
-import { type CacheSettings, cacheSettings } from "./reuse/settings";
+import { cacheRoutes } from "./reuse";
 import { settingsStore } from "./settings";
 import { DEFAULT_SPEECH_MODEL, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
 
@@ -36,6 +40,8 @@ export type AdminConfig = {
   features?: FeatureValues;
   /** Saved answers (docs/caching.md): the defaults the settings page starts from. */
   cache?: Partial<CacheSettings>;
+  /** The turn queue (docs/caching.md): model turns at once, and how many wait and for how long. */
+  queue?: Partial<QueueSettings>;
 };
 
 /** Where the LLM key came from, for the settings page. */
@@ -65,12 +71,20 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...saved<LanguageSettings>("language") });
   const off = () => Object.entries(features.values()).filter(([, on]) => !on).map(([f]) => f);
   const cache = cacheSettings(settings, config.cache);
+  const queue = queueSettings(settings, config.queue);
+  const cacheNow = () => ({ ...cache.get(), on: features.on("cache") });
+  // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/caching.md).
+  const reuse = reuseLayer({ store: join(stateDir, "reuse.json"), settings: cacheNow, log: (m) => console.error(`lenspack: ${m}`) });
+  const gate = localTurnGate(queue.get);
   return {
     settings,
     features,
     cache,
     /** The answer store's effective settings: the section, and the cache feature switch. */
-    cacheNow: () => ({ ...cache.get(), on: features.on("cache") }),
+    cacheNow,
+    queue,
+    reuse,
+    gate,
     speech,
     holdMs,
     language,
@@ -80,6 +94,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       speech,
       language: () => ({ titles: language().titles, board: language().board }),
       chatDefault: () => saved<ChatSetting>("chat"),
+      reuse,
+      queue: gate,
     } satisfies Partial<AppOptions>,
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
     speechView: (writable: boolean) => ({
@@ -132,8 +148,12 @@ export function adminRoutes(o: AdminRouteOptions) {
       options: o.providers.map(publicView),
     };
   };
+  // Saved answers' admin routes (<prefix>/cache…), beside the settings.
+  const cachePage = cacheRoutes({ prefix: o.prefix, reuse: s.reuse, queue: s.gate, audit: o.audit, adminName: o.adminName });
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<void> => {
     if (!url.pathname.startsWith(`${o.prefix}/`)) return;
+    await cachePage(req, res, url, who);
+    if (res.headersSent) return;
     const path = url.pathname.slice(o.prefix.length);
     const send = (status: number, body: unknown) => json(res, status, body, NO_STORE);
     const audit = (action: string, detail?: string, outcome: "ok" | "denied" = "ok") => o.audit?.audit({ at: new Date().toISOString(), user: who.user, action, outcome, ...(detail !== undefined ? { detail } : {}) });
@@ -145,8 +165,8 @@ export function adminRoutes(o: AdminRouteOptions) {
     }
     if (path === "/settings/speech/models") return send(200, (await speechModels({ baseUrl: s.speech.baseUrl })).models);
     const put = req.method === "PUT";
-    if (!["/settings", "/turns", "/audit"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache"].includes(path))) return;
-    if (!who.roles?.includes("admin")) {
+    if (!["/settings", "/turns", "/audit"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue"].includes(path))) return;
+    if (!mayAdminister(who)) {
       audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
       return send(403, { error: `only ${o.adminName}s can do this` });
     }
@@ -163,6 +183,7 @@ export function adminRoutes(o: AdminRouteOptions) {
         language: s.languageView(writable),
         features: s.features.view(writable),
         cache: s.cache.view(writable),
+        queue: s.queue.view(writable),
       });
     // What chat has cost: the newest turns and the totals for today and the last 7 days, from the audit log.
     if (path === "/turns") {
@@ -205,6 +226,14 @@ export function adminRoutes(o: AdminRouteOptions) {
       o.log(`cache: ${JSON.stringify(s.cache.get())}`);
       audit("settings cache", JSON.stringify(b));
       return send(200, s.cache.view(writable));
+    }
+    // The turn queue: any of maxConcurrent, maxWaiting, maxWaitSeconds; read on every turn.
+    if (path === "/settings/queue") {
+      const r = s.queue.update(b);
+      if (!r.ok) return send(400, { error: r.error });
+      o.log(`queue: ${JSON.stringify(s.queue.get())}`);
+      audit("settings queue", JSON.stringify(b));
+      return send(200, s.queue.view(writable));
     }
     // Any of model, holdMs; a field left out is kept, and null or "" puts it back to the default.
     if (path === "/settings/speech") {

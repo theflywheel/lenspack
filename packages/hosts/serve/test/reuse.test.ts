@@ -14,13 +14,11 @@ import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { seed } from "../../../../examples/campaign/seed";
-import { CACHE_DEFAULTS, type CacheSettings, type Host, type Provider, type Reuse, buildProvider, cacheSettings, configSchema, createApp, openConfig, registerLlmAdapter, reuseLayer } from "../src";
+import { type AppOptions, BUSY_TEXT, CACHE_DEFAULTS, type CacheSettings, type Host, type Provider, QUEUE_DEFAULTS, QueueBusy, type Reuse, type TurnGate, buildProvider, localTurnGate, cacheSettings, configSchema, createApp, openConfig, registerLlmAdapter, reuseLayer } from "../src";
 import { anthropicAdapter, anthropicTokens } from "../src/adapters/anthropic";
 import { costOf } from "../src/metering";
 import { cacheRoutes } from "../src/reuse";
-import { retemplate, shapeOf } from "../src/reuse/numbers";
-import { fill, slotInto, slotsOf, timePhrase } from "../src/reuse/slots";
-import { guessLanguage, normalise, standalone } from "../src/reuse/text";
+import { fill, guessLanguage, normalise, retemplate, shapeOf, slotInto, slotsOf, standalone, timePhrase } from "@lenspack/agent";
 
 const campaign = fileURLToPath(new URL("../../../../examples/campaign/", import.meta.url));
 const usage = { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 2, text: 2, reasoning: 0 } };
@@ -37,7 +35,7 @@ const lastValue = (prompt: unknown) => {
   return m ? Number(m[1]) : NaN;
 };
 
-type Step = unknown[] | ((prompt: unknown) => unknown[]);
+type Step = unknown[] | ((prompt: unknown) => unknown[] | Promise<unknown[]>);
 type Part = { type: string; id?: string; delta?: string; data?: any; toolName?: string; output?: any };
 
 describe("answer and plan reuse", () => {
@@ -48,6 +46,14 @@ describe("answer and plan reuse", () => {
   let base: string;
   let reuse: Reuse;
   let settings: Partial<CacheSettings> & { on?: boolean } = {};
+  let appOptions: AppOptions;
+  /** Another server on the same host and answer store, with other options (a queue). */
+  const serverWith = async (o: Partial<AppOptions>) => {
+    const server = createServer(createApp([host], { ...appOptions, ...o }));
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    return `http://127.0.0.1:${(server.address() as { port: number }).port}/api/${host.name}`;
+  };
   const clock = { now: new Date("2026-11-26T09:00:00Z") };
   // Data that "changed": every value the source returns is multiplied by this.
   const data = { factor: 1 };
@@ -81,7 +87,7 @@ describe("answer and plan reuse", () => {
       doStream: async ({ prompt }) => {
         script.calls++;
         const next = script.steps.shift() ?? sayStep("Done.");
-        return stream(typeof next === "function" ? next(prompt) : next);
+        return stream(typeof next === "function" ? await next(prompt) : next);
       },
       doGenerate: async () => {
         script.reviews++;
@@ -105,13 +111,14 @@ describe("answer and plan reuse", () => {
       { ...buildProvider({ name: "builder", kind: "reuse-builder", model: "big", pricing: { input: 10, output: 50 } }), available: true },
       { ...buildProvider({ name: "router", kind: "reuse-router", model: "small", pricing: { input: 1, output: 5 } }), available: true },
     ];
-    reuse = reuseLayer({ file: join(dir, "state", "reuse.json"), settings: () => ({ ...CACHE_DEFAULTS, on: true, ...settings }), now: () => clock.now });
+    reuse = reuseLayer({ store: join(dir, "state", "reuse.json"), settings: () => ({ ...CACHE_DEFAULTS, on: true, ...settings }), now: () => clock.now, timer: false });
     // Who asks: x-user names them; user "north" may only see the Northern province.
     const access = (req: { headers: Record<string, unknown> }) => {
       const user = String(req.headers["x-user"] ?? "a");
       return { user, edit: true, maintain: true, ...(user === "north" ? { scope: [{ dimension: "province", op: "eq" as const, value: "Northern" }] } : {}) };
     };
-    const server = createServer(createApp([host], { providers, roles: { router: "router" }, reuse, access: access as never }));
+    appOptions = { providers, roles: { router: "router" }, reuse, access: access as never };
+    const server = createServer(createApp([host], appOptions));
     servers.push(server);
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/${host.name}`;
@@ -135,10 +142,10 @@ describe("answer and plan reuse", () => {
     await host.store.create({ id, pack: host.pack, title: "Campaign" });
     return id;
   };
-  const ask = async (board: string, text: string, o: { user?: string; fresh?: boolean; history?: string[]; language?: string } = {}) => {
+  const ask = async (board: string, text: string, o: { user?: string; fresh?: boolean; history?: string[]; language?: string; base?: string; query?: string } = {}) => {
     const before = { calls: script.calls, reviews: script.reviews, router: router.calls };
     const messages = [...(o.history ?? []).flatMap((h, i) => [{ id: `h${i}`, role: "user", parts: [{ type: "text", text: h }] }, { id: `a${i}`, role: "assistant", parts: [{ type: "text", text: "ok" }] }]), { id: "u", role: "user", parts: [{ type: "text", text }] }];
-    const res = await fetch(`${base}/${board}/chat?model=builder`, { method: "POST", headers: { "x-user": o.user ?? "a" }, body: JSON.stringify({ messages, ...(o.fresh ? { fresh: true } : {}), ...(o.language ? { language: o.language } : {}) }) });
+    const res = await fetch(`${o.base ?? base}/${board}/chat?model=builder${o.query ?? ""}`, { method: "POST", headers: { "x-user": o.user ?? "a" }, body: JSON.stringify({ messages, ...(o.fresh ? { fresh: true } : {}), ...(o.language ? { language: o.language } : {}) }) });
     const parts = (await res.text())
       .split("\n")
       .filter((l) => l.startsWith("data: ") && l !== "data: [DONE]")
@@ -308,7 +315,7 @@ describe("answer and plan reuse", () => {
     const b = await newBoard();
     answers();
     await ask(b, "How many households were delivered?");
-    const unfiltered = new Set(reuse.store.entries().map((x) => x.id));
+    const unfiltered = new Set((await reuse.store.entries()).map((x) => x.id));
     // A board filter added: the board's answers are not reused.
     await host.store.patch({ id: b, ops: [{ op: "add_filter", filter: { id: "f_province", field: "province", label: "Province", type: "select", applies: ["*"] } } as never], catalogue: catalogueFrom(host.pack), source: "ops" });
     answers();
@@ -317,12 +324,12 @@ describe("answer and plan reuse", () => {
     answers();
     expect((await ask(b, "How many households were delivered?", { language: "fr" })).model).toBe(2);
     // An entry made under another pack or prompt version (a restart after either changed) is never served.
-    const e = reuse.store.entries().find((x) => x.board === b && x.replyLang === "auto" && !unfiltered.has(x.id))!;
+    const e = (await reuse.store.entries()).find((x) => x.board === b && x.replyLang === "auto" && !unfiltered.has(x.id))!;
     const version = e.version;
-    e.version = "older";
+    await reuse.store.put({ ...e, version: "older" });
     answers();
     expect((await ask(b, "How many households were delivered?")).model).toBe(2);
-    expect(reuse.store.get(e.id)!.version).toBe(version);
+    expect((await reuse.store.get(e.id))!.version).toBe(version);
     // Past the TTL the entry is dropped and the assistant answers again.
     settings = { ttlHours: 1 };
     clock.now = new Date(clock.now.getTime() + 2 * 3_600_000);
@@ -364,45 +371,46 @@ describe("answer and plan reuse", () => {
     expect(freshEdit.model).toBe(2);
     expect(freshEdit.reviews).toBe(0);
     // Edits are counted per board, for "settled" boards.
-    expect(reuse.boards().find((x) => x.board === b)).toMatchObject({ settled: false });
-    expect(reuse.boards().find((x) => x.board === b)!.edits7d).toBeGreaterThanOrEqual(3);
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await reuse.boards()).find((x) => x.board === b)).toMatchObject({ settled: false });
+    expect((await reuse.boards()).find((x) => x.board === b)!.edits7d).toBeGreaterThanOrEqual(3);
   });
 
   it("frequent questions become suggestions, and those no chart answers become chart candidates", async () => {
     const b = await newBoard();
     answers();
     for (let i = 0; i < 3; i++) await ask(b, "How many households were delivered?");
-    expect(reuse.suggestions({ board: b, scope: null })).toEqual(["How many households were delivered?"]);
-    const candidates = reuse.chartCandidates().filter((c) => c.board === b);
+    expect(await reuse.suggestions({ board: b, scope: null })).toEqual(["How many households were delivered?"]);
+    const candidates = (await reuse.chartCandidates()).filter((c) => c.board === b);
     expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({ question: "How many households were delivered?", asks: 3, query: { kind: "value", measure: "households_delivered" } });
     // Once the board has a chart of it, it is no longer a candidate.
     await host.store.patch({ id: b, ops: [{ op: "add_widget", id: "k", widget: { kind: "kpi", title: "HH", query: { kind: "value", measure: "households_delivered" } }, placement: { place: "top", width: "quarter" } } as never], catalogue: catalogueFrom(host.pack), source: "ops" });
     answers();
     await ask(b, "something unrelated to refresh the board view", {});
-    expect(reuse.chartCandidates().filter((c) => c.board === b)).toHaveLength(0);
+    expect((await reuse.chartCandidates()).filter((c) => c.board === b)).toHaveLength(0);
   });
 
   it("the store survives a restart, bounded with LRU and pinning", async () => {
     const file = join(dir, "lru", "reuse.json");
-    const one = reuseLayer({ file, settings: () => ({ ...CACHE_DEFAULTS, on: true, maxEntries: 10 }), now: () => clock.now });
+    const one = reuseLayer({ timer: false, store: file, settings: () => ({ ...CACHE_DEFAULTS, on: true, maxEntries: 10 }), now: () => clock.now });
     const entry = (i: number) => ({
       id: `e${i}`, kind: "answer" as const, pack: "p", board: "b", scope: "s", version: "v", lang: "en", replyLang: "auto", question: `q${i}`, norm: `q${i}`, variants: [], plan: [], reply: "r", dataAsOf: clock.now.toISOString(),
       costUsd: 0.01, model: "m", createdAt: new Date(clock.now.getTime() + i).toISOString(), lastHit: null, hits: 0, asked: [], tierCounts: { t1: 0, t2: 0, t3: 0, t4: 0 }, pinned: false,
     });
-    one.store.put(entry(0));
-    one.pin("e0", true);
-    for (let i = 1; i <= 12; i++) one.store.put(entry(i));
-    one.flush();
-    const two = reuseLayer({ file, settings: () => ({ ...CACHE_DEFAULTS, on: true, maxEntries: 10 }), now: () => clock.now });
-    const ids = two.list().entries.map((e) => e.id).sort();
+    await one.store.put(entry(0));
+    await one.pin("e0", true);
+    for (let i = 1; i <= 12; i++) await one.store.put(entry(i));
+    await one.flush();
+    const two = reuseLayer({ timer: false, store: file, settings: () => ({ ...CACHE_DEFAULTS, on: true, maxEntries: 10 }), now: () => clock.now });
+    const ids = (await two.list()).entries.map((e) => e.id).sort();
     expect(ids).toHaveLength(10);
     // The pinned one stayed, the oldest unpinned went.
     expect(ids).toContain("e0");
     expect(ids).not.toContain("e1");
     expect(ids).not.toContain("e2");
     expect(ids).not.toContain("e3");
-    expect(two.list().entries.find((e) => e.id === "e0")!.pinned).toBe(true);
+    expect((await two.list()).entries.find((e) => e.id === "e0")!.pinned).toBe(true);
   });
 
   it("the admin API: stats, entries, pin, evict, suggestions, chart candidates, admins only", async () => {
@@ -424,17 +432,132 @@ describe("answer and plan reuse", () => {
     const e = list.body.entries.find((x: { board: string }) => x.board === b);
     expect(e).toMatchObject({ id: expect.any(String), board: b, question: "How many households were delivered?", variants: [], kind: "answer", hits: 1, lastHit: expect.any(String), createdAt: expect.any(String), pinned: false, tierCounts: { t1: 1, t2: 0, t3: 0, t4: 0 }, dataAsOf: expect.any(String) });
     expect((await call("POST", `/_x/cache/${e.id}/pin`)).body).toEqual({ ok: true, id: e.id, action: "pin" });
-    expect(reuse.store.get(e.id)!.pinned).toBe(true);
+    expect((await reuse.store.get(e.id))!.pinned).toBe(true);
     expect((await call("POST", `/_x/cache/${e.id}/unpin`)).status).toBe(200);
     expect((await call("GET", `/_x/cache/suggestions?board=${b}`)).body.suggestions).toEqual(["How many households were delivered?"]);
     expect((await call("GET", "/_x/cache/chart-candidates")).body).toHaveProperty("candidates");
     expect((await call("GET", "/_x/cache/boards")).body).toHaveProperty("boards");
     expect((await call("GET", "/_x/cache", ["viewer"])).status).toBe(403);
     expect((await call("POST", `/_x/cache/${e.id}/evict`)).status).toBe(200);
-    expect(reuse.store.get(e.id)).toBeUndefined();
+    expect(await reuse.store.get(e.id)).toBeUndefined();
     expect((await call("POST", `/_x/cache/${e.id}/evict`)).status).toBe(404);
     // The savings are counted: two full turns' average, less what the saved answer spent (nothing).
     expect(list.body.stats.savedUsd).toBeGreaterThan(0);
+  });
+
+  it("the viewer's dashboard filter selections are part of the question", async () => {
+    const b = await newBoard();
+    answers();
+    await ask(b, "How many households were delivered?", { query: "&f_province=Northern" });
+    expect((await ask(b, "How many households were delivered?", { query: "&f_province=Northern" })).saved?.tier).toBe("t1");
+    // Other selections (or none): not the same question.
+    answers();
+    expect((await ask(b, "How many households were delivered?", { query: "&f_province=Eastern" })).model).toBe(2);
+    answers();
+    expect((await ask(b, "How many households were delivered?")).model).toBe(2);
+  });
+
+  it("a suggested question with a checked query is answered by that query the first time, without the agent", async () => {
+    const b = await newBoard();
+    const pack = host.pack as { examples: { question: string; query: unknown }[] };
+    const was = pack.examples;
+    pack.examples = [{ question: "How many households were delivered so far?", query: { kind: "value", measure: "households_delivered" } }];
+    try {
+      router.answers.push((system, user) => (system.startsWith("You answer a dashboard question") && user.includes("households_delivered") ? "That many households were delivered." : "?"));
+      const chip = await ask(b, "How many households were delivered so far?");
+      expect(chip).toMatchObject({ model: 0, router: 1, reply: "That many households were delivered.", saved: { tier: "t2" } });
+      expect(chip.saved.how).toMatch(/checked query, said by router/);
+      expect(chip.parts.find((p) => p.type === "tool-output-available")?.output).toMatchObject({ ok: true, rows: [{ value: expect.any(Number) }] });
+      // Kept like any answer: the next ask is T1.
+      expect((await ask(b, "how many households were delivered so far")).saved.tier).toBe("t1");
+    } finally {
+      pack.examples = was;
+    }
+  });
+
+  it("saved answers skip the queue; a full queue turns a model turn away with the suggestions", async () => {
+    const b = await newBoard();
+    answers();
+    await ask(b, "How many households were delivered?");
+    const full: TurnGate = {
+      acquire: async () => {
+        throw new QueueBusy("full", 60);
+      },
+      settings: () => QUEUE_DEFAULTS,
+      stats: () => ({ running: 8, waiting: 50, editsWaiting: 0, turnSeconds: 10 }),
+    };
+    const busy = await serverWith({ queue: full });
+    const hit = await ask(b, "How many households were delivered?", { base: busy });
+    expect(hit.saved?.tier).toBe("t1");
+    const turnedAway = await ask(b, "How many households were delivered by province?", { base: busy });
+    expect(turnedAway.model).toBe(0);
+    expect(turnedAway.parts.find((p) => p.type === "data-queue")?.data).toEqual({ state: "full", why: "full", retryAfterSeconds: 60 });
+    expect(turnedAway.reply).toBe(BUSY_TEXT);
+  });
+
+  it("edits to one board wait for each other, and the second sees the first's result", async () => {
+    const b = await newBoard();
+    const gate = localTurnGate(() => ({ maxConcurrent: 8, maxWaiting: 8, maxWaitSeconds: 30 }));
+    const busy = await serverWith({ queue: gate });
+    let sawFirst: boolean | undefined;
+    script.steps.push(
+      async () => {
+        await new Promise((r) => setTimeout(r, 300));
+        return toolStep("add_widget", { id: "hh", kind: "kpi", title: "Households delivered", query_kind: "value", measure: "households_delivered", place: "top", width: "quarter" });
+      },
+      sayStep("I added the KPI."),
+      (prompt) => {
+        sawFirst = JSON.stringify(prompt).includes("Households delivered");
+        return sayStep("The board already has that KPI.");
+      },
+    );
+    // Worded unlike any edit saved by the tests before, so the model makes it.
+    const first = ask(b, "Put a households delivered KPI first on the board", { base: busy });
+    // The first holds its place before the second asks.
+    for (let i = 0; i < 400 && gate.stats().running === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(gate.stats().running).toBe(1);
+    const second = await ask(b, "Add another households delivered KPI please", { base: busy });
+    await first;
+    expect(second.parts.find((p) => p.type === "data-queue")?.data).toMatchObject({ state: "waiting", reason: "edit", position: 1 });
+    expect(sawFirst).toBe(true);
+    expect(second.reply).toBe("The board already has that KPI.");
+  });
+
+  it("pre-warming refreshes the most-asked answers on schedule, without the model while it can", async () => {
+    for (const e of await reuse.store.entries()) await reuse.store.delete(e.id);
+    const b = await newBoard();
+    answers();
+    const first = await ask(b, "How many households were delivered?");
+    const n = Number(first.reply.match(/[\d,]+/)![0].replace(/,/g, ""));
+    answers("", {}, (v) => `${v.toLocaleString("en-US")} households were delivered, about 17 per team.`);
+    await ask(b, "How many households were delivered by the teams?");
+    // Off by default: the schedule does nothing.
+    data.factor = 2;
+    clock.now = new Date(`${clock.now.toISOString().slice(0, 10)}T06:31:00Z`);
+    expect(reuse.tick()).toBeNull();
+    // On, at 06:30 UTC, with no money for rewrites: the template answer is refreshed, the other waits.
+    settings = { prewarm: { enabled: true, times: ["06:30"], timeZone: "UTC", topN: 10, maxUsd: 0 } };
+    const calls = router.calls;
+    const run = (await reuse.tick())!;
+    expect(run).toMatchObject({ reason: "schedule", entries: 2, refreshed: 1, rewritten: 0, skipped: 1, failed: 0, modelCalls: 0 });
+    expect(router.calls).toBe(calls);
+    expect(script.calls).toBeGreaterThan(0);
+    // Once a day per time.
+    expect(reuse.tick()).toBeNull();
+    const hit = await ask(b, "How many households were delivered?");
+    expect(hit).toMatchObject({ model: 0, saved: { tier: "t1" }, reply: `${(n * 2).toLocaleString("en-US")} households were delivered.` });
+    // A data change, with a cap that allows a rewrite: the one that needs words rewritten is rewritten by the small model.
+    settings = { prewarm: { enabled: true, times: ["06:30"], timeZone: "UTC", topN: 10, maxUsd: 1 } };
+    data.factor = 3;
+    router.answers.push(() => "Rewritten by the refresh.");
+    const changed = (await reuse.dataChanged(null, 0))!;
+    expect(changed).toMatchObject({ reason: "data", refreshed: 1, rewritten: 1, modelCalls: 1 });
+    expect(changed.spentUsd).toBeGreaterThan(0);
+    const words = await ask(b, "How many households were delivered by the teams?");
+    expect(words).toMatchObject({ model: 0, router: 0, reply: "Rewritten by the refresh.", saved: { tier: "t1" } });
+    // Only the top N per board and access scope.
+    settings = { prewarm: { enabled: true, times: ["06:30"], timeZone: "UTC", topN: 1, maxUsd: 0 } };
+    expect((await reuse.prewarm())!.entries).toBe(1);
   });
 
   it("the cache feature switch and settings turn it off", async () => {

@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { cacheSettings, localTurnGate, queueSettings, reuseLayer } from "@lenspack/agent";
 import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
@@ -10,7 +11,6 @@ import { fileAudit } from "./audit";
 import { authFrom, effectiveAuth } from "./auth";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
-import { cacheSettings, reuseLayer } from "./reuse";
 import { startRuntime } from "./runtime";
 
 const USAGE = `lenspack <command>
@@ -55,7 +55,7 @@ async function main() {
       // Saved answers, when the config asks for them: settings from the config (no settings page here).
       const { file: cacheFile, ...cacheConfig } = typeof config.cache === "object" ? config.cache : {};
       const cache = cacheSettings(null, cacheConfig);
-      const reuse = config.cache ? reuseLayer({ file: resolve(dir, cacheFile ?? "reuse.json"), settings: () => ({ ...cache.get(), on: true }), log: (m) => console.error(`lenspack: ${m}`) }) : undefined;
+      const reuse = config.cache ? reuseLayer({ store: resolve(dir, cacheFile ?? "reuse.json"), settings: () => ({ ...cache.get(), on: true }), log: (m: string) => console.error(`lenspack: ${m}`) }) : undefined;
       startRuntime({
         hosts,
         close,
@@ -64,7 +64,7 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined, historyTurns: config.historyTurns, reuse },
+        app: { ui, page, auth: adapter, rights, audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined, historyTurns: config.historyTurns, reuse, queue: localTurnGate(queueSettings(null, config.queue).get) },
         log: (m) => console.error(`lenspack: ${m}`),
         onListening: () => console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}`),
       });

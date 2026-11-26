@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { memoryStore } from "@lenspack/core";
-import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, cacheRoutes, json, resolveSecrets, reuseLayer, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
 import YAML from "yaml";
 
 import { identityKey, serviceAccount } from "./bootstrap";
@@ -130,8 +130,6 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   log(`Superset ${superset.version ?? "5.x (no version reported)"}${config.overlay?.mapStyle ? "" : `; maps drawn on ${binding.mapStyle}`}`);
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
-  // Saved answers and plans, beside settings.json: a repeated question is answered without the model (docs/caching.md).
-  const reuse = reuseLayer({ file: join(stateDir, "reuse.json"), settings: admin.cacheNow, log });
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
   const connector = supersetConnector(client, binding, { log, capabilities: () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) }) });
@@ -203,7 +201,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
-    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined), audit: auditLog?.audit, reuse, ...admin.app },
+    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined), audit: auditLog?.audit, ...admin.app },
     port,
     host,
     budget: config.budget,
@@ -236,7 +234,6 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           panel,
         }),
       });
-      const cachePage = cacheRoutes({ prefix: "/_superset", reuse, audit: auditLog, adminName: "Superset admin" });
       return async (req, res, url, signedIn) => {
         cors(req, res);
         if (req.method === "OPTIONS") return send(res, 204, "", "application/json");
@@ -250,8 +247,6 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         const who = await signedIn();
         if (!who) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
         await settingsPage(req, res, url, who);
-        if (res.headersSent) return;
-        await cachePage(req, res, url, who);
         if (res.headersSent) return;
         if (url.pathname === "/_superset/bind") {
           const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, () => idKey)?.d);

@@ -21,6 +21,8 @@ Each question is tried against these in order. The first one that fits answers i
 | **3. Slots** | The same question about another place, facility or time ("in Ward 7" instead of "in Ward 12", "last week" instead of "today") | Swaps the value into the saved queries, checks that the value exists in the data, and runs them. The reply is filled in as in tier 2. A different time period always goes to the small model, because the dates in the reply change. | none, or one small call |
 | **4. Router** | A question in different words, or another language | One small model call sees the new question and the eight saved questions most like it, and says which one (if any) would answer it exactly as asked, and with which place or time. A match is run as in tier 3. "No match" goes to the full assistant. | one small call |
 
+**Suggested questions.** A pack can list example questions with the query someone checked for each (`examples:` in the pack file); the chat offers them as suggestion chips. When one of those questions is asked and nothing is saved for it yet, its checked query is run directly, under the asking person's access, and the small model says the result in one to three sentences (with no model at hand, a plain line such as "households reached: 1,204." does). That answer is then kept like any other, so the next ask is tier 1 or 2. Before, clicking a chip ran the full assistant even though the right query was already known.
+
 The small model is the deployment's `router` role if one is set, otherwise a Haiku model if one is configured, otherwise the main model. On Haiku 5.5 a router or rewrite call costs a few hundredths of a cent.
 
 ### What gets saved
@@ -53,6 +55,7 @@ A saved answer is used only for the same:
 - **pack and its definitions.** A change to the pack file (a measure, a dimension, a definition, a correctness filter) changes its fingerprint, and every answer saved under the old one stops being served.
 - **assistant version.** When the assistant's instructions change (`PROMPT_VERSION`), old answers stop being served.
 - **board filters.** An answer is saved per board, under that board's filters. Adding, changing or removing a filter starts afresh.
+- **the viewer's filter selections.** What a person has picked in the dashboard's filters (`?f_<field>=` on the chat request, or `selections` in its body) is part of the question: "how many today?" with one province picked is not the same question as with none.
 - **language rules.** A reply in a chosen language is not served to someone who chose another.
 
 And it expires:
@@ -100,6 +103,56 @@ A `null` in a `PUT` returns a setting to its default. An unknown setting is refu
 
 For `lenspack serve`, add `cache: true` (or `cache: { file: ./reuse.json, ttlHours: 72, … }`) to `lenspack.yaml`. Without it, every question goes to the full assistant.
 
+## Busy hours: the queue
+
+Use of a dashboard is concentrated. Most people open it at the start of the day and before a review meeting, so most questions arrive in two or three short peaks, and they are mostly the same questions. That makes peaks both predictable and repetitive, and Lenspack uses both facts: saved answers take the repetitive part, and the rest waits its turn instead of failing.
+
+- **At most `maxConcurrent` model turns run at once** (8 by default). The others wait in line, oldest first. A turn answered from a saved answer never waits: it uses no model.
+- **The person waiting is told so.** The chat shows "Busy, about 12 s (number 3 in line)" and updates it as the line moves.
+- **When the line is full** (`maxWaiting`, 50 by default), or a turn has waited `maxWaitSeconds` (60 by default), the reply is a short "Lenspack is too busy right now. Try again in a minute", with a Try again button and the board's suggestion chips beside it. Those chips are usually saved answers, so they still answer at once.
+- **A rate limit is not a failure.** When the model provider turns a call away because of its rate limit (HTTP 429) or because it is overloaded (529), the call is tried again after about 1, 2, 4 seconds and so on (up to 15 seconds each, with a random part so that many waiting turns do not all retry at the same moment, and longer if the provider asks for longer). It only fails once the turn's wait limit would be passed.
+- **Two changes to the same dashboard do not run at once.** If a second request to change a board arrives while another change to it is still being made, it waits for the first to finish ("waiting for another edit on this dashboard"), then starts from the board as the first left it. Questions, and changes to other boards, do not wait for it. A request counts as a change when it starts with a word such as "add", "remove", "move" or "change" (in English, French, Portuguese and Hindi). A question mistaken for a change only waits a little longer; a change mistaken for a question still works, as it always did.
+- How long each turn waited is recorded as `queueMs` in its `chat-turn` audit record.
+
+Settings under `queue` (`PUT <prefix>/settings/queue`, or `queue:` in the deployment config):
+
+| setting | default | |
+|---|---|---|
+| `maxConcurrent` | `8` | model turns at once (1 to 200) |
+| `maxWaiting` | `50` | turns that may wait (0 to 2,000) |
+| `maxWaitSeconds` | `60` | how long a turn may wait, and how long a rate-limited call keeps retrying (1 to 600) |
+
+## Pre-warming: ready before the peak
+
+Because the peaks come at known times, the most-asked answers can be made ready just before them. At each configured time, Lenspack takes the most-asked saved answers (`topN`, 10 by default) on each board for each access scope, runs their queries again on the current data, and rebuilds their replies, as the person they were made for, with that person's access and nothing wider. The first people to arrive then get tier 1 answers, with numbers read minutes before.
+
+- No full assistant turn runs. Most replies are rebuilt by swapping the numbers, with no model at all. A reply that needs rewriting costs one small model call; the refresh stops making those once it has spent `maxUsd` (5 cents by default), and such replies are rebuilt when they are next asked instead.
+- A refresh also runs a few seconds after a data load, when the data pipeline says so (`POST <prefix>/cache/data-changed`, below).
+- Off by default: turn it on once you know when your peaks are.
+
+Settings under `cache.prewarm`:
+
+| setting | default | |
+|---|---|---|
+| `enabled` | `false` | run refreshes at the times below |
+| `times` | `["06:30", "16:30"]` | local times, `HH:MM` |
+| `timeZone` | the pack's time zone, else UTC | an IANA time zone such as `Africa/Lagos` |
+| `topN` | `10` | answers per board and access scope (1 to 100) |
+| `maxUsd` | `0.05` | what one refresh may spend on rewrites, in US dollars (0 to 100) |
+
+A refresh that was due while the server was down runs if the server is back within 30 minutes of the time.
+
+## How it is built
+
+The matching, the replays, the refreshes and the queue know nothing about HTTP or about the host they run in. They are in `@lenspack/agent` (`reuseLayer` and `localTurnGate`), so the same logic can serve any host, and the coming shared turn code can call it directly. A host gives them a turn (who asks what, on which board, with which access), a small model to call, and a store, and turns what comes back into its own reply stream. The Lenspack server's side is a few lines in its chat route.
+
+State sits behind two small interfaces, so that two copies of a deployment can share it later:
+
+- **`AnswerStore`**: saved answers, board edit counts and totals. Today `fileAnswerStore` keeps them in `reuse.json`. A database-backed store implements the same calls (`get`, `put`, `delete`, `entries` and a few counters), so every copy sees every saved answer.
+- **`TurnGate`**: the queue and the one-change-at-a-time rule per board. Today `localTurnGate` keeps them in the server's memory, which is right for one copy. With several copies behind a load balancer, each copy limits only its own turns, and two changes to the same board on two copies are not held one after the other; a shared gate (for example on database row locks or a small queue service) implements the same `acquire`, `settings` and `stats` calls to fix that.
+
+Who may see and change the admin pages is decided by one function in `@lenspack/policy` (`mayAdminister`), like the other access decisions.
+
 ## Prompt caching
 
 Separate from saved answers, the Anthropic adapter marks the parts of every call that do not change (the tools, the pack's catalogue and rules) for Anthropic's prompt cache. These are now kept for **one hour** instead of five minutes, so a question that comes in 20 minutes after the last one still reads them from the cache at a tenth of the input price. Writing to the one-hour cache costs twice the input price (five-minute writes cost 1.25 times), so it pays for itself after about two reads. The part that grows during one turn (the conversation inside a tool loop) keeps the five-minute cache, since nothing reads it after the turn. `cacheTtl: "5m"` in the provider's `anthropic` settings goes back to five minutes everywhere. Metering charges one-hour and five-minute cache writes each at their own price, from the breakdown Anthropic reports. See [llm.md](llm.md#anthropic).
@@ -126,11 +179,13 @@ The real number for a deployment is on the admin page. Each turn served from a s
 
 For admins only, under the host's admin prefix (`/_superset` inside Superset). A person who is not an admin gets `403`, and the attempt is written to the audit log.
 
-`GET <prefix>/cache`: totals since the store was started, and every entry.
+`GET <prefix>/cache`: totals since the store was started, the queue right now, the last refresh, and every entry.
 
 ```jsonc
 {
   "stats": { "since": "2026-11-26T08:00:00.000Z", "turns": 120, "hits": { "t1": 40, "t2": 31, "t3": 9, "t4": 12 }, "misses": 28, "savedUsd": 1.92 },
+  "queue": { "running": 3, "waiting": 0, "editsWaiting": 0, "turnSeconds": 11.5 },  // turnSeconds: recent average model turn
+  "prewarm": { "at": "2026-11-26T06:30:04.000Z", "reason": "schedule", "pack": null, "entries": 24, "refreshed": 21, "rewritten": 2, "skipped": 1, "failed": 0, "spentUsd": 0.0011, "modelCalls": 2 },  // or null
   "entries": [
     {
       "id": "k3j9x2", "board": "overview", "question": "How many households were reached today?",
@@ -152,6 +207,12 @@ For admins only, under the host's admin prefix (`/_superset` inside Superset). A
 
 `GET <prefix>/cache/boards` (an addition): how often each board changed, for settled boards: `{ "boards": [{ "board", "edits7d", "edits30d", "edits90d", "lastEdit", "settled" }] }`.
 
+`POST <prefix>/cache/prewarm`: refreshes now, and answers when done: `{ "ok": true, "run": { …as "prewarm" above } }` (`run` is `null` when saved answers are off).
+
+`POST <prefix>/cache/data-changed`, with an optional body `{ "pack": "<name>" }`: for a data pipeline to call after a load. Answers `202 { "ok": true, "scheduled": true }` at once; the refresh runs a few seconds later, and several calls close together make one refresh.
+
 For everyone who may open a board, the board API also answers `GET /api/<pack>/<board>/suggestions?lang=` with `{ "suggestions": ["…"] }`: the most-asked questions on that board by people with the same access. The chat panels use it for their chips.
 
-The settings are read and changed with the other admin settings: `GET <prefix>/settings` includes `cache`, and `PUT <prefix>/settings/cache` takes any of the settings above.
+The settings are read and changed with the other admin settings: `GET <prefix>/settings` includes `cache` (with `prewarm`) and `queue`; `PUT <prefix>/settings/cache` and `PUT <prefix>/settings/queue` take any of the settings above (`prewarm` as a partial object).
+
+The chat stream carries two extra kinds of part: `data-reuse` (the saved-answer line) and `data-queue` (`{ "state": "waiting", "reason": "busy" | "edit", "position", "etaSeconds" }` while waiting, not kept in the message; `{ "state": "full", "why": "full" | "timeout", "retryAfterSeconds" }` when turned away, followed by the same message as text so any client can show it).

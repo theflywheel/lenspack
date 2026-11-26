@@ -5,6 +5,7 @@ import { type LanguageModel, type ModelMessage, type SystemModelMessage, type To
 import { anthropicAdapter } from "./adapters/anthropic";
 import { openAICompatibleAdapter } from "./adapters/openai-compatible";
 import { type Pricing, type ProviderUsage, type Tokens, meterModel, withMeter } from "./metering";
+import { retrying } from "./queue";
 
 // Model providers for the chat, in order of preference. Configured as JSON so
 // several can coexist and the eval suite can score them against each other:
@@ -182,7 +183,7 @@ export function buildProvider({ fetch, ...cfg }: ProviderConfig & { fetch?: type
   if (!cfg.baseUrl && !adapter.defaultBaseUrl) throw new Error(`Provider "${cfg.name}": a ${adapter.kind} provider needs a baseUrl`);
   const apiKey = cfg.apiKey ?? (cfg.apiKeyFile ? readFileSync(cfg.apiKeyFile, "utf8").trim() : undefined);
   const pricing = cfg.pricing ?? adapter.pricing?.(cfg);
-  const languageModel = meterModel(adapter.build(cfg, { apiKey, fetch }), { provider: cfg.name, model: cfg.model, kind: adapter.kind, pricing, tokens: adapter.tokens && ((u) => adapter.tokens!(u, cfg)) });
+  const languageModel = meterModel(retrying(adapter.build(cfg, { apiKey, fetch })), { provider: cfg.name, model: cfg.model, kind: adapter.kind, pricing, tokens: adapter.tokens && ((u) => adapter.tokens!(u, cfg)) });
   const prepare = adapter.prepare ? (call: CallParts) => adapter.prepare!(call, cfg) : undefined;
   return { ...cfg, kind: adapter.kind, apiKey: undefined, pricing, languageModel, available: null, prepare, probeTokens: adapter.probeTokens, efforts: adapter.efforts?.(cfg) };
 }

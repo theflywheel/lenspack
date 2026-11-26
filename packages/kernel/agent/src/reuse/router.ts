@@ -55,3 +55,9 @@ export function rewriteMessage(o: { question: string; reply: string; before: unk
     .filter(Boolean)
     .join("\n\n");
 }
+
+export const PHRASE_PROMPT = `You answer a dashboard question from the results of the query that answers it. Write one to three plain sentences with the numbers as the results give them, in the language of the question. Say nothing the results do not show. Reply with the answer only.`;
+
+export function phraseMessage(o: { question: string; results: unknown[]; language?: string }): string {
+  return [`Question: ${o.question}`, o.language ? `Write the answer in this language: ${o.language}.` : "", `Results:\n${JSON.stringify(o.results).slice(0, 6000)}`].filter(Boolean).join("\n\n");
+}

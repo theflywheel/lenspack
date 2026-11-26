@@ -5,7 +5,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
+import { type ProposalStore, type Reuse, type ReuseTurn, type TurnGate, boardTools, localTurnGate, looksLikeEdit, toVercelAI } from "@lenspack/agent";
 import { type Principal, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -15,9 +15,10 @@ import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson,
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
+import { waitForTurn, withRetryWindow } from "./queue";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
+import { PROMPT_VERSION, prewarmTurns, savedChunks, smallModel } from "./reuse";
 import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
-import { type Reuse, type ReuseTurn } from "./reuse";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
@@ -101,8 +102,10 @@ export type AppOptions = {
    * `language` ("auto", "fr", …) is the user's pick.
    */
   language?: () => Omit<LanguagePolicy, "reply">;
-  /** Saved answers and plans (reuse/): a repeated question is answered without the model. Absent, every turn runs the model. */
+  /** Saved answers and plans (@lenspack/agent reuseLayer): a repeated question is answered without the model. Absent, every turn runs the model. */
   reuse?: Reuse;
+  /** How many model turns run at once, and how many wait (@lenspack/agent TurnGate). Absent: a queue with the defaults (8 at a time). */
+  queue?: TurnGate;
 };
 
 const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
@@ -273,6 +276,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
   const providers = opts.providers ?? [];
+  const queue = opts.queue ?? localTurnGate();
+  // Saved answers refreshed on a schedule or when data changes run as their askers, from these hosts (reuse/index.ts).
+  opts.reuse?.attach(prewarmTurns({ hosts, providers, router: opts.roles?.router, rules: () => opts.language?.(), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
   // Transcriptions waiting for the turn they were spoken for: POST /_stt answers with a clip id, and
   // the chat request that sends the text names it, so the turn's cost includes the clip. The cost is
   // the server's own record, never a figure from the browser; a clip is claimed once, by its speaker.
@@ -509,7 +515,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           return json(res, 200, await dimensionValues(url.searchParams.get("field") ?? "", run));
         // The questions asked most on this board by people with the caller's access: the chat's suggestion chips.
         case "GET suggestions":
-          return json(res, 200, { suggestions: opts.reuse?.suggestions({ board: boardId, pack: h.name, scope: ctx, lang: url.searchParams.get("lang") }) ?? [] });
+          return json(res, 200, { suggestions: (await opts.reuse?.suggestions({ board: boardId, pack: h.name, scope: ctx, lang: url.searchParams.get("lang") })) ?? [] });
         case "GET versions":
           return json(res, 200, (await h.store.versions(boardId)).map(shown));
         case "POST ops": {
@@ -591,7 +597,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const store = staged ?? h.store;
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; fresh?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; fresh?: unknown; selections?: unknown };
     // What this turn costs: every model call made in its scope, the queries its tools run, and the
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
@@ -606,28 +612,45 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
-    const system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes, language);
+    let system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes, language);
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
-    const before = summarise(config);
+    let before = summarise(config);
 
     // A question answered before, by someone with the same access, on the same pack and board: answered from the
     // saved plan without the agent (reuse/, docs/caching.md). "Ask fresh" (fresh: true) always runs the agent.
-    const reuseTurn: ReuseTurn = { packName: h.name, pack: h.pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, messages: body.messages, picked, rules: opts.language?.(), readOnly, fresh: body.fresh === true, builder: builderModel, providers, routerName: opts.roles?.router, meter: scope, calls };
-    const reused = opts.reuse && (await withMeter(scope, () => opts.reuse!.serve({ ...reuseTurn, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) })));
+    // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
+    const selections = { ...selectionsOf(url), ...(body.selections && typeof body.selections === "object" ? (body.selections as Record<string, unknown>) : {}) };
+    const reuseTurn: ReuseTurn = { packName: h.name, pack: h.pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, promptVersion: String(PROMPT_VERSION), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
+    const reused = await opts.reuse?.serve({ ...reuseTurn, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) });
     if (reused) {
       const cost = turnCost(calls, queries);
       const summary = turnSummary(cost);
       ledger.turn({ user, pack: h.name }, cost);
-      audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: "saved answer", reuse: { tier: reused.tier, entry: reused.entry.id, savedUsd: reused.savedUsd, dataAsOf: reused.dataAsOf, ...(reused.why ? { how: reused.why } : {}) }, instruction: instruction.slice(0, 2000), answer: reused.reply.slice(0, 2000), ...summary, cost }) });
+      audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: "saved answer", queueMs: 0, reuse: { tier: reused.tier, entry: reused.entry.id, savedUsd: reused.savedUsd, dataAsOf: reused.dataAsOf, ...(reused.why ? { how: reused.why } : {}) }, instruction: instruction.slice(0, 2000), answer: reused.reply.slice(0, 2000), ...summary, cost }) });
       return respond(res, createUIMessageStream({ execute: ({ writer }) => {
-        for (const c of reused.chunks) writer.write(c);
+        for (const c of savedChunks(reused)) writer.write(c);
         writer.write({ type: "data-usage", data: { ...cost, summary } });
         writer.write({ type: "finish" });
       } }));
+    }
+
+    // A model turn waits for a place (and an edit for the edit before it on this board), told its place meanwhile (queue.ts).
+    const place = await waitForTurn(res, queue, { board: boardId, edit: !readOnly && looksLikeEdit(instruction) });
+    if (!place) return audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: "busy" });
+    if (place.boardWaited) {
+      // The edit before this one may have changed the board: read it as that edit left it.
+      const now = await h.store.get(boardId);
+      if (now && now.version !== startVersion) {
+        config = view(now.config);
+        startVersion = now.version;
+        system = systemParts(h.pack, h.catalogue, config, h.ctx.now, changes, language);
+        before = summarise(config);
+        reuseTurn.config = config;
+      }
     }
 
     // One more call to a builder with tools off, for the words a turn ends with when its tool
@@ -677,7 +700,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // Build, review, and when the reviewer finds a misleading change, one fix round and a
     // second review — all in one response stream. The reviewer's findings go out as a data part
     // for tools that want them; the person reads the outcome in the reply.
-    const stream = createUIMessageStream({
+    const stream = withRetryWindow(queue.settings().maxWaitSeconds * 1000, () => createUIMessageStream({
       execute: ({ writer }) => withMeter(scope, async () => {
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
@@ -744,7 +767,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             const gained = (await store.versions(boardId)).some((v) => v.version > startVersion);
             if (!fixing && !wantsReview(gained, steps as never)) break;
             // The same edits, on a board with the same content, as an edit the reviewer accepted before: it stands.
-            if (!fixing && gained && opts.reuse?.acceptedBefore(reuseTurn, steps as never)) {
+            if (!fixing && gained && (await opts.reuse?.acceptedBefore(reuseTurn, steps as never))) {
               turn.reviews.push({ round, skipped: "the same edits were accepted before on a board like this one" });
               break;
             }
@@ -811,14 +834,15 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const cost = turnCost(calls, queries);
           const summary = turnSummary(cost);
           ledger.turn({ user, pack: h.name }, cost);
-          audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, ...summary, cost }) });
-          opts.reuse?.remember(reuseTurn, { completed: completed && !misleading.length, reply: turn.answer ?? "", calls: results, saved: turn.saved ?? [], reviewed: turn.reviews.length > 0, accepted: !misleading.length, fixed: corrected, costUsd: summary.costUsd });
+          audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), queueMs: place.queueMs, ...turn, ...summary, cost }) });
+          place.release();
+          void opts.reuse?.remember(reuseTurn, { completed: completed && !misleading.length, reply: turn.answer ?? "", calls: results, saved: turn.saved ?? [], reviewed: turn.reviews.length > 0, accepted: !misleading.length, fixed: corrected, costUsd: summary.costUsd });
           writer.write({ type: "data-usage", data: { ...cost, summary } });
         }
         writer.write({ type: "finish" });
-      }),
+      }).finally(() => place.release()),
       onError: (e) => (e instanceof Error ? e.message : String(e)),
-    });
+    }));
     return respond(res, stream);
   }
 
@@ -828,9 +852,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // reviewer thinks would cut it as idle.
     const headers: Record<string, string> = { "x-accel-buffering": "no" };
     response.headers.forEach((v, k) => (headers[k] = v));
-    res.writeHead(response.status, headers);
-    res.flushHeaders();
-    res.socket?.setNoDelay(true);
+    // Already open when the turn waited in the queue: its place was sent first.
+    if (!res.headersSent) {
+      res.writeHead(response.status, headers);
+      res.flushHeaders();
+      res.socket?.setNoDelay(true);
+    }
     try {
       if (response.body) for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) res.write(chunk);
     } catch {
