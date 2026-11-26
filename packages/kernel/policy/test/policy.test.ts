@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Identity, type PackRule, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { type Identity, type PackRule, answerView, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -192,5 +192,17 @@ describe("the deployment's context", () => {
     expect(deploymentContextSchema.safeParse({ x: "A" }).success).toBe(false);
     expect(deploymentContextSchema.safeParse({ x: { country: 3 } }).success).toBe(false);
     expect(deploymentContextSchema.safeParse({ x: { country: "" } }).success).toBe(false);
+  });
+});
+
+describe("answerView", () => {
+  it("shows the SQL and definitions unless the deployment or the caller's view takes them away; never adds", () => {
+    const open = { hidden: new Set<string>() };
+    const hiding = { hidden: new Set(["delivered_by"]) };
+    expect(answerView(open)).toEqual({ sql: true, definitions: true });
+    expect(answerView(open, { sql: false })).toEqual({ sql: false, definitions: true });
+    expect(answerView(open, { on: false })).toBeNull();
+    expect(answerView(hiding)).toEqual({ sql: false, definitions: false });
+    expect(answerView(hiding, { on: true, sql: true })).toEqual({ sql: false, definitions: false });
   });
 });

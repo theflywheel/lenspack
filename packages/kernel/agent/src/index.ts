@@ -3,3 +3,4 @@ export * from "./tools";
 export * from "./proposals";
 export * from "./telemetry";
 export * from "./checklist";
+export * from "./answer";

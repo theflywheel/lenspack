@@ -9,7 +9,7 @@ import { buildBoard, seedBoards } from "./app";
 import { fileAudit } from "./audit";
 import { fileTelemetry } from "./telemetry";
 import { authFrom, effectiveAuth } from "./auth";
-import { openConfig, readConfig, resolveSecrets } from "./config";
+import { explainFrom, openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
 
@@ -67,6 +67,7 @@ async function main() {
           rights,
           audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined,
           historyTurns: config.historyTurns,
+          explain: () => explainFrom(config.explain),
           ...(config.telemetry ? { telemetry: fileTelemetry(resolve(dir, config.telemetry.dir), { retentionDays: () => config.telemetry!.retentionDays, questionText: () => config.telemetry!.questionText, context: () => config.context ?? {} }).telemetry } : {}),
         },
         log: (m) => console.error(`lenspack: ${m}`),

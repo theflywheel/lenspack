@@ -34,6 +34,8 @@ export type TurnRecord = {
   board: string | null;
   pack: string;
   datasets: string[];
+  /** The viewer's dashboard filter selections when they asked (filter → value); values hashed when question text is off. */
+  selections: Record<string, string> | null;
   campaign: string | null;
   campaignType: string | null;
   country: string | null;
@@ -422,6 +424,8 @@ export type TurnStart = {
   newConversation: boolean;
   languagePicked: string | null;
   client: unknown;
+  /** The viewer's dashboard filter selections, part of the turn's context. */
+  selections?: Record<string, string>;
   builder: string;
   effort: string | null;
   readOnly: boolean;
@@ -693,6 +697,7 @@ export function turnTelemetry(opts: TelemetryOptions) {
             board: s.board,
             pack: s.pack,
             datasets,
+            selections: s.selections && Object.keys(s.selections).length ? Object.fromEntries(Object.entries(s.selections).map(([f, v]) => [f, keepText() ? v : hash(v)])) : null,
             ...contextFor(opts.context?.() ?? {}, { board: s.board, datasets, roles: s.who.roles }),
             languagePicked: picked,
             replyLanguage: picked && picked !== "auto" ? picked.split("-")[0]! : questionLanguage,

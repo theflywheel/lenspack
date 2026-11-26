@@ -87,7 +87,7 @@ One line per chat turn, written after the reply ends, even when the reader left 
 | group | fields |
 |---|---|
 | identity | `turnId`, `sessionId`, `at` (when the question arrived), `user`, `roles` (the role names the host signed; `[]` when it signs none), `tenant` |
-| place | `board`, `pack`, `datasets` (what the turn's queries read, by the name the deployment knows them by) |
+| place | `board`, `pack`, `datasets` (what the turn's queries read, by the name the deployment knows them by), `selections` (the viewer's dashboard filter selections when they asked; values hashed when question text is off) |
 | context | `campaign`, `campaignType`, `country` (from the deployment's context; `null` when unmapped) |
 | language | `languagePicked` (the chat's menu, `auto` or a code), `replyLanguage`, `questionLanguage` (from speech to text for a spoken question, else guessed from its words) |
 | input | `input` (`typed` or `spoken`), `question`, `questionHash`, `questionWords` |
@@ -356,6 +356,7 @@ not change meaning.
         "board": { "$ref": "#/$defs/text" },
         "pack": { "type": "string" },
         "datasets": { "type": "array", "items": { "type": "string" } },
+        "selections": { "type": ["object", "null"], "additionalProperties": { "type": "string" } },
         "campaign": { "$ref": "#/$defs/text" },
         "campaignType": { "$ref": "#/$defs/text" },
         "country": { "$ref": "#/$defs/text" },

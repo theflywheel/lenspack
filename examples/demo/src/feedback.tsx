@@ -32,6 +32,11 @@ export function clientInfo() {
 
 const post = (body: Record<string, unknown>) => fetch("/api/_telemetry", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), keepalive: true }).then((r) => r.ok, () => false);
 
+/** Reports an event about a turn (such as explain-opened); nothing when the turn has no id (telemetry off). */
+export function reportEvent(type: string, turn: { turnId?: string } | undefined) {
+  if (turn?.turnId) void post({ type, turnId: turn.turnId });
+}
+
 export function Feedback({ turnId }: { turnId: string }) {
   const w = WORDS[lang()];
   const [rating, setRating] = React.useState<"up" | "down" | null>(null);

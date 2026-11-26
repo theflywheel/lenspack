@@ -148,6 +148,19 @@ describe("repeats and sessions", () => {
     expect(ids[5]).toBe(ids[4]);
   });
 
+  it("keeps the viewer's dashboard selections as the turn's context, hashed when question text is off", async () => {
+    let keep = true;
+    const { ask, turns } = recorder({ questionText: () => keep });
+    await ask("visits here", { selections: { Region: "North" } });
+    keep = false;
+    await ask("visits here", { selections: { Region: "North" } });
+    await ask("visits everywhere");
+    const [a, b, c] = turns();
+    expect(a!.selections).toEqual({ Region: "North" });
+    expect(b!.selections).toEqual({ Region: hash("north") });
+    expect(c!.selections).toBe(null);
+  });
+
   it("keeps the client's classes, never a raw user agent, and the deployment's context", async () => {
     const { ask, store } = recorder();
     await ask("a");

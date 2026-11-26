@@ -11,7 +11,8 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
-import { Feedback, clientInfo } from "./feedback";
+import { Feedback, clientInfo, reportEvent } from "./feedback";
+import { type AnswerCardData, ExplainBlock } from "./explain";
 import { Markdown } from "./markdown";
 
 // The chat panel beside the board.
@@ -113,6 +114,7 @@ export function ChatPanel({
   onModelChange,
   effort,
   onEffortChange,
+  selections,
 }: {
   base: string;
   suggestions: string[];
@@ -128,6 +130,8 @@ export function ChatPanel({
   /** A level the model takes, or "" for its default. */
   effort: string;
   onEffortChange: (e: string) => void;
+  /** The board's filter selections now: sent with each question, as the turn's context. */
+  selections?: () => Record<string, string>;
 }) {
   const efforts = models.find((m) => m.name === model)?.efforts;
   const chat = React.useMemo(
@@ -203,8 +207,10 @@ export function ChatPanel({
     startVersion.current = b.board?.version ?? null;
     // The model sees the board as it is now; a notice pending for edits before this is moot.
     if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
+    const picked = selections?.() ?? {};
     // client: the device, network and viewport classes usage telemetry records (docs/telemetry.md).
-    void sendMessage({ text }, { body: { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), client: clientInfo() } });
+    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(Object.keys(picked).length ? { selections: picked } : {}), client: clientInfo() };
+    void sendMessage({ text }, { body });
     setInput("");
   };
   const noticesAt = (at: number) =>
@@ -302,6 +308,8 @@ export function ChatPanel({
                 ) : p.type === "data-review" ? (
                   // Only the last check: an earlier one's findings were fixed, or the board was left as it was.
                   p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
+                ) : p.type === "data-answer-card" ? (
+                  <ExplainBlock key={i} x={p.data as AnswerCardData} onOpen={() => reportEvent("explain-opened", (m.parts as Part[]).find((q) => q.type === "data-turn")?.data as { turnId?: string } | undefined)} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
