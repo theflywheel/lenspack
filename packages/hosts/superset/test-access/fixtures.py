@@ -53,7 +53,8 @@ with app.app_context():
 
     def dataset(name, columns, metrics, dttm=None):
         table = SqlaTable(table_name=name, schema="public", database=database, main_dttm_col=dttm)
-        table.columns = [TableColumn(column_name=c, type=t, groupby=t != "DATE", is_dttm=t == "DATE", filterable=True) for c, t in columns]
+        # Number columns are listed, as Superset lists a table's columns, but not offered for grouping.
+        table.columns = [TableColumn(column_name=c, type=t, groupby=t == "TEXT", is_dttm=t == "DATE", filterable=True) for c, t in columns]
         table.metrics = [SqlMetric(metric_name=m, expression=e) for m, e in metrics]
         db.session.add(table)
         db.session.flush()
@@ -61,11 +62,11 @@ with app.app_context():
 
     visits = dataset(
         "visits",
-        [("day", "DATE"), ("region", "TEXT"), ("district", "TEXT"), ("team", "TEXT")],
+        [("day", "DATE"), ("region", "TEXT"), ("district", "TEXT"), ("team", "TEXT"), ("visits", "INTEGER")],
         [("visit_total", "SUM(visits)"), ("visit_count", "COUNT(*)")],
         dttm="day",
     )
-    stock = dataset("stock", [("region", "TEXT"), ("item", "TEXT")], [("stock_total", "SUM(qty)"), ("stock_count", "COUNT(*)")])
+    stock = dataset("stock", [("region", "TEXT"), ("item", "TEXT"), ("qty", "INTEGER")], [("stock_total", "SUM(qty)"), ("stock_count", "COUNT(*)")])
 
     def role(name, tables=()):
         r = sm.find_role(name) or sm.add_role(name)

@@ -100,6 +100,16 @@ were counted.
   - `lp_lensuser`, with the role, gets the real overlay, their board and correct chat answers, and still can't edit
     dashboard A.
   - `lp_admin`, an admin without the role, gets the overlay, the chat and the settings.
+- **Set up in `superset.yaml` alone.** The suite restarts Lenspack with overlay measures, two excluded columns, two
+  columns that are not dimensions, and a pinned scope of every region but South.
+  - The excluded and non-dimension columns are missing from what each person is shown, and a query naming one is
+    refused.
+  - An overlay measure (a sum of a column) gives the same numbers as the saved metric, under the scope; one with a
+    condition counts only the rows it keeps.
+  - Each person's row-level security applies to an overlay measure as to a saved metric. The templated rule filters on
+    an excluded column, which Lenspack can't apply, so `visits` is kept from `lp_templ`.
+  - Asking for South, through the chat, the board, the filter menu or explain, gets nothing.
+  - A chart of an overlay measure is saved in Superset and reads back as that measure.
 - **Caching and saved answers.**
   - Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
   - Five users with different access (all datasets, `visits` only, North only, North and East, their own team) ask the

@@ -241,7 +241,12 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `editScope` | `superset` (`LENSPACK_EDIT_SCOPE` wins) | where the chat may edit: `superset` (any dashboard Superset lets the person edit) or `own` (their own dashboards only); or `{ scope, adminsExempt }` (admins exempt by default). See [Personal dashboards](../features/personal-dashboards.md#where-the-chat-may-edit-editscope) |
 | `personal` | `maxDashboardsPerUser: 20`, `maxSavedConfigsPerUser: 50` | limits for [personal dashboards and saved layouts](../features/personal-dashboards.md) |
 | `audit` | on, 90 days | `false`, or `{ retentionDays }` (`LENSPACK_AUDIT_RETENTION_DAYS`) |
+| `scope` | | the pack's own row scope: filters every answer carries, for everyone (one campaign: `[{ dimension: campaign, op: eq, value: 2026-spring }]`). See [Row scope and tenancy](../access/scope-and-tenancy.md#pinning-every-answer-in-superset) |
 | `overlay` | | what Superset has no field for: `pack`, `description`, `instructions`, `timeZone`, `entities`, `hints`, `labels`, `hierarchies`, `examples`, `geo`, `mapStyle`, `panel` (`float` or `dock`). See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-overlay) |
+| `overlay.exclude` | | `{ columns, datasets }`: columns (by name, any case, on every dataset) and whole datasets the pack never uses. See [Columns the pack never uses](../hosts/superset/datasets-and-dashboards.md#columns-the-pack-never-uses) |
+| `overlay.notDimensions` | | columns Superset lets you group by that are not dimensions (amounts, counts) |
+| `overlay.measures` | | base measures from columns: `{ dataset, name, agg, column, where, label, hint, format }`, `agg` one of `sum`, `count`, `count_distinct`, `min`, `max`. See [Measures from columns](../hosts/superset/datasets-and-dashboards.md#measures-from-columns) |
+| `overlay.labels`, `overlay.hints` | | by key; text, or text per language (`{ en: …, fr: … }`) |
 | `host` | `LENSPACK_HOST`, else `127.0.0.1` | where it listens |
 | `port` | `LENSPACK_PORT`, else `8795` | |
 | `publicPath` | `LENSPACK_PUBLIC_PATH`, else `""` | the path Superset forwards (`/lenspack`) |

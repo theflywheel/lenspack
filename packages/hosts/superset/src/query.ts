@@ -2,7 +2,7 @@ import { type ComputeStep, type FilterClause, type Grain, MAX_POINTS, type Query
 import { type BoundDimension, type BoundPlan, COMPUTE_ROWS, ResolveError, SPLIT_ROWS, computeRefusal, rowCap, windowDates } from "@lenspack/engine";
 import { type Pack, datedTime, maybeFragmentFor, natureOf } from "@lenspack/pack";
 
-import type { Binding } from "./catalogue";
+import type { AdhocSpec, Binding } from "./catalogue";
 
 // One translation, two directions of use. A lenspack query becomes a Superset
 // query object (for /api/v1/chart/data, which the connector runs) and a chart's
@@ -12,7 +12,7 @@ import type { Binding } from "./catalogue";
 
 export type AdhocFilter = { expressionType: "SIMPLE" | "SQL"; clause: "WHERE"; subject?: string; operator?: string; comparator?: unknown; sqlExpression?: string };
 export type QueryFilter = { col: string; op: string; val?: unknown };
-export type Metric = string | { expressionType: "SQL"; sqlExpression: string; label: string };
+export type Metric = string | { expressionType: "SQL"; sqlExpression: string; label: string } | { expressionType: "SIMPLE"; column: { column_name: string }; aggregate: string; label: string };
 export type Column = string | { expressionType: "SQL"; sqlExpression: string; label: string; columnType?: "BASE_AXIS"; timeGrain?: string };
 export type QueryObject = {
   columns: Column[];
@@ -46,12 +46,49 @@ export function columnOf(def: { key: string; field?: string; sql?: unknown }): s
   throw new ResolveError("NOT_SUPPORTED", `"${def.key}" is computed by an expression Superset does not have; give it a Superset column`, def.key);
 }
 
-/** The metric a measure is in Superset: its saved metric, or COUNT(*). */
+/** The metric a measure is in Superset: its saved metric, an overlay measure's ad hoc metric, or COUNT(*). */
 export function metricOf(key: string, binding: Binding): Metric {
   const b = binding.metrics.get(key);
   if (!b) throw new ResolveError("NOT_SUPPORTED", `"${key}" is not a Superset metric`, key);
+  if (b.adhoc) return adhocMetric(b.adhoc, key);
   const ds = binding.datasets.get(b.entity);
   return b.metric ?? ds?.countMetric ?? { expressionType: "SQL", sqlExpression: "COUNT(*)", label: key };
+}
+
+const AGGREGATE: Record<AdhocSpec["agg"], string> = { sum: "SUM", count: "COUNT", count_distinct: "COUNT_DISTINCT", min: "MIN", max: "MAX" };
+const literal = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? String(v) : typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : sqlString(v));
+const SQL_OP: Record<string, string> = { eq: "=", neq: "<>", gt: ">", gte: ">=", lt: "<", lte: "<=" };
+
+/** One overlay condition as SQL, from checked column names and quoted values: never text from a person or the model. */
+function conditionSql(w: AdhocSpec["where"][number]): string {
+  const c = ident(w.column);
+  if (w.op === "exists") return `${c} IS NOT NULL`;
+  if (w.op === "missing") return `${c} IS NULL`;
+  if (w.op === "in") return `${c} IN (${(w.value as unknown[]).map(literal).join(", ")})`;
+  return `${c} ${SQL_OP[w.op]} ${literal(w.value)}`;
+}
+
+/**
+ * An overlay measure as Superset's ad hoc metric. Without conditions it is the kind Superset's own metric editor
+ * makes (an aggregate of a column); with them, the aggregate over the rows they keep. Superset wraps either in its
+ * query for the dataset, so dataset access and row-level security apply as for a saved metric.
+ */
+export function adhocMetric(spec: AdhocSpec, label: string): Metric {
+  if (!spec.where.length && spec.column) return { expressionType: "SIMPLE", column: { column_name: spec.column }, aggregate: AGGREGATE[spec.agg], label };
+  if (!spec.where.length) return { expressionType: "SQL", sqlExpression: "COUNT(*)", label };
+  const when = spec.where.map(conditionSql).join(" AND ");
+  const value = spec.column ? ident(spec.column) : "1";
+  const fn = spec.agg === "count_distinct" ? "COUNT(DISTINCT " : `${AGGREGATE[spec.agg]}(`;
+  return { expressionType: "SQL", sqlExpression: `${fn}CASE WHEN ${when} THEN ${value} END)`, label };
+}
+
+/** A metric's identity apart from its label and editor fields: how a chart made in Superset is matched to an overlay measure. */
+export function metricSignature(m: unknown): string | null {
+  if (!m || typeof m !== "object") return null;
+  const x = m as { expressionType?: string; column?: { column_name?: string }; aggregate?: string; sqlExpression?: string };
+  if (x.expressionType === "SIMPLE" && x.column?.column_name && x.aggregate) return `simple|${x.aggregate.toUpperCase()}|${x.column.column_name}`;
+  if (x.expressionType === "SQL" && typeof x.sqlExpression === "string") return `sql|${x.sqlExpression.replace(/\s+/g, " ").trim()}`;
+  return null;
 }
 export const metricLabel = (m: Metric) => (typeof m === "string" ? m : m.label);
 
@@ -668,7 +705,14 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
   const datasetId = chart.datasource_id ?? Number(String(p.datasource ?? "").split("__")[0]);
   const entity = binding.entityOf.get(datasetId);
   if (!entity) return { widget: null, reason: "its dataset is not in the pack" };
-  const measureKey = (m: unknown): string | null => (typeof m === "string" ? (binding.measureOf.get(entity)?.get(m) ?? null) : null);
+  // A saved metric by name; an ad hoc one made in Superset when it is exactly an overlay measure of this dataset.
+  const measureKey = (m: unknown): string | null => {
+    if (typeof m === "string") return binding.measureOf.get(entity)?.get(m) ?? null;
+    const sig = metricSignature(m);
+    if (!sig) return null;
+    for (const [key, b] of binding.metrics) if (b.entity === entity && b.adhoc && metricSignature(adhocMetric(b.adhoc, key)) === sig) return key;
+    return null;
+  };
   const dimKey = (c: unknown): string | null => (typeof c === "string" ? (binding.dimensionOf.get(entity)?.get(c) ?? null) : null);
   const ds = binding.datasets.get(entity)!;
 

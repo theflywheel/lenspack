@@ -298,21 +298,19 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
     const logFile = join(dir, "lenspack.log");
     const log = () => readFileSync(logFile, "utf8");
     const startLenspack = async (extraYaml: string[] = []) => {
-      writeFileSync(
-        join(dir, "superset.yaml"),
-        [
-          `superset: { url: "http://127.0.0.1:${wayPort}" }`,
-          "datasets: [visits, stock]",
-          `dashboards: [${fixtures!.dashboards.a}, ${fixtures!.dashboards.b}, ${fixtures!.dashboards.c}]`,
-          `overlay: { pack: ${PACK} }`,
-          "host: 127.0.0.1",
-          `port: ${lpPort}`,
-          "publicPath: /lenspack",
-          `state: ${join(dir, "state", "superset-boards.json")}`,
-          ...extraYaml,
-          "",
-        ].join("\n"),
-      );
+      // An extra line for a key the suite's own config has (overlay:) takes its place.
+      const given = new Set(extraYaml.map((l) => /^(\w+):/.exec(l)?.[1]).filter(Boolean));
+      const base = [
+        `superset: { url: "http://127.0.0.1:${wayPort}" }`,
+        "datasets: [visits, stock]",
+        `dashboards: [${fixtures!.dashboards.a}, ${fixtures!.dashboards.b}, ${fixtures!.dashboards.c}]`,
+        `overlay: { pack: ${PACK} }`,
+        "host: 127.0.0.1",
+        `port: ${lpPort}`,
+        "publicPath: /lenspack",
+        `state: ${join(dir, "state", "superset-boards.json")}`,
+      ].filter((l) => !given.has(/^(\w+):/.exec(l)?.[1]));
+      writeFileSync(join(dir, "superset.yaml"), [...base, ...extraYaml, ""].join("\n"));
       const out = openSync(logFile, "a");
       // Ready once this start's own "listening" line is in the log, not an earlier start's.
       const from = (() => {

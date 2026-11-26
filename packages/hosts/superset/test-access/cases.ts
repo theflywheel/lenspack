@@ -964,5 +964,63 @@ export function accessSuite(version: string) {
         expect((await s.lp_admin.lp("GET", "_superset/settings")).status).toBe(200);
       });
     });
+
+    // Last, as it restarts Lenspack once more: a deployment set up in superset.yaml alone, with no change to Superset's
+    // datasets: measures from columns, columns left out, and every answer pinned (here, to every region but South).
+    describe("set up in superset.yaml alone (overlay measures, exclusions, a pinned scope)", () => {
+      const PINNED = { North: 3, East: 8, West: 16 };
+      beforeAll(async () => {
+        await stack.restartLenspack([
+          "scope: [{ dimension: region, op: in, value: [North, East, West] }]",
+          `overlay: { pack: ${PACK}, exclude: { columns: [team, district] }, notDimensions: [visits, qty], measures: [{ dataset: visits, name: visits_summed, agg: sum, column: visits, label: { en: Visits added up, fr: Visites additionnées } }, { dataset: visits, name: north_rows, agg: count, where: [{ column: region, op: eq, value: North }] }] }`,
+        ]);
+        expect(stack.log()).toMatch(/pack scope: region in \["North","East","West"\]/);
+      }, 300_000);
+
+      it("leaves the excluded and non-dimension columns out of what each person is shown", async () => {
+        const got = (await s.lp_viewer.lp("GET", `api/${PACK}/${A}`)).json.catalogue;
+        const dims = got.dimensions.map((d: { key: string }) => d.key).sort();
+        expect(dims).toEqual(["item", "region"]);
+        expect(got.measures.map((m: { key: string }) => m.key)).toEqual(expect.arrayContaining(["visits_summed", "north_rows", "visit_total"]));
+        expect(JSON.stringify(got)).not.toMatch(/"team"|"district"/);
+        const rows = toolOutput(await chat("lp_viewer", A, "query", { query_kind: "rows", entity: "visits", dimension: "region,team" }));
+        expect(rows.ok).toBe(false);
+      });
+
+      it("computes an overlay measure in Superset, under the pinned scope, the same as the saved metric", async () => {
+        expect(byGroup(toolOutput(await chat("lp_viewer", A, "query", BREAKDOWN("visits_summed"))).rows)).toEqual(PINNED);
+        expect(byGroup(toolOutput(await chat("lp_viewer", A, "query", BREAKDOWN("visit_total"))).rows)).toEqual(PINNED);
+        const north = toolOutput(await chat("lp_viewer", A, "query", { query_kind: "value", measure: "north_rows" }));
+        expect(north.rows[0].value).toBe(2);
+      });
+
+      it("applies each person's row-level security to an overlay measure", async () => {
+        expect(byGroup(toolOutput(await chat("lp_north", A, "query", BREAKDOWN("visits_summed"))).rows)).toEqual({ North: 3 });
+        expect(byGroup(toolOutput(await chat("lp_inlist", A, "query", BREAKDOWN("visits_summed"))).rows)).toEqual({ North: 3, East: 8 });
+        expect(toolOutput(await chat("lp_north", A, "query", { query_kind: "value", measure: "north_rows" })).rows[0].value).toBe(2);
+        // The templated rule filters on team, which the pack now leaves out: Lenspack can't apply it, so visits is kept from them.
+        const templ = toolOutput(await chat("lp_templ", A, "query", BREAKDOWN("visits_summed")));
+        expect([templ.ok, templ.error]).toEqual([false, expect.stringMatching(NO_ACCESS)]);
+      });
+
+      it("can't be widened by a filter: asking for the pinned-out region gets nothing, on every path", async () => {
+        const south = toolOutput(await chat("lp_viewer", A, "query", { ...BREAKDOWN("visits_summed"), filters: "region = South" }));
+        expect(byGroup(south.rows)).toEqual({});
+        expect(byGroup((await s.lp_viewer.lp("GET", `api/${PACK}/${A}/data`)).json.visits_by_region.rows)).toEqual(PINNED);
+        expect(sorted(((await s.lp_viewer.lp("GET", `api/${PACK}/${A}/options?field=region`)).json as { value: string }[]).map((v) => v.value))).toEqual(["East", "North", "West"]);
+        const explained = await s.lp_viewer.lp("GET", `api/${PACK}/explain?${explainQuery("visits_summed")}`);
+        expect(explained.json.ok).toBe(true);
+        expect(JSON.parse(explained.json.native).queries[0].filters).toContainEqual({ col: "region", op: "IN", val: ["North", "East", "West"] });
+      });
+
+      it("saves a chart of an overlay measure in Superset and reads it back as that measure", async () => {
+        const r = await s.lp_admin.lp("POST", `api/${PACK}/${A}/ops`, widgetOps([["summed_c", "Visits added up", "visits_summed"]]));
+        expect(r.status, r.text).toBe(200);
+        const listed = await s.lp_admin.lp("GET", `api/${PACK}/${A}?include=data`);
+        expect(listed.json.board.config.widgets.summed_c.query.measure).toBe("visits_summed");
+        expect(byGroup(listed.json.data.summed_c.rows)).toEqual(PINNED);
+        expect(listed.json.board.config.widgets.summed_c.kind).toBe("chart");
+      });
+    });
   });
 }
