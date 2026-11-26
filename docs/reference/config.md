@@ -236,6 +236,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `superset.passwordEnv`, `superset.password` | `LENSPACK_SUPERSET_PASSWORD` | an account you manage instead: its password's variable, or the password |
 | `editPolicy` | `superset` (`LENSPACK_EDIT_POLICY` wins) | who may change dashboards through the chat: `superset` or `signed-in` |
 | `hostPolicy` | `superset` (`LENSPACK_HOST_POLICY` wins) | whose access narrows what each user sees: `superset` or `off` |
+| `accessFallback` | `none` (`LENSPACK_ACCESS_FALLBACK` wins) | what happens when Superset answers 404 for the plugin's access route: `none` refuses that request; `rls-only`, only for an old plugin without the route, applies Superset's row-level security rules alone and treats every dataset as readable. See [Access inside Superset](../access/superset.md#when-access-cant-be-checked) |
 | `auth.admins` | `["Admin"]` (`LENSPACK_ADMIN_ROLES` wins) | Superset roles whose members are Lenspack admins. See [Who is asking](../hosts/superset/identity.md#who-may-administer) |
 | `auth.usage` | the same roles as `auth.admins` (`LENSPACK_USAGE_ROLES` wins) | Superset roles that also see user names on the usage pages |
 | `auth.users` | everyone signed in (`LENSPACK_USER_ROLES` wins) | Superset roles that may use the assistant at all; admins always may. See [Who is asking](../hosts/superset/identity.md#who-may-use-the-assistant) |
@@ -286,6 +287,7 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback |
 | `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
+| `LENSPACK_ACCESS_FALLBACK` | superset | `accessFallback` | over the file |
 | `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file |
 | `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |
 | `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it |

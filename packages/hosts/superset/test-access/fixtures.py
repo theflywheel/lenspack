@@ -15,6 +15,7 @@ Users (all with the password in LP_USER_PASSWORD):
   lp_rbac_off  the same roles as lp_rbac (asked about only while dashboard roles are turned off)
   lp_noroles   no roles at all
   lp_outage    Gamma + both datasets (asked about only while Superset is cut off)
+  lp_misroute  Gamma + visits only (asked about first while Superset answers 404 for the plugin's access route)
   lp_lensadmin Gamma + visits only + "Lenspack admin", a Superset role with no permissions: Lenspack's admins rule
                may name it (the suite restarts Lenspack with auth.admins: ["Lenspack admin"] at the end)
   lp_reader    a copy of Gamma without can_write on Dashboard or Chart ("lp_read_only", the kind of viewer role a
@@ -109,6 +110,7 @@ with app.app_context():
         "lp_rbac_off": [gamma, r_board_b, r_board_c],
         "lp_noroles": [],
         "lp_outage": both,
+        "lp_misroute": [gamma, r_visits],
         "lp_lensadmin": [gamma, r_visits, r_lens_admin],
         "lp_lensuser": [*both, r_lens_user],
         "lp_reader": [r_read_only, r_visits, r_stock],

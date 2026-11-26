@@ -5,11 +5,15 @@
 // (its keys hidden, any query on it refused), and its RLS filters narrow every query that reads it.
 //
 // Superset's answer comes from lenspack_superset.py's /api/v1/lenspack/access, which asks Superset's
-// own security manager as that user (Jinja in a clause rendered). Without the plugin's endpoint, the
-// stock REST API's RLS rules are read and matched to the user's roles; dataset permissions are not
-// readable there, and a templated clause cannot be rendered, so such a clause keeps its dataset from
-// the user. Only simple clauses translate (col = v, col IN (...), AND, and OR over one column);
-// anything else fails closed: the dataset is kept from the user, and the log says why.
+// own security manager as that user (Jinja in a clause rendered). When that route can't be asked (an
+// error, a timeout, or Superset's own 404: a pod without the plugin, a path-prefix misroute), every
+// dataset and dashboard is kept from the user for that request, and the route is asked again on the
+// next one: nothing is remembered from a failure. Only with the explicit opt-in `accessFallback:
+// rls-only` does a 404 fall back, for that request, to the stock REST API's RLS rules matched to the
+// user's roles; dataset permissions are not readable there (every dataset counts as readable), and a
+// templated clause cannot be rendered, so such a clause keeps its dataset from the user. Only simple
+// clauses translate (col = v, col IN (...), AND, and OR over one column); anything else fails closed:
+// the dataset is kept from the user, and the log says why.
 //
 // The same answer says which bound dashboards the user may open (Superset's dashboard access check, dashboard
 // roles included): the others are kept from them, so their titles are not listed to them either.
@@ -218,18 +222,33 @@ type PluginAnswer = { datasets: Record<string, DatasetAccess>; dashboards?: Reco
 /**
  * Each user's Superset access as policy, kept for ttlMs (60 s) per user: the datasets and bound dashboards kept from
  * them, RLS as scope, and with dashboard roles on, the datasets they may read only on a dashboard. A failure to ask
- * Superset keeps every dataset and dashboard from that user until the next try (and grants nothing on any dashboard),
- * rather than showing them the service account's. A dashboard bound after the answer was read counts as kept
- * until the next one (the request Superset signs for it still opens it).
+ * Superset (Superset's own 404 included) keeps every dataset and dashboard from that user (and grants nothing on any
+ * dashboard), rather than showing them the service account's; it is not cached, so the next request asks again. A
+ * dashboard bound after the answer was read counts as kept until the next one (the request Superset signs for it
+ * still opens it).
  */
 export type HostPolicy = (user: string, roles: string[] | undefined) => Promise<HostAnswer>;
 
-export function supersetPolicy(o: { client: SupersetClient; binding: Binding; log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number }): HostPolicy {
+/** What the deployment allows when the plugin's access route is missing: nothing (the default), or Superset's RLS rules alone. */
+export type AccessFallback = "none" | "rls-only";
+
+/** accessFallback (LENSPACK_ACCESS_FALLBACK wins): "none" unless "rls-only" is chosen. */
+export function accessFallbackFrom(value: string | undefined): AccessFallback {
+  const v = (value ?? "").trim().toLowerCase();
+  if (v === "" || v === "none") return "none";
+  if (v === "rls-only") return "rls-only";
+  throw new Error(`LENSPACK_ACCESS_FALLBACK (accessFallback) must be "none" or "rls-only", not "${value}"`);
+}
+
+/** Superset's own 404 for the access route (no such route), not the endpoint's (no such user). */
+const routeMissing = (e: unknown) => e instanceof SupersetError && e.status === 404 && (e.body as { message?: string } | undefined)?.message !== "no such user";
+
+export function supersetPolicy(o: { client: SupersetClient; binding: Binding; log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number; fallback?: AccessFallback }): HostPolicy {
   const ttl = o.ttlMs ?? 60_000;
   const now = o.now ?? Date.now;
   const datasets = [...o.binding.entityOf.keys()];
   const cache = new Map<string, { at: number; value: Promise<HostAnswer> }>();
-  let plugin = true;
+  const rlsOnly = o.fallback === "rls-only";
   let rbacSaid: string | undefined;
   const boardsOf = (ids: number[], open: (id: number) => boolean) => {
     const hiddenBoards = ids.filter((id) => !open(id)).map((id) => `superset-${id}`);
@@ -238,33 +257,31 @@ export function supersetPolicy(o: { client: SupersetClient; binding: Binding; lo
   const ask = async (user: string, roles: string[] | undefined): Promise<HostAnswer> => {
     const dashboards = o.dashboards?.() ?? [];
     try {
-      if (plugin) {
-        try {
-          const r = await o.client.get<{ result: PluginAnswer }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=${datasets.join(",")}${dashboards.length ? `&dashboards=${dashboards.join(",")}` : ""}`);
-          const rbac = r.result.dashboardRbac === true;
-          // Said once, and again when it changes.
-          if (String(r.result.dashboardRbac) !== rbacSaid) {
-            rbacSaid = String(r.result.dashboardRbac);
-            o.log(
-              r.result.dashboardRbac === undefined
-                ? "access: lenspack_superset.py does not say whether dashboard roles (DASHBOARD_RBAC) are on; update it for dashboard roles to open their dashboards' data in the chat"
-                : `access: Superset's dashboard roles (DASHBOARD_RBAC) are ${rbac ? "on: a dashboard opened through one reads its charts' datasets there" : "off"}`,
-            );
-          }
-          const onBoards = boardEntitiesFrom(r.result.datasets, r.result.dashboardDatasets, rbac, o.binding, o.log, user);
-          // A plugin from before dashboards were asked about answers none: each counts as kept.
-          return {
-            ...identityFrom(r.result.datasets, o.binding, o.log, user),
-            ...boardsOf(dashboards, (id) => r.result.dashboards?.[String(id)] === true),
-            ...(Object.keys(onBoards).length ? { boardEntities: onBoards } : {}),
-            hiddenReason: SUPERSET_HIDDEN_REASON,
-          };
-        } catch (e) {
-          // Superset's own 404 (no such route), not the endpoint's (no such user).
-          if (!(e instanceof SupersetError && e.status === 404 && (e.body as { message?: string } | undefined)?.message !== "no such user")) throw e;
-          plugin = false;
-          o.log("access: lenspack_superset.py has no /api/v1/lenspack/access; reading RLS rules from Superset's REST API (dataset permissions need the plugin)");
+      try {
+        const r = await o.client.get<{ result: PluginAnswer }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=${datasets.join(",")}${dashboards.length ? `&dashboards=${dashboards.join(",")}` : ""}`);
+        const rbac = r.result.dashboardRbac === true;
+        // Said once, and again when it changes.
+        if (String(r.result.dashboardRbac) !== rbacSaid) {
+          rbacSaid = String(r.result.dashboardRbac);
+          o.log(
+            r.result.dashboardRbac === undefined
+              ? "access: lenspack_superset.py does not say whether dashboard roles (DASHBOARD_RBAC) are on; update it for dashboard roles to open their dashboards' data in the chat"
+              : `access: Superset's dashboard roles (DASHBOARD_RBAC) are ${rbac ? "on: a dashboard opened through one reads its charts' datasets there" : "off"}`,
+          );
         }
+        const onBoards = boardEntitiesFrom(r.result.datasets, r.result.dashboardDatasets, rbac, o.binding, o.log, user);
+        // A plugin from before dashboards were asked about answers none: each counts as kept.
+        return {
+          ...identityFrom(r.result.datasets, o.binding, o.log, user),
+          ...boardsOf(dashboards, (id) => r.result.dashboards?.[String(id)] === true),
+          ...(Object.keys(onBoards).length ? { boardEntities: onBoards } : {}),
+          hiddenReason: SUPERSET_HIDDEN_REASON,
+        };
+      } catch (e) {
+        // Asked again on the next request whatever happened: a 404 during a rollout or a misroute is not remembered.
+        if (!routeMissing(e)) throw e;
+        if (!rlsOnly) throw new Error("Superset answered 404 for /api/v1/lenspack/access: lenspack_superset.py is not loaded in the Superset that answered, or a path prefix sends the request elsewhere");
+        o.log(`access: no /api/v1/lenspack/access for ${user}; reading RLS rules from Superset's REST API (accessFallback: rls-only; dataset permissions need the plugin)`);
       }
       // A regular rule is matched by role: without the signed roles (an older plugin), it cannot be.
       if (!roles) throw new Error("the identity carries no Superset roles; update lenspack_superset.py");

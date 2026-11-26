@@ -24,7 +24,7 @@ import { type Overlay, fetchDatasets, packFromDatasets, packScope } from "./cata
 import { supersetClient } from "./client";
 import { supersetConnector, timeZoneWarnings } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
-import { supersetPolicy, viewableDashboards } from "./access";
+import { accessFallbackFrom, supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, supersetAuth, supersetRights } from "./identity";
 import { personalDashboards } from "./personal";
 import { actorOf, personalRoutes } from "./personal-routes";
@@ -66,6 +66,14 @@ export type SupersetConfig = AdminConfig & {
    * Needs lenspack_superset.py's /api/v1/lenspack/access for dataset access and templated clauses.
    */
   hostPolicy?: "superset" | "off";
+  /**
+   * With hostPolicy: superset, what happens when Superset answers 404 for the plugin's access route (env
+   * LENSPACK_ACCESS_FALLBACK wins). "none" (the default): that request is refused, as for any failure to check access,
+   * and the route is asked again on the next. "rls-only", only for a Superset that runs an old plugin without the
+   * route: Superset's row-level security rules alone apply to that request, and every dataset counts as readable
+   * (a warning says so at every start).
+   */
+  accessFallback?: "none" | "rls-only";
   /**
    * Who holds Lenspack's admin role (the settings, the admin panel, the audit log, the usage page), by Superset role
    * name: admins, default [Admin]; and who also sees user names there: usage, default the same roles as admins.
@@ -222,13 +230,21 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     return !!id && !mayUse(settle({ user: id.u, roles: rolesOf(id) }));
   };
   const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
+  const accessFallback = accessFallbackFrom(env.LENSPACK_ACCESS_FALLBACK ?? config.accessFallback);
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
-  log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}; admins: Superset role${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).length === 1 ? "" : "s"} ${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).join(", ") || "(none)"}${roleRules.usage ? `; user names on the usage board: ${roleRules.usage.join(", ") || "(none)"}` : ""}; users: ${roleRules.users ? `Superset role${roleRules.users.length === 1 ? "" : "s"} ${roleRules.users.join(", ") || "(none)"} and admins` : "everyone signed in"}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
+  log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}${hostPolicy === "superset" && accessFallback === "rls-only" ? " (rls-only fallback on a missing access route)" : ""}; admins: Superset role${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).length === 1 ? "" : "s"} ${(roleRules.admins ?? DEFAULT_SUPERSET_ADMINS).join(", ") || "(none)"}${roleRules.usage ? `; user names on the usage board: ${roleRules.usage.join(", ") || "(none)"}` : ""}; users: ${roleRules.users ? `Superset role${roleRules.users.length === 1 ? "" : "s"} ${roleRules.users.join(", ") || "(none)"} and admins` : "everyone signed in"}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
   if (hostPolicy === "off")
     for (const line of [
       "WARNING: host policy is off (hostPolicy: off or LENSPACK_HOST_POLICY=off).",
       `WARNING: anyone signed in to Superset can read all ${datasets.length} configured dataset(s) in full through Lenspack: the chat, the filter menus and the board API.`,
       "WARNING: Superset's dataset permissions and row-level security do not apply to what Lenspack answers. Remove the setting to apply them (the default, hostPolicy: superset).",
+    ])
+      log(line);
+  if (hostPolicy === "superset" && accessFallback === "rls-only")
+    for (const line of [
+      "WARNING: accessFallback is rls-only (accessFallback: rls-only or LENSPACK_ACCESS_FALLBACK=rls-only).",
+      "WARNING: whenever Superset answers 404 for /api/v1/lenspack/access, Superset's dataset permissions and dashboard roles do not apply to that request: every configured dataset counts as readable, and only row-level security rules narrow it.",
+      "WARNING: load lenspack_superset.py in every Superset process and remove the setting (the default, none, refuses such a request instead).",
     ])
       log(line);
 
@@ -371,7 +387,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     title: pack.pack,
     log,
   });
-  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined, callerFacts, rights);
+  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards), fallback: accessFallback }) : undefined, callerFacts, rights);
   // The start of a link to a Superset page: Superset's root when this server is reached through Superset's host
   // ("" or "/superset"), else Superset's address.
   const supersetBase = (req: IncomingMessage) => {
@@ -488,6 +504,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           superset: { url: supersetUrl, username: account.username, account: account.source },
           editPolicy,
           hostPolicy,
+          accessFallback,
           dashboards: Object.values(dashboards),
           // People's own dashboards and saved layouts: the switch and the limits (PUT /_superset/settings/personal).
           personal: limits(),
