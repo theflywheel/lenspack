@@ -18,8 +18,9 @@ brought it.
   section per question (users, volume and cost, quality, what people ask, speed, voice, trust and reuse), each figure
   worked out from the records with simple measures and compute steps. A widget that needs a field that is off says so,
   with a link to that field's switch. Boards anywhere can do the same: a host passes `ctx.unavailable` and the widget
-  shows its `notice` in place of a figure (refusal code `UNAVAILABLE`). Switches are now on fields (`telemetry.fields.<field>`); a category's switch turns all its fields
-  off, or all but the privacy-sensitive ones on. A locked switch says why on its row. Older `telemetry.items` and
+  shows its `notice` in place of a figure (refusal code `UNAVAILABLE`). Switches are now on fields
+  (`telemetry.fields.<field>`); a category's switch turns all its fields off, or all but the privacy-sensitive ones
+  on. A locked switch says why on its row. Older `telemetry.items` and
   `telemetry.groups` values keep their meaning; scripts that switched items through the route need the new names. See
   [Telemetry](docs/features/telemetry.md) and [Upgrading](docs/operating/upgrading.md#telemetry-switches-by-field).
   ([#100](https://github.com/theflywheel/lenspack/pull/100))

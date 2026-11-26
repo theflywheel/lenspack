@@ -2,7 +2,7 @@ import type { BoardConfig, Query } from "@lenspack/core";
 import { parsePack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Connector, ResolveError, SQL_CAPABILITIES, resolve, resolveBoard } from "../src";
+import { type Connector, type Notice, ResolveError, SQL_CAPABILITIES, resolve, resolveBoard } from "../src";
 
 // Keys the source can't answer right now (ctx.unavailable): what they read is not collected or not set up. A query
 // naming one is refused with the host's notice, by any path, so a board says why in place of a wrong figure.
@@ -21,7 +21,7 @@ const pack = parsePack({
   ],
 });
 const notice = { text: "Needs the device field, which is switched off.", action: { label: "Show the field", href: "#fields/device" } };
-const unavailable = new Map([["device", notice], ["people", { text: "Needs the person field." }]]);
+const unavailable = new Map<string, Notice>([["device", notice], ["people", { text: "Needs the person field." }]]);
 
 describe("unavailable keys", () => {
   it("refuse a query that names one, as a measure, a dimension or a ratio's other measure, with the host's notice", () => {

@@ -96,7 +96,7 @@ describe("what's recorded", () => {
 });
 
 describe("why a field is not recording", () => {
-  const notices = (o: Partial<ChecklistInput> = {}) => fieldNotices(input(o));
+  const notices = (o: Partial<ChecklistInput> & { superset?: boolean } = {}) => fieldNotices({ ...input(o), superset: o.superset });
 
   it("leaves out every field that is recording", () => {
     const n = notices();
