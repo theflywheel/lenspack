@@ -103,7 +103,7 @@ export type AppOptions = {
    * turn's prompt says which language to reply and title in; the request's
    * `language` ("auto", "fr", …) is the user's pick.
    */
-  language?: () => Omit<LanguagePolicy, "reply">;
+  language?: (req?: IncomingMessage) => Omit<LanguagePolicy, "reply">;
   /** Usage telemetry (@lenspack/agent telemetry.ts): a record per turn and transcription, and POST /api/_telemetry for client events. */
   telemetry?: Telemetry;
   /** The caller's role names as telemetry records them (Superset's signed role names); absent, the sign-in's roles. */
@@ -755,7 +755,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const view = (c: BoardConfig) => shownConfig(c, h.ctx);
     const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
-    const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
+    // The deployment's rules for where this request came from (a language set for its host name), then the person's pick.
+    const rules = opts.language?.(req);
+    const language = opts.language || picked ? { ...rules, reply: picked ?? null } : undefined;
     const access = accessNote(h.ctx);
     let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
@@ -792,7 +794,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // A question answered before, by someone with the same access, on the same pack and board: answered from the
     // saved plan without the agent (reuse/, docs/features/saved-answers.md). "Ask fresh" (fresh: true) always runs the agent.
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
-    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
+    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules, selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
     const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections, unusedSelections: viewer.dropped, assistant: name });
     const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) });

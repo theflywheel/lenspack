@@ -36,7 +36,58 @@ type SpeechSettings = { model?: string; holdMs?: number } & Partial<AudioSetting
 const AUDIO_DAYS = { min: 1, max: 3650 };
 const AUDIO_MB = { min: 1, max: 100_000 };
 const whole = (v: unknown, r: { min: number; max: number }): v is number => typeof v === "number" && Number.isInteger(v) && v >= r.min && v <= r.max;
-type LanguageSettings = { default?: string; titles?: "board" | "speaker"; board?: string };
+type LanguageRules = { default?: string; titles?: "board" | "speaker"; board?: string };
+/**
+ * The deployment's language rules, and the same rules for the host names people reach it by: one deployment can serve
+ * two countries through two addresses, each with its own default language and board-title language.
+ */
+type LanguageSettings = LanguageRules & { hosts?: Record<string, LanguageRules> };
+
+const LANGUAGE_RULES = [
+  ["default", (v: unknown) => LANGUAGES.includes(v as never)],
+  ["titles", (v: unknown) => v === "board" || v === "speaker"],
+  ["board", (v: unknown) => LANGUAGES.includes(v as never) && v !== "auto"],
+] as const;
+/** A host name as written in a request (example.org, Example.org:443) or a setting: lowercase, no port. */
+export const hostName = (h: string) => h.trim().toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
+const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+
+/** One set of language rules, checked: an error naming the bad field, or the rules with what was set. */
+function checkedRules(v: unknown, where: string): { ok: true; rules: LanguageRules } | { ok: false; error: string } {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: `${where} must be a map of default, titles and board` };
+  const rules: LanguageRules = {};
+  for (const [k, val] of Object.entries(v)) {
+    const rule = LANGUAGE_RULES.find(([name]) => name === k);
+    if (!rule) return { ok: false, error: `${where}.${k} is not a language setting (default, titles, board)` };
+    if (val === undefined || val === null) continue;
+    if (!rule[1](val)) return { ok: false, error: `bad ${where}.${k}: ${String(val)}` };
+    (rules as Record<string, unknown>)[k] = val;
+  }
+  return { ok: true, rules };
+}
+
+/** The host names' rules from a config's language.hosts, checked (a bad one stops the start, like any bad setting). */
+function configHosts(v: unknown): Record<string, LanguageRules> {
+  if (v === undefined || v === null) return {};
+  if (typeof v !== "object" || Array.isArray(v)) throw new Error("language.hosts must map host names to language settings, like { fr.example.org: { default: fr, board: fr } }");
+  const out: Record<string, LanguageRules> = {};
+  for (const [name, rules] of Object.entries(v)) {
+    const host = hostName(name);
+    if (!HOST.test(host)) throw new Error(`language.hosts: "${name}" is not a host name`);
+    const r = checkedRules(rules, `language.hosts.${name}`);
+    if (!r.ok) throw new Error(r.error);
+    out[host] = r.rules;
+  }
+  return out;
+}
+
+/** The host name a request was made to: what the proxy in front says it was reached as (X-Forwarded-Host), else Host. */
+export function requestHost(req: { headers: Record<string, string | string[] | undefined> } | undefined): string | undefined {
+  if (!req) return undefined;
+  const first = (h: string | string[] | undefined) => (Array.isArray(h) ? h[0] : h)?.split(",")[0]?.trim();
+  const h = first(req.headers["x-forwarded-host"]) || first(req.headers.host);
+  return h ? hostName(h) : undefined;
+}
 type ChatSetting = { model?: string; effort?: string };
 
 /** A deployment's defaults for what the settings page can change. */
@@ -105,8 +156,28 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     maxSeconds: config.speech?.maxSeconds ?? 60,
     model: speechModel,
   };
-  const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
-  const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...saved<LanguageSettings>("language") });
+  const languageDefaults: Required<LanguageRules> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
+  const hostDefaults = configHosts(config.language?.hosts);
+  /** The deployment's rules: what an admin set, over the config's. */
+  const language = (): Required<LanguageRules> => {
+    const { hosts: _h, ...set } = saved<LanguageSettings>("language") ?? {};
+    return { ...languageDefaults, ...set };
+  };
+  /** Every host name with rules of its own: the config's, with what an admin set over each (null removes one). */
+  const languageHosts = (): Record<string, LanguageRules> => {
+    const set = saved<LanguageSettings>("language")?.hosts ?? {};
+    const out: Record<string, LanguageRules> = {};
+    for (const host of new Set([...Object.keys(hostDefaults), ...Object.keys(set)])) {
+      const rules = { ...hostDefaults[host], ...set[host] };
+      if (Object.keys(rules).length) out[host] = rules;
+    }
+    return out;
+  };
+  /**
+   * The rules for a request reaching the deployment by this host name: that host's own rules, field by field, over
+   * the deployment's. The person's own pick and Superset's language still come first (in the chat panel).
+   */
+  const languageFor = (host?: string): Required<LanguageRules> => ({ ...language(), ...(host ? languageHosts()[hostName(host)] : undefined) });
   const off = () => Object.entries(features.values()).filter(([, on]) => !on).map(([f]) => f);
   // Kept recordings: off unless the config, the environment or the settings page turns them on.
   const flag = (v: string | undefined) => (["true", "on", "1", "yes"].includes((v ?? "").trim().toLowerCase()) ? true : ["false", "off", "0", "no"].includes((v ?? "").trim().toLowerCase()) ? false : undefined);
@@ -171,6 +242,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     speech,
     holdMs,
     language,
+    languageFor,
+    languageHosts,
     telemetry,
     telemetryLog,
     switches,
@@ -181,7 +254,10 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     app: {
       review: () => features.on("reviewer"),
       speech,
-      language: () => ({ titles: language().titles, board: language().board }),
+      language: (req?: { headers: Record<string, string | string[] | undefined> }) => {
+        const l = languageFor(requestHost(req));
+        return { titles: l.titles, board: l.board };
+      },
       chatDefault: () => saved<ChatSetting>("chat"),
       telemetry,
       audio,
@@ -213,7 +289,11 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       stored: await audio.stats(),
       writable,
     }),
-    languageView: (writable: boolean) => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: saved("language") ? "settings" : "default", writable }),
+    languageView: (writable: boolean) => {
+      const set = saved<LanguageSettings>("language");
+      const hosts = Object.fromEntries(Object.entries(languageHosts()).map(([h, rules]) => [h, { ...rules, source: set?.hosts?.[h] ? "settings" : "config" }]));
+      return { ...language(), hosts, options: LANGUAGES, defaults: { ...languageDefaults, hosts: hostDefaults }, source: set && Object.keys(set).some((k) => k !== "hosts") ? "settings" : "default", writable };
+    },
     telemetryView: (writable: boolean) => ({ ...switches.view(writable), file: telemetryLog.file, context: Object.keys(context).length }),
   };
 }
@@ -293,7 +373,8 @@ export function adminRoutes(o: AdminRouteOptions) {
     if (path === "/info") {
       // consent: the notice this user must acknowledge before the mic records, while recordings are kept; else null.
       const speech = s.speech.apiKey ? { enabled: true, maxSeconds: s.speech.maxSeconds, holdMs: s.holdMs(), consent: await s.audio.consentNeeded(who.user) } : { enabled: false };
-      return send(200, { ...o.info?.(url, req), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values(), brand: s.brand.get() });
+      // The default for the host name this page was reached by (language.hosts), else the deployment's.
+      return send(200, { ...o.info?.(url, req), speech, language: { default: s.languageFor(requestHost(req)).default, options: LANGUAGES }, features: s.features.values(), brand: s.brand.get() });
     }
     if (path === "/settings/speech/models") return send(200, (await speechModels({ baseUrl: s.speech.baseUrl })).models);
     const put = req.method === "PUT";
@@ -509,15 +590,40 @@ export function adminRoutes(o: AdminRouteOptions) {
       audit("settings speech", JSON.stringify(next));
       return send(200, await s.speechView(writable));
     }
-    // Any of default, titles, board; null resets the field.
+    // Any of default, titles, board; null resets the field. hosts: { <host name>: { default, titles, board } }, the
+    // same rules for one address; a field set to null, or the host set to null, goes back to the config's.
     if (path === "/settings/language") {
       const next: LanguageSettings = { ...s.settings.get<LanguageSettings>("language") };
-      for (const [k, ok] of [["default", (v: unknown) => LANGUAGES.includes(v as never)], ["titles", (v: unknown) => v === "board" || v === "speaker"], ["board", (v: unknown) => LANGUAGES.includes(v as never) && v !== "auto"]] as const) {
+      for (const [k, ok] of LANGUAGE_RULES) {
         if (!(k in b)) continue;
         const v = b[k];
         if (v === null) delete next[k];
         else if (!ok(v)) return send(400, { error: `bad ${k}: ${String(v)}` });
         else (next as Record<string, unknown>)[k] = v;
+      }
+      if ("hosts" in b) {
+        const given = b.hosts;
+        if (!given || typeof given !== "object" || Array.isArray(given)) return send(400, { error: "hosts must map host names to { default, titles, board }, or a host to null" });
+        const hosts: Record<string, LanguageRules> = { ...next.hosts };
+        for (const [name, rules] of Object.entries(given as Record<string, unknown>)) {
+          const host = hostName(name);
+          if (!HOST.test(host)) return send(400, { error: `"${name}" is not a host name` });
+          if (rules === null) {
+            delete hosts[host];
+            continue;
+          }
+          const fields = rules && typeof rules === "object" && !Array.isArray(rules) ? (rules as Record<string, unknown>) : null;
+          if (!fields) return send(400, { error: `hosts.${name} must be a map of default, titles and board, or null` });
+          const merged: Record<string, unknown> = { ...hosts[host] };
+          for (const [k, v] of Object.entries(fields)) if (v === null) delete merged[k];
+          else merged[k] = v;
+          const r = checkedRules(merged, `hosts.${name}`);
+          if (!r.ok) return send(400, { error: r.error });
+          if (Object.keys(r.rules).length) hosts[host] = r.rules;
+          else delete hosts[host];
+        }
+        if (Object.keys(hosts).length) next.hosts = hosts;
+        else delete next.hosts;
       }
       s.settings.set("language", Object.keys(next).length ? next : undefined);
       o.log(`language: ${JSON.stringify(s.language())}`);
