@@ -4,7 +4,7 @@ import { Chat, useChat } from "@ai-sdk/react";
 import { changesSince, listInWords } from "@lenspack/core";
 import type { BoardVersion } from "@lenspack/react";
 import { DefaultChatTransport } from "ai";
-import { Hand, PanelRightClose, SendHorizontal } from "lucide-react";
+import { Bookmark, Hand, PanelRightClose, SendHorizontal } from "lucide-react";
 
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -67,6 +67,26 @@ function UsageLine({ u }: { u: UsageData }) {
   );
 }
 
+type ReuseData = { tier: string; kind?: "answer" | "edit"; dataAsOf: string; savedUsd?: number; how?: string };
+
+// A reply served from a saved answer: when its data was read, and a way to have the assistant work it out again.
+function SavedNote({ r, onFresh }: { r: ReuseData; onFresh?: () => void }) {
+  const when = new Date(r.dataAsOf);
+  const today = when.toDateString() === new Date().toDateString();
+  const at = Number.isNaN(when.getTime()) ? "" : today ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : when.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground" data-testid="saved-answer" title={`Answered from an earlier answer to the same question${r.how ? ` (${r.how})` : ""}. No AI model was used for the answer itself.`}>
+      <Bookmark className="size-3 shrink-0" aria-hidden="true" />
+      <span>{r.kind === "edit" ? "Saved change, made as before" : `Saved answer, data as of ${at}`}</span>
+      {onFresh && (
+        <button type="button" className="font-medium text-foreground underline underline-offset-2 hover:text-primary" onClick={onFresh} data-testid="ask-fresh">
+          Ask fresh
+        </button>
+      )}
+    </p>
+  );
+}
+
 function StepBadge({ name, part }: { name: string; part: Part }) {
   const r = part.output as { applied?: boolean; held?: boolean; ok?: boolean; error?: string; didYouMean?: string; version?: number } | undefined;
   const failed = part.errorText !== undefined || r?.applied === false || r?.ok === false;
@@ -94,6 +114,9 @@ function labelFor(name: string, models: ModelInfo[]) {
   const collides = models.filter((m) => m.available !== false && m.name !== name && base(m.name) === mine).length > 0;
   return collides ? name : mine;
 }
+
+/** What a person typed in a message. */
+const textOf = (m: { parts: unknown[] } | undefined) => ((m?.parts ?? []) as Part[]).map((p) => (p.type === "text" ? (p.text ?? "") : "")).join(" ").trim();
 
 // Once the user's own edits have settled, one line in the transcript says
 // what the assistant will be told with the next message. Local: no model call.
@@ -196,13 +219,15 @@ export function ChatPanel({
   React.useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages, busy, notices]);
-  const ask = async (text: string) => {
+  // fresh: "Ask fresh" on a saved answer; the full assistant answers, whatever is saved.
+  const ask = async (text: string, fresh = false) => {
     if (!text.trim() || busy) return;
     const b = await (await fetch(`/api${base}`)).json();
     startVersion.current = b.board?.version ?? null;
     // The model sees the board as it is now; a notice pending for edits before this is moot.
     if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
-    void sendMessage({ text }, lastTurnFrom.current !== null ? { body: { since: lastTurnFrom.current } } : undefined);
+    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(fresh ? { fresh: true } : {}) };
+    void sendMessage({ text }, Object.keys(body).length ? { body } : undefined);
     setInput("");
   };
   const noticesAt = (at: number) =>
@@ -302,6 +327,8 @@ export function ChatPanel({
                   p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
+                ) : p.type === "data-reuse" ? (
+                  <SavedNote key={i} r={p.data as ReuseData} onFresh={busy ? undefined : () => void ask(textOf(messages[mi - 1]), true)} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (
                   <p key={i} className="text-[11px] text-muted-foreground">round {(p.data as { round: number }).round} · {(p.data as { builder: string }).builder}</p>
                 ) : null,

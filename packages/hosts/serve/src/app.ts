@@ -17,6 +17,7 @@ import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetR
 import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
 import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
+import { type Reuse, type ReuseTurn } from "./reuse";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
@@ -52,8 +53,8 @@ export type AppOptions = {
   /** A built client to serve for every non-API path (single-page fallback to index.html). */
   ui?: string;
   providers?: Provider[];
-  /** `{ reviewer, escalate }` provider names. */
-  roles?: { reviewer?: string; escalate?: string };
+  /** `{ reviewer, escalate, router }` provider names; router is the small model that pairs a question with a saved answer. */
+  roles?: { reviewer?: string; escalate?: string; router?: string };
   /** False turns the reviewer off for every turn (a deployment's switch, read per turn). Absent means on. */
   review?: () => boolean;
   log?: (line: string) => void;
@@ -100,6 +101,8 @@ export type AppOptions = {
    * `language` ("auto", "fr", …) is the user's pick.
    */
   language?: () => Omit<LanguagePolicy, "reply">;
+  /** Saved answers and plans (reuse/): a repeated question is answered without the model. Absent, every turn runs the model. */
+  reuse?: Reuse;
 };
 
 const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
@@ -297,7 +300,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
 
   const audit = (e: Omit<Parameters<Audit>[0], "at">) => {
     try {
-      opts.audit?.({ at: new Date().toISOString(), ...e });
+      const event = { at: new Date().toISOString(), ...e };
+      opts.reuse?.noteEvent(event);
+      opts.audit?.(event);
     } catch (err) {
       opts.log?.(`audit failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -502,6 +507,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         }
         case "GET options":
           return json(res, 200, await dimensionValues(url.searchParams.get("field") ?? "", run));
+        // The questions asked most on this board by people with the caller's access: the chat's suggestion chips.
+        case "GET suggestions":
+          return json(res, 200, { suggestions: opts.reuse?.suggestions({ board: boardId, pack: h.name, scope: ctx, lang: url.searchParams.get("lang") }) ?? [] });
         case "GET versions":
           return json(res, 200, (await h.store.versions(boardId)).map(shown));
         case "POST ops": {
@@ -583,7 +591,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const store = staged ?? h.store;
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; fresh?: unknown };
     // What this turn costs: every model call made in its scope, the queries its tools run, and the
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
@@ -605,6 +613,22 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
     const before = summarise(config);
+
+    // A question answered before, by someone with the same access, on the same pack and board: answered from the
+    // saved plan without the agent (reuse/, docs/caching.md). "Ask fresh" (fresh: true) always runs the agent.
+    const reuseTurn: ReuseTurn = { packName: h.name, pack: h.pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, messages: body.messages, picked, rules: opts.language?.(), readOnly, fresh: body.fresh === true, builder: builderModel, providers, routerName: opts.roles?.router, meter: scope, calls };
+    const reused = opts.reuse && (await withMeter(scope, () => opts.reuse!.serve({ ...reuseTurn, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) })));
+    if (reused) {
+      const cost = turnCost(calls, queries);
+      const summary = turnSummary(cost);
+      ledger.turn({ user, pack: h.name }, cost);
+      audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: "saved answer", reuse: { tier: reused.tier, entry: reused.entry.id, savedUsd: reused.savedUsd, dataAsOf: reused.dataAsOf, ...(reused.why ? { how: reused.why } : {}) }, instruction: instruction.slice(0, 2000), answer: reused.reply.slice(0, 2000), ...summary, cost }) });
+      return respond(res, createUIMessageStream({ execute: ({ writer }) => {
+        for (const c of reused.chunks) writer.write(c);
+        writer.write({ type: "data-usage", data: { ...cost, summary } });
+        writer.write({ type: "finish" });
+      } }));
+    }
 
     // One more call to a builder with tools off, for the words a turn ends with when its tool
     // loop could not supply them. Empty when the call fails or says nothing.
@@ -663,6 +687,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         let toldUnchanged = false;
         // A fix round put a misleading change right: the turn is saved as one version, so the wrong one never reaches the board.
         let corrected = false;
+        // Round 1's tool calls with their results, and whether the turn ran to its end: what the answer store keeps.
+        const results: { tool: string; input: unknown; output: unknown }[] = [];
+        let completed = false;
         const say = (text: string) => {
           writeText(writer, `reply-${randomUUID()}`, text);
           turn.answer = text.slice(0, 2000);
@@ -694,6 +721,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             const steps = await result.steps;
             let answer = (await result.text).trim();
             turn.calls.push(...steps.flatMap((s) => s.toolCalls.map((c) => ({ tool: c.toolName, input: (c as { input?: unknown }).input }))));
+            if (!fixing) results.push(...steps.flatMap((s) => s.toolResults.map((r) => ({ tool: r.toolName, input: r.input, output: r.output }))));
             const refused = refusalsFrom(steps as never);
             turn.refusals.push(...refused);
             const history = [...messages, ...steps.flatMap((s) => s.response.messages)];
@@ -715,6 +743,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             // the board gained a version, or when the model tried an edit or its reply claims one.
             const gained = (await store.versions(boardId)).some((v) => v.version > startVersion);
             if (!fixing && !wantsReview(gained, steps as never)) break;
+            // The same edits, on a board with the same content, as an edit the reviewer accepted before: it stands.
+            if (!fixing && gained && opts.reuse?.acceptedBefore(reuseTurn, steps as never)) {
+              turn.reviews.push({ round, skipped: "the same edits were accepted before on a board like this one" });
+              break;
+            }
             const verdict = await review(writer, reviewer, turn.refusals.slice(-8));
             const material = materialFindings(verdict);
             // Round 1's held words go out when its edit stands; a fix round's words will replace them.
@@ -745,6 +778,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             if (minor) writeText(writer, `note-${randomUUID()}`, minor);
             break;
           }
+          completed = true;
         } finally {
           // A turn that ended before a verdict (no review, or a failure part-way) shows what round 1 said.
           held?.release();
@@ -778,12 +812,17 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           const summary = turnSummary(cost);
           ledger.turn({ user, pack: h.name }, cost);
           audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), ...turn, ...summary, cost }) });
+          opts.reuse?.remember(reuseTurn, { completed: completed && !misleading.length, reply: turn.answer ?? "", calls: results, saved: turn.saved ?? [], reviewed: turn.reviews.length > 0, accepted: !misleading.length, fixed: corrected, costUsd: summary.costUsd });
           writer.write({ type: "data-usage", data: { ...cost, summary } });
         }
         writer.write({ type: "finish" });
       }),
       onError: (e) => (e instanceof Error ? e.message : String(e)),
     });
+    return respond(res, stream);
+  }
+
+  async function respond(res: ServerResponse, stream: ReadableStream<UIMessageChunk>) {
     const response = createUIMessageStreamResponse({ stream });
     // Unbuffered all the way: a proxy that holds the stream while the
     // reviewer thinks would cut it as idle.

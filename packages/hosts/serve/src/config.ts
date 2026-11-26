@@ -93,6 +93,16 @@ export const configSchema = z.object({
   budget: z.object({ usdPerDay: z.number().positive().optional(), usdPerUserPerDay: z.number().positive().optional() }).strict().optional(),
   /** How many of the latest user turns the chat model is sent (default 8). */
   historyTurns: z.number().int().positive().optional(),
+  /**
+   * Saved answers (docs/caching.md): `true`, or the store's file (default reuse.json beside this file) and its
+   * settings. Absent, every question runs the full assistant.
+   */
+  cache: z
+    .union([
+      z.boolean(),
+      z.object({ file: z.string().optional(), enabled: z.boolean().optional(), ttlHours: z.number().optional(), router: z.enum(["on", "off"]).optional(), maxEntries: z.number().int().optional(), freshMinutes: z.number().optional() }).strict(),
+    ])
+    .optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
   proposals: z.string().optional(),
 });

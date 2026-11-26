@@ -412,18 +412,32 @@ export function App() {
   const current = catalog.find((c) => c.example === example);
   // The deployment's own line under the title, if it has one.
   const intro = page.intro;
+  // The questions asked most on this board, from the server's saved answers: shown first, one click answers from them.
+  const [asked, setAsked] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    setAsked([]);
+    if (!boardId) return;
+    let live = true;
+    void api(`${base}/suggestions`)
+      .then((r: { suggestions?: string[] }) => live && setAsked(Array.isArray(r.suggestions) ? r.suggestions.slice(0, 4) : []))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [base, boardId]);
   const suggestions = React.useMemo(() => {
-    if (!state) return [];
+    if (!state) return asked;
     const m = state.catalogue.measures;
     const d = state.catalogue.dimensions.filter((x) => x.type !== "time");
     const timed = m.find((x) => state.catalogue.entities.find((e) => e.key === x.entity)?.hasTime) ?? m[0];
-    return [
+    const ideas = [
       `Add a KPI for ${m[0]?.label.toLowerCase()} across the top`,
       d[0] && m[1] ? `Show ${m[1].label.toLowerCase()} by ${d[0].label.toLowerCase()} as a bar chart` : "",
       timed ? `Plot ${timed.label.toLowerCase()} per week for the last 12 weeks` : "",
       "Make the first chart full width",
-    ].filter(Boolean);
-  }, [state]);
+    ].filter((q) => q && !asked.includes(q));
+    return [...asked, ...ideas].slice(0, 6);
+  }, [state, asked]);
 
   const undoRemove = async () => {
     if (!removed || !host.revertTo) return;

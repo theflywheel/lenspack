@@ -123,8 +123,8 @@ describe("the anthropic adapter", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("prices Sonnet 5.5 from the published rates, cache writes by TTL, and lets a config's own price win", () => {
-    expect(buildProvider(sonnet).pricing).toEqual({ input: 2, output: 10, cachedInput: 0.2, cacheWrite: 2.5 });
-    expect(buildProvider({ ...sonnet, anthropic: { cacheTtl: "1h" } }).pricing).toMatchObject({ cacheWrite: 4 });
+    // The stable prefix is cached for an hour by default: its writes cost 2x input; five-minute writes 1.25x.
+    expect(buildProvider(sonnet).pricing).toEqual({ input: 2, output: 10, cachedInput: 0.2, cacheWrite: 2.5, cacheWrite1h: 4 });
     expect(buildProvider({ ...sonnet, pricing: { input: 9, output: 9 } }).pricing).toEqual({ input: 9, output: 9 });
     expect(buildProvider({ ...sonnet, model: "claude-next" }).pricing).toBeUndefined();
   });
@@ -204,13 +204,14 @@ describe("the anthropic adapter", () => {
     await generateText({ model: p.languageModel, ...call });
     const body = sent[0]!.body;
     expect(body.system).toEqual([
-      { type: "text", text: "STABLE.", cache_control: { type: "ephemeral" } },
+      { type: "text", text: "STABLE.", cache_control: { type: "ephemeral", ttl: "1h" } },
       { type: "text", text: "\n\nBOARD." },
     ]);
     expect(body.tools.map((t: any) => [t.name, t.cache_control])).toEqual([
       ["first", undefined],
-      ["last", { type: "ephemeral" }],
+      ["last", { type: "ephemeral", ttl: "1h" }],
     ]);
+    // The loop's tail is read only within the turn: five minutes.
     expect(body.cache_control).toEqual({ type: "ephemeral" });
   });
 
@@ -232,7 +233,7 @@ describe("the reviewer through the anthropic adapter", () => {
     const { sent, fetch } = recorder(anthropicText('{"satisfied": true, "missing": [], "wrong": [], "note": "fine"}', { input_tokens: 900, cache_read_input_tokens: 1200, output_tokens: 40 }));
     const review = await reviewTurn(buildProvider({ ...sonnet, fetch }), { catalogue: "PACK", instruction: "add a kpi", before: "", after: "", receipt: "v2 added" });
     expect(review).toMatchObject({ satisfied: true, note: "fine" });
-    expect(sent[0]!.body.system).toEqual([{ type: "text", text: REVIEW_PROMPT, cache_control: { type: "ephemeral" } }]);
+    expect(sent[0]!.body.system).toEqual([{ type: "text", text: REVIEW_PROMPT, cache_control: { type: "ephemeral", ttl: "1h" } }]);
     expect(sent[0]!.body.max_tokens).toBe(4000 + 4096);
     expect(sent[0]!.body.cache_control).toBeUndefined();
   });
@@ -315,7 +316,7 @@ describe("a chat turn", () => {
   });
 
   it("with Sonnet 5.5: a tool loop with thinking passed back, cache breakpoints, and cache reads and writes priced", async () => {
-    const usage0 = { input_tokens: 40, cache_creation_input_tokens: 3000, cache_read_input_tokens: 0, output_tokens: 1 };
+    const usage0 = { input_tokens: 40, cache_creation_input_tokens: 3000, cache_read_input_tokens: 0, output_tokens: 1, cache_creation: { ephemeral_1h_input_tokens: 3000, ephemeral_5m_input_tokens: 0 } };
     const { sent, fetch } = recorder(
       sse([
         { type: "message_start", message: { id: "m1", type: "message", role: "assistant", model: "claude-sonnet-5-5", content: [], stop_reason: null, stop_sequence: null, usage: usage0 } },
@@ -329,7 +330,7 @@ describe("a chat turn", () => {
         { type: "message_stop" },
       ]),
       sse([
-        { type: "message_start", message: { id: "m2", type: "message", role: "assistant", model: "claude-sonnet-5-5", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 60, cache_creation_input_tokens: 100, cache_read_input_tokens: 3000, output_tokens: 1 } } },
+        { type: "message_start", message: { id: "m2", type: "message", role: "assistant", model: "claude-sonnet-5-5", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 60, cache_creation_input_tokens: 100, cache_read_input_tokens: 3000, output_tokens: 1, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 100 } } } },
         { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
         { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "The board is empty." } },
         { type: "content_block_stop", index: 0 },
@@ -343,11 +344,11 @@ describe("a chat turn", () => {
     for (const { body } of sent) {
       // The pack's stable prompt is cached apart from the board, which changes with every edit.
       expect(body.system).toHaveLength(2);
-      expect(body.system[0]).toMatchObject({ cache_control: { type: "ephemeral" } });
+      expect(body.system[0]).toMatchObject({ cache_control: { type: "ephemeral", ttl: "1h" } });
       expect(body.system[0].text).toContain("Rules:");
       expect(body.system[1].text).toContain("CURRENT BOARD:");
       expect(body.system[1].cache_control).toBeUndefined();
-      expect(body.tools.at(-1).cache_control).toEqual({ type: "ephemeral" });
+      expect(body.tools.at(-1).cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
       expect(body.tools.slice(0, -1).every((t: any) => !t.cache_control)).toBe(true);
       expect(body.cache_control).toEqual({ type: "ephemeral" });
     }
@@ -356,10 +357,11 @@ describe("a chat turn", () => {
     expect(assistant.content[0]).toEqual({ type: "thinking", thinking: "", signature: "sig-1" });
     expect(assistant.content[1]).toMatchObject({ type: "tool_use", id: "toolu_1", name: "get_board" });
     expect(result.content[0]).toMatchObject({ type: "tool_result", tool_use_id: "toolu_1" });
-    // Two steps at Sonnet 5.5's published rates: plain input $2, cache reads $0.20, writes $2.50, output $10 per million.
+    // Two steps at Sonnet 5.5's published rates: plain input $2, cache reads $0.20, hour-long writes (the first step's
+    // prefix) $4, five-minute writes (the second step's tail) $2.50, output $10 per million.
     const usage = parts.find((p) => p.type === "data-usage")!.data;
     expect(usage.total).toMatchObject({ calls: 2, inputTokens: 3040 + 3160, cachedInputTokens: 3000, cacheWriteTokens: 3100, outputTokens: 40 });
-    expect(usage.total.usd).toBeCloseTo((100 * 2 + 3000 * 0.2 + 3100 * 2.5 + 40 * 10) / 1e6, 9);
+    expect(usage.total.usd).toBeCloseTo((100 * 2 + 3000 * 0.2 + 3000 * 4 + 100 * 2.5 + 40 * 10) / 1e6, 9);
     expect(report.total).toMatchObject({ turns: 1, cachedInputTokens: 3000, cacheWriteTokens: 3100 });
     // Both steps of the tool loop are attributed to the turn's round: the scope survived the loop.
     expect(usage.models).toEqual([expect.objectContaining({ role: "build", provider: "sonnet", calls: 2 })]);

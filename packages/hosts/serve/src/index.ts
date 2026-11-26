@@ -16,3 +16,4 @@ export * from "./settings";
 export * from "./features";
 export * from "./admin";
 export * from "./runtime";
+export { type CacheSettings, type CacheSettingsStore, type Reuse, type ReuseOptions, type ReuseTurn, type Served, type TurnOutcome, CACHE_DEFAULTS, boardHash, cacheRoutes, cacheSettings, cacheSettingsFrom, reuseLayer } from "./reuse";

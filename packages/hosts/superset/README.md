@@ -312,6 +312,8 @@ page, which calls:
 | `PUT /_superset/settings/speech` | any of `{model, holdMs}`; a field left out is kept, `null` puts it back to the default |
 | `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}` (below); `null` drops the admin's value |
+| `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes}` for saved answers; `null` resets a field |
+| `GET /_superset/cache` and below | saved answers: stats, entries, pin, unpin, evict, suggestions, chart candidates, settled boards ([docs/caching.md](../../../docs/caching.md#the-admin-api)) |
 
 Reads and writes need a Superset admin's signed identity (above). Settings persist in `settings.json` beside
 the board state.
@@ -353,6 +355,7 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `heatmap` | new heatmaps are refused (existing ones stay) | the server |
 | `maps` | map queries are refused (existing deck_scatter charts stay in Superset) | the server |
 | `reviewer` | no second model call checking each change: edits are saved as they are made, and a wrong one is not caught before the reply | the server |
+| `cache` | no saved answers: every question goes to the model, even one answered a minute ago ([docs/caching.md](../../../docs/caching.md)) | the server |
 
 `/_superset/info` returns `features` (the effective booleans) for the page. `GET /_superset/settings` returns
 `features: {values, defaults, source, options, writable}`: `defaults` is what the deployment says without the

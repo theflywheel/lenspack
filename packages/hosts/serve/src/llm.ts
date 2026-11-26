@@ -45,7 +45,7 @@ export type AnthropicSettings = {
   display?: "omitted" | "summarized" | "updates";
   /** Prompt-cache breakpoints on tools, the stable system prompt and a tool loop's tail. Default true. */
   cache?: boolean;
-  /** How long a cache entry lives. "1h" doubles the write price. Default "5m". */
+  /** How long the tools and the stable system prompt stay cached. "1h" (the default) writes at 2x input, "5m" at 1.25x; a tool loop's tail is always "5m". */
   cacheTtl?: "5m" | "1h";
   /** Server-side retry of a refused turn on Anthropic's chosen fallback model. Default "default" where the model has it; false turns it off. */
   fallbacks?: "default" | false;
@@ -94,7 +94,8 @@ export type LlmAdapter = {
    * usage oddly, how its usage maps to tokens.
    */
   pricing?(cfg: ProviderConfig): Pricing | undefined;
-  tokens?(usage: ProviderUsage): Tokens;
+  /** cfg: the provider the usage came from, for an adapter whose usage reads differently by its settings. */
+  tokens?(usage: ProviderUsage, cfg: ProviderConfig): Tokens;
   /** The effort levels this provider's model takes; absent, it has no effort setting and a call's effort is ignored. */
   efforts?(cfg: ProviderConfig): Efforts | undefined;
   /** Shapes a call for this provider (prompt-cache breakpoints). Absent, the system parts are joined and the call goes as written. */
@@ -181,7 +182,7 @@ export function buildProvider({ fetch, ...cfg }: ProviderConfig & { fetch?: type
   if (!cfg.baseUrl && !adapter.defaultBaseUrl) throw new Error(`Provider "${cfg.name}": a ${adapter.kind} provider needs a baseUrl`);
   const apiKey = cfg.apiKey ?? (cfg.apiKeyFile ? readFileSync(cfg.apiKeyFile, "utf8").trim() : undefined);
   const pricing = cfg.pricing ?? adapter.pricing?.(cfg);
-  const languageModel = meterModel(adapter.build(cfg, { apiKey, fetch }), { provider: cfg.name, model: cfg.model, kind: adapter.kind, pricing, tokens: adapter.tokens });
+  const languageModel = meterModel(adapter.build(cfg, { apiKey, fetch }), { provider: cfg.name, model: cfg.model, kind: adapter.kind, pricing, tokens: adapter.tokens && ((u) => adapter.tokens!(u, cfg)) });
   const prepare = adapter.prepare ? (call: CallParts) => adapter.prepare!(call, cfg) : undefined;
   return { ...cfg, kind: adapter.kind, apiKey: undefined, pricing, languageModel, available: null, prepare, probeTokens: adapter.probeTokens, efforts: adapter.efforts?.(cfg) };
 }

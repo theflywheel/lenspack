@@ -7,6 +7,7 @@ import { type FeatureValues, features as featureSwitches } from "./features";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, publicView } from "./llm";
 import type { Budget } from "./metering";
+import { type CacheSettings, cacheSettings } from "./reuse/settings";
 import { settingsStore } from "./settings";
 import { DEFAULT_SPEECH_MODEL, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
 
@@ -33,6 +34,8 @@ export type AdminConfig = {
   language?: LanguageSettings;
   /** Off switches, all on by default (see features.ts); LENSPACK_FEATURES and the settings page override them. */
   features?: FeatureValues;
+  /** Saved answers (docs/caching.md): the defaults the settings page starts from. */
+  cache?: Partial<CacheSettings>;
 };
 
 /** Where the LLM key came from, for the settings page. */
@@ -61,9 +64,13 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
   const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...saved<LanguageSettings>("language") });
   const off = () => Object.entries(features.values()).filter(([, on]) => !on).map(([f]) => f);
+  const cache = cacheSettings(settings, config.cache);
   return {
     settings,
     features,
+    cache,
+    /** The answer store's effective settings: the section, and the cache feature switch. */
+    cacheNow: () => ({ ...cache.get(), on: features.on("cache") }),
     speech,
     holdMs,
     language,
@@ -138,7 +145,7 @@ export function adminRoutes(o: AdminRouteOptions) {
     }
     if (path === "/settings/speech/models") return send(200, (await speechModels({ baseUrl: s.speech.baseUrl })).models);
     const put = req.method === "PUT";
-    if (!["/settings", "/turns", "/audit"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat"].includes(path))) return;
+    if (!["/settings", "/turns", "/audit"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache"].includes(path))) return;
     if (!who.roles?.includes("admin")) {
       audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
       return send(403, { error: `only ${o.adminName}s can do this` });
@@ -155,6 +162,7 @@ export function adminRoutes(o: AdminRouteOptions) {
         speech: s.speechView(writable),
         language: s.languageView(writable),
         features: s.features.view(writable),
+        cache: s.cache.view(writable),
       });
     // What chat has cost: the newest turns and the totals for today and the last 7 days, from the audit log.
     if (path === "/turns") {
@@ -189,6 +197,14 @@ export function adminRoutes(o: AdminRouteOptions) {
       o.log(s.featuresLine());
       audit("settings features", JSON.stringify(r.changed));
       return send(200, s.features.view(writable));
+    }
+    // Saved answers: any of enabled, ttlHours, router, maxEntries, freshMinutes; null puts a field back to the default.
+    if (path === "/settings/cache") {
+      const r = s.cache.update(b);
+      if (!r.ok) return send(400, { error: r.error });
+      o.log(`cache: ${JSON.stringify(s.cache.get())}`);
+      audit("settings cache", JSON.stringify(b));
+      return send(200, s.cache.view(writable));
     }
     // Any of model, holdMs; a field left out is kept, and null or "" puts it back to the default.
     if (path === "/settings/speech") {
