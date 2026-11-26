@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
 import { type AuditLog, turnsReport } from "./audit";
 import type { Principal } from "./auth";
+import { type ExplainConfig, explainFrom } from "./config";
 import { type FeatureValues, features as featureSwitches } from "./features";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, publicView } from "./llm";
@@ -33,6 +34,8 @@ export type AdminConfig = {
   language?: LanguageSettings;
   /** Off switches, all on by default (see features.ts); LENSPACK_FEATURES and the settings page override them. */
   features?: FeatureValues;
+  /** "How this was worked out" under each answer: false turns it off; `sql: false` keeps the words and rows but not the SQL. */
+  explain?: ExplainConfig;
 };
 
 /** Where the LLM key came from, for the settings page. */
@@ -73,6 +76,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       speech,
       language: () => ({ titles: language().titles, board: language().board }),
       chatDefault: () => saved<ChatSetting>("chat"),
+      // The explain switch (settings page, env, config) and the config's explain.sql.
+      explain: () => ({ ...explainFrom(config.explain), ...(features.on("explain") ? {} : { on: false }) }),
     } satisfies Partial<AppOptions>,
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
     speechView: (writable: boolean) => ({

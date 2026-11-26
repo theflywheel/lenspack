@@ -171,6 +171,27 @@ export const otherTenant = (who: Pick<Identity, "tenant">, host?: Pick<Scoped, "
  */
 export const showsStatement = (ctx: Pick<Scoped, "hidden">) => !ctx.hidden?.size;
 
+/** What a caller is shown of how an answer was worked out: the answer card under a chat reply. */
+export type AnswerView = {
+  /** The statement each data call ran (its SQL or search request). */
+  sql: boolean;
+  /** Each measure's definition, in the words: it reads like the pack file. */
+  definitions: boolean;
+};
+
+/**
+ * Whether a caller gets an answer card, and what is on it, or null: none. The
+ * deployment's choice (`allows`: the `explain` switch and `explain.sql`) and
+ * the caller's own view (showsStatement) can each only take things away: a
+ * caller not shown compiled statements gets no SQL and no definitions, even
+ * where the deployment shows them. Per-role grants narrow through here too.
+ */
+export function answerView(ctx: Pick<Scoped, "hidden">, allows: { on?: boolean; sql?: boolean } = {}): AnswerView | null {
+  if (allows.on === false) return null;
+  const statements = showsStatement(ctx);
+  return { sql: statements && allows.sql !== false, definitions: statements };
+}
+
 /** What one caller may use of one pack. */
 export type Decision<C extends Scoped = Scoped> = {
   /** Every row filter: the pack's own, the caller's, then their rule's. */

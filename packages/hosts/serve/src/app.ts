@@ -5,8 +5,8 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
-import { type Principal, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
+import { type AnswerCard, type ProposalStore, answerCard, boardTools, selectionsFrom, toVercelAI } from "@lenspack/agent";
+import { type Principal, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -100,6 +100,11 @@ export type AppOptions = {
    * `language` ("auto", "fr", …) is the user's pick.
    */
   language?: () => Omit<LanguagePolicy, "reply">;
+  /**
+   * What the deployment allows of the answer card ("How this was worked out"), read per turn: on
+   * unless `on` is false; the statements shown unless `sql` is false. Policy only narrows it.
+   */
+  explain?: () => { on?: boolean; sql?: boolean } | undefined;
 };
 
 const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
@@ -583,15 +588,18 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const store = staged ?? h.store;
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; selections?: unknown };
     // What this turn costs: every model call made in its scope, the queries its tools run, and the
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
+    // The answer card (kernel/agent answer.ts), from the data calls the tools make; policy decides what it shows.
+    const shown = answerView(h.ctx, opts.explain?.());
+    const card = shown && answerCard({ ...shown, pack: h.pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged,
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, onData: card?.onData,
       onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const view = (c: BoardConfig) => shownConfig(c, h.ctx);
@@ -657,7 +665,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       execute: ({ writer }) => withMeter(scope, async () => {
         let messages = modelMessages;
         // One line per turn for whoever improves the pack: what was asked, what the model did, what was refused, the verdicts.
-        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[] } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
+        const turn: { instruction: string; answer?: string; calls: unknown[]; refusals: string[]; reviews: unknown[]; outcome?: string; saved?: string[]; card?: AnswerCard } = { instruction: instruction.slice(0, 2000), calls: [], refusals: [], reviews: [] };
         // The findings that would make the held edits mislead; while there are any, they are dropped rather than saved.
         let misleading: Finding[] = [];
         let toldUnchanged = false;
@@ -772,6 +780,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
                 say(`The change could not be saved: ${why}`);
               }
             }
+          }
+          // To the person who asked, under their answer, and into the turn's audit line (bounded).
+          const answered = card?.record();
+          if (answered) {
+            turn.card = answered;
+            writer.write({ type: "data-answer-card", data: answered });
           }
           // Counted even when the turn failed part-way: the tokens were spent.
           const cost = turnCost(calls, queries);

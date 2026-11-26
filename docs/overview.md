@@ -108,6 +108,7 @@ lenspack came out of a consultation tool whose dashboard logic was welded to one
 - Tenancy is structural: an entity that declares a tenant cannot be queried without one, so there is no forgot-to-filter state.
 - Raw SQL is off by default. When switched on, it is read-only, timeboxed and capped, and its results can never become a widget.
 - No URLs, no markup and no colour values in any board. Text renders as text; a scheme name maps to a CSS variable.
+- Every chat answer that read data shows how it was worked out: each data call in plain words, naming the approved measure behind each figure, with the SQL that ran and the rows behind it. See [explain.md](explain.md).
 
 The security model in full: [security.md](security.md).
 
