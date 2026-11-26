@@ -117,6 +117,8 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `auth (kind: password).editors` | list of string |  | `[]` |
 | `auth (kind: password).maintainers` | list of string |  | `[]` |
 | `auth (kind: password).usage` | list of string |  |  |
+| `auth (kind: password).admins` | list of string |  |  |
+| `auth (kind: password).users` | list of string |  |  |
 | `auth (kind: tokens).kind` | `"tokens"` | yes |  |
 | `auth (kind: tokens).users` | list of object | yes |  |
 | `auth (kind: tokens).users[].user` | string | yes |  |
@@ -134,6 +136,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `auth (kind: tokens).editors` | list of string |  | `[]` |
 | `auth (kind: tokens).maintainers` | list of string |  | `[]` |
 | `auth (kind: tokens).usage` | list of string |  |  |
+| `auth (kind: tokens).admins` | list of string |  |  |
 | `auth (kind: proxy).kind` | `"proxy"` | yes |  |
 | `auth (kind: proxy).secret` | string | yes |  |
 | `auth (kind: proxy).secretHeader` | string |  | `"x-lenspack-proxy-secret"` |
@@ -143,6 +146,8 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `auth (kind: proxy).editors` | list of string |  | `[]` |
 | `auth (kind: proxy).maintainers` | list of string |  | `[]` |
 | `auth (kind: proxy).usage` | list of string |  |  |
+| `auth (kind: proxy).admins` | list of string |  |  |
+| `auth (kind: proxy).users` | list of string |  |  |
 | `auth (kind: proxy).signOutUrl` | string |  |  |
 | `auth (kind: oidc).kind` | `"oidc"` | yes |  |
 | `auth (kind: oidc).issuer` | string | yes |  |
@@ -158,6 +163,8 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `auth (kind: oidc).editors` | list of string |  | `[]` |
 | `auth (kind: oidc).maintainers` | list of string |  | `[]` |
 | `auth (kind: oidc).usage` | list of string |  |  |
+| `auth (kind: oidc).admins` | list of string |  |  |
+| `auth (kind: oidc).users` | list of string |  |  |
 | `host` | string |  |  |
 | `audit` | string |  |  |
 | `telemetry` | object |  |  |
@@ -229,6 +236,9 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `superset.passwordEnv`, `superset.password` | `LENSPACK_SUPERSET_PASSWORD` | an account you manage instead: its password's variable, or the password |
 | `editPolicy` | `superset` (`LENSPACK_EDIT_POLICY` wins) | who may change dashboards through the chat: `superset` or `signed-in` |
 | `hostPolicy` | `superset` (`LENSPACK_HOST_POLICY` wins) | whose access narrows what each user sees: `superset` or `off` |
+| `auth.admins` | `["Admin"]` (`LENSPACK_ADMIN_ROLES` wins) | Superset roles whose members are Lenspack admins. See [Who is asking](../hosts/superset/identity.md#who-may-administer) |
+| `auth.usage` | the same roles as `auth.admins` (`LENSPACK_USAGE_ROLES` wins) | Superset roles that also see user names on the usage pages |
+| `auth.users` | everyone signed in (`LENSPACK_USER_ROLES` wins) | Superset roles that may use the assistant at all; admins always may. See [Who is asking](../hosts/superset/identity.md#who-may-use-the-assistant) |
 | `editScope` | `superset` (`LENSPACK_EDIT_SCOPE` wins) | where the chat may edit: `superset` (any dashboard Superset lets the person edit) or `own` (their own dashboards only); or `{ scope, adminsExempt }` (admins exempt by default). See [Personal dashboards](../features/personal-dashboards.md#where-the-chat-may-edit-editscope) |
 | `personal` | `maxDashboardsPerUser: 20`, `maxSavedConfigsPerUser: 50` | limits for [personal dashboards and saved layouts](../features/personal-dashboards.md) |
 | `audit` | on, 90 days | `false`, or `{ retentionDays }` (`LENSPACK_AUDIT_RETENTION_DAYS`) |
@@ -271,6 +281,7 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback |
 | `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
+| `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file |
 | `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |
 | `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it |
 | `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file |

@@ -73,7 +73,9 @@ return a decision; the engine enforces it.
   hidden keys and kept entities.
 - `boardRights`: whether a caller may view or edit a board. It also applies `editScope` and hides people's own
   dashboards from everyone but their owner and admins (`hiddenPersonalBoards`).
-- `adminRights` and `mayAdminister`: whether a caller may use the admin pages and see user names.
+- `adminRights` and `mayAdminister`: whether a caller may use the admin pages and see user names. `principalOf`
+  gives Lenspack's admin role by the deployment's `admins` rule, the one place a host's roles become it.
+- `mayUse`: whether the deployment's `users` rule lets a caller use the assistant at all (admins always may).
 - `answerView` and `showsStatement`: what the answer card may show a caller.
 - The rules for [personal dashboards and saved layouts](../features/personal-dashboards.md) (making, copying,
   deleting, saving and applying, and the limits), in `personal.ts`. The data a person reads on a dashboard is

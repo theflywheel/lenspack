@@ -1,20 +1,21 @@
 # Who is asking
 
-This page explains how the Lenspack server knows who is asking inside Superset, who may edit and administer, the
+This page explains how the Lenspack server knows who is asking inside Superset, who may use the assistant, edit and administer, the
 account Lenspack uses to talk to Superset, and the audit log. It is for Superset admins and security reviewers.
 What each person may *see* is in [Access inside Superset](../../access/superset.md).
 
 ## The signed identity
 
 Browsers never reach the Lenspack server directly. Superset forwards `/lenspack/...` to it for signed-in users and
-adds a header, `x-lenspack-identity`: base64url JSON `{u, i, a, r, d, b, p, e, v, t}` and an HMAC-SHA256 of it.
+adds a header, `x-lenspack-identity`: base64url JSON `{u, i, a, r, w, d, b, p, e, v, t}` and an HMAC-SHA256 of it.
 
 | field | meaning |
 |---|---|
 | `u` | the Superset user |
 | `i` | their Superset user id (needed to make or copy [personal dashboards](../../features/personal-dashboards.md); an older plugin that does not sign it gets a refusal saying to update) |
-| `a` | whether they are a Superset admin |
-| `r` | their Superset role names |
+| `a` | whether they are a Superset admin. It counts only as Superset's own right to edit every dashboard; who is a Lenspack admin is the `admins` rule's to say (below) |
+| `r` | their Superset role names, which Lenspack's `admins`, `usage` and `users` rules read |
+| `w` | whether Superset lets them write dashboards at all (`can_write` on Dashboard, or Admin), which making, copying, deleting and laying out [personal dashboards](../../features/personal-dashboards.md) need. An older plugin does not sign it; then only Superset admins may |
 | `d` | the dashboard the request is about |
 | `b`, `p` | its board (`superset-<d>`) and the pack in the path |
 | `e`, `v` | whether Superset lets them edit and view that dashboard |
@@ -37,6 +38,27 @@ dashboard (`/_superset/bind`), and the personal-dashboard and saved-layout route
 work only for the dashboard Superset checked. An older plugin signs only the dashboard
 id. The server still checks it, but update the plugin.
 
+## Who may use the assistant
+
+Everyone signed in to Superset, unless the config names roles in `auth.users` (or `LENSPACK_USER_ROLES`,
+comma-separated):
+
+```yaml
+auth:
+  users: ["Lenspack user"]
+```
+
+Then only people with one of those Superset roles, and every Lenspack admin, see the **Ask** button and may use the
+chat. Everyone else sees no button, and the chat, board, data and personal-dashboard routes answer 403 "The assistant
+isn't turned on for your account". To turn it on for someone, a Superset admin gives them the role in
+Settings → List Users (make the role once in Settings → List Roles; it needs no permissions). It applies from their
+next page load. Nothing in Lenspack needs changing.
+
+Hiding the button costs nothing extra. Every Superset page already loads `/lenspack/overlay.js` through Superset's
+own route, which signs the person's role names onto that request. The server checks the signature and the rule, with
+no call back to Superset, and for someone left out answers with an empty script that is never cached. No page makes
+a request it did not make before, and the plugin needs no copy of the rule.
+
 ## Who may edit
 
 Edits follow `editPolicy` in the config (or `LENSPACK_EDIT_POLICY`):
@@ -51,16 +73,38 @@ The `boardEdits` switch comes first: off, nobody edits through the chat, admins 
 
 Someone who can only view a dashboard can make their own copy and change that. `editScope: own` (or
 `LENSPACK_EDIT_SCOPE=own`) narrows chat edits further, to each person's own dashboards, so shared ones stay as they
-are; admins are exempt unless `adminsExempt: false`. See [Personal dashboards and saved
+are; admins (by the `admins` rule) are exempt unless `adminsExempt: false`, still only on dashboards Superset lets
+them edit. See [Personal dashboards and saved
 layouts](../../features/personal-dashboards.md#where-the-chat-may-edit-editscope).
 
 ## Who may administer
 
-Settings writes, the audit log, cost per answer and the usage page (`GET /api/_usage`, which names every user's
-spend) need a Superset admin. Owning a dashboard does not give them.
+Lenspack decides who its admins are, by Superset role name: `auth.admins` in the config (or `LENSPACK_ADMIN_ROLES`,
+comma-separated). The default is `["Admin"]`, Superset's own admins, as before.
 
-The roles in the header also become the user's roles in Lenspack's policy, beside `admin` for a Superset admin. A
-Superset role literally named `admin` grants nothing here: Lenspack's admin comes only from the signed admin flag.
+```yaml
+auth:
+  admins: ["Lenspack admin"]   # a Superset Admin without this role gets no admin pages
+  usage: ["Lenspack admin"]    # who also sees user names; default: the same roles as admins
+```
+
+An admin may use the settings and their changes, the admin panel, saved answers, the audit log, cost per answer,
+everyone's personal dashboards and the usage page (`GET /api/_usage`, which names every user's spend). User names on
+those pages also need the usage right: `auth.usage` (or `LENSPACK_USAGE_ROLES`), by default the same roles as
+`admins`.
+
+- **Being an admin gives no more data.** A Gamma or Alpha user given the "Lenspack admin" role opens the admin
+  panel at `/lenspack/_superset/admin/` and changes the settings through it. They still see only their own data,
+  open only the dashboards Superset lets them open, and edit only what Superset lets them edit.
+- **Owning a dashboard does not make anyone an admin.**
+- **Superset's Settings → AI assistant page** also lists Superset's databases, so it stays a Superset Admin's page.
+  Lenspack refuses it to any Superset Admin the rule does not name.
+- **Older plugins.** A plugin too old to sign role names still signs the admin flag, which then counts as the
+  `Admin` role, so the default rule holds for it too.
+
+The roles in the header also become the user's roles in Lenspack's policy. Lenspack's own `admin` role is given
+only by the `admins` rule, so a Superset role that happens to be called `admin` grants nothing unless the rule names
+it.
 
 ## Lenspack's own Superset account
 

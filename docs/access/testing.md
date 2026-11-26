@@ -23,6 +23,10 @@ checks what the tools and routes let through, not what a model says. Nothing pai
 | `lp_rbac` | Gamma and the roles of dashboards B and C | opens B and C through their dashboard roles, reads no dataset; RLS `region IN ('North', 'South')` on `stock` through B's role |
 | `lp_rbac_off` | the same as `lp_rbac` | used only while dashboard roles are turned off |
 | `lp_noroles` | none | signs in, nothing else |
+| `lp_lensadmin` | Gamma, `visits` only, and a role called "Lenspack admin" with no permissions | no access to `stock`; an admin in Lenspack only once its `admins` rule names that role |
+| `lp_lensuser` | Gamma, both datasets, and a role called "Lenspack user" with no permissions | views A; let in by Lenspack's `users` rule when it names that role |
+| `lp_reader` | a copy of Gamma without `can_write` on Dashboard or Chart, both datasets | views dashboards, may not make or change any |
+| `lp_alpha` | Alpha | reads every dataset and may make dashboards |
 
 Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard B holds a stock chart and C a visits
 chart; each opens only for its dashboard role (`DASHBOARD_RBAC`). The suite can turn `DASHBOARD_RBAC` off without
@@ -70,13 +74,32 @@ were counted.
   - A personal copy of B does not carry B's dashboard-role access: stock is refused on it.
 - **Personal dashboards and saved layouts.**
   - A viewer may create a personal dashboard, and copy one they can open.
-  - A user may delete only their own personal dashboard.
+  - A user may delete only their own personal dashboard. An admin may delete another person's, but not a dashboard
+    that wasn't made through Lenspack: that stays its owners' to delete, in Superset.
   - A saved layout applies only to dashboards the user controls.
   - Another user's personal dashboard is neither listed, opened nor edited.
   - With `editScope: own`, the chat changes only people's own dashboards; admins are exempt unless told otherwise.
+  - `lp_reader`, whose role can't write dashboards, is offered no create or copy. Making, copying (through the routes
+    or the chat) and applying a layout are refused with the reason. Saving a layout, which writes nothing to Superset,
+    still works. `lp_alpha` makes, copies and deletes its own. (Stock Gamma may write dashboards, so the refusal is
+    tested with a viewer role made from Gamma without that permission.)
   - The suite leaves no personal dashboards behind.
-- **Admin surfaces.** Settings, the audit log, cost per answer and usage are for Superset admins only. A dashboard owner
-  gets 403, and so does Superset's own AI assistant page.
+- **Admin surfaces.** Under the default `admins` rule, settings, the admin panel, the audit log, cost per answer and
+  usage are for Superset admins only. A dashboard owner gets 403, and so does Superset's own AI assistant page. So
+  does `lp_lensadmin`: a role called "Lenspack admin" gives nothing until the rule names it.
+- **Lenspack's own admins rule.** The suite restarts Lenspack with `auth: { admins: ["Lenspack admin"] }`.
+  - `lp_admin`, a Superset Admin without that role, gets 403 from the admin panel, the settings, the audit log, cost
+    per answer, usage, everyone's personal dashboards and every settings change, and Superset's own AI assistant page
+    refuses them. Their dashboards and data are unchanged.
+  - `lp_lensadmin`, a Gamma user with that role, gets all of those (Superset's AI assistant page, which lists
+    Superset's databases, stays a Superset Admin's). Their data stays exactly `lp_partial`'s: the same catalogue,
+    `stock` refused, the same boards, no edit on dashboard A, and no deleting it.
+- **Lenspack switched on per person.** The suite restarts Lenspack again, with `auth: { users: ["Lenspack user"] }`.
+  - `lp_viewer`, without the role, is served an overlay script that draws nothing (no button), and every chat, board
+    and data route, the personal dashboards' routes and binding answer 403 "isn't turned on for your account".
+  - `lp_lensuser`, with the role, gets the real overlay, their board and correct chat answers, and still can't edit
+    dashboard A.
+  - `lp_admin`, an admin without the role, gets the overlay, the chat and the settings.
 - **Caching and saved answers.**
   - Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
   - Five users with different access (all datasets, `visits` only, North only, North and East, their own team) ask the

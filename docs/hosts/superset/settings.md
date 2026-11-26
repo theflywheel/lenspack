@@ -1,11 +1,14 @@
 # Settings and switches in Superset
 
-This page covers what a Superset admin can change on a running Lenspack: the settings page, its routes, the
-switches, and what happens when Lenspack cannot save. It is for Superset admins.
+This page covers what an admin can change on a running Lenspack: the settings page, its routes, the switches, and
+what happens when Lenspack cannot save. It is for Superset admins. Who counts as an admin is Lenspack's `auth.admins`
+rule, by default Superset's Admin role (see [Who is asking](identity.md#who-may-administer)).
 
 ## The settings page
 
-**Settings → Manage → AI assistant** (`/ai-assistant/`) is for Superset admins. It holds the chat and speech
+**Settings → Manage → AI assistant** (`/ai-assistant/`) is for Superset admins whom the `auth.admins` rule also
+names; Lenspack refuses it to any Superset admin the rule leaves out. An admin by the rule who isn't a Superset admin
+uses the [admin panel](../../features/admin-panel.md) instead. It holds the chat and speech
 models, languages, switches, spend, cost per answer and the audit log, and links to the
 [admin panel](../../features/admin-panel.md) (`/lenspack/_superset/admin/`). On Superset 6.1 it has its own page
 frame with a link back to Superset, light or dark as Superset is; on 5.0 it sits inside Superset's server-drawn page.
@@ -22,7 +25,7 @@ defaults. An admin changes them on the settings page. What they do is in [Voice]
 
 ## The routes behind it
 
-Reads and writes need a Superset admin's signed identity (see [Who is asking](identity.md)).
+Reads and writes need an admin's signed identity, by the `auth.admins` rule (see [Who is asking](identity.md)).
 
 | route | what it does |
 |---|---|

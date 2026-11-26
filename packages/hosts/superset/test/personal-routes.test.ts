@@ -80,11 +80,13 @@ describe("/_superset/my", () => {
     await post("/_superset/my/layouts/l_2/rename", {}, { name: "Daily" });
     await post("/_superset/my/layouts/l_2/delete", {});
     expect(calls.map((c) => [c.fn, c.args[0]])).toEqual([["create", "New"], ["remove", 12], ["renameLayout", "l_2"], ["deleteLayout", "l_2"]]);
-    // personal.everyone asks policy (mayViewAllPersonal) with the signed admin flag.
+    // personal.everyone asks policy (mayViewAllPersonal) with the roles the admins rule settled.
     await fetch(`${base}/_superset/personal`, { headers: as({}) });
     expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { roles: [] } });
     await fetch(`${base}/_superset/personal`, { headers: as({ a: true }) });
-    expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { roles: ["admin"] } });
+    expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { roles: ["Admin", "admin"], hostRoles: [] } });
+    await fetch(`${base}/_superset/personal`, { headers: as({ a: true, r: ["Admin"] }) });
+    expect(calls.at(-1)).toMatchObject({ fn: "everyone", who: { roles: ["Admin", "admin"], hostRoles: ["Admin"] } });
     expect((await fetch(`${base}/_superset/settings/personal`, { method: "PUT", headers: as({}), body: "{}" })).status).toBe(403);
   });
 

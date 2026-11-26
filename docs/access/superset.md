@@ -79,10 +79,12 @@ by); that reads the same datasets, so it adds nothing to the list. The plugin as
 
 ## Admins and roles
 
-The roles in the identity header also become the user's roles in Lenspack's policy, beside `admin` for a Superset
-admin. A Superset role literally named `admin` grants nothing here; Lenspack's admin comes from the signed admin flag.
-What a Superset dashboard shows natively is unchanged: Superset applies its own security there. Who may edit and
-administer is in [Who is asking](../hosts/superset/identity.md).
+The roles in the identity header also become the user's roles in Lenspack's policy. Lenspack's own rules read them:
+`auth.admins` says which Superset roles make someone a Lenspack admin (default `["Admin"]`), and `auth.users` can
+switch the assistant on for some roles only. A Superset role that happens to be called `admin` grants nothing unless
+the rule names it. Neither rule gives anyone more data than Superset does. What a Superset dashboard shows natively
+is unchanged: Superset applies its own security there. Who may use the assistant, edit and administer is in [Who is
+asking](../hosts/superset/identity.md).
 
 ## Turning it off: `hostPolicy: off`
 
