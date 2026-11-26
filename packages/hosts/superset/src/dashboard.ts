@@ -4,6 +4,7 @@ import type { Pack } from "@lenspack/pack";
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
 import { type PlacedChart, filtersFromNative, nativeFiltersAfter } from "./filters";
+import { plainNote } from "./note";
 import { type Component, type Position, COLUMNS, componentAt, defaultContainer, freshId, insertInRow, insertRow, isComponent, layoutProblems, locate, nestedLayout, openTab, parentMap, reachable, removeComponent, rowWidth, wrapRow } from "./layout";
 import { chartToWidget, queryContextOf, widgetToChart } from "./query";
 
@@ -388,7 +389,11 @@ function widgetComponent(widgetId: string, config: BoardConfig, state: Dashboard
   }
   if (widget.kind === "text") {
     const id = state.markdown[widgetId] ?? `MARKDOWN-lp-${widgetId}`;
-    return { ...component(id, "MARKDOWN", parents), meta: { width: l.w, height: toSupersetH(l.h), code: widget.body } };
+    // A block someone wrote in Superset keeps its text while the note is unchanged (it is read
+    // cut to 2000 characters); a note Lenspack wrote or changed is made plain (note.ts).
+    const had = componentAt(old, id)?.meta?.code;
+    const code = typeof had === "string" && had.slice(0, 2000) === widget.body ? had : plainNote(widget.body);
+    return { ...component(id, "MARKDOWN", parents), meta: { width: l.w, height: toSupersetH(l.h), code } };
   }
   return null;
 }

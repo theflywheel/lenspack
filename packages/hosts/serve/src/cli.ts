@@ -13,7 +13,7 @@ import { adminSettings } from "./admin";
 import { brandSettings } from "./brand";
 import { cacheRoutes } from "./reuse";
 import { fileTelemetry, staticItems } from "./telemetry";
-import { explainFrom, openConfig, readConfig, resolveSecrets } from "./config";
+import { explainFrom, openConfig, openSources, readConfig, readSourcesConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
 
@@ -147,8 +147,9 @@ async function main() {
       process.exit(failed ? 1 : 0);
     }
     case "sources": {
-      const { config, dir } = readConfig(flag("config") ?? "lenspack.yaml");
-      const { sources, close } = await openConfig(config, dir);
+      // Only the connections: this is the step before a pack exists.
+      const { config, dir } = readSourcesConfig(flag("config") ?? "lenspack.yaml");
+      const { sources, close } = await openSources(config, dir);
       const only = flag("source");
       for (const [name, connector] of sources) {
         if (only && name !== only) continue;
