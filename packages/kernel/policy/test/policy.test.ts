@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Identity, type PackRule, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
+import { type Identity, type PackRule, adminRights, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -156,5 +156,17 @@ describe("holds", () => {
     expect(holds({ grants: ["/x"] }, "/x")).toBe(true);
     expect(holds({ grants: ["/x"] }, "/y")).toBe(false);
     expect(holds({ grants: [] })).toBe(false);
+  });
+});
+
+describe("admin rights", () => {
+  it("opens the panel to maintainers only, shows usernames only with usage rights, and only narrows", () => {
+    expect(adminRights(principalOf({ user: "ana" }))).toEqual({ panel: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"] }))).toEqual({ panel: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", maintain: true }))).toEqual({ panel: true, users: true });
+    expect(adminRights(principalOf({ user: "ana", maintain: true, usage: false }))).toEqual({ panel: true, users: false });
+    expect(adminRights(principalOf({ user: "ana", maintain: true, readOnly: "a read-only key" }))).toEqual({ panel: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", usage: true }))).toEqual({ panel: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", roles: ["ops"] }, { editors: [], maintainers: ["role:ops"] }))).toEqual({ panel: true, users: true });
   });
 });

@@ -8,7 +8,7 @@ import { sqlConnector } from "@lenspack/sql";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 
-import { type AuditEvent, type DigestTurn, type Provider, adminSettings, buildProvider, compareReadings, parseReport, planReview, registerLlmAdapter, reviewSystem, scheduler, slots } from "../src";
+import { type AuditEvent, type DigestTurn, type Provider, type Reading, adminSettings, buildProvider, compareReadings, parseReport, planReview, registerLlmAdapter, reviewSystem, scheduler, slots } from "../src";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "lp-daily-"));
 const usage = (i: number, o: number) => ({ inputTokens: { total: i, noCache: i, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: o, text: o, reasoning: 0 } });
@@ -123,7 +123,7 @@ async function shop() {
   await db.writer.exec("INSERT INTO sales VALUES ('north', '2026-11-02', true), ('north', '2026-11-10', false), ('south', '2026-11-12', true), ('south', '2026-10-20', true)");
   return { db, pack: parsePackText(PACK_YAML), connector: sqlConnector(db.executor) };
 }
-const readings = [
+const readings: Reading[] = [
   { id: "r1", label: "Every sale", explanation: "paid or not", query: { query_kind: "value", measure: "sales" } },
   { id: "r2", label: "Paid sales only", explanation: "", query: { query_kind: "value", measure: "paid_sales" } },
   { id: "r3", label: "By region", explanation: "", query: { query_kind: "breakdown", dimension: "region", measure: "sales" } },
@@ -192,19 +192,19 @@ describe("a review run", () => {
     expect(files).toHaveLength(1);
     expect(JSON.parse(readFileSync(join(dir, "review-runs", files[0]!), "utf8")).packs[0].report.findings).toHaveLength(1);
     // A proposal waits; accepting it writes the overlay, which the next turn reads.
-    const [p] = r.proposals("pending");
+    const [p] = await r.proposals("pending");
     expect(p).toBeDefined();
-    const v0 = r.definitionsVersion("shop");
-    r.acceptProposal(p!.id, "admin");
-    expect(r.definitionsVersion("shop")).not.toBe(v0);
-    expect(r.overlay("shop").entries()[0]!.text).toContain("Count every sale");
+    const v0 = await r.definitionsVersion("shop");
+    await r.acceptProposal(p!.id, "admin");
+    expect(await r.definitionsVersion("shop")).not.toBe(v0);
+    expect((await r.overlay("shop").entries())[0]!.text).toContain("Count every sale");
     // The question was logged, and compared on the data (review.compare is on with the review).
-    const [q] = r.questions("shop").list("open");
+    const [q] = await r.questions("shop").list("open");
     expect(q?.compared?.readings.map((x) => x.value)).toEqual([4, 3]);
     // Answering it writes a definition.
-    const answered = r.answer("shop", q!.id, q!.readings[1]!.id, "admin", "finance counts paid ones");
+    const answered = await r.answer("shop", q!.id, q!.readings[1]!.id, "admin", "finance counts paid ones");
     expect(answered.entry.kind).toBe("definition");
-    expect(r.overlay("shop").entries()).toHaveLength(2);
+    expect(await r.overlay("shop").entries()).toHaveLength(2);
     await db.close();
   });
 

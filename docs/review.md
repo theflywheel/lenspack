@@ -25,9 +25,9 @@ The panel is served by Lenspack itself, so it looks the same in every host.
 - **In Superset**, it is at `/lenspack/_superset/admin/`, linked from the Lenspack settings page (`/ai-assistant/`). Only Superset admins can open it.
 - **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Only maintainers can open it. It needs a `state:` directory in `lenspack.yaml` (see below).
 
-Anyone else gets a refusal, and the refusal is written to the audit log.
+Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the policy layer, from what the host says about the caller: a Superset admin, or a maintainer in the standalone server. Usernames (on the usage board and in review reports) are shown only to those who may also read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
 
-It has seven tabs, in English and French, in light and dark, and it works at phone width:
+It has eight tabs, in English and French, in light and dark, and it works at phone width:
 
 | Tab | What it shows |
 | --- | --- |
@@ -36,6 +36,7 @@ It has seven tabs, in English and French, in light and dark, and it works at pho
 | **Open questions** | Each question with its readings, each reading's figures, and buttons to answer, dismiss, edit or compare. |
 | **Proposals** | The review's proposed changes, each with why and the questions it would fix. Accept, edit then accept, or reject. |
 | **Definitions** | What admins have added to the pack: the entries, how much of their size budget they use, undo, and the full history with restore. The pack's own instructions are shown read-only beside them. |
+| **Telemetry** | A checklist of every signal Lenspack can record for this deployment (see [What is recorded](#what-is-recorded)). |
 | **Cache** | Saved answers and what they saved, when a server keeps them. Otherwise it says caching is not enabled. |
 | **Settings** | Every switch, with where its value comes from (default, config file, environment, or set here). |
 
@@ -50,11 +51,13 @@ A definition is one of four things:
 - **Synonyms** for a key ("area" and "zone" mean region).
 - **A reading for a kind of question**: "when someone asks about sales this month, use the calendar month to date".
 
-Definitions are kept in the server's state directory, one file per pack. They are added to the pack on every chat turn. A change applies to the next question, with no restart. They never change the deployment's own pack file.
+Definitions are a document of their own, one per pack, typed and versioned like a pack or a board. They are kept in the server's state directory. They are added to the pack on every chat turn. A change applies to the next question, with no restart. They never change the deployment's own pack file.
 
 Every change keeps who made it, when and why. Any change can be undone, and any earlier version restored. The definitions have their own size budget (4,000 characters by default), shown in the panel, because they are sent with every question. A change that would go over the budget is refused. A change that makes them smaller is always allowed.
 
 Each version has a short key. An answer cache can use it to know that a saved answer was made under older definitions.
+
+The definitions document, its checks and how it is merged into the pack are part of Lenspack's core, not of any one host, so every host and every turn applies them the same way. It is meant as the first part of the documents a deployment lays over its packs.
 
 ### Open questions
 
@@ -133,6 +136,8 @@ The Overview tab is not a set of hand-drawn charts. It is a Lenspack board, draw
 - **The tool explains itself.** The chat beside the board answers questions about usage, such as "which board cost most this week?" or "how many questions were answered from saved answers yesterday?". It uses the same agent and the same rules as every answer: plain counts in the pack, and rates and averages worked out by the compute step.
 - **Nothing to maintain twice.** A new chart type or a fix to the renderer reaches the usage board for free.
 
+**How it is built.** The usage pack is an ordinary pack (`packs/usage/pack.yaml` in the server package, with its default board in `packs/usage/boards/overview.json`). It reads from a small adapter, the usage source, the way other packs read from a database. The adapter turns the server's own records into tables.
+
 **The data.** One row per chat turn, read into an in-process DuckDB table:
 
 - from the turn telemetry (`telemetry*.jsonl` in the state directory) when the server writes it;
@@ -154,9 +159,23 @@ The table is read again when the board is opened, at most every 30 seconds.
 - A table of the most-asked questions with their outcomes.
 - Reply time over time.
 
-**Who sees it.** The usage board is for admins only. It names users as they sign in, so it is never listed beside the deployment's own packs.
+**Who sees it.** The usage board is for admins only. It names users as they sign in, so it is never listed beside the deployment's own packs, and an admin who may not read usage sees it with the user, question and session hidden.
 
 The usage chat's turns are logged and costed like any other. They are marked internal, and left out of the daily review, so the review never reviews itself. An answer cache should leave them out of its suggestions too.
+
+## What is recorded
+
+The **Telemetry** tab is a checklist of every signal Lenspack can record for a deployment, grouped by section. Each line shows:
+
+- a mark: ✓ recording, ◐ on but no data yet, ○ off, ⚠ needs configuration, — not telemetry (kept for another reason, such as the audit log);
+- the decision the signal feeds ("whether voice is worth its cost");
+- how many it saw in the last seven days, and when it last saw one;
+- privacy notes;
+- for anything not recording, how to turn it on.
+
+A line at the top sums it up, for example "23 of 31 recording · 4 need configuration · 2 off · 2 not telemetry". The telemetry switches (record telemetry, keep question text, keep audio, and how long to keep it) can be changed from the tab. The page prints cleanly for a pilot report, and **Copy as Markdown** copies the same checklist as text.
+
+The checklist comes from the server's telemetry (`<prefix>/telemetry/checklist`). A server that does not report its telemetry shows "Telemetry is not available on this server".
 
 ## Cost controls
 
@@ -204,6 +223,8 @@ features:             # optional starting values; the panel can change them
 With `state:` set, the audit log is kept there by month, unless `audit:` names a file. The panel is at `/_lenspack/admin/`, for maintainers.
 
 What the state directory holds:
+
+Everything in it except the usage tables sits behind a small document store: each file is one named document, read fresh on every use and written only if it has not changed since it was read. A database can take the files' place, so two copies of a server can share them.
 
 | File | What |
 | --- | --- |

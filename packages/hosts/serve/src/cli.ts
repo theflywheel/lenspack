@@ -9,10 +9,6 @@ import { buildBoard, seedBoards } from "./app";
 import { type AuditEvent, auditFileSince, fileAudit, rotatingAudit } from "./audit";
 import { authFrom, effectiveAuth, principalOf } from "./auth";
 import { adminSettings } from "./admin";
-import { panelRoutes } from "./review/panel";
-import { reviewSystem } from "./review/system";
-import { usageBoard } from "./review/usage";
-import type { Provider } from "./llm";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
@@ -64,8 +60,8 @@ async function main() {
       const audit = auditFile ? fileAudit(auditFile) : monthly?.audit;
       const events: ((from: Date) => AuditEvent[]) | undefined = auditFile ? auditFileSince(auditFile) : monthly ? (from) => monthly.since(from) : undefined;
       const admin = stateDir ? adminSettings(stateDir, { features: config.features as never }) : null;
-      let models: Provider[] = [];
-      const review = admin && stateDir ? reviewSystem({ stateDir, hosts, features: admin.features, settings: admin.settings, providers: () => models, events, audit, log: (m) => console.error(`lenspack: ${m}`) }) : null;
+      const log = (m: string) => console.error(`lenspack: ${m}`);
+      const review = admin && stateDir ? admin.review({ stateDir, hosts, events, audit, prefix: "/_lenspack", adminName: "maintainer", title: config.ui && typeof config.ui === "object" ? config.ui.title : undefined, log }) : null;
       const open = principalOf({ user: "local", edit: true, maintain: true, usage: true });
       startRuntime({
         hosts,
@@ -76,16 +72,10 @@ async function main() {
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
         app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
-        log: (m) => console.error(`lenspack: ${m}`),
-        routes: ({ providers, budget, ledger, roles }) => {
-          models = providers;
-          if (!review || !admin || !stateDir) return () => {};
-          const log = (m: string) => console.error(`lenspack: ${m}`);
-          const usage = usageBoard({ stateDir, events, providers: () => providers, ledger, budget, roles, audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log }).catch((e) => {
-            log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
-            return null;
-          });
-          const panel = panelRoutes({ prefix: "/_lenspack", system: review, features: admin.features, providers: () => providers, isAdmin: (who) => !!who.maintain || !!who.roles?.includes("admin"), adminName: "maintainer", title: config.ui && typeof config.ui === "object" ? config.ui.title : undefined, log, usage });
+        log,
+        routes: (rt) => {
+          if (!review) return () => {};
+          const panel = review.routes(rt);
           return async (req, res, url, signedIn) => {
             if (url.pathname !== "/_lenspack/admin" && !url.pathname.startsWith("/_lenspack/admin/")) return;
             // An open server (auth: none) has one local user, who may do everything.

@@ -227,6 +227,18 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
   };
 }
 
+/**
+ * What a principal may do in a deployment's admin panel: open it (and so read and change the definitions,
+ * open questions and the daily review), and see who asked what (usernames on the usage board and in review
+ * reports). Decided here, from the rights the host and the deployment gave, so every host decides the same
+ * way; it only narrows: someone the host made neither a maintainer nor a usage reader gets nothing.
+ */
+export type AdminRights = { panel: boolean; users: boolean };
+export function adminRights(who: Pick<Principal, "maintain" | "usage" | "readOnly">): AdminRights {
+  const panel = !!who.maintain && !who.readOnly;
+  return { panel, users: panel && !!who.usage };
+}
+
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
 // to change. A board someone made is theirs to change, and everyone's to read
 // once they share it: everyone in their tenant, as one user name may sign in

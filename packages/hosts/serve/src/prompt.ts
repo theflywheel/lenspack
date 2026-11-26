@@ -1,8 +1,7 @@
+import { CLARIFY_RULE } from "@lenspack/agent";
 import type { BoardChange, BoardConfig, Catalogue } from "@lenspack/core";
 import { describeQuery, summarise } from "@lenspack/core";
 import { type Pack, datedTime, timeFieldOf } from "@lenspack/pack";
-
-import { CLARIFY_RULE } from "./review/clarify";
 
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when

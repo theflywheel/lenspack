@@ -58,14 +58,14 @@ describe("clarify", () => {
       expect(prompts[0]).toContain("clarify");
       const part = out.split("\n").filter((l) => l.startsWith("data: ") && l.includes('"data-clarify"')).map((l) => JSON.parse(l.slice(6)))[0];
       expect(part.data.options.map((o: { label: string }) => o.label)).toEqual(["Not closed", "Waiting on us"]);
-      const [q] = review.questions(host.name).list("open");
+      const [q] = await review.questions(host.name).list("open");
       expect(q).toMatchObject({ pattern: "open tickets", sources: ["turn"], examples: ["How many open tickets?"] });
       expect(part.data.question).toBe(q!.id);
       const line = lines.find((l) => l.action === "chat-turn")!;
       expect(JSON.parse(line.detail!).clarify).toMatchObject({ asked: true });
       // The person picks a button: the reply is counted against that reading.
       await chat({ messages: [{ id: "u1", role: "user", parts: [{ type: "text", text: "How many open tickets?" }] }, { id: "a1", role: "assistant", parts: [{ type: "text", text: "Which?" }] }, { id: "u2", role: "user", parts: [{ type: "text", text: "Not closed: every ticket not yet closed" }] }], quickReply: { question: q!.id, option: "Not closed" } });
-      expect(review.questions(host.name).get(q!.id).choices).toEqual({ "Not closed": 1 });
+      expect((await review.questions(host.name).get(q!.id)).choices).toEqual({ "Not closed": 1 });
       expect(JSON.parse(lines.filter((l) => l.action === "chat-turn")[1]!.detail!).quickReply).toEqual({ question: q!.id, option: "Not closed" });
       // Switched off: no tool and no rule in the prompt.
       admin.features.update({ clarify: false });

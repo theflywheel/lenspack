@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 
-import { SettingsSaveError, writeWhole } from "../settings";
+import { type DocStore, readDoc, updateDoc } from "./store";
 
 // The open-questions log: definitional questions with more than one reasonable reading and no
 // sane default ("burn rate per facility": stock dispatched from the facility's store, or doses given
@@ -122,18 +120,35 @@ export function cleanReadings(rs: unknown): Omit<Reading, "id">[] {
 
 export type QuestionLog = ReturnType<typeof questionLog>;
 
-/** One pack's log, kept in <dir>/open-questions-<pack>.json. */
-export function questionLog(dir: string, pack: string, opts: { now?: () => Date } = {}) {
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `open-questions-${pack}.json`);
+/** One pack's log, kept as open-questions-<pack>.json in a document store, read on every use. */
+export function questionLog(docs: DocStore, pack: string, opts: { now?: () => Date } = {}) {
+  const name = `open-questions-${pack}.json`;
   const now = opts.now ?? (() => new Date());
-  let items: OpenQuestion[] = existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as OpenQuestion[]) : [];
+  const read = async <R>(fn: (ops: ReturnType<typeof questionOps>) => R): Promise<R> => fn(questionOps((await readDoc<OpenQuestion[]>(docs, name, () => [])).value, now));
+  const write = <R>(fn: (ops: ReturnType<typeof questionOps>) => R): Promise<R> =>
+    updateDoc<OpenQuestion[], R>(docs, name, () => [], (current) => {
+      const ops = questionOps(current, now);
+      const result = fn(ops);
+      return { next: ops.items(), result };
+    });
+  return {
+    name,
+    list: (status?: QuestionStatus) => read((o) => o.list(status)),
+    get: (id: string) => read((o) => o.get(id)),
+    note: (n: QuestionNote) => write((o) => o.note(n)),
+    choose: (id: string, label: string) => write((o) => o.choose(id, label)),
+    answer: (id: string, reading: string, by: string, why: string, definition: string) => write((o) => o.answer(id, reading, by, why, definition)),
+    dismiss: (id: string, by: string, why: string) => write((o) => o.dismiss(id, by, why)),
+    reopen: (id: string) => write((o) => o.reopen(id)),
+    edit: (id: string, patch: { pattern?: unknown; readings?: unknown }) => write((o) => o.edit(id, patch)),
+    setCompared: (id: string, compared: Comparison) => write((o) => o.setCompared(id, compared)),
+  };
+}
+
+/** The log's rules, on one copy of it in memory: items() is the log after the changes made. */
+export function questionOps(start: OpenQuestion[], now: () => Date) {
+  let items = start;
   const save = (next: OpenQuestion[]) => {
-    try {
-      writeWhole(path, JSON.stringify(next, null, 2));
-    } catch (e) {
-      throw new SettingsSaveError(e);
-    }
     items = next;
   };
   const get = (id: string) => {
@@ -145,7 +160,7 @@ export function questionLog(dir: string, pack: string, opts: { now?: () => Date 
   const withReadingIds = (rs: Omit<Reading, "id">[]): Reading[] => rs.map((r, i) => ({ id: `r${i + 1}`, ...r }));
 
   return {
-    path,
+    items: () => items,
     list: (status?: QuestionStatus) => (status ? items.filter((q) => q.status === status) : items).slice().sort((a, b) => (a.status === b.status ? b.lastSeen.localeCompare(a.lastSeen) : a.status === "open" ? -1 : b.status === "open" ? 1 : 0)),
     get,
     /**

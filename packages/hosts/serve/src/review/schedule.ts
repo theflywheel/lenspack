@@ -60,7 +60,7 @@ export type SchedulerDeps = {
   enabled: () => boolean;
   when: () => { time: string; timeZone: string };
   /** The last slot handled (run, or passed while switched off), kept across restarts. */
-  lastSlot: { get(): string | null; set(iso: string): void };
+  lastSlot: { get(): string | null | Promise<string | null>; set(iso: string): void | Promise<void> };
   run: (slot: Date) => Promise<unknown>;
   log?: (line: string) => void;
 };
@@ -82,12 +82,13 @@ export function scheduler(d: SchedulerDeps) {
     const { time, timeZone } = d.when();
     const now = d.now();
     const { last, next } = slots(time, timeZone, now);
-    const handled = d.lastSlot.get();
+    const handled = await d.lastSlot.get();
     if (!d.enabled() || handled === null) {
       // Off, or never run: slots that pass are not owed. Only a slot missed while on is caught up.
-      d.lastSlot.set(last.toISOString());
+      await d.lastSlot.set(last.toISOString());
     } else if (handled < last.toISOString() && !running) {
-      d.lastSlot.set(last.toISOString());
+      // Marked before running: with a shared store, another copy of the server that checks now sees it taken.
+      await d.lastSlot.set(last.toISOString());
       d.log?.(`daily review: running the ${last.toISOString()} slot${now.getTime() - last.getTime() > 5 * 60_000 ? " (catching up: the server was down when it came)" : ""}`);
       running = d.run(last).catch((e) => d.log?.(`daily review failed: ${e instanceof Error ? e.message : String(e)}`)).finally(() => (running = null));
       await running;

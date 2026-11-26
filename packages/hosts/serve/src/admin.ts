@@ -7,6 +7,7 @@ import { type FeatureValues, features as featureSwitches } from "./features";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, publicView } from "./llm";
 import type { Budget } from "./metering";
+import { type ReviewMountOptions, reviewMount } from "./review/mount";
 import { settingsStore } from "./settings";
 import { DEFAULT_SPEECH_MODEL, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
 
@@ -74,6 +75,10 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       language: () => ({ titles: language().titles, board: language().board }),
       chatDefault: () => saved<ChatSetting>("chat"),
     } satisfies Partial<AppOptions>,
+    /** The review system and admin panel over these settings (review/mount.ts), so a host wires it with no more imports. */
+    review(o: ReviewMountOptions) {
+      return reviewMount({ features, settings, app: { review: () => features.on("reviewer"), chatDefault: () => saved<ChatSetting>("chat") } }, o);
+    },
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
     speechView: (writable: boolean) => ({
       enabled: !!speechKey.apiKey,

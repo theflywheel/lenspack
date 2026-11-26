@@ -2,14 +2,14 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 
-import type { Principal } from "@lenspack/policy";
+import { type Principal, adminRights } from "@lenspack/policy";
 
 import type { Features } from "../features";
 import { BodyTooLarge, NO_STORE, TYPES, json, readJson } from "../http";
 import { publicView } from "../llm";
 import type { Provider } from "../llm";
 import { SettingsSaveError } from "../settings";
-import { OverlayError } from "./overlay";
+import { OverlayError, overlaySize } from "./overlay";
 import { QuestionError } from "./questions";
 import { ReviewBusy, type ReviewSystem } from "./system";
 import type { UsageBoard } from "./usage";
@@ -35,9 +35,7 @@ export type PanelOptions = {
   system: ReviewSystem;
   features: Features;
   providers: () => Provider[];
-  /** Whether a caller may use the panel: a Superset admin, a maintainer. */
-  isAdmin: (who: Principal) => boolean;
-  /** In the host's words, for the refusal: "Superset admin". */
+  /** In the host's words, for the refusal: "Superset admin". Who that is, the host says by making them a maintainer; the policy decides (adminRights). */
   adminName: string;
   /** The host's name for the page title. */
   title?: string;
@@ -47,7 +45,7 @@ export type PanelOptions = {
 };
 
 // board.js and board.css are the board renderer (@lenspack/react) bundled for a page with no build: its build writes them here.
-const ASSETS: Record<string, string> = { "panel.js": "panel.js", "panel.css": "panel.css", "board.js": "board.js", "board.css": "board.css" };
+const ASSETS: Record<string, string> = { "panel.js": "panel.js", "checklist.js": "checklist.js", "panel.css": "panel.css", "board.js": "board.js", "board.css": "board.css" };
 
 export function panelRoutes(o: PanelOptions) {
   const dir = webDir();
@@ -56,7 +54,8 @@ export function panelRoutes(o: PanelOptions) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {
     if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) return false;
     const send = (status: number, body: unknown) => (json(res, status, body, NO_STORE), true);
-    if (!o.isAdmin(who)) {
+    const rights = adminRights(who);
+    if (!rights.panel) {
       s.audit(who.user, `${req.method} ${url.pathname}`, `not a ${o.adminName}`, undefined, "denied");
       if (url.pathname.startsWith(`${base}/api/`)) return send(403, { error: `only ${o.adminName}s can use the admin panel` });
       res.writeHead(403, { "content-type": TYPES[".html"]!, ...NO_STORE });
@@ -109,37 +108,40 @@ export function panelRoutes(o: PanelOptions) {
       switch (a) {
         case "packs": {
           const usage = await o.usage;
-          return send(200, { me: { user: who.user }, usage: usage ? { board: "overview", source: usage.source() } : null, packs: s.packs().map((p) => ({ ...p, definitionsVersion: s.definitionsVersion(p.name) })) });
+          return send(200, { me: { user: who.user }, usage: usage ? { board: "overview", source: usage.source() } : null, packs: await Promise.all(s.packs().map(async (p) => ({ ...p, definitionsVersion: await s.definitionsVersion(p.name) }))) });
         }
         case "overview":
-          return send(200, s.overview(Math.max(1, Math.min(Number(url.searchParams.get("days")) || 14, 90))));
+          return send(200, await s.overview(Math.max(1, Math.min(Number(url.searchParams.get("days")) || 14, 90))));
         case "definitions": {
           const ov = s.overlay(packName);
           const h = s.host(packName);
-          if (!id && !post) return send(200, { pack: packName, entries: ov.entries(), history: ov.history().map(({ before: _b, after, ...c }) => ({ ...c, entries: after.length })), size: ov.size(), budget: ov.budget, version: ov.version(), definitionsVersion: s.definitionsVersion(packName), packInstructions: h.pack.instructions ?? "", keys: [...h.pack.measures.map((m) => ({ key: m.key, kind: "measure", label: m.label ?? m.key })), ...h.pack.dimensions.map((d) => ({ key: d.key, kind: "dimension", label: d.label ?? d.key }))] });
+          if (!id && !post) {
+            const doc = await ov.doc();
+            return send(200, { pack: packName, entries: doc.entries, history: [...doc.history].reverse().map(({ before: _b, after, ...c }) => ({ ...c, entries: after.length })), size: overlaySize(doc.entries), budget: ov.budget, version: doc.version, definitionsVersion: await s.definitionsVersion(packName), packInstructions: h.pack.instructions ?? "", keys: [...h.pack.measures.map((m) => ({ key: m.key, kind: "measure", label: m.label ?? m.key })), ...h.pack.dimensions.map((d) => ({ key: d.key, kind: "dimension", label: d.label ?? d.key }))] });
+          }
           if (!post) break;
           if (!id) {
-            const r = ov.add({ kind: body.kind as never, key: body.key as never, text: body.text as never, words: body.words as never, when: body.when as never, source: "admin" }, by, why);
+            const r = await ov.add({ kind: body.kind as never, key: body.key as never, text: body.text as never, words: body.words as never, when: body.when as never, source: "admin" }, by, why);
             s.audit(by, "definitions add", r.change.summary, packName);
             return send(200, r);
           }
           if (id === "undo") {
-            const c = ov.undo(by, why);
+            const c = await ov.undo(by, why);
             s.audit(by, "definitions undo", c.summary, packName);
             return send(200, { change: c });
           }
           if (id === "restore") {
-            const c = ov.restore(Number(body.version), by, why);
+            const c = await ov.restore(Number(body.version), by, why);
             s.audit(by, "definitions restore", c.summary, packName);
             return send(200, { change: c });
           }
           if (action === "edit") {
-            const r = ov.edit(id, { key: body.key as never, text: body.text as never, words: body.words as never, when: body.when as never }, by, why);
+            const r = await ov.edit(id, { key: body.key as never, text: body.text as never, words: body.words as never, when: body.when as never }, by, why);
             s.audit(by, "definitions edit", r.change.summary, packName);
             return send(200, r);
           }
           if (action === "remove") {
-            const c = ov.remove(id, by, why);
+            const c = await ov.remove(id, by, why);
             s.audit(by, "definitions remove", c.summary, packName);
             return send(200, { change: c });
           }
@@ -148,34 +150,39 @@ export function panelRoutes(o: PanelOptions) {
         case "questions": {
           if (!id && !post) {
             const status = url.searchParams.get("status");
-            return send(200, { pack: packName, questions: s.questions(packName).list(status === "open" || status === "answered" || status === "dismissed" ? status : undefined) });
+            return send(200, { pack: packName, questions: await s.questions(packName).list(status === "open" || status === "answered" || status === "dismissed" ? status : undefined) });
           }
-          if (!post) return id ? send(200, s.questions(packName).get(id)) : send(404, { error: "not found" });
-          if (!id) return send(200, s.addQuestion(packName, body, by));
-          if (action === "answer") return send(200, s.answer(packName, id, String(body.reading ?? ""), by, why));
-          if (action === "dismiss") return send(200, s.dismiss(packName, id, by, why));
-          if (action === "reopen") return send(200, s.reopen(packName, id, by));
-          if (action === "edit") return send(200, s.editQuestion(packName, id, body, by));
+          if (!post) return id ? send(200, await s.questions(packName).get(id)) : send(404, { error: "not found" });
+          if (!id) return send(200, await s.addQuestion(packName, body, by));
+          if (action === "answer") return send(200, await s.answer(packName, id, String(body.reading ?? ""), by, why));
+          if (action === "dismiss") return send(200, await s.dismiss(packName, id, by, why));
+          if (action === "reopen") return send(200, await s.reopen(packName, id, by));
+          if (action === "edit") return send(200, await s.editQuestion(packName, id, body, by));
           if (action === "compare") return send(200, await s.compare(packName, id));
           break;
         }
         case "proposals": {
           if (!id && !post) {
             const status = url.searchParams.get("status");
-            return send(200, { proposals: s.proposals(status === "pending" || status === "accepted" || status === "rejected" ? status : undefined) });
+            return send(200, { proposals: await s.proposals(status === "pending" || status === "accepted" || status === "rejected" ? status : undefined) });
           }
-          if (action === "accept") return send(200, s.acceptProposal(id!, by, (body.edit && typeof body.edit === "object" ? body.edit : {}) as never, why));
-          if (action === "reject") return send(200, s.rejectProposal(id!, by, why));
+          if (action === "accept") return send(200, await s.acceptProposal(id!, by, (body.edit && typeof body.edit === "object" ? body.edit : {}) as never, why));
+          if (action === "reject") return send(200, await s.rejectProposal(id!, by, why));
           break;
         }
         case "runs":
-          if (!id) return send(200, { runs: s.runs().map(({ packs, ...r }) => ({ ...r, packs: packs.map((p) => ({ pack: p.pack, turns: p.turns, status: p.status, reason: p.reason, usd: p.usd, findings: p.report?.findings.length ?? 0, proposals: p.proposals?.length ?? 0, questions: p.questions?.length ?? 0 })) })) });
-          return s.run(id) ? send(200, s.run(id)) : send(404, { error: `no run ${id}` });
+          if (!id) return send(200, { runs: (await s.runs()).map(({ packs, ...r }) => ({ ...r, packs: packs.map((p) => ({ pack: p.pack, turns: p.turns, status: p.status, reason: p.reason, usd: p.usd, findings: p.report?.findings.length ?? 0, proposals: p.proposals?.length ?? 0, questions: p.questions?.length ?? 0 })) })) });
+          {
+            const run = await s.run(id);
+            if (!run) return send(404, { error: `no run ${id}` });
+            // Who asked what is shown only to those who may see usernames.
+            return send(200, rights.users ? run : { ...run, packs: run.packs.map(({ users: _u, turnIndex, ...p }) => ({ ...p, turnIndex: turnIndex?.map(({ user: _x, ...t }) => t) })) });
+          }
         case "review": {
           if (id === "settings") {
-            if (!post) return send(200, { ...s.settingsView(), models: o.providers().map(publicView) });
+            if (!post) return send(200, { ...(await s.settingsView()), models: o.providers().map(publicView) });
             const r = s.updateSettings(body, by);
-            return r.ok ? send(200, { ...s.settingsView(), models: o.providers().map(publicView) }) : send(400, { error: r.error });
+            return r.ok ? send(200, { ...(await s.settingsView()), models: o.providers().map(publicView) }) : send(400, { error: r.error });
           }
           if (id === "estimate") return send(200, await s.estimate());
           if (id === "run" && post) {
@@ -183,20 +190,20 @@ export function panelRoutes(o: PanelOptions) {
             if (s.running()) return send(409, { error: "a review is already running" });
             const done = s.runNow(by);
             done.catch((e) => o.log?.(`review run: ${e instanceof Error ? e.message : String(e)}`));
-            return send(202, { started: true, run: s.runs()[0]?.id ?? null });
+            return send(202, { started: true, run: (await s.runs())[0]?.id ?? null });
           }
           break;
         }
         case "settings": {
-          if (!post) return send(200, { features: o.features.view(true), review: s.settingsView() });
+          if (!post) return send(200, { features: o.features.view(true), review: await s.settingsView() });
           if (id === "features") {
             const wasDaily = o.features.on("review.daily");
             const r = o.features.update(body);
             if (!r.ok) return send(400, { error: r.error });
             s.audit(by, "settings features", JSON.stringify(r.changed));
-            if (!wasDaily && o.features.on("review.daily")) s.switchedOn();
+            if (!wasDaily && o.features.on("review.daily")) await s.switchedOn();
             else s.reschedule();
-            return send(200, { features: o.features.view(true), review: s.settingsView() });
+            return send(200, { features: o.features.view(true), review: await s.settingsView() });
           }
           break;
         }

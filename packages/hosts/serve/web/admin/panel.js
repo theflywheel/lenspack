@@ -42,6 +42,15 @@
       // Settings
       sLede: "Switches for this server. A change applies to the next question. Where a value comes from: default, the config file, the environment, or this page.",
       source_default: "default", source_config: "config", source_env: "environment", source_settings: "set here", reset: "Reset to the deployment's value",
+      // Telemetry
+      tabTelemetry: "Telemetry", tlTitle: "What this deployment records", tlLede: "Every signal Lenspack can record for this deployment, the decision it feeds, and whether it is coming in. Print it or copy it into a pilot report.",
+      tlGenerated: "Checked {0}.", tlSumRecording: "{0} of {1} recording", tlSumNoData: "{0} on but no data", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumNot: "{0} not telemetry",
+      tlSwitches: "Switches", tlSwLede: "What is recorded, and for how long. A change applies to the next question.", tlOn: "on", tlOff: "off",
+      tlSw_telemetry: "Record telemetry", tlSw_questionText: "Keep question text", tlSw_audio: "Keep audio", tlSw_retentionDays: "Keep for (days)",
+      tlItem: "Signal", tlDecision: "Decision it drives", tl7d: "Last 7 days", tlLastSeen: "Last seen", tlNotes: "Notes", tlHow: "How to enable", tlFields: "Fields", tlPrivacy: "Privacy",
+      st_recording: "recording", "st_enabled-no-data": "on, no data yet", st_off: "off", "st_needs-config": "needs configuration", "st_not-telemetry": "not telemetry",
+      tlLegend: "✓ recording · ◐ on but no data · ○ off · ⚠ needs configuration · — not telemetry", tlPrint: "Print", tlCopy: "Copy as Markdown", tlCopied: "Copied.",
+      tlAbsent: "Telemetry is not available on this server.", tlAbsentHelp: "This server does not report its telemetry yet. The checklist appears here once it does.", tlSwitchAbsent: "This server cannot change that setting from here.",
     },
     fr: {
       title: "Administration Lenspack", pack: "Pack", loading: "Chargement…", failed: "Chargement impossible : {0}", saved: "Enregistré.", done: "Fait.",
@@ -74,6 +83,14 @@
       cacheOff: "Le cache n'est pas activé sur ce serveur.", cacheLede: "Les réponses gardées pour les questions qui reviennent, et ce qu'elles ont économisé.", since: "Depuis {0}", hits: "Réutilisations", misses: "Absences", entries: "Entrées", question: "Question", board: "Tableau", lastHit: "Dernière réutilisation", pin: "Épingler", unpin: "Détacher", evict: "Retirer", suggestions: "Suggestions", chartCandidates: "Graphiques à créer", pinned: "épinglée",
       sLede: "Les interrupteurs de ce serveur. Un changement s'applique à la question suivante. Origine de chaque valeur : défaut, fichier de configuration, environnement ou cette page.",
       source_default: "défaut", source_config: "configuration", source_env: "environnement", source_settings: "réglé ici", reset: "Revenir à la valeur du déploiement",
+      tabTelemetry: "Télémétrie", tlTitle: "Ce que ce déploiement enregistre", tlLede: "Chaque signal que Lenspack peut enregistrer pour ce déploiement, la décision qu'il éclaire, et s'il arrive bien. À imprimer ou à copier dans un rapport de pilote.",
+      tlGenerated: "Vérifié le {0}.", tlSumRecording: "{0} sur {1} enregistrés", tlSumNoData: "{0} activés sans données", tlSumConfig: "{0} à configurer", tlSumOff: "{0} désactivés", tlSumNot: "{0} hors télémétrie",
+      tlSwitches: "Interrupteurs", tlSwLede: "Ce qui est enregistré, et pour combien de temps. Un changement s'applique à la question suivante.", tlOn: "activé", tlOff: "désactivé",
+      tlSw_telemetry: "Enregistrer la télémétrie", tlSw_questionText: "Garder le texte des questions", tlSw_audio: "Garder l'audio", tlSw_retentionDays: "Conserver (jours)",
+      tlItem: "Signal", tlDecision: "Décision éclairée", tl7d: "7 derniers jours", tlLastSeen: "Vu pour la dernière fois", tlNotes: "Remarques", tlHow: "Pour l'activer", tlFields: "Champs", tlPrivacy: "Confidentialité",
+      st_recording: "enregistré", "st_enabled-no-data": "activé, pas encore de données", st_off: "désactivé", "st_needs-config": "à configurer", "st_not-telemetry": "hors télémétrie",
+      tlLegend: "✓ enregistré · ◐ activé sans données · ○ désactivé · ⚠ à configurer · — hors télémétrie", tlPrint: "Imprimer", tlCopy: "Copier en Markdown", tlCopied: "Copié.",
+      tlAbsent: "La télémétrie n'est pas disponible sur ce serveur.", tlAbsentHelp: "Ce serveur ne communique pas encore sa télémétrie. La liste apparaîtra ici dès qu'il le fera.", tlSwitchAbsent: "Ce réglage ne peut pas être modifié d'ici sur ce serveur.",
     },
   };
   // The switches' names and help in French; English comes from the server.
@@ -635,7 +652,80 @@
     return [card(t("tabSettings"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null)];
   }
 
-  const TABS = { overview, review, questions, proposals, definitions, cache, settings };
+  /** The telemetry checklist (GET <prefix>/telemetry/checklist), if the server has it: null when it does not (404). */
+  async function telemetryApi() {
+    const res = await fetch("../telemetry/checklist", { credentials: "same-origin" });
+    if (res.status === 404) return null;
+    let data = null;
+    try { data = await res.json(); } catch (e) { return null; }
+    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    return data && Array.isArray(data.groups) ? data : null;
+  }
+  /** A telemetry switch (on/off, or the retention), changed through the host's Settings routes: PUT <prefix>/settings/telemetry. */
+  async function setTelemetrySwitch(key, value) {
+    const res = await fetch("../settings/telemetry", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ [key]: value }), credentials: "same-origin" });
+    if (res.status === 404) throw new Error(t("tlSwitchAbsent"));
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON */ }
+    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    return data;
+  }
+  async function telemetry() {
+    const C = window.LenspackChecklist;
+    let data = null;
+    try { data = C ? await telemetryApi() : null; } catch (e) { data = null; }
+    if (!data) return [card(t("tlTitle"), null, h("p", { class: "empty" }, t("tlAbsent")), h("p", { class: "mute" }, t("tlAbsentHelp")))];
+    const swLabel = (k) => (t(`tlSw_${k}`) === `tlSw_${k}` ? k : t(`tlSw_${k}`));
+    const switches = Object.entries(data.switches || {}).map(([k, v]) => {
+      if (typeof v === "boolean") {
+        const input = h("input", { type: "checkbox", checked: v, "aria-label": swLabel(k), onchange: act(() => setTelemetrySwitch(k, input.checked), t("saved")) });
+        return h("label", { class: "switch" }, input, h("div", { style: "flex:1" }, h("div", { class: "row" }, h("span", { class: "lbl" }, swLabel(k)), h("code", {}, k))));
+      }
+      const input = h("input", { type: typeof v === "number" ? "number" : "text", min: typeof v === "number" ? "1" : null, value: String(v ?? ""), style: "width:110px" });
+      return h("div", { class: "switch" }, h("div", { style: "flex:1" }, h("div", { class: "row" }, h("span", { class: "lbl" }, swLabel(k)), h("code", {}, k))),
+        h("div", { class: "row" }, input, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => setTelemetrySwitch(k, typeof v === "number" ? Number(input.value) : input.value), t("saved")) }, t("save"))));
+    });
+    const md = () => C.markdown(data, t, { date: (iso) => when(iso), num: (n) => nf(n) });
+    const copy = async () => {
+      const text = md();
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        // No clipboard access (an http page, an old browser): select the text instead.
+        const area = h("textarea", { style: "position:fixed;top:0;left:0;opacity:0" }, text);
+        document.body.append(area);
+        area.select();
+        try { document.execCommand("copy"); } finally { area.remove(); }
+      }
+      toast(t("tlCopied"));
+    };
+    const item = (it) => {
+      const notRec = it.status !== "recording" && it.status !== "not-telemetry";
+      return h("li", { class: `ck ck-${it.status}` },
+        h("span", { class: "ck-mark", title: t(`st_${it.status}`), "aria-label": t(`st_${it.status}`) }, C.MARKS[it.status] || "?"),
+        h("div", { class: "ck-body" },
+          h("div", { class: "ck-head" }, h("b", {}, it.label), pill(t(`st_${it.status}`), it.status === "recording" ? "ok" : it.status === "needs-config" ? "warn" : it.status === "enabled-no-data" ? "acc" : "")),
+          h("div", { class: "ck-decision" }, it.decision),
+          h("div", { class: "ck-meta mute" },
+            it.status === "not-telemetry" ? null : h("span", {}, `${t("tl7d")}: `, h("b", {}, nf(it.count7d))),
+            it.status === "not-telemetry" ? null : h("span", {}, `${t("tlLastSeen")}: ${it.lastSeen ? when(it.lastSeen) : "—"}`),
+            it.source ? h("span", {}, h("code", {}, it.source)) : null,
+            (it.fields || []).length ? h("span", { class: "ck-fields" }, `${t("tlFields")}: `, ...(it.fields || []).map((f) => h("code", {}, f))) : null),
+          it.privacy ? h("div", { class: "ck-privacy" }, h("b", {}, `${t("tlPrivacy")}: `), it.privacy) : null,
+          notRec && it.howToEnable ? h("div", { class: "ck-how" }, h("b", {}, `${t("tlHow")}: `), it.howToEnable) : null));
+    };
+    return [
+      h("div", { class: "spread no-print-gap" },
+        h("div", {}, h("h2", { class: "tl-title" }, t("tlTitle")), h("p", { class: "lede mute", style: "margin:2px 0 0" }, t("tlLede"))),
+        h("div", { class: "row no-print" }, h("button", { class: "btn sm ghost", type: "button", onclick: () => window.print() }, t("tlPrint")), h("button", { class: "btn sm", type: "button", onclick: copy }, t("tlCopy")))),
+      h("p", { class: "tl-summary" }, C.summary(data, t)),
+      h("p", { class: "mute", style: "margin:-6px 0 14px;font-size:12.5px" }, t("tlGenerated", when(data.generatedAt)), " ", t("tlLegend")),
+      switches.length ? card(t("tlSwitches"), t("tlSwLede"), h("div", { class: "tl-switches" }, switches)) : null,
+      ...(data.groups || []).map((g) => h("section", { class: "card ck-group" }, h("h2", {}, g.title, h("span", { class: "mute", style: "font-weight:400;margin-left:8px;font-size:12.5px" }, `${(g.items || []).filter((i) => i.status === "recording").length}/${(g.items || []).length}`)), h("ul", { class: "ck-list" }, (g.items || []).map(item)))),
+    ];
+  }
+
+  const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };
   let rendering = 0;
   async function render() {
     const mine = ++rendering;

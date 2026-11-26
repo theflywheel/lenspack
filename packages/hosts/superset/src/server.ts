@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { memoryStore } from "@lenspack/core";
-import { type AdminConfig, type Budget, NO_STORE, type Provider, TYPES, adminRoutes, adminSettings, json, panelRoutes, resolveSecrets, reviewSystem, rotatingAudit, scriptJson, startRuntime, usageBoard } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
 import YAML from "yaml";
 
 import { identityKey, serviceAccount } from "./bootstrap";
@@ -201,15 +201,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
   // The definitions overlay, open questions and the daily review (review/ in @lenspack/serve), kept in the state
   // directory; the admin panel at /_superset/admin/ (through Superset: /lenspack/_superset/admin/).
-  let models: Provider[] = [];
-  const review = reviewSystem({
+  const review = admin.review({
     stateDir,
     hosts: [{ name: pack.pack, pack, connector, ctx: {} }],
-    features: admin.features,
-    settings: admin.settings,
-    providers: () => models,
     events: auditLog ? (from) => auditLog.since(from) : undefined,
     audit: auditLog?.audit,
+    prefix: "/_superset",
+    adminName: "Superset admin",
+    title: pack.pack,
     log,
   });
   startRuntime({
@@ -220,14 +219,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     budget: config.budget,
     log,
     health: () => ({ identity: !!idKey }),
-    routes: ({ providers, budget, ledger, roles }) => {
-      models = providers;
-      // Usage as a board of its own (the panel's Overview), over the audit log, or the turn telemetry when it is written.
-      const usage = usageBoard({ stateDir, events: auditLog ? (from) => auditLog.since(from) : undefined, providers: () => providers, ledger, budget, roles, audit: auditLog?.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log }).catch((e) => {
-        log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
-        return null;
-      });
-      const adminPanel = panelRoutes({ prefix: "/_superset", system: review, features: admin.features, providers: () => providers, isAdmin: (who) => !!who.roles?.includes("admin"), adminName: "Superset admin", title: pack.pack, log, usage });
+    routes: (rt) => {
+      const { providers, budget } = rt;
+      const adminPanel = review.routes(rt);
       const settingsPage = adminRoutes({
         prefix: "/_superset",
         settings: admin,

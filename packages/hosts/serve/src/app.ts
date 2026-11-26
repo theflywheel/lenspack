@@ -5,7 +5,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
+import { type ProposalStore, type TurnDefinitions, boardTools, clarifyOf, clarifyTool, definitionsKey, quickReplyOf, toVercelAI } from "@lenspack/agent";
 import { type Principal, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -18,8 +18,6 @@ import { type LanguagePolicy, catalogueText, systemParts } from "./prompt";
 import { keepReplyScripts, replyScripts, userTexts } from "./reply-script";
 import { type Finding, ROLLBACK_PROMPT, type Review, fixPrompt, isEditResult, materialFindings, refusalsFrom, reviewTurn, rolledBackLine, unavailable, wantsReview } from "./review";
 import { LANGUAGE, type SpeechOptions, SpeechError, fitsLanguages, scriptOf, speechRecord, transcribe } from "./speech";
-import { type QuickReplies, clarifyTool, readingsFrom } from "./review/clarify";
-import { type TurnDefinitions, definitionsKey } from "./review/hooks";
 
 /** Sent, tools off, when the step cap ends a tool loop before the model has said anything. */
 export const CLOSING_PROMPT =
@@ -113,8 +111,8 @@ export type AppOptions = {
  * The version of a pack's definitions as a chat turn reads them: the pack file's version and the admin's overlay.
  * It changes whenever either does, so anything that keeps answers (a cache) can key on it.
  */
-export function definitionsVersion(defs: TurnDefinitions | undefined, name: string, pack: Pack): string {
-  return defs ? defs.version(name, pack) : definitionsKey(pack, "d0");
+export async function definitionsVersion(defs: TurnDefinitions | undefined, name: string, pack: Pack): Promise<string> {
+  return defs ? await defs.version(name, pack) : definitionsKey(pack, "d0");
 }
 
 /** A tool result in a few fields for the audit line: whether it worked, how many rows, the error. */
@@ -284,27 +282,6 @@ export function accessOf(opts: Pick<AppOptions, "auth" | "access" | "rights">): 
     const id = await hook(req);
     return id && principalOf(id);
   });
-}
-
-/** The quick reply a chat request names: { question, option }, both short strings. */
-function quickReplyOf(v: unknown): { question: string; option: string } | null {
-  if (!v || typeof v !== "object") return null;
-  const { question, option } = v as { question?: unknown; option?: unknown };
-  return typeof question === "string" && typeof option === "string" && question.length <= 40 && option ? { question, option: option.slice(0, 120) } : null;
-}
-
-/** A round's clarify call, if it made one that worked: the audit record and, when it asked, the quick replies. */
-function clarifyOf(steps: { toolCalls: { toolName: string; toolCallId: string; input?: unknown }[]; toolResults: { toolCallId: string; output?: unknown }[] }[]) {
-  for (const s of steps)
-    for (const c of s.toolCalls) {
-      if (c.toolName !== "clarify") continue;
-      const out = s.toolResults.find((r) => r.toolCallId === c.toolCallId)?.output as { ok?: boolean; asked?: boolean; question?: string; quickReplies?: QuickReplies } | undefined;
-      if (!out?.ok) continue;
-      const input = (c.input ?? {}) as { pattern?: string; assumed?: string; readings?: string };
-      const options = out.quickReplies?.options.map((o) => o.label) ?? readingsFrom(String(input.readings ?? "")).map((r) => r.label);
-      return { record: { asked: !!out.asked, pattern: String(input.pattern ?? "").slice(0, 200), ...(out.question ? { question: out.question } : {}), ...(options.length ? { options } : {}), ...(out.asked ? {} : { assumed: String(input.assumed ?? "").slice(0, 120) }) }, quickReplies: out.asked ? out.quickReplies : undefined };
-    }
-  return null;
 }
 
 export function createApp(hosts: Host[], opts: AppOptions = {}) {
@@ -629,10 +606,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // The admin's definitions (instruction lines, hints, synonyms, definitions) merged into the pack for this turn,
     // read now so a change made in the admin panel applies to the next question.
     const defs = opts.definitions;
-    const merged = defs ? defs.apply(h.name, h.pack, h.catalogue) : { pack: h.pack, catalogue: h.catalogue };
+    const merged = defs ? await defs.apply(h.name, h.pack, h.catalogue) : { pack: h.pack, catalogue: h.catalogue };
     const pack = merged.pack;
     const turnCatalogue = merged.catalogue;
     const clarifying = !!defs?.clarify();
+    const defsVersion = await definitionsVersion(defs, h.name, h.pack);
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
     const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown };
@@ -640,7 +618,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     // A quick reply picked under a clarifying question: counted against that reading in the open-questions log.
     const quickReply = quickReplyOf(body.quickReply);
-    if (quickReply && defs) defs.choose(h.name, quickReply.question, quickReply.option);
+    if (quickReply && defs) await defs.choose(h.name, quickReply.question, quickReply.option);
     // What this turn costs: every model call made in its scope, the queries its tools run, and the
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
@@ -721,7 +699,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           refusals: [],
           reviews: [],
           ...(picked ? { language: picked } : {}),
-          definitions: definitionsVersion(defs, h.name, h.pack),
+          definitions: defsVersion,
           ...(quickReply ? { quickReply } : {}),
         };
         // The findings that would make the held edits mislead; while there are any, they are dropped rather than saved.

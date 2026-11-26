@@ -3,7 +3,7 @@ import { type IncomingMessage, type ServerResponse, createServer } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Script } from "node:vm";
+import { Script, runInNewContext } from "node:vm";
 
 import { parsePackText } from "@lenspack/pack";
 import { type Principal, principalOf } from "@lenspack/policy";
@@ -12,7 +12,9 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { type AuditEvent, type Provider, USAGE_BOARD, adminSettings, buildProvider, panelRoutes, readTelemetry, registerLlmAdapter, reviewSystem, usageBoard, usageFromAudit, usageFromTelemetry } from "../src";
+import { type AuditEvent, type Provider, adminSettings, buildProvider, panelRoutes, readBoards, readTelemetry, registerLlmAdapter, reviewSystem, usageBoard, usageFromAudit, usageFromTelemetry, usagePackDir } from "../src";
+
+const USAGE_BOARD = readBoards(`${usagePackDir()}boards`).find((b) => b.id === "overview")!;
 
 const fixture = fileURLToPath(new URL("./fixtures/telemetry-2026-11.jsonl", import.meta.url));
 const usageTokens = { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, text: 5, reasoning: 0 } };
@@ -44,7 +46,7 @@ describe("the usage pack's rows", () => {
     expect(t.events.filter((e) => e.event === "feedback" && e.value === "down").length).toBe(10);
     expect(new Set(t.turns.map((r) => r.answer_kind))).toEqual(new Set(["direct", "derived", "chart", "meta"]));
     expect(t.roles.length).toBeGreaterThan(40);
-    expect(t.turns[0]).toMatchObject({ session_id: "s0", country: "Country A", input: "spoken", reply_s: 3, first_token_s: 0.8, cache_tier: "t1", speech_s: 4.5 });
+    expect(t.turns[0]).toMatchObject({ chat_session: "s0", country: "Country A", input: "spoken", reply_s: 3, first_token_s: 0.8, cache_tier: "t1", speech_s: 4.5 });
   });
 });
 
@@ -74,16 +76,16 @@ describe("the admin panel", () => {
     const admin = adminSettings(dir, {}, {});
     // The usage chat's model: answers in one round, no tools.
     const model = new MockLanguageModelV4({
-      doStream: async () => ({ stream: new ReadableStream({ start(c) { for (const p of [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "The sales board cost most." }, { type: "text-end", id: "t" }, { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: usageTokens }]) c.enqueue(p); c.close(); } }) }),
+      doStream: async () => ({ stream: new ReadableStream({ start(c) { for (const p of [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "The sales board cost most." }, { type: "text-end", id: "t" }, { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage: usageTokens }]) c.enqueue(p as never); c.close(); } }) }),
     });
     registerLlmAdapter({ kind: "panel-mock", defaultBaseUrl: "mock:", build: () => model });
     const providers: Provider[] = [{ ...buildProvider({ name: "m", kind: "panel-mock", model: "m" }), available: true }];
     const review = reviewSystem({ stateDir: dir, hosts: [{ name: "shop", pack: PACK, connector: sqlConnector(db.executor), ctx: {} }], features: admin.features, settings: admin.settings, providers: () => providers, events: () => lines, audit: (e) => lines.push(e) });
     usage = await usageBoard({ stateDir: dir, events: () => lines, providers: () => providers, audit: (e) => lines.push(e), review: () => false, now: () => NOW });
-    const panel = panelRoutes({ prefix: "/_x", system: review, features: admin.features, providers: () => providers, isAdmin: (who) => !!who.maintain, adminName: "maintainer", title: "Shop <b>", usage });
+    const panel = panelRoutes({ prefix: "/_x", system: review, features: admin.features, providers: () => providers, adminName: "maintainer", title: "Shop <b>", usage });
     server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", "http://x");
-      const who: Principal = principalOf({ user: String(req.headers["x-test-user"] ?? "anon"), edit: true, maintain: req.headers["x-test-admin"] === "1" });
+      const who: Principal = principalOf({ user: String(req.headers["x-test-user"] ?? "anon"), edit: true, maintain: req.headers["x-test-admin"] === "1", ...(req.headers["x-test-usage"] === "0" ? { usage: false } : {}) });
       if (!(await panel(req, res, url, who))) {
         res.writeHead(404);
         res.end();
@@ -117,11 +119,26 @@ describe("the admin panel", () => {
     const js = await (await fetch(`${base}/panel.js`, { headers: as("ana", true) })).text();
     // The script parses, and has both languages and every tab.
     expect(() => new Script(js)).not.toThrow();
-    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, cache, settings };");
+    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };");
     expect(js).toContain('fr: {');
     expect((await fetch(`${base}/panel.css`, { headers: as("ana", true) })).status).toBe(200);
     const packs = await (await fetch(`${base}/api/packs`, { headers: as("ana", true) })).json();
     expect(packs.usage).toEqual({ board: "overview", source: "telemetry" });
+  });
+
+  it("serves the telemetry checklist's script, which sums up and copies the checklist as Markdown", async () => {
+    const js = await (await fetch(`${base}/checklist.js`, { headers: as("ana", true) })).text();
+    const box: { window: { LenspackChecklist?: { summary: Function; markdown: Function; counts: Function } } } = { window: {} };
+    runInNewContext(js, box);
+    const C = box.window.LenspackChecklist!;
+    const data = JSON.parse(readFileSync(fileURLToPath(new URL("./fixtures/telemetry-checklist.json", import.meta.url)), "utf8"));
+    const words: Record<string, string> = { tlSumRecording: "{0} of {1} recording", tlSumNoData: "{0} on but no data", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumNot: "{0} not telemetry", tlTitle: "What this deployment records" };
+    const t = (k: string, ...a: unknown[]) => (words[k] ?? k).replace(/\{(\d)\}/g, (_, i) => String(a[Number(i)]));
+    expect(C.summary(data, t)).toBe("23 of 32 recording · 1 on but no data · 4 need configuration · 2 off · 2 not telemetry");
+    const md: string = C.markdown(data, t);
+    expect(md.startsWith("# What this deployment records")).toBe(true);
+    expect(md.split("\n").filter((l) => /^\| [✓◐○⚠—] \|/.test(l))).toHaveLength(32);
+    expect(md).toContain("| ⚠ | Device and network |");
   });
 
   it("draws the usage board from the telemetry, through the same board API as every board", async () => {
@@ -135,6 +152,16 @@ describe("the admin panel", () => {
     expect(data.wau_role!.rows.length).toBeGreaterThan(0);
     expect(data.p95_kind!.rows.length).toBe(4);
     expect(data.dau_country!.rows.length).toBeGreaterThan(0);
+  });
+
+  it("hides who asked from an admin the policy does not let see usernames", async () => {
+    const headers = { ...as("ana", true), "x-test-usage": "0" };
+    const pack = await (await fetch(`${base}/api/usage/overview`, { headers })).json();
+    const keys = JSON.stringify(pack.catalogue ?? pack.pack ?? pack);
+    expect(keys).not.toContain('"user"');
+    const data = (await (await fetch(`${base}/api/usage/overview/data`, { headers })).json()) as Record<string, { error?: string }>;
+    expect(data.top_users?.error).toBeTruthy();
+    expect(data.turns_today?.error).toBeUndefined();
   });
 
   it("an admin can edit the usage board like any board", async () => {

@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 
 import { generateText } from "ai";
 
@@ -13,24 +11,27 @@ import type { Features } from "../features";
 import { type Provider, shapeCall } from "../llm";
 import { type CallRecord, withMeter } from "../metering";
 import { catalogueText } from "../prompt";
-import { type SettingsStore, SettingsSaveError, writeWhole } from "../settings";
+import type { SettingsStore } from "../settings";
 import { compareReadings } from "./compare";
 import { DAILY_PROMPT, type ReviewPlan, type ReviewProposal, type ReviewReport, type ReviewSettings, parseReport, planReview, repeats, reviewDefaults, updateSettings } from "./daily";
 import { type DigestTurn, digestTurns } from "./digest";
 import { type TurnDefinitions, definitionsKey } from "./hooks";
 import { type Overlay, OverlayError, applyOverlay, entryLine, overlayStore } from "./overlay";
+import { type DocStore, fileDocs, readDoc, updateDoc } from "./store";
 import { type OpenQuestion, type QuestionLog, QuestionError, questionLog } from "./questions";
 import { scheduler, slots as slotsNow } from "./schedule";
 
 // The review system: one per server. It holds each pack's definitions overlay and open-questions
 // log, the daily review's settings, runs and proposals, and the scheduler; it gives the chat its
 // per-turn hooks (TurnDefinitions) and the admin panel everything it shows. Everything is kept in
-// the state directory, as JSON files written whole.
+// a document store (the state directory's files by default), read on every use.
 
 export type ReviewHost = { name: string; pack: Pack; connector: Connector; ctx: Ctx; catalogue?: Catalogue };
 
 export type ReviewSystemOptions = {
   stateDir: string;
+  /** Where the definitions, open questions, proposals, runs and schedule are kept; the state directory's files by default. */
+  docs?: DocStore;
   hosts: ReviewHost[];
   features: Features;
   settings: SettingsStore;
@@ -95,13 +96,11 @@ export type ReviewSystem = ReturnType<typeof reviewSystem>;
 export function reviewSystem(o: ReviewSystemOptions) {
   const now = o.now ?? (() => new Date());
   const log = o.log ?? (() => {});
-  const dir = o.stateDir;
-  const runsDir = join(dir, "review-runs");
-  mkdirSync(runsDir, { recursive: true });
+  const docs = o.docs ?? fileDocs(o.stateDir);
   const hosts = new Map(o.hosts.map((h) => [h.name, h]));
   const keysOf = (h: ReviewHost) => () => new Set([...h.pack.dimensions.map((d) => d.key), ...h.pack.measures.map((m) => m.key)]);
-  const overlays = new Map<string, Overlay>([...hosts.values()].map((h) => [h.name, overlayStore(dir, h.name, { keys: keysOf(h), budget: o.overlayBudget, now })]));
-  const logs = new Map<string, QuestionLog>([...hosts.values()].map((h) => [h.name, questionLog(dir, h.name, { now })]));
+  const overlays = new Map<string, Overlay>([...hosts.values()].map((h) => [h.name, overlayStore(docs, h.name, { keys: keysOf(h), budget: o.overlayBudget, now })]));
+  const logs = new Map<string, QuestionLog>([...hosts.values()].map((h) => [h.name, questionLog(docs, h.name, { now })]));
   const host = (name: string) => {
     const h = hosts.get(name);
     if (!h) throw new QuestionError(`no pack ${name}`);
@@ -124,60 +123,58 @@ export function reviewSystem(o: ReviewSystemOptions) {
   const settings = (): ReviewSettings => ({ ...defaults, ...saved() });
 
   // ---- Proposals --------------------------------------------------------------------------------
-  const proposalsPath = join(dir, "review-proposals.json");
-  let proposals: StoredProposal[] = existsSync(proposalsPath) ? (JSON.parse(readFileSync(proposalsPath, "utf8")) as StoredProposal[]) : [];
-  const saveProposals = (next: StoredProposal[]) => {
-    try {
-      writeWhole(proposalsPath, JSON.stringify(next.slice(-500), null, 2));
-    } catch (e) {
-      throw new SettingsSaveError(e);
-    }
-    proposals = next.slice(-500);
-  };
-  const proposal = (id: string) => {
-    const p = proposals.find((x) => x.id === id);
+  const PROPOSALS = "review-proposals.json";
+  const allProposals = async () => (await readDoc<StoredProposal[]>(docs, PROPOSALS, () => [])).value;
+  const changeProposals = <R>(fn: (list: StoredProposal[]) => { next: StoredProposal[]; result: R }) =>
+    updateDoc<StoredProposal[], R>(docs, PROPOSALS, () => [], (list) => {
+      const r = fn(list);
+      return { next: r.next.slice(-500), result: r.result };
+    });
+  const proposal = async (id: string) => {
+    const p = (await allProposals()).find((x) => x.id === id);
     if (!p) throw new QuestionError(`no proposal ${id}`);
     return p;
   };
 
   // ---- Runs -------------------------------------------------------------------------------------
-  const runPath = (id: string) => join(runsDir, `${id}.json`);
-  const saveRun = (r: ReviewRun) => {
-    writeWhole(runPath(r.id), JSON.stringify(r, null, 2));
-    const all = readdirSync(runsDir).filter((f) => f.endsWith(".json")).sort();
-    for (const f of all.slice(0, Math.max(0, all.length - RUNS_KEPT))) rmSync(join(runsDir, f), { force: true });
+  const runName = (id: string) => `review-runs/${id}.json`;
+  const saveRun = async (r: ReviewRun) => {
+    await docs.put(runName(r.id), JSON.stringify(r, null, 2));
+    const all = await docs.list("review-runs/");
+    for (const f of all.slice(0, Math.max(0, all.length - RUNS_KEPT))) await docs.remove(f);
   };
-  const runs = (): ReviewRun[] =>
-    readdirSync(runsDir)
-      .filter((f) => f.endsWith(".json"))
-      .sort()
-      .reverse()
-      .flatMap((f) => {
-        try {
-          return [JSON.parse(readFileSync(join(runsDir, f), "utf8")) as ReviewRun];
-        } catch {
-          return [];
-        }
-      });
+  const runs = async (): Promise<ReviewRun[]> => {
+    const names = (await docs.list("review-runs/")).filter((f) => f.endsWith(".json")).reverse();
+    const out: ReviewRun[] = [];
+    for (const f of names) {
+      try {
+        const d = await docs.get(f);
+        if (d) out.push(JSON.parse(d.text) as ReviewRun);
+      } catch {
+        /* an unreadable run is skipped */
+      }
+    }
+    return out;
+  };
   // Ids sort by time: a run's file name is when it started.
   const runId = () => `${now().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 4)}`;
 
-  const statePath = join(dir, "review-state.json");
+  const STATE = "review-state.json";
   const state = {
-    get: (): string | null => (existsSync(statePath) ? ((JSON.parse(readFileSync(statePath, "utf8")) as { lastSlot?: string }).lastSlot ?? null) : null),
-    set: (iso: string) => writeWhole(statePath, JSON.stringify({ lastSlot: iso })),
+    get: async (): Promise<string | null> => (await readDoc<{ lastSlot?: string }>(docs, STATE, () => ({}))).value.lastSlot ?? null,
+    set: async (iso: string) => void (await docs.put(STATE, JSON.stringify({ lastSlot: iso }))),
   };
 
   /** The pack as the review reads it: catalogue, the pack's own rules, the admin's definitions, the open questions. */
-  const contextFor = (h: ReviewHost, turns: DigestTurn[], candidates: unknown[] | null) => {
-    const ov = overlays.get(h.name)!;
-    const open = logs.get(h.name)!.list();
+  const contextFor = async (h: ReviewHost, turns: DigestTurn[], candidates: unknown[] | null) => {
+    const entries = await overlays.get(h.name)!.entries();
+    const open = await logs.get(h.name)!.list();
     const rep = repeats(turns);
     return [
       `PACK "${h.pack.pack}" (times in ${h.pack.timeZone ?? "UTC"}):`,
       catalogueText(h.pack, h.catalogue ?? catalogueFrom(h.pack)),
       `\nDOMAIN RULES (the pack's own):\n${h.pack.instructions?.trim() || "(none)"}`,
-      `\nDEFINITIONS ALREADY SET BY AN ADMIN:\n${ov.entries().map((e) => `- [${e.kind}] ${entryLine(e)}`).join("\n") || "(none)"}`,
+      `\nDEFINITIONS ALREADY SET BY AN ADMIN:\n${entries.map((e) => `- [${e.kind}] ${entryLine(e)}`).join("\n") || "(none)"}`,
       `\nOPEN QUESTIONS ALREADY LOGGED:\n${open.slice(0, 40).map((q) => `- (${q.status}) ${q.pattern} [${q.readings.map((r) => r.label).join(" | ")}]${q.status === "answered" ? ` → ${q.readings.find((r) => r.id === q.chosen)?.label ?? ""}` : ""}`).join("\n") || "(none)"}`,
       `\nQUESTIONS ASKED MORE THAN ONCE THIS PERIOD:\n${rep.map((r) => `- ${r.count}× "${r.question.slice(0, 160)}" (turns ${r.turns.join(", ")})`).join("\n") || "(none)"}`,
       ...(candidates?.length ? [`\nFREQUENT QUESTIONS FROM THE ANSWER CACHE:\n${JSON.stringify(candidates).slice(0, 3000)}`] : []),
@@ -204,17 +201,30 @@ export function reviewSystem(o: ReviewSystemOptions) {
     const { from, to, packs } = gather(s);
     const candidates = o.chartCandidates ? await o.chartCandidates().catch(() => null) : null;
     let left = s.maxUsd;
-    const out = packs.map(({ h, turns }) => {
-      if (!provider) return { pack: h.name, turns: turns.length, error: `the review model ${s.model} is not configured` };
+    const out: Record<string, unknown>[] = [];
+    for (const { h, turns } of packs) {
+      if (!provider) {
+        out.push({ pack: h.name, turns: turns.length, error: `the review model ${s.model} is not configured` });
+        continue;
+      }
       const pricing = pricingOf(provider);
-      if (!pricing) return { pack: h.name, turns: turns.length, error: `${provider.name} has no price, so the cap cannot be enforced` };
-      if (!turns.length) return { pack: h.name, turns: 0 };
-      const plan = planReview({ turns, fixed: DAILY_PROMPT + contextFor(h, turns, candidates), pricing, maxUsd: left, thinkingAllowance: allowanceOf(provider) });
-      if ("error" in plan) return { pack: h.name, turns: turns.length, error: plan.error };
+      if (!pricing) {
+        out.push({ pack: h.name, turns: turns.length, error: `${provider.name} has no price, so the cap cannot be enforced` });
+        continue;
+      }
+      if (!turns.length) {
+        out.push({ pack: h.name, turns: 0 });
+        continue;
+      }
+      const plan = planReview({ turns, fixed: DAILY_PROMPT + (await contextFor(h, turns, candidates)), pricing, maxUsd: left, thinkingAllowance: allowanceOf(provider) });
+      if ("error" in plan) {
+        out.push({ pack: h.name, turns: turns.length, error: plan.error });
+        continue;
+      }
       left -= plan.worstUsd;
       const { text: _t, ...rest } = plan;
-      return { pack: h.name, turns: turns.length, ...rest };
-    });
+      out.push({ pack: h.name, turns: turns.length, ...rest });
+    }
     return { settings: s, model: provider ? { name: provider.name, available: provider.available, priced: !!provider.pricing } : null, from: from.toISOString(), to: to.toISOString(), packs: out };
   };
 
@@ -228,13 +238,13 @@ export function reviewSystem(o: ReviewSystemOptions) {
       const s = settings();
       const { from, to, packs, users } = gather(s);
       const run: ReviewRun = { id: runId(), at: now().toISOString(), trigger, by, ...(slot ? { slot: slot.toISOString() } : {}), status: "running", settings: s, from: from.toISOString(), to: to.toISOString(), packs: [], usd: 0 };
-      saveRun(run);
-      const finish = (status: ReviewRun["status"], reason?: string) => {
+      await saveRun(run);
+      const finish = async (status: ReviewRun["status"], reason?: string) => {
         run.status = status;
         if (reason) run.reason = reason;
         run.usd = Math.round(run.packs.reduce((n, p) => n + p.usd, 0) * 1e6) / 1e6;
         run.ms = Date.now() - started;
-        saveRun(run);
+        await saveRun(run);
         audit(by, "review run", `${trigger}: ${status}${reason ? ` (${reason})` : ""}, $${run.usd}`);
         log(`daily review ${run.id}: ${status}${reason ? ` (${reason})` : ""}, $${run.usd}`);
         return run;
@@ -258,7 +268,7 @@ export function reviewSystem(o: ReviewSystemOptions) {
           pr.reason = `${turns.length} turns, fewer than the ${s.minTurns} a scheduled review waits for`;
           continue;
         }
-        const context = contextFor(h, turns, candidates);
+        const context = await contextFor(h, turns, candidates);
         const plan = planReview({ turns, fixed: DAILY_PROMPT + context, pricing, maxUsd: left, thinkingAllowance: allowanceOf(provider) });
         if ("error" in plan) {
           pr.status = "failed";
@@ -294,14 +304,14 @@ export function reviewSystem(o: ReviewSystemOptions) {
           pr.problems = parsed.problems;
           // Proposals wait for an admin; questions join the log (a repeat counts against the one there).
           const made: StoredProposal[] = parsed.report.proposals.map((p) => ({ ...p, id: randomUUID().slice(0, 8), run: run.id, pack: h.name, status: "pending", createdAt: now().toISOString() }));
-          if (made.length) saveProposals([...proposals, ...made]);
+          if (made.length) await changeProposals((list) => ({ next: [...list, ...made], result: null }));
           pr.proposals = made.map((p) => p.id);
           pr.questions = [];
           for (const q of parsed.report.questions) {
             try {
               const examples = q.examples.length ? q.examples : q.turns.map((n) => turns.find((t) => t.n === n)?.question ?? "").filter(Boolean);
               let logged: OpenQuestion | null = null;
-              for (const example of examples.length ? examples.slice(0, 3) : [undefined]) logged = logs.get(h.name)!.note({ pattern: q.pattern, readings: q.readings, example, source: "review" });
+              for (const example of examples.length ? examples.slice(0, 3) : [undefined]) logged = await logs.get(h.name)!.note({ pattern: q.pattern, readings: q.readings, example, source: "review" });
               if (logged) pr.questions.push(logged.id);
             } catch (e) {
               pr.problems.push(`question "${q.pattern}" not logged: ${e instanceof Error ? e.message : String(e)}`);
@@ -313,7 +323,7 @@ export function reviewSystem(o: ReviewSystemOptions) {
           pr.status = "failed";
           pr.reason = (e instanceof Error ? e.message : String(e)).slice(0, 300);
         }
-        saveRun(run);
+        await saveRun(run);
       }
       const ran = run.packs.filter((p) => p.status !== "skipped");
       if (!ran.length) return finish("skipped", run.packs.map((p) => `${p.pack}: ${p.reason}`).join("; "));
@@ -327,9 +337,9 @@ export function reviewSystem(o: ReviewSystemOptions) {
   async function compareAll(packName: string): Promise<string[]> {
     const h = host(packName);
     const done: string[] = [];
-    for (const q of logs.get(packName)!.list("open")) {
+    for (const q of await logs.get(packName)!.list("open")) {
       if (q.readings.filter((r) => r.query).length < 2) continue;
-      logs.get(packName)!.setCompared(q.id, await compareReadings(q, { pack: h.pack, connector: h.connector, ctx: h.ctx, now }));
+      await logs.get(packName)!.setCompared(q.id, await compareReadings(q, { pack: h.pack, connector: h.connector, ctx: h.ctx, now }));
       done.push(q.id);
     }
     return done;
@@ -347,22 +357,22 @@ export function reviewSystem(o: ReviewSystemOptions) {
   });
 
   const turn: TurnDefinitions = {
-    apply: (name, pack, catalogue) => {
+    apply: async (name, pack, catalogue) => {
       const ov = overlays.get(name);
-      return ov ? applyOverlayEntries(ov, pack, catalogue) : { pack, catalogue };
+      return ov ? applyOverlay(await ov.entries(), pack, catalogue) : { pack, catalogue };
     },
-    version: (name, pack) => definitionsKey(pack, overlays.get(name)?.key() ?? "d0"),
+    version: async (name, pack) => definitionsKey(pack, (await overlays.get(name)?.key()) ?? "d0"),
     clarify: () => o.features.on("clarify"),
-    note: (name, n) => {
+    note: async (name, n) => {
       try {
-        return logs.get(name)?.note(n) ?? null;
+        return (await logs.get(name)?.note(n)) ?? null;
       } catch {
         return null;
       }
     },
-    choose: (name, id, label) => {
+    choose: async (name, id, label) => {
       try {
-        logs.get(name)?.choose(id, label);
+        await logs.get(name)?.choose(id, label);
       } catch {
         /* a full disk must not cost the user the answer */
       }
@@ -370,7 +380,7 @@ export function reviewSystem(o: ReviewSystemOptions) {
   };
 
   /** Usage by day from the audit log: turns, people, cost, errors, clarifications, reviewer findings. */
-  const overview = (days = 14) => {
+  const overview = async (days = 14) => {
     const to = now();
     const from = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate() - (days - 1)));
     const events = (o.events?.(from) ?? []).filter((e) => e.action === "chat-turn" && !e.internal);
@@ -401,8 +411,8 @@ export function reviewSystem(o: ReviewSystemOptions) {
       from: from.toISOString(),
       days: list,
       total: { turns: sum("turns"), users: new Set(events.map((e) => e.user)).size, costUsd: sum("costUsd"), errors: sum("errors"), refusals: sum("refusals"), findings: sum("findings"), asked: sum("asked"), assumed: sum("assumed"), picked: sum("picked") },
-      open: [...logs.values()].reduce((n, l) => n + l.list("open").length, 0),
-      pending: proposals.filter((p) => p.status === "pending").length,
+      open: (await Promise.all([...logs.values()].map((l) => l.list("open")))).reduce((n, l) => n + l.length, 0),
+      pending: (await allProposals()).filter((p) => p.status === "pending").length,
       estimate: "Chat costs are estimates from list prices.",
     };
   };
@@ -410,9 +420,9 @@ export function reviewSystem(o: ReviewSystemOptions) {
   return {
     turn,
     /** The definitions version a cache keys on: changes when the pack's file or its overlay does. */
-    definitionsVersion: (packName: string) => {
+    definitionsVersion: async (packName: string) => {
       const h = host(packName);
-      return definitionsKey(h.pack, overlays.get(packName)!.key());
+      return definitionsKey(h.pack, await overlays.get(packName)!.key());
     },
     packs: () => [...hosts.values()].map((h) => ({ name: h.name, pack: h.pack.pack, version: h.pack.version, timeZone: h.pack.timeZone ?? "UTC" })),
     host,
@@ -420,7 +430,7 @@ export function reviewSystem(o: ReviewSystemOptions) {
     questions,
     settings,
     defaults,
-    settingsView: () => ({ ...settings(), defaults, enabled: o.features.on("review.daily"), compare: o.features.on("review.compare"), next: schedule.next()?.toISOString() ?? null, lastSlot: state.get(), running: !!running }),
+    settingsView: async () => ({ ...settings(), defaults, enabled: o.features.on("review.daily"), compare: o.features.on("review.compare"), next: schedule.next()?.toISOString() ?? null, lastSlot: await state.get(), running: !!running }),
     updateSettings(body: Record<string, unknown>, by: string) {
       const r = updateSettings(saved(), body, o.providers().map((p) => p.name));
       if (!r.ok) return r;
@@ -430,10 +440,10 @@ export function reviewSystem(o: ReviewSystemOptions) {
       return { ok: true as const };
     },
     /** The daily switch went on: slots that passed while it was off are not owed. */
-    switchedOn() {
+    async switchedOn() {
       const { time, timeZone } = settings();
       const { last } = slotsNow(time, timeZone, now());
-      state.set(last.toISOString());
+      await state.set(last.toISOString());
       schedule.reschedule();
     },
     reschedule: () => schedule.reschedule(),
@@ -441,62 +451,69 @@ export function reviewSystem(o: ReviewSystemOptions) {
     runNow: (by: string) => runReview("manual", by),
     running: () => !!running,
     runs,
-    run: (id: string) => (existsSync(runPath(id)) && /^[\w-]+$/.test(id) ? (JSON.parse(readFileSync(runPath(id), "utf8")) as ReviewRun) : null),
-    proposals: (status?: ProposalStatus) => (status ? proposals.filter((p) => p.status === status) : proposals).slice().reverse(),
+    run: async (id: string) => {
+      if (!/^[\w-]+$/.test(id)) return null;
+      const d = await docs.get(runName(id));
+      return d ? (JSON.parse(d.text) as ReviewRun) : null;
+    },
+    proposals: async (status?: ProposalStatus) => {
+      const list = await allProposals();
+      return (status ? list.filter((p) => p.status === status) : list).slice().reverse();
+    },
     /** Accepting writes the overlay; an edit made first is what is written. */
-    acceptProposal(id: string, by: string, edit: Partial<ReviewProposal> = {}, why = "") {
-      const p = proposal(id);
+    async acceptProposal(id: string, by: string, edit: Partial<ReviewProposal> = {}, why = "") {
+      const p = await proposal(id);
       if (p.status !== "pending") throw new QuestionError(`proposal ${id} is already ${p.status}`);
       const merged = { ...p, ...edit };
-      const { entry } = overlay(p.pack).add({ kind: merged.kind, key: merged.key, text: merged.text, words: merged.words, when: merged.when, source: "proposal" }, by, why || merged.rationale || `proposal ${id}`);
-      saveProposals(proposals.map((x) => (x.id === id ? { ...merged, status: "accepted", decidedBy: by, decidedAt: now().toISOString(), definition: entry.id, ...(why ? { note: why } : {}) } : x)));
+      const { entry } = await overlay(p.pack).add({ kind: merged.kind, key: merged.key, text: merged.text, words: merged.words, when: merged.when, source: "proposal" }, by, why || merged.rationale || `proposal ${id}`);
+      await changeProposals((list) => ({ next: list.map((x) => (x.id === id ? { ...merged, status: "accepted" as const, decidedBy: by, decidedAt: now().toISOString(), definition: entry.id, ...(why ? { note: why } : {}) } : x)), result: null }));
       audit(by, "proposal accept", `${id}: ${entryLine(entry)}`, p.pack);
-      return { proposal: proposal(id), entry };
+      return { proposal: await proposal(id), entry };
     },
-    rejectProposal(id: string, by: string, why = "") {
-      const p = proposal(id);
+    async rejectProposal(id: string, by: string, why = "") {
+      const p = await proposal(id);
       if (p.status !== "pending") throw new QuestionError(`proposal ${id} is already ${p.status}`);
-      saveProposals(proposals.map((x) => (x.id === id ? { ...x, status: "rejected", decidedBy: by, decidedAt: now().toISOString(), ...(why ? { note: why } : {}) } : x)));
+      await changeProposals((list) => ({ next: list.map((x) => (x.id === id ? { ...x, status: "rejected" as const, decidedBy: by, decidedAt: now().toISOString(), ...(why ? { note: why } : {}) } : x)), result: null }));
       audit(by, "proposal reject", `${id}${why ? `: ${why}` : ""}`, p.pack);
       return proposal(id);
     },
     /** Answering an open question writes its reading as a definition in the overlay. */
-    answer(packName: string, id: string, reading: string, by: string, why = "") {
+    async answer(packName: string, id: string, reading: string, by: string, why = "") {
       const log = questions(packName);
-      const q = log.get(id);
+      const q = await log.get(id);
       if (q.status === "answered") throw new QuestionError(`question ${id} is already answered`);
       const r = q.readings.find((x) => x.id === reading);
       if (!r) throw new QuestionError(`question ${id} has no reading ${reading}`);
       const how = r.query ? ` (${Object.entries(r.query).map(([k, v]) => `${k} ${v}`).join(", ")})` : r.how ? ` (${r.how})` : "";
-      const { entry } = overlay(packName).add({ kind: "definition", when: q.pattern, text: `${r.label}${r.explanation ? `: ${r.explanation}` : ""}${how}`.slice(0, 600), question: id, source: "question" }, by, why || `answered open question ${id}`);
+      const { entry } = await overlay(packName).add({ kind: "definition", when: q.pattern, text: `${r.label}${r.explanation ? `: ${r.explanation}` : ""}${how}`.slice(0, 600), question: id, source: "question" }, by, why || `answered open question ${id}`);
       audit(by, "question answer", `${id}: ${q.pattern} → ${r.label}`, packName);
-      return { question: log.answer(id, reading, by, why, entry.id), entry };
+      return { question: await log.answer(id, reading, by, why, entry.id), entry };
     },
-    dismiss(packName: string, id: string, by: string, why = "") {
-      const q = questions(packName).dismiss(id, by, why);
+    async dismiss(packName: string, id: string, by: string, why = "") {
+      const q = await questions(packName).dismiss(id, by, why);
       audit(by, "question dismiss", `${id}: ${q.pattern}`, packName);
       return q;
     },
-    reopen(packName: string, id: string, by: string) {
-      const q = questions(packName).reopen(id);
+    async reopen(packName: string, id: string, by: string) {
+      const q = await questions(packName).reopen(id);
       audit(by, "question reopen", `${id}: ${q.pattern}`, packName);
       return q;
     },
-    addQuestion(packName: string, body: { pattern?: unknown; readings?: unknown; example?: unknown }, by: string) {
-      const q = questions(packName).note({ pattern: String(body.pattern ?? ""), readings: (Array.isArray(body.readings) ? body.readings : []) as never, example: typeof body.example === "string" ? body.example : undefined, source: "admin" });
+    async addQuestion(packName: string, body: { pattern?: unknown; readings?: unknown; example?: unknown }, by: string) {
+      const q = await questions(packName).note({ pattern: String(body.pattern ?? ""), readings: (Array.isArray(body.readings) ? body.readings : []) as never, example: typeof body.example === "string" ? body.example : undefined, source: "admin" });
       audit(by, "question add", `${q.id}: ${q.pattern}`, packName);
       return q;
     },
-    editQuestion(packName: string, id: string, body: { pattern?: unknown; readings?: unknown }, by: string) {
-      const q = questions(packName).edit(id, body);
+    async editQuestion(packName: string, id: string, body: { pattern?: unknown; readings?: unknown }, by: string) {
+      const q = await questions(packName).edit(id, body);
       audit(by, "question edit", `${id}: ${q.pattern}`, packName);
       return q;
     },
     async compare(packName: string, id: string) {
       const h = host(packName);
-      const q = questions(packName).get(id);
+      const q = await questions(packName).get(id);
       const c = await compareReadings(q, { pack: h.pack, connector: h.connector, ctx: h.ctx, now });
-      questions(packName).setCompared(id, c);
+      await questions(packName).setCompared(id, c);
       return c;
     },
     compareAll,
@@ -509,6 +526,5 @@ export function reviewSystem(o: ReviewSystemOptions) {
   };
 }
 
-const applyOverlayEntries = <C extends Pick<Catalogue, "dimensions" | "measures">>(ov: Overlay, pack: Pack, catalogue: C) => applyOverlay(ov.entries(), pack, catalogue);
 
 export { OverlayError, QuestionError };
