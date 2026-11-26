@@ -19,15 +19,21 @@ import { type QueryMeter, emptyQueryMeter } from "@lenspack/engine";
  * US dollars per million tokens, as providers publish them. A cache read or
  * write with no price of its own is charged as plain input.
  */
-export type Pricing = { input: number; output: number; cachedInput?: number; cacheWrite?: number };
+export type Pricing = { input: number; output: number; cachedInput?: number; cacheWrite?: number; cacheWrite1h?: number };
 
-/** One call's tokens. Cache reads and writes are parts of inputTokens; reasoning is part of outputTokens. */
-export type Tokens = { inputTokens: number; cachedInputTokens: number; cacheWriteTokens: number; outputTokens: number; reasoningTokens: number };
+/**
+ * One call's tokens. Cache reads and writes are parts of inputTokens; reasoning is part of outputTokens.
+ * cacheWrite1hTokens, where a provider reports it, is the part of cacheWriteTokens written for an hour
+ * (priced at cacheWrite1h); the rest of the writes are short-lived ones (cacheWrite).
+ */
+export type Tokens = { inputTokens: number; cachedInputTokens: number; cacheWriteTokens: number; outputTokens: number; reasoningTokens: number; cacheWrite1hTokens?: number };
 
 /** Usage as a provider reports it to the SDK (LanguageModelV4Usage), the shape an adapter's model returns. */
 export type ProviderUsage = {
   inputTokens: { total?: number; noCache?: number; cacheRead?: number; cacheWrite?: number };
   outputTokens: { total?: number; text?: number; reasoning?: number };
+  /** The provider's own usage object, as it sent it (for details such as cache writes by lifetime). */
+  raw?: unknown;
 };
 
 export type Usage = Tokens & {
@@ -40,7 +46,7 @@ export type Usage = Tokens & {
   unpriced: number;
 };
 
-export type Role = "build" | "escalate" | "review" | "daily-review" | "probe" | "eval" | "judge" | "speech" | "other";
+export type Role = "build" | "escalate" | "review" | "daily-review" | "probe" | "eval" | "judge" | "speech" | "reuse" | "other";
 
 /** Who and what a call is for. */
 export type Attribution = {
@@ -79,10 +85,13 @@ export type MeterInfo = { provider: string; model: string; kind: string; pricing
 
 export const emptyUsage = (): Usage => ({ calls: 0, failed: 0, inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, usd: 0, unpriced: 0 });
 
-/** Uncached input, cache reads, cache writes and output, each at its own rate. */
+/** Uncached input, cache reads, cache writes (short and hour-long) and output, each at its own rate. */
 export function costOf(t: Tokens, pricing: Pricing): number {
   const plain = t.inputTokens - t.cachedInputTokens - t.cacheWriteTokens;
-  return (plain * pricing.input + t.cachedInputTokens * (pricing.cachedInput ?? pricing.input) + t.cacheWriteTokens * (pricing.cacheWrite ?? pricing.input) + t.outputTokens * pricing.output) / 1e6;
+  const hour = Math.min(t.cacheWrite1hTokens ?? 0, t.cacheWriteTokens);
+  const short = t.cacheWriteTokens - hour;
+  const write = pricing.cacheWrite ?? pricing.input;
+  return (plain * pricing.input + t.cachedInputTokens * (pricing.cachedInput ?? pricing.input) + short * write + hour * (pricing.cacheWrite1h ?? write) + t.outputTokens * pricing.output) / 1e6;
 }
 
 /** The provider-level usage shape as metered tokens; what an adapter gets unless it maps its own. */
@@ -104,7 +113,7 @@ export function usageOfRecord(r: CallRecord): Usage {
   return { calls: 1, failed: r.ok ? 0 : 1, inputTokens: r.inputTokens, cachedInputTokens: r.cachedInputTokens, cacheWriteTokens: r.cacheWriteTokens, outputTokens: r.outputTokens, reasoningTokens: r.reasoningTokens, usd: r.usd ?? 0, unpriced: r.priced ? 0 : 1 };
 }
 
-const USAGE_KEYS = Object.keys(emptyUsage()) as (keyof Usage)[];
+const USAGE_KEYS = Object.keys(emptyUsage()) as Exclude<keyof Usage, "cacheWrite1hTokens">[];
 
 /** Adds u's counts into `into` (which may carry labels beside them, as a ModelLine does). */
 export function addUsage<U extends Usage>(into: U, u: Usage): U {

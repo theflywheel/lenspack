@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { type Identity, type PackRule, adminRights, answerView, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
+import { type Identity, type PackRule, adminRights, answerView, boardRights, decide, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -160,14 +160,17 @@ describe("holds", () => {
 });
 
 describe("admin rights", () => {
-  it("opens the panel to maintainers only, shows usernames only with usage rights, and only narrows", () => {
-    expect(adminRights(principalOf({ user: "ana" }))).toEqual({ panel: false, users: false });
-    expect(adminRights(principalOf({ user: "ana", roles: ["admin"] }))).toEqual({ panel: false, users: false });
-    expect(adminRights(principalOf({ user: "ana", maintain: true }))).toEqual({ panel: true, users: true });
-    expect(adminRights(principalOf({ user: "ana", maintain: true, usage: false }))).toEqual({ panel: true, users: false });
-    expect(adminRights(principalOf({ user: "ana", maintain: true, readOnly: "a read-only key" }))).toEqual({ panel: false, users: false });
-    expect(adminRights(principalOf({ user: "ana", usage: true }))).toEqual({ panel: false, users: false });
-    expect(adminRights(principalOf({ user: "ana", roles: ["ops"] }, { editors: [], maintainers: ["role:ops"] }))).toEqual({ panel: true, users: true });
+  it("are the admin role only, never a dashboard's edit right; usernames need the usage right too", () => {
+    expect(mayAdminister({ roles: ["admin"] })).toBe(true);
+    expect(mayAdminister({ roles: ["Alpha", "editor"] })).toBe(false);
+    expect(mayAdminister({})).toBe(false);
+    expect(adminRights(principalOf({ user: "ana" }))).toEqual({ administer: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", maintain: true, edit: true }))).toEqual({ administer: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true }))).toEqual({ administer: true, users: true });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: false }))).toEqual({ administer: true, users: false });
+    // A read-only admin (edits switched off) still runs the deployment.
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true, readOnly: "edits are off" }))).toEqual({ administer: true, users: true });
+    expect(adminRights(principalOf({ user: "ana", usage: true }))).toEqual({ administer: false, users: false });
   });
 });
 

@@ -29,7 +29,7 @@ export function numbersIn(text: string): Num[] {
   for (const re of NOT_AMOUNTS) t = t.replace(re, (m) => " ".repeat(m.length));
   const out: Num[] = [];
   // Indian grouping ("1,23,456") first, then thousands with commas, then plain digits; a minus may be typographic (−).
-  const re = /(?<![\w.])([-−]?\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|[-−]?\d{1,3}(?:,\d{3})+(?:\.\d+)?|[-−]?\d+(?:\.\d+)?)(\s*(?:%|percent\b|pp\b|k\b|thousand\b|m\b|million\b))?/gi;
+  const re = /(?<![\w.])([-−]?\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?|[-−]?\d{1,3}(?:,\d{3})+(?:\.\d+)?|[-−]?\d+(?:\.\d+)?)(\s*(?:%|percent\b|percentage points?\b|points?\b|pp\b|k\b|thousand\b|m\b|million\b))?/gi;
   for (const m of t.matchAll(re)) {
     const digits = m[1]!.replace(/,/g, "").replace("−", "-");
     let value = Number(digits);
@@ -41,7 +41,8 @@ export function numbersIn(text: string): Num[] {
     if (suffix === "k" || suffix === "thousand") value *= 1_000;
     else if (suffix === "m" || suffix === "million") value *= 1_000_000;
     else sig = Math.max(sig, decimals > 0 ? sig : 0);
-    const pct = suffix === "%" || suffix === "percent" || suffix === "pp";
+    // A change in a rate is often written in points ("fell 8.9 points", "8.9 percentage points"): a percentage.
+    const pct = suffix === "%" || suffix === "percent" || suffix === "pp" || /^(?:percentage )?points?$/.test(suffix);
     out.push({ value, pct, raw: m[0].trim(), index: m.index ?? 0, sig, decimals });
     // "12 345" (French, Portuguese): groups of three after a space. The digits before are read on their own above, so this is a second reading.
     const spaced = /^[ \u00a0\u202f](\d{3})(?:[ \u00a0\u202f](\d{3}))?(?![\d.,])/.exec(t.slice((m.index ?? 0) + m[0].length));
@@ -164,6 +165,9 @@ function findKey(segs: string[], key: string, ordinal?: number): string[] {
   });
 }
 
+/** A reply that opens by saying no group qualifies. */
+const NONE = /^(?:\*\*)?(?:no|none|not one|not a single|there (?:is|are) no|zero)\b/i;
+
 const CONTRAST = /\b(next|just above|just below|closest|nearest|narrowly|except|excluding|other than|followed by|by contrast|not below|not above|misses|outside the|the other|others|range from|ranging from|up to|or higher|or above|and above|or lower|or below)\b/i;
 
 // ── answers ──────────────────────────────────────────────────────────────
@@ -219,7 +223,11 @@ function scoreValue(value: TruthValue, truth: Truth, text: string): AnswerScore 
       const named = (truth.universe ?? keys).filter((k) => findKey(keys.includes(k) ? segs : answerClauses, k).length > 0);
       const right = keys.filter((k) => named.includes(k));
       keys.filter((k) => !named.includes(k)).forEach((k) => missing.push(k));
-      const precision = named.length ? right.length / named.length : 0;
+      // An empty answer ("no ward is below 80%") is right when the reply names none of the universe; a refusal
+      // never gets here, as declines are told apart before scoring.
+      // …or one that opens by saying there are none ("No LGA is short of its target: …"), whatever it lists after as context.
+      const saysNone = keys.length === 0 && NONE.test(segs[0] ?? "");
+      const precision = named.length && !saysNone ? right.length / named.length : keys.length ? 0 : 1;
       return { correct: right.length === keys.length && precision === 1, recall: keys.length ? right.length / keys.length : 1, precision, coarse, matched: null, missing };
     }
     case "list": {

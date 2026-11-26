@@ -199,7 +199,7 @@ describe("Superset mode's server", () => {
   });
 
   it("keeps the settings to Superset admins, and audits a refusal", async () => {
-    for (const [method, path] of [["GET", "/_superset/settings"], ["GET", "/_superset/audit"], ["GET", "/_superset/turns"], ["PUT", "/_superset/settings/features"], ["PUT", "/_superset/settings/speech"], ["PUT", "/_superset/settings/language"], ["PUT", "/_superset/settings/chat"]] as const) {
+    for (const [method, path] of [["GET", "/_superset/settings"], ["GET", "/_superset/audit"], ["GET", "/_superset/turns"], ["PUT", "/_superset/settings/features"], ["PUT", "/_superset/settings/speech"], ["PUT", "/_superset/settings/language"], ["PUT", "/_superset/settings/chat"], ["PUT", "/_superset/settings/cache"], ["GET", "/_superset/cache"], ["POST", "/_superset/cache/abc/pin"]] as const) {
       const r = await call(path, { method, as: VIEWER, ...(method === "PUT" ? { body: "{}" } : {}) });
       expect(r).toMatchObject({ status: 403, body: { error: "only Superset admins can do this" } });
     }
@@ -221,7 +221,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "speech", "superset", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "queue", "speech", "superset", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -238,6 +238,8 @@ describe("Superset mode's server", () => {
       speech: { enabled: false, keyFrom: null, provider: "openrouter", source: "default", holdMs: 2000, defaultHoldMs: 2000, holdMsRange: { min: 500, max: 3000 }, writable: true },
       language: { default: "auto", titles: "board", board: "en", defaults: { default: "auto", titles: "board", board: "en" }, source: "default", writable: true },
       features: { writable: true },
+      cache: { enabled: true, ttlHours: 168, router: "on", maxEntries: 500, freshMinutes: 10, prewarm: { enabled: false, times: ["06:30", "16:30"], timeZone: null, topN: 10, maxUsd: 0.05 }, source: "default", writable: true },
+      queue: { maxConcurrent: 8, maxWaiting: 50, maxWaitSeconds: 60, source: "default", writable: true },
     });
     expect(Object.keys(r.body.features).sort()).toEqual(["defaults", "options", "source", "values", "writable"]);
     expect(JSON.stringify(r.body)).not.toContain("service-password");
@@ -253,6 +255,29 @@ describe("Superset mode's server", () => {
     expect(await put("/_superset/settings/features", { voice: "off" })).toMatchObject({ status: 400, body: { error: "voice must be true, false or null" } });
     expect((await put("/_superset/settings/features", "{not json")).status).toBe(400);
     expect(await put("/_superset/settings/features", "[1]")).toMatchObject({ status: 400, body: { error: "body must be a JSON object" } });
+  });
+
+  it("changes the saved-answer settings, and shows the saved answers to admins", async () => {
+    const r = await put("/_superset/settings/cache", { router: "off", ttlHours: 24 });
+    expect(r).toMatchObject({ status: 200, body: { router: "off", ttlHours: 24, source: "settings", defaults: { router: "on", ttlHours: 168 } } });
+    expect(await put("/_superset/settings/cache", { ttlHours: 0 })).toMatchObject({ status: 400, body: { error: expect.stringContaining("ttlHours") } });
+    expect((await put("/_superset/settings/cache", { router: null, ttlHours: null })).body).toMatchObject({ router: "on", ttlHours: 168, source: "default" });
+    const list = await call("/_superset/cache", { as: ADMIN });
+    expect(list).toMatchObject({ status: 200, body: { stats: { hits: { t1: 0, t2: 0, t3: 0, t4: 0 }, misses: expect.any(Number) }, entries: expect.any(Array) } });
+    expect((await call("/_superset/cache/nothing/evict", { method: "POST", as: ADMIN })).status).toBe(404);
+    expect((await call("/_superset/cache/suggestions", { as: ADMIN })).status).toBe(400);
+    expect(list.body.queue).toMatchObject({ running: 0, waiting: 0 });
+    // The refresh schedule merges: a change to one field keeps the others.
+    expect((await put("/_superset/settings/cache", { prewarm: { enabled: true, times: ["07:00"] } })).body.prewarm).toMatchObject({ enabled: true, times: ["07:00"], topN: 10 });
+    expect((await put("/_superset/settings/cache", { prewarm: { topN: 3 } })).body.prewarm).toMatchObject({ enabled: true, times: ["07:00"], topN: 3 });
+    expect((await put("/_superset/settings/cache", { prewarm: { times: ["7am"] } })).status).toBe(400);
+    expect((await put("/_superset/settings/cache", { prewarm: null })).body.prewarm).toMatchObject({ enabled: false, times: ["06:30", "16:30"] });
+    expect((await call("/_superset/cache/prewarm", { method: "POST", as: ADMIN })).body).toMatchObject({ ok: true });
+    expect((await call("/_superset/cache/data-changed", { method: "POST", as: ADMIN, body: "{}" })).status).toBe(202);
+    // The queue's limits.
+    expect((await put("/_superset/settings/queue", { maxConcurrent: 2 })).body).toMatchObject({ maxConcurrent: 2, maxWaiting: 50, source: "settings" });
+    expect((await put("/_superset/settings/queue", { maxConcurrent: 0 })).status).toBe(400);
+    expect((await put("/_superset/settings/queue", { maxConcurrent: null })).body).toMatchObject({ maxConcurrent: 8, source: "default" });
   });
 
   it("sets the speech model and the hold, and lists the models", async () => {

@@ -87,13 +87,13 @@ export async function usageBoard(o: UsageBoardOptions) {
     source: source.source,
     /**
      * Answers <panel>/api/usage/<rest>: the board API for the usage pack. The panel let `who` in (adminRights
-     * panel); they change the usage board as its maintainer. Someone the policy does not let see who asked
+     * administer); they change the usage board as its maintainer. Someone the policy does not let see who asked
      * (adminRights users) gets the pack with the user dimension and the questions hidden.
      */
     async handle(req: IncomingMessage, res: ServerResponse, rest: string, search: string, who: Principal) {
       providers.splice(0, providers.length, ...o.providers());
       const rights = adminRights(who);
-      if (!rights.panel) {
+      if (!rights.administer) {
         res.writeHead(403, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: "only admins can read usage" }));
         return;

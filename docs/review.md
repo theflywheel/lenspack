@@ -23,9 +23,9 @@ So Lenspack keeps a log of questions with more than one reading and shows the ad
 The panel is served by Lenspack itself, so it looks the same in every host.
 
 - **In Superset**, it is at `/lenspack/_superset/admin/`, linked from the Lenspack settings page (`/ai-assistant/`). Only Superset admins can open it.
-- **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Only maintainers can open it. It needs a `state:` directory in `lenspack.yaml` (see below).
+- **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Only the admin can open it. It needs a `state:` directory in `lenspack.yaml` (see below).
 
-Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the policy layer, from what the host says about the caller: a Superset admin, or a maintainer in the standalone server. Usernames (on the usage board and in review reports) are shown only to those who may also read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
+Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the policy layer, from what the host says about the caller: the admin role (a Superset admin, or the standalone server's built-in admin), never a dashboard's edit right. The settings page and the saved answers' routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
 
 It has eight tabs, in English and French, in light and dark, and it works at phone width:
 
@@ -37,7 +37,7 @@ It has eight tabs, in English and French, in light and dark, and it works at pho
 | **Proposals** | The review's proposed changes, each with why and the questions it would fix. Accept, edit then accept, or reject. |
 | **Definitions** | What admins have added to the pack: the entries, how much of their size budget they use, undo, and the full history with restore. The pack's own instructions are shown read-only beside them. |
 | **Telemetry** | A checklist of every signal Lenspack can record for this deployment (see [What is recorded](#what-is-recorded)). |
-| **Cache** | Saved answers and what they saved, when a server keeps them. Otherwise it says caching is not enabled. |
+| **Cache** | Saved answers ([caching.md](caching.md)): how many questions they answered and what they saved, each entry with pin, unpin and evict, the last refresh with a **Refresh now** button, the most-asked questions per board, chart candidates and settled boards. A server that keeps none says caching is not enabled. |
 | **Settings** | Every switch, with where its value comes from (default, config file, environment, or set here). |
 
 ## The flows
@@ -220,7 +220,7 @@ features:             # optional starting values; the panel can change them
   review.daily: false
 ```
 
-With `state:` set, the audit log is kept there by month, unless `audit:` names a file. The panel is at `/_lenspack/admin/`, for maintainers.
+With `state:` set, the audit log is kept there by month, unless `audit:` names a file. The panel is at `/_lenspack/admin/`, for the admin. With `cache:` set too, the saved answers' routes are at `/_lenspack/cache`, and the panel's switches and settings apply to them.
 
 What the state directory holds:
 

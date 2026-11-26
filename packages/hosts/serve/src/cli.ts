@@ -2,6 +2,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { cacheSettings, localTurnGate, queueSettings, reuseLayer } from "@lenspack/agent";
 import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
@@ -9,6 +10,7 @@ import { buildBoard, seedBoards } from "./app";
 import { type AuditEvent, auditFileSince, fileAudit, rotatingAudit } from "./audit";
 import { authFrom, effectiveAuth, principalOf } from "./auth";
 import { adminSettings } from "./admin";
+import { cacheRoutes } from "./reuse";
 import { explainFrom, openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
@@ -52,17 +54,26 @@ async function main() {
       const openedByEnv = !adapter && config.auth?.kind !== "none";
       const host = flag("host") ?? (openedByEnv ? "127.0.0.1" : (config.host ?? (adapter ? "0.0.0.0" : "127.0.0.1")));
       if (!adapter) console.warn(`lenspack: auth is \`none\`: anyone who reaches ${host}:${port} may read and edit every board`);
+      // Saved answers, when the config asks for them (docs/caching.md).
+      const { file: cacheFile, ...cacheConfig } = typeof config.cache === "object" ? config.cache : {};
       // With state: the server's switches, the admins' definitions, open questions and the daily review, and the admin
-      // panel at /_lenspack/admin/ for maintainers. The audit log goes there by month unless audit: names a file.
+      // panel at /_lenspack/admin/ for admins (with the saved answers' routes at /_lenspack/cache). The audit log goes
+      // there by month unless audit: names a file.
       const stateDir = config.state ? resolve(dir, config.state) : undefined;
       const auditFile = config.audit ? resolve(dir, config.audit) : undefined;
       const monthly = stateDir && !auditFile ? rotatingAudit(stateDir) : null;
       const audit = auditFile ? fileAudit(auditFile) : monthly?.audit;
+      const auditLog = audit ? { audit } : null;
       const events: ((from: Date) => AuditEvent[]) | undefined = auditFile ? auditFileSince(auditFile) : monthly ? (from) => monthly.since(from) : undefined;
-      const admin = stateDir ? adminSettings(stateDir, { features: config.features as never }) : null;
+      const admin = stateDir ? adminSettings(stateDir, { features: config.features as never, cache: cacheConfig as never, queue: config.queue }) : null;
       const log = (m: string) => console.error(`lenspack: ${m}`);
-      const review = admin && stateDir ? admin.review({ stateDir, hosts, events, audit, prefix: "/_lenspack", adminName: "maintainer", title: config.ui && typeof config.ui === "object" ? config.ui.title : undefined, log }) : null;
-      const open = principalOf({ user: "local", edit: true, maintain: true, usage: true });
+      const review = admin && stateDir ? admin.review({ stateDir, hosts, events, audit, prefix: "/_lenspack", adminName: "admin", title: config.ui && typeof config.ui === "object" ? config.ui.title : undefined, log }) : null;
+      // With state, saved answers follow the panel's switch and settings; without, the config's settings alone.
+      const cache = cacheSettings(null, cacheConfig);
+      const reuse = config.cache ? (admin ? admin.reuse : reuseLayer({ store: resolve(dir, cacheFile ?? "reuse.json"), settings: () => ({ ...cache.get(), on: true }), log })) : undefined;
+      const gate = admin ? admin.gate : localTurnGate(queueSettings(null, config.queue).get);
+      const cachePage = reuse ? cacheRoutes({ prefix: "/_lenspack", reuse, queue: gate, audit: auditLog ?? null, adminName: "admin" }) : null;
+      const open = principalOf({ user: "local", roles: ["admin"], edit: true, maintain: true, usage: true });
       startRuntime({
         hosts,
         close,
@@ -71,24 +82,27 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, explain: () => explainFrom(config.explain), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
+        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, reuse, queue: gate, explain: () => explainFrom(config.explain), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
         log,
         routes: (rt) => {
-          if (!review) return () => {};
-          const panel = review.routes(rt);
+          if (!review && !cachePage) return () => {};
+          const panel = review?.routes(rt);
           return async (req, res, url, signedIn) => {
-            if (url.pathname !== "/_lenspack/admin" && !url.pathname.startsWith("/_lenspack/admin/")) return;
+            const inPanel = url.pathname === "/_lenspack/admin" || url.pathname.startsWith("/_lenspack/admin/");
+            const inCache = url.pathname === "/_lenspack/cache" || url.pathname.startsWith("/_lenspack/cache/");
+            if (!(inPanel && panel) && !(inCache && cachePage)) return;
             // An open server (auth: none) has one local user, who may do everything.
             const who = adapter ? await signedIn() : open;
             if (!who) {
-              if (adapter?.signInPath && !url.pathname.startsWith("/_lenspack/admin/api/")) {
+              if (adapter?.signInPath && inPanel && !url.pathname.startsWith("/_lenspack/admin/api/")) {
                 res.writeHead(302, { location: adapter.signInPath(url), "cache-control": "no-store" });
                 return void res.end();
               }
               res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
               return void res.end(JSON.stringify({ error: "sign in to use the admin panel" }));
             }
-            await panel(req, res, url, who);
+            if (inPanel && panel) await panel(req, res, url, who);
+            else if (cachePage) await cachePage(req, res, url, who);
           };
         },
         onListening: () => {

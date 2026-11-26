@@ -85,7 +85,7 @@ describe("the admin panel", () => {
     const panel = panelRoutes({ prefix: "/_x", system: review, features: admin.features, providers: () => providers, adminName: "maintainer", title: "Shop <b>", usage });
     server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", "http://x");
-      const who: Principal = principalOf({ user: String(req.headers["x-test-user"] ?? "anon"), edit: true, maintain: req.headers["x-test-admin"] === "1", ...(req.headers["x-test-usage"] === "0" ? { usage: false } : {}) });
+      const who: Principal = principalOf({ user: String(req.headers["x-test-user"] ?? "anon"), edit: true, maintain: true, roles: req.headers["x-test-admin"] === "1" ? ["admin"] : [], ...(req.headers["x-test-usage"] === "0" ? { usage: false } : {}) });
       if (!(await panel(req, res, url, who))) {
         res.writeHead(404);
         res.end();
@@ -122,6 +122,8 @@ describe("the admin panel", () => {
     expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };");
     expect(js).toContain('fr: {');
     expect((await fetch(`${base}/panel.css`, { headers: as("ana", true) })).status).toBe(200);
+    // The Cache tab reads the saved answers' own admin routes (docs/caching.md).
+    for (const route of ["../cache${path}", "/chart-candidates", "/boards", "/suggestions?board=", "/prewarm", '"unpin" : "pin"', "/evict"]) expect(js).toContain(route);
     const packs = await (await fetch(`${base}/api/packs`, { headers: as("ana", true) })).json();
     expect(packs.usage).toEqual({ board: "overview", source: "telemetry" });
   });

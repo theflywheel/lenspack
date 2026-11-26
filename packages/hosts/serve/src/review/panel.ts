@@ -35,7 +35,7 @@ export type PanelOptions = {
   system: ReviewSystem;
   features: Features;
   providers: () => Provider[];
-  /** In the host's words, for the refusal: "Superset admin". Who that is, the host says by making them a maintainer; the policy decides (adminRights). */
+  /** In the host's words, for the refusal: "Superset admin". Who that is, the host says by giving them the admin role; the policy decides (adminRights). */
   adminName: string;
   /** The host's name for the page title. */
   title?: string;
@@ -55,7 +55,7 @@ export function panelRoutes(o: PanelOptions) {
     if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) return false;
     const send = (status: number, body: unknown) => (json(res, status, body, NO_STORE), true);
     const rights = adminRights(who);
-    if (!rights.panel) {
+    if (!rights.administer) {
       s.audit(who.user, `${req.method} ${url.pathname}`, `not a ${o.adminName}`, undefined, "denied");
       if (url.pathname.startsWith(`${base}/api/`)) return send(403, { error: `only ${o.adminName}s can use the admin panel` });
       res.writeHead(403, { "content-type": TYPES[".html"]!, ...NO_STORE });
