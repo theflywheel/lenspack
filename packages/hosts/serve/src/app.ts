@@ -674,7 +674,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     let before = summarise(config);
 
     // A question answered before, by someone with the same access, on the same pack and board: answered from the
-    // saved plan without the agent (reuse/, docs/caching.md). "Ask fresh" (fresh: true) always runs the agent.
+    // saved plan without the agent (reuse/, docs/features/saved-answers.md). "Ask fresh" (fresh: true) always runs the agent.
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
     const selections = { ...selectionsOf(url), ...selectionsFrom(body.selections) };
     const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, promptVersion: String(PROMPT_VERSION), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };

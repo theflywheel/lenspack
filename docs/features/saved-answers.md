@@ -58,6 +58,9 @@ A saved answer is used only for the same:
 - **board filters.** An answer is saved per board, under that board's filters. Adding, changing or removing a filter starts afresh.
 - **the viewer's filter selections.** What a person has picked in the dashboard's filters (the `selections` the chat panels send with each question, or `?f_<field>=` on the chat request) is part of the question: "how many today?" with one region picked is not the same question as with none.
 - **language rules.** A reply in a chosen language is not served to someone who chose another.
+- **board grant.** An answer made on a dashboard that the person may read only there (a Superset dashboard role) is never used on another dashboard, or for someone who reads that data another way.
+
+> **Coming soon.** On a Superset dashboard with tabs, a saved edit is also kept apart by the tab the viewer had open: "add a chart here" puts the chart on that tab. A saved answer is not: which tab is open does not change what a number is.
 
 And it expires:
 

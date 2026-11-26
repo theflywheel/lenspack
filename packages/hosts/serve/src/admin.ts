@@ -40,9 +40,9 @@ export type AdminConfig = {
   language?: LanguageSettings;
   /** Off switches, all on by default (see features.ts); LENSPACK_FEATURES and the settings page override them. */
   features?: FeatureValues;
-  /** Saved answers (docs/caching.md): the defaults the settings page starts from. */
+  /** Saved answers (docs/features/saved-answers.md): the defaults the settings page starts from. */
   cache?: Partial<CacheSettings>;
-  /** The turn queue (docs/caching.md): model turns at once, and how many wait and for how long. */
+  /** The turn queue (docs/features/busy-hours.md): model turns at once, and how many wait and for how long. */
   queue?: Partial<QueueSettings>;
   /** "How this was worked out" under each answer: false turns it off; `sql: false` keeps the words and rows but not the SQL. */
   explain?: ExplainConfig;
@@ -77,7 +77,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   const cache = cacheSettings(settings, config.cache);
   const queue = queueSettings(settings, config.queue);
   const cacheNow = () => ({ ...cache.get(), on: features.on("cache") });
-  // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/caching.md).
+  // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/features/saved-answers.md).
   const reuse = reuseLayer({ store: join(stateDir, "reuse.json"), settings: cacheNow, log: (m) => console.error(`lenspack: ${m}`) });
   const gate = localTurnGate(queue.get);
   return {

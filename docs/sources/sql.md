@@ -1,6 +1,10 @@
-# SQL drivers
+# SQL databases
 
-A SQL source is a connection URL. Its scheme picks a **driver**, and the driver is the only thing in lenspack that talks to the database. Everything it is ever sent is SQL text and bound parameters: no client-side query builder, no ORM, no second path for "special" queries. The same idea Metabase uses, for the same reason: one place per database to get right, and one test that says whether it is right.
+This page covers SQL databases as Lenspack sources: connection URLs, the drivers that ship, how each keeps
+queries read-only, what each database can compute, and the differences worth knowing. It is for whoever connects
+Lenspack to a database.
+
+A SQL source is a connection URL. Its scheme picks a **driver**, and the driver is the only thing in Lenspack that talks to the database. Everything it is ever sent is SQL text and bound parameters: no client-side query builder, no ORM, no second path for "special" queries. The same idea Metabase uses, for the same reason: one place per database to get right, and one test that says whether it is right.
 
 ```yaml
 # lenspack.yaml
@@ -8,14 +12,18 @@ sources:
   shop:    { url: env:DATABASE_URL }                 # postgres://, mysql://, clickhouse://, …
   local:   { url: "duckdb:./data/shop.duckdb" }      # relative to this file
   archive: { url: "sqlite:///srv/archive.db", timeoutMs: 30000, maxRows: 50000 }
-  search:  { kind: elasticsearch, url: env:ES_URL }  # not a driver; see below
+  search:  { kind: elasticsearch, url: env:ES_URL }  # not a driver; see Elasticsearch
 ```
+
+Each SQL source also takes `timeoutMs` (the time limit for one query, 15 seconds by default), `maxRows` (the row cap; see
+[below](#the-guards-belong-to-the-driver)) and `cacheTtlMs` (keep each distinct query's rows this long and answer a
+repeat from memory; off by default).
 
 `kind:` may still be written next to a URL and must then agree with it. The older `{ kind: duckdb, path: … }` form still works.
 
 A DuckDB or SQLite source with `optional: true` whose file is not there is skipped with a warning, and so is every pack on it. Without it, a missing file stops the server.
 
-## The drivers lenspack ships
+## The drivers Lenspack ships
 
 | driver | URL | client library (an optional peer dependency) |
 |---|---|---|
@@ -27,27 +35,7 @@ A DuckDB or SQLite source with `optional: true` whose file is not there is skipp
 
 A driver loads its client only when a URL asks for it, so an install needs only the clients it uses.
 
-## What a driver is
-
-```ts
-type Driver = {
-  name: string;        // "mysql"; also the key a pack's per-dialect fragments use
-  schemes: string[];   // ["mysql", "mariadb"]
-  dialect: DialectRules;
-  connect(url: string, opts?: { base?: string; defaultTimeoutMs?: number; maxRows?: number }): Promise<Connection>;
-};
-
-type Connection = {
-  executor: Executor;                      // query(sql, params, { timeoutMs }) → rows, read-only
-  writer?: Writer;                         // seeding and tests only; never handed to a tool or a model
-  introspect(): Promise<SourceSchema>;     // tables, columns, types, row counts: `lenspack sources`
-  close(): Promise<void>;
-};
-```
-
-`registerDriver(driver)` adds one; `driverFor(url)` finds one; `openSource(url)` returns the connector the engine runs boards on. Registering a driver also registers its dialect, so the compiler prints for it and a pack can carry fragments under its name. Nothing under `packages/` changes.
-
-### The dialect
+## The dialect
 
 `DialectRules` is the whole of what differs between databases. The printer never branches on a dialect name; it asks the rules.
 
@@ -69,7 +57,7 @@ type Connection = {
 
 Time windows (`last: "30d"`, previous periods) are resolved in JavaScript and bound as parameters, so no dialect needs `now()` or interval arithmetic. `LIMIT n` is the same everywhere.
 
-## The guards are the driver's
+## The guards belong to the driver
 
 The caller (the engine, `run_sql`, a tool) never sets them and cannot remove them.
 
@@ -83,7 +71,7 @@ The caller (the engine, `run_sql`, a tool) never sets them and cannot remove the
 
 A result over the cap is an error, never a shorter answer: a cut-off list reads as a whole one. The default cap is 100,000 rows, above anything a compiled query asks for; `maxRows` on a source changes it. `run_sql` keeps its own rules on top (one `SELECT` or `WITH`, wrapped in `LIMIT n`).
 
-These are belts. The braces are a database role that can only read what lenspack should see; give every source one.
+These are belts. The braces are a database role that can only read what Lenspack should see; give every source one.
 
 ## Capability matrix
 
@@ -124,39 +112,27 @@ sql: { default: "EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600.0",
 
 A YAML anchor writes one such map once and reuses it (`examples/hcm/pack.yaml` does this for its epoch times). A pack with no entry for a dialect refuses the query on that source with `NOT_SUPPORTED`, naming the fragment. Dimensions and measures written with `field:` and `where:` need no fragment at all and run on every driver and on Elasticsearch.
 
-## Writing a driver
+## ClickHouse
 
-```ts
-import { type Driver, postgresRules, registerDriver } from "@lenspack/sql";
+A few more things to know when the source is ClickHouse:
 
-registerDriver({
-  name: "acme",
-  schemes: ["acme"],
-  dialect: { ...postgresRules, dialect: "acme", param: () => "?", capabilities: { percentiles: false } },
-  async connect(url, opts) {
-    const client = await AcmeClient.connect(url);
-    return {
-      executor: {
-        dialect: "acme",
-        async query(sql, params, o) {
-          // read-only, one statement, a timeout and a row cap: here, not in the SQL
-          return client.readOnly(sql, params, { timeoutMs: o?.timeoutMs ?? opts?.defaultTimeoutMs, maxRows: opts?.maxRows });
-        },
-      },
-      introspect: async () => ({ collections: await client.tables() }),
-      close: () => client.close(),
-    };
-  },
-});
-```
+- It is reached over its HTTP interface (port 8123, or 8443 with `?secure=true`); no client library is needed.
+- Columns should be `Nullable` where the data has gaps, so a missing value is NULL as on other databases.
+- It has no correlated subqueries, so a pack fragment that uses one needs a `clickhouse:` entry.
+- **Through Superset 6.1**, a saved metric named like the column it adds up can break other metrics in the same
+  chart. The Superset plugin fixes this; see [Superset versions](../hosts/superset/versions.md#clickhouse-column-names-on-superset-61).
+  Through Superset, a heatmap over weeks or months is refused on ClickHouse; see
+  [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#heatmaps).
 
-Start from the closest dialect and override what differs. Then prove it:
+## Adding a database
 
-1. Add golden SQL for it in `packages/sources/sql/test/golden.test.ts` (a file per dialect, every node the planner emits).
-2. Add it to `ENGINES` in `packages/sources/sql/test/drivers.test.ts`: every golden query must return DuckDB's numbers or the documented refusal, and a write, a second statement, a slow statement and an oversized result must each be stopped.
-3. Add it to `ENGINES` in `examples/test/conformance.test.ts` with a dialect for `examples/_shared/seed-util.ts`: every example board and every dimension × measure × shape must agree with DuckDB.
-4. Add a service for it to `.github/workflows/ci.yml`.
+A new database is one driver: its dialect rules, its connection and its guards, registered with `registerDriver()`,
+and the test suites that prove it. Nothing under `packages/` changes. See
+[Write a source](../extending/write-a-source.md#a-new-sql-database).
 
-## Why Elasticsearch is not a driver
+---
 
-Elasticsearch has a SQL API, but it cannot join, and its answers come from the same aggregations the native connector already builds. The native connector (`@lenspack/elasticsearch`) speaks 6.x to 8.x and OpenSearch, marks approximate aggregations, and is proven in CI to return DuckDB's numbers on the `campaign` pack. Routing it through SQL would trade that for a narrower dialect, so it stays a connector of its own, configured with `kind: elasticsearch`.
+**Next:** [Elasticsearch](elasticsearch.md).
+
+**Related:** [Sources](../concepts/sources.md) · [The life of a query](../architecture/life-of-a-query.md) ·
+[Why the model cannot break things](../architecture/safety.md)

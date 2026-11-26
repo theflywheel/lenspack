@@ -107,7 +107,7 @@
 [data-lp-theme=dark] .lpc-menu{box-shadow:0 8px 24px rgba(0,0,0,.5)}
 `;
 
-  // "How this was worked out" under an answer (docs/explain.md): its own styles and words, so the
+  // "How this was worked out" under an answer (docs/features/explain.md): its own styles and words, so the
   // rest of the panel's are left as they are.
   const EXPLAIN_CSS = `
 .lpc-ex{align-self:stretch;min-width:0;max-width:100%;margin:-4px 0 0;font-size:12.5px}
@@ -712,7 +712,7 @@
       d.append(sum, el("div", "", lines.join(" · ")));
       return d;
     }
-    // ---- How this was worked out (docs/explain.md): one expander under an answer, from the turn's
+    // ---- How this was worked out (docs/features/explain.md): one expander under an answer, from the turn's
     // data-answer-card part (the answer card). Kept in this tab beside the conversation (by message id), so it is there
     // again after a reload, and never sent back to the server.
     const exKey = `lenspack-explain:${opts.board}`;

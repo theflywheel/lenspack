@@ -1,8 +1,8 @@
-# What Superset 6 could add to Lenspack
+# What Superset 6 could add
 
-Lenspack works with Superset 6.1 and 5.0 ([packages/hosts/superset/README.md](../packages/hosts/superset/README.md#superset-versions)
-lists the differences). This page looks at what Superset 6.0 and 6.1 add that could make the assistant able to do
-more, and what each would take. Nothing here is built yet.
+This page looks at what Superset 6.0 and 6.1 add that could make the assistant able to do more, and what each would
+take. It is for whoever plans Lenspack's Superset work. Nothing here is built yet. Lenspack works with Superset 6.1
+and 5.0; [Versions](versions.md) lists the differences.
 
 Effort: **small** is a few days inside the Superset package; **medium** touches the board model or the chat's
 tools as well; **large** is a new piece of the system.
@@ -102,13 +102,13 @@ supports.
 
 ### Per-group summaries saved as ordinary charts
 
-The question: can a figure such as "average deliveries per day in each ward, counting days with none as 0" be
+The question: can a figure such as "average deliveries per day in each region, counting days with none as 0" be
 saved as an ordinary Superset chart, computed by Superset?
 
 Superset's post-processing steps are the same in 6.1 as in 5.0: aggregate, pivot, resample, rolling, cumulative,
 difference, compare, contribution, rank, sort, rename, flatten, histogram, box plot and a few more. Resampling
-can fill missing days with 0 on a table that has one column per ward, but no step then averages each column over
-time and returns one row per ward, so the chain cannot end in that figure. A pivot table's "average" counts only
+can fill missing days with 0 on a table that has one column per region, but no step then averages each column over
+time and returns one row per region, so the chain cannot end in that figure. A pivot table's "average" counts only
 the days that have rows, so empty days are skipped rather than counted as 0. The one change in 6.1 is that
 percentages of a total can be taken against the total of all rows, not only the rows shown.
 
@@ -150,3 +150,9 @@ row-level security.
   Nothing for Lenspack to do.
 - **OpenStreetMap basemap** (6.0) and **`/version`** (6.1): Lenspack uses both since the change that added
   Superset 6.1 support.
+
+---
+
+**Next:** [Access inside Superset](../../access/superset.md), or back to [Choose a host](../README.md).
+
+**Related:** [Versions](versions.md) · [Computed charts](computed-charts.md)

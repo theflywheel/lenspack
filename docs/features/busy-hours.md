@@ -29,7 +29,7 @@ only its own turns. See [Stores, and running several copies](../architecture/sto
 
 ---
 
-**Next:** [Daily review, open questions and definitions](review.md).
+**Next:** [Dashboard edits, versions and undo](dashboard-edits.md).
 
 **Related:** [Saved answers](saved-answers.md#pre-warming-ready-before-the-peak) · [Chat stream parts](../reference/stream-parts.md) ·
 [HTTP API: saved answers and the queue](../reference/http-api.md#saved-answers-and-the-queue)

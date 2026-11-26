@@ -2,7 +2,7 @@
 // no host: this file gives it what a host has. A small model to call, through this host's providers
 // and metering. The stream a saved answer goes out as. And, for refreshes, the turn a saved answer
 // is run in: its pack's host, its board, and the access it was made under. The admin routes are in
-// routes.ts. See docs/caching.md.
+// routes.ts. See docs/features/saved-answers.md.
 
 import { randomUUID } from "node:crypto";
 

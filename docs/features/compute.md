@@ -176,7 +176,7 @@ otherwise, with the nearest chart Superset keeps exactly. The chat still answers
 
 ---
 
-**Next:** [Dashboard edits, versions and undo](dashboard-edits.md).
+**Next:** [How this was worked out](explain.md).
 
 **Related:** [Measures and the compute step](../concepts/measures.md) · [Query format](../reference/query.md#compute) ·
 [How this was worked out](explain.md)

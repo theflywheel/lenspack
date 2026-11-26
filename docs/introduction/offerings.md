@@ -47,7 +47,7 @@ every switch. Its overview is itself a Lenspack board. See [The admin panel](../
 **Costs you can see and cap.** Every model call is metered by user, board and purpose. A daily budget, for the
 server and per person, stops the chat before it spends past the cap. See [Costs](../operating/costs.md).
 
-**Usage telemetry** (coming soon). One record per chat turn, a thumbs up or down on answers, and a switch for each
+**Usage telemetry.** One record per chat turn, a thumbs up or down on answers, and a switch for each
 item recorded. See [Usage telemetry](../features/telemetry.md).
 
 **Your name on it** (coming soon). Call the assistant something else and label its button your way, in each

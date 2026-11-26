@@ -51,14 +51,18 @@ Ask the chat:
 
 ## Or: let an AI assistant build the board
 
-Point any MCP client at the same data, with no app at all:
+Point any MCP client at the same data, with no app at all. Build the packages once, then start the MCP server from
+the clone:
 
 ```bash
-npx lenspack-mcp --pack examples/commerce/pack.yaml --db ./commerce.duckdb
+pnpm build
+node packages/hosts/mcp/dist/cli.js --pack examples/commerce/pack.yaml --db ./commerce.duckdb
 ```
 
+An MCP client starts it itself, from its own folder, so give it absolute paths:
+
 ```json
-{ "mcpServers": { "commerce": { "command": "npx", "args": ["lenspack-mcp", "--pack", "examples/commerce/pack.yaml", "--db", "./commerce.duckdb"] } } }
+{ "mcpServers": { "commerce": { "command": "node", "args": ["/path/to/lenspack/packages/hosts/mcp/dist/cli.js", "--pack", "/path/to/lenspack/examples/commerce/pack.yaml", "--db", "/path/to/lenspack/commerce.duckdb"] } } }
 ```
 
 Then ask: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue below it, and a pie of line

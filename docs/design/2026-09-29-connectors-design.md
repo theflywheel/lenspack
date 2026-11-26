@@ -161,5 +161,5 @@ Output: `pack.yaml`, one ops file per DSS dashboard, and `report.md`.
   aggregations.
 - The DSS config compiled to a pack and boards that load, check and render
   against the synthetic index. The report shows the coverage ratio.
-- Numbers matching real DSS need a read-only UAT index from eGov. That is out
+- Numbers matching real DSS need a read-only test index from the system.s owner. That is out
   of scope until one exists.

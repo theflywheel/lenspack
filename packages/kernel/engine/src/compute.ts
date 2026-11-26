@@ -9,7 +9,7 @@ import { ResolveError, type TimeWindow } from "./resolve";
 // grain (a measure per group and time bucket); the steps here turn those
 // numbers into changes, rolling windows, running totals, ratios and averages.
 // Plain arithmetic in one place, so every source gets the same answer, and the
-// rules for zeros and gaps are written once (docs/compute.md).
+// rules for zeros and gaps are written once (docs/features/compute.md).
 
 /** Numbers a source may return for one computed query (groups × time buckets): as many as for any series. */
 export const COMPUTE_ROWS = SERIES_ROWS;
@@ -145,7 +145,7 @@ export type ComputeWindow = NonNullable<WidgetData["window"]>;
 type Span = { from: string; to: string; by: "data" | "range"; future: boolean; capped: boolean };
 
 /**
- * The first and last bucket the steps run over (docs/compute.md), or null when
+ * The first and last bucket the steps run over (docs/features/compute.md), or null when
  * there are none. A summary runs from the first to the last bucket where the
  * measure has a value (`filled`), the same buckets for every group, within the
  * query's time range (`range`, as bucket labels), when it has one. A series

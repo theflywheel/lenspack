@@ -261,7 +261,7 @@ const PIVOT_VERB: Record<Summary, string> = { mean: "averages", median: "takes t
  * Why Superset's pivot table would summarise a measure's buckets differently from Lenspack, or
  * null when the two agree exactly. The pivot table summarises the cells its query returns, one
  * per group and bucket with records; a bucket with no records is no cell. Lenspack counts such a
- * bucket as 0 for a count or a sum, and skips it for anything else (docs/compute.md). So they
+ * bucket as 0 for a count or a sum, and skips it for anything else (docs/features/compute.md). So they
  * agree for an average or another level (skipped in both), for a total (adding 0 changes
  * nothing), and for the highest count (a bucket with records counts at least 1, more than 0).
  */

@@ -1,11 +1,18 @@
 # Lenspack documentation
 
-Lenspack puts a chat on top of your dashboards. People ask questions in their own words and get numbers they can
-check, and people allowed to edit can change a dashboard by asking. The model never writes SQL and never writes to
-your data: it names measures and dimensions from a file your team reviewed, and Lenspack does the rest.
+**A dashboard is data, not code.** Declare your data once in a pack, a closed vocabulary of measures and
+dimensions that your team reviews like code. After that a language model can answer questions and build and edit
+dashboards by naming those keys, and nothing else. What the pack does not declare, the compiler will not build: ask
+for it and you get a refusal with the reason and the nearest key, never a wrong number. The model never writes SQL
+and never writes to your data.
 
-These pages go from why Lenspack exists to every setting it has. Read them in order the first time; come back to
-the reference when you need a detail.
+People meet this as a chat on their dashboards, inside Apache Superset or Lenspack's own app: questions in their own
+words or by voice, answers that show how they were worked out, and dashboards that change when someone allowed to
+edit asks. See it on the [live demo](https://lenspack.proto.theflywheel.in).
+
+These pages go from why Lenspack exists to every setting it has: aims, concepts, architecture, features, hosts,
+sources, extending, access, operating and reference. Read them in order the first time; come back to the reference
+when you need a detail.
 
 ## Start here
 
@@ -76,7 +83,7 @@ How the code is laid out and how a request moves through it.
 - [Daily review, open questions and definitions](features/review.md)
 - [The admin panel](features/admin-panel.md)
 - [Voice](features/voice.md) and [languages](features/languages.md)
-- [Usage telemetry](features/telemetry.md) (coming soon)
+- [Usage telemetry](features/telemetry.md)
 - [Naming the assistant](features/naming.md) (coming soon)
 - [Personal dashboards and saved layouts](features/personal-dashboards.md) (coming soon)
 

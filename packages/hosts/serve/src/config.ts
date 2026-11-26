@@ -101,7 +101,7 @@ export const configSchema = z.object({
   /** How many of the latest user turns the chat model is sent (default 8). */
   historyTurns: z.number().int().positive().optional(),
   /**
-   * Saved answers (docs/caching.md): `true`, or the store's file (default reuse.json beside this file) and its
+   * Saved answers (docs/features/saved-answers.md): `true`, or the store's file (default reuse.json beside this file) and its
    * settings. Absent, every question runs the full assistant.
    */
   cache: z
@@ -110,7 +110,7 @@ export const configSchema = z.object({
       z.object({ file: z.string().optional(), enabled: z.boolean().optional(), ttlHours: z.number().optional(), router: z.enum(["on", "off"]).optional(), maxEntries: z.number().int().optional(), freshMinutes: z.number().optional(), prewarm: z.record(z.unknown()).optional() }).strict(),
     ])
     .optional(),
-  /** The turn queue (docs/caching.md): { maxConcurrent, maxWaiting, maxWaitSeconds }. Absent: 8 at a time, 50 waiting, 60 s. */
+  /** The turn queue (docs/features/busy-hours.md): { maxConcurrent, maxWaiting, maxWaitSeconds }. Absent: 8 at a time, 50 waiting, 60 s. */
   queue: z.object({ maxConcurrent: z.number().int().optional(), maxWaiting: z.number().int().optional(), maxWaitSeconds: z.number().int().optional() }).strict().optional(),
   /** "How this was worked out" under each answer: false turns it off; `{ sql: false }` keeps the words and rows but not the SQL. */
   explain: explainSchema.optional(),
