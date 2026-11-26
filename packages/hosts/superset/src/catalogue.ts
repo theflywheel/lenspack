@@ -1,4 +1,5 @@
-import { type BuiltPack, type PackDimension, emitPack, packBuilder, slug as packSlug } from "@lenspack/pack";
+import { type ScopeClause, filterClauseSchema } from "@lenspack/core";
+import { type BuiltPack, type Pack, type PackDimension, WHERE_OPS, emitPack, packBuilder, slug as packSlug } from "@lenspack/pack";
 
 import { type SupersetClient, rison } from "./client";
 import { examplesForPack } from "./examples";
@@ -12,6 +13,33 @@ export type SupersetColumn = { column_name: string; verbose_name?: string | null
 export type SupersetMetric = { metric_name: string; verbose_name?: string | null; description?: string | null; expression: string; d3format?: string | null; warning_text?: string | null };
 export type SupersetDataset = { id: number; table_name: string; schema?: string | null; description?: string | null; main_dttm_col?: string | null; columns: SupersetColumn[]; metrics: SupersetMetric[]; database?: { id: number; database_name?: string } };
 
+/** Words in one language, or by language: `Nets handed out` or `{ en: Nets handed out, fr: Moustiquaires remises }`. */
+export type Words = string | Record<string, string>;
+
+/** The aggregates an overlay measure may use: simple base measures (rates come from Lenspack's compute step). */
+export const OVERLAY_AGGS = ["sum", "count", "count_distinct", "min", "max"] as const;
+export type OverlayAgg = (typeof OVERLAY_AGGS)[number];
+
+/**
+ * A base measure made from a dataset's column, for a deployment that cannot add saved metrics in Superset. It is sent
+ * to Superset as an ad hoc metric (a sum, count, distinct count, min or max of the column), so Superset computes it
+ * and the user's dataset access and row-level security apply, as for a saved metric. Nothing here is SQL.
+ */
+export type OverlayMeasure = {
+  /** The dataset, by id, table name or entity key: one listed in datasets. */
+  dataset: number | string;
+  /** The measure's key (made a pack key: lowercase words joined by "_"). */
+  name: string;
+  agg: OverlayAgg;
+  /** The column it reads. count without one counts rows. */
+  column?: string;
+  /** Rows it counts or adds up: each a column, an operator (eq, neq, in, gt, gte, lt, lte, exists, missing) and a value. */
+  where?: { column: string; op?: (typeof WHERE_OPS)[number]; value?: string | number | boolean | (string | number | boolean)[] }[];
+  label?: Words;
+  hint?: Words;
+  format?: "number" | "percent" | "currency" | "compact";
+};
+
 /** What lenspack adds on top of Superset's own descriptions: the parts Superset has no field for. */
 export type Overlay = {
   pack?: string;
@@ -20,9 +48,23 @@ export type Overlay = {
   timeZone?: string;
   /** Entity key per dataset id or table name, instead of the slugged table name. */
   entities?: Record<string, string>;
-  /** Hints and labels by key, over Superset's descriptions and verbose names. */
-  hints?: Record<string, string>;
-  labels?: Record<string, string>;
+  /**
+   * Hints and labels by key, over Superset's descriptions and verbose names. Either may be written per language
+   * ({ en, fr }): the English (else the first) is the key's label, and the others are words the chat also knows it by.
+   */
+  hints?: Record<string, Words>;
+  labels?: Record<string, Words>;
+  /**
+   * What the pack never uses, whatever Superset's flags say, on every dataset: columns (and saved metrics) by name,
+   * matched without regard to case, and whole datasets by id or table name. An excluded column is never a dimension,
+   * a measure, a map's coordinates or a time column, and no query can read it; a dashboard filter on it is not passed
+   * to the chat. It wins over notDimensions and measures.
+   */
+  exclude?: { columns?: string[]; datasets?: (number | string)[] };
+  /** Columns that Superset lets you group by but the pack does not make dimensions (amounts and counts), by name. */
+  notDimensions?: string[];
+  /** Base measures from datasets' columns, compiled as Superset ad hoc metrics (see OverlayMeasure). */
+  measures?: OverlayMeasure[];
   hierarchies?: Record<string, string[]>;
   examples?: unknown[];
   /**
@@ -47,8 +89,11 @@ export type Binding = {
   datasets: Map<string, { id: number; table: string; time: string | null; countMetric: string | null }>;
   /** Dataset id → entity key. */
   entityOf: Map<number, string>;
-  /** Measure key → { entity, metric name } (null metric: COUNT(*) with no saved metric). */
-  metrics: Map<string, { entity: string; metric: string | null }>;
+  /**
+   * Measure key → { entity, metric name } (null metric: COUNT(*) with no saved metric). An overlay measure has no
+   * saved metric; `adhoc` says what Superset is asked to compute instead.
+   */
+  metrics: Map<string, { entity: string; metric: string | null; adhoc?: AdhocSpec }>;
   /** Entity → (metric name → measure key). */
   measureOf: Map<string, Map<string, string>>;
   /** Dimension key → (entity → column name). */
@@ -59,7 +104,12 @@ export type Binding = {
   geo: Map<string, { lat: string; lon: string }>;
   /** The basemap written into maps: overlay.mapStyle, else the default for the Superset version (set by the server). */
   mapStyle?: string;
+  /** Column names the overlay excludes (lowercase): a dashboard filter on one is described without its name or values. */
+  excluded?: Set<string>;
 };
+
+/** An overlay measure as Superset computes it: an aggregate of one column (or of rows), over the rows its conditions keep. */
+export type AdhocSpec = { agg: OverlayAgg; column: string | null; where: { column: string; op: (typeof WHERE_OPS)[number]; value?: unknown }[] };
 
 export const slug = (s: string) => packSlug(s, { camel: true, digit: "k", empty: "k" });
 
@@ -225,13 +275,34 @@ export function geoOf(ds: SupersetDataset, configured: { lat: string; lon: strin
 
 const blank = (s: unknown) => typeof s !== "string" || !s.trim();
 
+/** Words written once or per language: the English (else the first) as the main text, the rest beside it. */
+export function wordsOf(w: Words | undefined): { main?: string; others: string[] } {
+  if (w === undefined || w === null) return { others: [] };
+  if (typeof w !== "object") return { main: String(w), others: [] };
+  const entries = Object.entries(w).filter(([, v]) => typeof v === "string" && v.trim()) as [string, string][];
+  const main = (entries.find(([k]) => k === "en") ?? entries[0])?.[1];
+  return { main, others: entries.map(([, v]) => v).filter((v) => v !== main) };
+}
+
 /**
  * Datasets → a pack, the binding back to Superset names, and a warning for each column or metric it left out or
  * renamed. One odd column or metric in one dataset never stops the pack being built: the pack is what Lenspack starts
  * with, and a dataset's admin can change Superset's catalogue at any time, without knowing Lenspack reads it.
  */
-export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay = {}): BuiltPack & { binding: Binding; warnings: string[] } {
-  const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map(), geo: new Map(), ...(overlay.mapStyle ? { mapStyle: overlay.mapStyle } : {}) };
+export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay = {}): BuiltPack & { binding: Binding; warnings: string[]; problems: string[] } {
+  // What the overlay keeps out of the pack: by name, on every dataset, whatever Superset's flags say.
+  const lower = (s: unknown) => String(s).trim().toLowerCase();
+  const excludedColumns = new Set((overlay.exclude?.columns ?? []).map(lower));
+  const excludedDatasets = new Set((overlay.exclude?.datasets ?? []).map(lower));
+  const notDimensions = new Set((overlay.notDimensions ?? []).map(lower));
+  const excluded = (column: string) => excludedColumns.has(lower(column)) || excludedColumns.has(slug(column));
+  const datasetOut = (ds: SupersetDataset) => excludedDatasets.has(String(ds.id)) || excludedDatasets.has(lower(ds.table_name)) || excludedDatasets.has(lower(`${ds.schema ?? ""}.${ds.table_name}`));
+  const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map(), geo: new Map(), ...(overlay.mapStyle ? { mapStyle: overlay.mapStyle } : {}), };
+  // Every column name the overlay's exclusions match, as Superset spells it (lowercase), for the filter bar's notes.
+  if (excludedColumns.size) binding.excluded = new Set([...excludedColumns, ...datasets.flatMap((d) => d.columns.filter((c) => !blank(c.column_name) && excluded(c.column_name)).map((c) => lower(c.column_name)))]);
+  // Mistakes in the overlay itself (a measure on a column that isn't there): left out with a warning at start-up, and
+  // a reason to keep the pack already loaded on a reload.
+  const problems: string[] = [];
   const entities: Record<string, unknown> = {};
   const pb = packBuilder();
   const dimensions = pb.dimensions;
@@ -241,12 +312,23 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
   // The column each dimension was made from, to label it again if it has to give its key to a metric.
   const columnOf = new Map<string, SupersetColumn>();
   const name = (ds: SupersetDataset) => `Superset dataset "${ds.table_name}" (${ds.id})`;
+  /** A key's label, hint and other-language words: the overlay's (per language or not) over Superset's own. */
+  const named = (key: string, label: Words | null | undefined, hint: Words | null | undefined) => {
+    const l = wordsOf(overlay.labels?.[key] ?? label ?? undefined);
+    const h = wordsOf(overlay.hints?.[key] ?? hint ?? undefined);
+    const synonyms = [...new Set(l.others.filter((w) => w.length <= 40 && w !== l.main))].slice(0, 20);
+    return { label: cut(l.main, 80), hint: cut(h.main, 400), ...(synonyms.length ? { synonyms } : {}) };
+  };
 
-  for (const ds of datasets) {
+  const used = datasets.filter((ds) => !datasetOut(ds));
+  const entityKeys = new Map<SupersetDataset, string>();
+  for (const ds of used) {
     const entity = overlay.entities?.[String(ds.id)] ?? overlay.entities?.[ds.table_name] ?? slug(ds.table_name);
-    const time = ds.main_dttm_col && COLUMN.test(ds.main_dttm_col) ? ds.main_dttm_col : null;
+    entityKeys.set(ds, entity);
+    const time = ds.main_dttm_col && COLUMN.test(ds.main_dttm_col) && !excluded(ds.main_dttm_col) ? ds.main_dttm_col : null;
     // A metric with no name or no expression can't be asked for: Superset would refuse it too.
     const usable = ds.metrics.filter((m) => {
+      if (!blank(m.metric_name) && excluded(m.metric_name)) return false;
       if (blank(m.metric_name)) warnings.push(`${name(ds)}: a metric with no name is left out`);
       else if (blank(m.expression)) warnings.push(`${name(ds)}: metric "${m.metric_name}" has no SQL expression and is left out`);
       else return true;
@@ -254,7 +336,9 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     });
     const countMetric = usable.find((m) => COUNT_STAR.test(m.expression))?.metric_name ?? null;
     if (entities[entity]) throw new Error(`Superset datasets ${binding.datasets.get(entity)?.table} and ${ds.table_name} both map to entity "${entity}"; give each its own name in overlay.entities`);
-    const geo = geoOf(ds, overlay.geo?.[entity] ?? overlay.geo?.[String(ds.id)] ?? overlay.geo?.[ds.table_name]);
+    // Coordinates the overlay excludes are never read, so the dataset has no location.
+    const found = geoOf(ds, overlay.geo?.[entity] ?? overlay.geo?.[String(ds.id)] ?? overlay.geo?.[ds.table_name]);
+    const geo = found && !excluded(found.lat) && !excluded(found.lon) ? found : null;
     if (geo) binding.geo.set(entity, geo);
     // A time column of calendar dates (DATE, or ClickHouse's Date and Date32) says so: its days need no time zone.
     const dated = !!time && DATE_TYPE.test(ds.columns.find((c) => c.column_name === time)?.type ?? "");
@@ -267,6 +351,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     // Columns that group, other than the time column: conformed across datasets by name.
     for (const c of ds.columns) {
       if (c.groupby === false || c.is_dttm || c.column_name === time) continue;
+      if (!blank(c.column_name) && (excluded(c.column_name) || notDimensions.has(lower(c.column_name)) || notDimensions.has(slug(c.column_name)))) continue;
       if (blank(c.column_name)) {
         warnings.push(`${name(ds)}: a column with no name is left out`);
         continue;
@@ -283,8 +368,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
           entity,
           ...source,
           type: typeOf(c),
-          label: cut(overlay.labels?.[key] ?? c.verbose_name ?? undefined, 80),
-          hint: cut(overlay.hints?.[key] ?? c.description ?? undefined, 400),
+          ...named(key, c.verbose_name, c.description),
         } as PackDimension);
       binding.columns.set(key, new Map([...(binding.columns.get(key) ?? []), [entity, c.column_name]]));
       binding.dimensionOf.get(entity)!.set(c.column_name, key);
@@ -301,7 +385,8 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
       for (let i = 2, stem = key; usedMeasureKeys.has(key); i++) key = `${stem}_${i}`;
       usedMeasureKeys.add(key);
       const agg = formatOf(m.d3format) === "percent" && aggOf(m.expression) !== "count" ? "avg" : aggOf(m.expression);
-      const hint = [overlay.hints?.[key] ?? m.description, m.warning_text].filter(Boolean).join(" ");
+      const words = named(key, m.verbose_name ?? m.metric_name, m.description);
+      const hint = [words.hint, m.warning_text].filter(Boolean).join(" ");
       measures.push({
         key,
         entity,
@@ -309,13 +394,99 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
         // count takes no fragment: it is COUNT(*), and the binding names the saved metric.
         ...(agg === "count" ? {} : { sql: { superset: m.metric_name } }),
         format: formatOf(m.d3format),
-        label: cut(overlay.labels?.[key] ?? m.verbose_name ?? m.metric_name, 80),
+        ...words,
         hint: cut(hint || undefined, 400),
       });
       binding.metrics.set(key, { entity, metric: m.metric_name || null });
       if (m.metric_name) binding.measureOf.get(entity)!.set(m.metric_name, key);
     }
   }
+
+  // Base measures from the overlay: a column's sum, count, distinct count, min or max, computed by Superset as an ad
+  // hoc metric. Checked against the dataset as Superset describes it; a mistake leaves the measure out and says why.
+  for (const [i, om] of (overlay.measures ?? []).entries()) {
+    const where = `overlay.measures[${i}]${om && typeof om.name === "string" ? ` (${om.name})` : ""}`;
+    const problem = (why: string) => void problems.push(`${where}: ${why}`);
+    if (!om || typeof om !== "object") {
+      problem("each measure is a map, like { dataset: orders, name: items_sold, agg: sum, column: quantity }");
+      continue;
+    }
+    if (blank(om.name)) {
+      problem("give it a name");
+      continue;
+    }
+    const ref = lower(om.dataset ?? "");
+    const ds = datasets.find((d) => String(d.id) === ref || lower(d.table_name) === ref || entityKeys.get(d) === ref);
+    if (!ds) {
+      problem(`dataset "${om.dataset ?? ""}" is not one of the datasets listed`);
+      continue;
+    }
+    if (!entityKeys.has(ds)) {
+      problem(`dataset "${ds.table_name}" is excluded`);
+      continue;
+    }
+    if (!(OVERLAY_AGGS as readonly string[]).includes(om.agg)) {
+      problem(`agg must be one of ${OVERLAY_AGGS.join(", ")}`);
+      continue;
+    }
+    const entity = entityKeys.get(ds)!;
+    const columnNamed = (n: string) => ds.columns.find((c) => c.column_name === n) ?? ds.columns.find((c) => lower(c.column_name) === lower(n));
+    const col = om.column === undefined || om.column === null ? null : columnNamed(String(om.column));
+    if (om.column !== undefined && om.column !== null && !col) {
+      problem(`column "${om.column}" is not a column of Superset dataset "${ds.table_name}"`);
+      continue;
+    }
+    if (!col && om.agg !== "count") {
+      problem(`${om.agg} needs a column`);
+      continue;
+    }
+    if (col && excluded(col.column_name)) {
+      problem(`column "${col.column_name}" is excluded (overlay.exclude), so no measure may read it`);
+      continue;
+    }
+    if (col && om.agg === "sum" && col.type && typeOf(col) !== "number") {
+      problem(`column "${col.column_name}" holds ${String(col.type)}, which can't be added up`);
+      continue;
+    }
+    const conds: AdhocSpec["where"] = [];
+    let bad = false;
+    for (const w of Array.isArray(om.where) ? om.where : om.where === undefined ? [] : [null]) {
+      const c = w && typeof w === "object" && typeof w.column === "string" ? columnNamed(w.column) : undefined;
+      const op = (w?.op ?? "eq") as AdhocSpec["where"][number]["op"];
+      const v = w?.value;
+      if (!c) problem(`where: ${w && typeof w === "object" && typeof w.column === "string" ? `column "${w.column}" is not a column of Superset dataset "${ds.table_name}"` : "each condition is { column, op, value }"}`);
+      else if (excluded(c.column_name)) problem(`where: column "${c.column_name}" is excluded (overlay.exclude)`);
+      else if (!(WHERE_OPS as readonly string[]).includes(op)) problem(`where: op must be one of ${WHERE_OPS.join(", ")}`);
+      else if ((op === "exists" || op === "missing") !== (v === undefined)) problem(`where: ${op === "exists" || op === "missing" ? `${op} takes no value` : `${op} needs a value`}`);
+      else if ((op === "in") !== Array.isArray(v) || (Array.isArray(v) && (!v.length || v.length > 100))) problem(`where: ${op === "in" ? "in takes a list of 1 to 100 values" : `${op} takes one value`}`);
+      else if (v !== undefined && [v].flat().some((x) => !["string", "number", "boolean"].includes(typeof x))) problem("where: values are text, numbers or true/false");
+      else {
+        conds.push({ column: c.column_name, op, ...(v === undefined ? {} : { value: v }) });
+        continue;
+      }
+      bad = true;
+    }
+    if (bad) continue;
+    const key = slug(om.name);
+    if (usedMeasureKeys.has(key)) {
+      problem(`the key "${key}" is already a measure; name it something else`);
+      continue;
+    }
+    usedMeasureKeys.add(key);
+    const fmt = om.format && ["number", "percent", "currency", "compact"].includes(om.format) ? om.format : "number";
+    const words = named(key, om.label, om.hint);
+    // What the measure reads, for the pack's own checks; Superset is sent the ad hoc metric in the binding. A column
+    // the pack can't name plainly is named by Superset's own name (count takes neither: it counts what Superset says).
+    const reads = !col ? {} : COLUMN.test(col.column_name) ? { field: col.column_name } : om.agg === "count" ? {} : { sql: { superset: col.column_name } };
+    // Its conditions too, so "How this was worked out" says which rows it reads (Superset is sent them in the ad hoc metric).
+    const only = conds.length && conds.every((c) => COLUMN.test(c.column)) ? { where: conds.map((c) => ({ field: c.column, op: c.op, ...(c.value === undefined ? {} : { value: c.value }) })) } : {};
+    measures.push({ key, entity, agg: om.agg, ...reads, ...only, format: fmt, ...words });
+    binding.metrics.set(key, { entity, metric: null, adhoc: { agg: om.agg, column: col?.column_name ?? null, where: conds } });
+    if (col && binding.dimensionOf.get(entity)?.has(col.column_name) && (om.agg === "sum" || om.agg === "min" || om.agg === "max"))
+      warnings.push(`${name(ds)}: column "${col.column_name}" is measured by "${key}" and is also a dimension; list it in overlay.notDimensions if it is only ever added up`);
+  }
+  for (const n of overlay.exclude?.columns ?? []) if (!datasets.some((d) => d.columns.some((c) => excluded(c.column_name) && lower(c.column_name) === lower(n)) || d.metrics.some((m) => lower(m.metric_name) === lower(n)))) warnings.push(`overlay.exclude names "${n}", which no listed dataset has`);
+  for (const n of overlay.notDimensions ?? []) if (!datasets.some((d) => d.columns.some((c) => lower(c.column_name) === lower(n) || slug(c.column_name) === lower(n)))) warnings.push(`overlay.notDimensions names "${n}", which no listed dataset has`);
 
   // A column that groups and a metric can come to the same key (a column children_reached that Superset lets you
   // group by, and the metric children_reached that sums it), and a pack's keys are unique. The metric keeps the key:
@@ -327,8 +498,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     for (let i = 2; usedMeasureKeys.has(next) || dimensions.has(next); i++) next = `${key}_value_${i}`;
     const c = columnOf.get(key)!;
     dim.key = next;
-    dim.label = cut(overlay.labels?.[next] ?? c.verbose_name ?? undefined, 80);
-    dim.hint = cut(overlay.hints?.[next] ?? c.description ?? `Each row's own ${c.column_name} value. For the total, use the measure ${key}.`, 400);
+    Object.assign(dim, named(next, c.verbose_name, c.description ?? `Each row's own ${c.column_name} value. For the total, use the measure ${key}.`));
     const cols = binding.columns.get(key)!;
     binding.columns.delete(key);
     binding.columns.set(next, cols);
@@ -347,7 +517,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
   const { pack, packYaml } = emitPack({
     pack: overlay.pack ?? "superset",
     version: 1,
-    description: overlay.description ?? `Superset datasets: ${datasets.map((d) => d.table_name).join(", ")}`,
+    description: overlay.description ?? `Superset datasets: ${used.map((d) => d.table_name).join(", ")}`,
     ...(overlay.timeZone ? { timeZone: overlay.timeZone } : {}),
     entities,
     dimensions: [...dimensions.values()],
@@ -356,5 +526,35 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     ...(overlay.instructions ? { instructions: overlay.instructions } : {}),
     ...(overlay.examples?.length ? { examples: examplesForPack(overlay.examples as { question?: unknown }[]) } : {}),
   });
-  return { pack, packYaml, binding, warnings };
+  return { pack, packYaml, binding, warnings, problems };
+}
+
+/**
+ * superset.yaml's scope: the pack's own row filters, checked against the pack. A clause that is not a filter is an
+ * error (a deployment that means to pin its answers must not start unpinned). One naming a dimension or dataset the
+ * pack doesn't have is kept, so every question it should narrow is refused (OUT_OF_SCOPE) rather than answered for
+ * all rows, and it is said as a warning.
+ */
+export function packScope(given: unknown, pack: Pack): { clauses: ScopeClause[]; warnings: string[] } {
+  if (given === undefined || given === null) return { clauses: [], warnings: [] };
+  if (!Array.isArray(given)) throw new Error("scope must be a list of filters, like [{ dimension: campaign, op: eq, value: 2026-spring }]");
+  const clauses: ScopeClause[] = [];
+  const warnings: string[] = [];
+  given.forEach((c, i) => {
+    const { entity, ...clause } = (c && typeof c === "object" ? c : {}) as Record<string, unknown>;
+    const parsed = filterClauseSchema.safeParse(clause);
+    if (!parsed.success) throw new Error(`scope[${i}]: ${parsed.error.issues.map((x) => `${x.path.join(".") || "(clause)"}: ${x.message}`).join("; ")}`);
+    if (entity !== undefined && typeof entity !== "string") throw new Error(`scope[${i}].entity must be an entity key`);
+    const out: ScopeClause = { ...parsed.data, ...(entity ? { entity } : {}) };
+    const dim = pack.dimensions.find((d) => d.key === out.dimension);
+    if (entity && !pack.entities[entity]) warnings.push(`scope[${i}] names the dataset "${entity}", which the pack does not have; nothing is narrowed by it`);
+    else if (!dim) warnings.push(`scope[${i}] filters on "${out.dimension}", which is not a dimension of the pack: every question is refused until it is`);
+    else {
+      const reach = [dim.entity, ...Object.keys(dim.also ?? {})];
+      const missing = Object.keys(pack.entities).filter((e) => !reach.includes(e) && (!entity || entity === e));
+      if (missing.length) warnings.push(`scope[${i}] filters on "${out.dimension}", which ${missing.join(", ")} ${missing.length === 1 ? "does" : "do"} not have: questions on ${missing.length === 1 ? "it" : "them"} are refused`);
+    }
+    clauses.push(out);
+  });
+  return { clauses, warnings };
 }

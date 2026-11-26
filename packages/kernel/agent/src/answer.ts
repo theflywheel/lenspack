@@ -62,6 +62,11 @@ export type AnswerCard = {
   sql: boolean;
   /** The viewer's dashboard filters when they asked: part of the turn's context. */
   selections?: AnswerSelection[];
+  /**
+   * How many of the viewer's dashboard filters were on fields the assistant does not use (left out of the pack, or
+   * kept from this viewer), so the answer was not narrowed by them. Their fields and values are never on the card.
+   */
+  unusedSelections?: number;
   checks?: AnswerCheck[];
 };
 
@@ -226,7 +231,7 @@ export function selectionsOf(selections: Record<string, string> | undefined, pac
  * One turn's answer card, gathered as its tools run: onData for boardTools; check() for a check
  * on the reply, which reads the full results from calls(); record() when the turn ends.
  */
-export function answerCard(o: AnswerContext & { selections?: Record<string, string> }) {
+export function answerCard(o: AnswerContext & { selections?: Record<string, string>; unusedSelections?: number }) {
   const seen: DataCall[] = [];
   const calls: AnswerCall[] = [];
   const checks: AnswerCheck[] = [];
@@ -244,7 +249,7 @@ export function answerCard(o: AnswerContext & { selections?: Record<string, stri
     record(): AnswerCard | null {
       if (!calls.length) return null;
       const selections = selectionsOf(o.selections, o.pack, seen);
-      return boundCard({ calls, sql: o.sql, ...(selections.length ? { selections } : {}), ...(checks.length ? { checks } : {}) });
+      return boundCard({ calls, sql: o.sql, ...(selections.length ? { selections } : {}), ...(o.unusedSelections ? { unusedSelections: o.unusedSelections } : {}), ...(checks.length ? { checks } : {}) });
     },
   };
 }
