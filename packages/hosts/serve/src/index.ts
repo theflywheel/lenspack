@@ -16,6 +16,7 @@ export * from "./settings";
 export * from "./features";
 export * from "./admin";
 export * from "./runtime";
+export * from "./review/index";
 // Answer reuse and the turn gate live in @lenspack/agent (no host); these are the serve host's sides of them.
 export { cacheRoutes, prewarmTurns, savedChunks, smallModel } from "./reuse";
 export { BUSY_TEXT, retrying, waitForTurn, withRetryWindow } from "./queue";

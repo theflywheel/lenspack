@@ -280,3 +280,13 @@ describe("path filters", () => {
     expect(sub.params).toEqual(["a.b", "a.b.%"]);
   });
 });
+
+describe("the 95th percentile", () => {
+  it("is spelled by each dialect that has percentiles, and refused by those that have none", async () => {
+    const { duckdbRules, postgresRules, clickhouseRules, sqliteRules } = await import("../src");
+    expect(duckdbRules.percentile?.("p95", "x")).toBe("quantile_cont(x, 0.95)");
+    expect(postgresRules.percentile?.("p95", "x")).toBe("percentile_cont(0.95) WITHIN GROUP (ORDER BY x)");
+    expect(clickhouseRules.percentile?.("p95", "x")).toBe("quantileExactInclusive(0.95)(x)");
+    expect(sqliteRules.percentile).toBeUndefined();
+  });
+});

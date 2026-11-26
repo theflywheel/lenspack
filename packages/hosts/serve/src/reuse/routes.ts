@@ -17,7 +17,7 @@ import type { AuditLog } from "../audit";
 import type { Principal } from "../auth";
 import { NO_STORE, json, readJson } from "../http";
 
-export function cacheRoutes(o: { prefix: string; reuse: Reuse; queue?: TurnGate; audit?: AuditLog | null; adminName: string }) {
+export function cacheRoutes(o: { prefix: string; reuse: Reuse; queue?: TurnGate; audit?: Pick<AuditLog, "audit"> | null; adminName: string }) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<void> => {
     const base = `${o.prefix}/cache`;
     if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) return;

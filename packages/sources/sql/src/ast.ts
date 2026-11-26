@@ -14,7 +14,7 @@ export type Expr =
   | { t: "str"; value: string } // a constant string the planner writes, never a request value
   | { t: "star" }
   | { t: "json"; alias: string; col: string; path: string[] }
-  | { t: "agg"; fn: "count" | "count_distinct" | "sum" | "avg" | "min" | "max" | "median" | "p90"; arg: Expr }
+  | { t: "agg"; fn: "count" | "count_distinct" | "sum" | "avg" | "min" | "max" | "median" | "p90" | "p95"; arg: Expr }
   | { t: "bin"; op: "=" | "<>" | ">=" | "<=" | ">" | "<" | "+" | "-" | "*" | "/" | "AND" | "OR" | "ILIKE" | "LIKE" | "IS DISTINCT FROM" | "||"; l: Expr; r: Expr }
   | { t: "notnull"; arg: Expr }
   | { t: "segment"; arg: Expr; values: Expr[] } // one of values is a whole "|"-separated segment of arg
