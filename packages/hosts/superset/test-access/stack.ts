@@ -123,7 +123,8 @@ export class Session {
   }
 }
 
-export type ChatResult = { status: number; error?: string; tools: { tool: string; input: any; output: any }[]; text: string };
+/** reuse: set when the reply came from a saved answer (which tier, and which saved entry). */
+export type ChatResult = { status: number; error?: string; tools: { tool: string; input: any; output: any }[]; text: string; reuse?: { tier: string; entry: string } };
 
 /** A chat turn through the UI message stream: the tools the stub model called, what each returned, and the reply's words. */
 export function readChat(res: Reply): ChatResult {
@@ -131,16 +132,18 @@ export function readChat(res: Reply): ChatResult {
   const calls = new Map<string, { tool: string; input: any; output: any }>();
   let text = "";
   let error: string | undefined;
+  let reuse: ChatResult["reuse"];
   for (const line of res.text.split("\n")) {
     if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
-    const e = JSON.parse(line.slice(6)) as { type: string; toolCallId?: string; toolName?: string; input?: unknown; output?: unknown; delta?: string; errorText?: string };
+    const e = JSON.parse(line.slice(6)) as { type: string; toolCallId?: string; toolName?: string; input?: unknown; output?: unknown; delta?: string; errorText?: string; data?: { tier: string; entry: string } };
     if (e.type === "tool-input-available") calls.set(e.toolCallId!, { tool: e.toolName!, input: e.input, output: undefined });
     else if (e.type === "tool-output-available") calls.get(e.toolCallId!)!.output = e.output;
     else if (e.type === "tool-output-error") calls.get(e.toolCallId!)!.output = { error: e.errorText };
     else if (e.type === "text-delta") text += e.delta;
     else if (e.type === "error") error = e.errorText;
+    else if (e.type === "data-reuse" && e.data) reuse = { tier: e.data.tier, entry: e.data.entry };
   }
-  return { status: 200, ...(error ? { error } : {}), tools: [...calls.values()], text };
+  return { status: 200, ...(error ? { error } : {}), tools: [...calls.values()], text, ...(reuse ? { reuse } : {}) };
 }
 
 /**

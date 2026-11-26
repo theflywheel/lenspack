@@ -112,6 +112,14 @@ lenspack came out of a consultation tool whose dashboard logic was welded to one
 
 The security model in full: [security.md](security.md).
 
+## Using the model less
+
+Most questions on a dashboard are asked again and again, and a dashboard stops changing once it has been shaped. Lenspack keeps the plan behind every answer that went well and every accepted change, and answers a repeated question by running the same queries on today's data, without the model. Only new questions reach the model. How it works, what it saves and when a saved answer is not used: [caching.md](caching.md).
+
+## Keeping answers right after launch
+
+People ask questions the pack never thought of, and some have two sane readings. The admin panel keeps a log of those open questions with each reading's figures side by side, and lets admins add definitions on top of the pack without a release. An optional daily review has a strong model read the day's questions and propose fixes, which wait for an admin. The panel's Overview is itself a Lenspack board about how the server is used. How it all works, what it costs and what keeps it safe: [review.md](review.md).
+
 ## The demo app
 
 `pnpm demo` serves the example packs in the board app (`examples/demo`). You can build boards with the chat, drag widgets and restore versions. Its look carries one idea: colour is provenance. A key that the pack declares is always mono and blue, whether in prose, in the metrics reference or in a board title. Something the compiler refuses is always ochre.

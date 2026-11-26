@@ -9,12 +9,32 @@ import { join } from "node:path";
 // write of a new month, deletes months older than the retention, and reads
 // itself back for a settings page (the log, and what chat has cost).
 
-export type AuditEvent = { at: string; user: string; pack?: string; board?: string; action: string; outcome: "ok" | "refused" | "denied"; detail?: string };
+export type AuditEvent = { at: string; user: string; pack?: string; board?: string; action: string; outcome: "ok" | "refused" | "denied"; detail?: string; /** A turn about the server itself (the admin panel's usage chat): logged and costed, but left out of the daily review. */ internal?: boolean };
 export type Audit = (event: AuditEvent) => void;
 
 /** Appends one JSON line per event. */
 export function fileAudit(path: string): Audit {
   return (event) => appendFileSync(path, `${JSON.stringify(event)}\n`);
+}
+
+/** The events at or after a time in one audit file (fileAudit's), newest first; an unreadable line is skipped. */
+export function auditFileSince(path: string): (from: Date) => AuditEvent[] {
+  return (from) => {
+    if (!existsSync(path)) return [];
+    const iso = from.toISOString();
+    return readFileSync(path, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((l) => {
+        try {
+          const e = JSON.parse(l) as AuditEvent;
+          return typeof e.at === "string" && e.at >= iso ? [e] : [];
+        } catch {
+          return [];
+        }
+      })
+      .sort((a, b) => b.at.localeCompare(a.at));
+  };
 }
 
 export type AuditLog = {

@@ -265,6 +265,7 @@ auth:
     - { user: kenya, token: env:KE_TOKEN, tenant: ke, scope: [{ dimension: province, op: in, value: [Nairobi] }] }
 audit: ./audit.jsonl
 usage: ./usage.jsonl
+state: ./state                     # switches, admin definitions, open questions, the daily review; the admin panel at /_lenspack/admin/
 budget: { usdPerDay: 20, usdPerUserPerDay: 2 }
 ```
 
@@ -277,6 +278,7 @@ More in [docs/security.md](docs/security.md).
 - [Compute](docs/compute.md): rates, changes and averages over the pack's measures, worked out after the source answers
 - [Query IR](docs/query-ir.md), [SQL drivers](docs/drivers.md), [chat models](docs/llm.md)
 - [Security model](docs/security.md)
+- [Review, open questions and the admin panel](docs/review.md): settling questions with two readings, the daily review, and usage as a board
 
 ## Status
 

@@ -37,7 +37,7 @@ export function accessSuite(version: string) {
       readChat(await s[who].lp("POST", `api/${PACK}/${board}/chat?review=off`, { messages: [{ id: `m${Date.now()}`, role: "user", parts: [{ type: "text", text: `TOOL ${tool} ${JSON.stringify(args)}` }] }] }));
     const toolOutput = (r: ChatResult) => {
       expect(r.status, r.error).toBe(200);
-      expect(r.tools).toHaveLength(1);
+      expect(r.tools, JSON.stringify({ text: r.text, reuse: r.reuse, error: r.error })).toHaveLength(1);
       return r.tools[0]!.output;
     };
     /** What Superset would sign for a request, signed here with the same key (derived from its SECRET_KEY). */
@@ -349,10 +349,70 @@ export function accessSuite(version: string) {
         }
       });
 
-      // TODO(theflywheel/lenspack "reuse: answer repeated questions without the model"): when answer reuse lands, ask
-      // the same question as lp_viewer and then lp_north through the chat with reuse on, and expect lp_north's reused
-      // answer to be { North: 3 }, not lp_viewer's; and the same for two users of one dashboard with different filter picks.
-      it.todo("answer reuse never hands one user's answer to a user with different RLS (pending: reuse PR)");
+      it("answer reuse never hands a saved answer to a user with different access, at tiers 1 to 3", async () => {
+        // Saved answers are on by default. The small-model router (tier 4) is turned off so a miss is one full turn.
+        const cache = (body: object) => s.lp_admin.lp("PUT", "_superset/settings/cache", body);
+        expect((await cache({ router: "off", freshMinutes: 10 })).status).toBe(200);
+        // Visits in one region, as each user may count them: lp_templ's rule leaves only their team's rows.
+        const ask = (who: User, region: string) => chat(who, A, "query", { ...BREAKDOWN("visit_total"), filter_dimension: "region", filter_value: region });
+        const NORTH: Partial<Record<User, Record<string, number>>> = { lp_viewer: { North: 3 }, lp_partial: { North: 3 }, lp_north: { North: 3 }, lp_inlist: { North: 3 }, lp_templ: { North: 1 } };
+        const EAST: Partial<Record<User, Record<string, number>>> = { lp_viewer: { East: 8 }, lp_partial: { East: 8 }, lp_north: {}, lp_inlist: { East: 8 }, lp_templ: { East: 8 } };
+        const who = Object.keys(NORTH) as User[];
+        // Which saved entries served each user: no entry may serve two users whose access differs.
+        const served = new Map<string, User>();
+        const check = (u: User, r: ChatResult, want: Record<string, number>) => {
+          expect([u, byGroup(toolOutput(r).rows)]).toEqual([u, want]);
+          if (!r.reuse) return;
+          const owner = served.get(r.reuse.entry) ?? u;
+          expect([u, r.reuse.entry, owner]).toEqual([u, r.reuse.entry, u]);
+          served.set(r.reuse.entry, u);
+        };
+        try {
+          // First asks: lp_viewer's answer is saved first; nobody else is served from it.
+          let before = stack.modelCalls();
+          const first = await ask("lp_viewer", "North");
+          expect(first.reuse).toBeUndefined();
+          expect(stack.modelCalls()).toBeGreaterThan(before);
+          check("lp_viewer", first, NORTH.lp_viewer!);
+          for (const u of who.slice(1)) {
+            const r = await ask(u, "North");
+            expect([u, r.reuse]).toEqual([u, undefined]);
+            check(u, r, NORTH[u]!);
+          }
+
+          // Tier 1: the same question again within minutes sends each user their own saved reply, with no model.
+          before = stack.modelCalls();
+          for (const u of who) {
+            const r = await ask(u, "North");
+            expect([u, r.reuse?.tier]).toEqual([u, "t1"]);
+            check(u, r, NORTH[u]!);
+          }
+          expect(stack.modelCalls()).toBe(before);
+
+          // Tier 2: with no fresh window, each saved plan runs again, under the asking user's own access.
+          expect((await cache({ freshMinutes: 0 })).status).toBe(200);
+          before = stack.modelCalls();
+          for (const u of who) {
+            const r = await ask(u, "North");
+            expect([u, r.reuse?.tier]).toEqual([u, "t2"]);
+            check(u, r, NORTH[u]!);
+          }
+          expect(stack.modelCalls()).toBe(before);
+
+          // Tier 3: the same question about another region swaps the value into the user's own saved plan. Where the
+          // user can't see that region, they get no rows, whether the slot or a full turn answers.
+          // The rows differ from the saved ones, so the reply may take one small rewrite call; never a full turn.
+          before = stack.modelCalls();
+          const t3 = await ask("lp_viewer", "East");
+          expect(t3.reuse?.tier).toBe("t3");
+          expect(stack.modelCalls() - before).toBeLessThanOrEqual(1);
+          check("lp_viewer", t3, EAST.lp_viewer!);
+          for (const u of who.slice(1)) check(u, await ask(u, "East"), EAST[u]!);
+          expect(new Set(served.values()).size).toBe(who.length);
+        } finally {
+          await cache({ router: null, freshMinutes: null });
+        }
+      });
     });
 
     describe("personal dashboards and saved configurations (pending: built in a parallel PR)", () => {

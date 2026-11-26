@@ -56,7 +56,7 @@ export type Capabilities = {
   joins: boolean;
   /** count_distinct is exact (false: an estimate, shown as ≈). */
   exactDistinct: boolean;
-  /** median / p90 are exact. */
+  /** median / p90 / p95 are exact. */
   exactPercentiles: boolean;
   /**
    * median / p90 can be computed at all. A SQL dialect with no percentile
@@ -344,11 +344,11 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
   // A percentile the source cannot compute is refused, never approximated by
   // something that would print a different number under the same label.
   if (measure && caps.percentiles === false) {
-    const pct = (measure.kind === "simple" ? [measure.def] : measure.operands).find((m) => m.agg === "median" || m.agg === "p90");
+    const pct = (measure.kind === "simple" ? [measure.def] : measure.operands).find((m) => m.agg === "median" || m.agg === "p90" || m.agg === "p95");
     if (pct)
       throw new ResolveError(
         "NOT_SUPPORTED",
-        `"${pct.key}" is a ${pct.agg === "p90" ? "90th percentile" : "median"}, and this source has no percentile function, so it is not computed here`,
+        `"${pct.key}" is a ${pct.agg === "p90" ? "90th percentile" : pct.agg === "p95" ? "95th percentile" : "median"}, and this source has no percentile function, so it is not computed here`,
         pct.key,
       );
   }

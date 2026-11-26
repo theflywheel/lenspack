@@ -314,6 +314,22 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
   };
 }
 
+/**
+ * What a principal may do on a deployment's admin pages, decided here so every host and every page asks the same
+ * question. administer: see and change the settings, the saved answers, the definitions, the open questions and the
+ * daily review: the host's admin role (a Superset admin, the built-in admin), never a dashboard's edit right. users:
+ * also see who asked what (usernames on the usage board and in review reports), which needs the usage right as well.
+ * It only narrows what the host gave: no admin role, no admin pages.
+ */
+export type AdminRights = { administer: boolean; users: boolean };
+export function adminRights(who: { roles?: readonly string[]; usage?: boolean }): AdminRights {
+  const administer = !!who.roles?.includes("admin");
+  return { administer, users: administer && !!who.usage };
+}
+
+/** May use the admin pages at all (adminRights().administer). */
+export const mayAdminister = (who: { roles?: readonly string[] }) => adminRights(who).administer;
+
 // The pack's own boards (no owner) are everyone's to read and a maintainer's
 // to change. A board someone made is theirs to change, and everyone's to read
 // once they share it: everyone in their tenant, as one user name may sign in

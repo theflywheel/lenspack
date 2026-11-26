@@ -185,9 +185,10 @@ Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard 
   - A user who may read nothing is told so before any model is asked.
   - While Lenspack can't reach Superset, a user it hasn't checked yet sees nothing. Once Superset is back, they see their data again.
 - **Admin surfaces.** Settings, the audit log, cost per answer and usage are for Superset admins only. A dashboard owner gets 403, and so does Superset's own AI assistant page.
-- **Caching.** Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
+- **Caching and saved answers.**
+  - Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
+  - Five users with different access (all datasets, `visits` only, North only, North and East, their own team) ask the same question. Nobody is answered from another's saved answer: not when the same question comes again within minutes (sent as saved, no model), not when the saved queries run again on fresh data, and not when the question names another region (the region swapped into the saved queries). Each answer has exactly that user's rows.
 - **Pending.**
-  - Answer reuse (the "reuse: answer repeated questions without the model" change): a reused answer must never cross to a user with different RLS.
   - Personal dashboards and saved configurations (another change in progress): a viewer may create one; only its owner deletes it; a saved configuration applies only to dashboards the user controls; another user's personal dashboard is neither listed, opened nor edited.
 
 These cases check outcomes, not how Lenspack gets them. They keep holding when queries move to running as the user inside Superset. The `LIKE` case would then get stronger: Superset would apply the rule itself, so `lp_complex` would see the North rows instead of no `visits` at all.

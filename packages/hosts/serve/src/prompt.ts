@@ -1,3 +1,4 @@
+import { CLARIFY_RULE } from "@lenspack/agent";
 import type { BoardChange, BoardConfig, Catalogue } from "@lenspack/core";
 import { describeQuery, summarise } from "@lenspack/core";
 import { type Pack, datedTime, timeFieldOf } from "@lenspack/pack";
@@ -5,7 +6,7 @@ import { type Pack, datedTime, timeFieldOf } from "@lenspack/pack";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 26;
+export const PROMPT_VERSION = 27;
 
 // What a widget can show, told to the builder and the reviewer alike, so a
 // request for a setting that does not exist gets a plain "cannot" rather than
@@ -125,11 +126,11 @@ export function userChangesText(changes: BoardChange[] = []) {
  * Stable first, so a provider's prompt cache keeps the long first part across
  * edits.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, access?: string | null): [stable: string, board: string] => [
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null } = {}): [stable: string, board: string] => [
   `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
-${catalogueText(pack, catalogue)}${access ? `\n\nACCESS:\n${access}` : ""}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
+${catalogueText(pack, catalogue)}${o.access ? `\n\nACCESS:\n${o.access}` : ""}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
 
 Rules:
 - Use only the keys listed above. ${tooLarge(catalogue) ? "Meanings are not listed: call list_metrics with q when a label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown below; call get_board only after your edits, to verify.
@@ -155,7 +156,7 @@ Rules:
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.
 - "Reset", "start over", "back to the original/default", "undo my changes": restore_version with to: baseline. "Undo that" / "go back to how it was before X": list_versions, then restore_version with that version. A restore is one call; never rebuild a past board widget by widget.
 - When the board part lists changes the user made since your last turn, they are deliberate: keep them, never undo them unless asked, and mention them only when they bear on the request.
-- Never address the user by name.
+- Never address the user by name.${o.clarify ? `\n${CLARIFY_RULE}` : ""}
 - After edits, reply in one or two plain sentences with the outcome only. Never narrate your reasoning, plans or which tools you are about to call.
 - An informational answer (what the data holds) may use a short bullet list and **bold** for names; keep it brief. Several numbers side by side for a few groups may be one compact markdown table (at most 6 rows and 4 columns, figures formatted as on the board); anything larger belongs on the board as a table widget. Never use markdown headings.`,
   `${board ? `\n\nCURRENT BOARD:\n${summarise(board)}` : ""}${userChangesText(changes)}${languageText(language)}`,

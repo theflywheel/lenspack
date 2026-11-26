@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, answerView, boardRights, decide, hiddenKeys, holds, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
+import { DEFAULT_HIDDEN_REASON, type Identity, type PackRule, accessNote, adminRights, answerView, boardRights, decide, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -183,6 +183,21 @@ describe("holds", () => {
     expect(holds({ grants: ["/x"] }, "/x")).toBe(true);
     expect(holds({ grants: ["/x"] }, "/y")).toBe(false);
     expect(holds({ grants: [] })).toBe(false);
+  });
+});
+
+describe("admin rights", () => {
+  it("are the admin role only, never a dashboard's edit right; usernames need the usage right too", () => {
+    expect(mayAdminister({ roles: ["admin"] })).toBe(true);
+    expect(mayAdminister({ roles: ["Alpha", "editor"] })).toBe(false);
+    expect(mayAdminister({})).toBe(false);
+    expect(adminRights(principalOf({ user: "ana" }))).toEqual({ administer: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", maintain: true, edit: true }))).toEqual({ administer: false, users: false });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true }))).toEqual({ administer: true, users: true });
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: false }))).toEqual({ administer: true, users: false });
+    // A read-only admin (edits switched off) still runs the deployment.
+    expect(adminRights(principalOf({ user: "ana", roles: ["admin"], usage: true, readOnly: "edits are off" }))).toEqual({ administer: true, users: true });
+    expect(adminRights(principalOf({ user: "ana", usage: true }))).toEqual({ administer: false, users: false });
   });
 });
 
