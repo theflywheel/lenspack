@@ -84,9 +84,11 @@ export function http(base: string, method: string, path: string, o: { headers?: 
 /** A browser signed in to Superset as one user: its session cookie, and requests through Superset (to /lenspack/... and Superset's own API). */
 export class Session {
   private cookies = new Map<string, string>();
+  /** root: the path Superset runs under ("" at the root, "/superset" with SUPERSET_APP_ROOT); every path sent starts with it. */
   constructor(
     readonly superset: string,
     readonly user: string,
+    readonly root = "",
   ) {}
 
   private keep(res: Reply) {
@@ -99,7 +101,7 @@ export class Session {
 
   async send(method: string, path: string, o: { headers?: Record<string, string>; body?: string | object } = {}) {
     const cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
-    const res = await http(this.superset, method, path, { ...o, headers: { ...(cookie ? { cookie } : {}), ...o.headers } });
+    const res = await http(this.superset, method, `${this.root}${path}`, { ...o, headers: { ...(cookie ? { cookie } : {}), ...o.headers } });
     this.keep(res);
     return res;
   }
@@ -202,6 +204,8 @@ const listen = (s: Server) => new Promise<number>((resolve) => s.listen(0, "127.
 
 export type Stack = {
   version: string;
+  /** The path Superset runs under: "" at the root, else what SUPERSET_APP_ROOT says ("/superset"). */
+  appRoot: string;
   superset: string;
   lenspack: string;
   fixtures: Fixtures;
@@ -226,7 +230,8 @@ export type Stack = {
 };
 
 /** Starts the stack for one Superset version (an apache/superset image tag). */
-export async function startStack(version: string, o: { lenspackEnv?: Record<string, string> } = {}): Promise<Stack> {
+export async function startStack(version: string, o: { lenspackEnv?: Record<string, string>; /** Superset under a path of its host (SUPERSET_APP_ROOT, Superset 6.1). */ appRoot?: string } = {}): Promise<Stack> {
+  const appRoot = (o.appRoot ?? "").replace(/\/+$/, "");
   const tag = `lpacc-${version.replace(/\W/g, "")}-${process.pid}-${randomBytes(3).toString("hex")}`;
   const dir = mkdtempSync(join(tmpdir(), "lenspack-access-suite-"));
   const secrets = { SUPERSET_SECRET_KEY: randomBytes(32).toString("hex"), POSTGRES_PASSWORD: randomBytes(16).toString("hex"), LP_USER_PASSWORD: randomBytes(16).toString("hex") };
@@ -275,6 +280,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
         "-e", "SUPERSET_CONFIG_PATH=/access/superset_config.py", "-e", "PYTHONPATH=/plugin:/access",
         "-e", `LENSPACK_INTERNAL_URL=${lenspack}`, "-e", "SUPERSET_BIND_ADDRESS=127.0.0.1", "-e", `SUPERSET_PORT=${ssPort}`,
         "-e", "SERVER_THREADS_AMOUNT=20", "-e", "GUNICORN_TIMEOUT=120",
+        ...(appRoot ? ["-e", `SUPERSET_APP_ROOT=${appRoot}`] : []),
         "-v", `${plugin}:/plugin:ro`, "-v", `${here}:/access:ro`,
         `apache/superset:${version}`, "sh", "-c", script,
       ],
@@ -289,7 +295,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
       const line = /^LP_FIXTURES (.+)$/m.exec(logs.stdout)?.[1];
       const state = docker(["inspect", "-f", "{{.State.Running}}", containers[1]!]).stdout.trim();
       if (state !== "true") throw new Error(`Superset ${version} stopped while starting:\n${(logs.stdout + logs.stderr).split("\n").slice(-40).join("\n")}`);
-      if (line && (await http(superset, "GET", "/health").catch(() => null))?.status === 200) fixtures = JSON.parse(line) as Fixtures;
+      if (line && (await http(superset, "GET", `${appRoot}/health`).catch(() => null))?.status === 200) fixtures = JSON.parse(line) as Fixtures;
       else if (Date.now() > until) throw new Error(`Superset ${version} was not up in 10 minutes`);
       else await sleep(2000);
     }
@@ -301,7 +307,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
       writeFileSync(
         join(dir, "superset.yaml"),
         [
-          `superset: { url: "http://127.0.0.1:${wayPort}" }`,
+          `superset: { url: "http://127.0.0.1:${wayPort}${appRoot}" }`,
           "datasets: [visits, stock]",
           `dashboards: [${fixtures!.dashboards.a}, ${fixtures!.dashboards.b}, ${fixtures!.dashboards.c}]`,
           `overlay: { pack: ${PACK} }`,
@@ -357,6 +363,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
     const identityKey = createHmac("sha256", secrets.SUPERSET_SECRET_KEY).update("lenspack-identity-v1").digest("hex");
     return {
       version,
+      appRoot,
       superset,
       lenspack,
       fixtures,
@@ -368,7 +375,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
         const r = docker(["exec", containers[1]!, "sh", "-c", on ? "rm -f /tmp/lp-dashboard-rbac-off" : "touch /tmp/lp-dashboard-rbac-off"]);
         if (r.status) throw new Error(`could not turn dashboard roles ${on ? "on" : "off"}: ${r.stderr.trim()}`);
       },
-      as: (user) => new Session(superset, user).signIn(secrets.LP_USER_PASSWORD),
+      as: (user) => new Session(superset, user, appRoot).signIn(secrets.LP_USER_PASSWORD),
       restartLenspack: async (extraYaml = []) => {
         await stopLenspack();
         await startLenspack(extraYaml);

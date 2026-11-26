@@ -78,7 +78,8 @@ hostPolicy: superset                     # LENSPACK_HOST_POLICY: each user's own
 ```
 
 Set `publicPath: /lenspack` (or `LENSPACK_PUBLIC_PATH=/lenspack`) so the server's pages and scripts use the path
-Superset forwards. Every key is in [Configuration reference](../../reference/config.md#supersetyaml); what the
+Superset forwards. It is the fallback: requests that come through Superset's route say where the browser reached
+them, and that wins (see [Superset under a path](#superset-under-a-path)). Every key is in [Configuration reference](../../reference/config.md#supersetyaml); what the
 datasets and overlay do is in [Datasets and dashboards](datasets-and-dashboards.md).
 
 **Naming datasets.** Prefer table names (`orders`, or `schema.table` when two schemas hold the same name): they stay
@@ -166,6 +167,37 @@ The chat opens as a floating window or as a side panel; the gear chooses. The wi
 Superset's menu bar: drag it by its header, and resize it with the grip in its bottom-left corner or from its left
 and top edges. Size and position are remembered per browser.
 
+## Superset under a path
+
+Superset 6.1 can run below a path of a shared host, for example `https://example.org/superset/`, with
+`SUPERSET_APP_ROOT=/superset` (Superset calls this a beta feature). Superset then answers only below that path. Lenspack
+follows it with no setting of its own:
+
+- the **Ask Lenspack** button loads its script from `/superset/lenspack/overlay.js`;
+- the settings page (`/superset/ai-assistant/`), its forms, the menu entry and the admin panel link start with
+  `/superset`;
+- links to dashboards, in the chat and in "My dashboards", start with `/superset` too.
+
+How it works: the plugin builds every address from Flask's `request.script_root`, which is `/superset` there and empty
+at the root. For each request it forwards, it tells the server both paths, in `X-Forwarded-Prefix`
+(`/superset/lenspack`) and `X-Lenspack-Superset-Root` (`/superset`). The server builds its pages and links from them.
+Only plain paths are used (letters, digits, `.`, `_`, `~`, `-` and `/`); anything else counts as the root.
+
+What to set:
+
+- On Superset: `SUPERSET_APP_ROOT=/superset`, as your chart already does. Nothing for Lenspack.
+- On the server: `LENSPACK_SUPERSET_URL` must include the path, because Superset's API is under it too:
+  `http://superset:8088/superset`. Keep `publicPath: /lenspack`; through Superset's route the per-request path wins.
+- Update the plugin file and the server image together. A plugin from before this support loads the button from
+  `/lenspack/overlay.js`, which Superset answers with 404, so no button appears.
+
+Behind a proxy that sets `X-Forwarded-Prefix` itself (with `ENABLE_PROXY_FIX`), Superset's `request.script_root` is
+that prefix, and the same applies. The settings menu entry is the one exception: it is fixed when Superset starts, so
+it takes the path from `SUPERSET_APP_ROOT` (Superset's `APPLICATION_ROOT`), as Superset's own menu entries do.
+
+`pnpm test:access app-root` runs Superset 6.1 under `/superset` with Lenspack and checks the button script, the
+chat, the links, the settings page and its redirects.
+
 ## On Kubernetes with the Helm chart
 
 The same three pieces, with Superset's official Helm chart:
@@ -200,6 +232,10 @@ The same three pieces, with Superset's official Helm chart:
    replica (see [Deploying](../../operating/deploying.md#more-than-one-copy)).
 3. **A Service named `lenspack`** on port 8795, of type `ClusterIP`, in Superset's namespace (or set
    `LENSPACK_INTERNAL_URL` to its full name). No Ingress: browsers come through Superset.
+
+If the chart runs Superset under a path (`SUPERSET_APP_ROOT`, often set from the Ingress path), give the server
+`LENSPACK_SUPERSET_URL=http://superset:8088/superset` and nothing else; see
+[Superset under a path](#superset-under-a-path).
 
 ---
 
