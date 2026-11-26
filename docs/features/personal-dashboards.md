@@ -22,23 +22,32 @@ it was.
 
 Lenspack talks to Superset through its own admin account, so the rules below are Lenspack's, checked on every
 request before anything is written to Superset. They never allow more than Superset does. The chat and the panel
-check the same rules, so they always agree. (Where the rules live in the code is in
+check the same rules, so they always agree. "Admins" here are Lenspack's admins, by the `auth.admins` rule (by
+default Superset's Admin role; see [Who is asking](../hosts/superset/identity.md#who-may-administer)). (Where the rules live in the code is in
 [The kernel](../architecture/kernel.md#policy).)
 
 | | who may | |
 |---|---|---|
 | Ask about a dashboard | everyone who can view it in Superset | unchanged |
 | Change a shared dashboard | whoever Superset lets edit it: its owners with `can_write` on Dashboard, and admins | unchanged (`editPolicy: superset`) |
-| Make a blank dashboard | anyone signed in, up to the limit | it is owned by them in Superset |
+| Make a blank dashboard | anyone whose Superset roles may write dashboards, up to the limit | it is owned by them in Superset |
 | Open someone's own dashboard | its owner, and admins | narrower than Superset, which opens a draft with no roles for anyone who has its address |
-| Copy a dashboard | anyone who can view it, up to the limit | the copy and its charts are new and owned by them |
-| Delete a dashboard | its owners in Superset, and admins | never anyone else's, whatever else they may edit |
+| Copy a dashboard | anyone who can view it and may write dashboards, up to the limit | the copy and its charts are new and owned by them |
+| Delete a dashboard | among those who may write dashboards: its owners in Superset; admins too, for a personal dashboard (one made or copied through Lenspack) | never anyone else's, whatever else they may edit; any other dashboard only its owners delete here |
 | Save a layout | anyone who can view the dashboard, up to the limit | saving under a name they already used replaces it |
-| Apply a layout | the layout's owner (or an admin), on a dashboard they may edit | otherwise: make your own copy first |
+| Apply a layout | the layout's owner (or an admin) who may write dashboards, on a dashboard they may edit | otherwise: make your own copy first |
 | Rename or delete a layout | its owner, and admins | |
 | See everyone's | admins | `GET /_superset/personal` |
 
 Some details:
+
+- **Writing dashboards is Superset's right.** Making, copying, deleting and applying a layout all need what Superset
+  needs for the same thing: `can_write` on Dashboard (or the Admin role). A viewer role without it, for example a
+  copy of Gamma with that permission taken away, can still ask questions and save layouts, which writes nothing to
+  Superset. The panel then offers no "New dashboard" or copy, and says why; the routes and the chat refuse with "Your
+  role lets you view dashboards but not make or change them". Being a Lenspack admin does not change this. Superset
+  signs it on each request (`w`); a plugin too old to sign it leaves this to Superset admins only, so update
+  `lenspack_superset.py` together with Lenspack.
 
 - **Owners are real people.** A new dashboard, a copy and every chart made for them are given the person's own
   Superset user as owner, not Lenspack's account. That person can then also edit them in Superset itself.
@@ -162,7 +171,7 @@ dashboard than the one signed is refused (403).
 |---|---|
 | `GET /_superset/my?dashboard=<id>` | the person's dashboards and saved layouts (an admin: everyone's layouts), the limits, and what they may do on this dashboard |
 | `POST /_superset/my/dashboards` | `{title}`: a new blank dashboard. With `?dashboard=<id>` and `{copy: true, title?}`: a copy of that one |
-| `POST /_superset/my/dashboards/delete` | `{dashboard}`: delete one (its owners and admins only) |
+| `POST /_superset/my/dashboards/delete` | `{dashboard}`: delete one (its owners; admins for a personal dashboard) |
 | `POST /_superset/my/layouts?dashboard=<id>` | `{name}`: save the open dashboard's layout |
 | `POST /_superset/my/layouts/<id>/apply?dashboard=<id>` | apply it to the open dashboard; returns `{previous, version, skipped}` (`previous` is what Undo reverts to) |
 | `POST /_superset/my/layouts/<id>/rename` | `{name}` |

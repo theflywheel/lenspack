@@ -52,8 +52,9 @@ first, then from `LENSPACK_SUPERSET_URL`, `LENSPACK_PUBLIC_PATH`, `LENSPACK_PORT
 `LENSPACK_STATE_DIR`. A `budget:` in the file is used as it is; the budget variables count only when the file sets
 none. For `lenspack serve`, a command-line flag beats both: `--port`, then `port:`, then `PORT`.
 
-**Three exceptions, where the environment wins over the file:** `LENSPACK_EDIT_POLICY` and `LENSPACK_HOST_POLICY`
-over `editPolicy` and `hostPolicy`, `LENSPACK_AUDIT_RETENTION_DAYS` over `audit.retentionDays`, and `LENSPACK_AUTH`
+**Four exceptions, where the environment wins over the file:** `LENSPACK_EDIT_POLICY` and `LENSPACK_HOST_POLICY`
+over `editPolicy` and `hostPolicy`, `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES` and `LENSPACK_USER_ROLES` over
+`auth.admins`, `auth.usage` and `auth.users` in `superset.yaml`, `LENSPACK_AUDIT_RETENTION_DAYS` over `audit.retentionDays`, and `LENSPACK_AUTH`
 over `auth.kind`.
 
 The "wins" column of [Environment variables](../reference/config.md#environment-variables) says which way each

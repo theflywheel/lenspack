@@ -14,7 +14,7 @@ import { type ChatResult, PACK, type Session, type Stack, http, readChat, startS
 const VISITS = { North: 3, South: 4, East: 8, West: 16 };
 const STOCK = { North: 32, South: 64, East: 128, West: 256 };
 const ALL_MEASURES = ["stock_count", "stock_total", "visit_count", "visit_total"];
-const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_rbac_off", "lp_noroles", "lp_outage"] as const;
+const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_rbac_off", "lp_noroles", "lp_outage", "lp_lensadmin", "lp_lensuser", "lp_reader", "lp_alpha"] as const;
 type User = (typeof USERS)[number];
 
 const READ_ONLY = /can view this dashboard but not edit it in Superset/;
@@ -410,10 +410,12 @@ export function accessSuite(version: string) {
 
     describe("admin surfaces", () => {
       it("shows settings, the audit log and usage to Superset admins only; a dashboard owner is refused", async () => {
-        for (const path of ["_superset/settings", "_superset/audit?limit=5", "_superset/turns?limit=5", "api/_usage"]) {
+        // The default admins rule, ["Admin"]: a Superset role called "Lenspack admin" gives nothing until the rule names it.
+        for (const path of ["_superset/settings", "_superset/audit?limit=5", "_superset/turns?limit=5", "api/_usage", "_superset/admin/"]) {
           expect([path, (await s.lp_admin.lp("GET", path)).status]).toEqual([path, 200]);
-          for (const who of ["lp_owner", "lp_viewer", "lp_noroles"] as const) expect([who, path, (await s[who].lp("GET", path)).status]).toEqual([who, path, 403]);
+          for (const who of ["lp_owner", "lp_viewer", "lp_noroles", "lp_lensadmin"] as const) expect([who, path, (await s[who].lp("GET", path)).status]).toEqual([who, path, 403]);
         }
+        expect((await s.lp_lensadmin.lp("GET", "_superset/settings")).json.error).toMatch(/only Superset admins/);
         expect((await s.lp_owner.lp("PUT", "_superset/settings/features", { boardEdits: false })).status).toBe(403);
         expect((await s.lp_admin.send("GET", "/ai-assistant/")).status).toBe(200);
         expect((await s.lp_owner.send("GET", "/ai-assistant/")).status).toBe(403);
@@ -691,6 +693,10 @@ export function accessSuite(version: string) {
         expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: stack.fixtures.dashboards.a })).status).toBe(403);
         expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.a}`)).status).toBe(200);
         expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${one}`)).status).toBe(200);
+        // An admin deletes only personal dashboards: A was not made through Lenspack, so it is its owner's to delete, in Superset.
+        const notPersonal = await s.lp_admin.lp("POST", "_superset/my/dashboards/delete", { dashboard: stack.fixtures.dashboards.a });
+        expect([notPersonal.status, notPersonal.json.code]).toEqual([403, "not-yours"]);
+        expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.a}`)).status).toBe(200);
         // Their owner may; so may an admin.
         expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: one })).status).toBe(200);
         expect((await s.lp_admin.lp("POST", "_superset/my/dashboards/delete", { dashboard: two })).status).toBe(200);
@@ -830,9 +836,132 @@ export function accessSuite(version: string) {
         }
       });
 
+      it("needs Superset's right to write dashboards: a viewer role makes, copies and applies nothing; Alpha may", async () => {
+        const NO_WRITE = /view dashboards but not make or change them/;
+        const A_ID = stack.fixtures.dashboards.a;
+        // A role without can_write on Dashboard: the menu offers nothing to make, and every route says why.
+        const view = (await s.lp_reader.lp("GET", `_superset/my?dashboard=${A_ID}`)).json;
+        expect(view).toMatchObject({ canWrite: false, canCreate: false, here: { canCopy: false, edit: false } });
+        const made = await s.lp_reader.lp("POST", "_superset/my/dashboards", { title: "Reader's" });
+        expect([made.status, made.json.code, made.json.error]).toEqual([403, "no-write", expect.stringMatching(NO_WRITE)]);
+        const copied = await copyOf("lp_reader", A_ID);
+        expect([copied.status, copied.json.code]).toEqual([403, "no-write"]);
+        expect(JSON.stringify(toolOutput(await chat("lp_reader", A, "create_dashboard", { title: "Reader's (chat)" })))).toMatch(NO_WRITE);
+        // A saved layout writes nothing to Superset, so it may save one, but not apply it.
+        const saved = await s.lp_reader.lp("POST", `_superset/my/layouts?dashboard=${A_ID}`, { name: "Reader view" });
+        expect(saved.status, saved.text).toBe(200);
+        const applied = await s.lp_reader.lp("POST", `_superset/my/layouts/${saved.json.id}/apply?dashboard=${A_ID}`, {});
+        expect([applied.status, applied.json.code]).toEqual([403, "no-write"]);
+        await s.lp_reader.lp("POST", `_superset/my/layouts/${saved.json.id}/delete`, {});
+        expect(await mine("lp_reader")).toEqual([]);
+        // Alpha writes dashboards in Superset: it makes, copies and deletes its own.
+        expect((await s.lp_alpha.lp("GET", `_superset/my?dashboard=${A_ID}`)).json).toMatchObject({ canWrite: true, canCreate: true, here: { canCopy: true } });
+        const blank = await make("lp_alpha", "Alpha blank");
+        const copy = await copyOf("lp_alpha", A_ID);
+        expect(copy.status, copy.text).toBe(200);
+        expect(sorted((await mine("lp_alpha")).map(String))).toEqual(sorted([blank, copy.json.dashboard].map(String)));
+        for (const d of [blank, copy.json.dashboard]) expect((await s.lp_alpha.lp("POST", "_superset/my/dashboards/delete", { dashboard: d })).status).toBe(200);
+        expect(await mine("lp_alpha")).toEqual([]);
+      });
+
       it("leaves no personal dashboards behind", async () => {
         expect((await s.lp_viewer.lp("POST", "_superset/my/dashboards/delete", { dashboard: viewerCopy })).status).toBe(200);
         expect(await mine("lp_viewer")).toEqual([]);
+      });
+    });
+
+    // Last, as it restarts Lenspack: the deployment names its own admin role (auth.admins in superset.yaml).
+    describe("Lenspack's own admins rule (auth.admins: [\"Lenspack admin\"])", () => {
+      const ADMIN_GETS = ["_superset/settings", "_superset/audit?limit=5", "_superset/turns?limit=5", "api/_usage", "_superset/admin/", "_superset/admin/api/packs", "_superset/telemetry/superset-actions", "_superset/personal"];
+      const catalogue = async (who: User) => sorted(((await s[who].lp("GET", `api/${PACK}`)).json.catalogue.measures as { key: string }[]).map((m) => m.key));
+
+      beforeAll(async () => {
+        await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }']);
+        expect(stack.log()).toMatch(/admins: Superset role Lenspack admin/);
+      }, 300_000);
+
+      it("refuses a Superset Admin without the role the panel, the settings, the audit log and every admin route", async () => {
+        for (const path of ADMIN_GETS) expect([path, (await s.lp_admin.lp("GET", path)).status]).toEqual([path, 403]);
+        const refused = await s.lp_admin.lp("GET", "_superset/settings");
+        expect(refused.json.error).toMatch(/only assistant admins/);
+        for (const [path, body] of [["_superset/settings/features", { boardEdits: false }], ["_superset/settings/edit-scope", { scope: "own" }], ["_superset/settings/personal", { maxDashboardsPerUser: 1 }]] as const)
+          expect([path, (await s.lp_admin.lp("PUT", path, body)).status]).toEqual([path, 403]);
+        // Superset's own Settings → AI assistant page follows Lenspack's answer.
+        expect((await s.lp_admin.send("GET", "/ai-assistant/")).status).toBe(403);
+        // Still a Superset Admin everywhere else: their dashboards and data are Superset's to give, and unchanged.
+        expect(await catalogue("lp_admin")).toEqual(ALL_MEASURES);
+        expect(byGroup(toolOutput(await chat("lp_admin", B, "query", BREAKDOWN("stock_total"))).rows)).toEqual(STOCK);
+      });
+
+      it("gives a Gamma user with the role the panel and the admin routes", async () => {
+        for (const path of ADMIN_GETS) expect([path, (await s.lp_lensadmin.lp("GET", path)).status]).toEqual([path, 200]);
+        const page = await s.lp_lensadmin.lp("GET", "_superset/admin/");
+        expect(page.headers["content-type"]).toMatch(/text\/html/);
+        expect((await s.lp_lensadmin.lp("PUT", "_superset/settings/edit-scope", { scope: "own" })).status).toBe(200);
+        expect((await s.lp_lensadmin.lp("GET", "_superset/settings")).json.editScope.scope).toBe("own");
+        expect((await s.lp_lensadmin.lp("PUT", "_superset/settings/edit-scope", { scope: null })).status).toBe(200);
+        // Superset's own settings page lists Superset's databases: it stays a Superset Admin's page.
+        expect((await s.lp_lensadmin.send("GET", "/ai-assistant/")).status).toBe(403);
+      });
+
+      it("but only their own data access: the admin role widens no dataset, row, dashboard or edit right", async () => {
+        // The same as lp_partial (Gamma + visits, no admin role) in every answer.
+        expect(await catalogue("lp_lensadmin")).toEqual(await catalogue("lp_partial"));
+        expect(await catalogue("lp_lensadmin")).toEqual(["visit_count", "visit_total"]);
+        const stock = toolOutput(await chat("lp_lensadmin", A, "query", BREAKDOWN("stock_total")));
+        expect([stock.ok, stock.error]).toEqual([false, expect.stringMatching(NO_ACCESS)]);
+        expect(byGroup(toolOutput(await chat("lp_lensadmin", A, "query", BREAKDOWN("visit_total"))).rows)).toEqual(VISITS);
+        const boards = async (who: User) => sorted(((await s[who].lp("GET", `api/${PACK}`)).json.boards as { id: string }[]).map((b) => b.id));
+        expect(await boards("lp_lensadmin")).toEqual(await boards("lp_partial"));
+        expect((await s.lp_lensadmin.lp("GET", `api/${PACK}/${B}`)).status).toBe(403);
+        // Not an owner of A: they ask, they don't edit.
+        const edit = await s.lp_lensadmin.lp("POST", `api/${PACK}/${A}/ops`, { ops: [{ op: "set_title", title: "Not theirs" }] });
+        expect([edit.status, edit.json.error]).toEqual([403, expect.stringMatching(READ_ONLY)]);
+        expect(await dashboardTitle(stack.fixtures.dashboards.a)).toBe("Access A");
+        // Nor delete a dashboard that isn't a personal one.
+        expect((await s.lp_lensadmin.lp("POST", "_superset/my/dashboards/delete", { dashboard: stack.fixtures.dashboards.a })).status).toBe(403);
+        expect((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.a}`)).status).toBe(200);
+      });
+    });
+
+    // Last, as it restarts Lenspack again: the assistant switched on per person (auth.users in superset.yaml).
+    describe("Lenspack switched on per person (auth.users: [\"Lenspack user\"])", () => {
+      const NOT_ON = /isn't turned on for your account/;
+      /** The overlay script every Superset page loads through /lenspack: the real one draws the button. */
+      const overlay = async (who: User) => (await s[who].lp("GET", "overlay.js")).text;
+      let real = "";
+
+      beforeAll(async () => {
+        real = await overlay("lp_viewer");
+        expect(real.length).toBeGreaterThan(1000);
+        await stack.restartLenspack(['auth: { users: ["Lenspack user"] }']);
+        expect(stack.log()).toMatch(/users: Superset role Lenspack user and admins/);
+      }, 300_000);
+
+      it("gives a user without the role no button and no chat, and refuses the chat and data routes plainly", async () => {
+        const script = await overlay("lp_viewer");
+        expect(script).not.toBe(real);
+        expect(script.length).toBeLessThan(200);
+        const r = await s.lp_viewer.lp("POST", `api/${PACK}/${A}/chat?review=off`, { messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: `TOOL query ${JSON.stringify(BREAKDOWN("visit_total"))}` }] }] });
+        expect([r.status, r.json.code, r.json.error]).toEqual([403, "not-turned-on", expect.stringMatching(NOT_ON)]);
+        for (const path of [`api/${PACK}`, `api/${PACK}/${A}`, `api/${PACK}/${A}/data`, `api/${PACK}/${A}/options?field=region`, "_superset/my", "_superset/dashboards", `_superset/bind?dashboard=${stack.fixtures.dashboards.a}`]) {
+          const refused = await s.lp_viewer.lp("GET", path);
+          expect([path, refused.status, refused.json?.code]).toEqual([path, 403, "not-turned-on"]);
+        }
+      });
+
+      it("works as before for a user with the role", async () => {
+        expect(await overlay("lp_lensuser")).toBe(real);
+        expect((await s.lp_lensuser.lp("GET", `api/${PACK}/${A}`)).status).toBe(200);
+        expect(byGroup(toolOutput(await chat("lp_lensuser", A, "query", BREAKDOWN("visit_total"))).rows)).toEqual(VISITS);
+        // Still only what Superset lets them do: a viewer of A, not an editor.
+        expect((await s.lp_lensuser.lp("POST", `api/${PACK}/${A}/ops`, { ops: [{ op: "set_title", title: "Not theirs" }] })).status).toBe(403);
+      });
+
+      it("lets an admin without the role in, chat and admin pages alike", async () => {
+        expect(await overlay("lp_admin")).toBe(real);
+        expect(byGroup(toolOutput(await chat("lp_admin", B, "query", BREAKDOWN("stock_total"))).rows)).toEqual(STOCK);
+        expect((await s.lp_admin.lp("GET", "_superset/settings")).status).toBe(200);
       });
     });
   });

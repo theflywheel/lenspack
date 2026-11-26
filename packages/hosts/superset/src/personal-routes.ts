@@ -6,13 +6,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { Capabilities, Ctx } from "@lenspack/engine";
-import { type PersonalActor, type PersonalLimits, adminRights } from "@lenspack/policy";
+import { type PersonalActor, type PersonalLimits, type Rights, adminRights, principalOf } from "@lenspack/policy";
 
-import type { Identity } from "./identity";
+import { type Identity, rolesOf, supersetRights } from "./identity";
 import type { PersonalDashboards, SignedRights } from "./personal";
 
 export type PersonalRoutesOptions = {
   personal: PersonalDashboards;
+  /** The deployment's rights by Superset role (supersetRights): who holds the admin role here. */
+  rights?: Rights;
+  /** In the deployment's words, for the refusal: "Superset admin", or "assistant admin" under a rule of its own. */
+  adminName?: string;
   /** The signed identity of a request, or null. */
   identity: (req: IncomingMessage) => Identity | null;
   /**
@@ -55,8 +59,18 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-/** Superset says who this is; with the plugin's user id when it signs one. */
-export const actorOf = (id: Identity): PersonalActor => ({ user: id.u, userId: typeof id.i === "number" && Number.isSafeInteger(id.i) && id.i > 0 ? id.i : null, roles: id.a === true ? ["admin"] : [], hostRoles: id.r ?? [] });
+/**
+ * Superset says who this is, with the plugin's user id when it signs one. Their roles are settled by the deployment's
+ * rights (principalOf), so an admin here is whoever the admins rule says, as on every other admin page.
+ */
+export const actorOf = (id: Identity, rights: Rights = supersetRights()): PersonalActor => ({
+  user: id.u,
+  userId: typeof id.i === "number" && Number.isSafeInteger(id.i) && id.i > 0 ? id.i : null,
+  roles: principalOf({ user: id.u, roles: rolesOf(id) }, rights).roles,
+  // Superset's own right to write dashboards; a plugin too old to sign it: Superset admins only, who always have it.
+  writes: typeof id.w === "boolean" ? id.w : id.a === true,
+  hostRoles: id.r ?? [],
+});
 
 export function personalRoutes(o: PersonalRoutesOptions) {
   const { personal } = o;
@@ -69,7 +83,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
   };
   const audited = (who: PersonalActor, action: string, outcome: "ok" | "refused" | "denied", detail: string) => o.audit?.({ at: new Date().toISOString(), user: who.user, action, outcome, detail: detail.slice(0, 300) });
   const unsigned = { error: "Superset did not check your access to this dashboard. Reload the page; if it keeps happening, lenspack_superset.py in Superset needs updating.", code: "unsigned" };
-  const status = (r: { ok: boolean; code?: string }) => (r.ok ? 200 : r.code === "not-yours" || r.code === "no-view" || r.code === "no-edit" || r.code === "no-user-id" ? 403 : r.code === "missing" ? 404 : r.code === "limit" || r.code === "off" ? 409 : 400);
+  const status = (r: { ok: boolean; code?: string }) => (r.ok ? 200 : r.code === "not-yours" || r.code === "no-view" || r.code === "no-edit" || r.code === "no-write" || r.code === "no-user-id" ? 403 : r.code === "missing" ? 404 : r.code === "limit" || r.code === "off" ? 409 : 400);
 
   /** Handles the request when it is one of these routes; false otherwise. */
   return async function handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
@@ -77,7 +91,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
     if (path !== "/_superset/personal" && path !== "/_superset/settings/personal" && path !== "/_superset/settings/edit-scope" && path !== "/_superset/my" && !path.startsWith("/_superset/my/")) return false;
     const id = o.identity(req);
     if (!id) return o.reply(res, 401, { error: "sign in to Superset first" }), true;
-    const who = actorOf(id);
+    const who = actorOf(id, o.rights);
     const base = o.base(req);
     const send = (r: { ok: boolean; code?: string }) => o.reply(res, status(r), r);
     try {
@@ -87,7 +101,8 @@ export function personalRoutes(o: PersonalRoutesOptions) {
       }
       if ((path === "/_superset/settings/personal" || path === "/_superset/settings/edit-scope") && req.method === "PUT") {
         const action = `PUT ${path}`;
-        if (!adminRights(who).administer) return audited(who, action, "denied", "not a Superset admin"), o.reply(res, 403, { error: "only Superset admins can change this" }), true;
+        const admins = o.adminName ?? "Superset admin";
+        if (!adminRights(who).administer) return audited(who, action, "denied", `not a ${admins}`), o.reply(res, 403, { error: `only ${admins}s can change this` }), true;
         const b = await body(req);
         const r = path === "/_superset/settings/personal" ? o.setLimits(b) : o.setEditScope(b);
         audited(who, action, r.ok ? "ok" : "refused", r.ok ? JSON.stringify(b) : r.error);
