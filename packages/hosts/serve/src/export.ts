@@ -117,7 +117,7 @@ export function exportRoutes(src: ExportSources) {
     const given = bearer(req);
     if (!given || !sameToken(given, setup.token)) {
       log("export:?", `export ${path || "index"}`, "denied", given ? "wrong token" : "no token");
-      res.setHeader("www-authenticate", 'Bearer realm="lenspack export"');
+      res.setHeader("www-authenticate", 'Bearer realm="export"');
       return send(401, { error: "an export token is needed: Authorization: Bearer <LENSPACK_EXPORT_TOKEN>", code: "no-token" });
     }
     const grant = setup.grant;
