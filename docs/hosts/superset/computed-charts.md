@@ -43,10 +43,10 @@ summary is saved, when that 0 cannot change the answer:
 - for `sum` of a count or a sum: adding 0 changes nothing;
 - for `max` of a count or a distinct count: a bucket with records counts at least 1, more than 0.
 
-Otherwise it is refused when the widget is added, with the nearest chart Superset keeps exactly. The burn rate per
-region (the average daily units dispatched) is one: a region's day with nothing dispatched is 0 for Lenspack and no cell
-for the pivot table, so Superset's average would be higher wherever a region had such a day. Superset keeps exactly the
-total per region with a column per day (`sum`), or the daily units dispatched by region as a line chart.
+Otherwise it is refused when the widget is added, with the nearest chart Superset keeps exactly. The average
+orders per day by country is one: a country's day with no orders is 0 for Lenspack and no cell for the pivot table,
+so Superset's average would be higher wherever a country had such a day. Superset keeps exactly the total per
+country with a column per day (`sum`), or the daily orders by country as a line chart.
 
 **Read back.** Lenspack reads these charts back as computed widgets, including ones made in Superset when the
 controls say exactly one of these steps: a time chart with one of the advanced analytics above, or a pivot table
@@ -54,7 +54,7 @@ with one pack dimension as its rows, the time column at a grain as its columns, 
 and an aggregation function that agrees with Lenspack for that metric.
 
 **Refused**, with what to do instead: a summary whose pivot table total would differ (above), a summary with a step
-before it (an average day-on-day change per region: Superset keeps the change by region as a line chart), `last`
+before it (an average day-on-day change per country: Superset keeps the change by country as a line chart), `last`
 (the pivot table's "Last" is the largest value, not the latest bucket), a summary as one number (ask it per group),
 a ratio of two metrics, and several steps on a series. The chat still answers all of these: through Superset, as
 through every source, the engine asks for the base rows and computes the steps itself.
@@ -71,7 +71,7 @@ answer there:
   with the same part of the bucket before it; Lenspack compares it with the whole bucket before.
 - From a negative bucket, Superset divides the change by the value itself and Lenspack by its size. Counts and sums
   of quantities are rarely negative.
-- A group whose every cell is empty (a region that dispatched nothing in the window) is listed by Lenspack, with 0 or
+- A group whose every cell is empty (a country with no orders in the window) is listed by Lenspack, with 0 or
   no value, and left out of Superset's pivot table.
 
 ---

@@ -67,9 +67,6 @@ session hidden. Every refusal is written to the audit log.
 Inside Superset, edits follow Superset's own rights by default: whoever Superset lets edit that dashboard. See
 [Who is asking: who may edit](../hosts/superset/identity.md#who-may-edit).
 
-> **Coming soon.** Personal dashboards: anyone may make or copy a dashboard of their own and change it freely, and
-> `editScope: own` limits chat edits to those. See [Personal dashboards](../features/personal-dashboards.md).
-
 ## Turning edits off for everyone
 
 The `boardEdits` switch, off, makes the chat answer questions only, for everyone, admins included. See

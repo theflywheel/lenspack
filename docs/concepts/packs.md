@@ -27,8 +27,8 @@ entities:
       - { to: customers, on: orders.customer_id = customers.id, type: many_to_one }
   customers: { source: customers, grain: one row per customer }
 dimensions:
-  - { key: country, entity: customers, sql: country, synonyms: [market, region] }
-  - { key: channel, entity: orders,    sql: channel, type: enum }
+  - { key: country, entity: customers, field: country, synonyms: [market, region] }
+  - { key: channel, entity: orders,    field: channel, type: enum }
 measures:
   - { key: orders,  entity: orders, agg: count }
   - { key: revenue, entity: orders, agg: sum, sql: total_cents / 100.0, format: currency }

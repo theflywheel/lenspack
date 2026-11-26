@@ -36,14 +36,12 @@ POST /api/<pack>/<board>/chat
    by hand since the last turn). A model provider that caches prompts reads the stable part from its cache.
 7. **Round 1.** The builder model calls tools, up to a step limit, and stops early after repeated refusals. With a
    reviewer on, every edit goes to a **staged** copy of the board: nothing is saved yet.
-8. **Review.** A turn is reviewed when the board gained a version, or when the reply may say it did (an edit was
-   tried and refused, or the reply says it added, removed, renamed or moved something). The reviewer sees the
-   request, the board before and after, and the refusals, and marks each finding **material** (the board would
-   mislead whoever reads it) or **minor**.
+8. **Review.** The reviewer sees the request, the board before and after, and the refusals, and marks each finding
+   material or minor. When a turn is reviewed, and what each finding leads to, is in
+   [The reviewer](../features/dashboard-edits.md#the-reviewer).
 9. **Fix round.** A material finding gets one fix round on the escalation model and a second check.
-10. **Save or discard.** If the change is still wrong, nothing from the turn is saved and the reply says the board
-    was left as it was. Otherwise the staged edits become versions. Minor findings are saved and mentioned in one
-    sentence.
+10. **Save or discard.** The staged edits become versions, or, if the change is still wrong, nothing from the turn
+    is saved.
 11. **Close.** The answer card goes to the person who asked; the turn's cost is sent as a line under the reply; one
     `chat-turn` audit line records the instruction, the answer, the tool calls, the outcome and the cost; the
     saved-answer store keeps the plan if the turn went well.

@@ -1,15 +1,10 @@
 # Saved answers
 
-People who use a dashboard do not come up with new questions every day. A team asks the same few dozen things ("how many orders came in today?", "which region is behind?") again and again, in slightly different words, about different places and days. And once a dashboard has been shaped over a few rounds of changes, it settles: nobody keeps moving the charts around.
-
-Lenspack takes advantage of both. When a question has been answered well before, it answers it again by running the same queries on the current data, without asking the model to work everything out again. When a change to a board has been made and accepted before, it makes the same change again. The model is kept for questions that are actually new.
-
 This page explains how saved answers work, what they save, when one is not used, and what the person asking sees.
-It is for admins and anyone sizing a deployment. The short version is in [Concepts: saved answers](../concepts/saved-answers.md).
-
-## The idea in one paragraph
-
-A full turn with the assistant reads the pack's catalogue, plans which queries to run, runs them, and writes a reply. Most of the cost is the planning and the writing. The result of the planning (which tools were called, with which arguments) is small and can be kept. So Lenspack keeps a **plan** for each question it answered well, together with the reply and the numbers the reply was written from. The next time the same question comes in, it runs the plan again on today's data and puts today's numbers into the saved reply. The numbers are always read fresh. Only the work of deciding what to read is reused.
+It is for admins and anyone sizing a deployment. The idea, and the rule that keeps it safe, are in [Concepts: saved
+answers](../concepts/saved-answers.md): a question answered well before is answered again by running the same
+queries on today's data, without the model, and only for someone with the same access. A change to a board made
+and accepted before is made again the same way. The model is kept for questions that are actually new.
 
 ## The tiers, cheapest first
 
@@ -19,10 +14,10 @@ Each question is tried against these in order. The first one that fits answers i
 |---|---|---|---|
 | **1. Exact replay** | The same question (ignoring case, punctuation, spacing and how numbers are written) was answered in the last few minutes on the same day | Sends the saved reply as it is. The data has not had time to change. | none |
 | **2. Plan replay** | The same question, answered earlier | Runs the saved queries again on the current data. If every number in the saved reply can be traced to one place in the results, and the results still have the same rows in the same order, today's numbers are put into the reply in the same format. Otherwise one small model call rewrites the reply from the fresh results. | none, or one small call |
-| **3. Slots** | The same question about another place, facility or time ("in the North" instead of "in the South", "last week" instead of "today") | Swaps the value into the saved queries, checks that the value exists in the data, and runs them. The reply is filled in as in tier 2. A different time period always goes to the small model, because the dates in the reply change. | none, or one small call |
+| **3. Slots** | The same question about another place, product or time ("in Portugal" instead of "in Spain", "last week" instead of "today") | Swaps the value into the saved queries, checks that the value exists in the data, and runs them. The reply is filled in as in tier 2. A different time period always goes to the small model, because the dates in the reply change. | none, or one small call |
 | **4. Router** | A question in different words, or another language | One small model call sees the new question and the eight saved questions most like it, and says which one (if any) would answer it exactly as asked, and with which place or time. A match is run as in tier 3. "No match" goes to the full assistant. | one small call |
 
-**Suggested questions.** A pack can list example questions with the query someone checked for each (`examples:` in the pack file); the chat offers them as suggestion chips. When one of those questions is asked and nothing is saved for it yet, its checked query is run directly, under the asking person's access, and the small model says the result in one to three sentences (with no model at hand, a plain line such as "orders today: 1,204." does). That answer is then kept like any other, so the next ask is tier 1 or 2. Before, clicking a chip ran the full assistant even though the right query was already known.
+**Suggested questions.** A pack can list example questions with the query someone checked for each (`examples:` in the pack file); the chat offers them as suggestion chips. When one of those questions is asked and nothing is saved for it yet, its checked query is run directly, under the asking person's access, and the small model says the result in one to three sentences (with no model at hand, a plain line such as "orders today: 1,204." does). That answer is then kept like any other, so the next ask is tier 1 or 2.
 
 The small model is the deployment's `router` role if one is set, otherwise a Haiku model if one is configured, otherwise the main model. On Haiku 5.5 a router or rewrite call costs a few hundredths of a cent.
 
@@ -54,7 +49,8 @@ A saved answer is used only for the same:
 
 - **access scope.** The places, records and fields a person may see. See below.
 - **pack and its definitions.** A change to the pack file (a measure, a dimension, a definition, a correctness filter) changes its fingerprint, and every answer saved under the old one stops being served.
-- **assistant version.** When the assistant's instructions change (`PROMPT_VERSION`), old answers stop being served.
+- **the assistant's instructions.** When a release changes the instructions the assistant is given, old answers stop
+  being served.
 - **board filters.** An answer is saved per board, under that board's filters. Adding, changing or removing a filter starts afresh.
 - **the viewer's filter selections.** What a person has picked in the dashboard's filters (the `selections` the chat panels send with each question, or `?f_<field>=` on the chat request) is part of the question: "how many today?" with one region picked is not the same question as with none.
 - **language rules.** A reply in a chosen language is not served to someone who chose another.
@@ -73,7 +69,7 @@ The store holds at most `maxEntries` entries (500 by default). When it is full, 
 
 ## Why we never cross access scopes
 
-Two people can ask the same words and be entitled to different answers. Someone who may only see one region must never be given a number counted over all of them, and must not even learn that someone else asked about a place they cannot see. So every saved answer carries a fingerprint of the access it was made under: the tenant, the row filters, and the fields and tables hidden from that person. An answer is only served to a request with the same fingerprint, and its queries are run again under the asking person's own access, so the access checks still apply to every query. The suggestion chips follow the same rule. Admins see every scope's questions on the admin page, because they can already see every board.
+Two people can ask the same words and be entitled to different answers. Someone who may only see one country must never be given a number counted over all of them, and must not even learn that someone else asked about a place they cannot see. So every saved answer carries a fingerprint of the access it was made under: the tenant, the row filters, and the fields and tables hidden from that person. An answer is only served to a request with the same fingerprint, and its queries are run again under the asking person's own access, so the access checks still apply to every query. The suggestion chips follow the same rule. Admins see every scope's questions on the admin page, because they can already see every board.
 
 ## What the person asking sees
 

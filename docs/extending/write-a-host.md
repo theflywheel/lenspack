@@ -24,7 +24,7 @@ const identity = {
   user: "someone",
   roles: ["analyst"],
   tenant: "acme",                                                  // narrows every query to this tenant
-  scope: [{ dimension: "region", op: "eq", value: "North" }],      // rows they may see
+  scope: [{ dimension: "country", op: "eq", value: "PT" }],        // rows they may see
   hiddenEntities: ["payroll"],                                     // tables your app keeps from them
   readOnly: "you can view this board but not edit it",            // they may ask, not change
 };

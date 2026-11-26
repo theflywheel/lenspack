@@ -1,8 +1,10 @@
 # What Superset 6 could add
 
-This page looks at what Superset 6.0 and 6.1 add that could make the assistant able to do more, and what each would
-take. It is for whoever plans Lenspack's Superset work. Nothing here is built yet. Lenspack works with Superset 6.1
-and 5.0; [Versions](versions.md) lists the differences.
+Status: a planning note, 2026-11-25. Nothing here is built yet.
+
+This note looks at what Superset 6.0 and 6.1 add that could make the assistant able to do more, and what each would
+take. Lenspack works with Superset 6.1
+and 5.0; [Versions](../hosts/superset/versions.md) lists the differences.
 
 Effort: **small** is a few days inside the Superset package; **medium** touches the board model or the chat's
 tools as well; **large** is a new piece of the system.
@@ -153,6 +155,6 @@ row-level security.
 
 ---
 
-**Next:** [Access inside Superset](../../access/superset.md), or back to [Choose a host](../README.md).
+**Next:** back to [Design notes](README.md).
 
-**Related:** [Versions](versions.md) · [Computed charts](computed-charts.md)
+**Related:** [Versions](../hosts/superset/versions.md) · [Computed charts](../hosts/superset/computed-charts.md)

@@ -32,17 +32,31 @@ carry keys and per-deployment prices; the config file describes data. See [Chat 
 
 ## What wins
 
-For settings that can come from several places, the order is, lowest first:
+It depends on the kind of setting.
+
+**Settings an admin can change while it runs** (feature switches, telemetry, kept recordings, voice and language,
+saved answers and the queue). The order is, lowest first:
 
 1. the built-in default;
 2. the config file;
-3. the environment variable;
-4. a value an admin set on a running server (the admin panel or Superset's settings page), kept in the state
+3. the environment variable, where there is one;
+4. a value an admin set on the running server (the admin panel or Superset's settings page), kept in the state
    directory.
 
-An admin's value can be handed back with **Reset** (or `null` through the settings routes). This holds for the
-switches, voice and language settings, saved answers and the queue. For `superset.yaml`, most keys can be left out
-for their environment variable, then the default (for example `superset.url` or `LENSPACK_SUPERSET_URL`).
+An admin's value can be handed back with **Reset** (or `null` through the settings routes).
+
+**Everything else: the config file wins**, and the environment variable is a fallback for a key the file leaves
+out. For example, `superset.url`, `publicPath`, `port`, `host` and `state` in `superset.yaml` are read from the file
+first, then from `LENSPACK_SUPERSET_URL`, `LENSPACK_PUBLIC_PATH`, `LENSPACK_PORT`, `LENSPACK_HOST` and
+`LENSPACK_STATE_DIR`. A `budget:` in the file is used as it is; the budget variables count only when the file sets
+none. For `lenspack serve`, a command-line flag beats both: `--port`, then `port:`, then `PORT`.
+
+**Three exceptions, where the environment wins over the file:** `LENSPACK_EDIT_POLICY` and `LENSPACK_HOST_POLICY`
+over `editPolicy` and `hostPolicy`, `LENSPACK_AUDIT_RETENTION_DAYS` over `audit.retentionDays`, and `LENSPACK_AUTH`
+over `auth.kind`.
+
+The "wins" column of [Environment variables](../reference/config.md#environment-variables) says which way each
+variable goes.
 
 ## The settings an admin can change while it runs
 
@@ -50,7 +64,7 @@ Without a restart, from the admin panel or Superset's settings page:
 
 - every [feature switch](switches.md);
 - [saved answers](../features/saved-answers.md#the-switches) and the [queue](../features/busy-hours.md);
-- the [daily review](../features/review.md#the-daily-review) and the definitions;
+- the [daily review](../features/open-questions.md#the-daily-review) and the definitions;
 - inside Superset, the chat and speech models, [voice](../features/voice.md) and [languages](../features/languages.md).
 
 Everything else (sources, packs, sign-in, the store) needs a restart.

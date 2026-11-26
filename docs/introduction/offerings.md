@@ -21,11 +21,8 @@ filters and dates it used, the SQL that ran and the rows behind it. See [How thi
 See [Voice](../features/voice.md) and [Languages](../features/languages.md).
 
 **Asking which reading was meant.** When a question can be read two ways that give different numbers, the
-assistant asks, with buttons, or says which reading it used. See [Daily review, open questions and
-definitions](../features/review.md#clarify).
-
-**Your own copy of a shared dashboard** (coming soon). Someone who can only view a dashboard can copy it and
-change the copy, or keep a layout they like under a name. See [Personal dashboards](../features/personal-dashboards.md).
+assistant asks, with buttons, or says which reading it used. See [Open questions and
+definitions](../features/open-questions.md#clarify).
 
 ## For the people running it
 
@@ -39,7 +36,7 @@ same queries on today's data, without the model, and keeps the model for new que
 
 **A daily review, open questions and definitions.** A log of questions with more than one reading, each reading's
 figures side by side, and a layer of definitions admins add without a release. An optional daily review proposes
-fixes for an admin to accept. See [Daily review](../features/review.md).
+fixes for an admin to accept. See [Daily review](../features/open-questions.md).
 
 **An admin panel.** One place for usage, the review, open questions, definitions, saved answers, telemetry and
 every switch. Its overview is itself a Lenspack board. See [The admin panel](../features/admin-panel.md).
@@ -49,9 +46,6 @@ server and per person, stops the chat before it spends past the cap. See [Costs]
 
 **Usage telemetry.** One record per chat turn, a thumbs up or down on answers, and a switch for each
 item recorded. See [Usage telemetry](../features/telemetry.md).
-
-**Your name on it** (coming soon). Call the assistant something else and label its button your way, in each
-language. See [Naming the assistant](../features/naming.md).
 
 ## For developers
 

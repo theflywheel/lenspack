@@ -28,7 +28,7 @@ A **row scope** is a list of filters every query a person runs carries: board wi
 chat's tools, on every source.
 
 ```yaml
-scope: [{ dimension: region, op: in, value: [North, East] }]
+scope: [{ dimension: country, op: in, value: [PT, ES] }]
 ```
 
 It comes from three places, applied together:
@@ -37,7 +37,7 @@ It comes from three places, applied together:
 2. **the caller**: a sign-in's claims, a token's `scope`, or the host (Superset's row-level security);
 3. **the caller's pack access rule** (`scope:` in [Pack access rules](pack-rules.md)).
 
-A clause may name an entity (`{ entity: visits, dimension: region, … }`); it then narrows only the queries that read
+A clause may name an entity (`{ entity: customers, dimension: country, … }`); it then narrows only the queries that read
 that entity, as a table's row-level security does. A host may also keep whole entities from a caller: their measures
 and the dimensions only they have are hidden, and a query that reads one is refused (`NOT_PERMITTED`).
 
@@ -52,8 +52,8 @@ under, so one caller's rows are never served to another. See [Saved answers](../
 
 ## Imported systems
 
-The CCRS importer's API puts the caller's CCRS row scope (departments, jurisdictions, own records) through the same
-path. See [Importers](../extending/importers.md#ccrs-analytics-lenspackccrs).
+An importer's API that answers another system's dashboards puts that system's row scope for the caller through the
+same path. See [Importers](../extending/importers.md).
 
 ## `run_sql`
 

@@ -35,7 +35,7 @@ Every SQL source is opened through a driver, and the driver, not the SQL, enforc
 read-only, exactly one statement, a time limit, and a row cap (a result over it is an error, not a shorter
 answer). How each database does it is in [SQL databases](../sources/sql.md#the-guards-belong-to-the-driver).
 
-Use a read-only database role in production as well. The driver's guards are a belt; the role is the braces.
+Use a read-only database role in production as well. The role is a second guard: if the driver's guards ever missed something, the database would still refuse to write.
 Seeding and the board store use a separate writer that is never handed to a tool or a model.
 
 ## `run_sql`

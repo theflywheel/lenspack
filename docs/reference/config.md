@@ -17,7 +17,7 @@ The standalone server's config. The blocks, in brief:
 | `packs` | each pack: its file, its source, its boards, its access rules | [Packs](#packs) below |
 | `store` | where boards live: `memory` (the default), `duckdb` with a `path`, or `postgres` with a `url` | [Stores](../architecture/stores.md) |
 | `ui` | the board app's folder, or `{ dir, mode, title, home, intro }` | [The standalone server](../hosts/serve.md#the-board-app) |
-| `port`, `host` | where it listens: port 8787; host `0.0.0.0` with a sign-in, `127.0.0.1` with `auth: none` | [CLI](cli.md#lenspack-serve) |
+| `port`, `host` | where it listens: port 8787; host `0.0.0.0` with a sign-in, `127.0.0.1` with `auth: { kind: none }` | [CLI](cli.md#lenspack-serve) |
 | <a id="auth"></a>`auth` | the sign-in: `password` (the default), `oidc`, `proxy`, `tokens` or `none` | [Sign-in](../access/sign-in.md) |
 | `state` | a writable folder for switches, definitions, open questions, the review and the audit log; turns on the admin panel | [What Lenspack keeps on disk](../operating/state.md) |
 | `audit` | an audit log file (JSON lines) | [Privacy](../operating/privacy.md) |
@@ -223,35 +223,38 @@ The Superset host's config. Most keys can be left out for their environment vari
 
 ## Environment variables
 
-| variable | read by | what it does |
-|---|---|---|
-| `LENSPACK_AUTH` | serve | overrides `auth.kind` (`none` for a quick local look) |
-| `LENSPACK_ADMIN_PASSWORD` | serve | the built-in admin's password, at least 12 characters |
-| `LENSPACK_ADMIN_PASSWORD_HASH` | serve | a scrypt hash of it (`lenspack hash-password`) |
-| `LENSPACK_STATE_DIR` | both | the state folder (`/data` in the image); the password sign-in's default `dir` |
-| `LENSPACK_UI` | serve | the board app's folder |
-| `LENSPACK_HOST`, `LENSPACK_PORT` | superset | where it listens (the image sets `LENSPACK_HOST=0.0.0.0`) |
-| `PORT` | serve | the port, when neither `--port` nor `port:` gives one |
-| `LENSPACK_FEATURES` | both | switches: `voice=off,maps=on`, `-voice,+maps`, or a JSON object |
-| `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | both | daily caps when the config sets none |
-| `LENSPACK_LLM_PROVIDERS` | both | model providers, as a JSON array. See [Chat models](../operating/models.md) |
-| `LENSPACK_LLM_ROLES` | both | which provider plays `reviewer`, `escalate` and `router` |
-| `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`, `LENSPACK_LLM_MODEL`, `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING` | both | a single OpenAI-compatible provider |
-| `LENSPACK_LLM_KEY_SOURCE` | both | what the settings page says the key came from |
-| `ANTHROPIC_API_KEY` | both | the `anthropic` adapter's key when a provider names none |
-| `LENSPACK_STT_API_KEY`, else `OPENROUTER_API_KEY` | both | speech to text |
-| `LENSPACK_SUPERSET_URL` | superset | `superset.url` |
-| `LENSPACK_SUPERSET_PASSWORD` | superset | the password of an account you manage |
-| `SUPERSET_ADMIN_USERNAME`, `SUPERSET_ADMIN_PASSWORD` | superset | the one-time admin sign-in that makes Lenspack's own account (`admin` by default) |
-| `LENSPACK_PUBLIC_PATH` | superset | `publicPath` |
-| `LENSPACK_EDIT_POLICY` | superset | `editPolicy` |
-| `LENSPACK_HOST_POLICY` | superset | `hostPolicy` |
-| `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept |
-| `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) |
-| `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) |
-| `LENSPACK_SPEECH_KEEP_AUDIO`, `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE` | both | keeping recordings of spoken questions: whether (off by default), for how long (30 days), how much (1000 MB), and the notice shown |
-| `LENSPACK_MCP_TOKEN` | mcp | the bearer token for `lenspack-mcp --http` |
-| `LENSPACK_DATA_DIR` | the demo | where `pnpm demo` looks for `<name>.duckdb` |
+In the "wins" column: **over the file** means the variable beats the config file's key; **fallback** means it is
+read only when the file leaves the key out; **only source** means there is no key in the file.
+
+| variable | read by | what it does | wins |
+|---|---|---|---|
+| `LENSPACK_AUTH` | serve | overrides `auth.kind` (`none` for a quick local look) | over the file |
+| `LENSPACK_ADMIN_PASSWORD` | serve | the built-in admin's password, at least 12 characters | fallback (when `auth` names no password or hash) |
+| `LENSPACK_ADMIN_PASSWORD_HASH` | serve | a scrypt hash of it (`lenspack hash-password`) | fallback (as above) |
+| `LENSPACK_STATE_DIR` | both | the state folder (`/data` in the image); the password sign-in's default `dir` | fallback (for `state:`, `auth.dir`) |
+| `LENSPACK_UI` | serve | the board app's folder | between: `--ui`, then it, then `ui:` |
+| `LENSPACK_HOST`, `LENSPACK_PORT` | superset | where it listens (the image sets `LENSPACK_HOST=0.0.0.0`) | fallback (for `host`, `port`) |
+| `PORT` | serve | the port, when neither `--port` nor `port:` gives one | fallback (after `--port`, `port:`) |
+| `LENSPACK_FEATURES` | both | switches: `voice=off,maps=on`, `-voice,+maps`, or a JSON object | over the file; an admin's setting wins over it |
+| `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | both | daily caps when the config sets none | fallback (only when the file sets no `budget`) |
+| `LENSPACK_LLM_PROVIDERS` | both | model providers, as a JSON array. See [Chat models](../operating/models.md) | only source |
+| `LENSPACK_LLM_ROLES` | both | which provider plays `reviewer`, `escalate` and `router` | only source |
+| `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`, `LENSPACK_LLM_MODEL`, `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING` | both | a single OpenAI-compatible provider | only source |
+| `LENSPACK_LLM_KEY_SOURCE` | both | what the settings page says the key came from | only source |
+| `ANTHROPIC_API_KEY` | both | the `anthropic` adapter's key when a provider names none | fallback (when a provider names no key) |
+| `LENSPACK_STT_API_KEY`, else `OPENROUTER_API_KEY` | both | speech to text | only source |
+| `LENSPACK_SUPERSET_URL` | superset | `superset.url` | fallback |
+| `LENSPACK_SUPERSET_PASSWORD` | superset | the password of an account you manage | fallback |
+| `SUPERSET_ADMIN_USERNAME`, `SUPERSET_ADMIN_PASSWORD` | superset | the one-time admin sign-in that makes Lenspack's own account (`admin` by default) | only source |
+| `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback |
+| `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
+| `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
+| `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file |
+| `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) | over the file; an admin's setting wins over it |
+| `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) | over the file's older `questionText`; an admin's setting wins over it |
+| `LENSPACK_SPEECH_KEEP_AUDIO`, `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE` | both | keeping recordings of spoken questions: whether (off by default), for how long (30 days), how much (1000 MB), and the notice shown | over the file; an admin's setting wins over it |
+| `LENSPACK_MCP_TOKEN` | mcp | the bearer token for `lenspack-mcp --http` | fallback (after `--token`) |
+| `LENSPACK_DATA_DIR` | the demo | where `pnpm demo` looks for `<name>.duckdb` | only source |
 
 Read by the Superset plugin, in Superset's environment:
 

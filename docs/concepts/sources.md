@@ -23,7 +23,7 @@ search request and runs it.
 | source | connector | notes |
 |---|---|---|
 | Postgres, ClickHouse, DuckDB, SQLite, MySQL, MariaDB | `sql`, with one driver per database | chosen by the URL's scheme. See [SQL databases](../sources/sql.md). |
-| Elasticsearch 6.x to 8.x, OpenSearch | `elasticsearch` | no joins; approximate counts are marked. See [Elasticsearch](../sources/elasticsearch.md). |
+| Elasticsearch 6.x to 8.x (tested on 7.17), OpenSearch | `elasticsearch` | no joins; approximate counts are marked. See [Elasticsearch](../sources/elasticsearch.md). |
 | Superset datasets | `superset` | numbers come from Superset's chart-data API, so a metric means the same in both. See [Superset](../hosts/superset/datasets-and-dashboards.md). |
 
 ## What a source may do
@@ -45,7 +45,7 @@ A pack can name data in two ways:
   accepts, or give one per database.
 
 The repository's tests hold this to account: one example pack returns the same numbers from DuckDB and from a real
-Elasticsearch on 77 queries.
+Elasticsearch on more than 100 queries.
 
 ---
 

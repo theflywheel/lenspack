@@ -41,8 +41,8 @@ A pack's example question may be written per language, with one query for all of
 ```yaml
 overlay:
   examples:
-    - question: { en: Orders by region, fr: Commandes par région, pt: Encomendas por região }
-      query: { kind: breakdown, dimension: region, measure: orders, limit: 10 }
+    - question: { en: Orders by country, fr: Commandes par pays, pt: Encomendas por país }
+      query: { kind: breakdown, dimension: country, measure: orders, limit: 10 }
 ```
 
 The model sees the English wording (else the first) as a worked example; a language an example lacks shows its

@@ -37,9 +37,55 @@ Names on the usage board and in review reports are shown only to admins who also
 same figures with the user, question text and session hidden. The browser keeps each answer's "How this was worked
 out" beside the conversation in the tab; it is never sent back to the server.
 
-**Telemetry** keeps one record per turn, per transcription and per client event, each item switched on its own.
-Question text, transcript text, kept recordings and device detail start off and ask an admin to confirm. Records are
-kept 90 days. See [Telemetry](../features/telemetry.md#privacy-notes).
+## Telemetry
+
+Telemetry keeps one record per turn, per transcription and per client event, each item switched on its own. Question
+text, transcript text, kept recordings and device detail start off and ask an admin to confirm. Records are kept 90
+days. What is recorded, and the switches, are in [Telemetry](../features/telemetry.md).
+
+### Privacy notes
+
+- **User names** are recorded while the user items are on, because each deployment wants to know who uses its tool. Only readers the policy allows see them as written. With them off, records carry no name, and feedback on a finished answer still works for the hour the turn stays open.
+- **Question text** is off by default. Then each question is kept only as a keyed hash:
+  - equal questions share a hash, so repeats can still be counted;
+  - nobody without the key can test a guess against it;
+  - working state keeps only hashed words.
+- **The browser** reports only classes, and only with the device items on: phone, tablet or desktop; a network type; narrow, medium or wide. Never its user agent.
+- **Secrets never reach a record.** Event data whose key looks like a secret is dropped, and no record holds a connection string or key.
+- **Audio** is not kept unless switched on (below).
+- **Switching off deletes nothing.** Records age out with their month; kept recordings can be deleted per user or all at once.
+
+### Kept recordings
+
+**Off by default.** Kept recordings are the `voice-audio` item on the Telemetry tab; turning it on shows the
+consent notice and asks the admin to confirm. Off:
+
+- nothing is written;
+- a clip lives only as long as its transcription takes;
+- the transcript record says `audio: null`.
+
+Either way, **the speech provider receives the audio** in order to transcribe it.
+
+When it is on:
+
+| | |
+|---|---|
+| what is stored | the bytes as uploaded, at `audio/<yyyy-mm>/<transcriptId>.<ext>` in the state directory, listed in `audio/index.jsonl` with the user and time. The transcript record links it: `audio: {stored: true, bytes, format}`. |
+| retention | `speech.audioRetentionDays` (default 30) and `speech.maxStoredMb` (default 1000; the oldest are deleted first when over). Checked at start, daily, and after each saved clip. |
+| access | admins only, through `GET /_superset/audio/<transcriptId>`. Each play is written to the audit log. No other route serves audio. |
+| consent | with `speech.consentNotice` set, each user sees the notice once and must acknowledge it before the mic records. Changing the notice asks again. |
+| deletion | `DELETE /_superset/audio/<transcriptId>`, `DELETE /_superset/audio?user=<name>`, `DELETE /_superset/audio?all=1`. Each deletion is audited. Turning the item off keeps what is stored; the settings page has a "delete stored audio" action. |
+| export | `POST /_superset/audio/export` writes `audio/manifest.jsonl` in the speech benchmark's format (`id`, `set`, `lang`, `speaker`, `audio`, `ref`, `seconds`). The reference is the question as sent: the transcript itself when unchanged, the user's correction when edited. These go to `manifest-flagged.jsonl` instead: edits that changed most of the words (more than 40%, or the length by half), clips never sent, questions spoken in several clips, and clips whose text is not kept. Speakers are keyed hashes, not names. |
+
+How long, how much and the consent notice can be changed in four places:
+
+- the settings page;
+- the config: `speech.audioRetentionDays`, `speech.maxStoredMb`, `speech.consentNotice`;
+- the environment: `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE`;
+- the admin route `PUT /_superset/settings/speech`.
+
+Recordings sit behind their own storage interface (`AudioStore`). Object storage could serve several copies of
+Lenspack through the same methods.
 
 ## What is never stored
 

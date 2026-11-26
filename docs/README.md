@@ -74,18 +74,16 @@ How the code is laid out and how a request moves through it.
 
 ### 4. Features
 
-- [All features](features/README.md), with what is available and what is coming soon.
+- [All features](features/README.md): what each does and which hosts have it.
 - [Answering questions](features/answering.md) and [the compute step](features/compute.md)
 - [Dashboard edits, versions and undo](features/dashboard-edits.md)
 - [Charts, maps and heatmaps](features/charts.md)
 - [How this was worked out](features/explain.md)
 - [Saved answers](features/saved-answers.md) and [busy hours](features/busy-hours.md)
-- [Daily review, open questions and definitions](features/review.md)
+- [Open questions and definitions](features/open-questions.md)
 - [The admin panel](features/admin-panel.md)
 - [Voice](features/voice.md) and [languages](features/languages.md)
 - [Usage telemetry](features/telemetry.md)
-- [Naming the assistant](features/naming.md) (coming soon)
-- [Personal dashboards and saved layouts](features/personal-dashboards.md) (coming soon)
 
 ### 5. Hosts
 
@@ -94,7 +92,7 @@ How the code is laid out and how a request moves through it.
   [datasets and dashboards](hosts/superset/datasets-and-dashboards.md),
   [computed charts](hosts/superset/computed-charts.md), [who is asking](hosts/superset/identity.md),
   [the settings page](hosts/superset/settings.md), [supported versions](hosts/superset/versions.md),
-  [upgrading](hosts/superset/upgrading.md), [what Superset 6 could add](hosts/superset/roadmap.md)
+  [upgrading](hosts/superset/upgrading.md)
 - [The standalone server](hosts/serve.md)
 - [React components](hosts/react.md)
 - [MCP server](hosts/mcp.md)
@@ -164,6 +162,5 @@ How the code is laid out and how a request moves through it.
   go next.
 - **Made-up examples.** The running example is a small online shop with made-up data, the same one the repository
   seeds with `pnpm seed commerce`. No page uses real data.
-- **"Coming soon"** marks a feature that is built and in review but not yet in a release. Its page describes it as
-  built, so it is ready the day it lands.
+- **Everything described is on the main branch.** What changed lately is in the [changelog](../CHANGELOG.md).
 - **"Planned"** marks a direction the architecture has chosen but that is not built yet.

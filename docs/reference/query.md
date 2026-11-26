@@ -103,7 +103,7 @@ Up to 20 per query; a value list holds 1–100 values.
 
 A filter must narrow every operand of a cross-entity derived measure, or the query is refused (`NOT_SUPPORTED`,
 naming the operands that can be narrowed), when the board is edited as when it runs. The one exception is a
-reference value that only divides (a target or a capacity: `delivered / target`, not a count of events over time)
+reference value that only divides (a target or a capacity: `revenue / sales_target`, not a count of events over time)
 when no other divisor is narrowed by that filter: it stays whole ("this kind over the whole goal") and the answer's
 `notes` say so.
 

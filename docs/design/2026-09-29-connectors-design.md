@@ -1,7 +1,7 @@
 # Connectors, Elasticsearch, `lenspack serve`, and the DSS compiler
 
 Status: approved direction ("Connector + ES + serve"), 2026-09-29. Adds a
-fourth item the owner asked for mid-build: a small compiler from DIGIT DSS
+fourth item added during the build: a small compiler from DIGIT DSS
 `ChartApiConfig.json` to a pack plus boards.
 
 ## Why
@@ -12,7 +12,7 @@ product binary, because the demo server was welded to the examples. A request
 to "connect this to Elasticsearch" had nowhere to land.
 
 DIGIT's DSS is the forcing case: 140 charts, all hand-written ES `aggrQuery`
-JSON (104 health charts = 11,656 lines). They draw on 5 indexes and about 24
+JSON (104 charts of one kind = 11,656 lines). They draw on 5 indexes and about 24
 fields. Measured on the config, the agg features are terms 193, filter 188,
 sum 186, filters 140, script 90, bucket_script 71, value_count 60 and
 date_histogram 24. Post-aggregation work runs through `computedFields`
@@ -64,7 +64,7 @@ These additions are neutral: every connector compiles them.
 - `count` may take a `field`, which counts non-null values (`COUNT(col)` /
   `value_count`).
 - `scale: 1.8` multiplies a measure's final value. DSS uses this for
-  population = nets × 1.8.
+  population = items × 1.8.
 - A dimension may add `also: { <entity>: { field | sql } }`. This is the same
   concept on another entity (a conformed dimension), and it is what lets one
   `district` group measures from two indexes.
@@ -116,7 +116,7 @@ sources:
   hcm_es: { kind: elasticsearch, url: env:ES_URL, apiKey: env:ES_API_KEY }
   shop:   { kind: duckdb, path: ./data/commerce.duckdb }
 packs:
-  - { pack: ./packs/hcm/pack.yaml, source: hcm_es, boards: ./packs/hcm/boards, tenant: ng.state }
+  - { pack: ./packs/hcm/pack.yaml, source: hcm_es, boards: ./packs/hcm/boards }
 store: { kind: duckdb, path: ./data/boards.duckdb }    # or the SQL source
 ui: ./ui                                              # optional static app
 ```

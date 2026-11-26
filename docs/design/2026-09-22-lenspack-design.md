@@ -2,13 +2,13 @@
 
 Date: 2026-09-22
 Status: implemented 2026-09-22 (0.1.0); see README for what is deferred
-Origin: extracted from `open-listening/iffy` (`lib/dashboard/*`, `lib/lens-config.ts`, `services/lenses.ts`, `ai/*-tools.ts`, `mcp/server.ts`, `app/dashboard/boards/*`)
+Origin: extracted from a public-consultation moderation tool (its dashboard, board and tool code)
 
 ## 1. Purpose
 
 A dashboard is data, not code. A language model edits a validated document; the
 server compiles it against a declared metric catalogue; the renderer is the only
-code. iffy proved this works for one dataset. lenspack makes the same model work
+code. The source tool proved this works for one dataset. lenspack makes the same model work
 for any dataset by turning the catalogue and the query layer into data.
 
 Success criteria:
@@ -24,7 +24,7 @@ Success criteria:
 
 Non-goals for v1: a chat UI, an LLM provider integration, rollup/pre-aggregation
 management, warehouse dialects beyond Postgres and DuckDB, the LLM extraction
-pipeline that produces iffy's "signals".
+pipeline that produces the source tool's "signals".
 
 ## 2. Packages
 
@@ -135,7 +135,7 @@ type TimeRange = { last: `${number}${"h"|"d"|"w"|"m"}` } | { from: string; to: s
 type Grain     = "hour"|"day"|"week"|"month"|"quarter"|"year";
 ```
 
-Mapping from iffy's five kinds: `lens → breakdown`; `volume → series(responses, day)`;
+Mapping from the source tool's five kinds: `lens → breakdown`; `volume → series(responses, day)`;
 `overall → value`; `themes → breakdown(theme, priority)`; `signal → series` on a
 measure the consultation pack declares from extraction columns.
 
@@ -212,7 +212,7 @@ Board config `version: 2`:
 - adds `pack: string` and `packVersion: number`;
 - `query` is the §4 IR;
 - widgets, filters, grid, layout, placement-as-intent, packing, text-as-text,
-  named colour schemes: unchanged from iffy;
+  named colour schemes: unchanged from the source tool;
 - kpi `aggregate` (`sum|avg|max|min|count|last`) applies only when the KPI's
   query is a `series`. (Since replaced by a value query's `over_time` step; old
   boards are read as described in docs/compute.md.)
@@ -248,7 +248,7 @@ application's concern; lenspack never reads a session.
 `{ name, description, inputSchema: ZodObject, execute(args, ctx) }`.
 `toVercelAI(tools)` and `toMcp(tools)` adapt without changing behaviour.
 
-Design carried over from iffy: tool arguments are flat scalars (nested
+Design carried over from the source tool: tool arguments are flat scalars (nested
 arguments were corrupted by weaker models); the server assembles ops; the
 board is presented to the model through `summarise(config)`, a compact
 row-per-widget text view, not JSON.
@@ -263,7 +263,7 @@ row-per-widget text view, not JSON.
 | `run_sql`         | **disabled unless `options.runSql = true`.** SELECT/WITH only by shape; executed read-only with timeout; may reference only the pack's entity sources; results are ephemeral and cannot be attached to a widget. |
 | `propose_measure` | writes `{ key, entity, agg, sql, rationale, verified: false }` to `options.proposals` (a `ProposalStore`, default file-backed). A human promotes it by editing the pack. |
 
-Not carried from iffy: `draftSignal`, `testSignal`, `saveSignal`, `signalTrend`
+Not carried from the source tool: `draftSignal`, `testSignal`, `saveSignal`, `signalTrend`
 (extraction pipeline), `calculate` (unneeded).
 
 MCP CLI:
@@ -275,8 +275,7 @@ npx @lenspack/mcp --pack ./packs/events.yaml   --db ./events.duckdb --http 8787
 
 ## 8. Renderer (`@lenspack/react`)
 
-Ported from `app/dashboard/boards/[boardId]/{grid,board-client,filter-bar,versions}.tsx`
-and `components/ui/chart.tsx`, with Next.js coupling removed.
+Ported from the source tool's board components (grid, filter bar, versions, charts), with Next.js coupling removed.
 
 ```tsx
 <BoardProvider board={board} catalogue={catalogue}
@@ -364,13 +363,13 @@ Two or three per pack, saved as JSON, used as fixtures by §9.3.
 - Docs: README (thesis, 60-second quickstart on DuckDB), `docs/pack-spec.md`,
   `docs/query-ir.md`, `docs/security.md`, `docs/writing-a-pack.md`.
 
-## 13. Migration path for iffy
+## 13. Migration path for the source tool
 
 Out of scope for this spec, but the design must not preclude it: a
-`consultation` pack authored against iffy's real tables (`records`,
+`consultation` pack authored against the source tool's real tables (`records`,
 `signal_extractions`, `analysis_assignments`, `analysis_themes`, `signals`),
 with `latestCompletedRunId()` expressed as a view, and a one-off `migrateKeys`
-run from iffy's v1 board configs to v2.
+run from the source tool's v1 board configs to v2.
 
 ## 14. Open decisions
 

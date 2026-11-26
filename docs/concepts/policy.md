@@ -33,9 +33,8 @@ scope cannot narrow is refused rather than answered for everyone.
 
 ## Where it lives
 
-All of these decisions are functions in the kernel's policy package, so every host asks the same questions the
-same way. **Planned:** policy becomes a document of its own, versioned like a pack or a board, holding rules,
-rights and per-role feature grants, loaded by every host and edited from the admin panel.
+All of these decisions are made in one place, the kernel's policy package, so every host asks the same questions
+the same way. How it is built, and where it is going, is in [The kernel](../architecture/kernel.md#policy).
 
 ---
 

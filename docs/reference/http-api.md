@@ -41,7 +41,77 @@ right, except a chat turn: a read-only caller may still ask questions, and the c
 which board is in [Rights](../access/rights.md#boards-have-owners).
 
 A chat turn takes the conversation (`messages`) and optional settings. Query parameters choose models for the turn:
-`?model=<provider>`, `?review=off`, `?escalate=<provider>`. See [Chat models](../operating/models.md).
+`?model=<provider>`, `?effort=<level>` (one of the levels `GET /api` lists for that model; another level answers
+`400`), `?review=off`, `?escalate=<provider>`. See [Chat models](../operating/models.md).
+
+### Examples
+
+These run against `lenspack serve` over the `commerce` example pack, with `auth: { kind: none }`. Long SQL is cut
+short (`…`).
+
+**Compile a query without running it.** The query goes in `q`, as JSON:
+
+```bash
+curl -sG localhost:8787/api/commerce/explain \
+  --data-urlencode 'q={"kind":"breakdown","dimension":"country","measure":"revenue","limit":5}'
+```
+
+```json
+{ "ok": true, "source": "duckdb",
+  "sql": "SELECT \"customers\".\"__d_country\" AS \"group\", sum(\"orders\".\"__m_revenue\") AS \"value\", count(*) AS \"n\"\nFROM (SELECT *, … FROM \"orders\") AS \"orders\"\nLEFT JOIN (SELECT *, … FROM \"customers\") AS \"customers\" ON \"orders\".\"customer_id\" = \"customers\".\"id\"\nGROUP BY …\nLIMIT 5",
+  "native": "…the same SQL…", "entities": ["orders", "customers"], "approximate": false }
+```
+
+A query the pack cannot answer comes back as a refusal, with its [code](errors.md), the reason and the nearest key:
+
+```bash
+curl -sG localhost:8787/api/commerce/explain \
+  --data-urlencode 'q={"kind":"breakdown","dimension":"category","measure":"revenue"}'
+```
+
+```json
+{ "ok": false, "code": "FANOUT_REFUSED",
+  "error": "\"category\" lives on \"products\", which has many rows per \"orders\" row; grouping a orders-level measure by it would multiply the numbers. Measure one of these instead: units, item_revenue. Or keep the measure and group by a dimension on \"orders\": status, channel.",
+  "nearest": "units", "key": "category" }
+```
+
+**Edit a board.** Make a board, then add a widget to it:
+
+```bash
+curl -s -X POST localhost:8787/api/commerce/boards -H 'content-type: application/json' -d '{"title":"Shop"}'
+# {"id":"b_ssm7b0d3","version":1}
+
+curl -s -X POST localhost:8787/api/commerce/b_ssm7b0d3/ops -H 'content-type: application/json' -d '{"ops":[
+  {"op":"add_widget","id":"revenue_by_country","placement":{"place":"top","width":"half","height":6},
+   "widget":{"kind":"chart","chart":"bar","title":"Revenue by country",
+             "query":{"kind":"breakdown","dimension":"country","measure":"revenue","limit":5}}}]}'
+```
+
+```json
+{ "ok": true,
+  "board": { "id": "b_ssm7b0d3", "pack": "commerce", "version": 2, "owner": "anonymous", "shared": false,
+    "updatedAt": "2026-11-26T09:54:23.536Z",
+    "config": { "version": 2, "pack": "commerce", "packVersion": 1, "title": "Shop",
+      "grid": { "cols": 12, "rowHeight": 40, "density": "comfortable", "fill": false },
+      "layout": [{ "i": "revenue_by_country", "x": 0, "y": 0, "w": 6, "h": 6 }],
+      "widgets": { "revenue_by_country": { "title": "Revenue by country", "kind": "chart", "chart": "bar",
+        "query": { "kind": "breakdown", "dimension": "country", "measure": "revenue", "limit": 5, "sort": "desc" },
+        "options": { "legend": true, "colorScheme": "default" } } },
+      "filters": [] } } }
+```
+
+An edit that fails a check answers `{ "ok": false, "opIndex": <n>, "error": "…", "hint": "<nearest key>" }`, and the
+board does not change.
+
+**Ask a question.** The body is the conversation in the AI SDK's message format. The answer is a stream of
+server-sent events; its parts are listed in [Stream parts](stream-parts.md).
+
+```bash
+curl -N -X POST 'localhost:8787/api/commerce/b_ssm7b0d3/chat?effort=low' -H 'content-type: application/json' -d '{
+  "messages": [{ "id": "m1", "role": "user", "parts": [{ "type": "text", "text": "Revenue by country, last 30 days" }] }]}'
+```
+
+A server with no chat model answers `{"error":"Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)"}`.
 
 ## Speech
 
@@ -80,7 +150,7 @@ The panel's own data, on both hosts:
 |---|---|
 | `<prefix>/admin/api/packs`, `…/overview` | the packs, and the Overview board |
 | `<prefix>/admin/api/definitions`, `…/questions`, `…/proposals` | definitions, open questions and the model's pack proposals. See [Definitions and open questions](../concepts/definitions.md) |
-| `<prefix>/admin/api/runs`, `…/review` | the daily review's runs and settings. See [Review](../features/review.md#the-daily-review) |
+| `<prefix>/admin/api/runs`, `…/review` | the daily review's runs and settings. See [Review](../features/open-questions.md#the-daily-review) |
 | `<prefix>/admin/api/settings` | the switches and the review settings; `POST …/settings/features` changes switches. See [Feature switches](../operating/switches.md) |
 | `<prefix>/admin/api/usage` | the usage board's data |
 
@@ -97,6 +167,8 @@ The Superset host's settings, beside the panel:
 ### Saved answers and the queue
 
 `GET <prefix>/cache`: totals since the store was started, the queue right now, the last refresh, and every entry.
+`t1` to `t4` count answers by [tier](../features/saved-answers.md#the-tiers-cheapest-first): exact replay, plan
+replay, slots and router.
 
 ```jsonc
 {

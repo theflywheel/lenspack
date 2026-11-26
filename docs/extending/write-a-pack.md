@@ -1,17 +1,21 @@
 # Write a pack
 
-This page walks through writing a pack for a database of your own, step by step. It is for developers and analysts
-who know their data. The ideas behind each step are in [Concepts](../concepts/README.md); every key is in the
-[Pack file reference](../reference/pack.md).
+This page covers the choices you make when writing a pack for a database of your own, with short fragments for a
+made-up billing database. It is for developers and analysts who know their data. To learn by doing first, follow
+[Tutorial: build a pack from scratch](../getting-started/tutorial.md), which runs end to end on data that ships with
+the repository. The ideas behind each step are in [Concepts](../concepts/README.md); every key is in the [Pack file
+reference](../reference/pack.md).
 
-Target: under an hour, and nothing under `packages/` changes. If you find yourself editing the compiler, that is a bug report we want.
+The aim: a new pack takes under an hour, and nothing under `packages/` changes. If you find yourself editing the
+compiler, that is a bug report we want.
 
 Start by looking at what the database holds: `lenspack sources --config lenspack.yaml` lists tables, columns, types
 and row counts.
 
 ## 1. Pick the entities
 
-One entity per table (or view) you want to measure. Name the grain in one line: it is shown to the model, and it keeps you honest.
+One entity per table (or view) you want to measure. Name the grain in one line: it is shown to the model, and it
+keeps you honest.
 
 ```yaml
 entities:
@@ -19,7 +23,9 @@ entities:
   accounts: { source: billing.accounts, grain: one row per account }
 ```
 
-Prefer views over base tables when the raw shape is awkward ("latest run", soft deletes, unions). A view is the right place for `WHERE deleted_at IS NULL`; so is an entity `where:` or `filter:`, which every query on the entity then carries.
+Prefer views over base tables when the raw shape is awkward ("latest run", soft deletes, unions). A view is the
+right place for `WHERE deleted_at IS NULL`; so is an entity `where:` or `filter:`, which every query on the entity
+then carries.
 
 ## 2. Declare the joins, with their direction
 
@@ -29,7 +35,9 @@ Prefer views over base tables when the raw shape is awkward ("latest run", soft 
       - { to: accounts, on: invoices.account_id = accounts.id, type: many_to_one }
 ```
 
-`type` is what makes fan-out refusal possible. Many invoices → one account is `many_to_one`; declare the reverse on `accounts` as `one_to_many` if you want account-level measures to be able to reach invoice dimensions *the other way round* (they will be refused, correctly).
+`type` is what makes fan-out refusal possible. Many invoices to one account is `many_to_one`. Declare `one_to_many`
+on `accounts` too. Lenspack will then refuse account measures grouped by invoice fields, with the reason, instead of
+saying it found no join.
 
 ## 3. Dimensions
 
@@ -55,7 +63,15 @@ measures:
   - { key: overdue,  entity: invoices, agg: count, where: [{ field: status, value: overdue }] }
   - { key: billed,   entity: invoices, agg: sum, sql: amount_cents / 100.0, format: currency }
   - { key: avg_invoice, entity: invoices, derived: billed / invoices, format: currency }
-  - { key: p90_days_to_pay, entity: invoices, agg: p90, sql: "EXTRACT(EPOCH FROM (paid_at - issued_at)) / 86400.0", format: duration }
+  - key: p90_days_to_pay
+    entity: invoices
+    agg: p90
+    sql:                    # databases disagree on time arithmetic, so one fragment per database
+      default: "EXTRACT(EPOCH FROM (paid_at - issued_at)) / 86400.0"      # Postgres, DuckDB
+      mysql: "TIMESTAMPDIFF(SECOND, issued_at, paid_at) / 86400.0"
+      sqlite: "(unixepoch(paid_at) - unixepoch(issued_at)) / 86400.0"
+      clickhouse: "dateDiff('second', issued_at, paid_at) / 86400.0"
+    format: duration
 ```
 
 Rules of thumb:
@@ -103,7 +119,8 @@ const c = compile({ kind: "breakdown", dimension: "plan", measure: "billed", lim
 console.log(c.sql, c.params);
 ```
 
-Then run the conformance idea from `examples/test/conformance.test.ts` against your pack: every dimension × measure × shape should compile or refuse with a documented code, and something must be answerable for every measure.
+Then run the conformance idea from `examples/test/conformance.test.ts` against your pack: every dimension × measure ×
+shape should compile or refuse with a documented code, and something must be answerable for every measure.
 
 ## 7. Give it to a model
 
@@ -111,8 +128,9 @@ Then run the conformance idea from `examples/test/conformance.test.ts` against y
 lenspack-mcp --pack ./billing.yaml --db postgres://… --tenant org_123
 ```
 
-Ask for a board. When the model asks for something the pack cannot express, it will `propose_measure`; the proposal is written to `<pack>.proposals.json` (beside `lenspack.yaml`, or in the folder `proposals:`
-names) marked unverified. You review it and add it to the pack file; a key in a pack file is verified by the review
+Ask for a board. When the model asks for something the pack cannot express, it will `propose_measure`. The proposal
+is written to `<pack>.proposals.json` (beside `lenspack.yaml`, or in the folder `proposals:` names), marked
+unverified. You review it and add it to the pack file; a key in a pack file is verified by the review
 that merged it. That loop (the model proposes, a person verifies, the catalogue grows) is how the vocabulary stays
 trustworthy.
 
@@ -129,5 +147,5 @@ Once the pack is in use, admins can add definitions on top of it without editing
 
 **Next:** [Write a source](write-a-source.md).
 
-**Related:** [Pack file reference](../reference/pack.md) · [Packs](../concepts/packs.md) ·
-[Your own data](../getting-started/your-own-data.md)
+**Related:** [Tutorial: build a pack](../getting-started/tutorial.md) · [Pack file reference](../reference/pack.md) ·
+[Packs](../concepts/packs.md) · [Your own data](../getting-started/your-own-data.md)

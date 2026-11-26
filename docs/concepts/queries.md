@@ -37,17 +37,11 @@ The compiler turns a query into SQL (or a search request) and guarantees, and te
 - a `LIMIT` is always there;
 - a join that would multiply numbers is refused, not computed.
 
-Ask for something the pack cannot answer and the compiler declines with a code, the reason and the nearest key:
-
-| asked for | the answer |
-|---|---|
-| revenue by country | compiles, and returns the SQL it would run |
-| revenue by product category | `FANOUT_REFUSED`, with a measure that works |
-| revenue by contry | `UNKNOWN_DIMENSION`, nearest key `country` |
-| median order value | `UNKNOWN_MEASURE`: the pack has no median; the nearest measure is named |
-
-You can ask the running compiler yourself: `GET /api/<pack>/explain?q=<query JSON>` returns the SQL it would run,
-or the refusal.
+Ask for something the pack cannot answer and the compiler declines with a code, the reason and the nearest key.
+[What Lenspack is](../introduction/README.md#the-refusal) shows four examples on the commerce pack, and
+[Refusal codes](../reference/errors.md) lists every code. You can ask the running compiler yourself:
+`GET /api/<pack>/explain?q=<query JSON>` returns the SQL it would run, or the refusal (see the
+[examples](../reference/http-api.md#examples)).
 
 ---
 

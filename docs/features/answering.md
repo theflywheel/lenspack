@@ -14,7 +14,7 @@ have picked, and the pack's catalogue, and answers with numbers it read through 
   [compute step](compute.md).
 - **The board's filters apply.** "How many today?" with one country picked is answered for that country. "How this
   was worked out" says whether each pick was applied.
-- **Your access applies.** A person who may see one region is answered for that region. A question about data
+- **Your access applies.** A person who may see one country is answered for that country. A question about data
   their access keeps from them is answered with "not available to you", not with a guess.
 - **Refusals are explained.** A question the pack cannot answer gets the reason and what it can answer instead.
 
@@ -27,7 +27,7 @@ have picked, and the pack's catalogue, and answers with numbers it read through 
   `turnCost` switch hides both; the audit log still records each turn's cost).
 - When the reply came from a [saved answer](saved-answers.md), a line saying so, with **Ask fresh**.
 - When the question could be read two ways, the readings as buttons, or a sentence saying which one was used. See
-  [Clarify](review.md#clarify).
+  [Clarify](open-questions.md#clarify).
 - Suggested questions under an empty chat: the pack's examples, then the board's most-asked questions.
 
 ## Follow-ups and new chats

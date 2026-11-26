@@ -32,16 +32,37 @@ The `boardEdits` switch turns edits through the chat off for everyone, admins in
 
 ## The reviewer
 
-With the `reviewer` switch on (the default), every edit a turn makes is held as a draft. A second model call
-compares the change with the request and with the board before it, and marks each problem it finds:
+With the `reviewer` switch on (the default), every edit a turn makes is held as a draft. The reviewer is a second
+model call. It compares the change with the request and with the board before it, and marks each problem it finds:
 
-- **material**: the board would mislead whoever reads it (a wrong measure, a title that says something else);
+- **material**: the board would mislead whoever reads it. Examples: wrong or double-counted numbers, a title that
+  claims what the query does not do, a required filter missing, the wrong widget changed.
 - **minor**: worth a sentence, not a fix.
 
-A material finding gets one fix round, then a second check. If the change is still wrong, nothing from the turn is
-saved and the reply says the board was left as it was. Words after an edit wait for the reviewer, so a reply never
-claims a change that was then undone. Turning the reviewer off saves a model call per change; a wrong change is
-then saved as made. See [The life of a turn](../architecture/life-of-a-turn.md#the-steps).
+**When a turn is reviewed.** When the board gained a version, or when it gained none but the reply may say it did:
+the model tried an edit that was refused, or its reply says it added, removed, renamed or moved something, in any of
+the chat's languages. A question answered with no edit is not reviewed.
+
+**What happens next.** A material finding gets one fix round on the escalation model (the builder, when no
+[role](../operating/models.md#roles) names one), then a second check. If the change is still wrong, nothing from the
+turn is saved and the reply says the board was left as it was. Minor findings are saved and mentioned in one
+sentence in the reply.
+
+**What the reader sees.** The reply describes the board as the turn left it. Words the model writes before its first
+edit, and the whole answer to a question, appear as they are written. Words after an edit wait for the reviewer: they
+appear when the edit stands, and are replaced by the fix round's words when it does not. So a reply never says "I
+added the chart" and then "I removed the chart I added".
+
+**What the audit log records.** While the reviewer is on, the chat panel shows each edit as a draft. The audit log
+records each as a `chat-edit` line ending `→ draft v3` (the number it would have if saved). One `chat-save` line
+then says which versions the turn saved, or that it saved none. The `chat-turn` line repeats this as `outcome`
+(`saved`, `left unchanged` or `not saved`) and `saved` (the version numbers).
+
+The reviewer also checks that an answer said which reading it used when a question could be read two ways; see
+[Open questions](open-questions.md#open-questions).
+
+Turning the reviewer off saves a model call per change; a wrong change is then saved as made. Where each step runs is
+in [The life of a turn](../architecture/life-of-a-turn.md#the-steps).
 
 ## Versions and undo
 

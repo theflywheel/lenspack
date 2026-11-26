@@ -26,8 +26,9 @@ shapes, with made-up data.
 
 ## CCRS analytics (`@lenspack/ccrs`)
 
-Compiles a CCRS analytics KPI catalogue (KPI definitions and dashboard packs) into a pack, boards, and a skin map that
-lets CCRS's own dashboard components draw Lenspack's results column for column. Its API answers CCRS's analytics
+Compiles a CCRS analytics KPI catalogue (KPI definitions and dashboard packs) into a pack, boards, and a skin map (a
+file saying which result column fills which part of each CCRS chart), so CCRS's own dashboard components draw
+Lenspack's results column for column. Its API answers CCRS's analytics
 route with Lenspack: each `{ kpiId, params }` a CCRS dashboard sends becomes a Lenspack query over the compiled pack,
 and each result goes back in CCRS's own envelope and column names, so CCRS's interface runs unchanged and a migration
 is a change of base URL.

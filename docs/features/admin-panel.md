@@ -93,7 +93,7 @@ tab says so. Turning on a privacy-sensitive item (question text, transcript text
 detail) shows what it records, and for kept recordings the consent notice, and asks to confirm. Only admins can
 change switches, and every change is in the audit log.
 
-The page prints cleanly for a pilot report, and **Copy as Markdown** copies the same table as text, with each switch
+The page prints cleanly for a usage report, and **Copy as Markdown** copies the same table as text, with each switch
 as it stands. Both follow the panel's language (English or French) and its light or dark theme.
 
 The table comes from the server (`<prefix>/telemetry/checklist`, changed with `PUT <prefix>/settings/telemetry`; see
@@ -123,5 +123,5 @@ switches and settings apply to them. What the folder holds is in [What Lenspack 
 
 **Next:** [Telemetry](telemetry.md).
 
-**Related:** [Daily review, open questions and definitions](review.md) · [Feature switches](../operating/switches.md) ·
+**Related:** [Open questions and definitions](open-questions.md) · [Feature switches](../operating/switches.md) ·
 [Rights](../access/rights.md#admin)

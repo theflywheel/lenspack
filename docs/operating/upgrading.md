@@ -15,9 +15,26 @@ packages. It is for operators and developers.
 
 A pack's `version` is recorded on the boards built against it. Bump it when you change keys.
 
+## KPIs saved with `aggregate`
+
+Boards saved by older releases carry an `aggregate` field on a KPI: how the renderer used to fold a series into one
+number. Lenspack reads it when the board loads and never saves it again. Nothing needs doing by hand:
+
+| saved `aggregate` | read as |
+|---|---|
+| none, or `last` | dropped: the KPI shows the series' latest bucket, as before |
+| `sum`, `avg`, `max`, `min`, on a series | a `value` over the same window and filters, with `compute: { grain: <the series' grain>, steps: [<its steps>, { op: "over_time", fn }] }` (`avg` becomes `mean`) |
+| anything else | dropped, and the KPI shows the series' latest bucket |
+
+"Anything else" is `count` (how many buckets came back, which no step gives), a series split by a dimension (the old
+fold added every split's buckets together), a series that already has four steps, and any value on a `value` query,
+where the field never did anything. A summary read this way obeys the [compute step's rules](../features/compute.md#how-zeros-and-gaps-are-treated): a percentage or an average is not
+added up, so such a `sum` is refused on the widget, with a way forward, instead of showing a wrong number.
+
 ## Code using the packages
 
-**From 0.1.0:** the pack loader `@lenspack/spec` is now `@lenspack/pack` (published as `@theflywheel/lenspack-pack`).
+**After 0.1.0** (on the main branch since 24 November 2026; no version has been tagged since 0.1.0): the pack
+loader `@lenspack/spec` is now `@lenspack/pack` (published as `@theflywheel/lenspack-pack`).
 Its exports are unchanged; change the import path and the dependency name.
 
 The packages now sit in folders by job (`packages/kernel`, `sources`, `packs`, `hosts`; see

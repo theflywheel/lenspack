@@ -27,8 +27,8 @@ rules. Access rules in `lenspack.yaml` do not apply here.
 
 ## A model for it
 
-A small model is enough: on the hardest example pack, five models under 30 billion parameters pass nine or ten of
-ten board-building tasks. Try: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue below it,
+Building a board is a short run of checked edits, so a small, cheap model is often enough. To measure one on your
+own pack, run the board-building tasks in [Evals](../reference/evals.md). Try: *"Put revenue for the last 30 days as a KPI across the top, weekly revenue below it,
 and a pie of line revenue by category."* Every step is a checked edit operation, and every refusal names the nearest
 real key.
 

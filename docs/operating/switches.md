@@ -45,8 +45,6 @@ All are on by default except the daily review, which costs money.
 
 | `telemetry` | Telemetry | no usage records, no thumbs under answers; `/api/_telemetry` answers 404 (see [Telemetry](../features/telemetry.md)) | the server |
 
-> **Coming soon.** A `personalDashboards` switch. See [Personal dashboards](../features/personal-dashboards.md).
-
 ## Reading them
 
 `GET /_superset/settings` (inside Superset) and the admin panel's settings route return `features: {values, defaults,

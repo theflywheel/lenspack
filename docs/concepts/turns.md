@@ -14,8 +14,8 @@ someone presses Enter.
 4. **The model plans.** It gets the pack's catalogue, the board, the deployment's rules and definitions, and a set
    of **tools**. It calls them to read numbers or change the board.
 5. **Edits are held as drafts.** While a reviewer is on, every change the turn makes is staged, not saved.
-6. **A reviewer checks the edits.** A second model call compares the change with the request. A misleading change
-   gets one fix round; if it is still wrong, nothing from the turn is saved and the reply says so.
+6. **A reviewer checks the edits** against the request, and nothing misleading is saved. See
+   [The reviewer](../features/dashboard-edits.md#the-reviewer).
 7. **The reply streams back**, with **How this was worked out** under it and a line with what the turn cost.
 8. **Everything is recorded**: the audit log, the usage ledger and, where it is on, telemetry.
 
@@ -45,12 +45,7 @@ A deployment can name different models for different jobs:
 
 See [Chat models](../operating/models.md#roles).
 
-## Where the turn runs
-
-Today the turn is implemented in the standalone server's package, and the Superset host reuses it.
-**Planned:** the turn moves into the kernel's agent package as one function, with a mode for questions (read-only
-tools, a cheap model, numbers checked in code) and a mode for edits (the staging and review above), called the
-same way by every host and by the evals. See [The life of a turn](../architecture/life-of-a-turn.md).
+Where each step lives in the code is in [The life of a turn](../architecture/life-of-a-turn.md).
 
 ---
 

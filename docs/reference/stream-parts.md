@@ -11,8 +11,8 @@ calls and their results, `finish`), Lenspack adds its own `data-*` parts.
 |---|---|---|
 | `data-round` | a model round starts | `{ round, builder, effort? }`: which model is building, and with what effort |
 | `data-status` | while the reviewer reads the edits (every 10 seconds; transient) | `{ phase: "reviewing" }` |
-| `data-review` | the reviewer has checked a round's edits | `{ round, reviewer, … }`: its verdict and findings, each marked material or minor. See [Review](../features/review.md) |
-| `data-clarify` | the model asked a question with ready answers | `{ question, options }`: the quick replies to show as buttons. See [Review](../features/review.md#clarify) |
+| `data-review` | the reviewer has checked a round's edits | `{ round, reviewer, … }`: its verdict and findings, each marked material or minor. See [The reviewer](../features/dashboard-edits.md#the-reviewer) |
+| `data-clarify` | the model asked a question with ready answers | `{ question, options }`: the quick replies to show as buttons. See [Clarify](../features/open-questions.md#clarify) |
 | `data-reuse` | the answer came from a saved answer | the saved-answer line (`tier`, the money saved, how fresh the data is). See [Saved answers](../features/saved-answers.md) |
 | `data-queue` | the turn is waiting, or turned away | waiting (transient, not kept in the message): `{ state: "waiting", reason: "busy" \| "edit", position, etaSeconds }`; turned away: `{ state: "full", why: "full" \| "timeout", retryAfterSeconds }`, followed by the same message as text so any client can show it. See [Busy hours](../features/busy-hours.md) |
 | `data-answer-card` | the turn read data | the answer card behind "How this was worked out": each data call in plain words, the measures behind each figure, the SQL that ran and the rows. The browser keeps it beside the conversation and never sends it back. See [How this was worked out](../features/explain.md) |

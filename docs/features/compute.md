@@ -4,8 +4,8 @@ This page explains compute steps: rates, changes, rolling averages, running tota
 out by Lenspack on numbers the source has already counted. It is for pack authors, admins checking an answer, and
 anyone building widgets by hand.
 
-A pack defines simple measures: units dispatched, visits, orders placed. People ask for more than that:
-a burn rate, a day-on-day change, a 7-day average, the average daily change per region. None of these needs a new
+A pack defines simple measures: orders placed, revenue, units sold. People ask for more than that: units per
+order, a day-on-day change, a 7-day average, the average daily change per country. None of these needs a new
 measure. Each is ordinary arithmetic on numbers the source has already aggregated.
 
 A query can carry `compute`: a short list of steps run in order on the source's answer. The model still never
@@ -25,11 +25,11 @@ compute?: {
 
 | step | what it does | example |
 |---|---|---|
-| `{ op: "ratio", to: m, percent? }` | the measure divided by measure `m`, per group (and per time bucket) | units dispatched per unit received |
+| `{ op: "ratio", to: m, percent? }` | the measure divided by measure `m`, per group (and per time bucket) | units sold per order |
 | `{ op: "change", percent? }` | each time bucket against the bucket just before it: the difference, or the relative change | day-on-day % change |
 | `{ op: "rolling", fn: "mean" \| "sum", window: n }` | each time bucket with the `n - 1` before it, averaged or added | 7-day average |
-| `{ op: "running_total" }` | the total so far, from the first bucket shown | stock dispatched to date |
-| `{ op: "over_time", fn }` | the time buckets of each group as one number: `mean`, `sum`, `min`, `max`, `median` or `last` | average daily units dispatched |
+| `{ op: "running_total" }` | the total so far, from the first bucket shown | revenue so far this month |
+| `{ op: "over_time", fn }` | the time buckets of each group as one number: `mean`, `sum`, `min`, `max`, `median` or `last` | average orders per day |
 
 Where each step may go:
 
@@ -49,54 +49,53 @@ A KPI is one number. Over a `series` it shows the latest bucket, with the trend 
 of the buckets (the average per day, the total over the weeks) is a `value` whose steps end with `over_time`, so it
 follows the rules below like any other computed number.
 
-Boards saved before this carry an `aggregate` field on a KPI: how the renderer used to fold a series into one number.
-It is read when the board loads, and never saved again:
-
-| saved `aggregate` | read as |
-|---|---|
-| none, or `last` | dropped: the KPI shows the series' latest bucket, as it did |
-| `sum`, `avg`, `max`, `min`, on a series | a `value` over the same window and filters, with `compute: { grain: <the series' grain>, steps: [<its steps>, { op: "over_time", fn }] }` (`avg` becomes `mean`) |
-| anything else | dropped, and the KPI shows the series' latest bucket |
-
-"Anything else" is `count` (how many buckets came back, which no step gives), a series split by a dimension (the old
-fold added every split's buckets together), a series that already has four steps, and any value on a `value` query,
-where the field never did anything. A summary read this way obeys the rules below: a percentage or an average is not
-added up, so such a `sum` is refused on the widget, with a way forward, instead of showing a wrong number.
+Boards saved by older releases may carry an `aggregate` field on a KPI. It is read as a computed `value` when the
+board loads; see [Upgrading](../operating/upgrading.md#kpis-saved-with-aggregate).
 
 ## Examples
 
-These use a made-up stock pack with two count measures, `dispatched` and `received`, and a `region` dimension.
+These use the `commerce` example pack (`pnpm seed commerce`): `orders`, `revenue` and `units` are simple measures, and
+`country` is a dimension.
 
-**Burn rate per region.** The source answers units dispatched per region and day; the engine averages each region's days.
+**Average orders per day, by country**, last month. The source answers orders per country and day; the engine
+averages each country's days.
 
 ```json
-{ "kind": "breakdown", "dimension": "region", "measure": "dispatched", "time": { "period": "month", "offset": -1 },
+{ "kind": "breakdown", "dimension": "country", "measure": "orders", "time": { "period": "month", "offset": -1 },
   "compute": { "grain": "day", "steps": [{ "op": "over_time", "fn": "mean" }] } }
 ```
 
-**Day-on-day % change**, as a line:
+**Day-on-day % change in revenue**, as a line:
 
 ```json
-{ "kind": "series", "measure": "dispatched", "grain": "day", "time": { "last": "30d" },
+{ "kind": "series", "measure": "revenue", "grain": "day", "time": { "last": "30d" },
   "compute": { "steps": [{ "op": "change", "percent": true }] } }
 ```
 
-**Average day-on-day % change per region**: the change per region and day, then its average per region.
+**A 7-day rolling average of orders**, as a line:
 
 ```json
-{ "kind": "breakdown", "dimension": "region", "measure": "dispatched", "time": { "last": "30d" },
+{ "kind": "series", "measure": "orders", "grain": "day", "time": { "last": "90d" },
+  "compute": { "steps": [{ "op": "rolling", "fn": "mean", "window": 7 }] } }
+```
+
+**Average day-on-day % change in revenue, by country**: the change per country and day, then its average per
+country.
+
+```json
+{ "kind": "breakdown", "dimension": "country", "measure": "revenue", "time": { "last": "30d" },
   "compute": { "grain": "day", "steps": [{ "op": "change", "percent": true }, { "op": "over_time", "fn": "mean" }] } }
 ```
 
-**Units dispatched as a share of units received**, per region.
+**Units sold per order, by country**: one measure divided by another, per group.
 
 ```json
-{ "kind": "breakdown", "dimension": "region", "measure": "dispatched",
-  "compute": { "steps": [{ "op": "ratio", "to": "received", "percent": true }] } }
+{ "kind": "breakdown", "dimension": "country", "measure": "units",
+  "compute": { "steps": [{ "op": "ratio", "to": "orders" }] } }
 ```
 
 The agent's tools take the same steps as one string, like filters: `compute: "pct_change, mean"` with
-`grain: day`. They also accept `change`, `rolling_mean 7`, `rolling_sum 7`, `running_total`, `ratio received`, and
+`grain: day`. They also accept `change`, `rolling_mean 7`, `rolling_sum 7`, `running_total`, `ratio orders`, and
 a closing `mean`, `sum`, `min`, `max`, `median` or `last`.
 
 ## How zeros and gaps are treated
@@ -105,7 +104,7 @@ These rules are the same on every source, and the answer says which ones applied
 
 - **The window is the measure's own days.** A summary (`over_time`) runs from the first bucket where the measure has
   a value to the last, in the pack's time zone. A bucket of 0 for a count or a sum is not a value here: rows that
-  are only of another measure (receipts, on days with no dispatch) do not stretch the window, nor do days of 0 at
+  are only of another measure (in a ratio, days with orders but no units) do not stretch the window, nor do days of 0 at
   either end. The window is the same for every group, so each group is averaged over the same days. With a time
   range, the window stays inside it; when no bucket in the range has a value, the window is the whole range. A
   series with a time range runs over the whole range; with none, over the measure's own buckets, like a summary.
@@ -137,28 +136,28 @@ These rules are the same on every source, and the answer says which ones applied
 
 The source is asked for the base grain: the measure per group and time bucket, for every group (not a top few),
 at most 20,000 numbers. An answer that would be larger, or that the source says it cut, is refused with a way
-forward (a shorter time range, a coarser grain, a filter), never computed from part of the data. A split series still shows its top 12 series,
-ranked by the measure's total.
+forward (a shorter time range, a coarser grain, a filter), never computed from part of the data. A split series
+still shows its top 12 series, ranked by the measure's total.
 
 ## Not yet
 
 Planned additions, each worked out by the engine after the source answers, so every source gets them at once:
 
-- **a filter on a group's value**: "regions below 80%", not just "the worst 10";
-- **a summary across groups**: "how many regions are below 80%", "the average across regions";
-- **a previous-period comparison of a ratio, per group**: "which regions improved since yesterday";
-- **periods from a calendar of your own**: "since the start", "round 2 against round 1".
+- **a filter on a group's value**: "countries with a refund rate above 5%", not just "the worst 10";
+- **a summary across groups**: "how many countries are above 5%", "the average across countries";
+- **a previous-period comparison of a ratio, per group**: "which countries improved since yesterday";
+- **periods from a calendar of your own**: "since the sale began", "this sale against the last one".
 
 ## In words
 
 Every computed answer carries a name for its numbers and the rules it followed, in plain words:
 
 ```
-label:    average day-on-day % change in units dispatched
-computed: average day-on-day % change in units dispatched: a day with no records counts as 0; the first day
+label:    average day-on-day % change in revenue
+computed: average day-on-day % change in revenue: a day with no records counts as 0; the first day
           changes from the day before it, even when that is before the time range; a change from 0 has no
           percentage and is skipped; days without a value are skipped in the average; averaged over 20 days,
-          2026-03-01 to 2026-03-20 (the first to the last day with units dispatched in the time range)
+          2026-03-01 to 2026-03-20 (the first to the last day with revenue in the time range)
 ```
 
 The answer also carries the window itself, `window: { from, to, buckets, grain }` (the first and last bucket, named

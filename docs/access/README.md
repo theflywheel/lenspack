@@ -31,10 +31,11 @@ Nothing in Lenspack's config can widen what the host allows.
 ## How the layers combine
 
 One pure function, `decide()` in `@lenspack/policy`, settles what a caller may use of a pack. Every host with callers
-goes through it: `lenspack serve` with any sign-in, the Superset host, and the CCRS API. `lenspack-mcp` has one caller
+goes through it: `lenspack serve` with any sign-in, the Superset host, and the importer APIs (see
+[Importers](../extending/importers.md)). `lenspack-mcp` has one caller
 and does not.
 
-1. **The host says who the caller is and what it already allows.** The sign-in (or Superset, or CCRS) gives an
+1. **The host says who the caller is and what it already allows.** The sign-in (or Superset, or an importer's API) gives an
    identity: user, roles, tenant, and whatever the host limits itself: a row scope, keys or tables it keeps from them,
    boards they may not open, capabilities it grants.
 2. **Lenspack's rules only narrow it.** The rights by user and role add edit, maintain and usage rights. A pack's

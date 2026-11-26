@@ -44,7 +44,6 @@ Superset 6.1 is the version it is built for, and 5.0 is tested the same way. See
    happens when storage fails.
 6. [Versions](versions.md): Superset 6.1 and 5.0, the content security policy, and ClickHouse.
 7. [Upgrading](upgrading.md): updating the plugin and server, and what changed.
-8. [What Superset 6 could add](roadmap.md): Superset features the assistant could use next.
 
 ---
 

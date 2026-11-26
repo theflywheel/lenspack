@@ -22,7 +22,7 @@ when someone asks for it on a board in the same state.
 **A saved answer is only ever given to someone with the same access.** Two people can ask the same words and be
 entitled to different answers. So every saved answer carries a fingerprint of the access it was made under (the
 tenant, the row filters, the keys and tables hidden), and its queries run again under the asking person's own
-access. Someone who may see one region is never given a number counted over all of them.
+access. Someone who may see one country is never given a number counted over all of them.
 
 A saved answer is also tied to the pack and its definitions, the assistant's instructions, the board's filters, the
 reader's filter picks and their language. Change any of these and the question is answered afresh.

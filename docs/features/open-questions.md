@@ -1,10 +1,10 @@
-# Daily review, open questions and definitions
+# Open questions and definitions
 
 This page covers the tools that find questions the assistant may have read wrongly and settle them: definitions,
 open questions, clarify, the daily review and compare readings. It is for admins who keep a deployment's answers
 right after launch. The ideas are introduced in [Definitions and open questions](../concepts/definitions.md).
 
-A data assistant gets most of its answers wrong in the same few ways. Someone asks "how many visits this month?" and the assistant reads "this month" as the last 30 days, while the person meant the calendar month. Someone asks about "stock" and the pack has two measures that could be meant. Neither reading is a bug. The pack does not say which one this deployment means, so the assistant guesses.
+A data assistant gets most of its answers wrong in the same few ways. Someone asks "how many orders this month?" and the assistant reads "this month" as the last 30 days, while the person meant the calendar month. Someone asks about "sales" and the pack has two measures that could be meant (revenue, or units sold). Neither reading is a bug. The pack does not say which one this deployment means, so the assistant guesses.
 
 ## Why
 
@@ -21,7 +21,7 @@ A definition is one of four things:
 
 - **An instruction**: a line the assistant follows ("Weeks start on Monday").
 - **A hint** on a measure or dimension ("Before refunds").
-- **Synonyms** for a key ("area" and "zone" mean region).
+- **Synonyms** for a key ("market" and "region" mean country).
 - **A reading for a kind of question**: "when someone asks about sales this month, use the calendar month to date".
 
 Definitions are a document of their own, one per pack, typed and versioned like a pack or a board. They are kept in the server's state directory. They are added to the pack on every chat turn. A change applies to the next question, with no restart. They never change the deployment's own pack file.
@@ -64,7 +64,7 @@ When a question can be read two ways and the readings give different figures, th
 
 Either way, the question is logged for an admin. It never asks when the pack's rules or an admin's definition already settle the question.
 
-The reviewer, where it already runs, also checks whether an answer used a reading without saying so, or used the wrong one. This adds no extra model call. Such a turn is logged as an open question too.
+The reviewer, when it is on, also checks whether an answer used a reading without saying so, or used the wrong one. This adds no extra model call. Such a turn is logged as an open question too.
 
 ## The daily review
 

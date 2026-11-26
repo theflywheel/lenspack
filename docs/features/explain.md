@@ -23,11 +23,16 @@ auditor finds the same record in the audit log, so an answer can still be checke
 ## What it shows
 
 **The words** are built from the query itself and the pack's labels and definitions. No model call writes them,
-so they cannot claim something the query did not do. For example:
+so they cannot claim something the query did not do. For example, on the `commerce` example pack, "revenue by
+country, last 30 days" asked on 30 September 2026 reads:
 
-> Units dispatched (sum of qty_out, the pack's approved measure “dispatched”), for Region = North, from 1 to 7
-> September 2026, grouped by site, top 5 by value. Then averaged per day over 7 days (1 to 7 September 2026),
-> with days that had no units dispatched counted as 0.
+> Revenue (sum of total_cents / 100.0, the pack's approved measure “revenue”), in the last 30 days (31 August to 30
+> September 2026), grouped by country, top 5 by value.
+
+and "average orders per day, by country, last month" adds the compute step:
+
+> Orders (count of rows in orders (one row per order), the pack's approved measure “orders”), last month (1 to 31
+> August 2026), grouped by country, top 5 by value. Then averaged per day, with days that had no orders counted as 0.
 
 The words always say:
 

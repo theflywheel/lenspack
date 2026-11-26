@@ -1,18 +1,20 @@
 # What Lenspack is
 
-This page tells Lenspack's story: the problem, the idea, how it holds, and who it is for. Read it first if you are
-deciding whether Lenspack fits your team. The [live demo](https://lenspack.proto.theflywheel.in) shows it working.
+Lenspack is an open-source assistant for dashboards. People ask questions and change dashboards in plain words,
+inside Apache Superset or Lenspack's own app, and every number comes from definitions your team reviewed, never from
+SQL a model wrote.
 
-**A dashboard is data, not code.**
+This page tells the story behind that: the problem, how it works, how it holds, and who it is for. Read it first if
+you are deciding whether Lenspack fits your team. The [live demo](https://lenspack.proto.theflywheel.in) shows it
+working.
 
-Declare your data once in a pack. After that a language model can answer questions over it, and build and edit
-dashboards, by naming keys such as `revenue`, `country` and `refund_rate`, and nothing else. No SQL, no JSX, no
-colour values. What the pack does not declare, the compiler will not build.
+Its motto is **a dashboard is data, not code**: a dashboard is a small document, and a model changes it only by naming
+keys your team declared, such as `revenue`, `country` and `orders`.
 
 ## The problem
 
 A dashboard answers the questions someone thought of when they built it. The people who read it ask others every
-day: "which region is behind this week?", "how does that compare with last month?", "what is the average per day,
+day: "which country is behind this week?", "how does that compare with last month?", "what is the average per day,
 counting the days with none?". Today they wait for an analyst, or they export to a spreadsheet and work it out by
 hand, and the numbers drift apart.
 
@@ -20,7 +22,7 @@ Putting a chat model on top of the data seems like the fix. But a model that wri
 can check. It joins tables the wrong way and counts orders twice. It forgets a filter. It reads "this month" one way
 today and another way tomorrow. The answer looks confident either way.
 
-## The binding
+## How it works
 
 Lenspack keeps three things apart:
 
@@ -31,15 +33,8 @@ Lenspack keeps three things apart:
 3. **A compiler** that turns a request naming pack keys into a safe query, or refuses it.
 
 The model sits on top. It asks for numbers by naming keys, such as `revenue` by `country` for the last 30 days, and
-it changes a board through ten checked edit operations. It never writes SQL, and never writes to your data.
-
-```
-pack.yaml  ──►  catalogue  ──►  the model names keys  ──►  edits  ──►  board (JSON)
-                    │                                                     │
-                    └──────────►  compiler (resolve → plan → print)  ◄────┘
-                                          │
-         Postgres · ClickHouse · DuckDB · SQLite · MySQL · Elasticsearch · Superset
-```
+it changes a board through ten checked edit operations. It never writes SQL, and never writes to your data. How the pieces connect is drawn in
+[Architecture](../architecture/README.md#three-layers).
 
 ## The refusal
 
@@ -51,7 +46,7 @@ compiler declines, names the reason, and points at the nearest key that exists. 
 | revenue by country | compiles, and returns the SQL it would run |
 | revenue by product category | `FANOUT_REFUSED`: an order has many products, so grouping order revenue by category would count orders more than once. It offers line revenue instead |
 | revenue by contry | `UNKNOWN_DIMENSION`, nearest key `country` |
-| median order value | `UNKNOWN_MEASURE`: the pack declares no median, and the answer names the nearest measure that exists |
+| median order value | `UNKNOWN_MEASURE`: the pack declares no median order value. A misspelt key, such as `revenu`, also names the nearest one that exists |
 
 A mistake becomes a refusal, never a wrong number. Every answer that read data shows how it was worked out: the
 measure behind each figure, the SQL that ran and the rows that came back.
@@ -103,7 +98,8 @@ a reviewer that checks edits, an admin panel for definitions and open questions,
 ## Six shapes of data, one renderer
 
 Each example pack stresses a different side of the design. Each is made-up data that seeds in seconds, and together
-they are the test suite: every board runs on every supported database in CI, and the results must match.
+they are the test suite: every example board runs on every supported SQL database in CI, and the results must
+match. One pack also runs on Elasticsearch.
 
 | pack | what it stresses |
 |---|---|
@@ -114,23 +110,22 @@ they are the test suite: every board runs on every supported database in CI, and
 | `hcm` | a deliberately awkward registry: epoch-millisecond times, soft deletes, dotted hierarchies |
 | `campaign` | search-index shapes: the same numbers from DuckDB and Elasticsearch |
 
-More in [The example packs](../architecture/README.md#the-example-packs).
+More in [The example packs](../getting-started/examples.md).
 
 ## What holds
 
-Lenspack came out of a consultation tool whose dashboard logic was welded to one schema. These checks are what keep
+Lenspack came out of a consultation tool whose dashboard logic was tied to one schema. These checks are what keep
 the abstraction honest now that it is not. The build fails when one stops being true.
 
 | check | what it holds |
 |---|---|
-| Every engine, same answer | every example board runs on Postgres, MySQL, MariaDB, SQLite and ClickHouse and must return DuckDB's numbers |
+| Every SQL database, same answer | every example board runs on Postgres, MySQL, MariaDB, SQLite and ClickHouse and must return DuckDB's numbers |
 | One pack, two kinds of source | the `campaign` pack returns identical numbers from DuckDB and Elasticsearch |
 | One edit suite, every pack | the core's tests run over every example catalogue, not just the one they were written for |
 | No domain words in the code | the build fails if the kernel, the sources or the hosts contain a word from any example domain |
 | Pack conformance | every dimension × measure × shape compiles or fails with a documented reason; declared fan-outs are refused; tenancy is present |
-| The next pack | writing a pack for a new dataset takes under an hour and changes nothing under `packages/` |
 
-The full list is in [Claims the build checks](../architecture/README.md#claims-the-build-checks).
+The full list is in [Claims the build checks](../architecture/claims.md).
 
 ## The guarantees
 

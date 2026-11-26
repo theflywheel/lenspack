@@ -23,7 +23,7 @@ lenspack serve --config lenspack.yaml --port 9000 --ui ./examples/demo/dist --ho
 ```
 
 The port is `--port`, else `port:` in the config, else `PORT`, else 8787. It listens on `--host`, else `host:`,
-else on every address (`0.0.0.0`) when a sign-in is set and on this machine only (`127.0.0.1`) with `auth: none`.
+else on every address (`0.0.0.0`) when a sign-in is set and on this machine only (`127.0.0.1`) with `auth: { kind: none }`.
 The Docker image includes the board app. The whole command line is in [CLI](../reference/cli.md); deployment is in [Deploying](../operating/deploying.md).
 
 ## A config
@@ -51,9 +51,7 @@ for is in [Configuration](../operating/configuration.md).
 ## The board app
 
 The board app (`examples/demo` in this repository) is a React app over the board API: a chat that builds the board,
-drag-and-drop editing, filters, version history and "How this was worked out". Its look carries one idea: colour is
-provenance. A key the pack declares is always mono and blue, in prose, in the metrics reference or in a board title.
-Something the compiler refuses is always ochre.
+drag-and-drop editing, filters, version history and "How this was worked out".
 
 `pnpm demo` serves every example pack with a seeded database in the current folder (`<name>.duckdb`) through this
 server, with the board app. In the app, `/?example=<pack>&board=<board>` opens one. See

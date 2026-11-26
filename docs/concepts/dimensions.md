@@ -9,7 +9,7 @@ are declared and the options that help the model find the right one. It is for p
 dimensions:
   - { key: country,  entity: customers, field: country, label: Country, synonyms: [market, region] }
   - { key: channel,  entity: orders,    field: channel, type: enum }
-  - { key: placed,   entity: orders,    sql: placed_at, type: time, grains: [day, week, month, quarter] }
+  - { key: placed,   entity: orders,    field: placed_at, type: time, grains: [day, week, month, quarter] }
 ```
 
 Each dimension has a **key** (the name the model uses), the **entity** it lives on, and exactly one way to read
@@ -24,28 +24,28 @@ it: a column or field path (`field`), a SQL fragment (`sql`), or a path inside a
 
 ## Hierarchies
 
-Some dimensions nest: region, then district, then site. A pack can say so:
+Some dimensions nest: country, then city. A pack can say so:
 
 ```yaml
 hierarchies:
-  place: [region, district, site]
+  place: [country, city]
 ```
 
 Picking a value on one level narrows the board to it, and anything grouped at or above that level moves one level
 down. A measure can also be read at whichever level is being viewed when the source keeps a row per level, such as
-targets set per region and per district (`levels:` on the measure).
+sales targets set per country and per city (`levels:` on the measure).
 
 ## The same dimension on several entities
 
 A dimension can be declared on more than one entity with `also:`, when the same idea lives in two tables. This is
-what lets one `region` group measures from different entities, and what a ratio across entities joins its two
+what lets one `country` group measures from different entities, and what a ratio across entities joins its two
 sides on.
 
 ```yaml
-  - key: region
-    entity: visits
-    field: region
-    also: { targets: { field: region_name } }
+  - key: country
+    entity: customers
+    field: country
+    also: { targets: { field: country_code } }   # a table of sales targets per country
 ```
 
 ## Time

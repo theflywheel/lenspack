@@ -80,8 +80,9 @@ Two moves are planned, and new work should fit them:
 
 - **The turn moves into `agent`** as one function (`runTurn`), with a mode for questions and a mode for edits.
   Today the turn lives in the standalone server's package. See [The life of a turn](life-of-a-turn.md).
-- **Policy becomes a document**, and the engine's `Capabilities` splits into what the source can compute, what the
-  board's host can store, and what the deployment allows. See [Policy](../concepts/policy.md#where-it-lives).
+- **Policy becomes a document** of its own, versioned like a pack or a board, holding rules, rights and per-role
+  feature grants, loaded by every host and edited from the admin panel. The engine's `Capabilities` splits into
+  what the source can compute, what the board's host can store, and what the deployment allows.
 
 ---
 

@@ -48,8 +48,8 @@ These are known gaps. Each is a candidate for later work, not a promise.
 - **Sharing a board with groups, read-only links, and handing a board to another owner.**
 - **Access rules inside the pack file.** They live in the deployment's config, because role names belong to a
   deployment and one pack serves several.
-- **Filters on a group's value** ("regions below 80%"), counting groups ("how many regions are below 80%"), and
-  periods tied to a calendar of your own ("round 2 against round 1"). See [the compute step](../features/compute.md).
+- **Filters on a group's value** ("countries with a refund rate above 5%"), counting groups ("how many countries are
+  above 5%"), and periods tied to a calendar of your own ("this sale against the last one"). See [the compute step](../features/compute.md).
 
 ---
 

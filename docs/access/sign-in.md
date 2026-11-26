@@ -99,7 +99,7 @@ auth:
   users:
     - { user: ops,     token: env:OPS_TOKEN, edit: true, maintain: true }
     - { user: partner, token: env:PARTNER_TOKEN, tenant: t1, roles: [partner],
-        scope: [{ dimension: region, op: in, value: [North] }] }
+        scope: [{ dimension: country, op: in, value: [PT] }] }
 ```
 
 Each entry takes `user`, `token`, `edit` and `maintain` (both false by default), `tenant`, `scope` (row filters every

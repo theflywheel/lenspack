@@ -4,8 +4,9 @@ This page covers search indexes as Lenspack sources: how to connect, what a pack
 refused or approximate. It is for whoever connects Lenspack to Elasticsearch or OpenSearch.
 
 `@lenspack/elasticsearch` turns a query into one search request with aggregations, over plain HTTP. With no client
-library, one connector covers **Elasticsearch 6.x to 8.x and OpenSearch**, which differ in client packages far more
-than in the search API it uses.
+library, one connector is written for **Elasticsearch 6.x to 8.x and OpenSearch**, which differ in client packages far more
+than in the search API it uses. The repository's tests run it against Elasticsearch 7.17; the other versions are
+supported by design but not tested on every build.
 
 ## Connect
 
@@ -55,7 +56,7 @@ knows it is not exact.
 
 Elasticsearch has a SQL API, but it cannot join, and its answers come from the same aggregations the native
 connector already builds. The native connector marks approximate aggregations and is proven in the repository's
-tests to return DuckDB's numbers on the `campaign` example pack, on 77 queries. Routing it through SQL would trade
+tests to return DuckDB's numbers on the `campaign` example pack, on more than 100 queries. Routing it through SQL would trade
 that for a narrower dialect, so it stays a connector of its own, configured with `kind: elasticsearch`.
 
 ---

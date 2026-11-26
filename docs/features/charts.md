@@ -58,7 +58,7 @@ chart library is one more adapter. See [React](../hosts/react.md).
 ---
 
 **Next:** [Personal dashboards and saved layouts](personal-dashboards.md) (coming soon), or
-[Daily review, open questions and definitions](review.md).
+[Open questions and definitions](open-questions.md).
 
 **Related:** [Boards and widgets](../concepts/boards.md) · [Board format](../reference/board.md) ·
 [Datasets and dashboards in Superset](../hosts/superset/datasets-and-dashboards.md)

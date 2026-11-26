@@ -25,8 +25,8 @@ The plugin adds:
 - `/lenspack/...` on Superset's own host, forwarded to the Lenspack server for signed-in users, with a signed
   identity header (see [Who is asking](identity.md)). Chat replies stream through unbuffered, and a change sent
   from another site is refused. Browsers never reach Lenspack's port.
-- the **Ask Lenspack** button on every page, through Superset's documented-overridable
-  `tail_js_custom_extra.html`;
+- the **Ask Lenspack** button on every page, through `tail_js_custom_extra.html`, a template
+  Superset documents as one a deployment may replace;
 - **Settings → Manage → AI assistant** for admins: chat and speech models, languages, switches, spend, cost per
   answer and the audit log (see [Settings and switches](settings.md));
 - `GET /api/v1/lenspack/identity-key` and `POST /api/v1/lenspack/bootstrap`, which the Lenspack server calls on

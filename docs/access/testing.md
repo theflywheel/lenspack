@@ -13,7 +13,7 @@ The access suite starts real Superset 6.1 and 5.0, each with a Postgres database
 | `lp_owner` | Gamma, both datasets | owns dashboard A, so may edit it |
 | `lp_viewer` | Gamma, both datasets | views A, may not edit it |
 | `lp_partial` | Gamma, `visits` only | no access to `stock` |
-| `lp_north` | Gamma, both datasets | RLS `region = 'North'` on both datasets |
+| `lp_north` | Gamma, both datasets | row-level security (RLS) `region = 'North'` on both datasets |
 | `lp_inlist` | Gamma, both datasets | RLS `region IN ('North', 'East')` on `visits` |
 | `lp_complex` | Gamma, both datasets | RLS `region LIKE 'N%'` on `visits`, which Lenspack can't translate |
 | `lp_templ` | Gamma, both datasets | RLS `team = '{{ current_username() }}'` on `visits` |
@@ -54,9 +54,6 @@ Dashboard A holds a chart of each dataset and has no dashboard roles. Dashboard 
 - **Caching and saved answers.**
   - Two users with different RLS asking the same question, twice in a row, each get their own correct answer.
   - Five users with different access (all datasets, `visits` only, North only, North and East, their own team) ask the same question. Nobody is answered from another's saved answer: not when the same question comes again within minutes (sent as saved, no model), not when the saved queries run again on fresh data, and not when the question names another region (the region swapped into the saved queries). Each answer has exactly that user's rows.
-- **Pending.**
-  - A personal copy of B does not carry B's dashboard-role access (needs personal dashboards).
-  - Personal dashboards and saved layouts (coming soon; see [Personal dashboards](../features/personal-dashboards.md)): a viewer may create one; only its owner deletes it; a saved configuration applies only to dashboards the user controls; another user's personal dashboard is neither listed, opened nor edited.
 
 These cases check outcomes, not how Lenspack gets them. They keep holding when queries move to running as the user inside Superset. The `LIKE` case would then get stronger: Superset would apply the rule itself, so `lp_complex` would see the North rows instead of no `visits` at all.
 

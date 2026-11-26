@@ -47,9 +47,6 @@ Edits follow `editPolicy` in the config (or `LENSPACK_EDIT_POLICY`):
 
 The `boardEdits` switch comes first: off, nobody edits through the chat, admins included.
 
-> **Coming soon.** `editScope: own` limits chat edits to each person's own dashboards. See
-> [Personal dashboards](../../features/personal-dashboards.md#where-the-chat-may-edit-editscope).
-
 ## Who may administer
 
 Settings writes, the audit log, cost per answer and the usage page (`GET /api/_usage`, which names every user's

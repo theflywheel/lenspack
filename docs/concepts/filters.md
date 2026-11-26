@@ -41,7 +41,7 @@ A query that cannot be narrowed by the scope is refused (`OUT_OF_SCOPE`) rather 
 ## How they combine
 
 All three apply together. A query filter and a board pick can narrow further, but they can never widen what the
-scope allows: a person held to the North region who asks about the South gets nothing from the South.
+scope allows: a person held to Portugal who asks about Spain gets nothing from Spain.
 
 ---
 

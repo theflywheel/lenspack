@@ -44,6 +44,6 @@ fix. See [Versions](versions.md#clickhouse-column-names-on-superset-61).
 
 ---
 
-**Next:** [What Superset 6 could add](roadmap.md).
+**Next:** [The standalone server](../serve.md).
 
 **Related:** [Upgrading](../../operating/upgrading.md) · [Versions](versions.md)

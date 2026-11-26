@@ -98,8 +98,8 @@ measures:
     derived: <arithmetic>   # measure keys with + - * / and parentheses: "revenue / orders", "(a + b) / c * 100"
   - key: <slug>
     entity: <entity_key>
-    levels:                 # one number kept per level of a hierarchy (a target set per region and per city)
-      region: target_at_region
+    levels:                 # one number kept per level of a hierarchy (a target set per country and per city)
+      country: target_at_country
       city: target_at_city
 ```
 
@@ -107,7 +107,7 @@ measures:
 
 ```yaml
 hierarchies:                # dimensions that nest, coarse to fine (2 to 10 levels)
-  place: [region, city, store]
+  place: [country, city]
 
 instructions: <text>        # optional, up to 2000 characters: rules the keys cannot say, sent with every chat turn
 examples:                   # optional, up to 12: checked questions and the query that answers each

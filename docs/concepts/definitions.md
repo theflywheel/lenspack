@@ -17,7 +17,7 @@ anything. There are four kinds:
 
 - **an instruction**: a line the assistant follows ("Weeks start on Monday");
 - **a hint** on a measure or dimension ("Before refunds");
-- **synonyms** for a key ("area" and "zone" mean region);
+- **synonyms** for a key ("market" and "region" mean country);
 - **a reading for a kind of question**: "when someone asks about sales this month, use the calendar month to date".
 
 Definitions are a document of their own, one per pack, versioned like a board. Each change keeps who made it, when
@@ -43,4 +43,4 @@ for an admin. It never asks when the pack's rules or a definition already settle
 
 **Next:** [Saved answers](saved-answers.md).
 
-**Related:** [Daily review, open questions and definitions](../features/review.md) · [The admin panel](../features/admin-panel.md)
+**Related:** [Open questions and definitions](../features/open-questions.md) · [The admin panel](../features/admin-panel.md)

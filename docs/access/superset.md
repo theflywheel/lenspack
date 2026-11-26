@@ -14,8 +14,8 @@ In Lenspack's terms: a dataset their roles may not read is a kept entity, each s
 may read is scope on that entity, and a dashboard they may not open is a kept board. All of it goes through the same
 `decide()` as every host (see [Who sees what](README.md#how-the-layers-combine)).
 
-> **Changed:** earlier releases defaulted to `hostPolicy: off`. See
-> [Upgrading](../hosts/superset/upgrading.md#changes-that-need-attention).
+`hostPolicy` is `superset` by default. A deployment upgraded from a release that defaulted to `off` should read
+[Upgrading](../hosts/superset/upgrading.md#changes-that-need-attention).
 
 ## What each user sees
 

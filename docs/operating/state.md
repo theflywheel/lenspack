@@ -36,8 +36,6 @@ Files named in the config sit where the config says: `usage:` (one line per mode
 Telemetry adds `telemetry.jsonl` (by month), `telemetry-state.json` and `telemetry.key`; see
 [Telemetry](../features/telemetry.md).
 
-> **Coming soon.** Personal dashboards add `personal-dashboards.json` and `saved-layouts.json`; naming adds the brand to `settings.json`.
-
 ## How the files are written
 
 Everything except the usage tables sits behind a small document store: each file is one named document, read fresh on

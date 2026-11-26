@@ -31,13 +31,13 @@ What Superset has no field for comes from `overlay:` in `superset.yaml`: the pac
 
 ```yaml
 overlay:
-  description: Orders, customers and stock for the shop.
+  description: Orders, customers and products for the shop.
   timeZone: Europe/Lisbon
   instructions: Revenue is after refunds. Weeks start on Monday.
-  hierarchies: { place: [region, district, store] }
+  hierarchies: { place: [country, city] }
   examples:
-    - question: Orders by region last month
-      query: { kind: breakdown, dimension: region, measure: orders, time: { period: month, offset: -1 } }
+    - question: Orders by country last month
+      query: { kind: breakdown, dimension: country, measure: orders, time: { period: month, offset: -1 } }
 ```
 
 ## Numbers, from Superset

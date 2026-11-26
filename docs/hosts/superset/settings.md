@@ -55,12 +55,13 @@ the page; the rest by the server.
 
 Each chat turn, transcription and client event (a thumbs up or down, an answer left early) leaves a record in
 `telemetry.jsonl` in the state directory. The record holds the user and the role names the plugin signs. The
-deployment's `context:` section maps boards, datasets and roles to a campaign, campaign type and country:
+deployment's `context:` section tags boards, datasets and roles with a campaign, campaign type and country, for
+reading usage by them (see [Telemetry](../../features/telemetry.md#tagging-records-with-your-own-context)):
 
 ```yaml
 context:
-  superset-12: { campaign: Round 2 }
-  "role:Supervisor-North": { country: Country A }
+  superset-1: { campaign: Spring sale }
+  "role:Sales-North": { country: Country A }
 ```
 
 Admins read the records at `/_superset/telemetry`. What is recorded is switched item by item on the admin panel's
