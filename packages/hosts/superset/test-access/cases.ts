@@ -8,6 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { type Identity, signIdentity } from "../src/identity";
+import { type Position, layoutProblems, reachable } from "../src/layout";
 import { type ChatResult, PACK, type Session, type Stack, http, readChat, startStack } from "./stack";
 
 const VISITS = { North: 3, South: 4, East: 8, West: 16 };
@@ -101,7 +102,8 @@ export function accessSuite(version: string) {
         expect(await boards("lp_viewer")).toEqual([A]);
         expect(await boards("lp_rbac")).toEqual([B]);
         expect(await boards("lp_noroles")).toEqual([]);
-        expect(await dashboards("lp_admin")).toEqual(sorted([A, B]));
+        // The dashboard with tabs is not bound to a board yet (its cases bind it), and has no charts a viewer could read.
+        expect(await dashboards("lp_admin")).toEqual(sorted([A, B, `superset-${stack.fixtures.dashboards.t}`]));
         expect(await dashboards("lp_viewer")).toEqual([A]);
         expect(await dashboards("lp_rbac")).toEqual([B]);
         expect(await dashboards("lp_noroles")).toEqual([]);
@@ -193,6 +195,79 @@ export function accessSuite(version: string) {
         } finally {
           expect((await s.lp_admin.lp("PUT", "_superset/settings/features", { boardEdits: null })).status).toBe(200);
         }
+      });
+    });
+
+    // Superset's tabs: the layout as Superset keeps it (position_json, read back through Superset's own API), after
+    // Lenspack's board API and chat change the dashboard. Every change lands where Superset draws it.
+    describe("a dashboard with tabs", () => {
+      let T: string;
+      const layout = async () => JSON.parse((await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.t}`)).json.result.position_json) as Position;
+      const ops = (list: object[]) => s.lp_admin.lp("POST", `api/${PACK}/${T}/ops`, { ops: list });
+      /** The tabs above each chart Superset draws, by chart title ("TAB-overview>TAB-trend"). */
+      const tabsOf = (pos: Position) => {
+        const drawn = reachable(pos);
+        return Object.fromEntries(Object.values(pos).filter((c: any) => c?.type === "CHART" && drawn.has(c.id)).map((c: any) => [c.meta.sliceName, (c.parents as string[]).filter((p) => p.startsWith("TAB-")).join(">")]));
+      };
+      const kpi = (id: string, title: string, place = "bottom") => ({ op: "add_widget", id, widget: { title, kind: "kpi", query: { kind: "value", measure: "stock_total" } }, placement: { place, width: "quarter" } });
+
+      beforeAll(async () => {
+        // Bound on first use, as the overlay binds any dashboard it is opened on.
+        const bound = await s.lp_admin.lp("GET", `_superset/bind?dashboard=${stack.fixtures.dashboards.t}`);
+        expect(bound.status, bound.text).toBe(200);
+        T = bound.json.board;
+      });
+
+      it("adds a chart to the first tab, never under the grid the tabs left behind", async () => {
+        const r = await ops([kpi("stock_kpi", "Stock total")]);
+        expect(r.json, r.text).toMatchObject({ ok: true });
+        const pos = await layout();
+        expect(tabsOf(pos)).toEqual({ "Stock total": "TAB-overview" });
+        expect((pos.GRID_ID as { children: string[] }).children).toEqual([]);
+        expect(layoutProblems(pos)).toEqual([]);
+      });
+
+      it("puts what the chat adds on the tab the viewer has open, or after the widget it names", async () => {
+        const said = await s.lp_admin.lp("POST", `api/${PACK}/${T}/chat?review=off`, {
+          messages: [{ id: "tabs1", role: "user", parts: [{ type: "text", text: `TOOL add_widget ${JSON.stringify({ id: "visits_kpi", title: "Visits total", kind: "kpi", query_kind: "value", measure: "visit_total", place: "bottom", width: "quarter" })}` }] }],
+          view: { tabs: ["TAB-overview", "TAB-trend"] },
+        });
+        expect(toolOutput(readChat(said))).toMatchObject({ applied: true });
+        expect((await ops([kpi("stock_kpi_2", "Stock again", "after:stock_kpi")])).json).toMatchObject({ ok: true });
+        const pos = await layout();
+        expect(tabsOf(pos)).toEqual({ "Stock total": "TAB-overview", "Visits total": "TAB-overview>TAB-trend", "Stock again": "TAB-overview" });
+        expect(layoutProblems(pos)).toEqual([]);
+        const charts = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.t}/charts`)).json.result.map((c: { slice_name: string }) => c.slice_name);
+        expect(sorted(charts)).toEqual(["Stock again", "Stock total", "Visits total"]);
+      });
+
+      it("resizes a chart where it is", async () => {
+        expect((await ops([{ op: "resize_widget", id: "visits_kpi", width: "half" }])).json).toMatchObject({ ok: true });
+        const pos = await layout();
+        const chart = Object.values(pos).find((c: any) => c?.meta?.sliceName === "Visits total") as unknown as { meta: { width: number } };
+        expect(chart.meta.width).toBe(6);
+        expect(tabsOf(pos)["Visits total"]).toBe("TAB-overview>TAB-trend");
+      });
+
+      it("refuses a move plainly and changes nothing", async () => {
+        const before = await layout();
+        const r = await ops([{ op: "move_widget", id: "visits_kpi", placement: { place: "top", width: "half" } }]);
+        expect(r.json).toMatchObject({ ok: false });
+        expect(r.json.error).toMatch(/can't move charts on it yet/);
+        expect(await layout()).toEqual(before);
+      });
+
+      it("a restore puts a removed chart back on its tab, at its size", async () => {
+        const versions = (await s.lp_admin.lp("GET", `api/${PACK}/${T}/versions`)).json as { version: number }[];
+        expect((await ops([{ op: "remove_widget", id: "visits_kpi" }])).json).toMatchObject({ ok: true });
+        expect(tabsOf(await layout())["Visits total"]).toBeUndefined();
+        expect((await s.lp_admin.lp("POST", `api/${PACK}/${T}/revert`, { version: versions[0]!.version })).status).toBe(200);
+        const pos = await layout();
+        expect(tabsOf(pos)["Visits total"]).toBe("TAB-overview>TAB-trend");
+        expect((Object.values(pos).find((c: any) => c?.meta?.sliceName === "Visits total") as unknown as { meta: { width: number } }).meta.width).toBe(6);
+        expect(layoutProblems(pos)).toEqual([]);
+        const charts = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.t}/charts`)).json.result.map((c: { slice_name: string }) => c.slice_name);
+        expect(sorted(charts)).toEqual(["Stock again", "Stock total", "Visits total"]);
       });
     });
 

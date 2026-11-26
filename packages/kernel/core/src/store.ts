@@ -22,11 +22,29 @@ export type PatchResult =
   | { ok: true; board: Board }
   | { ok: false; error: string; hint?: string; opIndex?: number };
 
+/**
+ * Where the person is on the host's page when they edit: the tabs they have open, outermost
+ * first, as the host's own ids. A chat turn's view (kernel/agent TurnView), passed through to a
+ * store that keeps the board in a host's layout, which knows what the ids mean.
+ */
+export type BoardView = { tabs?: string[] };
+
+/** A tab of a host's layout, in reading order: its title (with the tabs around it, "Overview › Trend") and the widgets directly on it. */
+export type BoardTab = { id: string; title: string; widgets: string[] };
+
 export interface BoardStore {
   get(id: string): Promise<Board | null>;
   list(): Promise<BoardSummary[]>;
   create(input: { id?: string; pack: { pack: string; version: number }; title: string; config?: BoardConfig; owner?: string; tenant?: string }): Promise<Board>;
-  patch(input: { id: string; ops: BoardOp[]; catalogue: Catalogue; source?: string; expectedVersion?: number }): Promise<PatchResult>;
+  patch(input: { id: string; ops: BoardOp[]; catalogue: Catalogue; source?: string; expectedVersion?: number; view?: BoardView }): Promise<PatchResult>;
+  /**
+   * For a store that keeps the board in a host's own layout: told about edits before they are
+   * made, held or not. Returns why it cannot keep them (said to the person as it is), or null; it
+   * may note where a new widget should go. Absent: every edit the ops allow can be kept.
+   */
+  admit?(id: string, ops: BoardOp[], view?: BoardView): Promise<string | null>;
+  /** The tabs of the host's layout, in reading order, with the widgets on each; none when it has no tabs. */
+  tabs?(id: string): Promise<BoardTab[]>;
   replaceConfig(input: { id: string; config: BoardConfig; source?: string; summary?: string }): Promise<Board>;
   versions(id: string): Promise<BoardVersion[]>;
   revertTo(id: string, version: number): Promise<Board | null>;
@@ -152,7 +170,7 @@ export type SavedVersion = { version: number; summary: string };
  * wrong before the turn ends is never saved.
  */
 export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
-  type Write = { ops: BoardOp[]; catalogue: Catalogue; source: string } | { config: BoardConfig; source: string; summary: string };
+  type Write = { ops: BoardOp[]; catalogue: Catalogue; source: string; view?: BoardView } | { config: BoardConfig; source: string; summary: string };
   let held: { version: BoardVersion; write: Write }[] = [];
   // The board as it was when the first edit was held.
   let base: Board | null = null;
@@ -180,16 +198,21 @@ export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
     share: (id, shared) => inner.share(id, shared),
     delete: (id) => inner.delete(id),
     versions,
+    ...(inner.admit ? { admit: (id: string, ops: BoardOp[], view?: BoardView) => inner.admit!(id, ops, view) } : {}),
+    ...(inner.tabs ? { tabs: (id: string) => inner.tabs!(id) } : {}),
     async patch(input) {
       if (input.id !== boardId) return inner.patch(input);
       const board = await current();
       if (!board) return { ok: false, error: `No board called "${input.id}"` };
       if (input.expectedVersion !== undefined && board.version !== input.expectedVersion)
         return { ok: false, error: `Board changed since version ${input.expectedVersion}; it is now v${board.version}` };
+      // Refused now, while the turn can still say so, rather than when it is saved.
+      const refused = await inner.admit?.(boardId, input.ops, input.view);
+      if (refused) return { ok: false, error: refused };
       const result = applyOps(board.config, input.ops, input.catalogue);
       if (!result.ok) return { ok: false, error: result.error, hint: result.hint, opIndex: result.opIndex };
       const source = input.source ?? "ops";
-      return { ok: true, board: hold(board, result.config, source, describeOps(input.ops, board.config), { ops: input.ops, catalogue: input.catalogue, source }) };
+      return { ok: true, board: hold(board, result.config, source, describeOps(input.ops, board.config), { ops: input.ops, catalogue: input.catalogue, source, ...(input.view ? { view: input.view } : {}) }) };
     },
     async replaceConfig(input) {
       if (input.id !== boardId) return inner.replaceConfig(input);

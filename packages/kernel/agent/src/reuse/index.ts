@@ -25,6 +25,7 @@ import type { Pack } from "@lenspack/pack";
 
 import type { ProposalStore } from "../proposals";
 import { type BoardToolsOptions, boardTools, checkedQuery } from "../tools";
+import type { TurnView } from "../view";
 import { retemplate } from "./numbers";
 import { PHRASE_PROMPT, REWRITE_PROMPT, ROUTER_PROMPT, parseRoute, phraseMessage, rewriteMessage, routerMessage, slotName } from "./router";
 import { dueTimes } from "./schedule";
@@ -75,6 +76,8 @@ export type ReuseTurn = {
   rules?: unknown;
   /** The viewer's filter selections on the dashboard: part of what an answer is an answer to. */
   selections?: Record<string, unknown>;
+  /** Where the viewer is on the host's page (their open tab): part of what an edit is ("add a chart here"), not of what an answer is. */
+  view?: TurnView;
   /** The host's assistant prompt version: a new one makes every saved answer stale. */
   promptVersion?: string;
   readOnly?: string;
@@ -175,7 +178,7 @@ export function reuseLayer(o: ReuseOptions) {
   const keys = (t: ReuseTurn, kind: "answer" | "edit") => ({
     scope: scopeOf(t.ctx),
     // The board's filters and the viewer's selections are part of an answer's version; an edit's board is its content hash.
-    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : {}) })),
+    version: shortHash(canonical({ pack: packHash(t.pack), prompt: t.promptVersion ?? null, rules: t.rules ?? null, ...(kind === "answer" ? { filters: t.config.filters, selections: t.selections ?? {} } : t.view?.tabs?.length ? { view: t.view.tabs } : {}) })),
     replyLang: t.picked ?? "auto",
   });
   const expired = (e: Entry) => !e.pinned && now().getTime() - Date.parse(e.createdAt) > o.settings().ttlHours * 3_600_000;
@@ -202,7 +205,7 @@ export function reuseLayer(o: ReuseOptions) {
   }
 
   const tools = (t: ReuseTurn, boards?: BoardStore, held = false) =>
-    new Map(boardTools({ pack: t.pack, connector: t.connector, store: boards ?? t.store, boardId: t.board, ctx: t.ctx, proposals: t.proposals, readOnly: t.readOnly, held, onEdit: t.onEdit, onData: t.onData }).map((x) => [x.name, x]));
+    new Map(boardTools({ pack: t.pack, connector: t.connector, store: boards ?? t.store, boardId: t.board, ctx: t.ctx, proposals: t.proposals, readOnly: t.readOnly, held, onEdit: t.onEdit, onData: t.onData, ...(t.view ? { view: t.view } : {}) }).map((x) => [x.name, x]));
 
   /** Runs a plan's data calls again under the asker's own access. Null when one fails: the full assistant answers instead. */
   async function rerun(t: ReuseTurn, plan: Call[]): Promise<Call[] | null> {

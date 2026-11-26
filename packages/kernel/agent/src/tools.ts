@@ -7,6 +7,7 @@ import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 
 import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, parseClear, patchQuery, str } from "./args";
 import { type Proposal, type ProposalStore, memoryProposals } from "./proposals";
+import type { TurnView } from "./view";
 
 export type Tool<A extends z.ZodRawShape = z.ZodRawShape> = {
   name: string;
@@ -70,6 +71,8 @@ export type BoardToolsOptions = {
    * as it runs; nothing is run again for it. Never throws into the tool.
    */
   onData?: (e: DataCall) => void;
+  /** Where the viewer is on the host's page (the tab they have open): passed with every edit, so a store that keeps a host's layout can place a new widget there. */
+  view?: TurnView;
 };
 
 /** One data call a tool made, as onData hears it. */
@@ -238,7 +241,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       }
       const layoutEdit = ops.some((op) => op.op === "move_widget" || op.op === "resize_widget" || op.op === "remove_widget");
       const before = layoutEdit ? (await store.get(boardId))?.config : undefined;
-      const result = await store.patch({ id: boardId, ops, catalogue, source: "chat" });
+      const result = await store.patch({ id: boardId, ops, catalogue, source: "chat", ...(opts.view ? { view: opts.view } : {}) });
       if (!result.ok) {
         told({ outcome: "refused", ops: names, error: result.error });
         return { applied: false, error: result.error, ...(result.hint ? { didYouMean: result.hint } : {}) };
