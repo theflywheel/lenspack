@@ -6,7 +6,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, NOT_SHARED, type Ownership, type Sharing, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
-import { type Principal, boardRights, decide, otherTenant, principalOf, sharingShown, shownConfig, showsStatement } from "@lenspack/policy";
+import { type Principal, boardRights, decide, otherTenant, principalOf, sameUser, sharingShown, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -122,7 +122,7 @@ const randomId = (prefix: string) => `${prefix}_${Math.random().toString(36).sli
 const MAX_PEOPLE = 200;
 /**
  * Who a share request names: { everyone, people }, or the older { shared } (true: everyone, the people
- * named kept; false: nobody). Names are trimmed and the owner left out. A string says what is wrong.
+ * named kept; false: nobody). Names are trimmed, and repeats and the owner left out, whatever their case. A string says what is wrong.
  */
 function sharingFrom(body: unknown, board: Ownership): Sharing | string {
   const b = (body ?? {}) as { shared?: unknown; everyone?: unknown; people?: unknown };
@@ -132,7 +132,9 @@ function sharingFrom(body: unknown, board: Ownership): Sharing | string {
   }
   if (b.everyone !== undefined && typeof b.everyone !== "boolean") return "everyone is true or false";
   if (b.people !== undefined && !(Array.isArray(b.people) && b.people.every((p) => typeof p === "string"))) return "people is a list of user names";
-  const people = [...new Set(((b.people ?? []) as string[]).map((p) => p.trim()).filter((p) => p && p !== board.owner))];
+  // A name is one person whatever its case: the first spelling stays.
+  const people: string[] = [];
+  for (const p of ((b.people ?? []) as string[]).map((p) => p.trim())) if (p && !people.some((q) => sameUser(p, q)) && !sameUser(p, board.owner ?? "")) people.push(p);
   if (people.length > MAX_PEOPLE) return `a board is shared by name with at most ${MAX_PEOPLE} people; share it with everyone instead`;
   if (people.some((p) => p.length > 200)) return "a user name is at most 200 characters";
   return { everyone: b.everyone === true, people };
@@ -320,14 +322,19 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
   };
 
-  // Who has used this server since it started, by tenant: the names an owner is offered to share a board with.
-  // Kept in memory and capped, as a login proxy may name anyone.
+  // Who has used this server, by tenant: the names an owner is offered to share a board with. Each pack's store
+  // keeps the names that opened it, so they outlast a restart. This process notes a name once (whatever its case),
+  // and at most so many per tenant, as a login proxy may name anyone.
   const seen = new Map<string, Set<string>>();
   const SEEN_PER_TENANT = 5000;
-  const saw = (who: Principal) => {
+  const saw = async (who: Principal, packs: () => Host[]) => {
     const names = seen.get(who.tenant ?? "") ?? new Set<string>();
-    if (names.size < SEEN_PER_TENANT && who.user.length <= 200) names.add(who.user);
     seen.set(who.tenant ?? "", names);
+    const key = who.user.toLowerCase();
+    if (names.has(key) || names.size >= SEEN_PER_TENANT || who.user.length > 200) return;
+    names.add(key);
+    // A store that cannot take it now is asked again next time.
+    await Promise.all(packs().map((h) => h.store.noteUser(who.user, who.tenant))).catch(() => names.delete(key));
   };
 
   // What the client needs to show the mic; null when speech is off.
@@ -354,9 +361,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       const who = access ? await access(req) : OPEN;
       if (!who) return json(res, 401, { error: "sign in to use this API" });
-      if (access) saw(who);
       // What of a pack the caller may use; null: they may not open it. An open server has one local user, who sees everything.
       const decisionFor = (h: Host, as: Principal = who) => decide(as, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx });
+      if (access) await saw(who, () => [...byName.values()].filter((h) => decisionFor(h)));
       // The pack's own boards first, in board-file order; then people's, latest first.
       const boardsOf = async (h: Host) => {
         const order = (b: Ownership & { id: string }) => (b.owner ? h.boards.length : Math.max(0, h.boards.findIndex((f) => f.id === b.id)));
@@ -377,15 +384,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         // The caps go with it, so whoever watches spend sees how near they are.
         return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
       }
-      // The names an owner may share a board with: whoever has used this server in the caller's tenant, and
+      // The names an owner may share a board with: whoever has used a pack the caller opens, in their tenant, and
       // whoever owns a board there. Editors only, as it names people; any other name may be typed as well.
       if (packName === "_people" && req.method === "GET") {
         if (!who.edit) return json(res, 403, { error: "only editors share boards" });
         const tenant = who.tenant ?? "";
-        const names = new Set(seen.get(tenant));
-        for (const h of byName.values()) if (decisionFor(h)) for (const b of await h.store.list()) if (b.owner && (b.tenant ?? "") === tenant) names.add(b.owner);
-        names.delete(who.user);
-        return json(res, 200, { people: [...names].sort() });
+        // One entry per name whatever its case, the caller left out.
+        const names = new Map<string, string>([[who.user.toLowerCase(), ""]]);
+        const add = (n: string) => names.has(n.toLowerCase()) || names.set(n.toLowerCase(), n);
+        for (const h of byName.values()) {
+          if (!decisionFor(h)) continue;
+          (await h.store.users(who.tenant)).forEach(add);
+          for (const b of await h.store.list()) if (b.owner && (b.tenant ?? "") === tenant) add(b.owner);
+        }
+        return json(res, 200, { people: [...names.values()].filter(Boolean).sort((a, b) => a.localeCompare(b)) });
       }
       // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
       if (packName === "_stt") {

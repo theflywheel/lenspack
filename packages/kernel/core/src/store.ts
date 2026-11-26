@@ -44,6 +44,10 @@ export interface BoardStore {
   /** Says who an owned board is shown to besides its owner, replacing what it said before. Not a version: the board itself is unchanged. */
   share(id: string, to: Sharing): Promise<Board | null>;
   delete(id: string): Promise<void>;
+  /** Notes that a user name has used this store's boards under a tenant: a name to offer when sharing. Names only, nothing else about them. */
+  noteUser(user: string, tenant?: string): Promise<void>;
+  /** The user names noted under a tenant, as they signed in. */
+  users(tenant?: string): Promise<string[]>;
 }
 
 /** The ops in a few words, for a version's summary. `board`, the board before them, names a removed filter by its label. */
@@ -73,6 +77,7 @@ export function describeOps(ops: BoardOp[], board?: BoardConfig) {
 export function memoryStore(): BoardStore {
   const boards = new Map<string, Board>();
   const history = new Map<string, BoardVersion[]>();
+  const seen = new Map<string, Set<string>>();
   let counter = 0;
 
   const record = (id: string, config: BoardConfig, source: string, summary: string, ownership: Ownership = {}) => {
@@ -128,6 +133,12 @@ export function memoryStore(): BoardStore {
       if (!b?.owner) return null;
       Object.assign(b, ownershipOf(b.owner, b.tenant, to));
       return { ...b, config: structuredClone(b.config) };
+    },
+    async noteUser(user, tenant) {
+      seen.set(tenant ?? "", (seen.get(tenant ?? "") ?? new Set()).add(user));
+    },
+    async users(tenant) {
+      return [...(seen.get(tenant ?? "") ?? [])];
     },
     async delete(id) {
       boards.delete(id);
@@ -186,6 +197,8 @@ export function stagedStore(inner: BoardStore, boardId: string): StagedStore {
     create: (input) => inner.create(input),
     share: (id, to) => inner.share(id, to),
     delete: (id) => inner.delete(id),
+    noteUser: (user, tenant) => inner.noteUser(user, tenant),
+    users: (tenant) => inner.users(tenant),
     versions,
     async patch(input) {
       if (input.id !== boardId) return inner.patch(input);

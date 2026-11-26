@@ -34,6 +34,7 @@ describe("serve with sign-in", () => {
     bob_a: { user: "bob", edit: true, tenant: "a" },
     bob_b: { user: "bob", edit: true, tenant: "b" },
     carol_a: { user: "carol", edit: true, tenant: "a" },
+    BOB_a: { user: "BOB", edit: true, tenant: "a" },
     viewer: { user: "viewer" },
     reader: { user: "reader", readOnly: "You can view this board but not edit it." },
     scoped: { user: "scoped" }, // scope filled in once a province is known
@@ -153,7 +154,7 @@ describe("serve with sign-in", () => {
     expect(named.body).toMatchObject({ owner: "alice", shared: true, everyone: false, people: ["bob"] });
     expect(events.at(-1)).toMatchObject({ user: "alice", board: id, action: "share", outcome: "ok", detail: "everyone no, 1 by name" });
 
-    expect((await call("bob_a", `/campaign/${id}`)).body).toMatchObject({ writable: false, board: { owner: "alice", shared: true } });
+    expect((await call("bob_a", `/campaign/${id}`)).body).toMatchObject({ writable: false, board: { owner: "alice", shared: true, everyone: false } });
     expect((await call("bob_a", `/campaign/${id}`)).body.board).not.toHaveProperty("people");
     const listed = async (who: string) => ((await call(who, "/campaign")).body.boards as Record<string, unknown>[]).find((b) => b.id === id);
     expect(await listed("bob_a")).toEqual(expect.objectContaining({ owner: "alice", shared: true, writable: false }));
@@ -170,11 +171,29 @@ describe("serve with sign-in", () => {
     expect((await share("alice_a", id, {})).status).toBe(400);
 
     expect((await share("alice_a", id, { everyone: true, people: ["bob"] })).body).toMatchObject({ everyone: true, people: ["bob"] });
-    expect((await call("carol_a", `/campaign/${id}`)).status).toBe(200);
+    expect((await call("carol_a", `/campaign/${id}`)).body.board).toEqual(expect.objectContaining({ owner: "alice", shared: true, everyone: true }));
+    expect((await call("carol_a", `/campaign/${id}`)).body.board).not.toHaveProperty("people");
     expect((await call("bob_b", `/campaign/${id}`)).status).toBe(404);
     expect((await share("alice_a", id, { everyone: false, people: [] })).body).toMatchObject({ shared: false });
     expect(events.at(-1)).toMatchObject({ action: "unshare", detail: "everyone no, 0 by name" });
     expect((await call("bob_a", `/campaign/${id}`)).status).toBe(404);
+  });
+
+  it("matches a name whatever its case", async () => {
+    const made = await call("alice_a", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "Any case" }) });
+    const id = made.body.id as string;
+    const named = await call("alice_a", `/campaign/${id}/share`, { method: "POST", body: JSON.stringify({ everyone: false, people: ["Bob", "bob", "ALICE", "Carol"] }) });
+    expect(named.body).toMatchObject({ people: ["Bob", "Carol"] });
+    expect((await call("bob_a", `/campaign/${id}`)).status).toBe(200);
+    expect((await call("BOB_a", `/campaign/${id}`)).status).toBe(200);
+    expect((await call("carol_a", `/campaign/${id}`)).status).toBe(200);
+    expect((await call("bob_b", `/campaign/${id}`)).status).toBe(404);
+    // One suggestion per name, and never the caller, whatever the case.
+    await call("bob_a", "/campaign");
+    await call("BOB_a", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "Owned as BOB" }) });
+    const names = (await call("alice_a", "/_people")).body.people as string[];
+    expect(names.filter((n) => n.toLowerCase() === "bob")).toHaveLength(1);
+    expect((await call("BOB_a", "/_people")).body.people.map((n: string) => n.toLowerCase())).not.toContain("bob");
   });
 
   it("still takes { shared } from an older client: true is everyone, false is nobody", async () => {

@@ -125,6 +125,8 @@ export function supersetBoards(opts: SupersetBoardsOptions): BoardStore & { pull
     versions: (id) => inner.versions(id),
     revertTo: (id, version) => through(id, () => inner.revertTo(id, version)),
     share: (id, to) => inner.share(id, to),
+    noteUser: (user, tenant) => inner.noteUser(user, tenant),
+    users: (tenant) => inner.users(tenant),
     async delete(id) {
       if (bound(id)) throw new Error("A Superset dashboard is deleted in Superset");
       return inner.delete(id);

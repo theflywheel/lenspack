@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./comp
 import type { ModelInfo } from "./chat";
 import { page } from "./page";
 import { ProfileMenu } from "./profile";
-import { type Entry, ShareButton, boardGroups } from "./sharing";
+import { type Entry, ShareButton, boardGroups, reachedBy } from "./sharing";
 import { SplitView } from "./split";
 
 // The board app, built from shadcn components. The board itself is rendered
@@ -477,7 +477,12 @@ export function App() {
                         {g.boards.map((b) => (
                           <SelectItem key={b.id} value={b.id}>
                             {b.title}
-                            {g.key === "shared" && <span className="text-muted-foreground"> · {b.owner}</span>}
+                            {g.key === "shared" && (
+                              <span className="text-muted-foreground" title={reachedBy(b)}>
+                                {" "}
+                                · {b.owner}, {b.everyone ? "with everyone" : "with you"}
+                              </span>
+                            )}
                             {g.key === "yours" && b.shared && <Users className="size-3.5" aria-label="shared" />}
                           </SelectItem>
                         ))}
@@ -524,7 +529,7 @@ export function App() {
                   {intro && <p className="mt-1 max-w-[70ch] text-sm text-muted-foreground" data-testid="intro">{intro}</p>}
                   {!writable && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="read-only">
-                      <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board, shared with you.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}
+                      <Lock className="size-3" /> {state.board.owner ? `${state.board.owner}'s board. ${reachedBy(state.board)}.` : "The pack's own board."} Read-only{canMake ? ": save a copy to change it." : "."}
                     </p>
                   )}
                   {notice && <p className="mt-1 text-xs text-destructive">{notice}</p>}

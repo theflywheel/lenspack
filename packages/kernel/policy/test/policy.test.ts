@@ -158,15 +158,19 @@ describe("boardRights", () => {
     const toAll = { ...byName, everyone: true };
     expect(boardRights(as("cy"), toAll)).toEqual({ view: true, edit: false });
     expect(boardRights(as("cy", "t2"), toAll)).toEqual({ view: false, edit: false });
+    // A name matches whatever its case.
+    expect(boardRights(as("BOB"), byName)).toEqual({ view: true, edit: false });
+    expect(boardRights(as("bob"), { ...byName, people: ["Bob"] })).toEqual({ view: true, edit: false });
     // Not shared: everyone false and nobody named, whatever an old `shared` says.
     expect(boardRights(as("bob"), { owner: "ann", tenant: "t1", shared: true, everyone: false, people: [] })).toEqual({ view: false, edit: false });
   });
 
-  it("tells only a board's owner who else it is shared with", () => {
+  it("tells only a board's owner who it is shared with by name; others learn whether it is everyone's", () => {
     const board = { owner: "ann", tenant: "t1", shared: true, everyone: true, people: ["bob"] };
     expect(sharingShown(principalOf({ user: "ann", tenant: "t1" }), board)).toEqual(board);
-    expect(sharingShown(principalOf({ user: "bob", tenant: "t1" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true });
-    expect(sharingShown(principalOf({ user: "ann", tenant: "t2" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true });
+    expect(sharingShown(principalOf({ user: "bob", tenant: "t1" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true, everyone: true });
+    expect(sharingShown(principalOf({ user: "ann", tenant: "t2" }), board)).toEqual({ owner: "ann", tenant: "t1", shared: true, everyone: true });
+    expect(sharingShown(principalOf({ user: "bob", tenant: "t1" }), { ...board, everyone: false })).toEqual({ owner: "ann", tenant: "t1", shared: true, everyone: false });
   });
 });
 

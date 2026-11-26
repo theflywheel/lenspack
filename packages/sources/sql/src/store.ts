@@ -10,6 +10,8 @@ import { toDate } from "@lenspack/engine";
 // another's in the same tables: lenspack serve gives each pack its own.
 // An owned board's `shared` column shares it with everyone in its tenant, and
 // `people` (a JSON array, or NULL for none) with the users it names.
+// lenspack_users keeps the user names that used a space, by tenant ('' for
+// none): names to offer when sharing, nothing else about them.
 
 export const STORE_DDL = `
 CREATE TABLE IF NOT EXISTS lenspack_boards (
@@ -35,6 +37,12 @@ CREATE TABLE IF NOT EXISTS lenspack_board_versions (
   config TEXT NOT NULL,
   created_at TIMESTAMP NOT NULL,
   PRIMARY KEY (space, board_id, version)
+);
+CREATE TABLE IF NOT EXISTS lenspack_users (
+  space VARCHAR NOT NULL,
+  tenant VARCHAR NOT NULL,
+  name VARCHAR NOT NULL,
+  PRIMARY KEY (space, tenant, name)
 );`;
 
 // A list that does not read shares the board with nobody by name.
@@ -150,6 +158,13 @@ export function sqlStore(db: { executor: Executor; writer: Writer; dialect: Dial
     async delete(id) {
       await writer.exec(`DELETE FROM lenspack_board_versions WHERE space = $1 AND board_id = $2`, [space, id]);
       await writer.exec(`DELETE FROM lenspack_boards WHERE space = $1 AND id = $2`, [space, id]);
+    },
+    async noteUser(user, tenant) {
+      await writer.exec(`INSERT INTO lenspack_users (space, tenant, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [space, tenant ?? "", user]);
+    },
+    async users(tenant) {
+      const rows = await executor.query(`SELECT name FROM lenspack_users WHERE space = $1 AND tenant = $2 ORDER BY name`, [space, tenant ?? ""]);
+      return rows.map((r) => String(r.name));
     },
   };
   return store;

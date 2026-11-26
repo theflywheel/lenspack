@@ -37,6 +37,15 @@ describe("sql board store", () => {
     expect((await again.list())[0]).toMatchObject({ shared: true, everyone: false, people: ["bob", "cy"] });
     await again.share("x", { everyone: true, people: [] });
     expect(await store.get("x")).toMatchObject({ shared: true, everyone: true, people: [] });
+    // The names that used the space, by tenant, kept across a reopen; another space has its own.
+    await store.noteUser("bob", "t1");
+    await store.noteUser("bob", "t1");
+    await store.noteUser("Cy", "t1");
+    await store.noteUser("dee");
+    expect(await sqlStore(db, { space }).users("t1")).toEqual(["Cy", "bob"]);
+    expect(await sqlStore(db, { space }).users()).toEqual(["dee"]);
+    expect(await sqlStore(db, { space: `${space}_other` }).users("t1")).toEqual([]);
+    await db.writer.exec(`DELETE FROM lenspack_users WHERE space = $1`, [space]);
     await store.delete("x");
     await db.close();
   });
@@ -54,9 +63,14 @@ describe("sql board store", () => {
     expect(await store.get("open")).toMatchObject({ owner: "ann", shared: true, everyone: true, people: [] });
     expect(await store.get("closed")).toMatchObject({ owner: "ann", shared: false, everyone: false, people: [] });
     expect(await store.get("file")).not.toHaveProperty("everyone");
-    // And it takes names from now on.
+    // And it takes names from now on, and notes who used it.
     await store.share("closed", { everyone: false, people: ["bob"] });
     expect(await sqlStore(db).get("closed")).toMatchObject({ shared: true, everyone: false, people: ["bob"] });
+    await store.noteUser("bob");
+    expect(await store.users()).toEqual(["bob"]);
+    // The release before still writes its boards to the table.
+    await db.writer.exec(`INSERT INTO lenspack_boards (space, id, pack, title, owner, tenant, shared, version, config, updated_at) VALUES ('', 'older', 'plain', 'Old', 'ann', NULL, false, 1, $1, CAST('2026-01-02 00:00:00' AS TIMESTAMP))`, [config]);
+    expect(await store.get("older")).toMatchObject({ owner: "ann", shared: false, people: [] });
     await db.close();
   });
 });

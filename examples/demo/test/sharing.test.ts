@@ -2,7 +2,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { SharePanel, boardGroups, sharedWith } from "../src/sharing";
+import { SharePanel, boardGroups, reachedBy, sharedWith } from "../src/sharing";
 
 // The board menu's groups and the share dialog, as the app draws them.
 
@@ -26,6 +26,11 @@ describe("the board menu", () => {
   it("calls every board someone made yours on an open server, where there is no one to tell apart", () => {
     expect(boardGroups(boards, null).map((g) => g.boards.length)).toEqual([1, 2, 0]);
   });
+
+  it("tells a viewer how someone else's board reached them", () => {
+    expect(reachedBy({ everyone: true })).toBe("Shared with everyone");
+    expect(reachedBy({ everyone: false })).toBe("Shared with you");
+  });
 });
 
 describe("the share dialog", () => {
@@ -42,6 +47,13 @@ describe("the share dialog", () => {
     expect(everyone(out)).toBeDefined();
     expect(everyone(out)).not.toContain("checked");
     expect(everyone(html({ everyone: true, people: [] }))).toContain("checked");
+  });
+
+  it("treats a name in any case as the one already there", () => {
+    const out = html({ everyone: false, people: ["bob"] }, ["Bob", "ALICE", "carol"]);
+    expect(out).not.toContain('data-testid="share-suggestion-Bob"');
+    expect(out).not.toContain('data-testid="share-suggestion-ALICE"');
+    expect(out).toContain('data-testid="share-suggestion-carol"');
   });
 
   it("says on its button who the board is shared with", () => {

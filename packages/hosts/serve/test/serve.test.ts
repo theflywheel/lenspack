@@ -242,6 +242,24 @@ describe("boards kept in a database", () => {
     await again.close();
   });
 
+  it("offers the people who used it after a restart", async () => {
+    file("From the file");
+    const as = (user: string) => ({ "x-user": user });
+    const access = (req: { headers: Record<string, unknown> }) => ({ user: String(req.headers["x-user"]), edit: true });
+    const first = await open();
+    const one = await listen(createApp(first.hosts, { access }));
+    await fetch(`${one.base}/north`, { headers: as("bob") });
+    one.server.close();
+    await first.close();
+
+    const again = await open();
+    const two = await listen(createApp(again.hosts, { access }));
+    const people = (await (await fetch(`${two.base}/_people`, { headers: as("alice") })).json()).people;
+    two.server.close();
+    await again.close();
+    expect(people).toContain("bob");
+  });
+
   it("puts a changed board file on top, the app's edit kept in the history", async () => {
     file("The file changed");
     const changed = await open();

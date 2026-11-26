@@ -26,6 +26,11 @@ export function boardGroups(boards: Entry[], me: { user: string } | null): Group
   ];
 }
 
+/** How someone else's board reached the viewer: with everyone, or with them by name. Who else it names is its owner's to know. */
+export function reachedBy(b: { everyone?: boolean }): string {
+  return b.everyone ? "Shared with everyone" : "Shared with you";
+}
+
 /** Who a board is shared with, in a few words for its owner. */
 export function sharedWith({ everyone, people }: Sharing): string {
   if (everyone) return "Shared with everyone";
@@ -37,11 +42,13 @@ export function sharedWith({ everyone, people }: Sharing): string {
 export function SharePanel({ title, owner, sharing, suggestions, busy, error, onChange }: { title: string; owner: string; sharing: Sharing; suggestions: string[]; busy?: boolean; error?: string | null; onChange: (next: Sharing) => void }) {
   const [name, setName] = React.useState("");
   const typed = name.trim();
+  // A name is one person whatever its case.
+  const listed = (who: string) => [owner, ...sharing.people].some((p) => p.toLowerCase() === who.toLowerCase());
   const add = (who: string) => {
     setName("");
-    if (who && who !== owner && !sharing.people.includes(who)) onChange({ ...sharing, people: [...sharing.people, who] });
+    if (who && !listed(who)) onChange({ ...sharing, people: [...sharing.people, who] });
   };
-  const offered = suggestions.filter((p) => p !== owner && !sharing.people.includes(p) && p.toLowerCase().includes(typed.toLowerCase())).slice(0, 6);
+  const offered = suggestions.filter((p) => !listed(p) && p.toLowerCase().includes(typed.toLowerCase())).slice(0, 6);
   return (
     <div className="space-y-3 text-sm" data-testid="share-dialog">
       <div>

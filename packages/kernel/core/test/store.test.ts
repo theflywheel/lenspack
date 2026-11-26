@@ -65,6 +65,16 @@ describe("memory store", () => {
     expect(await store.share("pack", { everyone: true, people: [] })).toBeNull();
   });
 
+  it("notes the user names that used it, by tenant", async () => {
+    const store = memoryStore();
+    await store.noteUser("bob", "t1");
+    await store.noteUser("bob", "t1");
+    await store.noteUser("cy");
+    expect(await store.users("t1")).toEqual(["bob"]);
+    expect(await store.users()).toEqual(["cy"]);
+    expect(await store.users("t2")).toEqual([]);
+  });
+
   it("summarises by row", async () => {
     const store = memoryStore();
     await store.create({ id: "x", pack: packRef, title: "T" });
