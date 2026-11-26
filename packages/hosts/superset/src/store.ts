@@ -40,6 +40,12 @@ export type SupersetBoards = BoardStore & {
   lockedOf(id: string): string[];
   /** The charts Lenspack made on the board's dashboard. */
   createdOf(id: string): number[];
+  /**
+   * Replaces a board's config with one made from the board as it is at the moment of writing: after Superset's
+   * latest is read, in the same turn as the write, so nothing changed in Superset in between is written back.
+   * `make` gets that board and its widgets that stand for Superset's charts.
+   */
+  replaceFrom<T extends { config: BoardConfig }>(id: string, make: (board: Board, locked: string[]) => T, how: { source: string; summary: string }): Promise<{ board: Board; made: T }>;
   /** Drops a board whose dashboard is gone (deleted): its links and its versions here. */
   forget(id: string): Promise<void>;
 };
@@ -188,6 +194,16 @@ export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
       }
     },
     replaceConfig: (input) => (input.source === "superset" ? inner.replaceConfig(input) : through(input.id, () => inner.replaceConfig(input))),
+    async replaceFrom(id, make, how) {
+      let made: ReturnType<typeof make> | undefined;
+      const board = await through(id, async () => {
+        const current = await inner.get(id);
+        if (!current) throw new Error(`no board ${id}`);
+        made = make(current, [...(states[id]?.locked ?? [])]);
+        return inner.replaceConfig({ id, config: made.config, source: how.source as never, summary: how.summary });
+      });
+      return { board: board as Board, made: made! };
+    },
     versions: (id) => inner.versions(id),
     // A restore puts back what was removed and keeps charts where they are now: a layout with tabs can't take a move yet.
     revertTo: (id, version) => through(id, () => inner.revertTo(id, version), { moves: "keep" }),

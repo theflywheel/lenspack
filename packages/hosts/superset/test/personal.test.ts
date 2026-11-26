@@ -76,7 +76,7 @@ function fakeSuperset() {
     async post(path, body: any): Promise<any> {
       writes.push({ method: "POST", path, body });
       if (path === "/api/v1/dashboard/") {
-        const d: Dash = { id: nextDash++, dashboard_title: body.dashboard_title, position_json: null, json_metadata: null, changed_on: `t${++tick}`, owners: body.owners ?? [LENSPACK_ID] };
+        const d: Dash = { id: nextDash++, dashboard_title: body.dashboard_title, position_json: body.position_json ?? null, json_metadata: null, changed_on: `t${++tick}`, owners: body.owners ?? [LENSPACK_ID] };
         dashes.set(d.id, d);
         return { id: d.id, result: body };
       }
@@ -205,6 +205,8 @@ describe("a dashboard of one's own", () => {
     expect(await t.store.get(r.board)).toBeTruthy();
     expect((await t.links.get(String(r.dashboard)))!.owner).toBe("olu");
     expect(t.audit.at(-1)).toMatchObject({ user: "olu", action: "dashboard-create", outcome: "ok" });
+    // A layout Superset can draw from the start: a later change finds nothing to repair.
+    expect(layoutProblems(JSON.parse(t.superset.dashes.get(r.dashboard)!.position_json!))).toEqual([]);
     // A private draft: not published, no dashboard roles.
     expect(t.superset.writes.find((w) => w.method === "POST")!.body).toMatchObject({ published: false, roles: [] });
     // Telemetry: one event, ids only (no title).
@@ -394,6 +396,97 @@ describe("saved layouts", () => {
     expect(Object.keys((await t.store.get(t.other.board))!.config.widgets)).toEqual([]);
   });
 
+  it("are undone as applied, taking back a chart of Superset's own that the layout brought back", async () => {
+    const t = setup();
+    const src = t.superset.official("Campaign", [OWNER.userId], [KPI, VISITS]);
+    // A chart Lenspack can't redraw: kept as Superset's (locked).
+    t.superset.charts.get(src.charts[1]!)!.form_data.viz_type = "word_cloud";
+    const copy = await t.personal.copy(VIEWER, { dashboard: src.id, view: true, edit: false });
+    if (!copy.ok) throw new Error(copy.error);
+    const v1 = (await t.store.get(copy.board))!;
+    expect(t.store.lockedOf(copy.board)).toHaveLength(1);
+    expect(await t.personal.saveLayout(VIEWER, { dashboard: copy.dashboard, view: true, edit: true, board: copy.board }, "Both", v1.config)).toMatchObject({ ok: true });
+    const onCopy = () => [...t.superset.charts.values()].filter((c) => c.dashboards.includes(copy.dashboard)).map((c) => c.id).sort();
+    const inLayout = () => Object.values<any>(JSON.parse(t.superset.dashes.get(copy.dashboard)!.position_json!)).flatMap((c) => (c?.type === "CHART" || c?.type === "MARKDOWN" ? [c.meta.chartId ?? c.id] : [])).sort();
+    const locked = [...t.superset.charts.values()].find((c) => c.dashboards.includes(copy.dashboard) && c.form_data.viz_type === "word_cloud")!.id;
+    const kept = onCopy().find((c) => c !== locked)!;
+    // Someone removes the locked chart in Superset itself (Lenspack reads the change on its next write).
+    const d = t.superset.dashes.get(copy.dashboard)!;
+    const pos = JSON.parse(d.position_json!);
+    const gone = Object.keys(pos).filter((k) => pos[k]?.type === "CHART" && pos[k].meta.chartId === locked);
+    for (const k of gone) delete pos[k];
+    for (const c of Object.values<any>(pos)) if (Array.isArray(c?.children)) c.children = c.children.filter((x: string) => !gone.includes(x));
+    d.position_json = JSON.stringify(pos);
+    d.changed_on = "changed-in-superset";
+    t.superset.charts.get(locked)!.dashboards = [];
+    expect(inLayout()).toEqual([kept]);
+    // The saved layout, applied: Superset's change is read first (v2), then the layout (v3).
+    const r = await t.personal.applyLayout(VIEWER, "both", edit(copy.board));
+    if (!r.ok) throw new Error(r.error);
+    const versions = await t.store.versions(copy.board);
+    expect(versions[1]!.summary).toBe("changed in Superset");
+    const v2 = versions[1]!.version;
+    // The chart is gone from this dashboard, so the layout can't bring it back: it is left out and named, never
+    // put back as a note standing in for it.
+    expect(r.skipped.map((x) => x.title)).toEqual(["Visits"]);
+    expect(inLayout()).toEqual([kept]);
+    // Undo: back to v2, in Superset too: nothing the layout added is left on the dashboard.
+    await t.store.revertTo(copy.board, v2);
+    expect(inLayout()).toEqual([kept]);
+    expect(onCopy()).toEqual([kept]);
+  });
+
+  it("restoring a version from before Superset removed one of its own charts puts that chart back, or leaves it out if it is gone", async () => {
+    const t = setup();
+    const src = t.superset.official("Campaign", [OWNER.userId], [KPI, VISITS]);
+    const [kpi, cloud] = src.charts as [number, number];
+    t.superset.charts.get(cloud)!.form_data.viz_type = "word_cloud";
+    const board = await t.bindBoard(src.id);
+    const v1 = (await t.store.get(board))!;
+    expect(t.store.lockedOf(board)).toHaveLength(1);
+    const drawn = () => Object.values<any>(JSON.parse(t.superset.dashes.get(src.id)!.position_json!)).flatMap((c) => (c?.type === "CHART" ? [c.meta.chartId] : c?.type === "MARKDOWN" ? [c.id] : [])).sort();
+    const removeInSuperset = async (deleteIt: boolean) => {
+      const d = t.superset.dashes.get(src.id)!;
+      const pos = JSON.parse(d.position_json!);
+      const gone = Object.keys(pos).filter((k) => pos[k]?.type === "CHART" && pos[k].meta.chartId === cloud);
+      for (const k of gone) delete pos[k];
+      for (const c of Object.values<any>(pos)) if (Array.isArray(c?.children)) c.children = c.children.filter((x: string) => !gone.includes(x));
+      d.position_json = JSON.stringify(pos);
+      d.changed_on = `removed-${deleteIt}`;
+      if (deleteIt) t.superset.charts.delete(cloud);
+      else t.superset.charts.get(cloud)!.dashboards = [];
+      await t.store.pull(board, true);
+    };
+    await removeInSuperset(false);
+    expect(drawn()).toEqual([kpi]);
+    // Back to v1: the same chart, kept as Superset's, not a note standing in for it.
+    await t.store.revertTo(board, v1.version);
+    expect(drawn()).toEqual([cloud, kpi].sort((a, b) => a - b));
+    expect(t.superset.charts.get(cloud)!.dashboards).toEqual([src.id]);
+    expect(t.store.lockedOf(board)).toHaveLength(1);
+    // Removed and deleted in Superset: back to v1 leaves it out.
+    await removeInSuperset(true);
+    await t.store.revertTo(board, v1.version);
+    expect(drawn()).toEqual([kpi]);
+  });
+
+  it("say plainly that charts made in Superset stay with their dashboard, and how many charts a layout carried", async () => {
+    const t = await withBoards();
+    t.superset.charts.get(t.src.charts[1]!)!.form_data.viz_type = "word_cloud";
+    t.superset.dashes.get(t.src.id)!.changed_on = "now-with-a-cloud";
+    await t.store.pull(t.srcBoard, true);
+    const here = { dashboard: t.src.id, view: true, edit: true, board: t.srcBoard };
+    expect((await t.personal.overview(OWNER, here)).here).toMatchObject({ superset: 1 });
+    const config = (await t.store.get(t.srcBoard))!.config;
+    expect(await t.personal.saveLayout(OWNER, here, "Campaign view", config, "Campaign")).toMatchObject({ ok: true, charts: 2, superset: 1 });
+    expect((await t.personal.overview(OWNER, null)).layouts[0]).toMatchObject({ widgets: 2, superset: 1, from: "Campaign", fromDashboard: t.src.id });
+    const r = await t.personal.applyLayout(OWNER, "campaign view", edit(t.other.board), "https://superset.test");
+    if (!r.ok) throw new Error(r.error);
+    expect(r.carried).toEqual({ widgets: 1, of: 2, stayed: 1 });
+    expect(r.from).toEqual({ dashboard: t.src.id, title: "Campaign", url: `https://superset.test/superset/dashboard/${t.src.id}/` });
+    expect(r.skipped[0]!.why).toMatch(/made in Superset.*stays with the dashboard it was made on/);
+  });
+
   it("are not applied to a dashboard the person can't edit", async () => {
     const t = await withBoards();
     const config = (await t.store.get(t.srcBoard))!.config;
@@ -506,7 +599,8 @@ describe("in the chat", () => {
       const empty: BoardConfig = { ...(await t.store.get(t.board))!.config, widgets: {}, layout: [] };
       await t.personal.saveLayout(OWNER, { dashboard: t.dash, view: true, edit: true, board: t.board }, "Morning", empty);
     });
-    expect(applied.outputs[0]).toMatchObject({ applied: true, layout: "Morning" });
+    expect(applied.outputs[0]).toMatchObject({ applied: true, layout: "Morning", carried: "0 of 0 charts" });
+    expect(applied.outputs[0].stayed).toBeUndefined();
     expect((await applied.store.versions(applied.board))[0]!.summary).toBe("applied saved layout “Morning”");
   });
 

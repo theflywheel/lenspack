@@ -18,6 +18,8 @@ export type FittedLayout = {
   skippedFilters: { label: string; why: string }[];
   /** The saved layout was written against another version of the pack. */
   packChanged: boolean;
+  /** How many of the saved layout's widgets the board takes, of how many, and how many of those left out are host charts that stay with their own dashboard. */
+  carried: { widgets: number; of: number; stayed: number };
 };
 
 export type FitOptions = {
@@ -37,6 +39,7 @@ export function fitSavedLayout(saved: BoardConfig, target: BoardConfig, pack: Pa
   const savedLocked = new Set(o.savedLocked ?? []);
   const targetLocked = new Set(o.targetLocked ?? []);
   const skipped: SkippedWidget[] = [];
+  let stayed = 0;
   const widgets: Record<string, Widget> = {};
   // A saved widget id that names a host chart on this board would take that chart over: it gets a new id.
   const rename = new Map<string, string>();
@@ -51,7 +54,10 @@ export function fitSavedLayout(saved: BoardConfig, target: BoardConfig, pack: Pa
     if (savedLocked.has(id)) {
       // The very chart is on this board (the layout came from here): it stays as the board has it.
       if (targetLocked.has(id) && target.widgets[id]) widgets[id] = target.widgets[id]!;
-      else skipped.push({ id, title: w.title, why: "it is a Superset chart Lenspack can't redraw, so it stays only on the dashboard it came from" });
+      else {
+        skipped.push({ id, title: w.title, why: "it is a chart made in Superset, which Lenspack can't redraw, so it stays with the dashboard it was made on" });
+        stayed++;
+      }
       continue;
     }
     const checked = checkOps([{ op: "add_widget", id, widget: w } as never], pack, { ctx: o.ctx, capabilities: o.capabilities });
@@ -87,5 +93,5 @@ export function fitSavedLayout(saved: BoardConfig, target: BoardConfig, pack: Pa
     filters.push({ ...f, applies });
   }
   const config = boardConfigSchema.parse({ ...saved, pack: pack.pack, packVersion: pack.version, title: target.title, layout, widgets, filters });
-  return { config, skipped, skippedFilters, packChanged: saved.pack !== pack.pack || saved.packVersion !== pack.version };
+  return { config, skipped, skippedFilters, packChanged: saved.pack !== pack.pack || saved.packVersion !== pack.version, carried: { widgets: Object.keys(widgets).length, of: Object.keys(saved.widgets).length, stayed } };
 }

@@ -133,7 +133,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         const board = await o.bind(here.dashboard);
         const scope = await o.scope(req, board);
         if (!scope) return o.reply(res, 403, unsigned), true;
-        return send(await personal.applyLayout(who, layoutId, { board, edit: here.edit, ...scope })), true;
+        return send(await personal.applyLayout(who, layoutId, { board, edit: here.edit, ...scope }, base)), true;
       }
       return o.reply(res, 404, { error: "not found" }), true;
     } catch (e) {
