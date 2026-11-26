@@ -64,7 +64,7 @@ export type PlacementHint = { place: string; tabs?: string[] };
 
 /** Said when a move can't be written: the layout has tabs or columns, which the board's grid does not model yet. */
 export const MOVE_REFUSAL =
-  "This dashboard has tabs (or columns), and Lenspack can't move charts on it yet. Move the chart in Superset: Edit dashboard, then drag it. Adding, resizing, changing and removing charts work here.";
+  "This dashboard has tabs (or columns), and the assistant can't move charts on it yet. Move the chart in Superset: Edit dashboard, then drag it. Adding, resizing, changing and removing charts work here.";
 
 /** Removed widgets remembered per dashboard. */
 const REMEMBERED = 50;

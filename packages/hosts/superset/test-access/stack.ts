@@ -119,10 +119,32 @@ export class Session {
     return this;
   }
 
+  /** The session's cookies, for a browser signed in as the same user (openPage). */
+  cookieList() {
+    const { hostname } = new URL(this.superset);
+    return [...this.cookies].map(([name, value]) => ({ name, value, domain: hostname, path: "/" }));
+  }
+
   /** A request to Lenspack through Superset's /lenspack route. */
   lp(method: string, path: string, body?: object) {
     return this.send(method, `/lenspack/${path.replace(/^\//, "")}`, body === undefined ? {} : { body });
   }
+}
+
+/**
+ * A headless browser signed in as the session's user, on a Superset page: the overlay and the chat run as they do for a
+ * person. Playwright's Chromium (`pnpm exec playwright install --only-shell chromium`), or the one LENSPACK_CHROMIUM
+ * names.
+ */
+export async function openPage(session: Session, path: string) {
+  const { chromium } = await import("playwright");
+  const executablePath = process.env.LENSPACK_CHROMIUM || undefined;
+  const browser = await chromium.launch(executablePath ? { executablePath } : {});
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await context.addCookies(session.cookieList());
+  const page = await context.newPage();
+  await page.goto(`${session.superset}${path}`);
+  return { page, close: () => browser.close() };
 }
 
 /** reuse: set when the reply came from a saved answer (which tier, and which saved entry). */
@@ -230,7 +252,16 @@ export type Stack = {
 };
 
 /** Starts the stack for one Superset version (an apache/superset image tag). */
-export async function startStack(version: string, o: { lenspackEnv?: Record<string, string>; /** Superset under a path of its host (SUPERSET_APP_ROOT, Superset 6.1). */ appRoot?: string } = {}): Promise<Stack> {
+export async function startStack(
+  version: string,
+  o: {
+    lenspackEnv?: Record<string, string>;
+    /** Variables for Superset's container (the plugin reads LENSPACK_PATH and LENSPACK_BRAND_NAME there). */
+    supersetEnv?: Record<string, string>;
+    /** Superset under a path of its host (SUPERSET_APP_ROOT, Superset 6.1). */
+    appRoot?: string;
+  } = {},
+): Promise<Stack> {
   const appRoot = (o.appRoot ?? "").replace(/\/+$/, "");
   const tag = `lpacc-${version.replace(/\W/g, "")}-${process.pid}-${randomBytes(3).toString("hex")}`;
   const dir = mkdtempSync(join(tmpdir(), "lenspack-access-suite-"));
@@ -281,6 +312,7 @@ export async function startStack(version: string, o: { lenspackEnv?: Record<stri
         "-e", `LENSPACK_INTERNAL_URL=${lenspack}`, "-e", "SUPERSET_BIND_ADDRESS=127.0.0.1", "-e", `SUPERSET_PORT=${ssPort}`,
         "-e", "SERVER_THREADS_AMOUNT=20", "-e", "GUNICORN_TIMEOUT=120",
         ...(appRoot ? ["-e", `SUPERSET_APP_ROOT=${appRoot}`] : []),
+        ...Object.entries(o.supersetEnv ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
         "-v", `${plugin}:/plugin:ro`, "-v", `${here}:/access:ro`,
         `apache/superset:${version}`, "sh", "-c", script,
       ],

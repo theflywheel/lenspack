@@ -91,7 +91,7 @@ describe("compute as Superset's own advanced analytics", () => {
     const base = widgetToChart(line(undefined), pack, binding)!.params as Record<string, unknown>;
     const { lenspack: _l, ...plain } = base;
     const read = (more: Record<string, unknown>) => chartToWidget({ slice_name: "x", viz_type: "echarts_timeseries_line", params: { ...plain, ...more }, datasource_id: 3 }, pack, binding);
-    expect(read({ rolling_type: "mean", rolling_periods: 7, min_periods: 1 })).toEqual({ widget: null, reason: "its rolling window shows partial windows, which Lenspack leaves out" });
+    expect(read({ rolling_type: "mean", rolling_periods: 7, min_periods: 1 })).toEqual({ widget: null, reason: "its rolling window shows partial windows, which the assistant leaves out" });
     expect(read({ rolling_type: "std", rolling_periods: 7, min_periods: 7 })).toMatchObject({ widget: null });
     expect(read({ time_compare: ["1 year ago"], comparison_type: "percentage" })).toEqual({ widget: null, reason: "it compares with 1 year ago, not the day before" });
     expect(read({ time_compare: ["1 day ago"], comparison_type: "values" })).toEqual({ widget: null, reason: "it draws earlier periods beside the current one" });
@@ -210,8 +210,8 @@ describe("a summary per group as Superset's pivot table", () => {
   it("keeps as Superset's a pivot table whose totals Lenspack would compute differently, and says why", () => {
     const { lenspack: _l, ...plain } = widgetToChart(perWard("avg_out", "mean"), pack, binding)!.params as Record<string, unknown>;
     const read = (more: Record<string, unknown>) => chartToWidget({ slice_name: "x", viz_type: "pivot_table_v2", params: { ...plain, ...more }, datasource_id: 3 }, pack, binding);
-    expect(read({ metrics: ["dispatched"] })).toEqual({ widget: null, reason: "it averages only the days that have records, while Lenspack counts a day with no records as 0 for a count or a sum, so the two would differ wherever a group has a day with none" });
-    expect(read({ aggregateFunction: "Last" })).toEqual({ widget: null, reason: 'its aggregation "Last" has no Lenspack summary' });
+    expect(read({ metrics: ["dispatched"] })).toEqual({ widget: null, reason: "it averages only the days that have records, while the assistant counts a day with no records as 0 for a count or a sum, so the two would differ wherever a group has a day with none" });
+    expect(read({ aggregateFunction: "Last" })).toEqual({ widget: null, reason: 'its aggregation "Last" has no summary the assistant can draw' });
     // A total over the days of an average or a distinct count is one the engine refuses to add up.
     expect(read({ aggregateFunction: "Sum" })).toMatchObject({ widget: null, reason: expect.stringMatching(/average.*does not add up over time/) });
     expect(read({ aggregateFunction: "Sum", metrics: ["handlers"] })).toMatchObject({ widget: null, reason: expect.stringMatching(/distinct count/) });
@@ -228,7 +228,7 @@ describe("a summary per group as Superset's pivot table", () => {
     expect(ok(perWard("dispatched", "mean"))).toMatchObject({
       ok: false,
       error:
-        "Superset's pivot table averages only the days that have records, while Lenspack counts a day with no records as 0 for a count or a sum, so the two would differ wherever a group has a day with none. Superset keeps exactly: the total per ward over the days (the sum step), as a pivot table with a column per day; or the daily dispatched by ward as a line chart (a series split by ward).",
+        "Superset's pivot table averages only the days that have records, while the assistant counts a day with no records as 0 for a count or a sum, so the two would differ wherever a group has a day with none. Superset keeps exactly: the total per ward over the days (the sum step), as a pivot table with a column per day; or the daily dispatched by ward as a line chart (a series split by ward).",
     });
     expect(ok(perWard("dispatched", "max"))).toMatchObject({ ok: false, error: expect.stringMatching(/takes the highest of only the days that have records.*a sum can be below 0/) });
     expect(ok(perWard("movements", "min"))).toMatchObject({ ok: false, error: expect.stringMatching(/takes the lowest of only the days/) });

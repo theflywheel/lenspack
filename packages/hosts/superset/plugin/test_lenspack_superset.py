@@ -18,7 +18,8 @@ users and dashboards and sends /lenspack/... requests through Flask's test clien
 caught. AccessEndpoint makes a throwaway SQLite database, a dataset, a role with access to it, users and RLS rules
 in Superset's metadata, and dashboards with and without dashboard roles, and calls /api/v1/lenspack/access (and
 /api/v1/lenspack/version) through Flask's test client; it turns DASHBOARD_RBAC on and off itself where a case needs it. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. UnderARoot draws Superset's home page and the
-settings page with Superset under /superset (base_url), and sends one form back. ClickHouseLabels
+settings page with Superset under /superset (base_url), and sends one form back. BrandLabel, MountPath and
+NoProductName check the name the plugin shows and the route's path. ClickHouseLabels
 checks the ClickHouse column-name suffix, and runs a query against ClickHouse when one is given (above).
 """
 
@@ -519,7 +520,7 @@ class SettingsPage(unittest.TestCase):
 
         with self.client.session_transaction() as s:
             s["_flashes"] = list(flashes)
-        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no Lenspack in the tests")):
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("server down in the tests")):
             return self.client.get("/ai-assistant/")
 
     def test_uses_superset_5s_page_frame_or_its_own_on_superset_6(self):
@@ -530,10 +531,9 @@ class SettingsPage(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True)[:500])
         html = r.get_data(as_text=True)
         self.assertIn("AI assistant", html)
-        # Without LENSPACK_BRAND_NAME in superset_config, the heading and the button are named as before.
+        # Without a name from superset_config, the environment or the server, the heading is named as before.
         self.assertIn("<h1>AI assistant</h1>", html)
-        self.assertIn("<b>Ask Lenspack</b>", html)
-        self.assertIn("no Lenspack in the tests", html)
+        self.assertIn("server down in the tests", html)
         if major >= 6:
             # Its own frame follows Superset's light or dark theme, and its script carries the page's nonce.
             self.assertIn("superset-theme-mode", html)
@@ -578,7 +578,7 @@ class UnderARoot(unittest.TestCase):
         import urllib.error
         from unittest import mock
 
-        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no Lenspack in the tests")):
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("server down in the tests")):
             r = self.client.get("/ai-assistant/", base_url=base_url)
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True)[:500])
         return r.get_data(as_text=True)
@@ -627,7 +627,7 @@ class UnderARoot(unittest.TestCase):
         self.app.config["WTF_CSRF_ENABLED"] = False
         try:
             for base_url, root in [("http://localhost", ""), (self.ROOT, "/superset")]:
-                with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no Lenspack in the tests")):
+                with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("server down in the tests")):
                     r = self.client.post("/ai-assistant/telemetry", data={"retentionDays": "x"}, base_url=base_url)
                 self.assertEqual(r.status_code, 302, base_url)
                 self.assertTrue(r.headers["Location"].endswith(f"{root}/ai-assistant/"), (base_url, r.headers["Location"]))
@@ -638,14 +638,91 @@ class UnderARoot(unittest.TestCase):
 
 
 class BrandLabel(unittest.TestCase):
-    """The menu entry's and settings page's name: superset_config's optional LENSPACK_BRAND_NAME, else today's."""
+    """The menu entry's and settings page's name: superset_config's LENSPACK_BRAND_NAME, else Superset's environment's,
+    else the name the assistant's server gives, else today's."""
 
     def test_reads_the_optional_key_and_keeps_todays_name_without_it(self):
-        self.assertEqual(lp.lenspack_brand_label({}), "AI assistant")
-        self.assertEqual(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": None}), "AI assistant")
-        self.assertEqual(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": "  "}), "AI assistant")
-        self.assertEqual(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": " Campaign assistant "}), "Campaign assistant")
-        self.assertEqual(len(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": "x" * 90})), 40)
+        label = lambda config: lp.lenspack_brand_label(config, environ={})
+        self.assertEqual(label({}), "AI assistant")
+        self.assertEqual(label({"LENSPACK_BRAND_NAME": None}), "AI assistant")
+        self.assertEqual(label({"LENSPACK_BRAND_NAME": "  "}), "AI assistant")
+        self.assertEqual(label({"LENSPACK_BRAND_NAME": " Campaign assistant "}), "Campaign assistant")
+        self.assertEqual(len(label({"LENSPACK_BRAND_NAME": "x" * 90})), 40)
+
+    def test_superset_config_then_the_environment_then_the_server(self):
+        env = {"LENSPACK_BRAND_NAME": "Field desk"}
+        self.assertEqual(lp.lenspack_brand_label({"LENSPACK_BRAND_NAME": "Campaign desk"}, environ=env, server="Data help"), "Campaign desk")
+        self.assertEqual(lp.lenspack_brand_label({}, environ=env, server="Data help"), "Field desk")
+        self.assertEqual(lp.lenspack_brand_label({}, environ={}, server="Data help"), "Data help")
+        # The server's default name is no name: the entry keeps today's.
+        self.assertEqual(lp.lenspack_brand_label({}, environ={}, server=lp.DEFAULT_BRAND_NAME), "AI assistant")
+
+
+class MountPath(unittest.TestCase):
+    """Where browsers reach the assistant below Superset's root: LENSPACK_PATH, a plain path of its own."""
+
+    def test_takes_a_plain_path_and_keeps_the_default_otherwise(self):
+        self.assertEqual(lp.lenspack_mount_path(None), "/lenspack")
+        self.assertEqual(lp.lenspack_mount_path(""), "/lenspack")
+        self.assertEqual(lp.lenspack_mount_path("/assistant"), "/assistant")
+        self.assertEqual(lp.lenspack_mount_path("/tools/ask/"), "/tools/ask")
+        with self.assertLogs(lp.__name__, "WARNING"):
+            for bad in ["/", "assistant", "/a b", "/../x", "/api", "/superset/x", "/static", "/login", "/ai-assistant", "/Dashboard"]:
+                self.assertEqual(lp.lenspack_mount_path(bad), "/lenspack", bad)
+
+
+class NoProductName(unittest.TestCase):
+    """With a name set, the settings page and the menu entry say it, and the product's name is nowhere a person reads
+    (the access suite checks the page with every part drawn, superset-6.1-brand.access.test.ts)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = superset_app()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        from superset.extensions import security_manager as sm
+
+        admin = sm.find_user(username="lp_brand_admin") or sm.add_user("lp_brand_admin", "lp", "Test", "lp_brand_admin@example.invalid", [sm.find_role("Admin")], password=PASSWORD)
+        cls.client = cls.app.test_client()
+        with cls.client.session_transaction() as s:
+            s["_user_id"] = str(admin.id)
+            s["_fresh"] = True
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def test_the_settings_page_says_the_name_and_not_the_product(self):
+        import re
+        import urllib.error
+        from unittest import mock
+
+        self.app.config["LENSPACK_BRAND_NAME"] = "Campaign desk"
+        try:
+            with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("server down in the tests")):
+                html = self.client.get("/ai-assistant/").get_data(as_text=True)
+        finally:
+            del self.app.config["LENSPACK_BRAND_NAME"]
+        self.assertIn("<h1>Campaign desk</h1>", html)
+        text = re.sub(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>|<code>[^<]*</code>|<[^>]*>|data-bootstrap=\"[^\"]*\"", " ", html)
+        # Names the other tests gave their databases are data, not the page's words.
+        self.assertNotRegex(re.sub(r"lenspack_test_\d+", " ", text), re.compile("lenspack", re.I))
+
+    def test_the_templates_name_the_product_only_in_code(self):
+        import re
+
+        for name, template in [("settings", lp.SETTINGS_HTML), ("layout", lp.LAYOUT_HTML)]:
+            text = re.sub(r"\{#[\s\S]*?#\}|\{%[\s\S]*?%\}|\{\{[\s\S]*?\}\}|<code>[^<]*</code>|<[^>]*>", " ", template)
+            self.assertEqual(re.findall(r"[^.\n]*lenspack[^.\n]*", text, re.I), [], name)
+
+    def test_the_menu_entry_follows_the_name(self):
+        label = next(i.label for c in self.app.appbuilder.menu.menu if c.name == "Manage" for i in c.childs if getattr(i, "name", "") == "AI assistant")
+        self.assertEqual(str(label), "AI assistant")
+        os.environ["LENSPACK_BRAND_NAME"] = "Field desk"
+        try:
+            self.assertEqual(str(label), "Field desk")
+        finally:
+            del os.environ["LENSPACK_BRAND_NAME"]
 
 
 class ClickHouseLabels(unittest.TestCase):

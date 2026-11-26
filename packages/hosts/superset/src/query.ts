@@ -271,7 +271,7 @@ function pivotDisagrees(fn: Summary, measure: string, pack: Pack, grain: Grain):
   const agg = pack.measures.find((m) => m.key === measure)?.agg;
   if (fn === "max" && (agg === "count" || agg === "count_distinct")) return null;
   const { plural } = grainWords(grain);
-  return `Superset's pivot table ${PIVOT_VERB[fn]} only the ${plural} that have records, while Lenspack counts a ${grain} with no records as 0 for a count or a sum${fn === "max" ? " (and a sum can be below 0)" : ""}, so the two would differ wherever a group has a ${grain} with none`;
+  return `Superset's pivot table ${PIVOT_VERB[fn]} only the ${plural} that have records, while the assistant counts a ${grain} with no records as 0 for a count or a sum${fn === "max" ? " (and a sum can be below 0)" : ""}, so the two would differ wherever a group has a ${grain} with none`;
 }
 
 /**
@@ -402,7 +402,7 @@ export function widgetToChart(widget: Widget, pack: Pack, binding: Binding): Cha
 
   if (widget.kind === "kpi") {
     if (q.kind === "series") return { viz_type: "big_number", datasetId: ds.id, params: { ...common, metric: metrics[0], x_axis: ds.time, time_grain_sqla: GRAIN[q.grain], show_trend_line: true, y_axis_format: fmt, ...analytics } };
-    if (q.kind === "value") return { viz_type: "big_number_total", datasetId: ds.id, params: { ...common, metric: metrics[0], y_axis_format: fmt, ...(q.compare ? { subheader: "vs previous period: see Lenspack" } : {}) } };
+    if (q.kind === "value") return { viz_type: "big_number_total", datasetId: ds.id, params: { ...common, metric: metrics[0], y_axis_format: fmt, ...(q.compare ? { subheader: "vs previous period: ask the assistant" } : {}) } };
   }
   if (widget.kind === "table" || q.kind === "rows" || (widget.kind === "kpi" && q.kind === "breakdown")) {
     if (q.kind === "rows") return { viz_type: "table", datasetId: ds.id, params: { ...common, query_mode: "raw", all_columns: q.columns.map(colFor), order_by_cols: q.orderBy ? [JSON.stringify([colFor(q.orderBy.key), q.orderBy.dir === "asc"])] : [], row_limit: q.limit, server_pagination: false } };
@@ -648,7 +648,7 @@ type SavedChart = { slice_name: string; viz_type: string; params: Record<string,
 export function chartToWidget(chart: SavedChart, pack: Pack, binding: Binding): Recognised {
   const read = readChart(chart, pack, binding);
   const refused = read.widget && read.widget.kind !== "text" ? computeRefusal(read.widget.query, pack) : null;
-  return refused ? { widget: null, reason: `Lenspack would refuse its computation: ${refused.message}` } : read;
+  return refused ? { widget: null, reason: `the assistant would refuse its computation: ${refused.message}` } : read;
 }
 
 function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised {
@@ -679,14 +679,14 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
     if (f.expressionType !== "SIMPLE") return { widget: null, reason: "it has a custom SQL filter" };
     if (f.operator === "TEMPORAL_RANGE") {
       const t = timeRangeBack(f.comparator as string);
-      if (t === null) return { widget: null, reason: `its time range "${f.comparator}" is not one lenspack writes` };
+      if (t === null) return { widget: null, reason: `its time range "${f.comparator}" is not one the assistant writes` };
       time = t;
       continue;
     }
     const key = dimKey(f.subject);
     if (!key) return { widget: null, reason: `it filters on "${f.subject}", which is not a pack dimension` };
     const op = ({ "==": "eq", "!=": "neq", IN: "in", ">=": "gte", "<=": "lte" } as Record<string, FilterClause["op"]>)[f.operator ?? ""];
-    if (!op) return { widget: null, reason: `its filter operator ${f.operator} has no lenspack form` };
+    if (!op) return { widget: null, reason: `its filter operator ${f.operator} has no form the assistant can write` };
     filters.push({ dimension: key, op, value: f.comparator as never });
   }
   const common = { ...(time ? { time } : {}), ...(filters.length ? { filters } : {}) };
@@ -701,7 +701,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
     case "big_number": {
       const m = measureKey(p.metric);
       const grain = GRAIN_BACK[p.time_grain_sqla];
-      if (!m || !grain) return { widget: null, reason: "its metric or time grain has no lenspack form" };
+      if (!m || !grain) return { widget: null, reason: "its metric or time grain has no form the assistant can write" };
       const back = computeBack(p, grain);
       if ("reason" in back) return { widget: null, reason: back.reason };
       return { widget: { title, kind: "kpi", query: { kind: "series", measure: m, grain, ...back, ...common } } as Widget };
@@ -780,15 +780,15 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
       const cols: unknown[] = p.groupbyColumns ?? [];
       if (!ds.time || cols.length !== 1 || cols[0] !== ds.time || !p.temporal_columns_lookup?.[ds.time]) return { widget: null, reason: "its columns are not the dataset's time column, by day, week or month" };
       const grain = GRAIN_BACK[p.time_grain_sqla];
-      if (!grain) return { widget: null, reason: "its time grain has no Lenspack form" };
+      if (!grain) return { widget: null, reason: "its time grain has no form the assistant can draw" };
       const rows: unknown[] = p.groupbyRows ?? [];
       const d = rows.length === 1 ? dimKey(rows[0]) : null;
       if (!d) return { widget: null, reason: "its rows are not one pack dimension" };
-      if (!p.rowTotals) return { widget: null, reason: "it shows no total per row, which is the summary Lenspack reads" };
+      if (!p.rowTotals) return { widget: null, reason: "it shows no total per row, which is the summary the assistant reads" };
       if (p.colTotals) return { widget: null, reason: "it adds a total row across the groups" };
       if (p.series_limit) return { widget: null, reason: "it keeps only its top groups by the metric over the whole window" };
       const fn = PIVOT_BACK[p.aggregateFunction ?? "Sum"];
-      if (!fn) return { widget: null, reason: `its aggregation "${p.aggregateFunction}" has no Lenspack summary` };
+      if (!fn) return { widget: null, reason: `its aggregation "${p.aggregateFunction}" has no summary the assistant can draw` };
       const differs = pivotDisagrees(fn, ms[0], pack, grain);
       if (differs) return { widget: null, reason: differs.replace(/^Superset's pivot table/, "it") };
       const order = String(p.rowOrder ?? "key_a_to_z");
@@ -799,7 +799,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
     case "deck_scatter": {
       const geo = binding.geo.get(entity);
       const sp = p.spatial ?? {};
-      if (!geo) return { widget: null, reason: "its dataset has no latitude and longitude Lenspack knows of" };
+      if (!geo) return { widget: null, reason: "its dataset has no latitude and longitude the assistant knows of" };
       if (sp.type !== "latlong" || sp.reverseCheckbox) return { widget: null, reason: "its points are not read from a latitude and a longitude column" };
       if (sp.latCol !== geo.lat || sp.lonCol !== geo.lon) return { widget: null, reason: `its points are read from "${sp.latCol}" and "${sp.lonCol}", not the dataset's coordinates` };
       if (p.time_grain_sqla) return { widget: null, reason: "it animates its points over time" };
@@ -817,7 +817,7 @@ function readChart(chart: SavedChart, pack: Pack, binding: Binding): Recognised 
       return { widget: { title, kind: "chart", chart: "map", options: { legend: true, colorScheme: "default" }, query } as Widget };
     }
     default:
-      return { widget: null, reason: `lenspack has no ${chart.viz_type} chart` };
+      return { widget: null, reason: `the assistant has no ${chart.viz_type} chart` };
   }
 }
 
@@ -839,8 +839,8 @@ function computeBack(p: Record<string, any>, grain: Grain): { compute?: { steps:
   if (!p.rolling_type) return {};
   if (p.rolling_type === "cumsum") return { compute: { steps: [{ op: "running_total" }] } };
   const window = Number(p.rolling_periods);
-  if ((p.rolling_type !== "mean" && p.rolling_type !== "sum") || !Number.isInteger(window) || window < 2 || window > 366) return { reason: `its rolling ${p.rolling_type} has no Lenspack form` };
-  if (Number(p.min_periods) !== window) return { reason: "its rolling window shows partial windows, which Lenspack leaves out" };
+  if ((p.rolling_type !== "mean" && p.rolling_type !== "sum") || !Number.isInteger(window) || window < 2 || window > 366) return { reason: `its rolling ${p.rolling_type} has no form the assistant can draw` };
+  if (Number(p.min_periods) !== window) return { reason: "its rolling window shows partial windows, which the assistant leaves out" };
   return { compute: { steps: [{ op: "rolling", fn: p.rolling_type, window }] } };
 }
 

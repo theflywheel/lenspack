@@ -3,9 +3,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, recentRemovals, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, type Notice, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, tabsText, toVercelAI, viewFrom } from "@lenspack/agent";
+import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, type TurnLog, type TurnResult, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, memoryTurnLog, quickReplyOf, selectionsFrom, tabsText, toVercelAI, turnKeyOf, viewFrom, widgetChanges } from "@lenspack/agent";
 import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -123,6 +123,11 @@ export type AppOptions = {
   /** How many model turns run at once, and how many wait (@lenspack/agent TurnGate). Absent: a queue with the defaults (8 at a time). */
   queue?: TurnGate;
   /**
+   * What each chat turn did, under the key its client sent (@lenspack/agent turns.ts): a reply cut off on its way can
+   * be recovered (GET turn?key=), and asking again with the same key never runs the turn twice. Absent: kept in the process.
+   */
+  turns?: TurnLog;
+  /**
    * The review system's per-turn hooks (review/system.ts): the admin's definitions overlay merged into the pack,
    * its version, the clarify switch and the open-questions log. Absent, the pack is used as its file says.
    */
@@ -237,6 +242,19 @@ const usable = <P extends Pickable>(providers: P[], name: string | null | undefi
 /** The board's filter selections in a query string: ?f_<field>=<value>. */
 const selectionsOf = (url: URL) => Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("f_")).map(([k, v]) => [k.slice(2), v]));
 
+/**
+ * The answer to a question asked again under the same key (turns.ts): what the first asking did, as a data part, and
+ * its reply's words, with no model call. The client says the change was made instead of making it again.
+ */
+const recoveredStream = (outcome: TurnResult | undefined) =>
+  createUIMessageStream({
+    execute: ({ writer }) => {
+      writer.write({ type: "data-recovered", data: outcome ?? { state: "gone" } });
+      if (outcome?.reply) writeText(writer, `reply-${randomUUID()}`, outcome.reply);
+      writer.write({ type: "finish" });
+    },
+  });
+
 /** A whole text part, for a reply the server writes itself. */
 const writeText = (writer: UIMessageStreamWriter, id: string, text: string) => {
   writer.write({ type: "text-start", id });
@@ -329,6 +347,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
   const providers = opts.providers ?? [];
   const queue = opts.queue ?? localTurnGate();
+  const turnLog = opts.turns ?? memoryTurnLog();
   // Saved answers refreshed on a schedule or when data changes run as their askers, from these hosts (reuse/index.ts).
   opts.reuse?.attach(prewarmTurns({ hosts, providers, router: opts.roles?.router, rules: () => opts.language?.(), promptVersion: () => promptVersionFor(opts.brand?.().name), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
   // Transcriptions waiting for the turn they were spoken for: POST /_stt answers with a clip id, and
@@ -631,6 +650,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           return json(res, 200, { suggestions: (await opts.reuse?.suggestions({ board: boardId, pack: h.name, scope: ctx, lang: url.searchParams.get("lang") })) ?? [] });
         case "GET versions":
           return json(res, 200, (await h.store.versions(boardId)).map(shown));
+        // What a chat turn did, by the key its client sent, with the board's version now: how the chat finds out whether
+        // a turn whose reply was cut off changed the board. Only the asker's own turns on this board are found.
+        case "GET turn": {
+          const key = turnKeyOf(url.searchParams.get("key"));
+          const turn = key ? turnLog.get({ user: who.user, board: boardId, key }) : undefined;
+          return json(res, turn ? 200 : 404, { version: board.version, ...(turn ? { turn } : { error: "no such turn" }) });
+        }
         case "POST ops": {
           const body = (await read(req)) as { ops: unknown[]; view?: unknown };
           const ops = body.ops.map((o) => opSchema.parse(o)) as BoardOp[];
@@ -727,7 +753,23 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const defsVersion = await definitionsVersion(defs, h.name, h.pack);
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown; transcriptIds?: unknown; client?: unknown; view?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown; transcriptIds?: unknown; client?: unknown; view?: unknown; turnKey?: unknown };
+    // The client's key for this question (@lenspack/agent turns.ts). The same key again is the same question asked
+    // again, as Retry does after a reply was cut off: it is answered from what the first asking did, never run twice.
+    const turnKey = turnKeyOf(body.turnKey);
+    const turnScope = turnKey ? { user, board: boardId, key: turnKey } : null;
+    if (turnScope && !turnLog.begin(turnScope, startVersion)) {
+      const outcome = await turnLog.settled(turnScope, 120_000);
+      audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ replayed: turnKey, state: outcome?.state ?? "gone", from: outcome?.from, to: outcome?.to }) });
+      return respond(res, recoveredStream(outcome));
+    }
+    // Ends this turn's record: the board's version now, and what changed since the turn started, as the asker is shown it.
+    const endTurn = async (reply: string | undefined, failed: boolean) => {
+      if (!turnScope) return;
+      const now = await h.store.get(boardId).catch(() => undefined);
+      const to = now?.version ?? startVersion;
+      turnLog.end(turnScope, { from: startVersion, to, ...(now && to > startVersion ? { changes: widgetChanges(config, shownConfig(now.config, h.ctx)) } : {}), ...(reply ? { reply } : {}), ...(failed ? { failed } : {}) });
+    };
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     // A quick reply picked under a clarifying question: counted against that reading in the open-questions log.
@@ -756,11 +798,14 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     ]);
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const view = (c: BoardConfig) => shownConfig(c, h.ctx);
-    const changes = since === null ? [] : changesSince(await h.store.versions(boardId), since);
+    const history = await h.store.versions(boardId);
+    const changes = since === null ? [] : changesSince(history, since);
+    // Widgets taken off the board in the last week, by anyone, the chat included: a page opened before can still show one.
+    const removed = recentRemovals(history.map((v) => ({ ...v, config: view(v.config) })), { limit: 5, since: new Date(Date.now() - 7 * 86_400_000) });
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
     const access = accessNote(h.ctx);
-    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name });
+    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
@@ -799,8 +844,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
     const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections), assistant: name });
-    const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) });
+    const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) }).catch(async (e) => {
+      await endTurn(undefined, true);
+      throw e;
+    });
     if (reused) {
+      await endTurn(reused.reply, false);
       const cost = turnCost(calls, queries);
       const summary = turnSummary(cost);
       ledger.turn({ user, pack: h.name }, cost);
@@ -818,8 +867,12 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
 
     // A model turn waits for a place (and an edit for the edit before it on this board), told its place meanwhile (queue.ts).
-    const place = await waitForTurn(res, queue, { board: boardId, edit: !readOnly && looksLikeEdit(instruction), name });
+    const place = await waitForTurn(res, queue, { board: boardId, edit: !readOnly && looksLikeEdit(instruction), name }).catch(async (e) => {
+      await endTurn(undefined, true);
+      throw e;
+    });
     if (!place) {
+      await endTurn(undefined, true);
       tel?.failed("busy");
       tel?.ended({ cost: turnCost(calls, queries) });
       await tel?.record();
@@ -833,7 +886,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         config = view(now.config);
         startVersion = now.version;
         tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
-        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name });
+        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed });
         before = summarise(config);
         reuseTurn.config = config;
       }
@@ -1053,6 +1106,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
           tel?.ended({ cost, rolledBack: misleading.length > 0, saveFailed: turn.outcome === "not saved", refusals: turn.refusals });
           ledger.turn({ user, pack: h.name }, cost);
           audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ builder: builderModel.name, ...(effort ? { effort } : {}), queueMs: place.queueMs, ...turn, ...summary, cost, ms: Date.now() - started }) });
+          // After the save: what a Retry, or the client's check after a cut-off reply, finds.
+          await endTurn(turn.answer, !completed);
           place.release();
           // A turn that asked a clarifying question is not kept: its reply is a question, and its buttons are not saved.
           void opts.reuse?.remember(reuseTurn, { completed: completed && !misleading.length && !(turn.clarify as { asked?: boolean } | undefined)?.asked, reply: turn.answer ?? "", calls: results, saved: turn.saved ?? [], reviewed: turn.reviews.length > 0, accepted: !misleading.length, fixed: corrected, costUsd: summary.costUsd });

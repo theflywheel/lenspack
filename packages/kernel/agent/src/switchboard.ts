@@ -305,9 +305,9 @@ export const LEGACY_GROUPS: LegacyGroup[] = [
     title: "Trust and reuse",
     metrics: [
       { id: "trust-explain", label: "How an answer was worked out, opened", decision: "Whether people check where numbers come from.", source: "records", needs: ["explain"] },
-      { id: "trust-export-share", label: "Charts exported or boards shared in {name}", decision: "Whether answers travel beyond the person who asked.", source: "records", needs: ["export-share"] },
+      { id: "trust-export-share", label: "Charts exported or boards shared from the chat", decision: "Whether answers travel beyond the person who asked.", source: "records", needs: ["export-share"] },
       { id: "personal-dashboards", label: "Own dashboards made, copied and deleted; saved layouts used", decision: "Whether people make dashboards of their own, and reuse their saved layouts.", source: "records", needs: ["personal-dashboards"] },
-      { id: "trust-superset-actions", label: "Exports and shares in Superset on {name}'s dashboards", decision: "Whether dashboards {name} built get used.", source: "superset-logs", needs: ["superset-actions"] },
+      { id: "trust-superset-actions", label: "Exports and shares in Superset on dashboards the assistant built", decision: "Whether dashboards the assistant built get used.", source: "superset-logs", needs: ["superset-actions"] },
       { id: "reuse-hit-rate", label: "Saved answers used, by tier", decision: "How much reuse saves, and whether its tiers are right.", source: "records", needs: ["reuse"] },
       { id: "reuse-saved", label: "Money saved by saved answers", decision: "Whether answer reuse pays for itself.", source: "records", needs: ["reuse"] },
       { id: "review-runs", label: "Daily review runs", decision: "How often answers are checked after the fact.", source: "feature", needs: ["daily-review"] },

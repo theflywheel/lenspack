@@ -29,6 +29,7 @@ Under `/api`, on the standalone server (`lenspack serve`, the demo) and, below i
 | `GET /api/<pack>/<board>/options?field=<dimension>` | the values a filter can pick |
 | `GET /api/<pack>/<board>/suggestions?lang=` | the most-asked questions on this board by people with the same access: `{ "suggestions": ["…"] }` |
 | `GET /api/<pack>/<board>/versions` | the board's versions |
+| `GET /api/<pack>/<board>/turn?key=<key>` | what one of the caller's own chat turns did, by the key its chat request sent: `{ version, turn: { state, from, to, changes, reply } }`, where `version` is the board's version now. `404` (still with `version`) when no turn is known under the key. See [Dashboard edits](../features/dashboard-edits.md#when-the-reply-is-cut-off) |
 | `POST /api/<pack>/<board>/ops` | applies edit operations: `{ "ops": [ … ] }`. See [Board format](board.md#edit-operations) |
 | `POST /api/<pack>/<board>/layout` | saves a dragged layout: `{ layout, summary? }` |
 | `POST /api/<pack>/<board>/share` | `{ "shared": true }` shares an owned board with others who may open the pack, `false` stops |
@@ -41,7 +42,9 @@ Selections from the filter bar travel as query parameters on the data routes. Ev
 right, except a chat turn: a read-only caller may still ask questions, and the chat's edit tools refuse. Who may edit
 which board is in [Rights](../access/rights.md#boards-have-owners).
 
-A chat turn takes the conversation (`messages`) and optional settings. Query parameters choose models for the turn:
+A chat turn takes the conversation (`messages`) and optional settings. `turnKey`, a key the client makes for each
+question (8 to 64 letters, digits, `-` or `_`), makes asking again safe: the same key again is answered from what the
+first asking did, without a model call, and its edits are not made twice. Query parameters choose models for the turn:
 `?model=<provider>`, `?effort=<level>` (one of the levels `GET /api` lists for that model; another level answers
 `400`), `?review=off`, `?escalate=<provider>`. See [Chat models](../operating/models.md).
 

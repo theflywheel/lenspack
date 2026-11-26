@@ -224,7 +224,7 @@ export function personalDashboards(o: PersonalOptions) {
     }
     await o.links.delete(String(dashboard));
     await store.forget(board).catch(() => {});
-    audit(who, "dashboard-delete", "ok", board, `dashboard ${dashboard} “${dash.dashboard_title}”${removed ? ` and ${removed} of its charts` : ""}${link ? "" : " (not made through Lenspack)"}`);
+    audit(who, "dashboard-delete", "ok", board, `dashboard ${dashboard} “${dash.dashboard_title}”${removed ? ` and ${removed} of its charts` : ""}${link ? "" : " (not made through the assistant)"}`);
     emit(who, "personal-dashboard", "delete", `superset-${dashboard}`, { dashboard });
     return { ok: true, dashboard, title: dash.dashboard_title };
   }
@@ -291,7 +291,7 @@ export function personalDashboards(o: PersonalOptions) {
   async function applyLayout(who: PersonalActor, which: string, target: { board: string; edit: boolean; ctx: Ctx; capabilities?: Capabilities }, base = ""): Promise<PersonalResult<{ version: number; previous: number; name: string; from: { dashboard: number | null; title: string; url: string | null } } & Pick<FittedLayout, "skipped" | "skippedFilters" | "packChanged" | "carried">>> {
     const got = await layoutToApply(who, which, target);
     if (!got.ok) return got;
-    if (!(await store.get(target.board))) return { ok: false, error: "This dashboard is not open in Lenspack.", code: "missing" };
+    if (!(await store.get(target.board))) return { ok: false, error: "The assistant has not opened this dashboard yet.", code: "missing" };
     // Fitted to the board as it is when written (Superset's latest read first), never to an earlier read: a chart
     // removed in Superset in between is left out, not brought back.
     let previous = 0;

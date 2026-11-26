@@ -14,9 +14,16 @@ everywhere they meet the assistant:
   dashboards here"; see [Personal dashboards](personal-dashboards.md));
 - the admin panel's title, and the names of browser tabs;
 - the pages beside Superset, and the demo board app;
-- the assistant itself: asked who it is, it gives this name.
+- the admin panel's tabs and the Superset settings page, which say "the assistant" where they once said Lenspack;
+- messages from the server, such as refusals and errors, which say "the assistant" too;
+- the assistant itself: it calls itself by this name only. Asked what it is, what it runs on, who made it or which
+  model it uses, it gives this name, says it is the assistant for these dashboards, and names no product, company
+  or model behind it.
 
-The menu entry and the heading of Superset's settings page can be renamed too (see [Superset](#superset) below).
+Superset's menu entry and settings page heading take the name too (see [Superset](#superset) below).
+
+Once the assistant has another name, the only place the word Lenspack shows is the small "Powered by Lenspack"
+credit under the chat, and only while `poweredBy` is on.
 
 ## Setting it
 
@@ -86,25 +93,36 @@ under the new name.
 
 Only what people read changes. These stay as they are, so links, scripts and settings keep working:
 
-- addresses: `/lenspack/…` in Superset and `/_lenspack/…` on the server, and every API route
-- names of config keys, environment variables and packages
-- the server's log lines, and the names of actions in the audit log
-- names in the code
+- addresses: `/_lenspack/…` on the server and every API route. In Superset the assistant's route is `/lenspack/…`
+  unless you move it with `LENSPACK_PATH` (see [Superset](#superset));
+- names of config keys, environment variables, packages and files (such as `lenspack_superset.py`)
+- the server's log lines and start-up messages, the command line's help, and the names of actions in the audit log
+- names in the code, and the names the page scripts give themselves in the browser
+- the Superset account the server uses, which is `lenspack` unless you name it otherwise (`superset.username`
+  and `LENSPACK_SERVICE_USER`). Superset shows it in its user list as "Assistant Service account".
 
 ## Superset
 
 On Superset (6.1 and 5.0) the button and the chat are drawn by Lenspack's own scripts, so they follow the brand
 above with nothing to change in Superset.
 
-The settings page that the Superset plugin adds (Settings → Manage → "AI assistant") is drawn by Superset. To
-name its menu entry and heading, add this to `superset_config.py`:
+The settings page that the Superset plugin adds (Settings → Manage → "AI assistant") is drawn by Superset. Its
+menu entry and heading take the first of these that is set:
 
-```python
-LENSPACK_BRAND_NAME = "Sales assistant"
-```
+1. `LENSPACK_BRAND_NAME` in `superset_config.py`;
+2. `LENSPACK_BRAND_NAME` in Superset's own environment;
+3. the name the assistant's server uses: its `brand.name` from the config, the environment, or the admin panel.
 
-Without it, the menu entry and heading say "AI assistant". The page stays at `/ai-assistant/`. See [The settings
-page](../hosts/superset/settings.md).
+Without any of them, they say "AI assistant". So one setting is enough: set the name on the assistant's server
+(in its config, its environment or the admin panel), and Superset's menu follows it within five minutes, and the
+settings page at once. Set it on Superset's side only if Superset's menu should say something else. The page stays
+at `/ai-assistant/`. See [The settings page](../hosts/superset/settings.md).
+
+Browsers reach the assistant through Superset at `/lenspack/…`. To keep the product's name out of addresses too,
+set `LENSPACK_PATH` in Superset's environment, for example `LENSPACK_PATH=/assistant`; the button, the chat and
+the admin panel then live at `/assistant/…`. It must be a plain path of its own, not `/` and not one of Superset's
+(such as `/api`, `/superset`, `/static` or `/login`); anything else keeps `/lenspack`, with a warning in Superset's
+log. The assistant's server needs no change: it learns the path from each request.
 
 ---
 
