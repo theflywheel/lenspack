@@ -14,7 +14,7 @@ import { type ChatResult, PACK, type Session, type Stack, http, openPage, readCh
 const VISITS = { North: 3, South: 4, East: 8, West: 16 };
 const STOCK = { North: 32, South: 64, East: 128, West: 256 };
 const ALL_MEASURES = ["stock_count", "stock_total", "visit_count", "visit_total"];
-const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_rbac_off", "lp_noroles", "lp_outage", "lp_lensadmin", "lp_lensuser", "lp_reader", "lp_alpha"] as const;
+const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_rbac_off", "lp_noroles", "lp_outage", "lp_misroute", "lp_lensadmin", "lp_lensuser", "lp_reader", "lp_alpha"] as const;
 type User = (typeof USERS)[number];
 
 const READ_ONLY = /can view this dashboard but not edit it in Superset/;
@@ -474,6 +474,28 @@ export function accessSuite(version: string) {
         }
         expect(await measures("lp_outage")).toEqual(ALL_MEASURES);
         expect(byGroup(toolOutput(await chat("lp_outage", A, "query", BREAKDOWN("visit_total"))).rows)).toEqual(VISITS);
+      });
+
+      it("refuses, never answers, while Superset answers 404 for the access route, and forgets it once the route is back", async () => {
+        // A Superset pod without the plugin, or a path prefix sending the request elsewhere, in the middle of a run.
+        stack.missingRoute("/api/v1/lenspack/access");
+        try {
+          // lp_misroute may not read stock: asked about only now, they must be refused it, not answered from the service account.
+          for (const measure of ["stock_total", "visit_total"]) {
+            const r = await chat("lp_misroute", A, "query", BREAKDOWN(measure));
+            expect([measure, r.status, r.error]).toEqual([measure, 403, expect.stringMatching(/Superset access could not be checked/)]);
+          }
+          const d = (await s.lp_misroute.lp("GET", `api/${PACK}/${A}/data`)).json;
+          expect([d.visits_by_region.rows, d.stock_by_region.rows]).toEqual([[], []]);
+          expect((await catalogue("lp_misroute")).accessNotice).toMatch(/Superset access could not be checked/);
+        } finally {
+          stack.missingRoute(null);
+        }
+        expect(stack.log()).toMatch(/could not ask Superset about lp_misroute \(Superset answered 404 for \/api\/v1\/lenspack\/access/);
+        // Back: the very next request asks the route again, and their own access applies, dataset permissions included.
+        const stock = toolOutput(await chat("lp_misroute", A, "query", BREAKDOWN("stock_total")));
+        expect([stock.ok, stock.error]).toEqual([false, expect.stringMatching(NO_ACCESS)]);
+        expect(byGroup(toolOutput(await chat("lp_misroute", A, "query", BREAKDOWN("visit_total"))).rows)).toEqual(VISITS);
       });
     });
 

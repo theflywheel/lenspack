@@ -11,6 +11,13 @@ brought it.
 
 ### 26 November 2026
 
+- **Access checks fail closed, every time.** Inside Superset, when Superset answered 404 for the plugin's access
+  route even once (a pod without the plugin during a rollout, or a path prefix sending the request elsewhere), the
+  server switched for good, until restart, to Superset's row-level security rules alone, with every dataset readable.
+  Now any request whose access can't be checked is refused ("Your Superset access could not be checked just now"),
+  and the next request asks Superset again. The old fallback is there only for a Superset still running a plugin
+  without the route, as the explicit `accessFallback: rls-only` (`LENSPACK_ACCESS_FALLBACK`), with a warning at
+  every start. See [When access can't be checked](docs/access/superset.md#when-access-cant-be-checked). (PR_ONE)
 - **One name everywhere.** Once the assistant has its own name (`brand.name`), the word Lenspack shows nowhere
   people look: the admin panel, Superset's settings page and menu entry, messages and refusals, and the assistant's
   own replies (asked what it is or what it runs on, it gives only its name). The only exception is the "Powered by

@@ -47,10 +47,26 @@ security rules to every query. It uses the same rules as every other host (see
   (`can_access_datasource`, `get_rls_filters`, `can_access_dashboard`), with Jinja such as
   `{{ current_username() }}` rendered as Superset renders it (with `ENABLE_TEMPLATE_PROCESSING` on). Only admins
   and Lenspack's own account may call it. Answers are kept for 60 seconds per user, so a change in Superset reaches
-  Lenspack within a minute. Without that endpoint (an older plugin), this server reads the RLS rules from
-  Superset's REST API (`/api/v1/rowlevelsecurity/`) and matches them to the roles in the identity header. That
-  route can't read dataset permissions, dashboard access or render templates: every dataset counts as readable, a
-  templated clause keeps its dataset from the user, and only the dashboard a request is about is listed.
+  Lenspack within a minute. When the endpoint can't be asked, the request is refused: see
+  [When access can't be checked](#when-access-cant-be-checked).
+
+## When access can't be checked
+
+If Lenspack can't ask Superset about a user (Superset is down or slow, or answers 404 for
+`/api/v1/lenspack/access`), that user is shown nothing for that request: no datasets, no dashboards, and the message
+"Your Superset access could not be checked just now, so nothing is shown. Try again in a minute." A failure is never
+kept: the next request asks Superset again, and answers as soon as Superset does.
+
+A 404 for that route usually means a Superset process without the plugin loaded (for example one pod of a rollout),
+or a path prefix that sends the request somewhere else. The log says `Superset answered 404 for
+/api/v1/lenspack/access`.
+
+Only for a Superset that still runs an old plugin without that route, `accessFallback: rls-only` (or
+`LENSPACK_ACCESS_FALLBACK=rls-only`) lets such a request go on with Superset's row-level security rules alone: they are
+read from Superset's REST API (`/api/v1/rowlevelsecurity/`) and matched to the roles in the identity header. That API
+can't read dataset permissions, dashboard access or render templates: every dataset counts as readable, a templated
+clause keeps its dataset from the user, and only the dashboard a request is about is listed. Lenspack warns at every
+start while it is on. Update the plugin and remove the setting instead.
 
 ## Dashboard roles (DASHBOARD_RBAC)
 
