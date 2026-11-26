@@ -252,6 +252,26 @@ class ProxyEndpoint(unittest.TestCase):
         self.assertEqual(r.get_data(), b"".join(self.PAGE))
 
 
+    def test_signs_the_users_superset_id(self):
+        # Lenspack makes a person's own dashboards theirs in Superset by this id.
+        _, (_, claims) = self.send("GET", f"/lenspack/api/hcm/superset-{self.mine}")
+        self.assertEqual(claims["i"], self.owner.id)
+        _, (_, claims) = self.send("GET", "/lenspack/_superset/info")
+        self.assertEqual(claims["i"], self.owner.id)
+
+    def test_own_dashboard_routes_carry_the_rights_on_the_dashboard_named(self):
+        # Copy this one, save its layout, apply a layout here: ?dashboard= is signed like bind's.
+        for path in ["/lenspack/_superset/my", "/lenspack/_superset/my/dashboards", "/lenspack/_superset/my/layouts", "/lenspack/_superset/my/layouts/l_abc/apply"]:
+            method = "GET" if path.endswith("/my") else "POST"
+            _, (_, claims) = self.send(method, path, query_string={"dashboard": str(self.mine)}, json={})
+            self.assertEqual((claims["d"], claims["e"], claims["v"]), (self.mine, True, True), path)
+            _, (_, claims) = self.send(method, path, query_string={"dashboard": str(self.other)}, json={})
+            self.assertEqual((claims["d"], claims["e"]), (self.other, False), path)
+        # Elsewhere ?dashboard= means nothing.
+        _, (_, claims) = self.send("GET", "/lenspack/_superset/info", query_string={"dashboard": str(self.mine)})
+        self.assertNotIn("d", claims)
+
+
 class AccessEndpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

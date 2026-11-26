@@ -109,6 +109,7 @@ telemetry:
     # Trust and reuse
     trust-explain: true
     trust-export-share: true
+    personal-dashboards: true
     trust-superset-actions: true
     reuse-hit-rate: true
     reuse-saved: true
@@ -276,6 +277,7 @@ Clients post events to `<api>/_telemetry`. Inside Superset that is `/lenspack/ap
 | `transcript` | `turnId`, `transcript` (what speech to text returned), `sent` (what was sent): the edit distance is computed on the server |
 | `abandoned` | `how` (for example `page-hidden`), `stage` |
 | `explain-opened`, `quick-reply`, `chart-exported`, `board-shared` | optional `how`, `stage`, `choice` and `data` |
+| `personal-dashboard`, `saved-layout` | sent by the Superset host itself, not the browser: `how` (`create`, `copy`, `delete`; `save`, `apply`, `rename`, `delete`) and `data` with ids and counts only (see [Your own dashboards](my-dashboards.md#usage-telemetry)) |
 
 `data` is a flat map of up to 20 keys with short values. Keys that look like secrets (key, token, password and the
 like) are dropped.
@@ -372,6 +374,7 @@ How each of the pilot's metrics is answered.
 | Follow-ups per conversation | `sessionId` |
 | Explanation opened | `explain-opened` events, from the panel that shows explanations |
 | Export and share | `chart-exported` and `board-shared` events; Superset's action log |
+| Own dashboards and saved layouts | `personal-dashboard` and `saved-layout` events, from the Superset host |
 | Waiting for a free slot | `queueMs` |
 | Device and network | `device`, `viewport`, `network`, `saveData` (off by default) |
 

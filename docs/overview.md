@@ -112,6 +112,8 @@ lenspack came out of a consultation tool whose dashboard logic was welded to one
 
 The security model in full: [security.md](security.md).
 
+In Superset, a shared dashboard is changed only by the people Superset lets edit it; anyone else can make their own copy and change that, or save a layout by name: [my-dashboards.md](my-dashboards.md).
+
 ## Using the model less
 
 Most questions on a dashboard are asked again and again, and a dashboard stops changing once it has been shaped. Lenspack keeps the plan behind every answer that went well and every accepted change, and answers a repeated question by running the same queries on today's data, without the model. Only new questions reach the model. How it works, what it saves and when a saved answer is not used: [caching.md](caching.md).
@@ -122,6 +124,7 @@ People ask questions the pack never thought of, and some have two sane readings.
 ## Knowing how it is used
 
 Every chat turn leaves one record: who asked, on which board, what kind of question it was, how it ended, how long it took and what it cost. People can rate answers with a thumbs up or down. Admins read the records from the settings routes. Each item recorded has its own switch on the admin panel's Telemetry tab; the privacy-sensitive ones (question text, recordings, device detail) start off. What is kept, for how long, and who may read it: [telemetry.md](telemetry.md).
+
 
 ## The demo app
 

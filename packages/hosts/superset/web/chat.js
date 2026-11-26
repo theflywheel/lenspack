@@ -459,7 +459,7 @@
   }
 
   function describe(name, input) {
-    const what = TOOL[name] || name;
+    const what = TOOL[name] || (window.LenspackMine && window.LenspackMine.TOOLS[name]) || name;
     const w = input && input.widget;
     if (w && w.title) return `${what}: “${w.title}”`;
     if (input && input.id && /widget/.test(name)) return `${what}: ${input.id}`;
@@ -883,6 +883,8 @@
     const retries = new Set();
     wrap.append(head, downBar, log, status, foot);
     root.append(wrap);
+    // "My dashboards" and "Saved layouts" (mine.js), when it is loaded.
+    const mine = window.LenspackMine ? window.LenspackMine.attach({ head, before: newBtn, api, pack: opts.pack, board: opts.board, lang: () => uiLang(), send: (q) => send(q), note: (x, c) => note(x, c), log, scroll: () => scroll(), features: () => feat, openDashboard: opts.openDashboard, onChanged: opts.onChanged }) : null;
 
     const scroll = () => (log.scrollTop = log.scrollHeight);
     // A reply as formatted text, or as plain text when formatting is switched off.
@@ -1224,6 +1226,7 @@
     async function send(text, fresh, extra) {
       text = (text || "").trim();
       if (!text || busy || offline) return;
+      if (mine) mine.turn(text);
       busy = true;
       syncNew();
       go.disabled = true;
@@ -1241,6 +1244,7 @@
       } catch (e) {}
       let steps = null;
       const calls = {};
+      const toolNames = {};
       let bot = null;
       let answer = "";
       // Each run of text the model writes is its own segment: a new text part (id) or a
@@ -1338,6 +1342,7 @@
                   } else if (bot) bot.remove();
                   bot = null;
                   answer = "";
+                  toolNames[ev.toolCallId] = ev.toolName;
                   if (ev.toolName === "get_board" || ev.toolName === "list_metrics") break;
                   if (!steps) {
                     steps = el("div", "lpc-steps");
@@ -1351,6 +1356,7 @@
                 }
                 case "tool-output-available": {
                   const s = calls[ev.toolCallId];
+                  if (mine) mine.onTool(toolNames[ev.toolCallId], ev.output);
                   if (!s) break;
                   const o = ev.output || {};
                   const bad = o.applied === false || o.ok === false || o.error;
@@ -1555,6 +1561,7 @@
       newBtn.setAttribute("aria-label", t("newChat"));
       log.querySelectorAll(".lpc-fb").forEach((f) => f.relabel && f.relabel());
       renderMenu();
+      if (mine) mine.relabel();
     }
 
     // ---- Voice: click the mic to start and again to stop, or hold it (or Space) while speaking.
@@ -1925,6 +1932,7 @@
       input.style.height = "auto";
       input.style.height = `${Math.min(140, input.scrollHeight)}px`;
     });
+    if (mine) mine.start();
     return { send, focus: () => input.focus(), setOffline };
   }
 

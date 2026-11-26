@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, tabsText, toVercelAI, viewFrom } from "@lenspack/agent";
 import { type Principal, accessNote, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
@@ -120,6 +120,11 @@ export type AppOptions = {
    * its version, the clarify switch and the open-questions log. Absent, the pack is used as its file says.
    */
   definitions?: TurnDefinitions;
+  /**
+   * The caller's own dashboards and saved layouts, for a host that keeps them (Superset): the chat's tools to
+   * make, copy and delete one and to save and apply layouts. Absent, or undefined for a request, the tools are not offered.
+   */
+  personal?: (req: IncomingMessage, turn: { user: string; pack: string; boardId: string; readOnly?: string }) => PersonalPort | undefined;
   /**
    * What the deployment allows of the answer card ("How this was worked out"), read per turn: on
    * unless `on` is false; the statements shown unless `sql` is false. Policy only narrows it.
@@ -565,9 +570,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         audit({ user: who.user, pack: packName, board: copy.id, action: "copy", outcome: "ok", detail: `from ${boardId}` });
         return json(res, 200, { id: copy.id, version: copy.version });
       }
-      if (writes && !rights.edit && !readOnlyChat) {
-        audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? ""}`.trim(), outcome: "denied", detail: board.owner ? "owner" : "pack board" });
-        return json(res, 403, { error: board.owner ? `This board is ${board.owner}'s: save a copy to change it` : "This is the pack's own board: save a copy to change it" });
+      // A board policy makes read-only for a stated reason (the edit scope) may still be asked about in the chat.
+      if (writes && !rights.edit && !readOnlyChat && !(rights.readOnly && req.method === "POST" && action === "chat")) {
+        audit({ user: who.user, pack: packName, board: boardId, action: `${req.method} ${action ?? ""}`.trim(), outcome: "denied", detail: rights.readOnly ? "edit scope" : board.owner ? "owner" : "pack board" });
+        return json(res, 403, { error: rights.readOnly ?? (board.owner ? `This board is ${board.owner}'s: save a copy to change it` : "This is the pack's own board: save a copy to change it") });
       }
       if (req.method === "DELETE" && !action) {
         if (!board.owner) return json(res, 403, { error: "The pack's own boards come from its board files and are not deleted here" });
@@ -654,7 +660,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             return json(res, 403, { error: d.notice });
           }
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : who.readOnly, asker);
+          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : (rights.readOnly ?? who.readOnly), asker);
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -724,8 +730,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const scope = { user, pack: h.name, board: boardId, turn: turnId, sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
+    const personal = opts.personal?.(req, { user, pack: h.name, boardId, readOnly });
     const tools = toVercelAI([
-      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, onData: card?.onData, view: turnView,
+      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal, onData: card?.onData, view: turnView,
         onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }),
       ...(clarifying && defs ? [clarifyTool({ note: (n) => defs.note(h.name, n), question: instruction })] : []),
     ]);

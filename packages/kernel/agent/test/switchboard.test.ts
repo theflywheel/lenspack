@@ -56,6 +56,8 @@ async function scenario(on: () => ReadonlySet<string>, master = () => true) {
   results.push(await tel.event(ana, { type: "quick-reply", turnId: "t1", choice: "doses given" }));
   results.push(await tel.event(ana, { type: "abandoned", turnId: "t1", how: "closed", stage: "streaming" }));
   results.push(await tel.event(ana, { type: "transcript", turnId: "t1", transcript: "how many visit", sent: "how many visits" }));
+  // Sent by the host itself (Superset's own dashboards), not about a turn.
+  results.push(await tel.event({ ...ana, board: "b1", pack: "p" }, { type: "personal-dashboard", how: "copy", data: { dashboard: 9, from: 1 } }));
   t += 120_000;
   await tel.sweep();
   return { lines: store.lines, results };
@@ -102,7 +104,7 @@ describe("the switchboard's defaults", () => {
 describe("each item's switch", () => {
   it("records every field and event with everything on", async () => {
     const { lines } = await scenario(() => ALL);
-    expect(eventsOf(lines).sort()).toEqual(["abandoned", "abandoned:after-transcription", "chart-exported", "explain-opened", "feedback", "quick-reply", "transcript"]);
+    expect(eventsOf(lines).sort()).toEqual(["abandoned", "abandoned:after-transcription", "chart-exported", "explain-opened", "feedback", "personal-dashboard", "quick-reply", "transcript"]);
     expect(keysOf(lines, "turn")).toEqual(keptFields("turn", ALL));
   });
 
@@ -176,7 +178,7 @@ describe("section and telemetry switches", () => {
 describe("client events", () => {
   it("are only the kinds some item keeps", async () => {
     const tel = turnTelemetry({ store: memoryStore(() => 0), hash, items: () => ALL });
-    expect(EVENT_TYPES.sort()).toEqual(["abandoned", "board-shared", "chart-exported", "explain-opened", "feedback", "quick-reply", "transcript"]);
+    expect(EVENT_TYPES.sort()).toEqual(["abandoned", "board-shared", "chart-exported", "explain-opened", "feedback", "personal-dashboard", "quick-reply", "saved-layout", "transcript"]);
     expect(await tel.event(ana, { type: "made-up" })).toMatchObject({ ok: false, status: 400, error: expect.stringMatching(/not an event/) });
   });
 
