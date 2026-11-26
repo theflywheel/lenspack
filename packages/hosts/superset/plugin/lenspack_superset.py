@@ -9,7 +9,9 @@ It adds:
     only, with a signed header saying who is asking, whether they are an admin, and whether Superset would
     let them view and edit the dashboard the request is about. The dashboard is read from the path the way
     Lenspack reads it (api/<pack>/superset-<id>/...), the header names that board and pack, and a path with a
-    "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered.
+    "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered. Pages Lenspack
+    serves (its admin panel) get the request's Content-Security-Policy nonce on their scripts, which Superset's
+    default policy needs before a browser runs them.
     Lenspack trusts nothing else, so its port never needs to be reachable from outside.
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
   - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log, and a link to Lenspack's own
@@ -185,6 +187,20 @@ def lenspack_route(path: str):
     return route
 
 
+# A <script> start tag with no nonce attribute yet: "<script" then a space, ">" or "/", in any case ("<scripts" is not one).
+_SCRIPT_TAG = re.compile(rb"<script(?=[\s>/])(?![^>]*?[\s\"']nonce\s*=)", re.IGNORECASE)
+
+
+def lenspack_stamp_nonce(html: bytes, nonce: str) -> bytes:
+    """The page with this request's CSP nonce on every <script> tag that has none. Superset's Content-Security-Policy
+    (Talisman, on by default) has script-src 'self' 'strict-dynamic' 'nonce-...': with 'strict-dynamic' browsers ignore
+    'self', so a page's own scripts run only if they carry the nonce. Scripts those create are trusted in turn."""
+    if not nonce:
+        return html
+    attr = b' nonce="' + nonce.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").encode() + b'"'
+    return _SCRIPT_TAG.sub(lambda m: m.group(0) + attr, html)
+
+
 def lenspack_rls_clauses(filters, render) -> list:
     """RLS filters as Superset applies them: each rendered; a group key's clauses ORed, the rest and the groups ANDed."""
     clauses, groups = [], {}
@@ -352,6 +368,20 @@ def lenspack_app_mutator(app):
         except requests.RequestException as e:
             return jsonify({"error": f"Lenspack is not reachable: {type(e).__name__}"}), 502
 
+        out = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP]
+        # Chat replies stream: no buffering in a proxy in front of Superset, no compression here.
+        out += [("X-Accel-Buffering", "no"), ("Cache-Control", upstream.headers.get("cache-control", "no-store"))]
+
+        # A page (the admin panel, the chat page): its scripts need this request's nonce under Superset's
+        # Content-Security-Policy. Pages are small, so read it whole; everything else streams as it comes.
+        nonce = getattr(request, "csp_nonce", None)
+        if nonce and request.method != "HEAD" and upstream.headers.get("content-type", "").lower().startswith("text/html"):
+            try:
+                page = lenspack_stamp_nonce(b"".join(upstream.iter_content(chunk_size=None)), nonce)
+            finally:
+                upstream.close()
+            return Response(page, status=upstream.status_code, headers=out)
+
         def body():
             try:
                 for chunk in upstream.iter_content(chunk_size=None):
@@ -359,9 +389,6 @@ def lenspack_app_mutator(app):
             finally:
                 upstream.close()
 
-        out = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP]
-        # Chat replies stream: no buffering in a proxy in front of Superset, no compression here.
-        out += [("X-Accel-Buffering", "no"), ("Cache-Control", upstream.headers.get("cache-control", "no-store"))]
         return Response(stream_with_context(body()), status=upstream.status_code, headers=out, direct_passthrough=True)
 
     methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]
