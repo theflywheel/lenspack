@@ -63,7 +63,7 @@ const alsoMeasures = { measures: z.array(z.string()).min(1).max(11).optional() }
 // The source still computes every measure; these only combine its aggregated
 // answers: a change between consecutive time buckets, a rolling window, a
 // running total, one measure over another, and a summary of the buckets per
-// group. See docs/compute.md for what each does with zeros and gaps.
+// group. See docs/features/compute.md for what each does with zeros and gaps.
 export const COMPUTE_SUMMARIES = ["mean", "sum", "min", "max", "median", "last"] as const;
 export const computeStepSchema = z.discriminatedUnion("op", [
   // The measure over another measure, per group (and per time bucket), before any other step.

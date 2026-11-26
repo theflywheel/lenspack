@@ -17,7 +17,7 @@
 //
 // This module knows no host and no HTTP: a host hands it a turn (ReuseTurn), a small model to call
 // (SmallModel) and a store (AnswerStore), and turns what it serves into its own stream. See
-// docs/caching.md.
+// docs/features/saved-answers.md.
 
 import { type BoardConfig, type BoardStore, type Query, stagedStore } from "@lenspack/core";
 import type { Connector } from "@lenspack/engine";

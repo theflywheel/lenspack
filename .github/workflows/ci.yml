@@ -63,7 +63,7 @@ jobs:
       - name: Dist smoke (each built entry exports what its .d.ts declares)
         run: pnpm smoke:dist
   # The access suite: Lenspack against real Superset 6.1 and 5.0 containers, with Postgres sample data, checking what
-  # each kind of user can see and change (docs/access.md, "How access is tested"). Beside the unit tests, not after.
+  # each kind of user can see and change (docs/access/testing.md). Beside the unit tests, not after.
   access:
     runs-on: ubuntu-latest
     timeout-minutes: 25

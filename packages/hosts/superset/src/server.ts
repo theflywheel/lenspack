@@ -72,13 +72,13 @@ export type SupersetConfig = AdminConfig & {
   dashboards?: number[];
   overlay?: Overlay;
   /**
-   * People's own dashboards and saved layouts (docs/my-dashboards.md). The switch is the personalDashboards
+   * People's own dashboards and saved layouts (docs/features/personal-dashboards.md). The switch is the personalDashboards
    * feature (on by default); the limits may also come from LENSPACK_MAX_DASHBOARDS_PER_USER and
    * LENSPACK_MAX_SAVED_CONFIGS_PER_USER, and an admin can change them on a running server.
    */
   personal?: { maxDashboardsPerUser?: number; maxSavedConfigsPerUser?: number };
   /**
-   * Where the chat may change dashboards (docs/my-dashboards.md): "superset" (the default), any dashboard
+   * Where the chat may change dashboards (docs/features/personal-dashboards.md): "superset" (the default), any dashboard
    * Superset lets the person edit; "own", only their own dashboards, so shared ones stay as they are and people
    * make their own copy to change. Admins are exempt unless adminsExempt is false. LENSPACK_EDIT_SCOPE and
    * LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT win; an admin can change it on a running server.
@@ -221,7 +221,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     limits,
     audit: auditLog?.audit,
     log,
-    // Usage telemetry (docs/telemetry.md, item personal-dashboards): one event per action, if that item is on.
+    // Usage telemetry (docs/features/telemetry.md, item personal-dashboards): one event per action, if that item is on.
     telemetry: (e) => void admin.app.telemetry?.event({ user: e.user, roles: e.roles, board: e.board ?? null, pack: pack.pack }, { type: e.event, how: e.how, data: e.data }).catch((err: Error) => log(`telemetry: ${err.message}`)),
   });
 

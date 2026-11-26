@@ -687,7 +687,7 @@
   }
 
   async function cache() {
-    // The saved answers' admin routes (docs/caching.md): <prefix>/cache, …/suggestions, …/chart-candidates, …/boards.
+    // The saved answers' admin routes (docs/features/saved-answers.md): <prefix>/cache, …/suggestions, …/chart-candidates, …/boards.
     let data;
     try {
       data = await cacheApi("");

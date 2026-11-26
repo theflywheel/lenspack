@@ -5,7 +5,7 @@ import { CORE_FIELDS, type SwitchValues, keptFields, onlyKept, switchDefaults, i
 // Usage telemetry: one flat record per chat turn, per transcription and per event a client reports (a thumbs up or
 // down, an answer left before it finished, a transcript the user corrected). It answers how the assistant is used:
 // by whom (the user and the role names the host signed), where (board, pack, datasets, and the campaign and country
-// the deployment's context maps them to), what was asked and how it went. The schema is in docs/telemetry.md; keep
+// the deployment's context maps them to), what was asked and how it went. The schema is in docs/features/telemetry.md; keep
 // it flat, and add fields rather than change them.
 //
 // This module is the whole of it except storage and the key questions are hashed under: no HTTP, no host. A host

@@ -1,0 +1,145 @@
+# Datasets and dashboards
+
+This page explains how Lenspack builds its pack from Superset's datasets, reads numbers through Superset, and keeps
+boards in step with Superset dashboards. It is for Superset admins choosing datasets and anyone wondering why a
+chart is kept as Superset's.
+
+## The pack, from datasets
+
+`datasets:` in `superset.yaml` lists the datasets Lenspack may use, by id or by table name. At start-up
+`packFromDatasets` turns them into a pack:
+
+- a **dataset** becomes an entity;
+- its **saved metrics** become measures (`sql: { superset: <metric_name> }`), so the chat uses Superset's own
+  definition;
+- its **groupable columns** become dimensions. A column with the same name on several datasets becomes one
+  dimension shared by all of them.
+
+Hints come from Superset's descriptions. Keep numeric columns that are only measured (amounts, counts) not
+groupable in Superset: a groupable numeric column becomes a dimension, which confuses the chat about what to add up.
+
+**Nothing in a dataset stops Lenspack starting.** A metric with no name or SQL, or a column with no name, is left
+out. A groupable column with the same name as a saved metric becomes `<name>_value` (the metric keeps the name).
+Each change is one warning line in the log and in the settings API (`warnings`).
+
+## The overlay
+
+What Superset has no field for comes from `overlay:` in `superset.yaml`: the pack's `description` and `instructions`, a
+`timeZone`, entity names and `entities` settings, `hints` and `labels` for keys, `hierarchies`, `examples` (written per
+language if you like; see [Languages](../../features/languages.md#suggested-questions-in-several-languages)), `geo` for
+maps, `mapStyle`, and `panel` (`float` or `dock`, the chat's starting form).
+
+```yaml
+overlay:
+  description: Orders, customers and products for the shop.
+  timeZone: Europe/Lisbon
+  instructions: Revenue is after refunds. Weeks start on Monday.
+  hierarchies: { place: [country, city] }
+  examples:
+    - question: Orders by country last month
+      query: { kind: breakdown, dimension: country, measure: orders, time: { period: month, offset: -1 } }
+```
+
+## Numbers, from Superset
+
+Lenspack asks Superset's chart-data API (`/api/v1/chart/data`) for every number, so a metric means the same in the
+chat as on the dashboard, and Superset's row-level security applies. There are no joins, because a Superset chart
+reads one dataset. Shares, the "Other" group and extra measures are worked out by Lenspack afterwards.
+
+**Time zones.** Superset cuts time into days with no time zone. A dataset whose time column holds calendar dates
+(`DATE`, or ClickHouse's `Date` and `Date32`) needs none: the catalogue marks it `type: date`, its days, weeks and
+months are drawn in a pack with any `timeZone`, and a window is sent as the dates it holds in that zone ("the last 7
+days" ends today in the pack's zone). In a pack outside UTC, a series over a time column with a time of day is
+refused, and the refusal says what works: a date column, or a pack that keeps UTC.
+
+## Dashboards are boards
+
+Lenspack reads a dashboard as a board: charts become widgets, markdown blocks become text widgets, and the layout
+becomes the grid. A chart Lenspack cannot say exactly (custom SQL filters, ad hoc metrics, a heatmap shaded per row or
+column) is kept as Superset's: a widget the model can move, resize or remove but not rewrite. So is a chart whose
+dataset is not in `datasets:`, and the chat cannot answer questions from that dataset.
+
+**Notes.** A board holds no URLs, but Superset draws a markdown block with links. So a note Lenspack writes or
+changes is made plain before it is saved: a link becomes its text, and HTML and bare web or e-mail addresses are not
+drawn as tags or links. Bold, lists and the rest of the formatting are kept. A markdown block someone wrote in Superset
+keeps its text while Lenspack leaves the note unchanged.
+
+**Superset stays the record.** `supersetBoards` wraps a board store: reads pick up edits made in Superset, every
+Lenspack change is sent to Superset before it counts, and a change Superset refuses is undone. `pushBoard` sends only
+what changed: `POST`/`PUT /api/v1/chart`, then the dashboard's layout, title and filters. Lenspack's version history
+is the undo Superset lacks; today it is kept in memory (see [Stores](../../architecture/stores.md)).
+
+**Tabs and columns.** A dashboard's layout is read from the top down, through tabs (top-level, inside the grid, or
+inside other tabs) and columns, so the board lists every chart Superset draws, tab after tab. The chat is told what is
+on each tab and which tab the viewer has open (the overlay sends it with each message). On a dashboard with tabs or
+columns Lenspack keeps the layout and changes it in place (`layout.ts`):
+
+- a new chart goes on the tab of the widget its placement names (`after:` or `below:`), else at the top or bottom of
+  the viewer's tab, else where Superset puts charts that have no place: the first top-level tab, or the grid when the
+  tabs sit inside it. Never under the grid that top-level tabs leave behind, where Superset draws nothing;
+- a resize changes the chart where it is (a row then wider than 12 columns wraps onto a new row in place);
+- a removal takes out that one placement (a chart placed in two tabs keeps the other) and any row it empties;
+- a restore puts a removed chart back where it was: the same chart, unless Lenspack made it, in its tab and row;
+- **a move is refused**, with a message saying to move the chart in Superset. Moving charts between rows and tabs
+  needs a board that knows tabs, which is not built yet. Tabs themselves are made, renamed and removed in Superset.
+
+Before each save, Lenspack checks that Superset can still draw the whole dashboard. If an edit would break it, nothing
+is saved and the chat says so. Problems the dashboard already had are logged and left as they are. `placeCharts` puts
+charts a layout does not draw where Superset draws them; use it whenever a layout gains charts outside Lenspack's edits
+(a copy of a dashboard). A saved edit is kept apart by the tab the viewer had open, so "add a chart here" lands on that
+tab.
+
+**Gaps.** A previous-period KPI is drawn by Superset without its comparison.
+
+## The filter bar
+
+A dashboard's native filters (`json_metadata.native_filter_configuration`) are read as board filters:
+
+- a value filter (`filter_select`) on a column the pack has as a dimension becomes a `select`;
+- a time range (`filter_time`) becomes a `daterange`;
+
+each with the charts its scope covers and the value it is set to by default, so the chat can say what the dashboard
+is filtered to.
+
+Every other filter stays exactly as Superset has it and is shown to the model as "Superset-only filter: <name>",
+with what it does: a numeric range, a time grain or time column picker, a value filter on a column outside the pack,
+one that excludes the values picked or picks its first value, one reading several datasets, or a time range default
+other than "last N days or months".
+
+The chat can add, change (label, charts, default) and remove filters, and remove a Superset-only one, but never
+rewrite one. Writing back changes only the filters the board changed; every other key, section heading and filter
+is kept as it was. What a viewer has picked is sent with each chat question (see
+[Filters](../../concepts/filters.md#2-a-boards-filter-bar)). On Superset 6.1 the filter bar also holds "chart
+customizations" and a timestamp switch; Lenspack leaves both untouched.
+
+## Heatmaps
+
+A heatmap widget is Superset's `heatmap_v2`: a breakdown's dimension on `x_axis`, its split as `groupby`, one saved
+metric, rows A to Z, one scale across the grid. Lenspack won't make a heatmap with weeks or months on an axis, because
+Superset can't draw one over some databases (ClickHouse refuses the query it sends). Use a day or date-label column
+instead.
+
+## Maps
+
+A dataset with one numeric `latitude`/`lat` column and one `longitude`/`lon`/`lng`/`long` column becomes an entity
+with a location. `overlay.geo` names other columns per entity, dataset id or table, or turns detection off with
+`false`.
+
+A `map` widget is Superset's `deck_scatter`: `spatial` latlong on those columns, `dimension` for the colour, a saved
+metric as `point_radius_fixed` for the size (Superset groups by location), the label in `js_columns`, `row_limit`,
+and `mapbox_style` from `overlay.mapStyle`. The default style is Superset's own for its version (see
+[Versions](versions.md)). The query that draws the points is saved with the chart, so Superset's reports and
+`GET /api/v1/chart/<id>/data` get the same points as the dashboard; Lenspack reads them through
+`/api/v1/chart/data`.
+
+A `deck_scatter` made in Explore reads back as a map when every setting maps: latlong on the entity's location
+columns, a fixed or saved-metric radius, a dimension colour, at most one dimension in `js_columns`, no time grain and
+no JavaScript; otherwise it stays Superset's. Shaded areas (`deck_polygon`) are not done: they need boundary shapes
+in a dataset column.
+
+---
+
+**Next:** [Computed charts](computed-charts.md).
+
+**Related:** [Charts, maps and heatmaps](../../features/charts.md) · [Packs](../../concepts/packs.md) ·
+[Dashboard edits](../../features/dashboard-edits.md)

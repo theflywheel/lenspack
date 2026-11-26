@@ -47,7 +47,7 @@ export type AdminConfig = {
     baseUrl?: string;
     maxSeconds?: number;
     holdMs?: number;
-    /** Keep each spoken question's recording (default false; LENSPACK_SPEECH_KEEP_AUDIO). See docs/telemetry.md. */
+    /** Keep each spoken question's recording (default false; LENSPACK_SPEECH_KEEP_AUDIO). See docs/features/telemetry.md. */
     keepAudio?: boolean;
     /** Days a kept recording stays (default 30; LENSPACK_SPEECH_AUDIO_RETENTION_DAYS). */
     audioRetentionDays?: number;
@@ -61,9 +61,9 @@ export type AdminConfig = {
   /** Off switches, all on by default (see features.ts); LENSPACK_FEATURES and the settings page override them. */
   features?: FeatureValues;
   /**
-   * Usage telemetry (docs/telemetry.md), on unless the telemetry feature switch is off. retentionDays (default 90,
+   * Usage telemetry (docs/features/telemetry.md), on unless the telemetry feature switch is off. retentionDays (default 90,
    * else LENSPACK_TELEMETRY_RETENTION_DAYS); groups and items: the switchboard's starting values (every key and its
-   * default are in docs/telemetry.md), which admins change on the admin panel's Telemetry tab.
+   * default are in docs/features/telemetry.md), which admins change on the admin panel's Telemetry tab.
    */
   telemetry?: TelemetryConfig;
   /**
@@ -71,9 +71,9 @@ export type AdminConfig = {
    * campaign, campaign type and country it belongs to. Part of the deployment's policy; telemetry reads it.
    */
   context?: DeploymentContext;
-  /** Saved answers (docs/caching.md): the defaults the settings page starts from. */
+  /** Saved answers (docs/features/saved-answers.md): the defaults the settings page starts from. */
   cache?: Partial<CacheSettings>;
-  /** The turn queue (docs/caching.md): model turns at once, and how many wait and for how long. */
+  /** The turn queue (docs/features/busy-hours.md): model turns at once, and how many wait and for how long. */
   queue?: Partial<QueueSettings>;
   /** "How this was worked out" under each answer: false turns it off; `sql: false` keeps the words and rows but not the SQL. */
   explain?: ExplainConfig;
@@ -155,7 +155,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   const cache = cacheSettings(settings, config.cache);
   const queue = queueSettings(settings, config.queue);
   const cacheNow = () => ({ ...cache.get(), on: features.on("cache") });
-  // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/caching.md).
+  // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/features/saved-answers.md).
   const reuse = reuseLayer({ store: join(stateDir, "reuse.json"), settings: cacheNow, log: (m) => console.error(`lenspack: ${m}`) });
   const gate = localTurnGate(queue.get);
   return {
@@ -405,7 +405,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       }
     }
 
-    // What telemetry records for this deployment, item by item, each with its switch: the Telemetry tab (docs/telemetry.md).
+    // What telemetry records for this deployment, item by item, each with its switch: the Telemetry tab (docs/features/telemetry.md).
     if (path === "/telemetry/checklist") return send(200, await checklistNow());
 
     // Usage telemetry, newest first: ?from=&to= (ISO dates or times; default the last 7 days), ?type=turn|event|transcript, ?offset=&limit= (a page, at most 5000).

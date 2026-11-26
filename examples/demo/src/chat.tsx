@@ -276,7 +276,7 @@ export function ChatPanel({
     // A quick reply names the clarifying question it answers, so the server counts the choice.
     const picked = selections?.() ?? {};
     const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(quickReply?.question ? { quickReply } : {}), ...(Object.keys(picked).length ? { selections: picked } : {}), ...(fresh ? { fresh: true } : {}), client: clientInfo() };
-    // client: the device, network and viewport classes usage telemetry records (docs/telemetry.md).
+    // client: the device, network and viewport classes usage telemetry records (docs/features/telemetry.md).
     void sendMessage({ text }, { body });
     setInput("");
   };

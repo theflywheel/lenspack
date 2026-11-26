@@ -1,6 +1,6 @@
 import * as React from "react";
 
-// "How this was worked out" under an answer (docs/explain.md): the turn's data-answer-card part (the answer card), one
+// "How this was worked out" under an answer (docs/features/explain.md): the turn's data-answer-card part (the answer card), one
 // expander, collapsed. Each data call in the order made: the query in plain words, the statement
 // the source ran, and the first rows behind the answer.
 
