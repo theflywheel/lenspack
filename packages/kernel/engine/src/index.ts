@@ -7,4 +7,6 @@ export * from "./levels";
 export * from "./calendar";
 export * from "./metering";
 export * from "./source-errors";
+export * from "./trace";
+export * from "./describe";
 export * from "./layouts";

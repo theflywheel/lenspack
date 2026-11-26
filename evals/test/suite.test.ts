@@ -63,3 +63,29 @@ describe("the commerce suite, played by the stub", () => {
     });
   }
 });
+
+// The rig's user (hostPolicy: superset, --as-user) narrows every turn the way the Superset host does.
+describe("a run as a user who may read none of the datasets", () => {
+  let rig: Rig;
+  let srv: Awaited<ReturnType<typeof serve>>;
+  beforeAll(async () => {
+    const base = await exampleRig("commerce", { board: "overview" });
+    const hidden = Object.keys(base.host.pack.entities);
+    rig = { ...base, user: { name: "viewer", identity: async () => ({ user: "viewer", edit: true, maintain: true, hiddenEntities: hidden }) } };
+    srv = await serve(rig, [stubProvider(suite)]);
+  });
+  afterAll(async () => {
+    await srv.close();
+    await rig.close();
+  });
+
+  it("can't answer what the service account answers", async () => {
+    const q = suite.questions.find((x) => x.id === "C1")!;
+    const r = await runQuestion(rig, srv, srv.providers[0]!, q, undefined, { judge: null, rep: 1 });
+    expect(r.outcome).not.toBe("correct");
+    // The stub asks for the same figure; the engine refuses the hidden measure, and the stub's scripted
+    // reply has nothing to fill in.
+    expect(r.toolErrors).toBeGreaterThan(0);
+    expect(r.calls.find((c) => c.tool === "query")?.ok).toBe(false);
+  });
+});
