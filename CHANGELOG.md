@@ -51,6 +51,12 @@ brought it.
   `LENSPACK_PATH` in Superset's environment moves the route from `/lenspack` (for example to `/assistant`). The
   prompt version goes to 30, so saved answers are made afresh once. Update the plugin file with the server. See
   [Naming the assistant](docs/features/naming.md). ([#102](https://github.com/theflywheel/lenspack/pull/102))
+- **Spend and the daily budget survive a restart inside Superset.** Every model call is now kept as one line in
+  `usage.jsonl` in the state directory, and today's calls are read back at start, as the standalone server does with
+  `usage:`. Before, a restart (every deploy, or a crash loop) started the day's spend at zero, so the daily budget
+  could be overspent. Under a path (`/superset`), the check that the open page matches the saved dashboard after a
+  chat edit now reads the dashboard below Superset's path; it did nothing there before. The docs no longer say that
+  the chat on Superset receives the viewer's dashboard filters: it does not yet. ([#107](https://github.com/theflywheel/lenspack/pull/107))
 - **Superset under a path.** Superset 6.1 running below a path of its host (`SUPERSET_APP_ROOT=/superset`) now
   gets the button, the chat, the settings page and its menu entry, and links to dashboards, all below that path,
   with no new setting. At the root nothing changes. Update the plugin file and the server image together. See

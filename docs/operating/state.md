@@ -18,6 +18,7 @@ files in `auth.dir` (default `LENSPACK_STATE_DIR`, else `.lenspack` next to `len
 |---|---|---|
 | `superset-boards.json` | the links between Lenspack's boards and Superset's dashboards and charts | Superset |
 | `superset-account.json` | Lenspack's own Superset account password (mode 600) | Superset |
+| `usage.jsonl` | one line per model call (who, which model, tokens, cost), so today's spend and budget survive a restart; only its last 32 MB is read at start, and nothing deletes old lines, so trim it now and then if it grows | Superset |
 | `personal-dashboards.json`, `saved-layouts.json` | which dashboards are someone's own, and people's saved layouts (see [Personal dashboards](../features/personal-dashboards.md#where-it-is-kept)) | Superset |
 | `settings.json` | switches, voice, language, saved-answer and queue settings, personal-dashboard limits, the edit scope, the assistant's name, and the review's settings, as set by an admin | both |
 | `definitions-<pack>.json` | the admins' definitions and their history | both |
@@ -61,8 +62,8 @@ with `503` and change nothing, and Superset board links are kept in memory until
 | definitions, open questions, review runs and proposals | yes |
 | saved answers | yes (`reuse.json`) |
 | the queue and anyone waiting in it | **no**: waiting turns are dropped |
-| usage totals and the day's budget | yes with `usage:` set (read back at start); otherwise they start from zero |
-| usage figures inside Superset (`GET /api/_usage`) | **no**: kept in memory; the audit log is the durable record |
+| usage totals and the day's budget | standalone: yes with `usage:` set (read back at start), otherwise they start from zero; inside Superset: yes (`usage.jsonl` in the state directory) |
+| usage figures inside Superset (`GET /api/_usage`) | today's, yes (read back from `usage.jsonl`) |
 | the audit log | yes |
 | sign-in sessions | yes under the password and OpenID Connect sign-ins (signed cookies), as long as the session key or `sessionSecret` is unchanged |
 | a turn that was running | **no** |
