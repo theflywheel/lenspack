@@ -72,7 +72,7 @@ describe("the system prompt's parts", () => {
   it("keeps replies after edits to plain sentences, and allows short lists and bold for an informational answer", async () => {
     const pack = await loadPack(tickets);
     const [stable] = systemParts(pack, catalogueFrom(pack));
-    expect(PROMPT_VERSION).toBe(30);
+    expect(PROMPT_VERSION).toBe(31);
     expect(stable).toContain("no links, HTML or images (a board holds no URLs");
     expect(stable).toContain("After edits, reply in one or two plain sentences with the outcome only.");
     expect(stable).toContain("may use a short bullet list and **bold**");
@@ -87,6 +87,41 @@ describe("the system prompt's parts", () => {
     expect(stable).toContain('never say one is not in the data before trying compute. "Burn rate per ward" is breakdown by ward');
     expect(stable).toContain('"average day-on-day % change per ward" is breakdown by ward, grain day, compute "pct_change, mean"');
     expect(stable).toContain("records counts only the records behind the groups shown");
+  });
+});
+
+describe("the system prompt for a caller who cannot edit", () => {
+  const reason = "Changing dashboards through the chat is turned off on this deployment, so nothing was changed.";
+
+  it("says plainly the assistant cannot change the dashboard, and never to offer or suggest a change", async () => {
+    const pack = await loadPack(tickets);
+    const [stable] = systemParts(pack, catalogueFrom(pack), undefined, undefined, undefined, undefined, { readOnly: reason });
+    expect(stable).toContain('You answer questions about a dashboard ("board") over the "tickets" data pack; you cannot change it for this user.');
+    expect(stable).not.toContain("You build and edit a dashboard");
+    expect(stable).toContain(`EDITS ARE NOT AVAILABLE:\n- You cannot change this dashboard for this user: ${reason}`);
+    expect(stable).toContain("Never offer, suggest or hint at a change to the dashboard");
+    expect(stable).toContain('never say a filter or widget "can be removed" or "can be changed"');
+    expect(stable).toContain("Only when the user asks for a change: say plainly in one sentence that you cannot change this dashboard");
+    // The filter rule no longer names the filter tools or says a host filter can be removed.
+    expect(stable).not.toContain("add_filter, update_filter and remove_filter change it");
+    expect(stable).not.toContain("can be removed but not changed here");
+    // No copy offered unless the host offers one.
+    expect(stable).not.toContain("make me my own copy");
+  });
+
+  it("mentions the caller's own copy only when the host offers one", async () => {
+    const pack = await loadPack(tickets);
+    const [stable] = systemParts(pack, catalogueFrom(pack), undefined, undefined, undefined, undefined, { readOnly: reason, copy: true });
+    expect(stable).toContain('mention the copy only when they ask for a change ("make me my own copy")');
+  });
+
+  it("is unchanged for a caller who may edit", async () => {
+    const pack = await loadPack(tickets);
+    const [plain] = systemParts(pack, catalogueFrom(pack));
+    const [editor] = systemParts(pack, catalogueFrom(pack), undefined, undefined, undefined, undefined, { readOnly: undefined, copy: true });
+    expect(editor).toBe(plain);
+    expect(plain).not.toContain("EDITS ARE NOT AVAILABLE");
+    expect(plain).toContain("add_filter, update_filter and remove_filter change it");
   });
 });
 

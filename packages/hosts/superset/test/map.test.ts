@@ -123,7 +123,9 @@ describe("maps in Superset", () => {
     expect(read({ spatial: { type: "latlong", latCol: "longitude", lonCol: "latitude" } }).widget).toBeNull();
     expect(read({ spatial, time_grain_sqla: "P1D" })).toMatchObject({ reason: expect.stringMatching(/over time/) });
     expect(read({ spatial, js_tooltip: "d => d.x" })).toMatchObject({ reason: expect.stringMatching(/JavaScript/) });
-    expect(read({ spatial, point_radius_fixed: { type: "metric", value: { expressionType: "SIMPLE", column: { column_name: "people" }, aggregate: "SUM" } } })).toMatchObject({ reason: expect.stringMatching(/sized by something other/) });
+    expect(read({ spatial, point_radius_fixed: { type: "metric", value: { expressionType: "SIMPLE", column: { column_name: "people" }, aggregate: "MAX" } } })).toMatchObject({ reason: expect.stringMatching(/sized by something other/) });
+    // The same aggregate as a saved metric (sum(people)) is read as that metric.
+    expect(read({ spatial, point_radius_fixed: { type: "metric", value: { expressionType: "SIMPLE", column: { column_name: "people" }, aggregate: "SUM" } } }).widget).toMatchObject({ query: { kind: "points", size: "people" } });
     expect(read({ spatial, dimension: "latitude" })).toMatchObject({ reason: expect.stringMatching(/coloured by "latitude"/) });
     expect(read({ spatial, js_columns: ["site", "area"] })).toMatchObject({ reason: expect.stringMatching(/extra columns/) });
     expect(chartToWidget({ slice_name: "x", viz_type: "deck_scatter", params: { datasource: "10__table", spatial } }, pack, binding)).toMatchObject({ reason: expect.stringMatching(/no latitude/) });

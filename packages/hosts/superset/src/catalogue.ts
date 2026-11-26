@@ -106,6 +106,13 @@ export type Binding = {
   mapStyle?: string;
   /** Column names the overlay excludes (lowercase): a dashboard filter on one is described without its name or values. */
   excluded?: Set<string>;
+  /**
+   * Entity → (simple aggregate → measure key): "sum|nets", "count|*", "count_distinct|household_id". Each saved metric
+   * whose SQL is one simple aggregate of a column, and each overlay measure without conditions, so a chart's ad hoc
+   * metric that says the same (SUM(nets), or Superset's own SUM of nets) is read as that measure. A saved metric
+   * comes before an overlay measure; a column Superset computes from an expression is never matched.
+   */
+  aggregates?: Map<string, Map<string, string>>;
 };
 
 /** An overlay measure as Superset computes it: an aggregate of one column (or of rows), over the rows its conditions keep. */
@@ -125,6 +132,32 @@ const CH_SUM = new Set(["countif", "sumif"]);
 // The -Merge forms read a stored AggregateFunction state (uniqExactMerge(col) in a pre-aggregated mart).
 const CH_DISTINCT = new Set(["uniq", "uniqexact", "uniqcombined", "uniqcombined64", "uniqhll12", "uniqtheta", "countdistinct", "uniqmerge", "uniqexactmerge", "uniqcombinedmerge", "uniqcombined64merge", "uniqhll12merge"]);
 const CH_SUM_MERGE = new Set(["summerge", "countmerge"]);
+
+/** The aggregates a chart's metric is matched to a measure by: a plain aggregate of one column, or of rows. */
+export type SimpleAgg = "sum" | "count" | "count_distinct" | "min" | "max" | "avg";
+
+// SUM(col), COUNT(*), COUNT(col), COUNT(DISTINCT col), MIN, MAX and AVG of one column, in any case, with optional
+// spaces, and the column bare or quoted (`col` or "col"). count() is ClickHouse's COUNT(*).
+const SIMPLE_AGG = /^\s*(sum|count|min|max|avg)\s*\(\s*(?:(distinct)\s+)?(\*|`[^`]+`|"[^"]+"|[A-Za-z_][A-Za-z0-9_]*)?\s*\)\s*$/i;
+
+/**
+ * The simple aggregate a metric's SQL is, or null for anything else (arithmetic, a CASE, a function of a column, a
+ * DISTINCT inside anything but COUNT). Only the shape is read: nothing here is run.
+ */
+export function simpleAggregate(sql: string): { agg: SimpleAgg; column: string | null } | null {
+  const m = SIMPLE_AGG.exec(sql);
+  if (!m) return null;
+  const fn = m[1]!.toLowerCase() as "sum" | "count" | "min" | "max" | "avg";
+  const distinct = !!m[2];
+  const operand = m[3];
+  // COUNT(*) and count(): rows. Any other function needs a column, and DISTINCT a column of COUNT.
+  if (operand === undefined || operand === "*") return fn === "count" && !distinct ? { agg: "count", column: null } : null;
+  if (distinct && fn !== "count") return null;
+  return { agg: distinct ? "count_distinct" : fn, column: operand.replace(/^[`"](.*)[`"]$/, "$1") };
+}
+
+/** A simple aggregate as the key Binding.aggregates is read by. */
+export const aggregateKey = (a: { agg: SimpleAgg; column: string | null }) => `${a.agg}|${a.column ?? "*"}`;
 
 /** The aggregate a metric's expression behaves like, for what lenspack lets you do with it (share, Other, totals). */
 export function aggOf(expression: string): "count" | "sum" | "avg" | "min" | "max" | "count_distinct" {
@@ -297,7 +330,15 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
   const notDimensions = new Set((overlay.notDimensions ?? []).map(lower));
   const excluded = (column: string) => excludedColumns.has(lower(column)) || excludedColumns.has(slug(column));
   const datasetOut = (ds: SupersetDataset) => excludedDatasets.has(String(ds.id)) || excludedDatasets.has(lower(ds.table_name)) || excludedDatasets.has(lower(`${ds.schema ?? ""}.${ds.table_name}`));
-  const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map(), geo: new Map(), ...(overlay.mapStyle ? { mapStyle: overlay.mapStyle } : {}), };
+  const binding: Binding = { datasets: new Map(), entityOf: new Map(), metrics: new Map(), measureOf: new Map(), columns: new Map(), dimensionOf: new Map(), geo: new Map(), aggregates: new Map(), ...(overlay.mapStyle ? { mapStyle: overlay.mapStyle } : {}), };
+  // A simple aggregate as one measure of an entity: the first to claim it keeps it. A column Superset computes from an
+  // expression reads differently in SQL and in Superset's own metric editor, so neither is matched on it.
+  const claim = (ds: SupersetDataset, entity: string, a: { agg: SimpleAgg; column: string | null } | null, key: string) => {
+    if (!a || (a.column !== null && ds.columns.some((c) => c.column_name === a.column && !blank(c.expression)))) return;
+    const own = binding.aggregates!.get(entity) ?? new Map<string, string>();
+    binding.aggregates!.set(entity, own);
+    if (!own.has(aggregateKey(a))) own.set(aggregateKey(a), key);
+  };
   // Every column name the overlay's exclusions match, as Superset spells it (lowercase), for the filter bar's notes.
   if (excludedColumns.size) binding.excluded = new Set([...excludedColumns, ...datasets.flatMap((d) => d.columns.filter((c) => !blank(c.column_name) && excluded(c.column_name)).map((c) => lower(c.column_name)))]);
   // Mistakes in the overlay itself (a measure on a column that isn't there): left out with a warning at start-up, and
@@ -399,6 +440,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
       });
       binding.metrics.set(key, { entity, metric: m.metric_name || null });
       if (m.metric_name) binding.measureOf.get(entity)!.set(m.metric_name, key);
+      claim(ds, entity, simpleAggregate(m.expression), key);
     }
   }
 
@@ -482,6 +524,7 @@ export function packFromDatasets(datasets: SupersetDataset[], overlay: Overlay =
     const only = conds.length && conds.every((c) => COLUMN.test(c.column)) ? { where: conds.map((c) => ({ field: c.column, op: c.op, ...(c.value === undefined ? {} : { value: c.value }) })) } : {};
     measures.push({ key, entity, agg: om.agg, ...reads, ...only, format: fmt, ...words });
     binding.metrics.set(key, { entity, metric: null, adhoc: { agg: om.agg, column: col?.column_name ?? null, where: conds } });
+    if (!conds.length) claim(ds, entity, { agg: om.agg, column: col?.column_name ?? null }, key);
     if (col && binding.dimensionOf.get(entity)?.has(col.column_name) && (om.agg === "sum" || om.agg === "min" || om.agg === "max"))
       warnings.push(`${name(ds)}: column "${col.column_name}" is measured by "${key}" and is also a dimension; list it in overlay.notDimensions if it is only ever added up`);
   }
