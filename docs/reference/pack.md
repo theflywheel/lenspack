@@ -114,6 +114,7 @@ examples:                   # optional, up to 12: checked questions and the quer
   - question: <text>
     query: { kind: breakdown, dimension: <key>, measure: <key> }
     note: <text>            # optional: why this query and not the obvious one
+    wordings: [<text>]      # optional, up to 10: the same question in other words or languages, answered by the same query
 ```
 
 For example, the median items per order, and the customers with three or more orders:
@@ -283,6 +284,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `examples[].question` | string | yes |  |
 | `examples[].query` | a query: see [Query format](query.md) | yes |  |
 | `examples[].note` | string |  |  |
+| `examples[].wordings` | list of string |  |  |
 
 <!-- /keys:pack -->
 

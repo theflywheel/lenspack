@@ -34,4 +34,11 @@ describe("suggested questions by language", () => {
     expect(questionIn({ fr: "Seulement en français" })).toBe("Seulement en français");
     expect(examplesForPack(config)[0]!.query).toEqual({ kind: "breakdown" });
   });
+
+  it("gives the pack every other language's words as wordings of the same checked query", () => {
+    const pack = examplesForPack(config);
+    expect(pack[0]!.wordings).toEqual(["Visites par site", "साइट के अनुसार विज़िट"]);
+    expect(pack[1]).not.toHaveProperty("wordings");
+    expect(pack[2]!.wordings).toEqual(["Meilleur site"]);
+  });
 });

@@ -31,7 +31,7 @@ reader's filter picks and their language. Change any of these and the question i
 
 A reply from a saved answer looks like any other, with one line under it:
 
-> Saved answer, data as of 09:41 · **Ask fresh**
+> Saved answer · numbers read at 09:41 · **Ask fresh**
 
 **Ask fresh** sends the question to the full assistant, whatever is saved.
 

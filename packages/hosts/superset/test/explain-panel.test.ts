@@ -86,7 +86,7 @@ describe("how this was worked out, in the panel", () => {
     expect(table.querySelectorAll("tbody tr")).toHaveLength(20);
     expect(table.querySelector("caption")!.textContent).toBe("Showing 20 of 45 rows");
     expect(table.querySelector("tbody td:nth-child(3)")!.textContent).toBe("5%");
-    expect(body.textContent).toContain("Saved answer, data as of");
+    expect(body.textContent).toContain("Saved answer · numbers read at");
     // The SQL and the table scroll inside their own boxes.
     const css = document.getElementById("lpc-css")!.textContent!;
     expect(css).toMatch(/\.lpc-ex pre\{[^}]*overflow:auto[^}]*white-space:pre/);

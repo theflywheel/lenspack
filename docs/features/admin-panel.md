@@ -31,7 +31,7 @@ It has eight tabs, in English and French, in light and dark, and it works at pho
 | **Proposals** | The review's proposed changes, each with why and the questions it would fix. Accept, edit then accept, or reject. |
 | **Definitions** | What admins have added to the pack: the entries, how much of their size budget they use, undo, and the full history with restore. The pack's own instructions are shown read-only beside them. |
 | **Telemetry** | A checklist of every signal Lenspack can record for this deployment (see [What is recorded](#what-is-recorded)). |
-| **Cache** | [Saved answers](saved-answers.md): how many questions they answered and what they saved, each entry with pin, unpin and evict, the last refresh with a **Refresh now** button, the most-asked questions per board, chart candidates and settled boards. A server that keeps none says caching is not enabled. |
+| **Cache** | [Saved answers](saved-answers.md): how many questions they answered and what they saved, each entry with pin, unpin and evict, the last refresh with a **Refresh now** button, the most-asked questions per board, chart candidates and settled boards, and **Clear saved answers**, which removes them all at once. With saved answers switched off it lists nothing and says how many are still kept, with the same button. A server that keeps none says caching is not enabled. |
 | **Settings** | Every switch, with where its value comes from (default, config file, environment, or set here). |
 
 ## Usage is a board

@@ -16,13 +16,15 @@ answers, as it always did.
 | **1. Exact replay** | The same question (ignoring case, punctuation, spacing and how numbers are written) was answered in the last few minutes on the same day | Sends the saved reply as it is. The data has not had time to change. | none |
 | **2. Plan replay** | The same question, answered earlier | Runs the saved queries again on the current data. If every number in the saved reply can be traced to one place in the results, and the results still have the same rows in the same order, today's numbers are put into the reply in the same format. Otherwise one small model call rewrites the reply from the fresh results. | none, or one small call |
 | **3. Slots** | The same question about another place, product or time ("in Portugal" instead of "in Spain", "last week" instead of "today") | Swaps the value into the saved queries, checks that the value exists in the data, and runs them. The reply is filled in as in tier 2. A different time period always goes to the small model, because the dates in the reply change. | none, or one small call |
-| **4. Router** | A question in different words, or another language | One small model call sees the new question and the eight saved questions most like it, and says which one (if any) would answer it exactly as asked, and with which place or time. A match is run as in tier 3. "No match" goes to the full assistant. | one small call |
+| **4. Router** | A question in different words, or another language | One small model call sees the new question and the eight saved answers most like it, and says which one (if any) would answer it exactly as asked, and with which place or time. A match is run as in tier 3. "No match" goes to the full assistant. Only answers are offered: a saved change to a board is never made on the small model's say-so. | one small call |
 
 **Suggested questions.** A pack can list example questions with the query someone checked for each (`examples:` in the
 pack file); the chat offers them as suggestion chips. When one of those questions is asked and nothing is saved for it
 yet, its checked query is run directly, under the asking person's access, and the small model says the result in one to
 three sentences (with no model at hand, a plain line such as "orders today: 1,204." does). That answer is then kept like
-any other, so the next ask is tier 1 or 2.
+any other, so the next ask is tier 1 or 2. An example written in several languages (in Superset, `question: { en: …,
+fr: … }`) runs the same checked query whichever language's chip is clicked: the pack keeps the other languages as the
+example's `wordings`.
 
 The small model is the deployment's `router` role if one is set, otherwise a Haiku model if one is configured, otherwise
 the main model. On Haiku 5.5 a router or rewrite call costs a few hundredths of a cent.
@@ -31,8 +33,9 @@ the main model. On Haiku 5.5 a router or rewrite call costs a few hundredths of 
 
 Only answers that went well are saved:
 
-- the turn finished without an error and was not refused, and at least one of its data queries worked (a turn whose
-  queries were all refused or failed is not kept, so a refusal or an outage is never replayed);
+- the turn finished without an error and was not refused, and at least one of its data queries worked. A turn that
+  ran no query (a reply in the model's own words, an explanation, an "I can't") is not kept, nor is one whose queries
+  were all refused or failed, so a refusal or an outage is never replayed;
 - if the reviewer checked it, the reviewer accepted it (a turn whose finding was fixed or left the board as it was is
   not saved);
 - the turn only read data (a turn that also changed the board is saved as an edit, below, not as an answer);
@@ -93,10 +96,16 @@ And it expires:
   are never older than that window. We chose this over watching the data source for changes: Superset's "last changed"
   time tracks a dataset's definition, not its rows, and asking a source for its latest row costs about as much as
   running the queries.
-- **on request.** "Ask fresh" (below), or an admin evicting it.
+- **on request.** "Ask fresh" (below), an admin evicting it, or an admin clearing them all.
+- **at start, when it can no longer match.** A saved answer kept under an earlier pack (a changed `scope:` or excluded
+  field included), earlier definitions, an earlier version of the assistant's instructions or its name, or other
+  language rules is never served again, so it is dropped when the server starts, and is never refreshed. Answers with no
+  query behind them, kept by earlier versions, go too.
 
 The store holds at most `maxEntries` entries (500 by default). When it is full, the entry used longest ago goes first.
-Pinned entries are kept. It is kept in `reuse.json` in the deployment's state directory and survives restarts.
+Pinned entries are kept. It is kept in `reuse.json` in the deployment's state directory and survives restarts. The file
+holds people's questions, the replies and the rows that answered them (no user names), so only the server's own user can
+read it (file mode 600, like the audit log; a file written by an earlier version is put right at start).
 
 ## Why we never cross access scopes
 
@@ -112,9 +121,12 @@ see every board.
 
 A reply from a saved answer looks like any other, with one line under it:
 
-> Saved answer, data as of 09:41 · **Ask fresh**
+> Saved answer · numbers read at 09:41 · **Ask fresh**
 
-- The time is when the numbers were read. For tier 2 and later, that is now.
+- The time is when the numbers were read from the source. For tier 2 and later, that is now. It is not how recent the
+  source's data is: a source loaded yesterday read at 09:41 says 09:41.
+- Its tooltip says what ran: nothing at all (tier 1: the same answer as a few minutes ago), the queries again with no
+  model, or the queries again with a small model that matched the question or worded the reply.
 - For a change to the board, the line reads "Saved change, made as before".
 - **Ask fresh** sends the same question to the full assistant, whatever is saved. Its answer replaces the saved one.
 - The query steps still appear, with their results, so the person can see where the numbers came from.
@@ -127,19 +139,26 @@ This appears in both chat panels: the one inside Superset and the one in the boa
 
 Every turn served this way is written to the audit log as a `chat-turn` with `builder: "saved answer"` and `reuse: {
 tier, entry, savedUsd, dataAsOf, how }`. Here `how` says whether the reply was swapped by template or rewritten, and
-why.
+why. The reply's `data-reuse` part carries `model` when a small model was used, which the tooltip reads.
 
 ## The switches
 
 - **The `cache` feature** (on by default) turns the whole thing on or off, like the other feature switches:
   `LENSPACK_FEATURES=-cache`, or on the admin settings page. On by default because nothing is served that was not
-  checked first, every number is read again after a few minutes, and the person can always ask fresh.
+  checked first, every number is read again after a few minutes, and the person can always ask fresh. Off (or
+  `enabled: false`), nothing else happens either: no answer is served or kept, no suggestion chip comes from a saved
+  question (the pack's own examples still show), the admin page lists no entry, suggestion, chart candidate or settled
+  board, board edits are not counted, and nothing is refreshed.
+- **Switching off does not delete the file.** What was saved stays in `reuse.json` until it expires, so switching back on
+  picks up where it was. To remove it, an admin uses **Clear saved answers** on the Cache tab (`POST
+  <prefix>/cache/clear`), which works whether saved answers are on or off, empties the file at once and is written to the
+  audit log. With saved answers off, the Cache tab shows how many are still kept and the button.
 - **Settings** under `cache` in the admin settings (`PUT <prefix>/settings/cache`, or `cache:` in the deployment
   config):
 
 | setting | default | |
 |---|---|---|
-| `enabled` | `true` | `false` keeps the store but serves nothing from it |
+| `enabled` | `true` | `false` keeps the store but serves, keeps, suggests and refreshes nothing from it |
 | `ttlHours` | `168` | how long an entry lives, in hours (1 to 2,160, which is 90 days) |
 | `router` | `"on"` | `"off"`: no small-model matching, so only exact and slotted questions are served (tiers 1 to 3) |
 | `maxEntries` | `500` | how many entries are kept (10 to 20,000) |

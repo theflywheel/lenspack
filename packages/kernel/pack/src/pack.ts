@@ -237,7 +237,16 @@ export const packSchema = z.object({
   // into every turn's prompt, so both are bounded.
   instructions: z.string().max(2000).optional(),
   examples: z
-    .array(z.object({ question: z.string().min(1).max(200), query: querySchema, note: z.string().max(200).optional() }))
+    .array(
+      z.object({
+        question: z.string().min(1).max(200),
+        query: querySchema,
+        note: z.string().max(200).optional(),
+        // The same question in other words or languages (a chip's translations): answered by the same query.
+        // Only the question is shown to the model; these are matched when someone asks one of them.
+        wordings: z.array(z.string().min(1).max(200)).max(10).optional(),
+      }),
+    )
     .max(12)
     .default([]),
 });
