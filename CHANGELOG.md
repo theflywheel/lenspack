@@ -11,6 +11,14 @@ brought it.
 
 ### 26 November 2026
 
+- **Who is an admin, and who may use the assistant, are Lenspack's rules.** `auth.admins` says who gets the admin
+  pages and `auth.users` who may use the assistant at all. Both work the same for every sign-in, Superset included,
+  where they list Superset role names. Left out, nothing changes: admins are a role named `admin` (Superset's `Admin`
+  role under Superset), and everyone signed in may use the assistant. Under Superset, Lenspack no longer turns the
+  signed "Superset admin" flag straight into its admin role, and people the `users` rule leaves out see no Ask
+  button. Personal dashboards now need Superset's right to write dashboards, and an admin deletes only dashboards
+  made through Lenspack. Update `lenspack_superset.py` with the server. See [Rights](docs/access/rights.md) and
+  [Upgrading in Superset](docs/hosts/superset/upgrading.md#changes-that-need-attention).
 - **Saved layouts in Superset behave as expected.** Applying a layout fits it to the dashboard as it is now, so a
   chart removed in Superset is not brought back, and Undo after an apply goes back to the right version. Charts made
   in Superset that Lenspack can't redraw stay with their own dashboard: the panel says so when saving, the reply says

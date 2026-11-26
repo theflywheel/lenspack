@@ -19,14 +19,15 @@ named the caller.
 
 Inside Superset (`lenspack superset`) none of these kinds apply: Superset signs who is asking on every request, and that
 signed identity, with Superset's own dashboard rights, is the only sign-in there. It is an adapter of its own kind,
-`superset`, which gives a Superset admin the role `admin`. By default it also brings each user's Superset roles, dataset
+`superset`. Superset says who the user is and which Superset roles they hold; Lenspack's own `admins` and `users` rules
+read those roles (see [Rights](rights.md)). By default it also brings each user's Superset roles, dataset
 access, row-level security and the dashboards they may open. See [Who is asking](../hosts/superset/identity.md) and
 [Access inside Superset](superset.md).
 
 ### `password`
 
-For a deployment with no identity provider. There is one user, `admin`, with every right (editor, maintainer, usage) and
-the role `admin`, which pack rules can match. Lenspack keeps no other users and has no user management: for named
+For a deployment with no identity provider. There is one user, `admin`, with every right (editor, maintainer, usage,
+admin) and the role `admin`, which pack rules can match. It stays an admin whatever `admins:` says. Lenspack keeps no other users and has no user management: for named
 people, use `oidc` or a login proxy.
 
 ```yaml

@@ -1,7 +1,7 @@
 // People's own dashboards and saved layouts: who may make, copy and delete a dashboard, and save, apply,
 // rename and delete a layout. Pure functions of what the host says about the person and the dashboard (who
-// they are, their host user id, whether they are an admin, what the host lets them view and edit, who owns
-// a dashboard) and the deployment's switch and limits. The host acts through its own service account, so
+// they are, their host user id, whether they are an admin, whether the host lets them write dashboards at all,
+// what the host lets them view and edit, who owns a dashboard) and the deployment's switch and limits. The host acts through its own service account, so
 // these decisions are the only thing between a person and a dashboard that isn't theirs: they never grant
 // more than the host does, and a missing fact counts as "no".
 
@@ -13,21 +13,26 @@ import { adminRights } from "./index";
 
 /**
  * Who is asking, as the host signed it: their name, their roles (an admin is whoever adminRights() says) and
- * `userId`, the host's own id for them, needed to make a dashboard theirs there. `hostRoles` are the host's own
- * role names, which only telemetry records (they grant nothing here).
+ * `userId`, the host's own id for them, needed to make a dashboard theirs there. `writes`: the host lets them write
+ * dashboards at all (Superset: can_write on Dashboard); without it they make, copy, delete and apply nothing, as the
+ * host itself would refuse them. `hostRoles` are the host's own role names, which only telemetry records (they grant
+ * nothing here).
  */
-export type PersonalActor = { user: string; userId?: number | null; roles?: readonly string[]; hostRoles?: readonly string[] };
+export type PersonalActor = { user: string; userId?: number | null; roles?: readonly string[]; writes?: boolean; hostRoles?: readonly string[] };
 
 /** Admins as the rest of policy knows them (adminRights), so these rules and the settings pages agree. */
 const isAdmin = (who: Pick<PersonalActor, "roles">) => adminRights(who).administer;
 
-export type PersonalRefusal = "off" | "limit" | "no-user-id" | "no-view" | "no-edit" | "not-yours" | "not-own";
+export type PersonalRefusal = "off" | "limit" | "no-user-id" | "no-view" | "no-edit" | "no-write" | "not-yours" | "not-own";
 export type Verdict = { ok: true } | { ok: false; code: PersonalRefusal; why: string };
 
 const OK: Verdict = { ok: true };
 const no = (code: PersonalRefusal, why: string): Verdict => ({ ok: false, code, why });
 
 const OFF = no("off", "Personal dashboards and saved layouts are turned off on this deployment.");
+/** The host doesn't let them write dashboards at all; an admin role in Lenspack doesn't change that. */
+export const NO_WRITE_MESSAGE = "Your role lets you view dashboards but not make or change them, so nothing was made or changed. Whoever manages your access can give you a role that may.";
+const NO_WRITE = no("no-write", NO_WRITE_MESSAGE);
 const NO_ID = no("no-user-id", "Superset did not say who you are in a way Lenspack can give a dashboard to you (update lenspack_superset.py in Superset), so nothing was made.");
 
 function room(limits: PersonalLimits, owned: number): Verdict {
@@ -37,6 +42,7 @@ function room(limits: PersonalLimits, owned: number): Verdict {
 /** A new, blank dashboard of the person's own. */
 export function mayCreateDashboard(who: PersonalActor, limits: PersonalLimits, owned: number): Verdict {
   if (!limits.on) return OFF;
+  if (!who.writes) return NO_WRITE;
   if (!who.userId) return NO_ID;
   return room(limits, owned);
 }
@@ -45,19 +51,23 @@ export function mayCreateDashboard(who: PersonalActor, limits: PersonalLimits, o
 export function mayCopyDashboard(who: PersonalActor, limits: PersonalLimits, owned: number, source: { view: boolean }): Verdict {
   if (!limits.on) return OFF;
   if (!source.view) return no("no-view", "You can't view that dashboard in Superset, so it can't be copied for you.");
+  if (!who.writes) return NO_WRITE;
   if (!who.userId) return NO_ID;
   return room(limits, owned);
 }
 
 /**
- * Deleting a dashboard: its owner, or an admin. `owners` are the host's user ids for the dashboard's owners,
- * read from the host at the time; never anyone else's dashboard, whatever else they may edit.
+ * Deleting a dashboard: its owner, or an admin when it is a personal dashboard (one made or copied through Lenspack).
+ * `owners` are the host's user ids for the dashboard's owners, read from the host at the time. Lenspack's admin role
+ * comes from its own rule, not the host's, so it reaches only what Lenspack made: any other dashboard is its owners'
+ * to delete, in the host.
  */
-export function mayDeleteDashboard(who: PersonalActor, limits: PersonalLimits, dashboard: { owners: number[] }): Verdict {
+export function mayDeleteDashboard(who: PersonalActor, limits: PersonalLimits, dashboard: { owners: number[]; personal?: boolean }): Verdict {
   if (!limits.on) return OFF;
-  if (isAdmin(who)) return OK;
+  if (!who.writes) return NO_WRITE;
   if (who.userId && dashboard.owners.includes(who.userId)) return OK;
-  return no("not-yours", "That dashboard isn't yours, so it was not deleted. Only its owners and admins can delete it.");
+  if (dashboard.personal && isAdmin(who)) return OK;
+  return no("not-yours", dashboard.personal ? "That dashboard isn't yours, so it was not deleted. Only its owners and admins can delete it." : "That dashboard isn't yours, so it was not deleted. Only its owners can delete it.");
 }
 
 /** Saving a dashboard's layout under a name: any dashboard the person may view, up to the limit. */
@@ -82,6 +92,7 @@ export function mayManageLayout(who: PersonalActor, limits: PersonalLimits, layo
 export function mayApplyLayout(who: PersonalActor, limits: PersonalLimits, layout: { owner: string }, target: { edit: boolean }): Verdict {
   const mine = mayManageLayout(who, limits, layout);
   if (!mine.ok) return mine;
+  if (!who.writes) return NO_WRITE;
   return target.edit ? OK : no("no-edit", "You can't edit this dashboard, so the layout was not applied. Make your own copy of it first, then apply the layout there.");
 }
 

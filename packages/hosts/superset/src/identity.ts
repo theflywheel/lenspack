@@ -7,7 +7,9 @@
 // The rights on a dashboard hold for that dashboard only. Lenspack reads the board from its own
 // route (apiRoute, the parts the board API acts on) and refuses a request whose board is not the
 // one Superset signed for, so a path that names one dashboard to Superset and another to Lenspack
-// gets nowhere. The usage page and the settings go by the signed admin flag, never by a board right.
+// gets nowhere. The admin pages (settings, the admin panel, the audit log, the usage page) go by Lenspack's own
+// admins rule over the signed Superset role names (auth.admins, by default Superset's Admin role), never by a board
+// right and never by the signed admin flag itself.
 //
 // The signing key is derived from Superset's SECRET_KEY on the Superset side and handed to
 // Lenspack's service account on request, so neither side needs a second shared secret.
@@ -15,7 +17,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
-import { type Identity as Caller, type EditScopeFacts, NO_RIGHTS } from "@lenspack/policy";
+import { type Identity as Caller, type EditScopeFacts, type Rights } from "@lenspack/policy";
 import { type AuthAdapter, NO_STORE, apiRoute, json, withRights } from "@lenspack/serve";
 
 import type { HostPolicy } from "./access";
@@ -26,7 +28,10 @@ export const IDENTITY_HEADER = "x-lenspack-identity";
 export type Identity = {
   /** Superset username. */
   u: string;
-  /** Superset admin (may change Lenspack's settings and read the audit log). */
+  /**
+   * Superset admin. It counts only as Superset's own right to edit every dashboard (canEdit); Lenspack's admin pages
+   * go by the admins rule over `r` instead (supersetRights).
+   */
   a: boolean;
   /** The dashboard this request is about, when it is about one. */
   d?: number | null;
@@ -40,6 +45,11 @@ export type Identity = {
   v?: boolean;
   /** The user's Superset role names. */
   r?: string[];
+  /**
+   * Superset lets this user write dashboards at all (can_write on Dashboard, or admin): making, copying, deleting
+   * and laying out their own dashboards need it. Older plugins do not sign it; then only a Superset admin may.
+   */
+  w?: boolean;
   /** The user's Superset id, so a dashboard Lenspack makes for them can be theirs in Superset. Older plugins do not sign it. */
   i?: number;
   /** Signed at, unix seconds. */
@@ -89,6 +99,29 @@ export function editPolicyFrom(value: string | undefined): EditPolicy {
   throw new Error(`LENSPACK_EDIT_POLICY must be "superset" or "signed-in", not "${value}"`);
 }
 
+/**
+ * The role rules from superset.yaml's auth (admins, usage, users: lists of Superset role names) and the environment
+ * (LENSPACK_ADMIN_ROLES, LENSPACK_USAGE_ROLES, LENSPACK_USER_ROLES: comma-separated, and they win), checked.
+ * Superset signs people in, so auth takes nothing else.
+ */
+export function roleRulesFrom(auth: unknown, env: Record<string, string | undefined> = {}): SupersetRoleRules {
+  if (auth !== undefined && auth !== null && (typeof auth !== "object" || Array.isArray(auth))) throw new Error("auth must be a map, like auth: { admins: [Admin] }");
+  const given = (auth ?? {}) as Record<string, unknown>;
+  for (const k of Object.keys(given)) if (k !== "admins" && k !== "usage" && k !== "users") throw new Error(`auth.${k} is not a setting in Superset mode, where Superset signs people in: auth takes admins, usage and users (lists of Superset role names)`);
+  const list = (key: "admins" | "usage" | "users", envName: string): readonly string[] | undefined => {
+    const fromEnv = env[envName];
+    if (fromEnv !== undefined && fromEnv.trim() !== "") return fromEnv.split(",").map((r) => r.trim()).filter(Boolean);
+    const v = given[key];
+    if (v === undefined || v === null) return undefined;
+    if (!Array.isArray(v) || v.some((r) => typeof r !== "string" || !r.trim())) throw new Error(`auth.${key} must be a list of Superset role names, like [Admin]`);
+    return v.map((r: string) => r.trim());
+  };
+  const admins = list("admins", "LENSPACK_ADMIN_ROLES");
+  const usage = list("usage", "LENSPACK_USAGE_ROLES");
+  const users = list("users", "LENSPACK_USER_ROLES");
+  return { ...(admins ? { admins } : {}), ...(usage ? { usage } : {}), ...(users ? { users } : {}) };
+}
+
 /** The identity a request carries, or null. */
 export function identityOf(req: IncomingMessage, key: () => string | null): Identity | null {
   const k = key();
@@ -106,18 +139,43 @@ export function canEdit(id: Identity, policy: EditPolicy, editsOn = true): boole
   return editsOn && (policy === "signed-in" || id.a || id.e === true);
 }
 
+/** Superset roles that hold Lenspack's admin role when the config names none (auth.admins): Superset's own Admin. */
+export const DEFAULT_SUPERSET_ADMINS: readonly string[] = ["Admin"];
+
 /**
- * Who the signed identity is to lenspack. A Superset admin has the role admin (the settings page and the audit log)
- * and the usage right: the usage page names every user's spend, so it goes by the admin flag, never by a dashboard's
- * edit right.
+ * The user's Superset role names as signed. A plugin too old to sign them (no r) still signs the admin flag, which
+ * Superset sets for its Admin role: that counts as the role, so the default rule reads it as before.
+ */
+export const rolesOf = (id: Identity): string[] => (Array.isArray(id.r) ? id.r.filter((r): r is string => typeof r === "string") : id.a === true ? [...DEFAULT_SUPERSET_ADMINS] : []);
+
+/**
+ * Who holds Lenspack's admin role and the usage right, and who may use the assistant at all, under Superset, by
+ * Superset role name (superset.yaml auth).
+ */
+export type SupersetRoleRules = { admins?: readonly string[]; usage?: readonly string[]; users?: readonly string[] };
+
+/**
+ * Superset role names as Lenspack's rights by role: the admins rule (default Superset's Admin) and the usage right
+ * (who may see user names on the usage board; default the same roles as admins), and the users rule (who may use
+ * the assistant at all; default everyone signed in, and admins always). Edit rights stay Superset's own
+ * (editPolicy). A name may carry lenspack.yaml's "role:" prefix; it means the same.
+ */
+export function supersetRights(o: SupersetRoleRules = {}): Rights {
+  const asRoles = (names: readonly string[]) => names.map((n) => (n.startsWith("role:") ? n : `role:${n}`));
+  const admins = o.admins ?? DEFAULT_SUPERSET_ADMINS;
+  return { editors: [], maintainers: [], admins: asRoles(admins), usage: asRoles(o.usage ?? admins), ...(o.users ? { users: asRoles(o.users) } : {}) };
+}
+
+/**
+ * Who the signed identity is to lenspack: the user and their Superset role names, which the deployment's rights
+ * (supersetRights) read for the admin role and the usage right, and Superset's own edit right on the dashboard.
  */
 export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Caller {
-  const roles = id.a ? ["admin"] : [];
-  const usage = id.a === true;
-  if (!editsOn) return { user: id.u, roles, usage, readOnly: EDITS_OFF_MESSAGE };
-  if (canEdit(id, policy)) return { user: id.u, roles, usage, edit: true, maintain: true };
+  const roles = rolesOf(id);
+  if (!editsOn) return { user: id.u, roles, readOnly: EDITS_OFF_MESSAGE };
+  if (canEdit(id, policy)) return { user: id.u, roles, edit: true, maintain: true };
   // Asks are fine; every edit tool answers with the refusal, which the model passes on.
-  return { user: id.u, roles, usage, readOnly: READ_ONLY_MESSAGE };
+  return { user: id.u, roles, readOnly: READ_ONLY_MESSAGE };
 }
 
 /**
@@ -180,9 +238,11 @@ const decodePart = (s: string | undefined) => {
  * With a host policy (hostPolicy: superset), the user's own Superset roles, dataset access and row-level security
  * come with them, and policy narrows every query by those rather than by the service account's.
  */
-export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, extra?: CallerFacts): AuthAdapter {
+export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, extra?: CallerFacts, rights: Rights = supersetRights()): AuthAdapter {
   return {
     kind: "superset",
+    // Superset's role names, read by the deployment's role rules: the admin role and the usage right.
+    rights,
     handle: async (req, res) => {
       const id = identityOf(req, key);
       const refused = id ? boardCheck(id, req.url).refused : null;
@@ -206,8 +266,7 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
       const signed = check.onBoard ? signedBoard(id) : null;
       const fromHost = access.hiddenBoards?.filter((b) => b !== signed);
       const hiddenBoards = fromHost || ownHidden.length ? [...(fromHost ?? []), ...ownHidden] : undefined;
-      // "admin" stays the signed admin flag's: a Superset role of that name grants nothing here.
-      return { ...caller, roles: [...(caller.roles ?? []), ...(id.r ?? []).filter((r) => r !== "admin")], ...access, ...(hiddenBoards ? { hiddenBoards } : {}) };
+      return { ...caller, ...access, ...(hiddenBoards ? { hiddenBoards } : {}) };
     },
   };
 }
@@ -225,4 +284,4 @@ export function hostPolicyFrom(value: string | undefined): "superset" | "off" {
 }
 
 /** The same as an access hook, for createApp without the runtime. */
-export const supersetAccess = (key: () => string | null, policy: EditPolicy, editsOn?: () => boolean) => withRights(supersetAuth(key, policy, editsOn), NO_RIGHTS);
+export const supersetAccess = (key: () => string | null, policy: EditPolicy, editsOn?: () => boolean, rights: Rights = supersetRights()) => withRights(supersetAuth(key, policy, editsOn, undefined, undefined, rights), rights);

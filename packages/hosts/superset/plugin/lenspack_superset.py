@@ -6,7 +6,7 @@ Load it at the end of superset_config.py (on the Helm chart: a configOverrides e
 
 It adds:
   - /lenspack/...: Superset itself forwards these requests to the Lenspack container, for signed-in users
-    only, with a signed header saying who is asking, whether they are an admin, and whether Superset would
+    only, with a signed header saying who is asking, their role names, whether they are an admin, and whether Superset would
     let them view and edit the dashboard the request is about. The dashboard is read from the path the way
     Lenspack reads it (api/<pack>/superset-<id>/...), the header names that board and pack, and a path with a
     "." or ".." segment or an encoded slash is refused. Chat replies stream through unbuffered. Pages Lenspack
@@ -14,7 +14,8 @@ It adds:
     default policy needs before a browser runs them.
     Lenspack trusts nothing else, so its port never needs to be reachable from outside.
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
-  - Settings → Manage → "AI assistant" (admins): models, languages, spend, the audit log, and a link to Lenspack's own
+  - Settings → Manage → "AI assistant" (Superset admins whom Lenspack's admins rule also names; Lenspack refuses the
+    page for anyone else): models, languages, spend, the audit log, and a link to Lenspack's own
     admin panel (/lenspack/_superset/admin/: a board of how the assistant is used, the daily review, open questions, definitions). On Superset 6, whose pages
     are all drawn by its frontend, this page has a layout of its own that follows Superset's light or dark theme;
     on Superset 5 it sits in Superset's server-drawn layout;
@@ -150,8 +151,11 @@ def lenspack_identity_key() -> str:
     return hmac.new(secret.encode() if isinstance(secret, str) else secret, b"lenspack-identity-v1", hashlib.sha256).hexdigest()
 
 
-def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None, pack=None, user_id=None) -> str:
+def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_view=None, roles=None, pack=None, user_id=None, can_write=None) -> str:
     claims = {"u": user, "a": bool(admin), "t": int(time.time())}
+    if can_write is not None:
+        # w: Superset lets this user write dashboards at all; Lenspack makes, copies and changes their own only with it.
+        claims["w"] = bool(can_write)
     if isinstance(user_id, int) and not isinstance(user_id, bool) and user_id > 0:
         # i: the user's Superset id, so a dashboard Lenspack makes for them can be theirs in Superset.
         claims["i"] = user_id
@@ -413,8 +417,9 @@ def lenspack_app_mutator(app):
             return jsonify({"error": "You don't have access to this dashboard in Superset."}), 403
         admin = is_admin(user)
         roles = role_names(user)
+        can_write = admin or bool(security_manager.can_access("can_write", "Dashboard"))
         headers = {
-            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"], user_id=getattr(user, "id", None)) if rights else lenspack_sign(user.username, admin, roles=roles, user_id=getattr(user, "id", None)),
+            "x-lenspack-identity": lenspack_sign(user.username, admin, rights["id"], rights["edit"], rights["view"], roles, pack=route["pack"], user_id=getattr(user, "id", None), can_write=can_write) if rights else lenspack_sign(user.username, admin, roles=roles, user_id=getattr(user, "id", None), can_write=can_write),
             "x-forwarded-proto": request.scheme,
             "x-forwarded-host": request.host,
             "x-forwarded-prefix": LENSPACK_PATH,
@@ -564,8 +569,11 @@ def lenspack_app_mutator(app):
     app.add_url_rule("/api/v1/lenspack/bootstrap", "lenspack_bootstrap", bootstrap_view, methods=["POST"])
 
     # --- Settings → Manage → AI assistant ---------------------------------------------------------------
-    def call(method, path, body=None):
-        """Lenspack's settings API, as the signed-in admin."""
+    class Refused(Exception):
+        """Lenspack said no (403): its admins rule (auth.admins in superset.yaml) does not name this user's roles."""
+
+    def call(method, path, body=None, refuse=False):
+        """Lenspack's settings API, as the signed-in admin. refuse: raise Refused when Lenspack answers 403."""
         req = urllib.request.Request(
             LENSPACK_INTERNAL_URL + path,
             data=json.dumps(body).encode() if body is not None else None,
@@ -576,6 +584,8 @@ def lenspack_app_mutator(app):
             with urllib.request.urlopen(req, timeout=10) as r:
                 return json.load(r), None
         except urllib.error.HTTPError as e:
+            if refuse and e.code == 403:
+                raise Refused() from None
             try:
                 return None, json.load(e).get("error") or f"HTTP {e.code}"
             except Exception:
@@ -601,7 +611,11 @@ def lenspack_app_mutator(app):
                 abort(403)
             from superset.models.core import Database
 
-            settings, settings_error = call("GET", "/_superset/settings")
+            # Lenspack decides who its admins are: a Superset admin its admins rule does not name gets no page.
+            try:
+                settings, settings_error = call("GET", "/_superset/settings", refuse=True)
+            except Refused:
+                abort(403)
             stt_models = None
             if settings and settings.get("speech"):
                 stt_models, _ = call("GET", "/_superset/settings/speech/models")
@@ -838,7 +852,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What Lenspack runs 
 
   <div class="lp-card">
     <h2>{{ lp_named.get('name') or 'Lenspack' }} admin panel</h2>
-    <p class="mute" style="margin:0 0 8px">How people use the assistant each day, the daily review and its proposed fixes, open questions about definitions, the definitions you have added, and every switch. Served by Lenspack itself, for Superset admins.</p>
+    <p class="mute" style="margin:0 0 8px">How people use the assistant each day, the daily review and its proposed fixes, open questions about definitions, the definitions you have added, and every switch. Served by Lenspack itself, for its admins.</p>
     <p style="margin:0"><a href="{{ lenspack_path }}/_superset/admin/" target="_blank" rel="noopener">Open the admin panel</a></p>
   </div>
 

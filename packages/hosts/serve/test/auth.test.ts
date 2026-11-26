@@ -9,7 +9,9 @@ import { openDuckdb } from "@lenspack/sql/duckdb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { seed } from "../../../../examples/campaign/seed";
-import { type AuditEvent, type Principal, accessFrom, authSchema, createApp, openConfig, readConfig, seedBoards } from "../src";
+import { adminRights, mayUse } from "@lenspack/policy";
+
+import { type AuditEvent, type Principal, accessFrom, authFrom, authSchema, createApp, openConfig, principalOf, readConfig, seedBoards } from "../src";
 
 // Who may see and change what: the access hook, the row scope it carries into
 // every query, and the audit trail of changes and denials.
@@ -38,6 +40,7 @@ describe("serve with sign-in", () => {
     village: { user: "village", scope: [{ dimension: "village", op: "eq", value: "nowhere" }] },
     elsewhere: { user: "elsewhere", packs: ["another"] },
     elsewhere_b: { user: "eve", tenant: "b", packs: ["campaign"] },
+    switched_off: { user: "sam", edit: true, uses: false },
   };
   const access = (req: IncomingMessage) => people[String(req.headers["x-user"] ?? "")] ?? null;
   const call = async (who: string | null, path: string, init: RequestInit = {}) => {
@@ -70,6 +73,14 @@ describe("serve with sign-in", () => {
   it("turns away a caller the deployment does not know", async () => {
     expect((await call(null, "")).status).toBe(401);
     expect((await call("stranger", "/campaign/overview/data")).status).toBe(401);
+  });
+
+  it("refuses everything to a caller the users rule leaves out, with a plain message", async () => {
+    for (const [path, method] of [["", "GET"], ["/campaign", "GET"], ["/campaign/overview", "GET"], ["/campaign/overview/data", "GET"], ["/campaign/overview/chat", "POST"], ["/campaign/boards", "POST"], ["/_usage", "GET"]] as const) {
+      const r = await call("switched_off", path, method === "POST" ? { method, body: "{}" } : {});
+      expect([path, r.status, r.body.code]).toEqual([path, 403, "not-turned-on"]);
+      expect(r.body.error).toMatch(/isn't turned on for your account/);
+    }
   });
 
   it("lets a viewer read but not change a board, and records the attempt", async () => {
@@ -205,5 +216,44 @@ describe("sign-in from lenspack.yaml", () => {
     expect(await with_("role:admins", "")).toEqual({ user: "role:admins", roles: [], edit: false, usage: false });
     expect(await with_("kofi", "staff, admins")).toMatchObject({ roles: ["staff", "admins"], maintain: true });
     expect(() => accessFrom(authSchema.parse({ kind: "proxy", secret: "short" }))).toThrow(/16 characters/);
+  });
+
+  it("gives the admin role by the admins rule, the same for every kind; absent, a role named admin", async () => {
+    const admin = (p: Principal | null) => !!p && adminRights(p).administer;
+    const secret = "s".repeat(32);
+    const proxy = (rule: object) => accessFrom(authSchema.parse({ kind: "proxy", secret, rolesHeader: "x-forwarded-groups", ...rule }))!;
+    const as = (access: ReturnType<typeof proxy>, user: string, groups: string) => access(req({ "x-lenspack-proxy-secret": secret, "x-forwarded-user": user, "x-forwarded-groups": groups }));
+    // Absent: a group named admin, as before; nothing else.
+    expect(admin(await as(proxy({}), "kofi", "admin"))).toBe(true);
+    expect(admin(await as(proxy({}), "ama", "lens-admins"))).toBe(false);
+    // Named: the rule's role or user, and a group that happens to be called admin no longer counts.
+    const ruled = proxy({ admins: ["role:lens-admins", "ops-lead"] });
+    expect(admin(await as(ruled, "ama", "staff, lens-admins"))).toBe(true);
+    expect(admin(await as(ruled, "ops-lead", ""))).toBe(true);
+    expect(await as(ruled, "kofi", "admin")).toMatchObject({ roles: [], edit: false });
+    expect(admin(await as(ruled, "kofi", "admin"))).toBe(false);
+    // Tokens: the same rule over a token's roles.
+    const tokens = accessFrom(authSchema.parse({ kind: "tokens", users: [{ user: "ci", token: "t-ci", roles: ["lens-admins"] }, { user: "old", token: "t-old", roles: ["admin"] }], admins: ["role:lens-admins"] }))!;
+    expect(admin(await tokens(req({ authorization: "Bearer t-ci" })))).toBe(true);
+    expect(admin(await tokens(req({ authorization: "Bearer t-old" })))).toBe(false);
+    // OpenID Connect takes the key like the others.
+    expect(authSchema.parse({ kind: "oidc", issuer: "https://idp.example.com", clientId: "c", baseUrl: "https://lens.example.com", sessionSecret: "x".repeat(32), admins: ["role:lens-admins"] })).toMatchObject({ admins: ["role:lens-admins"] });
+    // Password: the built-in admin stays an admin whatever the rule names.
+    const dir = mkdtempSync(join(tmpdir(), "lenspack-admins-"));
+    const { rights } = authFrom(authSchema.parse({ kind: "password", password: "a-long-enough-password", dir, admins: ["role:lens-admins"] }));
+    expect(admin(principalOf({ user: "admin", roles: ["admin"], edit: true, maintain: true, usage: true }, rights))).toBe(true);
+    expect(rights.admins).toEqual(["role:lens-admins", "admin"]);
+    expect(authFrom(authSchema.parse({ kind: "password", password: "a-long-enough-password", dir })).rights.admins).toEqual(["role:admin", "admin"]);
+  });
+
+  it("switches the assistant on per person by the users rule; absent, for everyone; admins always", async () => {
+    const secret = "s".repeat(32);
+    const proxy = (rule: object) => accessFrom(authSchema.parse({ kind: "proxy", secret, rolesHeader: "x-forwarded-groups", ...rule }))!;
+    const as = async (access: ReturnType<typeof proxy>, user: string, groups: string) => mayUse((await access(req({ "x-lenspack-proxy-secret": secret, "x-forwarded-user": user, "x-forwarded-groups": groups })))!);
+    expect(await as(proxy({}), "ama", "")).toBe(true);
+    const ruled = proxy({ users: ["role:lens-users"], admins: ["role:lens-admins"] });
+    expect(await as(ruled, "ama", "staff")).toBe(false);
+    expect(await as(ruled, "bo", "staff, lens-users")).toBe(true);
+    expect(await as(ruled, "kofi", "lens-admins")).toBe(true);
   });
 });
