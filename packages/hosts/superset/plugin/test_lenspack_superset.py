@@ -55,6 +55,14 @@ class RlsClauses(unittest.TestCase):
         self.assertEqual(rendered, ["a = 1", "(r = 'x') OR (r = 'y')", "t = 2"])
 
 
+class StampNonce(unittest.TestCase):
+    def test_adds_the_nonce_to_script_tags_only(self):
+        page = b'<script src="a.js"></script><Script>x()</Script><scripts><script nonce="n0"></script><script/>'
+        self.assertEqual(lp.lenspack_stamp_nonce(page, "n1"), b'<script nonce="n1" src="a.js"></script><Script nonce="n1">x()</Script><scripts><script nonce="n0"></script><script nonce="n1"/>')
+        self.assertEqual(lp.lenspack_stamp_nonce(page, ""), page)
+        self.assertEqual(lp.lenspack_stamp_nonce(b"<script>", 'a"b'), b'<script nonce="a&quot;b">')
+
+
 class Route(unittest.TestCase):
     """lenspack_route gets the path as Flask hands it over: decoded once, so %2e%2e is already "..", %2f is "/",
     and a doubly encoded %252e is "%2e"."""
@@ -128,8 +136,9 @@ class ProxyEndpoint(unittest.TestCase):
     def tearDownClass(cls):
         cls.ctx.pop()
 
-    def send(self, method, path, **kw):
-        """The response, and the (url, claims) forwarded to Lenspack, or None when nothing was forwarded."""
+    def send(self, method, path, upstream=("application/json", [b"{}"]), **kw):
+        """The response, and the (url, claims) forwarded to Lenspack, or None when nothing was forwarded. Lenspack
+        answers with upstream: (content type, the chunks of its body)."""
         import base64
         import json
         from unittest import mock
@@ -139,7 +148,7 @@ class ProxyEndpoint(unittest.TestCase):
         def fake(method_, url, **kwargs):
             body = kwargs["headers"]["x-lenspack-identity"].split(".")[0]
             forwarded.append((url, json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))))
-            return mock.Mock(status_code=200, headers={"content-type": "application/json"}, iter_content=lambda chunk_size=None: iter([b"{}"]), close=lambda: None)
+            return mock.Mock(status_code=200, headers={"content-type": upstream[0]}, iter_content=lambda chunk_size=None: iter(upstream[1]), close=lambda: None)
 
         with mock.patch("requests.request", side_effect=fake):
             r = self.client.open(path, method=method, **kw)
@@ -196,6 +205,51 @@ class ProxyEndpoint(unittest.TestCase):
         self.assertEqual((claims["d"], claims["e"]), (self.other, False))
         _, (_, claims) = self.send("GET", "/lenspack/_superset/bind", query_string={"dashboard": str(self.other)})
         self.assertEqual((claims["d"], claims["e"]), (self.other, False))
+
+    # A page as Lenspack serves one: scripts by src and inline, in any case, one that has a nonce already, and
+    # look-alikes that are not script tags.
+    PAGE = [b'<!doctype html><title>x</title><link rel="stylesheet" href="panel.css">\n<script>/*vars*/</script>\n',
+            b'<SCRIPT src="checklist.js"></SCRIPT>\n<script\tsrc="panel.js" defer></script>\n<script nonce="theirs">1</script>\n',
+            b'<scripts></scripts><p data-x="<script">text</p><script data-nonce="x" src="a.js"></script>']
+
+    @staticmethod
+    def nonce_of(response):
+        import re
+
+        m = re.search(r"'nonce-([^']+)'", response.headers.get("Content-Security-Policy", ""))
+        return m.group(1) if m else None
+
+    def test_a_page_s_scripts_get_the_request_s_nonce(self):
+        if not self.app.config.get("TALISMAN_ENABLED"):
+            self.skipTest("Talisman is off in this config")
+        r, _ = self.send("GET", "/lenspack/_superset/admin/", upstream=("text/html; charset=utf-8", self.PAGE))
+        self.assertEqual(r.status_code, 200)
+        nonce = self.nonce_of(r)
+        self.assertTrue(nonce, r.headers.get("Content-Security-Policy"))
+        html = r.get_data(as_text=True)
+        self.assertEqual(html, b"".join(self.PAGE).decode().replace("<script>", f'<script nonce="{nonce}">').replace("<SCRIPT src", f'<SCRIPT nonce="{nonce}" src').replace("<script\tsrc", f'<script nonce="{nonce}"\tsrc').replace("<script data-nonce", f'<script nonce="{nonce}" data-nonce'))
+        self.assertIn('<script nonce="theirs">', html)
+        self.assertEqual(int(r.headers["Content-Length"]), len(r.get_data()))
+
+    def test_anything_else_streams_through_untouched(self):
+        body = [b'{"html": "<script src=x>', b'</script>"}']
+        r, _ = self.send("GET", "/lenspack/_superset/dashboards", upstream=("application/json", body))
+        self.assertEqual(r.get_data(), b"".join(body))
+        r, _ = self.send("POST", "/lenspack/api/hcm/chat", upstream=("text/event-stream", [b"data: <script>\n\n"]), json={})
+        self.assertEqual(r.get_data(), b"data: <script>\n\n")
+        self.assertNotIn("Content-Length", r.headers)  # streamed as it came, not read whole
+
+    def test_without_a_nonce_a_page_is_untouched(self):
+        # As with Talisman off: no Content-Security-Policy, so no nonce to add.
+        # Talisman reads a view's own options from the view function, per request.
+        view = self.app.view_functions["lenspack_proxy"]
+        view.talisman_view_options = {"content_security_policy": None}
+        try:
+            r, _ = self.send("GET", "/lenspack/_superset/admin/", upstream=("text/html", self.PAGE))
+        finally:
+            del view.talisman_view_options
+        self.assertIsNone(self.nonce_of(r))
+        self.assertEqual(r.get_data(), b"".join(self.PAGE))
 
 
 class AccessEndpoint(unittest.TestCase):

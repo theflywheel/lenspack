@@ -225,7 +225,7 @@ All four are in the Settings tab and in `LENSPACK_FEATURES`, for example `LENSPA
 
 ## Setting it up
 
-**Superset.** Nothing to add. The state directory the host already uses holds the definitions, questions, runs and usage tables. Open the Lenspack settings page in Superset and follow the link to the admin panel.
+**Superset.** Nothing to add. The state directory the host already uses holds the definitions, questions, runs and usage tables. Open the Lenspack settings page in Superset and follow the link to the admin panel. The panel works with Superset's default Content-Security-Policy: the plugin stamps the page's nonce on its scripts.
 
 **Standalone server.** Add a writable directory to `lenspack.yaml`:
 

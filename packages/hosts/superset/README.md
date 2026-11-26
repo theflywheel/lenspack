@@ -82,7 +82,8 @@ What is different between the two, as far as Lenspack is concerned:
 Everything else Lenspack uses is the same on both: the chart-data requests and their post-processing steps,
 the chart settings for every chart type it writes, native filters, dashboard layouts, row-level security and
 dataset permissions, and the content security policy (the button's script carries the page's nonce, which
-Superset 6.1's stricter policy requires). Flask-AppBuilder's shared-filter fault (below) is still there in
+Superset 6.1's stricter policy requires). Lenspack's admin panel works with Superset's default
+Content-Security-Policy too: the plugin stamps the page's nonce on the panel's scripts as it passes the page on. Flask-AppBuilder's shared-filter fault (below) is still there in
 Superset 6.1, so the plugin keeps its fix.
 
 **ClickHouse column names on Superset 6.1.** Up to 6.0, Superset gave every column in a ClickHouse query a short
