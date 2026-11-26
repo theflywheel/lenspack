@@ -9,7 +9,7 @@ import { dirname, resolve } from "node:path";
 
 import { type BoardConfig, memoryStore } from "@lenspack/core";
 import { type Connector, type WidgetData, run } from "@lenspack/engine";
-import { type Host, type Provider, createApp, resolveSecrets, usageLedger } from "@lenspack/serve";
+import { type Host, type Identity, type Provider, createApp, resolveSecrets, usageLedger } from "@lenspack/serve";
 import type { Pack } from "@lenspack/pack";
 import type { UIMessage, UIMessageChunk } from "ai";
 import { readUIMessageStream } from "ai";
@@ -24,6 +24,11 @@ export type Rig = {
   seed: BoardConfig | null;
   /** Runs a truth query, when the rig owns its database (the in-repo examples). */
   sql?: (sql: string) => Promise<Record<string, unknown>[]>;
+  /**
+   * Who the turns run as, when the host applies Superset's access (hostPolicy: superset, or --as-user): the
+   * user's Superset dataset access and row-level security narrow every turn, as the Superset host does it.
+   */
+  user?: { name: string; identity: () => Promise<Identity> };
   close: () => Promise<void>;
 };
 
@@ -31,6 +36,7 @@ export type Rig = {
 
 type SupersetConfig = {
   superset: { url: string; username: string; passwordEnv?: string; password?: string };
+  hostPolicy?: string;
   datasets: (number | string)[];
   overlay?: Record<string, unknown>;
 };
@@ -41,7 +47,7 @@ type SupersetConfig = {
  * board is read from a dashboard once and cached, so later runs start from the
  * same board even if the dashboard changes.
  */
-export async function supersetRig(configPath: string, opts: { dashboard?: number; boardCache?: string; now?: Date; supersetUrl?: string }): Promise<Rig> {
+export async function supersetRig(configPath: string, opts: { dashboard?: number; boardCache?: string; now?: Date; supersetUrl?: string; asUser?: string }): Promise<Rig> {
   const sup = await import("@lenspack/superset");
   const raw = YAML.parse(readFileSync(configPath, "utf8")) as SupersetConfig & { superset: { url: unknown } };
   // The deployment's url is usually a compose hostname; the runner may reach Superset elsewhere.
@@ -65,7 +71,22 @@ export async function supersetRig(configPath: string, opts: { dashboard?: number
     for (const n of made.notes) console.error(`seed board: ${n}`);
   }
   const host: Host = { name: pack.pack, pack, packYaml, connector, store: memoryStore(), ctx: opts.now ? { now: opts.now } : {}, boards: [] };
-  return { host, seed, close: async () => {} };
+  // The deployment's host policy, read as the Superset host reads it (env first). --as-user implies it: the turns
+  // run as that Superset user, asked through the service account, as the host asks for a signed-in user.
+  const policy = opts.asUser ? "superset" : sup.hostPolicyFrom(process.env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
+  if (policy !== "superset") return { host, seed, close: async () => {} };
+  const name = opts.asUser ?? config.superset.username;
+  const lookup = sup.supersetPolicy({ client, binding, log: (s: string) => console.error(`host policy: ${s}`) });
+  // Edits stay allowed: the suite tests edits, and the Superset host's edit policy is a separate setting.
+  const identity = async (): Promise<Identity> => ({ user: name, edit: true, maintain: true, ...(await lookup(name, undefined)) });
+  const first = await identity();
+  const total = Object.keys(pack.entities).length;
+  // A mistyped user (or one with no access at all) would score every question as a refusal: stop instead.
+  if ((first.hiddenEntities?.length ?? 0) >= total) throw new Error(`host policy: ${name} may read none of the ${total} datasets (an unknown user, or no dataset access); nothing to evaluate`);
+  if (first.hiddenEntities?.length || first.scope?.length) {
+    console.error(`host policy: ${name} sees ${total - (first.hiddenEntities?.length ?? 0)} of ${total} datasets; ${first.scope?.length ?? 0} row filter(s)`);
+  }
+  return { host, seed, user: { name, identity }, close: async () => {} };
 }
 
 // ── In-repo examples on DuckDB ───────────────────────────────────────────
@@ -104,7 +125,8 @@ export type Server2 = { base: string; close: () => Promise<void>; providers: Pro
 
 export async function serve(rig: Rig, providers: Provider[]): Promise<Server2> {
   const ledger = usageLedger();
-  const server: Server = createServer(createApp([rig.host], { providers, ledger }));
+  const user = rig.user;
+  const server: Server = createServer(createApp([rig.host], { providers, ledger, ...(user ? { access: () => user.identity() } : {}) }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/${rig.host.name}`;
   return { base, providers, close: () => new Promise((r) => server.close(() => r())) };
