@@ -181,7 +181,7 @@ describe("Superset mode's server", () => {
     const r = await call("/_superset/info?lang=fr", { as: VIEWER });
     expect(r.status).toBe(200);
     expect(r.headers.get("cache-control")).toBe("no-store");
-    expect(Object.keys(r.body).sort()).toEqual(["brand", "examples", "examplesByLang", "features", "language", "pack", "panel", "speech", "supersetRoot"]);
+    expect(Object.keys(r.body).sort()).toEqual(["admin", "brand", "examples", "examplesByLang", "features", "language", "pack", "panel", "speech", "supersetRoot"]);
     expect(r.body).toMatchObject({ pack: "visits_pack", panel: "float", speech: { enabled: false }, language: { default: "auto" }, supersetRoot: "" });
     expect(r.body.examples).toEqual(["Visites par région"]);
     expect(r.body.examplesByLang).toMatchObject({ en: ["Visits by region"], fr: ["Visites par région"] });
@@ -237,7 +237,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["adminAccess", "audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
