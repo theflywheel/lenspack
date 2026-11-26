@@ -29,7 +29,7 @@ The small model is the deployment's `router` role if one is set, otherwise a Hai
 
 Only answers that went well are saved:
 
-- the turn finished without an error and was not refused;
+- the turn finished without an error and was not refused, and at least one of its data queries worked (a turn whose queries were all refused or failed is not kept, so a refusal or an outage is never replayed);
 - if the reviewer checked it, the reviewer accepted it (a turn whose finding was fixed or left the board as it was is not saved);
 - the turn only read data (a turn that also changed the board is saved as an edit, below, not as an answer);
 - the question stands on its own. A follow-up such as "and for last week?" or "show that as a line" depends on the turn before it, so it is neither served from nor kept.

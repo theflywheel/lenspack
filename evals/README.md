@@ -41,9 +41,9 @@ pnpm eval:suite --suite my-suite.yaml --truth truth.json --models claude-haiku-5
   - The report breaks results down by model and tier, groups expected fails by reason (engine, pack, data, scope), quotes every confidently wrong reply, and gives cost per turn and per right answer, latency p50/p95, steps and tool errors.
 - **Stub:** `--stub` plays each question's `stub:` script (tool calls, then text, with `{{rows}}` for the last result). `evals/test/suite.test.ts` runs the commerce suite this way and checks that every outcome is the one the script aims for.
 - **Stored runs:** each result keeps what the turn left behind (reply, tool calls and outputs, boards before and after, widget data, the judge label). `--rescore results/<run>.json` scores a stored run again after a scorer, suite or truth fix, with no model and no database.
-- **Whose access:** with `hostPolicy: superset` in the config (or `LENSPACK_HOST_POLICY=superset`), the turns run as the
-  config's Superset account, with that user's dataset access and row-level security, as the Superset host applies
-  them. `--as-user <name>` runs as another Superset user (asked through the service account, as the host asks for a
+- **Whose access:** as in the Superset host, `hostPolicy: superset` is the default: the turns run as the config's
+  Superset account, with that user's dataset access and row-level security, as the Superset host applies them.
+  `hostPolicy: off` in the config (or `LENSPACK_HOST_POLICY=off`) runs them with no access check. `--as-user <name>` runs as another Superset user (asked through the service account, as the host asks for a
   signed-in user), for example a supervisor under row-level security. A user who may read no dataset stops the run.
   Edits stay allowed either way; the results record `asUser`.
 - **Reviewer:** turns run with `review=off` unless `--review` is given. With it, each turn runs as production does: the deployment's reviewer (the builder model by default) checks edits, and a material finding gets one fix round. Each result records its cost by role (`build`, `review`, `escalate`, …), the build rounds and the reviewer's verdicts. `--reviewer <model>` and `--escalate <model>` pick other models for those two roles, as a deployment's `LENSPACK_LLM_ROLES` does; either one turns review on.
