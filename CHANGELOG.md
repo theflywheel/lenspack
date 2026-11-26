@@ -23,7 +23,7 @@ brought it.
   `usage:`. Before, a restart (every deploy, or a crash loop) started the day's spend at zero, so the daily budget
   could be overspent. Under a path (`/superset`), the check that the open page matches the saved dashboard after a
   chat edit now reads the dashboard below Superset's path; it did nothing there before. The docs no longer say that
-  the chat on Superset receives the viewer's dashboard filters: it does not yet. (PR_TWO)
+  the chat on Superset receives the viewer's dashboard filters: it does not yet. ([#107](https://github.com/theflywheel/lenspack/pull/107))
 - **Superset under a path.** Superset 6.1 running below a path of its host (`SUPERSET_APP_ROOT=/superset`) now
   gets the button, the chat, the settings page and its menu entry, and links to dashboards, all below that path,
   with no new setting. At the root nothing changes. Update the plugin file and the server image together. See
