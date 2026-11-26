@@ -290,8 +290,9 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
 | `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file |
-| `LENSPACK_ADMIN_ACCESS`, `LENSPACK_ADMIN_USERS` | superset | `auth.adminAccess`, `auth.adminUsers` (comma-separated) | over the file |
-| `LENSPACK_ADMIN_PASSWORD`, `LENSPACK_ADMIN_PASSWORD_HASH` | superset | the admin password under `auth.adminAccess: password` (12+ characters), or its scrypt hash | only source |
+| `LENSPACK_ADMIN_ACCESS`, `LENSPACK_ADMIN_USERS` | superset | `auth.adminAccess` (one mode, or `password` with another: `superset-role,password`), `auth.adminUsers` (comma-separated) | over the file |
+| `LENSPACK_ADMIN_PASSWORDS`, `LENSPACK_ADMIN_PASSWORDS_FILE` | superset | the named admin passwords when `auth.adminAccess` includes `password`: `name:password` pairs separated by commas, or a file with one per line (12+ characters each; a value starting `scrypt$` is a hash) | only source |
+| `LENSPACK_ADMIN_PASSWORD`, `LENSPACK_ADMIN_PASSWORD_HASH` | superset | one more admin password, named `password` (signed in to with the name left empty), or its scrypt hash | only source |
 | `LENSPACK_ADMIN_SESSION_HOURS`, `LENSPACK_ADMIN_SESSION_SECRET` | superset | how long an admin's password sign-in lasts (8 hours), and the key that signs it (else a file in the state directory) | only source |
 | `LENSPACK_USER_ACCESS`, `LENSPACK_USERS` | superset | `auth.userAccess`, `auth.seedUsers` (comma-separated) | over the file |
 | `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |

@@ -379,6 +379,9 @@ export function adminRoutes(o: AdminRouteOptions) {
       audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
       return send(403, { error: `only ${o.adminName}s can do this` });
     }
+    // On the admins roster, with how they qualify; the first time, an audit line (admin-access.ts).
+    if (rights.administer) o.access?.seen(who);
+    const me = { ...rights, user: who.user };
 
     if (path === "/settings")
       return send(200, {
@@ -395,7 +398,7 @@ export function adminRoutes(o: AdminRouteOptions) {
         telemetry: s.telemetryView(writable),
         cache: s.cache.view(writable),
         queue: s.queue.view(writable),
-        ...(o.access ? { adminAccess: o.access.view(rights) } : {}),
+        ...(o.access ? { adminAccess: o.access.view(me) } : {}),
         ...(o.users ? { userAccess: o.users.view() } : {}),
       });
     // Who may use the assistant. GET: the modes, and under granted the people let in, newest first, ?q= to search, paged
@@ -441,12 +444,12 @@ export function adminRoutes(o: AdminRouteOptions) {
       return send(200, o.users.view());
     }
     // Who is an admin, and under named Superset users the grants: GET for any admin; PUT { add } or { remove } for owners.
-    if (path === "/settings/admins" && !put) return send(200, o.access ? o.access.view(rights) : { mode: null });
+    if (path === "/settings/admins" && !put) return send(200, o.access ? o.access.view(me) : { mode: null });
     if (path === "/settings/admins") {
-      if (!o.access || o.access.mode !== "superset-users") return send(409, { error: `admins are granted only when admin access is superset-users (now ${o.access?.mode ?? "not set"})` });
+      if (!o.access || !o.access.has("superset-users")) return send(409, { error: `admins are granted only when admin access includes superset-users (now ${o.access?.modes.join(",") ?? "not set"})` });
       if (!rights.owner) {
         audit("PUT settings admins", "not an owner", "denied");
-        return send(403, { error: "only owners (LENSPACK_ADMIN_USERS) can grant or remove admins" });
+        return send(403, { error: "only owners (LENSPACK_ADMIN_USERS), or an admin signed in with a password, can grant or remove admins" });
       }
       let b: Record<string, unknown>;
       try {
@@ -473,7 +476,7 @@ export function adminRoutes(o: AdminRouteOptions) {
         audit("settings admins revoke", user);
         o.log(`admins: ${who.user} removed admin from ${user}`);
       }
-      return send(200, o.access.view(rights));
+      return send(200, o.access.view(me));
     }
     // What chat has cost: the newest turns and the totals for today and the last 7 days, from the audit log.
     if (path === "/turns") {

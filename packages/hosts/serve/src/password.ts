@@ -39,6 +39,17 @@ function parseHash(stored: string) {
   return { N, r, p, salt, hash };
 }
 
+/** Why a password from the deployment can't be used (too short, or a hash that doesn't parse), or null when it can. */
+export function passwordProblem(o: { password?: string; passwordHash?: string }): string | null {
+  if (o.password !== undefined) return o.password.length < MIN_LENGTH ? `a password must be at least ${MIN_LENGTH} characters` : null;
+  try {
+    parseHash(o.passwordHash ?? "");
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 function verifyHash(password: string, stored: ReturnType<typeof parseHash>): Promise<boolean> {
   return new Promise((resolve) =>
     scrypt(password, stored.salt, stored.hash.length, { N: stored.N, r: stored.r, p: stored.p, maxmem: 128 * stored.N * stored.r * 2 + 1024 * 1024 }, (err, key) =>
@@ -272,9 +283,18 @@ export function attemptLimiter(now: () => number = Date.now) {
      * with how long; else whether `check` said yes. A known device is not held up by others' checks in flight.
      */
     async attempt(key: string, known: boolean, check: () => Promise<boolean>): Promise<{ ok: boolean } | { waitS: number }> {
-      const wait = waitFor(key, known);
+      return this.attemptAll([{ key, known }], check);
+    },
+    /**
+     * One try that counts against several callers at once (an address or device, and a name): it waits while any of
+     * them must, and a failure counts for each. The first key is the browser's (address or device), whose `known`
+     * decides the shared budget and the checks-in-flight limit.
+     */
+    async attemptAll(keys: { key: string; known: boolean }[], check: () => Promise<boolean>): Promise<{ ok: boolean } | { waitS: number }> {
+      const wait = Math.max(...keys.map((k) => waitFor(k.key, k.known)));
+      const known = keys[0]!.known;
       if (wait > 0 || (!known && checking >= MAX_CHECKING)) return { waitS: Math.max(1, Math.ceil(wait / 1000)) };
-      failed(key, known);
+      for (const k of keys) failed(k.key, k.known);
       checking++;
       let ok: boolean;
       try {
@@ -282,7 +302,7 @@ export function attemptLimiter(now: () => number = Date.now) {
       } finally {
         checking--;
       }
-      if (ok) succeeded(key, known);
+      if (ok) for (const k of keys) succeeded(k.key, k.known);
       return { ok };
     },
   };

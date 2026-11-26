@@ -1,5 +1,7 @@
-import { type AdminAccess, type AdminAccessMode, type Rights, type UserAccess, type UserAccessMode, adminAccessModeFrom, adminUsersFrom, rightsUnder, userAccessModesFrom, usersUnder } from "@lenspack/policy";
+import { type AdminAccess, type AdminAccessMode, type AdminRights, type Rights, type UserAccess, type UserAccessMode, adminAccessModesFrom, adminRights, adminUsersFrom, rightsUnder, userAccessModesFrom, usersUnder } from "@lenspack/policy";
 
+import { type AdminPassword, adminPasswordsFrom } from "./admin-signin";
+import type { AuditEvent } from "./audit";
 import type { SettingsStore } from "./settings";
 
 // How a deployment decides who is an admin (@lenspack/policy, access.ts), read from its config and environment, with the
@@ -46,68 +48,162 @@ export function settingsGrants(settings: SettingsStore, section: "adminGrants" |
 export const ADMIN_ACCESS_LABELS: Record<AdminAccessMode, string> = {
   "superset-role": "Superset roles",
   "superset-users": "named Superset users",
-  password: "one shared password",
+  password: "named passwords",
 };
 
 export type AdminAccessConfig = {
-  /** superset-role (default), superset-users or password; LENSPACK_ADMIN_ACCESS wins. */
-  adminAccess?: string;
+  /** superset-role (default), superset-users, password, or password with one of the others; LENSPACK_ADMIN_ACCESS wins. */
+  adminAccess?: string | string[];
   /** Owners under superset-users: Superset user names or id:<n>; LENSPACK_ADMIN_USERS (comma-separated) wins. */
   adminUsers?: string[] | string;
 };
 
+/** One person who has used admin rights, and how they qualified: the admins roster. */
+export type AdminSeen = {
+  user: string;
+  userId?: string | number;
+  /** role, owner, grant or password; and the role's or password's name. */
+  via: NonNullable<AdminRights["via"]>;
+  detail?: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** When their visit before this one ended: who became an admin since is news to them. */
+  prevVisit?: string;
+};
+
+/** Where the roster is kept. The settings store's file by default (settingsRoster); a durable store may stand in. */
+export interface AdminRosterStore {
+  list(): readonly AdminSeen[];
+  put(entry: AdminSeen): void;
+}
+
+/** The roster in settings.json (section "adminRoster"), beside the grants. */
+export function settingsRoster(settings: SettingsStore): AdminRosterStore {
+  const read = () => settings.get<AdminSeen[]>("adminRoster") ?? [];
+  return {
+    list: read,
+    put(e) {
+      const now = read();
+      const i = now.findIndex((x) => x.user === e.user);
+      settings.set("adminRoster", i < 0 ? [...now, e] : now.map((x, j) => (j === i ? e : x)));
+    },
+  };
+}
+
+/** How someone qualifies, in words, for the roster and the audit line. */
+export function viaWords(r: Pick<AdminSeen, "via" | "detail">): string {
+  if (r.via === "role") return r.detail ? `Superset role ${r.detail}` : "a Superset role";
+  if (r.via === "owner") return "owner";
+  if (r.via === "grant") return "granted by an owner";
+  return r.detail && r.detail !== "password" ? `named password ${r.detail}` : "the shared password";
+}
+
 export type AdminAccessSetup = ReturnType<typeof adminAccessSetup>;
 
 /**
- * The access mode in force and what it needs. Throws on an unknown mode or a bad user list (the server does not start);
- * a mode that leaves nobody an admin (named users with no owner, the password with none set) starts, says so in a
- * warning, and lets nobody in.
+ * The access modes in force and what they need. Throws on an unknown mode, a refused combination, a bad user list or a
+ * bad password entry (the server does not start); a mode that leaves nobody an admin (named users with no owner, the
+ * password with none set) starts, says so in a warning, and lets nobody in that way.
  */
-export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.ProcessEnv; grants: AdminGrantStore; adminRoles?: readonly string[]; adminRolesFrom?: string }) {
+export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.ProcessEnv; grants: AdminGrantStore; roster?: AdminRosterStore; adminRoles?: readonly string[]; adminRolesFrom?: string; now?: () => number }) {
   const env = o.env ?? process.env;
+  const now = o.now ?? Date.now;
   const fromEnv = !!env.LENSPACK_ADMIN_ACCESS?.trim();
-  const mode = adminAccessModeFrom(o.config?.adminAccess, env.LENSPACK_ADMIN_ACCESS);
+  const modes = adminAccessModesFrom(o.config?.adminAccess, env.LENSPACK_ADMIN_ACCESS);
+  const has = (m: AdminAccessMode) => modes.includes(m);
   const modeFrom = fromEnv ? "LENSPACK_ADMIN_ACCESS" : o.config?.adminAccess !== undefined ? "auth.adminAccess" : "default";
   const ownersEnv = env.LENSPACK_ADMIN_USERS?.trim();
-  const owners = mode === "superset-users" ? adminUsersFrom(ownersEnv ? ownersEnv : o.config?.adminUsers) : [];
+  const owners = has("superset-users") ? adminUsersFrom(ownersEnv ? ownersEnv : o.config?.adminUsers) : [];
   const ownersFrom = ownersEnv ? "LENSPACK_ADMIN_USERS" : o.config?.adminUsers !== undefined ? "auth.adminUsers" : null;
-  const passwordSet = !!(env.LENSPACK_ADMIN_PASSWORD || env.LENSPACK_ADMIN_PASSWORD_HASH);
-  const granted = () => (mode === "superset-users" ? o.grants.list().map((g) => g.user).filter((u) => !owners.includes(u)) : []);
-  const state = (): AdminAccess => (mode === "superset-users" ? { mode, owners, granted: granted() } : { mode });
-  const warnings: string[] = [];
-  if (mode === "superset-users" && !owners.length) warnings.push("admin access is superset-users, but no owner is named: nobody is an admin. Set LENSPACK_ADMIN_USERS (Superset user names or id:<n>, comma-separated).");
-  if (mode === "password" && !passwordSet) warnings.push("admin access is password, but no password is set: nobody is an admin. Set LENSPACK_ADMIN_PASSWORD (12+ characters) from the deployment's secrets.");
-  if (mode !== "superset-users" && (ownersEnv || o.config?.adminUsers !== undefined)) warnings.push(`LENSPACK_ADMIN_USERS is set but admin access is ${mode}: it has no effect. Set LENSPACK_ADMIN_ACCESS=superset-users to use it.`);
+  // Read only when the mode is on: a password set for another mode stops nothing, and is said to do nothing.
+  const passwords: AdminPassword[] = has("password") ? adminPasswordsFrom(env) : [];
+  const passwordSources = [...new Set(passwords.map((p) => p.from))];
+  const passwordSet = passwords.length > 0;
   const roles = o.adminRoles ?? ["Admin"];
+  const roleEntries = roles.map((r) => (r.startsWith("role:") || r === "*" ? r : `role:${r}`));
+  const granted = () => (has("superset-users") ? o.grants.list().map((g) => g.user).filter((u) => !owners.includes(u)) : []);
+  const state = (): AdminAccess => ({ modes, roles: roleEntries, owners, granted: granted(), passwords: passwords.map((p) => p.name) });
+  const warnings: string[] = [];
+  if (has("superset-users") && !owners.length) warnings.push("admin access includes superset-users, but no owner is named: nobody is an admin that way. Set LENSPACK_ADMIN_USERS (Superset user names or id:<n>, comma-separated).");
+  if (has("password") && !passwordSet) warnings.push("admin access includes password, but no admin password is set: nobody signs in that way. Set LENSPACK_ADMIN_PASSWORDS (name:secret pairs) or LENSPACK_ADMIN_PASSWORDS_FILE from the deployment's secrets.");
+  if (!has("superset-users") && (ownersEnv || o.config?.adminUsers !== undefined)) warnings.push(`LENSPACK_ADMIN_USERS is set but admin access is ${modes.join(",")}: it has no effect. Add superset-users to LENSPACK_ADMIN_ACCESS to use it.`);
+  if (!has("password") && (env.LENSPACK_ADMIN_PASSWORDS || env.LENSPACK_ADMIN_PASSWORDS_FILE || env.LENSPACK_ADMIN_PASSWORD || env.LENSPACK_ADMIN_PASSWORD_HASH))
+    warnings.push(`an admin password is set but admin access is ${modes.join(",")}: it has no effect. Add password to LENSPACK_ADMIN_ACCESS to use it.`);
+  if (has("superset-role") && roles.length === 1 && roles[0] === "Admin")
+    warnings.push("admins are Superset's own Admin role: every Superset Admin is an assistant admin. A role of its own (LENSPACK_ADMIN_ROLES) keeps the two apart; superset-users stops Superset Admins from making themselves admins.");
+  let audit: ((e: AuditEvent) => void) | undefined;
+
+  // Each mode's words; the last one's parentheses take the "access …" part, as the single-mode lines always read.
+  const lineFor = (m: AdminAccessMode): { text: string; tail?: string } => {
+    if (m === "superset-role") return { text: `Superset role${roles.length === 1 ? "" : "s"} ${roles.join(", ") || "(none)"}${o.adminRolesFrom ? ` from ${o.adminRolesFrom}` : ""}` };
+    if (m === "superset-users") return { text: `named Superset users (${owners.length} owner${owners.length === 1 ? "" : "s"}${ownersFrom ? ` from ${ownersFrom}` : ""}, ${granted().length} granted)`, ...(owners.length ? {} : { tail: ": NOBODY, no owner named" }) };
+    return passwordSet ? { text: `named passwords (${passwords.length} from ${passwordSources.join(", ")})` } : { text: "named passwords (none set)", tail: ": NOBODY signs in with a password" };
+  };
+
   return {
-    mode,
+    modes,
+    has,
     modeFrom,
     owners,
     ownersFrom,
     grants: o.grants,
     state,
     warnings,
-    /** Whether the password sign-in is on: password mode with a password set. */
-    passwordSignIn: mode === "password" && passwordSet,
-    /** The start-up line: the mode, where it came from, and who it names. Never the password. */
-    line(): string {
-      const how = `access ${mode}, ${modeFrom === "default" ? "the default" : `from ${modeFrom}`}`;
-      if (mode === "superset-role") return `admins: Superset role${roles.length === 1 ? "" : "s"} ${roles.join(", ") || "(none)"}${o.adminRolesFrom ? ` from ${o.adminRolesFrom}` : ""} (${how})`;
-      if (mode === "superset-users") {
-        const g = granted().length;
-        return `admins: named Superset users (${owners.length} owner${owners.length === 1 ? "" : "s"}${ownersFrom ? ` from ${ownersFrom}` : ""}, ${g} granted; ${how})${owners.length ? "" : ": NOBODY, no owner named"}`;
-      }
-      return `admins: one shared password (${passwordSet ? `${env.LENSPACK_ADMIN_PASSWORD ? "LENSPACK_ADMIN_PASSWORD" : "LENSPACK_ADMIN_PASSWORD_HASH"} set` : "NOT SET: nobody is an admin"}; ${how})`;
+    /** The admin passwords, for the admin sign-in (adminSignIn). Their secrets go nowhere else. */
+    passwords,
+    /** Whether the admin sign-in is on: the password mode with a password set. */
+    passwordSignIn: has("password") && passwordSet,
+    /** Where the "first use" audit lines go (the host's audit log, made after this). */
+    auditTo(fn: ((e: AuditEvent) => void) | undefined) {
+      audit = fn;
     },
-    /** What the admin pages show: the mode in plain words and where it is set, and under named users the owners and grants. */
-    view(me?: { owner: boolean }) {
+    /**
+     * Someone just used admin rights: on the roster, with how they qualify. The first time (or a new way to qualify),
+     * an audit line says so. Their last-seen time is written at most every 10 minutes; a gap of 30 starts a new visit.
+     */
+    seen(who: { user: string; userId?: string | number; roles?: readonly string[]; usage?: boolean }) {
+      if (!o.roster) return;
+      const r = adminRights(who, state());
+      if (!r.administer || !r.via) return;
+      const t = now();
+      const at = new Date(t).toISOString();
+      const old = o.roster.list().find((e) => e.user === who.user);
+      const how = { via: r.via, ...(r.detail ? { detail: r.detail } : {}) };
+      if (!old) {
+        o.roster.put({ user: who.user, ...(who.userId !== undefined ? { userId: who.userId } : {}), ...how, firstSeen: at, lastSeen: at });
+        audit?.({ at, user: who.user, action: "admin first use", outcome: "ok", detail: viaWords(how) });
+        return;
+      }
+      const changed = old.via !== how.via || old.detail !== how.detail;
+      const gap = t - Date.parse(old.lastSeen);
+      if (!changed && gap < 10 * 60_000) return;
+      o.roster.put({ ...old, ...how, ...(how.detail ? {} : { detail: undefined }), lastSeen: at, ...(gap >= 30 * 60_000 ? { prevVisit: old.lastSeen } : {}) });
+      if (changed) audit?.({ at, user: who.user, action: "admin qualifies another way", outcome: "ok", detail: `${viaWords(old)} → ${viaWords(how)}` });
+    },
+    /** The start-up line: each mode, where it came from, and who it names. Never a password. */
+    line(): string {
+      const how = `access ${modes.join(",")}, ${modeFrom === "default" ? "the default" : `from ${modeFrom}`}`;
+      const parts = modes.map(lineFor);
+      const last = parts[parts.length - 1]!.text;
+      const words = [...parts.slice(0, -1).map((x) => x.text), last.endsWith(")") ? `${last.slice(0, -1)}; ${how})` : `${last} (${how})`].join(", or ");
+      return `admins: ${words}${parts.map((x) => x.tail ?? "").join("")}`;
+    },
+    /** What the admin pages show: the modes in plain words and where they are set, the owners and grants, and the roster. */
+    view(me?: { owner: boolean; user?: string }) {
+      const roster = [...(o.roster?.list() ?? [])].sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+      const mine = me?.user ? roster.find((e) => e.user === me.user) : undefined;
+      const since = mine?.prevVisit;
       return {
-        mode,
-        label: ADMIN_ACCESS_LABELS[mode],
+        mode: modes.join(","),
+        modes,
+        label: modes.map((m) => ADMIN_ACCESS_LABELS[m]).join(" or "),
         from: modeFrom,
-        ...(mode === "superset-role" ? { roles, rolesFrom: o.adminRolesFrom ?? "default" } : {}),
-        ...(mode === "superset-users" ? { owners, ownersFrom, granted: o.grants.list().filter((g) => !owners.includes(g.user)), canGrant: !!me?.owner } : {}),
-        ...(mode === "password" ? { passwordSet } : {}),
+        ...(has("superset-role") ? { roles, rolesFrom: o.adminRolesFrom ?? "default" } : {}),
+        ...(has("superset-users") ? { owners, ownersFrom, granted: o.grants.list().filter((g) => !owners.includes(g.user)), canGrant: !!me?.owner } : {}),
+        ...(has("password") ? { passwordSet, passwordNames: passwords.map((p) => p.name), passwordsFrom: passwordSources } : {}),
+        roster: roster.map(({ prevVisit: _p, ...e }) => ({ ...e, how: viaWords(e) })),
+        // Who first used admin rights after this admin's previous visit ended: news for them.
+        newSince: since ? roster.filter((e) => e.user !== me!.user && e.firstSeen > since).map((e) => ({ user: e.user, how: viaWords(e), firstSeen: e.firstSeen })) : [],
         warnings,
       };
     },

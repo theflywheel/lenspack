@@ -1,29 +1,35 @@
 // Who is an admin and who may use the assistant (admin-access.ts), the routes admins change them with, and the admin
 // pages' own password sign-in (admin-signin.ts).
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { PASSWORD_ADMIN, type Rights, adminRights, mayUse, principalOf } from "@lenspack/policy";
+import { PASSWORD_ADMIN, type Rights, adminRights, mayUse, passwordAdmin, principalOf, rightsUnder } from "@lenspack/policy";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, settingsGrants, userAccessSetup } from "../src";
+import { accessRights, adminAccessSetup, adminPasswordsFrom, adminRoutes, adminSettings, adminSignIn, settingsGrants, settingsRoster, userAccessSetup } from "../src";
 import { settingsStore } from "../src/settings";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "lp-access-"));
 const HOST: Rights = { editors: [], maintainers: [], admins: ["role:Admin"], usage: ["role:Admin"] };
+const HOST_LENS: Rights = { editors: [], maintainers: [], admins: ["role:Lenspack admin"], usage: ["role:Lenspack admin"] };
 
 describe("admin access setup", () => {
   it("superset-role by default, saying where its roles come from", () => {
     const a = adminAccessSetup({ env: {}, grants: settingsGrants(settingsStore(tmp())) });
-    expect(a.mode).toBe("superset-role");
+    expect(a.modes).toEqual(["superset-role"]);
     expect(a.line()).toBe("admins: Superset role Admin (access superset-role, the default)");
-    expect(a.warnings).toEqual([]);
+    // Superset's own Admin role as the admins rule: allowed, as before, with a nudge toward a role of its own.
+    expect(a.warnings).toEqual([expect.stringMatching(/every Superset Admin is an assistant admin.*role of its own \(LENSPACK_ADMIN_ROLES\)/)]);
+    const own = adminAccessSetup({ env: {}, grants: settingsGrants(settingsStore(tmp())), adminRoles: ["Lenspack admin"], adminRolesFrom: "LENSPACK_ADMIN_ROLES" });
+    expect(own.line()).toBe("admins: Superset role Lenspack admin from LENSPACK_ADMIN_ROLES (access superset-role, the default)");
+    expect(own.warnings).toEqual([]);
   });
 
   it("refuses an unknown mode, and owners written as roles", () => {
-    expect(() => adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "everyone" }, grants: settingsGrants(settingsStore(tmp())) })).toThrow(/superset-role, superset-users or password/);
+    expect(() => adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "everyone" }, grants: settingsGrants(settingsStore(tmp())) })).toThrow(/superset-role, superset-users and password/);
+    expect(() => adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "superset-role,superset-users" }, grants: settingsGrants(settingsStore(tmp())) })).toThrow(/can't combine/);
     expect(() => adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "superset-users", LENSPACK_ADMIN_USERS: "role:Admin" }, grants: settingsGrants(settingsStore(tmp())) })).toThrow(/roles grant nothing/);
   });
 
@@ -38,13 +44,46 @@ describe("admin access setup", () => {
     expect(adminRights({ user: "bea", roles: [] }, none.state()).administer).toBe(false);
   });
 
-  it("password: says whether one is set, never what it is", () => {
+  it("password: says how many are set and where, never what they are", () => {
     const set = adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "password", LENSPACK_ADMIN_PASSWORD: "a-long-test-password" }, grants: settingsGrants(settingsStore(tmp())) });
-    expect(set.line()).toBe("admins: one shared password (LENSPACK_ADMIN_PASSWORD set; access password, from LENSPACK_ADMIN_ACCESS)");
+    expect(set.line()).toBe("admins: named passwords (1 from LENSPACK_ADMIN_PASSWORD; access password, from LENSPACK_ADMIN_ACCESS)");
     expect(JSON.stringify(set.view())).not.toContain("a-long-test-password");
+    expect(set.view()).toMatchObject({ passwordSet: true, passwordNames: ["password"] });
     const unset = adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "password" }, grants: settingsGrants(settingsStore(tmp())) });
-    expect(unset.line()).toMatch(/NOT SET: nobody is an admin/);
-    expect(unset.warnings[0]).toMatch(/no password is set/);
+    expect(unset.line()).toMatch(/none set; access password, from LENSPACK_ADMIN_ACCESS\): NOBODY signs in with a password/);
+    expect(unset.warnings[0]).toMatch(/no admin password is set/);
+  });
+
+  it("combines modes: one line naming each, a role and named passwords, either letting a person in", () => {
+    const dir = tmp();
+    const a = adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "password,superset-role", LENSPACK_ADMIN_PASSWORDS: "ops:a-long-ops-secret-1,vendor:a-long-vendor-secret" }, grants: settingsGrants(settingsStore(dir)), adminRoles: ["Lenspack admin"], adminRolesFrom: "LENSPACK_ADMIN_ROLES" });
+    expect(a.modes).toEqual(["superset-role", "password"]);
+    expect(a.line()).toBe("admins: Superset role Lenspack admin from LENSPACK_ADMIN_ROLES, or named passwords (2 from LENSPACK_ADMIN_PASSWORDS; access superset-role,password, from LENSPACK_ADMIN_ACCESS)");
+    expect(a.view()).toMatchObject({ modes: ["superset-role", "password"], label: "Superset roles or named passwords", passwordNames: ["ops", "vendor"] });
+    expect(adminRights(passwordAdmin("vendor"), a.state())).toMatchObject({ administer: true, via: "password", detail: "vendor" });
+    const host = principalOf({ user: "lin", roles: ["Lenspack admin"] }, rightsUnder(a.state(), HOST_LENS));
+    expect(adminRights(host, a.state())).toMatchObject({ administer: true, via: "role", detail: "Lenspack admin" });
+  });
+
+  it("reads named passwords from the environment and from a mounted file, refusing what can't be used", () => {
+    const file = join(tmp(), "passwords");
+    writeFileSync(file, "# admins of this deployment\nops:a,secret:with every-character\n\nvendor:scrypt$bad\n");
+    expect(() => adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS_FILE: file })).toThrow(/LENSPACK_ADMIN_PASSWORDS_FILE: the password named "vendor": a password hash must be/);
+    writeFileSync(file, "# admins of this deployment\nops:a,secret:with every-character\n\nvendor:another-long-secret\n");
+    expect(adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS_FILE: file }).map((p) => [p.name, p.password])).toEqual([["ops", "a,secret:with every-character"], ["vendor", "another-long-secret"]]);
+    expect(() => adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS: "ops:short" })).toThrow(/at least 12 characters/);
+    expect(() => adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS: "no-colon-here" })).toThrow(/write name:secret/);
+    expect(() => adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS: "a b:a-long-secret-x" })).toThrow(/not a name/);
+    expect(() => adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS: "password:a-long-secret-x", LENSPACK_ADMIN_PASSWORD: "another-long-one" })).toThrow(/given twice.*LENSPACK_ADMIN_PASSWORD is the name "password"/);
+    expect(() => adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS_FILE: join(tmp(), "missing") })).toThrow(/can't read/);
+    // An error names where the bad entry is, never the secret.
+    try {
+      adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS: "ops:tiny-pw" });
+    } catch (e) {
+      expect(String(e)).not.toContain("tiny-pw");
+    }
+    // A bad entry stops the server at start, when the mode is on.
+    expect(() => adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "password", LENSPACK_ADMIN_PASSWORDS: "ops:short" }, grants: settingsGrants(settingsStore(tmp())) })).toThrow(/at least 12/);
   });
 
   it("warns when owners are named under another mode", () => {
@@ -181,7 +220,7 @@ describe("the admin pages' password sign-in", () => {
       const url = new URL(req.url!, "http://x");
       if (await s.handle(req, res, url)) return;
       const who = s.identify(req);
-      res.writeHead(who ? 200 : 401, { "content-type": "application/json" }).end(JSON.stringify(who ? { user: who.user, admin: adminRights(who, { mode: "password" }).administer } : {}));
+      res.writeHead(who ? 200 : 401, { "content-type": "application/json" }).end(JSON.stringify(who ? { user: who.user, admin: adminRights(who, { modes: ["password"], owners: [], granted: [], passwords: ["password", "ops"] }).administer } : {}));
     });
     await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
     const at = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -213,5 +252,94 @@ describe("the admin pages' password sign-in", () => {
     expect(lines[6]).toMatch(new RegExp(`^${PASSWORD_ADMIN} admin sign-in denied too many tries; waiting \\d+ s`));
     expect(lines[7]).toBe(`${PASSWORD_ADMIN} admin sign-in ok`);
     expect(lines[8]).toMatch(/denied from another site/);
+  });
+
+  it("named passwords: each person signs in with a name, is admin:<name>, and tries count per name as well as per browser", async () => {
+    const audited: string[] = [];
+    let now = Date.parse("2026-01-01T00:00:00Z");
+    const passwords = adminPasswordsFrom({ LENSPACK_ADMIN_PASSWORDS: "ops:ops-long-secret-1,vendor:vendor-long-secret" });
+    const dir = tmp();
+    const s = adminSignIn({ prefix: "/_admin", dir, env: {}, passwords, publicBase: () => "", clientAddress: (req) => String(req.headers["x-test-client"] ?? "10.0.0.1"), audit: (e) => audited.push(`${e.user} ${e.action} ${e.outcome} ${e.detail}`), now: () => now });
+    if ("refused" in s) throw new Error(s.refused);
+    const access = { modes: ["password"] as const, owners: [], granted: [], passwords: ["ops", "vendor"] };
+    let current = s;
+    server = createServer(async (req, res) => {
+      const url = new URL(req.url!, "http://x");
+      if (await current.handle(req, res, url)) return;
+      const who = current.identify(req);
+      res.writeHead(who ? 200 : 401, { "content-type": "application/json" }).end(JSON.stringify(who ? { user: who.user, admin: adminRights(who, access).administer } : {}));
+    });
+    await new Promise<void>((r) => server!.listen(0, "127.0.0.1", r));
+    const at = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const login = (name: string, password: string, client = "10.0.0.1", cookie = "") =>
+      fetch(`${at}/_admin/auth/login`, { method: "POST", redirect: "manual", headers: { "content-type": "application/x-www-form-urlencoded", "x-test-client": client, ...(cookie ? { cookie } : {}) }, body: `name=${encodeURIComponent(name)}&password=${encodeURIComponent(password)}` });
+    const jar = (r: Response) => r.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+
+    const ok = await login("vendor", "vendor-long-secret");
+    expect(ok.status).toBe(303);
+    const vendorJar = jar(ok);
+    expect(await (await fetch(`${at}/_admin/`, { headers: { cookie: vendorJar } })).json()).toEqual({ user: "admin:vendor", admin: true });
+    // The page asks for a name; a wrong name and a wrong password get the same answer.
+    expect(await (await fetch(`${at}/_admin/auth/login`)).text()).toContain('name="name"');
+    const [wrongName, wrongPassword] = [await login("nobody", "ops-long-secret-1"), await login("ops", "vendor-long-secret")];
+    expect([wrongName.status, wrongPassword.status]).toEqual([401, 401]);
+    expect((await wrongName.text()).includes("Wrong name or password.") && (await wrongPassword.text()).includes("Wrong name or password.")).toBe(true);
+    // Guessing one name from many addresses: the name's own count holds it up.
+    for (let i = 0; i < 4; i++) expect((await login("ops", "guess", `10.9.0.${i}`)).status).toBe(401);
+    expect((await login("ops", "ops-long-secret-1", "10.9.0.200")).status).toBe(429);
+    // A browser that signed in as that name before isn't held up by the name's count.
+    now += 3_600_000;
+    const opsFirst = await login("ops", "ops-long-secret-1", "10.0.0.7");
+    expect(opsFirst.status).toBe(303);
+    const device = opsFirst.headers.getSetCookie().find((c) => c.startsWith("lenspack_admin_device="))!.split(";")[0]!;
+    for (let i = 0; i < 6; i++) await login("ops", "guess", `10.8.0.${i}`);
+    expect((await login("ops", "ops-long-secret-1", "10.0.0.7", device)).status).toBe(303);
+    expect((await login("ops", "ops-long-secret-1", "10.0.0.99")).status).toBe(429);
+    // The audit log names each person, and never what they typed as a name unless it could be one.
+    expect(audited).toContain("admin:vendor admin sign-in ok 10.0.0.1");
+    expect(audited).toContain("admin:nobody admin sign-in denied no such name (10.0.0.1)");
+    expect(audited).toContain("admin:ops admin sign-in denied wrong password (10.0.0.1)");
+    await login("<b>x</b>", "whatever-long-x");
+    expect(audited[audited.length - 1]).toMatch(/^admin:\? admin sign-in denied/);
+
+    // Taking a name off the list (and restarting) ends that person's session.
+    const fewer = adminSignIn({ prefix: "/_admin", dir, env: {}, passwords: passwords.filter((p) => p.name !== "vendor"), publicBase: () => "", now: () => now });
+    if ("refused" in fewer) throw new Error(fewer.refused);
+    current = fewer;
+    expect((await fetch(`${at}/_admin/`, { headers: { cookie: vendorJar } })).status).toBe(401);
+  });
+});
+
+describe("the admins roster", () => {
+  it("lists everyone who used admin rights and how, audits the first use, and tells each admin who is new since their last visit", () => {
+    const store = settingsStore(tmp());
+    const audited: string[] = [];
+    let now = Date.parse("2026-03-02T09:00:00Z");
+    const a = adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "superset-role,password", LENSPACK_ADMIN_PASSWORDS: "vendor:vendor-long-secret" }, grants: settingsGrants(store), roster: settingsRoster(store), adminRoles: ["Lenspack admin"], now: () => now });
+    a.auditTo((e) => audited.push(`${e.user} ${e.action} ${e.detail}`));
+    const settle = (user: string, roles: string[]) => principalOf({ user, roles }, rightsUnder(a.state(), HOST_LENS));
+    a.seen(settle("lin", ["Lenspack admin"]));
+    now += 5 * 60_000;
+    a.seen(settle("lin", ["Lenspack admin"]));
+    expect(audited).toEqual(["lin admin first use Superset role Lenspack admin"]);
+    // A Superset Admin gives themselves the role: allowed under superset-role, and it shows.
+    now += 2 * 3_600_000;
+    a.seen(settle("ana", ["Admin", "Lenspack admin"]));
+    now += 60_000;
+    a.seen(passwordAdmin("vendor"));
+    // Not an admin: not on the roster.
+    a.seen(settle("bea", ["Gamma"]));
+    expect(audited.slice(1)).toEqual(["ana admin first use Superset role Lenspack admin", "admin:vendor admin first use named password vendor"]);
+    // lin comes back the next day: ana and the vendor are new to them, and not to ana.
+    now += 24 * 3_600_000;
+    a.seen(settle("lin", ["Lenspack admin"]));
+    const view = a.view({ owner: false, user: "lin" });
+    expect(view.roster.map((e) => [e.user, e.how])).toEqual([["lin", "Superset role Lenspack admin"], ["admin:vendor", "named password vendor"], ["ana", "Superset role Lenspack admin"]]);
+    expect(view.roster[0]).toMatchObject({ firstSeen: "2026-03-02T09:00:00.000Z" });
+    expect(view.newSince.map((e) => e.user).sort()).toEqual(["admin:vendor", "ana"]);
+    expect(a.view({ owner: false, user: "ana" }).newSince).toEqual([]);
+    // The roster survives a restart: it is in the state directory's settings.
+    const again = adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "superset-role" }, grants: settingsGrants(store), roster: settingsRoster(store), adminRoles: ["Lenspack admin"] });
+    expect(again.view().roster).toHaveLength(3);
   });
 });

@@ -65,6 +65,7 @@
       acOwners: "Owners", acOwnerNote: "Change owners in the deployment, then restart.", acGranted: "Granted admins", acNoGranted: "No granted admins.",
       acUser: "User", acBy: "Granted by", acAt: "When", acRemove: "Remove", acAdd: "Add", acAddPh: "Superset user name or id:12",
       acOwnersOnly: "Only owners can add or remove admins.", acRemoveQ: "Remove {0}?", acSeeded: "From the deployment", acPeople: "People granted",
+      acRoster: "Admins roster", acRosterLede: "Everyone who has used admin rights here, and how they qualify. A Superset Admin can give themselves an admin role; this list shows it when they use it.", acHow: "How", acFirst: "First seen", acLast: "Last seen", acNoRoster: "Nobody yet.", acNew: "new", acNewSince: "New admin since your last visit: {0}.", acNewOpen: "See the roster", acPasswords: "Named passwords: {0}", acOwnersN: "Owners: {0}",
       acNoPeople: "Nobody granted yet.", acSearch: "Search", acRange: "{0}–{1} of {2}", acPrev: "Previous", acNext: "Next", acRoles: "Roles: {0}",
       acEveryone: "Everyone signed in", acSignOut: "Sign out", acNoneSet: "Not available on this server.",
       tlAbsent: "Telemetry is not available on this server.", tlAbsentHelp: "This server does not report its telemetry yet. The checklist appears here once it does.", tlSwitchAbsent: "This server cannot change that setting from here.",
@@ -122,6 +123,7 @@
       acOwners: "Propriétaires", acOwnerNote: "Les propriétaires se changent dans le déploiement, puis redémarrage.", acGranted: "Administrateurs ajoutés", acNoGranted: "Aucun administrateur ajouté.",
       acUser: "Utilisateur", acBy: "Ajouté par", acAt: "Quand", acRemove: "Retirer", acAdd: "Ajouter", acAddPh: "Nom d'utilisateur Superset ou id:12",
       acOwnersOnly: "Seuls les propriétaires ajoutent ou retirent des administrateurs.", acRemoveQ: "Retirer {0} ?", acSeeded: "Du déploiement", acPeople: "Personnes ajoutées",
+      acRoster: "Registre des administrateurs", acRosterLede: "Toute personne ayant utilisé des droits d'administration ici, et à quel titre. Un administrateur Superset peut s'attribuer un rôle d'administration ; cette liste le montre dès qu'il s'en sert.", acHow: "À quel titre", acFirst: "Première fois", acLast: "Dernière fois", acNoRoster: "Personne pour l'instant.", acNew: "nouveau", acNewSince: "Nouvel administrateur depuis votre dernière visite : {0}.", acNewOpen: "Voir le registre", acPasswords: "Mots de passe nommés : {0}", acOwnersN: "Propriétaires : {0}",
       acNoPeople: "Personne n'est encore ajouté.", acSearch: "Rechercher", acRange: "{0}–{1} sur {2}", acPrev: "Précédent", acNext: "Suivant", acRoles: "Rôles : {0}",
       acEveryone: "Toute personne connectée", acSignOut: "Se déconnecter", acNoneSet: "Indisponible sur ce serveur.",
       tlAbsent: "La télémétrie n'est pas disponible sur ce serveur.", tlAbsentHelp: "Ce serveur ne communique pas encore sa télémétrie. La liste apparaîtra ici dès qu'il le fera.", tlSwitchAbsent: "Ce réglage ne peut pas être modifié d'ici sur ce serveur.",
@@ -1074,12 +1076,21 @@
     const line = (label, mode, from, extra) => h("div", { class: "kv" }, h("dt", {}, label), h("dd", {}, h("b", {}, mode), " ", h("span", { class: "mute" }, t("acFrom", fromText(from))), extra ? h("div", { class: "mute" }, extra) : null));
     const out = [card(t("acWho"), null,
       h("dl", { class: "kvs" },
-        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, adm.roles ? t("acRoles", adm.roles.join(", ")) : null) : null,
+        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, [adm.roles ? t("acRoles", adm.roles.join(", ")) : null, adm.owners ? t("acOwnersN", adm.owners.join(", ") || "—") : null, adm.passwordNames ? t("acPasswords", adm.passwordNames.join(", ") || "—") : null].filter(Boolean).join(" · ") || null) : null,
         usr && usr.modes ? line(t("acUsers"), usr.label, usr.from, usr.everyone ? t("acEveryone") : usr.roles && usr.roles.length ? t("acRoles", usr.roles.join(", ")) : null) : null),
       warn(adm && adm.warnings), warn(usr && usr.warnings),
       shell.signOut ? h("div", { class: "actions" }, h("a", { class: "btn sm quiet", href: shell.signOut }, t("acSignOut"))) : null)];
 
-    if (adm && adm.mode === "superset-users") {
+    if (adm && adm.roster) {
+      const fresh = new Set((adm.newSince || []).map((e) => e.user));
+      out.push(h("section", { class: "card", id: "roster" }, h("h2", {}, t("acRoster")), h("p", { class: "lede" }, t("acRosterLede")),
+        adm.roster.length
+          ? h("div", { class: "table-wrap" }, h("table", { class: "people-table" },
+              h("thead", {}, h("tr", {}, h("th", {}, t("acUser")), h("th", {}, t("acHow")), h("th", {}, t("acFirst")), h("th", {}, t("acLast")))),
+              h("tbody", {}, adm.roster.map((e) => h("tr", {}, h("td", {}, h("b", {}, e.user), fresh.has(e.user) ? h("span", { class: "pill acc", style: "margin-left:6px" }, t("acNew")) : null), h("td", {}, e.how), h("td", { class: "num" }, when(e.firstSeen)), h("td", { class: "num" }, when(e.lastSeen)))))))
+          : h("p", { class: "mute" }, t("acNoRoster"))));
+    }
+    if (adm && adm.modes && adm.modes.includes("superset-users")) {
       const remove = (u) => (ev) => (confirm(t("acRemoveQ", u)) ? act(() => hostApi("settings/admins", { body: { remove: u } }), t("saved"))(ev) : null);
       out.push(card(t("acAdmins"), null,
         h("h3", { class: "sub-h" }, t("acOwners")),
@@ -1111,6 +1122,9 @@
 
   const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, access, settings };
   let rendering = 0;
+  // Who became an admin since this admin's last visit (the admins roster): said at the top of every tab, once loaded.
+  let newAdmins = [];
+  const newAdminsNotice = () => (newAdmins.length ? h("p", { class: "warn-line notice", role: "status" }, t("acNewSince", newAdmins.map((e) => `${e.user} (${e.how})`).join(", ")), " ", tab !== "access" ? h("a", { href: "#access", onclick: (e) => { const b = document.querySelector('#tabs [data-tab="access"]'); if (b) { e.preventDefault(); b.click(); } } }, t("acNewOpen")) : null) : null);
   async function render() {
     const mine = ++rendering;
     if (!TABS[tab]) tab = "overview";
@@ -1118,7 +1132,7 @@
     try {
       const nodes = await TABS[tab]();
       if (mine !== rendering) return;
-      main.replaceChildren(...[nodes].flat(Infinity).filter(Boolean));
+      main.replaceChildren(...[newAdminsNotice(), nodes].flat(Infinity).filter(Boolean));
     } catch (e) {
       if (mine !== rendering) return;
       main.replaceChildren(h("p", { class: "pad bad" }, t("failed", e.message)));
@@ -1154,6 +1168,10 @@
       return;
     }
     render();
+    hostApi("settings/admins").then((a) => {
+      newAdmins = (a && a.newSince) || [];
+      if (newAdmins.length) render();
+    }, () => {});
   }
   start();
 })();

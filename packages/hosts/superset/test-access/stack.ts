@@ -246,6 +246,8 @@ export type Stack = {
   dashboardRbac: (on: boolean) => void;
   /** A session signed in to Superset as this fixture user. */
   as: (user: string) => Promise<Session>;
+  /** Gives a fixture user one more Superset role, as a Superset Admin would in Superset's own user list. */
+  giveRole: (user: string, role: string) => void;
   /**
    * Stops Lenspack and starts it again on the same port and state, with these lines added to its superset.yaml
    * (none: the suite's own config). Superset sessions stay signed in.
@@ -409,6 +411,21 @@ export async function startStack(
         if (r.status) throw new Error(`could not turn dashboard roles ${on ? "on" : "off"}: ${r.stderr.trim()}`);
       },
       as: (user) => new Session(superset, user, appRoot).signIn(secrets.LP_USER_PASSWORD),
+      giveRole: (user, role) => {
+        const py = [
+          "import sys",
+          "from superset.app import create_app",
+          "app = create_app()",
+          "with app.app_context():",
+          "    from superset.extensions import db, security_manager as sm",
+          "    u, r = sm.find_user(username=sys.argv[1]), sm.find_role(sys.argv[2])",
+          "    assert u and r, 'no such user or role'",
+          "    u.roles = [*u.roles, r]",
+          "    db.session.commit()",
+        ].join("\n");
+        const r = docker(["exec", "-e", "PYTHONWARNINGS=ignore", containers[1]!, "/app/.venv/bin/python", "-c", py, user, role]);
+        if (r.status) throw new Error(`could not give ${user} the role ${role}: ${r.stderr.trim().split("\n").slice(-3).join(" ")}`);
+      },
       restartLenspack: async (extraYaml = []) => {
         await stopLenspack();
         await startLenspack(extraYaml);

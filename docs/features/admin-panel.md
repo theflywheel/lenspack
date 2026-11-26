@@ -12,7 +12,7 @@ The panel is served by Lenspack itself, so it looks the same in every host.
 - **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Admins by the
   `auth.admins` rule can open it; without a rule, anyone with a sign-in role named `admin`. It needs a `state:` directory in `lenspack.yaml`.
 
-A deployment can also name its admins one by one, or give them one shared password on a sign-in page of their own:
+A deployment can also name its admins one by one, or give each a named password on a sign-in page of their own:
 see [Who can use and administer the assistant](../access/admin-access.md).
 
 Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the

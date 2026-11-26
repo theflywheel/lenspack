@@ -49,6 +49,8 @@ export type PanelOptions = {
   base?: string;
   /** What the page's script needs from the host for this request (the sign-out address): written into the page as window.__lpAdmin. */
   shell?: (req: IncomingMessage) => Record<string, unknown>;
+  /** Someone used admin rights here: the host's admins roster (admin-access.ts seen()). */
+  seen?: (who: Principal) => void;
   /** Where a page request goes instead of the page (the admin pages are elsewhere for this deployment). Null: the page. */
   pageRedirect?: (req: IncomingMessage) => string | null;
 };
@@ -83,6 +85,7 @@ export function panelRoutes(o: PanelOptions) {
       res.end(`<!doctype html><meta charset="utf-8"><title>${name} admin</title><p style="font:15px system-ui;margin:40px">Only ${o.adminName}s can open the ${name} admin panel.</p>`);
       return true;
     }
+    o.seen?.(who);
     // The page's own address ends in a slash, so its relative calls (api/…, panel.js, ../cache) land under the prefix.
     if (url.pathname === base) {
       res.writeHead(302, { location: `${base.slice(base.lastIndexOf("/") + 1)}/`, ...NO_STORE });

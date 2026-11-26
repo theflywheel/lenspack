@@ -13,8 +13,13 @@ brought it.
 
 - **Choose who is an admin and who may use the assistant.** In Superset, admins can now be Superset roles (the
   default, as before), named Superset users (`superset-users`: owners from `LENSPACK_ADMIN_USERS`, who add other
-  admins on the admin panel's new **Access** tab; Superset's own Admin role then grants nothing), or one shared
-  password on a sign-in page of its own (`password`, `LENSPACK_ADMIN_PASSWORD`, reached at `/lenspack/_admin/`).
+  admins on the admin panel's new **Access** tab; Superset's own Admin role then grants nothing), or named
+  passwords on a sign-in page of their own (`password`, reached at `/lenspack/_admin/`: one `name:password` per
+  person in `LENSPACK_ADMIN_PASSWORDS` or a mounted file, `LENSPACK_ADMIN_PASSWORDS_FILE`, each shown as
+  `admin:<name>` in the audit log; `LENSPACK_ADMIN_PASSWORD` still works as one unnamed entry). `password` combines
+  with either of the others (`superset-role,password`, `superset-users,password`). The **Access** tab lists every admin
+  who has used admin rights and how they qualified, the audit log notes each one's first use, and the panel names anyone
+  new since your last visit. The docs now recommend a role of its own, `Lenspack admin`, over Superset's `Admin`.
   Users can be Superset roles (the default), people admins add one by one (`granted`), everyone signed in, or a
   role and a grant together (`superset-role,granted`). Set with `auth.adminAccess` / `LENSPACK_ADMIN_ACCESS` and
   `auth.userAccess` / `LENSPACK_USER_ACCESS`; the start-up log and the Access tab say which modes are in force.
