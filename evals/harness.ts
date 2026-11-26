@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import { dirname, resolve } from "node:path";
 
-import { type BoardConfig, memoryStore } from "@lenspack/core";
+import { type BoardConfig, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type Connector, type WidgetData, run } from "@lenspack/engine";
 import { type Host, type Identity, type Provider, createApp, resolveSecrets, usageLedger } from "@lenspack/serve";
 import type { Pack } from "@lenspack/pack";
@@ -39,7 +39,19 @@ type SupersetConfig = {
   hostPolicy?: string;
   datasets: (number | string)[];
   overlay?: Record<string, unknown>;
+  /** The pack's own row filters, which every answer the deployment gives carries (read with packScope). */
+  scope?: unknown;
 };
+
+/**
+ * The host a Superset rig runs its turns on: the deployment's pack and connector with a memory store, and the pack's
+ * row scope (superset.yaml scope, as packScope reads it) in its context, as the Superset host starts. So every query an
+ * eval sends carries the filters production sends; createApp's decide() adds the user's own to it, as in production.
+ */
+export function supersetHost(o: { pack: Pack; packYaml: string; connector: Connector; scope: { clauses: ScopeClause[] }; now?: Date }): Host {
+  const ctx = { ...(o.scope.clauses.length ? { scope: o.scope.clauses } : {}), ...(o.now ? { now: o.now } : {}) };
+  return { name: o.pack.pack, pack: o.pack, packYaml: o.packYaml, connector: o.connector, store: memoryStore(), ctx, boards: [] };
+}
 
 /**
  * A deployment's Superset config, read the way packages/hosts/superset/bin/serve.ts
@@ -60,6 +72,10 @@ export async function supersetRig(configPath: string, opts: { dashboard?: number
   const datasets = await sup.fetchDatasets(client, config.datasets, { log: (s) => console.error(`superset rig: ${s}`) });
   const { pack, packYaml, binding } = sup.packFromDatasets(datasets, config.overlay as never);
   const connector = sup.supersetConnector(client, binding);
+  // The pack's row scope, read and checked as the server reads it: a clause that is not a filter stops the run.
+  const scope = sup.packScope(config.scope, pack);
+  for (const w of scope.warnings) console.error(`superset rig: warning: ${w}`);
+  if (scope.clauses.length) console.error(`superset rig: pack scope: ${scope.clauses.map((c) => `${c.entity ? `${c.entity}.` : ""}${c.dimension} ${c.op} ${JSON.stringify(c.value)}`).join("; ")}`);
   let seed: BoardConfig | null = null;
   if (opts.boardCache && existsSync(opts.boardCache)) seed = JSON.parse(readFileSync(opts.boardCache, "utf8")) as BoardConfig;
   else if (opts.dashboard !== undefined) {
@@ -70,7 +86,7 @@ export async function supersetRig(configPath: string, opts: { dashboard?: number
     if (opts.boardCache) writeFileSync(opts.boardCache, JSON.stringify(seed, null, 1));
     for (const n of made.notes) console.error(`seed board: ${n}`);
   }
-  const host: Host = { name: pack.pack, pack, packYaml, connector, store: memoryStore(), ctx: opts.now ? { now: opts.now } : {}, boards: [] };
+  const host = supersetHost({ pack, packYaml, connector, scope, now: opts.now });
   // The deployment's host policy, read as the Superset host reads it (env first). --as-user implies it: the turns
   // run as that Superset user, asked through the service account, as the host asks for a signed-in user.
   const policy = opts.asUser ? "superset" : sup.hostPolicyFrom(process.env.LENSPACK_HOST_POLICY ?? config.hostPolicy);

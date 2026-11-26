@@ -110,6 +110,7 @@ function filterWords(pack: Pack, f: FilterClause): string {
     case "segment":
       return `${name} includes ${listOf(values, "or")}`;
     case "neq":
+    case "not_in":
       return values.length > 1 ? `${name} is none of ${listOf(values, "or")}` : `${name} is not ${values[0]}`;
     default:
       return `${name} ${VALUE_OPS[f.op] ?? f.op} ${values.join(", ")}`;

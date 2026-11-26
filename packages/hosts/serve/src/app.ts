@@ -809,7 +809,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
     const access = accessNote(h.ctx);
-    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed });
+    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed, readOnly, copy: !!personal?.offersCopy });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
@@ -889,7 +889,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         config = view(now.config);
         startVersion = now.version;
         tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
-        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed });
+        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed, readOnly, copy: !!personal?.offersCopy });
         before = summarise(config);
         reuseTurn.config = config;
       }

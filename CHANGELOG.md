@@ -23,6 +23,20 @@ brought it.
   on. A locked switch says why on its row. Older `telemetry.items` and `telemetry.groups` values keep their meaning;
   scripts that switched items through the route need the new names. See [Telemetry](docs/features/telemetry.md) and [Upgrading](docs/operating/upgrading.md#telemetry-switches-by-field).
   ([#100](https://github.com/theflywheel/lenspack/pull/100))
+- **Fixes from a read-only test on a real Superset 6.1.**
+  - When the chat cannot change the dashboard (the `boardEdits` switch is off, or the person may not edit), the
+    assistant's instructions now say so plainly, and it never offers or suggests a change ("you can remove the
+    filter"). The prompt version goes to 31, so saved answers are made afresh once.
+  - In a pack outside UTC, each Superset dataset whose time column has a time of day is named at start-up, in the log
+    and in the settings API's `warnings`, with what to do (a date column, or a pack kept in UTC). The refusal the
+    model gets for such a series says plainly that none can be drawn, so it stops trying.
+  - A chart made in Superset whose metric is one plain ad hoc aggregate (`SUM(quantity)`, `COUNT(*)`,
+    `COUNT(DISTINCT customer_id)`, `MIN`, `MAX`, `AVG`) is read as the pack measure that says the same, so the chat
+    can answer about the tile. Its `NOT IN` filters on a dimension are read too: queries take a new filter operator,
+    `not_in`, on every source.
+  - The eval runner applies the Superset config's `scope:` as the server does, so evals send the filters production
+    sends.
+
 - **One name everywhere.** Once the assistant has its own name (`brand.name`), the word Lenspack shows nowhere
   people look: the admin panel, Superset's settings page and menu entry, messages and refusals, and the assistant's
   own replies (asked what it is or what it runs on, it gives only its name). The only exception is the "Powered by

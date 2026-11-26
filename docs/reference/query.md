@@ -96,6 +96,7 @@ Up to 20 per query; a value list holds 1–100 values.
 |---|---|
 | `eq`, `neq` | equals, or does not equal, the value |
 | `in` | is one of the values |
+| `not_in` | is none of the values; a row with no value is left out, as with `neq` |
 | `gte`, `lte` | is at least, or at most, the value |
 | `between` | is between two values, both ends kept |
 | `contains` | contains the text |
