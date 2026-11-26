@@ -1,4 +1,5 @@
-// Off switches: parts of the assistant a deployment can turn off, each on by default. A value comes
+// Switches: parts of the assistant a deployment can turn on or off, each on by default unless
+// FEATURE_DEFAULTS says otherwise (the daily review costs money, so it starts off). A value comes
 // from, lowest first: these defaults, the config's `features:`, LENSPACK_FEATURES, then an admin on
 // the host's settings page (kept in settings.json, section "features"). The browser hears the
 // effective values from <prefix>/info (admin.ts) and hides what is off; the server refuses what is off as well
@@ -6,9 +7,12 @@
 
 import type { SettingsStore } from "./settings";
 
-export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost"] as const;
+export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "clarify", "review.daily", "review.compare"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type FeatureValues = Partial<Record<Feature, boolean>>;
+
+/** The switches that start off; every other one starts on. */
+export const FEATURE_DEFAULTS: FeatureValues = { "review.daily": false };
 
 /** What each switch does, for the settings page. */
 export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
@@ -24,6 +28,9 @@ export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
   maps: { label: "Maps", help: "Point maps made and read through the chat. Off refuses map queries; existing map charts stay in Superset." },
   reviewer: { label: "Reviewer", help: "A second model call that checks each dashboard change. Off saves a call per change." },
   turnCost: { label: "Cost per answer", help: "A line under each reply with what the turn cost (an estimate from list prices), and a running total in the chat menu. Off hides them; the audit log still records each turn's cost." },
+  clarify: { label: "Clarify intent", help: "When a question can be read two ways that give different numbers, the assistant asks which one (with buttons) or says which reading it used, and logs the question for an admin. Off answers with its best guess and logs nothing." },
+  "review.daily": { label: "Daily review", help: "Once a day, a strong model reads the day's questions and answers and proposes fixes to the definitions, for an admin to accept or reject. Costs up to the cap set in the review settings. Off by default." },
+  "review.compare": { label: "Compare readings", help: "After the daily review, each open question's readings are run through the data with no model call, so the admin sees how far apart the numbers are." },
 };
 
 const isFeature = (k: string): k is Feature => (FEATURES as readonly string[]).includes(k);
@@ -48,7 +55,7 @@ export function featuresFromEnv(value: string | undefined): FeatureValues {
   if (s.startsWith("{")) return featuresFromConfig(JSON.parse(s), "LENSPACK_FEATURES");
   const out: FeatureValues = {};
   for (const part of s.split(",").map((p) => p.trim()).filter(Boolean)) {
-    const m = /^([+-]?)([A-Za-z]+)(?:\s*=\s*(\S+))?$/.exec(part);
+    const m = /^([+-]?)([A-Za-z][A-Za-z.]*)(?:\s*=\s*(\S+))?$/.exec(part);
     if (!m || !isFeature(m[2]!)) throw new Error(`LENSPACK_FEATURES: can't read "${part}" (features: ${FEATURES.join(", ")})`);
     const word = m[3]?.toLowerCase();
     if (m[3] !== undefined && m[1]) throw new Error(`LENSPACK_FEATURES: "${part}" has both a sign and a value`);
@@ -79,7 +86,7 @@ export type Features = {
 export function features(opts: { config?: unknown; env?: string; settings: SettingsStore }): Features {
   const fromConfig = featuresFromConfig(opts.config);
   const fromEnv = featuresFromEnv(opts.env);
-  const base = Object.fromEntries(FEATURES.map((f) => [f, fromEnv[f] ?? fromConfig[f] ?? true])) as Record<Feature, boolean>;
+  const base = Object.fromEntries(FEATURES.map((f) => [f, fromEnv[f] ?? fromConfig[f] ?? FEATURE_DEFAULTS[f] ?? true])) as Record<Feature, boolean>;
   const saved = (): FeatureValues => opts.settings.get<FeatureValues>("features") ?? {};
   const values = () => {
     const s = saved();

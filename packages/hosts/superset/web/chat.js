@@ -29,6 +29,8 @@
 .lpc-chips{display:flex;flex-direction:column;gap:6px}
 .lpc-chip{text-align:left;border:1px solid var(--lpc-line);background:var(--lpc-bg);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;color:var(--lpc-fg);cursor:pointer}
 .lpc-chip:hover{border-color:var(--lpc-acc);background:var(--lpc-acc-soft)}
+.lpc-quick{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 6px}
+.lpc-quick .lpc-chip{padding:6px 10px;border-color:var(--lpc-acc);color:var(--lpc-acc);font-weight:500}
 .lpc-msg{max-width:92%;padding:8px 11px;border-radius:10px;white-space:pre-wrap;word-wrap:break-word}
 .lpc-user{align-self:flex-end;background:var(--lpc-acc);color:#fff;border-bottom-right-radius:3px}
 .lpc-bot{align-self:flex-start;background:var(--lpc-soft);border-bottom-left-radius:3px;white-space:normal}
@@ -723,7 +725,28 @@
         loadInfo();
       }
     }
-    async function send(text) {
+    // A clarifying question's readings, as buttons under the reply: one tap sends that reading as the next message,
+    // naming the question it answers so the server counts the choice.
+    function quickReplies(q) {
+      if (!q || !Array.isArray(q.options) || !q.options.length) return;
+      const box = el("div", "lpc-quick");
+      box.setAttribute("role", "group");
+      for (const o of q.options) {
+        const b = el("button", "lpc-chip", o.label);
+        b.type = "button";
+        b.title = o.text;
+        b.disabled = offline;
+        b.onclick = () => {
+          if (busy || offline) return;
+          box.remove();
+          send(o.text, { quickReply: { question: q.question || "", option: o.label } });
+        };
+        box.append(b);
+      }
+      log.append(box);
+      scroll();
+    }
+    async function send(text, extra) {
       text = (text || "").trim();
       if (!text || busy || offline) return;
       busy = true;
@@ -732,6 +755,7 @@
       input.value = "";
       const emptyEl = log.querySelector(".lpc-empty");
       if (emptyEl) emptyEl.remove();
+      log.querySelectorAll(".lpc-quick").forEach((q) => q.remove());
       history.push({ id: `u${Date.now()}`, role: "user", parts: [{ type: "text", text }] });
       persist();
       const userB = bubble("user", text);
@@ -778,7 +802,7 @@
       };
       try {
         const spoken = clips.slice();
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}) }) });
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken } : {}), ...(extra && extra.quickReply && extra.quickReply.question ? { quickReply: extra.quickReply } : {}) }) });
         if (!res.ok || !res.body) {
           let msg = `${res.status}`;
           try {
@@ -789,6 +813,7 @@
         // The stream ends with a finish event and [DONE]; a stream that stops short was cut (Lenspack restarted).
         let finished = false;
         let usage = null;
+        let clarify = null;
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
@@ -867,6 +892,9 @@
                 case "data-usage":
                   if (ev.data && ev.data.summary) usage = ev.data.summary;
                   break;
+                case "data-clarify":
+                  clarify = ev.data;
+                  break;
                 case "finish":
                   finished = true;
                   break;
@@ -883,6 +911,7 @@
         history.push({ id: `a${Date.now()}`, role: "assistant", parts: [{ type: "text", text: reply || t("noAnswer") }], ...(usage ? { metadata: { cost: usage } } : {}) });
         // The clips were counted in this turn (the server claims each once).
         clips.splice(0, spoken.length);
+        quickReplies(clarify);
         if (usage) {
           log.append(costLine(usage));
           spent.usd = Math.round((spent.usd + (usage.costUsd || 0)) * 1e6) / 1e6;

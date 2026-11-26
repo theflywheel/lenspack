@@ -36,7 +36,15 @@ export type Review = {
   /** The reviewer produced no usable verdict; never treat as a failure. */
   unavailable?: boolean;
   raw?: string;
+  /** With readings on: the request could be read more than one way, and the result left its reading unstated, or used a wrong one. */
+  reading?: ReadingIssue;
 };
+
+export type ReadingIssue = { issue: "unstated" | "wrong"; question: string; readings: string[]; note: string };
+
+/** Added to the reviewer's instructions when clarifying is on (the clarify switch). */
+export const READING_RULE = `
+Readings: when the instruction can reasonably be read in more than one way that gives materially different numbers (stock dispatched or doses given; calendar days or days with data; one side's records or the other's), check which reading AFTER uses. If a DOMAIN RULE or definition settles it and AFTER uses another, that is a material finding. If nothing settles it and no title or note says which reading was used, add a minor finding asking for the title to say so. In either case also add "reading": {"issue": "wrong" | "unstated", "question": "the question in general words, no names or dates", "readings": ["short label", "short label"], "note": "one sentence"} to your JSON. Leave "reading" out when there is only one reasonable reading.`;
 
 export const REVIEW_PROMPT = `You are a strict, adversarial reviewer of a dashboard edit made by another assistant.
 You will be given: the PACK (what each measure and dimension means) and its DOMAIN RULES, the user's instruction, the board BEFORE, the board AFTER, a RECEIPT listing the versions the board actually gained (this is the ground truth of what changed — the assistant's own claims are not), and REFUSALS: edits the system itself rejected during the turn, with the reason. A request the system refused cannot be satisfied as asked; the assistant is right to offer the nearest answerable alternative or to say so.
@@ -64,14 +72,14 @@ Reply with JSON only: {"findings": [{"severity": "material" | "minor", "widget":
 /** `reviewer` is a model, or a provider, whose adapter may shape the call (a cache breakpoint on the fixed prompt). */
 export async function reviewTurn(
   reviewer: LanguageModel | Pick<Provider, "languageModel" | "prepare">,
-  input: { catalogue: string; instructions?: string; instruction: string; before: string; after: string; receipt: string; refusals?: string[] },
+  input: { catalogue: string; instructions?: string; instruction: string; before: string; after: string; receipt: string; refusals?: string[]; readings?: boolean },
   timeoutMs = 60_000,
 ): Promise<Review> {
   const provider = typeof reviewer === "object" && "languageModel" in reviewer ? reviewer : { languageModel: reviewer };
   const prompt = `PACK:\n${input.catalogue}\n\nDOMAIN RULES:\n${input.instructions?.trim() || "(none)"}\n\nINSTRUCTION:\n${input.instruction}\n\nBEFORE:\n${input.before}\n\nAFTER:\n${input.after}\n\nRECEIPT:\n${input.receipt || "(no versions gained)"}\n\nREFUSALS:\n${input.refusals?.length ? input.refusals.map((r) => `- ${r}`).join("\n") : "(none)"}`;
   const out = await generateText({
     model: provider.languageModel,
-    ...shapeCall(provider, { system: [REVIEW_PROMPT], messages: [{ role: "user", content: prompt }] }),
+    ...shapeCall(provider, { system: [input.readings ? `${REVIEW_PROMPT}\n${READING_RULE}` : REVIEW_PROMPT], messages: [{ role: "user", content: prompt }] }),
     // Reasoning models spend output tokens on hidden reasoning before the
     // JSON, and this prompt carries a whole board; leave generous room.
     maxOutputTokens: 4000,
@@ -80,10 +88,11 @@ export async function reviewTurn(
   const raw = out.text.trim();
   const m = /\{[\s\S]*\}/.exec(raw);
   try {
-    const p = JSON.parse(m ? m[0] : raw) as { findings?: unknown; satisfied?: unknown; userNote?: unknown; note?: unknown };
+    const p = JSON.parse(m ? m[0] : raw) as { findings?: unknown; satisfied?: unknown; userNote?: unknown; note?: unknown; reading?: unknown };
     if (!Array.isArray(p.findings) && p.satisfied !== true) throw new Error("no verdict");
     const findings = (Array.isArray(p.findings) ? p.findings : []).flatMap(findingOf);
-    return { satisfied: findings.length === 0, findings, userNote: text(p.userNote), note: text(p.note), raw };
+    const reading = input.readings ? readingOf(p.reading) : undefined;
+    return { satisfied: findings.length === 0, findings, userNote: text(p.userNote), note: text(p.note), ...(reading ? { reading } : {}), raw };
   } catch {
     return { ...unavailable(raw ? "reviewer returned no verdict" : "reviewer returned nothing"), raw };
   }
@@ -102,6 +111,16 @@ function findingOf(v: unknown): Finding[] {
   if (!problem) return [];
   const widget = text(f.widget);
   return [{ severity: f.severity === "material" ? "material" : "minor", ...(widget ? { widget } : {}), problem, forUser: text(f.forUser) }];
+}
+
+/** The reviewer's reading note, when it is whole: an issue, a question and two or more readings. */
+function readingOf(v: unknown): ReadingIssue | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const r = v as Record<string, unknown>;
+  const issue = r.issue === "wrong" || r.issue === "unstated" ? r.issue : null;
+  const question = text(r.question).slice(0, 200);
+  const readings = (Array.isArray(r.readings) ? r.readings : []).map(text).filter(Boolean).map((x) => x.slice(0, 120)).slice(0, 6);
+  return issue && question && readings.length >= 2 ? { issue, question, readings, note: text(r.note).slice(0, 300) } : undefined;
 }
 
 export const materialFindings = (r: Review) => r.findings.filter((f) => f.severity === "material");

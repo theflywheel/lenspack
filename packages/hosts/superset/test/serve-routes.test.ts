@@ -170,7 +170,22 @@ describe("Superset mode's server", () => {
     expect(r.body.examples).toEqual(["Visites par région"]);
     expect(r.body.examplesByLang).toMatchObject({ en: ["Visits by region"], fr: ["Visites par région"] });
     expect(r.body.language.options).toEqual(expect.arrayContaining(["auto", "en", "fr", "hi"]));
-    expect(Object.values(r.body.features).every((v) => v === true)).toBe(true);
+    // Every switch is on by default but the daily review, which costs money.
+    const { "review.daily": daily, ...rest } = r.body.features;
+    expect(daily).toBe(false);
+    expect(Object.values(rest).every((v) => v === true)).toBe(true);
+  });
+
+  it("serves the admin panel to Superset admins only, under its own prefix", async () => {
+    for (const path of ["/_superset/admin/", "/_superset/admin/api/packs", "/_superset/admin/api/usage/overview"]) expect((await call(path, { as: VIEWER })).status).toBe(403);
+    const page = await call("/_superset/admin/", { as: ADMIN });
+    expect(page.status).toBe(200);
+    const packs = await call("/_superset/admin/api/packs", { as: ADMIN });
+    expect(packs.status).toBe(200);
+    expect(packs.body.packs.map((p: { name: string }) => p.name)).toEqual(["visits_pack"]);
+    expect(packs.body.usage).toMatchObject({ board: "overview" });
+    const audit = await call("/_superset/audit", { as: ADMIN });
+    expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "viewer", action: "GET /_superset/admin/api/packs", outcome: "denied" }));
   });
 
   it("names the signed user on the board API", async () => {

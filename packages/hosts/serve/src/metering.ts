@@ -40,7 +40,7 @@ export type Usage = Tokens & {
   unpriced: number;
 };
 
-export type Role = "build" | "escalate" | "review" | "probe" | "eval" | "judge" | "speech" | "other";
+export type Role = "build" | "escalate" | "review" | "daily-review" | "probe" | "eval" | "judge" | "speech" | "other";
 
 /** Who and what a call is for. */
 export type Attribution = {

@@ -164,8 +164,9 @@ function metric(m: PackMeasure, name: string, env: Env): Metric {
       approximate = true;
       break;
     case "median":
-    case "p90": {
-      const pct = m.agg === "median" ? 50 : 90;
+    case "p90":
+    case "p95": {
+      const pct = m.agg === "median" ? 50 : m.agg === "p90" ? 90 : 95;
       inner = { percentiles: { ...src, percents: [pct] } };
       readInner = (b) => {
         const values = b[name]?.values ?? {};

@@ -18,6 +18,8 @@ The roles are parts of a chat turn. The builder (the model picked for the turn) 
 
 A turn is reviewed when the board gained a version, or when it gained none but the reply may say it did: the model tried an edit (which was refused) or its reply says it added, removed, renamed or moved something, in any of the chat's languages. A question answered with no edit is not reviewed. The reply describes the board as the turn left it. Words the model writes before its first edit, and the whole answer to a question, appear as they are written. Words after an edit wait for the reviewer: they appear when the edit stands, and are replaced by the fix round's words when it does not, so a reply never says "I added the chart" and then "I removed the chart I added".
 
+Where it already runs, the reviewer also checks that an answer said which reading it used when a question could be read two ways. A turn with an unstated or wrong reading is logged as an open question for an admin. With the `clarify` switch on, the builder gets a `clarify` tool to ask the user which reading they mean, with quick-reply buttons, or to say which one it used. A separate, optional daily review (the `daily-review` role, off by default and capped per run) reads the day's turns and proposes changes to the definitions. All of this is described in [review.md](review.md).
+
 A single OpenAI-compatible provider can still be given as `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`, `LENSPACK_LLM_MODEL` (and `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING`).
 
 Providers live in the environment rather than in `lenspack.yaml` because they carry keys and per-deployment prices; the config file describes data.

@@ -52,6 +52,21 @@ function ReviewBlock({ r, onApply }: { r: ReviewData; onApply?: (text: string) =
 
 type UsageData = { total: { inputTokens: number; cachedInputTokens: number; outputTokens: number; usd: number; unpriced: number }; models?: { role: string; effort?: string }[]; queries: { queries: number } };
 
+type ClarifyData = { question: string; options: { label: string; text: string }[] };
+
+// The readings of a question that can be read more than one way, as quick replies.
+function QuickReplies({ q, onPick }: { q: ClarifyData; onPick: (o: ClarifyData["options"][number], q: ClarifyData) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" data-testid="quick-replies">
+      {q.options.map((o) => (
+        <Button key={o.label} variant="outline" size="sm" className="h-auto whitespace-normal rounded-sm py-1 text-left text-xs" title={o.text} onClick={() => onPick(o, q)}>
+          {o.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 const kilo = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 // What the turn cost, as the server metered it: one quiet line under the reply.
@@ -196,13 +211,15 @@ export function ChatPanel({
   React.useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages, busy, notices]);
-  const ask = async (text: string) => {
+  const ask = async (text: string, quickReply?: { question: string; option: string }) => {
     if (!text.trim() || busy) return;
     const b = await (await fetch(`/api${base}`)).json();
     startVersion.current = b.board?.version ?? null;
     // The model sees the board as it is now; a notice pending for edits before this is moot.
     if (startVersion.current !== null) noticedFrom.current = Math.max(noticedFrom.current, startVersion.current);
-    void sendMessage({ text }, lastTurnFrom.current !== null ? { body: { since: lastTurnFrom.current } } : undefined);
+    // A quick reply names the clarifying question it answers, so the server counts the choice.
+    const body = { ...(lastTurnFrom.current !== null ? { since: lastTurnFrom.current } : {}), ...(quickReply?.question ? { quickReply } : {}) };
+    void sendMessage({ text }, Object.keys(body).length ? { body } : undefined);
     setInput("");
   };
   const noticesAt = (at: number) =>
@@ -300,6 +317,9 @@ export function ChatPanel({
                 ) : p.type === "data-review" ? (
                   // Only the last check: an earlier one's findings were fixed, or the board was left as it was.
                   p !== (m.parts as Part[]).filter((q) => q.type === "data-review").at(-1) ? null : <ReviewBlock key={i} r={p.data as ReviewData} onApply={(text) => void ask(text)} />
+                ) : p.type === "data-clarify" ? (
+                  // A clarifying question's readings: buttons under the latest reply only, each sending its reading.
+                  mi === messages.length - 1 && !busy ? <QuickReplies key={i} q={p.data as ClarifyData} onPick={(o, q) => void ask(o.text, { question: q.question, option: o.label })} /> : null
                 ) : p.type === "data-usage" ? (
                   <UsageLine key={i} u={p.data as UsageData} />
                 ) : p.type === "data-round" && (p.data as { round: number }).round > 1 ? (

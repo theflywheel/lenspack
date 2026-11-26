@@ -61,7 +61,7 @@ type Connection = {
 | `epoch(x, unit)` | a number of seconds or milliseconds since 1970 as a UTC timestamp |
 | `json(col, path)` | a JSON path as text |
 | `segment(x, values)` | "one of these is a whole `\|`-separated segment of x" |
-| `percentile(fn, x)` | exact median and p90; leave it out when the database has none |
+| `percentile(fn, x)` | exact median, p90 and p95; leave it out when the database has none |
 | `ops` | operators spelled differently: `ILIKE`, `LIKE` (and its escape), `IS DISTINCT FROM` |
 | `aggregate` | an aggregate that needs help to return the same number (MySQL's `AVG`) |
 | `orderBy(x, dir)` | one ORDER BY term with NULLs last |
@@ -91,7 +91,7 @@ These are belts. The braces are a database role that can only read what lenspack
 |---|---|---|---|---|---|
 | joins (many-to-one, fan-out refused) | yes | yes | yes | yes | yes, with `join_use_nulls=1` |
 | `count_distinct` | exact | exact | exact | exact | exact (`uniqExact`) |
-| `median`, `p90` | `percentile_cont` | `quantile_cont` | **refused** (`NOT_SUPPORTED`) | **refused** (`NOT_SUPPORTED`) | `quantileExactInclusive` (same interpolation) |
+| `median`, `p90`, `p95` | `percentile_cont` | `quantile_cont` | **refused** (`NOT_SUPPORTED`) | **refused** (`NOT_SUPPORTED`) | `quantileExactInclusive` (same interpolation) |
 | time buckets hour to year, Monday weeks | `date_trunc` | `date_trunc` | `strftime` on ISO text | `DATE_FORMAT`, `WEEKDAY` | `toStartOf…`, `toMonday` |
 | buckets in a pack `timeZone` | `AT TIME ZONE` | `AT TIME ZONE` (ICU) | **refused** (`NOT_SUPPORTED`) | **refused** (`NOT_SUPPORTED`) | `toStartOf…(x, zone)` |
 | a calendar-date time (`type: date`) in any `timeZone` | the dates as they are | the dates as they are | the dates as they are | the dates as they are | the dates as they are |

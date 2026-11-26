@@ -60,10 +60,19 @@ describe("the system prompt's parts", () => {
     );
   });
 
+  it("adds the clarify rule only when the switch is on", async () => {
+    const pack = await loadPack(tickets);
+    const [off] = systemParts(pack, catalogueFrom(pack));
+    const [on] = systemParts(pack, catalogueFrom(pack), undefined, undefined, undefined, undefined, { clarify: true });
+    expect(off).not.toContain("clarify");
+    expect(on).toContain("clarify");
+    expect(on.length - off.length).toBeLessThan(700);
+  });
+
   it("keeps replies after edits to plain sentences, and allows short lists and bold for an informational answer", async () => {
     const pack = await loadPack(tickets);
     const [stable] = systemParts(pack, catalogueFrom(pack));
-    expect(PROMPT_VERSION).toBe(25);
+    expect(PROMPT_VERSION).toBe(26);
     expect(stable).toContain("After edits, reply in one or two plain sentences with the outcome only.");
     expect(stable).toContain("may use a short bullet list and **bold**");
     expect(stable).toContain("Never use markdown headings.");

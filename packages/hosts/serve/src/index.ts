@@ -16,3 +16,4 @@ export * from "./settings";
 export * from "./features";
 export * from "./admin";
 export * from "./runtime";
+export * from "./review/index";

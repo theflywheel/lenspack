@@ -6,8 +6,13 @@ import { compileDss } from "@lenspack/dss";
 import { resolveBoard } from "@lenspack/engine";
 
 import { buildBoard, seedBoards } from "./app";
-import { fileAudit } from "./audit";
-import { authFrom, effectiveAuth } from "./auth";
+import { type AuditEvent, auditFileSince, fileAudit, rotatingAudit } from "./audit";
+import { authFrom, effectiveAuth, principalOf } from "./auth";
+import { adminSettings } from "./admin";
+import { panelRoutes } from "./review/panel";
+import { reviewSystem } from "./review/system";
+import { usageBoard } from "./review/usage";
+import type { Provider } from "./llm";
 import { openConfig, readConfig, resolveSecrets } from "./config";
 import { hashPassword } from "./password";
 import { startRuntime } from "./runtime";
@@ -51,6 +56,17 @@ async function main() {
       const openedByEnv = !adapter && config.auth?.kind !== "none";
       const host = flag("host") ?? (openedByEnv ? "127.0.0.1" : (config.host ?? (adapter ? "0.0.0.0" : "127.0.0.1")));
       if (!adapter) console.warn(`lenspack: auth is \`none\`: anyone who reaches ${host}:${port} may read and edit every board`);
+      // With state: the server's switches, the admins' definitions, open questions and the daily review, and the admin
+      // panel at /_lenspack/admin/ for maintainers. The audit log goes there by month unless audit: names a file.
+      const stateDir = config.state ? resolve(dir, config.state) : undefined;
+      const auditFile = config.audit ? resolve(dir, config.audit) : undefined;
+      const monthly = stateDir && !auditFile ? rotatingAudit(stateDir) : null;
+      const audit = auditFile ? fileAudit(auditFile) : monthly?.audit;
+      const events: ((from: Date) => AuditEvent[]) | undefined = auditFile ? auditFileSince(auditFile) : monthly ? (from) => monthly.since(from) : undefined;
+      const admin = stateDir ? adminSettings(stateDir, { features: config.features as never }) : null;
+      let models: Provider[] = [];
+      const review = admin && stateDir ? reviewSystem({ stateDir, hosts, features: admin.features, settings: admin.settings, providers: () => models, events, audit, log: (m) => console.error(`lenspack: ${m}`) }) : null;
+      const open = principalOf({ user: "local", edit: true, maintain: true, usage: true });
       startRuntime({
         hosts,
         close,
@@ -59,9 +75,36 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit: config.audit ? fileAudit(resolve(dir, config.audit)) : undefined, historyTurns: config.historyTurns },
+        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
         log: (m) => console.error(`lenspack: ${m}`),
-        onListening: () => console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}`),
+        routes: ({ providers, budget, ledger, roles }) => {
+          models = providers;
+          if (!review || !admin || !stateDir) return () => {};
+          const log = (m: string) => console.error(`lenspack: ${m}`);
+          const usage = usageBoard({ stateDir, events, providers: () => providers, ledger, budget, roles, audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log }).catch((e) => {
+            log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
+            return null;
+          });
+          const panel = panelRoutes({ prefix: "/_lenspack", system: review, features: admin.features, providers: () => providers, isAdmin: (who) => !!who.maintain || !!who.roles?.includes("admin"), adminName: "maintainer", title: config.ui && typeof config.ui === "object" ? config.ui.title : undefined, log, usage });
+          return async (req, res, url, signedIn) => {
+            if (url.pathname !== "/_lenspack/admin" && !url.pathname.startsWith("/_lenspack/admin/")) return;
+            // An open server (auth: none) has one local user, who may do everything.
+            const who = adapter ? await signedIn() : open;
+            if (!who) {
+              if (adapter?.signInPath && !url.pathname.startsWith("/_lenspack/admin/api/")) {
+                res.writeHead(302, { location: adapter.signInPath(url), "cache-control": "no-store" });
+                return void res.end();
+              }
+              res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
+              return void res.end(JSON.stringify({ error: "sign in to use the admin panel" }));
+            }
+            await panel(req, res, url, who);
+          };
+        },
+        onListening: () => {
+          console.log(`lenspack: ${hosts.map((h) => `${h.name} (${h.connector.kind})`).join(", ")} on http://${host}:${port}/api${ui ? `, ui from ${ui}` : ""}${adapter ? `, sign-in by ${adapter.kind}` : ", open"}${review ? `; admin panel at /_lenspack/admin/` : ""}`);
+          void review?.start();
+        },
       });
       return;
     }

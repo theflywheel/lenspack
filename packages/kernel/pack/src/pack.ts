@@ -21,7 +21,7 @@ const column = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a column name");
 // way to name data that every connector understands.
 export const fieldPath = z.string().regex(/^[A-Za-z_@][A-Za-z0-9_@]*(\.[A-Za-z_@][A-Za-z0-9_@]*)*$/, 'a column or field path, e.g. "region" or "attrs.region.keyword"');
 
-export const AGGS = ["count", "count_distinct", "sum", "avg", "min", "max", "median", "p90"] as const;
+export const AGGS = ["count", "count_distinct", "sum", "avg", "min", "max", "median", "p90", "p95"] as const;
 
 // A fragment is one string, or one per dialect when the engines genuinely
 // differ (a date difference, a regex). `default` covers the rest. A driver
@@ -140,7 +140,7 @@ export const dimensionSchema = z
 export const perSchema = z
   .object({
     key: z.union([fieldPath, z.object({ sql: fragmentSchema })]),
-    agg: z.enum(AGGS).exclude(["median", "p90"]),
+    agg: z.enum(AGGS).exclude(["median", "p90", "p95"]),
     sql: fragmentSchema.optional(),
     field: fieldPath.optional(),
     filter: fragmentSchema.optional(),

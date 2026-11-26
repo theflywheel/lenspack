@@ -329,8 +329,8 @@ keeps its wording with URLs, hosts, ports and IP addresses taken out. The raw er
 
 ## Off switches
 
-Each part of the assistant can be turned off; all are on by default. A switch's value comes from, lowest first:
-the default (on), `features:` in the config, `LENSPACK_FEATURES`, then an admin on the settings page. The page
+Each part of the assistant can be turned off; all are on by default except the daily review, which costs money.
+A switch's value comes from, lowest first: the default, `features:` in the config, `LENSPACK_FEATURES`, then an admin on the settings page. The page
 can turn a switch the environment set back on; `null` hands it back to the environment.
 
 ```yaml
@@ -353,6 +353,12 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `heatmap` | new heatmaps are refused (existing ones stay) | the server |
 | `maps` | map queries are refused (existing deck_scatter charts stay in Superset) | the server |
 | `reviewer` | no second model call checking each change: edits are saved as they are made, and a wrong one is not caught before the reply | the server |
+| `clarify` | the assistant never asks which reading is meant and logs no open questions | the server |
+| `review.daily` | (off by default) no daily review of the day's questions | the server |
+| `review.compare` | open questions' readings are not run on the data after a review | the server |
+
+The admin panel (open questions, definitions, the daily review, a board of how the assistant is used) is at
+`/lenspack/_superset/admin/`, for Superset admins, linked from the settings page: see [docs/review.md](../../../docs/review.md).
 
 `/_superset/info` returns `features` (the effective booleans) for the page. `GET /_superset/settings` returns
 `features: {values, defaults, source, options, writable}`: `defaults` is what the deployment says without the

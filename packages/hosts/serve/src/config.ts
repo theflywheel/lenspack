@@ -95,6 +95,14 @@ export const configSchema = z.object({
   historyTurns: z.number().int().positive().optional(),
   /** Directory for each pack's <name>.proposals.json; defaults to this file's, which may be read-only (a mounted ConfigMap). */
   proposals: z.string().optional(),
+  /**
+   * A writable directory for the server's own state: its switches, the admins' definitions overlay, open questions and
+   * the daily review. With it, the admin panel is served at /_lenspack/admin/ (maintainers only), and the audit log is kept there
+   * by month unless audit: names a file.
+   */
+  state: z.string().optional(),
+  /** Switches (see features.ts): on or off by name; the admin panel can change them while the server runs. */
+  features: z.record(z.boolean()).optional(),
 });
 export type LenspackConfig = z.infer<typeof configSchema>;
 

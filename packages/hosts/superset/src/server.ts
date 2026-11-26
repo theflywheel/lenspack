@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { memoryStore } from "@lenspack/core";
-import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, type Provider, TYPES, adminRoutes, adminSettings, json, panelRoutes, resolveSecrets, reviewSystem, rotatingAudit, scriptJson, startRuntime, usageBoard } from "@lenspack/serve";
 import YAML from "yaml";
 
 import { identityKey, serviceAccount } from "./bootstrap";
@@ -199,15 +199,35 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
 
   const port = Number(config.port ?? env.LENSPACK_PORT ?? 8795);
   const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
+  // The definitions overlay, open questions and the daily review (review/ in @lenspack/serve), kept in the state
+  // directory; the admin panel at /_superset/admin/ (through Superset: /lenspack/_superset/admin/).
+  let models: Provider[] = [];
+  const review = reviewSystem({
+    stateDir,
+    hosts: [{ name: pack.pack, pack, connector, ctx: {} }],
+    features: admin.features,
+    settings: admin.settings,
+    providers: () => models,
+    events: auditLog ? (from) => auditLog.since(from) : undefined,
+    audit: auditLog?.audit,
+    log,
+  });
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
-    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined), audit: auditLog?.audit, ...admin.app },
+    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined), audit: auditLog?.audit, ...admin.app, definitions: review.turn },
     port,
     host,
     budget: config.budget,
     log,
     health: () => ({ identity: !!idKey }),
-    routes: ({ providers, budget }) => {
+    routes: ({ providers, budget, ledger, roles }) => {
+      models = providers;
+      // Usage as a board of its own (the panel's Overview), over the audit log, or the turn telemetry when it is written.
+      const usage = usageBoard({ stateDir, events: auditLog ? (from) => auditLog.since(from) : undefined, providers: () => providers, ledger, budget, roles, audit: auditLog?.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log }).catch((e) => {
+        log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
+        return null;
+      });
+      const adminPanel = panelRoutes({ prefix: "/_superset", system: review, features: admin.features, providers: () => providers, isAdmin: (who) => !!who.roles?.includes("admin"), adminName: "Superset admin", title: pack.pack, log, usage });
       const settingsPage = adminRoutes({
         prefix: "/_superset",
         settings: admin,
@@ -246,6 +266,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (asset) return send(res, 200, readFileSync(join(web, asset[1]!), "utf8"), TYPES[asset[1]!.slice(asset[1]!.lastIndexOf("."))]!);
         const who = await signedIn();
         if (!who) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
+        if (await adminPanel(req, res, url, who)) return;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
         if (url.pathname === "/_superset/bind") {
@@ -262,6 +283,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         return json(res, 404, { error: "not found" }, NO_STORE);
       };
     },
-    onListening: ({ providers }) => log(`http://${host}:${port}/ (Superset ${supersetUrl}, ${Object.keys(dashboards).length} dashboard(s) bound, chat ${providers.length ? "on" : "off"})`),
+    onListening: ({ providers }) => {
+      log(`http://${host}:${port}/ (Superset ${supersetUrl}, ${Object.keys(dashboards).length} dashboard(s) bound, chat ${providers.length ? "on" : "off"}); admin panel at ${base}/_superset/admin/`);
+      void review.start();
+    },
   });
 }
