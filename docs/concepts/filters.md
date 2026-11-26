@@ -24,10 +24,12 @@ the widgets it applies to are narrowed.
 { "id": "filter_country", "type": "select", "label": "Country", "field": "country", "applies": ["*"] }
 ```
 
-What a reader has picked is sent with each chat question, so "how many orders today?" with one country picked is
-answered for that country, and "How this was worked out" says whether each pick was applied. Inside Superset, a
-dashboard's native filters are read as board filters; one Lenspack cannot express is kept exactly as Superset has
-it. See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-filter-bar).
+In the standalone board, what a reader has picked is sent with each chat question, and "How this was worked out"
+says whether each pick was applied to the answer's numbers. The chat does not narrow its queries by the picks yet:
+"how many orders today?" with one country picked is answered for every country the reader may see unless the
+question names the country, and the card then says the pick was not applied. Inside Superset, the picks are not
+sent at all yet. A dashboard's native filters are read as board filters; one Lenspack cannot express is kept
+exactly as Superset has it. See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-filter-bar).
 
 ## 3. A person's row scope
 

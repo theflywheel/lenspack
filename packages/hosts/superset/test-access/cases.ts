@@ -944,10 +944,27 @@ export function accessSuite(version: string) {
       const ADMIN_GETS = ["_superset/settings", "_superset/audit?limit=5", "_superset/turns?limit=5", "api/_usage", "_superset/admin/", "_superset/admin/api/packs", "_superset/telemetry/superset-actions", "_superset/personal"];
       const catalogue = async (who: User) => sorted(((await s[who].lp("GET", `api/${PACK}`)).json.catalogue.measures as { key: string }[]).map((m) => m.key));
 
+      // Today's spend before the restart, as the usage page showed it.
+      let spentBefore = 0;
+      let callsBefore = 0;
+
       beforeAll(async () => {
-        await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }']);
+        const usage = (await s.lp_admin.lp("GET", "api/_usage")).json as { turns: { day: string; llm: { usd: number; calls: number } }[] };
+        const today = new Date().toISOString().slice(0, 10);
+        for (const t of usage.turns.filter((x) => x.day === today)) (spentBefore += t.llm.usd), (callsBefore += t.llm.calls);
+        // A daily budget from now on, so the restarted server reports what it counts against it.
+        await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }', "budget: { usdPerDay: 1000 }"]);
         expect(stack.log()).toMatch(/admins: Superset role Lenspack admin/);
       }, 300_000);
+
+      it("keeps today's spend, and so the daily budget, across the restart", async () => {
+        expect(callsBefore).toBeGreaterThan(0);
+        expect(spentBefore).toBeGreaterThan(0);
+        const after = (await s.lp_lensadmin.lp("GET", "api/_usage")).json as { budget: { spent: number }; turns: { day: string; llm: { calls: number } }[] };
+        const today = new Date().toISOString().slice(0, 10);
+        expect(after.turns.filter((x) => x.day === today).reduce((n, t) => n + t.llm.calls, 0)).toBeGreaterThanOrEqual(callsBefore);
+        expect(after.budget.spent).toBeGreaterThanOrEqual(Math.round(spentBefore * 1e6) / 1e6 - 1e-6);
+      });
 
       it("refuses a Superset Admin without the role the panel, the settings, the audit log and every admin route", async () => {
         for (const path of ADMIN_GETS) expect([path, (await s.lp_admin.lp("GET", path)).status]).toEqual([path, 403]);

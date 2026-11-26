@@ -241,8 +241,10 @@ other than "last N days or months".
 
 The chat can add, change (label, charts, default) and remove filters, and remove a Superset-only one, but never
 rewrite one. Writing back changes only the filters the board changed; every other key, section heading and filter
-is kept as it was. What a viewer has picked is sent with each chat question (see
-[Filters](../../concepts/filters.md#2-a-boards-filter-bar)). On Superset 6.1 the filter bar also holds "chart
+is kept as it was. What a viewer has picked in Superset's filter bar is not sent to the chat yet: the chat answers
+over everything the person may see (their row-level security and the pack's `scope` still apply), not only what the
+filters show, so its number can differ from a filtered dashboard's. Ask for the area in the question ("in district
+X") to narrow it. See [Filters](../../concepts/filters.md#2-a-boards-filter-bar). On Superset 6.1 the filter bar also holds "chart
 customizations" and a timestamp switch; Lenspack leaves both untouched.
 
 ## Heatmaps

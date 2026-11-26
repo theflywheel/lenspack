@@ -124,7 +124,8 @@ JSON line each in `audit.jsonl` in the state directory.
 
 - On the first write of a month, the previous month moves to `audit-YYYY-MM.jsonl`; months older than 90 days are
   deleted (`audit.retentionDays`, or `LENSPACK_AUDIT_RETENTION_DAYS`). `audit: false` turns it off.
-- It is the durable record: the usage figures (`GET /api/_usage`) are kept in memory and reset on restart.
+- The usage figures (`GET /api/_usage`) and the day's budget come from `usage.jsonl` beside it; a restart reads
+  today's calls back.
 - Admins read it with `GET /_superset/audit?month=YYYY-MM&limit=N`, and on the AI assistant page.
 
 ---

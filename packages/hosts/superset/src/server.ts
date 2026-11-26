@@ -454,6 +454,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     },
     port,
     host,
+    // Every model call, one JSON line in the state directory: today's spend (the budget, GET /api/_usage) is read back at start.
+    usageFile: join(stateDir, "usage.jsonl"),
     budget: config.budget,
     log,
     health: () => ({ identity: !!idKey }),
