@@ -91,7 +91,13 @@ export function filtersFromNative(meta: Record<string, unknown>, binding: Bindin
       applies: ["*"],
       note: `Superset-only filter: “${label}”, ${what}. It stays as Superset has it: it can be removed here, but changed only in Superset.`.slice(0, 400),
     });
-    const on = column ? `of ${column}` : "";
+    // A column the overlay excludes is not named, and its default values (a person's name, a place) are not said.
+    const hidden = !!column && !!binding.excluded?.has(column.trim().toLowerCase());
+    const on = hidden ? "of a field this assistant does not use" : column ? `of ${column}` : "";
+    if (hidden) {
+      out.push(kept(`a filter ${on}`));
+      continue;
+    }
     if (!applies.length) {
       out.push(kept(`which applies to no chart on this dashboard`));
       continue;

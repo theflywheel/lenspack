@@ -18,6 +18,9 @@ chart is kept as Superset's.
 Hints come from Superset's descriptions. Keep numeric columns that are only measured (amounts, counts) not
 groupable in Superset: a groupable numeric column becomes a dimension, which confuses the chat about what to add up.
 
+To use a dataset as it is, without editing it in Superset, see
+[Setting it all up in `superset.yaml`](#setting-it-all-up-in-supersetyaml).
+
 **Nothing in a dataset stops Lenspack starting.** A metric with no name or SQL, or a column with no name, is left
 out. A groupable column with the same name as a saved metric becomes `<name>_value` (the metric keeps the name).
 Each change is one warning line in the log and in the settings API (`warnings`).
@@ -27,7 +30,8 @@ Each change is one warning line in the log and in the settings API (`warnings`).
 What Superset has no field for comes from `overlay:` in `superset.yaml`: the pack's `description` and `instructions`, a
 `timeZone`, entity names and `entities` settings, `hints` and `labels` for keys, `hierarchies`, `examples` (written per
 language if you like; see [Languages](../../features/languages.md#suggested-questions-in-several-languages)), `geo` for
-maps, `mapStyle`, and `panel` (`float` or `dock`, the chat's starting form).
+maps, `mapStyle`, and `panel` (`float` or `dock`, the chat's starting form). `exclude`, `notDimensions` and `measures`
+are described [below](#setting-it-all-up-in-supersetyaml).
 
 ```yaml
 overlay:
@@ -39,6 +43,135 @@ overlay:
     - question: Orders by country last month
       query: { kind: breakdown, dimension: country, measure: orders, time: { period: month, offset: -1 } }
 ```
+
+## Setting it all up in `superset.yaml`
+
+Everything Lenspack needs can be said in `superset.yaml`, with no change to Superset's datasets. That matters when the
+people running Lenspack can't edit datasets in Superset, or when the dashboards depend on the datasets as they are.
+A dataset that has only a row count and lets every column be grouped would otherwise give a pack with dozens of
+dimensions and one measure per dataset. Three overlay keys fix that.
+
+### Columns the pack never uses
+
+`overlay.exclude` names columns the pack never turns into anything, on any dataset, whatever Superset's flags say:
+
+```yaml
+overlay:
+  exclude:
+    columns: [customer_name, loyalty_code, latitude, longitude]
+    datasets: [staff_shifts]      # optional: whole datasets, by id or table name
+```
+
+- A column is matched by name, in any case (`CustomerName` matches `customername`), or by its key (`customer_name`).
+- An excluded column is never a dimension, a measure, a map's coordinates or a time column. No query can read it, so
+  no answer, explain card or sample row can show it.
+- A dashboard filter on an excluded column stays on the dashboard, but it is not passed to the chat: its value never
+  reaches the model, a saved answer or the usage records. "How this was worked out" says that a dashboard filter on a
+  field the assistant does not use was not applied, without naming the field or its value. The model is told about
+  such a filter without its column name or default values.
+- The exclusion wins over `notDimensions` and `measures`: a measure that reads an excluded column is refused.
+- Superset itself is unchanged: its charts can still group by the column.
+- With `hostPolicy: superset`, a row-level security rule on an excluded column can't be applied by Lenspack, so the
+  dataset is kept from the people it applies to (Lenspack fails closed). Keep such rules on columns the pack uses.
+
+### Columns that are not dimensions
+
+`overlay.notDimensions` names columns that Superset lets you group by but that are amounts or counts, so the pack does
+not make them dimensions:
+
+```yaml
+overlay:
+  notDimensions: [quantity, basket_value]
+```
+
+The startup log warns when a column that a measure adds up is still a dimension.
+
+### Measures from columns
+
+`overlay.measures` adds base measures from a dataset's columns:
+
+```yaml
+overlay:
+  measures:
+    - { dataset: orders, name: items_sold, agg: sum, column: quantity, label: { en: Items sold, fr: Articles vendus } }
+    - { dataset: orders, name: customers, agg: count_distinct, column: customer_id }
+    - { dataset: orders, name: delivered_orders, agg: count, where: [{ column: status, op: eq, value: delivered }] }
+    - { dataset: orders, name: largest_basket, agg: max, column: basket_value, format: currency }
+```
+
+| key | what it is |
+|---|---|
+| `dataset` | one of the datasets in `datasets:`, by id, table name or entity key |
+| `name` | the measure's key |
+| `agg` | `sum`, `count`, `count_distinct`, `min` or `max` |
+| `column` | the column it reads; `count` without one counts rows |
+| `where` | optional conditions on the rows: `{ column, op, value }`, `op` one of `eq`, `neq`, `in`, `gt`, `gte`, `lt`, `lte`, `exists`, `missing` |
+| `label`, `hint` | text, or text per language |
+| `format` | `number` (default), `percent`, `currency` or `compact` |
+
+- Superset computes each one as an **ad hoc metric**, the kind its own metric editor makes. Lenspack sends the
+  aggregate and the column (or, with `where`, the aggregate over the rows the conditions keep, written from the
+  checked column names with the values quoted). Superset puts it in its query for the dataset, so the person's
+  dataset access, Superset's row-level security and the pack's own scope apply exactly as for a saved metric.
+- A chart the chat makes with one is saved in Superset with that ad hoc metric, and a chart someone makes in Superset
+  with the same aggregate of the same column reads back as the measure.
+- Keep these to simple base measures. Rates, shares and changes come from Lenspack's compute step (see
+  [Computed charts](computed-charts.md)), never from a measure.
+- Each one is checked against the dataset as Superset describes it. A dataset not listed, a column that isn't there,
+  an excluded column, an aggregate not in the list, a sum of a text column or a key already taken leaves that measure
+  out with a warning in the log and in the settings API (`warnings`). Lenspack still starts.
+
+### Labels in several languages
+
+`overlay.labels` and `overlay.hints` take text, or text per language:
+
+```yaml
+overlay:
+  labels:
+    region: { en: Region, fr: Région }
+```
+
+The English text (else the first) is the key's label. The other languages become words the chat also knows the key
+by, so a question asked in French finds it.
+
+### A worked example
+
+A shop's two datasets, `orders` and `returns`, each have one saved metric, a row count, and every column groupable.
+Nobody can edit them. This `superset.yaml` is the whole setup:
+
+```yaml
+datasets: [orders, returns]
+dashboards: [12]
+scope:
+  - { dimension: campaign, op: eq, value: 2026-spring }
+language: { default: fr, board: fr }
+overlay:
+  pack: shop
+  description: Orders and returns for the spring campaign.
+  exclude:
+    columns: [customer_name, loyalty_code, latitude, longitude]
+  notDimensions: [quantity, basket_value]
+  measures:
+    - { dataset: orders, name: items_sold, agg: sum, column: quantity, label: { en: Items sold, fr: Articles vendus } }
+    - { dataset: orders, name: customers, agg: count_distinct, column: customer_id, label: { en: Customers, fr: Clients } }
+    - { dataset: orders, name: delivered_orders, agg: count, where: [{ column: status, op: eq, value: delivered }], label: { en: Delivered orders, fr: Commandes livrées } }
+  labels:
+    region: { en: Region, fr: Région }
+  examples:
+    - question: { en: Items sold by region, fr: Articles vendus par région }
+      query: { kind: breakdown, dimension: region, measure: items_sold, limit: 10 }
+```
+
+What it gives:
+
+- dimensions from the groupable text columns, without the personal ones or the amounts;
+- three measures beside the row counts, computed by Superset under each person's own access;
+- every answer for the spring campaign only (see
+  [Row scope and tenancy](../../access/scope-and-tenancy.md#pinning-every-answer-in-superset)), and a question on
+  `returns`, which has no `campaign` column, refused rather than answered for every campaign;
+- suggested questions in French.
+
+A change to `superset.yaml` takes effect when Lenspack restarts.
 
 ## Numbers, from Superset
 
