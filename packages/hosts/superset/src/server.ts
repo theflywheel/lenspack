@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, boardRights, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, exportRoutes, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
@@ -461,6 +461,15 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     routes: (rt) => {
       const { providers, budget } = rt;
       const adminPanel = review.routes(rt);
+      const exporter = exportRoutes({
+        telemetry: admin.telemetryLog,
+        auditSince: auditLog ? (from) => auditLog.since(from) : null,
+        recordings: () => admin.audio.list(),
+        keeping: () => ({ itemsOn: admin.telemetry.items(), telemetry: admin.telemetry.enabled(), audit: !!auditLog }),
+        hash: admin.telemetry.hash,
+        audit: auditLog?.audit ?? null,
+        env,
+      });
       const settingsPage = adminRoutes({
         prefix: "/_superset",
         settings: admin,
@@ -503,6 +512,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         // Before the path is read at all: URL would resolve "..", so what the route acts on could differ from what Superset checked.
         const bad = pathRefusal(req.url);
         if (bad) return json(res, 400, { error: bad }, NO_STORE);
+        // Data export (prototype): an export token from the deployment's secrets, not a Superset sign-in (export.ts).
+        if (await exporter(req, res, url)) return;
         if (url.pathname.startsWith("/api/") || url.pathname === "/healthz") return;
         // The scripts are public (Superset only includes them for signed-in users); everything else needs Superset's signature.
         const asset = /^\/(chat\.js|overlay\.js|mine\.js|chat\.css)$/.exec(url.pathname);
