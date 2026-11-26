@@ -44,7 +44,7 @@ brought it.
   [Health and shutdown](docs/operating/deploying.md#health-and-shutdown).
 - **Excluded columns are not named to the model.** With `overlay.exclude`, the descriptions of Superset charts the
   assistant keeps as they are, the board notes, and filters on an excluded column no longer name the column (a map
-  of excluded coordinates, a chart split or filtered by an excluded column, a filter called after it). (PR_THREE)
+  of excluded coordinates, a chart split or filtered by an excluded column, a filter called after it). ([#110](https://github.com/theflywheel/lenspack/pull/110))
 - **After a chat edit in Superset, the open page shows the dashboard as saved, even when the reply is cut off.** A
   reply can be cut off after the change was made, for example when a phone changes networks. The chat panel now finds
   out what happened before offering Retry: "Your change was made: removed …", and the page drops the chart without a
