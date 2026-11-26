@@ -49,6 +49,10 @@ Some details:
   uses something they can't see (a dataset or field hidden from them under `hostPolicy: superset`) is left out,
   and the reply names it. Filters the target can't have are left out the same way. The dashboard keeps its own
   title.
+- **A copy keeps every chart.** Superset's copy keeps only the charts its layout places, so a chart that is on
+  the original but missing from its layout is placed first, where Superset draws such charts: the first tab of a
+  dashboard with tabs, else the end of the grid. The layout is checked before the copy is made; one Superset
+  could not draw is refused, unless the original already had the same problem.
 - **A copy starts private.** A new dashboard or a copy is a draft (not published) with no dashboard roles. A copy
   of a dashboard that some people open through its dashboard roles (Superset's `DASHBOARD_RBAC`) does not carry
   those roles, so it does not give them, or its owner, the access the original's roles gave. The owner reads on it

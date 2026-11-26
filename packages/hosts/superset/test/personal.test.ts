@@ -17,6 +17,7 @@ import { type SupersetClient, SupersetError } from "../src/client";
 import { supersetConnector } from "../src/connector";
 import { READ_ONLY_MESSAGE } from "../src/identity";
 import { type SupersetDataset, packFromDatasets, widgetToChart } from "../src/index";
+import { type Position as LayoutPosition, layoutProblems } from "../src/layout";
 import { type PersonalEvent, chartIdMap, completePositions, personalDashboards, remapChartIds } from "../src/personal";
 import { fileRecords } from "../src/records";
 import { supersetBoards } from "../src/store";
@@ -246,6 +247,29 @@ describe("a dashboard of one's own", () => {
     const map = chartIdMap(pos, JSON.parse(JSON.stringify(pos).replaceAll('"chartId":11', '"chartId":21').replaceAll('"chartId":12', '"chartId":22')));
     expect([...map]).toEqual([[11, 21], [12, 22]]);
     expect(remapChartIds({ chart_configuration: { "11": { id: 11, crossFilters: { chartsInScope: [12] } } }, global_chart_configuration: { chartsInScope: [11, 12] } }, map)).toEqual({ chart_configuration: { "21": { id: 21, crossFilters: { chartsInScope: [22] } } }, global_chart_configuration: { chartsInScope: [21, 22] } });
+  });
+
+  it("puts a chart the layout leaves out in the first tab of a dashboard with tabs, and keeps the layout valid", () => {
+    const tabbed = {
+      ROOT_ID: { id: "ROOT_ID", type: "ROOT", children: ["TABS-1"] },
+      "TABS-1": { id: "TABS-1", type: "TABS", children: ["TAB-a", "TAB-b"], parents: ["ROOT_ID"] },
+      "TAB-a": { id: "TAB-a", type: "TAB", children: ["ROW-1"], parents: ["ROOT_ID", "TABS-1"], meta: { text: "First" } },
+      "TAB-b": { id: "TAB-b", type: "TAB", children: [], parents: ["ROOT_ID", "TABS-1"], meta: { text: "Second" } },
+      "ROW-1": { id: "ROW-1", type: "ROW", children: ["CHART-11"], parents: ["ROOT_ID", "TABS-1", "TAB-a"], meta: {} },
+      "CHART-11": { id: "CHART-11", type: "CHART", children: [], parents: ["ROOT_ID", "TABS-1", "TAB-a", "ROW-1"], meta: { chartId: 11, width: 4, height: 50 } },
+    };
+    const pos = completePositions(tabbed, [11, 12]);
+    expect(layoutProblems(pos as LayoutPosition)).toEqual([]);
+    const placed = Object.values<any>(pos).find((c) => c?.type === "CHART" && c.meta.chartId === 12);
+    expect(placed.parents.slice(0, 3)).toEqual(["ROOT_ID", "TABS-1", "TAB-a"]);
+  });
+
+  it("is copied with a problem its original's layout already had, which the layout check leaves as it was", async () => {
+    const t = setup();
+    const src = t.superset.official("Broken", [ADMIN.userId], [KPI]);
+    // A layout that lists a component that isn't there.
+    t.superset.dashes.get(src.id)!.position_json = JSON.stringify({ ROOT_ID: { id: "ROOT_ID", type: "ROOT", children: ["GRID_ID", "GRID_2"] }, GRID_ID: { id: "GRID_ID", type: "GRID", children: [], parents: ["ROOT_ID"] } });
+    expect((await t.personal.copy(VIEWER, { dashboard: src.id, view: true, edit: false })).ok).toBe(true);
   });
 
   it("is removed again when Superset won't make it the person's", async () => {

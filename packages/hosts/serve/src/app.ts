@@ -5,7 +5,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, toVercelAI } from "@lenspack/agent";
+import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, quickReplyOf, selectionsFrom, tabsText, toVercelAI, viewFrom } from "@lenspack/agent";
 import { type Principal, accessNote, answerView, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -615,14 +615,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         case "GET versions":
           return json(res, 200, (await h.store.versions(boardId)).map(shown));
         case "POST ops": {
-          const body = (await read(req)) as { ops: unknown[] };
+          const body = (await read(req)) as { ops: unknown[]; view?: unknown };
           const ops = body.ops.map((o) => opSchema.parse(o)) as BoardOp[];
+          // The tab the caller has open, on a host layout with tabs: where a new widget goes when its placement names no other.
+          const view = viewFrom(body.view);
           const checked = checkOps(ops, h.pack, { ctx, capabilities: h.connector.capabilities });
           if (!checked.ok) {
             audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "refused", detail: checked.error });
             return json(res, 200, checked);
           }
-          const patched = await h.store.patch({ id: boardId, ops, catalogue, source: "ops" });
+          const patched = await h.store.patch({ id: boardId, ops, catalogue, source: "ops", ...(view ? { view } : {}) });
           audit({ user: who.user, pack: packName, board: boardId, action: "ops", outcome: "ok", detail: ops.map((o) => o.op).join(",") });
           return json(res, 200, patched.ok ? { ...patched, board: shown(patched.board) } : patched);
         }
@@ -708,7 +710,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const defsVersion = await definitionsVersion(defs, h.name, h.pack);
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown; transcriptIds?: unknown; client?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown; transcriptIds?: unknown; client?: unknown; view?: unknown };
     const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
     const instruction = (lastUser?.parts ?? []).map((p) => ("text" in p ? (p as { text: string }).text : "")).join(" ").trim();
     // A quick reply picked under a clarifying question: counted against that reading in the open-questions log.
@@ -721,13 +723,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // The answer card (kernel/agent answer.ts), from the data calls the tools make; policy decides what it shows.
     const shown = answerView(h.ctx, opts.explain?.());
     const card = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
+    // Where the viewer is on the host's page (the tab they have open), as the host page said; the tab names come from the store.
+    const turnView = viewFrom(body.view);
+    let tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
     const turnId = randomUUID();
     const scope = { user, pack: h.name, board: boardId, turn: turnId, sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
     const personal = opts.personal?.(req, { user, pack: h.name, boardId, readOnly });
     const tools = toVercelAI([
-      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal, onData: card?.onData,
+      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal, onData: card?.onData, view: turnView,
         onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }),
       ...(clarifying && defs ? [clarifyTool({ note: (n) => defs.note(h.name, n), question: instruction })] : []),
     ]);
@@ -737,7 +742,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
     const access = accessNote(h.ctx);
-    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access });
+    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView) });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
@@ -773,7 +778,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // A question answered before, by someone with the same access, on the same pack and board: answered from the
     // saved plan without the agent (reuse/, docs/caching.md). "Ask fresh" (fresh: true) always runs the agent.
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
-    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, promptVersion: String(PROMPT_VERSION), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
+    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: String(PROMPT_VERSION), readOnly, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
     const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections: selectionsFrom(body.selections) });
     const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) });
@@ -809,7 +814,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       if (now && now.version !== startVersion) {
         config = view(now.config);
         startVersion = now.version;
-        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access });
+        tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
+        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView) });
         before = summarise(config);
         reuseTurn.config = config;
       }

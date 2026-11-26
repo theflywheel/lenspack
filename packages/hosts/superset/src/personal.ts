@@ -26,7 +26,11 @@ import {
 } from "@lenspack/policy";
 
 import type { SupersetClient } from "./client";
+import { type Position as LayoutPosition, layoutProblems, placeCharts, withRoot } from "./layout";
 import type { SupersetBoards } from "./store";
+
+/** A layout as read from Superset's position_json, loosely typed (layout.ts has the strict shape). */
+type Position = Record<string, any>;
 
 /** What the audit log is told: one line per create, copy, delete, save, apply and rename. */
 export type PersonalAuditEvent = { at: string; user: string; pack?: string; board?: string; action: string; outcome: "ok" | "refused" | "denied"; detail?: string };
@@ -64,7 +68,6 @@ export type PersonalOptions = {
   newId?: () => string;
 };
 
-type Position = Record<string, any>;
 type Dash = { id: number; dashboard_title: string; position_json: string | null; json_metadata: string | null; css?: string | null; owners?: { id: number }[] };
 
 const refusal = (v: Verdict & { ok: false }) => ({ ok: false as const, error: v.why, code: v.code });
@@ -150,7 +153,16 @@ export function personalDashboards(o: PersonalOptions) {
       client.get<{ result: { id: number }[] }>(`/api/v1/dashboard/${source.dashboard}/charts`),
     ]);
     const name = (title?.trim() || `${dash.dashboard_title.slice(0, 140)} (my copy)`).slice(0, 160);
-    const positions = completePositions(dash.position_json ? JSON.parse(dash.position_json) : {}, charts.map((c) => c.id));
+    const original: Position = dash.position_json ? JSON.parse(dash.position_json) : {};
+    const positions = completePositions(original, charts.map((c) => c.id));
+    // Never a layout Superset can't draw (layoutProblems, layout.ts); problems the original already had are left as they were.
+    const had = new Set(layoutProblems(withRoot(structuredClone(original) as LayoutPosition)));
+    const wrong = layoutProblems(positions as LayoutPosition).filter((p) => !had.has(p));
+    if (wrong.length) {
+      log(`copy of dashboard ${source.dashboard} refused: ${wrong.join("; ")}`);
+      audit(who, "dashboard-copy", "refused", `superset-${source.dashboard}`, `layout not valid: ${wrong.slice(0, 3).join("; ").slice(0, 200)}`);
+      return { ok: false, error: "This dashboard's layout could not be copied as it is. Ask a Superset admin to open and save it in Superset, then try again.", code: "invalid" };
+    }
     const meta = parseMeta(dash.json_metadata);
     // Superset copies the charts and renames the layout's chart ids; it reads them from `positions`.
     const made = await client.post<{ result: { id: number } }>(`/api/v1/dashboard/${source.dashboard}/copy/`, {
@@ -408,29 +420,14 @@ function parseMeta(json: string | null | undefined): Record<string, any> {
 }
 
 /**
- * A dashboard's layout with every one of its charts in it. Superset's copy keeps only the charts its layout
- * places (a chart on the dashboard but not in the layout would be copied and then left on no dashboard), so
- * the ones it lacks go in rows at the end, as Superset draws them.
+ * A dashboard's layout with every one of its charts drawn, for Superset's copy. The copy keeps only the charts its
+ * layout places (a chart on the dashboard but not in the layout would be copied and then left on no dashboard), so
+ * the ones it lacks are placed where Superset draws such charts: the first top-level tab, else the grid
+ * (placeCharts, layout.ts).
  */
-export function completePositions(given: Position, chartIds: number[]): Position {
-  const pos: Position = structuredClone(given ?? {});
+export function completePositions(given: Position | null | undefined, chartIds: number[]): Position {
+  const pos: Position = placeCharts(structuredClone(given ?? {}) as LayoutPosition, chartIds, { prefix: "copy" });
   pos.DASHBOARD_VERSION_KEY ??= "v2";
-  pos.ROOT_ID ??= { id: "ROOT_ID", type: "ROOT", children: ["GRID_ID"] };
-  pos.GRID_ID ??= { id: "GRID_ID", type: "GRID", children: [], parents: ["ROOT_ID"] };
-  const placed = new Set(Object.values(pos).flatMap((c: any) => (c && typeof c === "object" && c.type === "CHART" ? [c.meta?.chartId] : [])));
-  const missing = chartIds.filter((id) => !placed.has(id));
-  // TODO(#94): place these with the shared tab-aware placement helper, so a copy of a dashboard with tabs puts them in a tab rather than in a row under the tabs.
-  for (let i = 0; i < missing.length; i += 3) {
-    const rowId = `ROW-lp-copy-${i / 3 + 1}`;
-    const row = { id: rowId, type: "ROW", children: [] as string[], parents: ["ROOT_ID", "GRID_ID"], meta: { background: "BACKGROUND_TRANSPARENT" } };
-    for (const chartId of missing.slice(i, i + 3)) {
-      const cid = `CHART-lp-copy-${chartId}`;
-      pos[cid] = { id: cid, type: "CHART", children: [], parents: ["ROOT_ID", "GRID_ID", rowId], meta: { chartId, width: 4, height: 50 } };
-      row.children.push(cid);
-    }
-    pos[rowId] = row;
-    pos.GRID_ID.children.push(rowId);
-  }
   return pos;
 }
 
