@@ -429,7 +429,6 @@ def lenspack_app_mutator(app):
     import requests
     from flask import Response, abort, g, jsonify, redirect, request, stream_with_context
     from flask_appbuilder import BaseView, expose
-    from flask_appbuilder.security.decorators import has_access
     from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
 
     from superset.extensions import appbuilder, csrf, db, security_manager
@@ -731,14 +730,16 @@ def lenspack_app_mutator(app):
         method_permission_name = {"index": "index"}
 
         @expose("/")
-        @has_access
         def index(self):
-            if not security_manager.is_admin():
-                abort(403)
+            # Lenspack decides who its admins are, so the page is not limited to Superset's Admin role: someone with a
+            # role of its own ("Lenspack admin") or named as an owner may be a Gamma user. Signed in, at least.
+            if not getattr(g.user, "is_authenticated", False):
+                return redirect(appbuilder.get_url_for_login)
+            superset_admin = is_admin(g.user)
             from superset.models.core import Database
 
-            # Lenspack decides who its admins are. One it refuses gets no page, unless the admin pages are elsewhere
-            # for this deployment (its own password sign-in, or everything on the panel): then a link to them.
+            # One Lenspack refuses gets no page, unless the admin pages are elsewhere for this deployment (its own
+            # password sign-in, or everything on the panel) and they are a Superset Admin: then a link to them.
             refused = False
             try:
                 settings, error = call("GET", "/_superset/settings", refuse=True)
@@ -750,12 +751,14 @@ def lenspack_app_mutator(app):
             # What this page shows (admin.surface): "host", what Superset needs (split, the default, and a Lenspack
             # that says nothing); "all", everything (superset); "link", a link to the admin panel (separate, password).
             page = adm.get("page") if adm.get("page") in ("host", "all", "link") else "host"
-            if adm.get("access") == "password":
+            # The admin modes, comma-separated ("superset-role,password"); the password alone sends everyone to its sign-in.
+            password_only = {m.strip() for m in str(adm.get("access") or "").split(",") if m.strip()} == {"password"}
+            if password_only:
                 page = "link"
-            if refused and page != "link":
+            if refused and (page != "link" or not superset_admin):
                 abort(403)
             lp = lenspack_root(request.script_root) + LENSPACK_PATH
-            panel = None if page == "all" else lp + ("/_admin/" if adm.get("access") == "password" else "/_superset/admin/")
+            panel = None if page == "all" else lp + ("/_admin/" if password_only else "/_superset/admin/")
             # The assistant's own name, as its server says: kept for the menu entry, and used on this page.
             server_name = ((settings or {}).get("brand") or {}).get("values", {}).get("name") or ((info or {}).get("brand") or {}).get("name")
             if server_name:
@@ -765,7 +768,8 @@ def lenspack_app_mutator(app):
             # of the assistant's own account.
             account = security_manager.find_user(username=(settings or {}).get("superset", {}).get("username") or LENSPACK_SERVICE_USER)
             facts = None
-            if page != "link":
+            # Superset's own connections are for Superset's admins only.
+            if page != "link" and superset_admin:
                 facts = {
                     "databases": [{"name": d.database_name, "backend": d.backend, "datasets": len(d.tables)} for d in db.session.query(Database).order_by(Database.database_name)],
                     "accountRoles": [r.name for r in account.roles] if account else None,

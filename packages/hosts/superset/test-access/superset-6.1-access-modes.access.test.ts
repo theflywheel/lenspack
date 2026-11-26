@@ -1,12 +1,16 @@
-// Who is an admin and who may use the assistant, each set one of three ways (docs/access/admin-access.md), on
-// Superset 6.1: named Superset users as admins, people granted the assistant one by one (alone and with a role), and
-// one shared admin password on a sign-in of its own. Each restarts Lenspack with its settings in superset.yaml.
+// Who is an admin and who may use the assistant (docs/access/admin-access.md), on Superset 6.1: named Superset users as
+// admins, people granted the assistant one by one (alone and with a role), named admin passwords on a sign-in of their
+// own, the password combined with a role or with named users, and a Superset Admin who gives themselves the admin role
+// (allowed under superset-role, and on the admins roster; refused under superset-users). Each restarts Lenspack with
+// its settings in superset.yaml.
 // Run with `pnpm test:access access-modes`.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { type ChatResult, PACK, Session, type Stack, readChat, startStack } from "./stack";
 
 const PASSWORD = "access-suite-admin-password-0123";
+const OPS = "access-suite-ops-password-4567";
+const VENDOR = "access-suite-vendor-password-89";
 const NOT_ON = /isn't turned on for your account/;
 const BREAKDOWN = { query_kind: "breakdown", measure: "visit_total", dimension: "region" };
 const byGroup = (rows: { group: string; value: number }[] | undefined) => Object.fromEntries((rows ?? []).map((r) => [r.group, r.value]));
@@ -34,9 +38,9 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
   const audit = async (who: Session, path = "_superset/audit?limit=200"): Promise<Event[]> => (await who.lp("GET", path)).json.events;
 
   beforeAll(async () => {
-    stack = await startStack("6.1.0", { lenspackEnv: { LENSPACK_ADMIN_PASSWORD: PASSWORD } });
+    stack = await startStack("6.1.0", { lenspackEnv: { LENSPACK_ADMIN_PASSWORD: PASSWORD, LENSPACK_ADMIN_PASSWORDS: `ops:${OPS},vendor:${VENDOR}` } });
     A = `superset-${stack.fixtures.dashboards.a}`;
-    for (const u of ["lp_admin", "lp_owner", "lp_viewer", "lp_north", "lp_lensuser"]) s[u] = await stack.as(u);
+    for (const u of ["lp_admin", "lp_owner", "lp_viewer", "lp_north", "lp_lensuser", "lp_lensadmin"]) s[u] = await stack.as(u);
     const a = await s.lp_admin!.lp("POST", `api/${PACK}/${A}/ops`, { ops: [{ op: "add_widget", id: "visits", widget: { title: "Visits", kind: "chart", chart: "bar", query: { kind: "breakdown", dimension: "region", measure: "visit_total" } }, placement: { place: "bottom", width: "half" } }] });
     expect(a.status, a.text).toBe(200);
     real = await overlay("lp_viewer");
@@ -126,17 +130,18 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
     });
   });
 
-  describe("admins: one shared password (adminAccess: password)", () => {
-    const anon = () => new Session(stack.superset, "anonymous");
+  const anon = () => new Session(stack.superset, "anonymous");
+  const login = (who: Session, password: string, name = "") =>
+    who.send("POST", "/lenspack/_admin/auth/login", { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ name, password, return: "/lenspack/_admin/" }).toString() });
+
+  describe("admins: named passwords (adminAccess: password)", () => {
     /** The browser that signed in with the password: it reads the audit log at the end. */
     let signedIn: Session;
-    const login = (who: Session, password: string) =>
-      who.send("POST", "/lenspack/_admin/auth/login", { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ password, return: "/lenspack/_admin/" }).toString() });
 
     beforeAll(async () => {
       await stack.restartLenspack(["auth: { adminAccess: password }"]);
-      expect(stack.log()).toMatch(/admins: one shared password \(LENSPACK_ADMIN_PASSWORD set; access password, from auth\.adminAccess\)/);
-      expect(stack.log()).not.toContain(PASSWORD);
+      expect(stack.log()).toMatch(/admins: named passwords \(3 from LENSPACK_ADMIN_PASSWORDS, LENSPACK_ADMIN_PASSWORD; access password, from auth\.adminAccess\)/);
+      for (const secret of [PASSWORD, OPS, VENDOR]) expect(stack.log()).not.toContain(secret);
     }, 300_000);
 
     it("no Superset user is an admin; Superset's address for the panel leads to the sign-in", async () => {
@@ -149,7 +154,10 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
       const b = (signedIn = anon());
       const first = await b.send("GET", "/lenspack/_admin/");
       expect([first.status, first.headers.location]).toEqual([302, expect.stringMatching(/^\/lenspack\/_admin\/auth\/login\?return=/)]);
-      expect((await b.send("GET", "/lenspack/_admin/auth/login")).text).toContain('type="password"');
+      const form = (await b.send("GET", "/lenspack/_admin/auth/login")).text;
+      expect(form).toContain('type="password"');
+      expect(form).toContain('name="name"');
+      // An empty name is the deployment's shared password (LENSPACK_ADMIN_PASSWORD), as before.
       const ok = await login(b, PASSWORD);
       expect([ok.status, ok.headers.location]).toEqual([303, "/lenspack/_admin/"]);
       const cookie = [ok.headers["set-cookie"] ?? []].flat().find((c) => c.startsWith("lenspack_admin="))!;
@@ -160,7 +168,17 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
       const panel = await b.send("GET", "/lenspack/_admin/");
       expect([panel.status, panel.headers["content-type"]]).toEqual([200, expect.stringMatching(/text\/html/)]);
       expect((await b.send("GET", "/lenspack/_admin/api/packs")).json.me.user).toBe("admin:password");
-      expect((await b.send("GET", "/lenspack/_admin/settings")).json.adminAccess).toMatchObject({ mode: "password", passwordSet: true });
+      expect((await b.send("GET", "/lenspack/_admin/settings")).json.adminAccess).toMatchObject({ mode: "password", passwordSet: true, passwordNames: ["ops", "vendor", "password"] });
+    });
+
+    it("each person signs in with their own name and password, and is named in the audit log", async () => {
+      // The browser that signed in before: its device cookie keeps these tries off the shared address's count.
+      const b = signedIn;
+      expect((await login(b, OPS, "vendor")).status).toBe(401);
+      expect([(await login(b, VENDOR, "vendor")).status]).toEqual([303]);
+      expect((await b.send("GET", "/lenspack/_admin/api/packs")).json.me.user).toBe("admin:vendor");
+      const roster = (await b.send("GET", "/lenspack/_admin/settings/admins")).json.roster as { user: string; how: string }[];
+      expect(roster).toEqual(expect.arrayContaining([expect.objectContaining({ user: "admin:vendor", how: "named password vendor" }), expect.objectContaining({ user: "admin:password", how: "the shared password" })]));
     });
 
     it("locks out after repeated wrong passwords, and audits every try", async () => {
@@ -172,7 +190,110 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
       expect(lines).toContain("admin:password admin sign-in ok");
       expect(lines.filter((l) => l === "admin:password admin sign-in denied wrong password")).toHaveLength(5);
       expect(lines.some((l) => l.startsWith("admin:password admin sign-in denied too many tries"))).toBe(true);
-      expect(stack.log()).not.toContain(PASSWORD);
+      expect(lines).toContain("admin:vendor admin sign-in denied wrong password");
+      expect(lines).toContain("admin:vendor admin sign-in ok");
+      const firstUse = (await audit(signedIn, "_admin/audit?limit=200")).filter((e) => e.action === "admin first use").map((e) => `${e.user} ${e.detail}`);
+      expect(firstUse).toEqual(expect.arrayContaining(["admin:password the shared password", "admin:vendor named password vendor"]));
+      for (const secret of [PASSWORD, OPS, VENDOR]) expect(stack.log()).not.toContain(secret);
     });
+  });
+
+  describe("admins: a role of its own, or a named password (adminAccess: superset-role,password)", () => {
+    beforeAll(async () => {
+      await stack.restartLenspack(['auth: { adminAccess: "superset-role,password", admins: ["Lenspack admin"] }']);
+      expect(stack.log()).toMatch(/admins: Superset role Lenspack admin from auth\.admins, or named passwords \(3 from LENSPACK_ADMIN_PASSWORDS, LENSPACK_ADMIN_PASSWORD; access superset-role,password, from auth\.adminAccess\)/);
+    }, 300_000);
+
+    it("lets in the role's holders through Superset and the named passwords through their own sign-in, and nobody else", async () => {
+      expect((await s.lp_lensadmin!.lp("GET", "_superset/admin/")).status).toBe(200);
+      expect((await s.lp_admin!.lp("GET", "_superset/admin/")).status).toBe(403);
+      expect((await s.lp_viewer!.lp("GET", "_superset/admin/")).status).toBe(403);
+      const b = anon();
+      expect((await login(b, OPS, "ops")).status).toBe(303);
+      expect((await b.send("GET", "/lenspack/_admin/api/packs")).json.me.user).toBe("admin:ops");
+      const view = (await s.lp_lensadmin!.lp("GET", "_superset/settings/admins")).json;
+      expect(view).toMatchObject({ modes: ["superset-role", "password"], roles: ["Lenspack admin"], passwordNames: ["ops", "vendor", "password"] });
+      const how = Object.fromEntries((view.roster as { user: string; how: string }[]).map((e) => [e.user, e.how]));
+      expect(how).toMatchObject({ lp_lensadmin: "Superset role Lenspack admin", "admin:ops": "named password ops" });
+    });
+  });
+
+  describe("admins: named users, or a named password as a way in when no owner can (adminAccess: superset-users,password)", () => {
+    beforeAll(async () => {
+      await stack.restartLenspack(['auth: { adminAccess: "superset-users,password", adminUsers: [lp_owner] }']);
+      expect(stack.log()).toMatch(/admins: named Superset users \(1 owner from auth\.adminUsers, 0 granted\), or named passwords \(3 from LENSPACK_ADMIN_PASSWORDS, LENSPACK_ADMIN_PASSWORD; access superset-users,password, from auth\.adminAccess\)/);
+    }, 300_000);
+
+    it("the owner and the password admin may both grant; the person granted may not", async () => {
+      expect((await s.lp_owner!.lp("GET", "_superset/admin/")).status).toBe(200);
+      const b = anon();
+      expect((await login(b, OPS, "ops")).status).toBe(303);
+      expect((await b.send("PUT", "/lenspack/_admin/settings/admins", { body: { add: "lp_north" } })).status).toBe(200);
+      expect((await s.lp_north!.lp("GET", "_superset/admin/")).status).toBe(200);
+      expect((await s.lp_north!.lp("PUT", "_superset/settings/admins", { add: "lp_viewer" })).status).toBe(403);
+      const how = Object.fromEntries(((await s.lp_owner!.lp("GET", "_superset/settings/admins")).json.roster as { user: string; how: string }[]).map((e) => [e.user, e.how]));
+      expect(how).toMatchObject({ lp_owner: "owner", lp_north: "granted by an owner" });
+      expect((await s.lp_owner!.lp("PUT", "_superset/settings/admins", { remove: "lp_north" })).status).toBe(200);
+    });
+  });
+
+  describe("where the admin pages are (admin.surface), with a role of its own and with named passwords", () => {
+    const shellOf = (html: string) => JSON.parse(/window\.__lpAdmin\s*=\s*(\{.*?\});<\/script>/.exec(html)![1]!);
+
+    it("superset: the panel's address leads to Superset's page, which a Gamma user with the role opens, without Superset's databases", async () => {
+      await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }', "admin: { surface: superset }"]);
+      const panel = await s.lp_lensadmin!.lp("GET", "_superset/admin/");
+      expect([panel.status, panel.headers.location]).toEqual([302, "/ai-assistant/"]);
+      const page = await s.lp_lensadmin!.send("GET", "/ai-assistant/");
+      expect(page.status).toBe(200);
+      expect(shellOf(page.text)).toMatchObject({ surface: "superset", sections: "all", panelUrl: null, facts: null });
+      // The API stays the panel's: the page is a frame, Lenspack decides.
+      expect((await s.lp_lensadmin!.lp("GET", "_superset/admin/api/packs")).status).toBe(200);
+      // A Superset Admin without the role: no page.
+      expect((await s.lp_admin!.send("GET", "/ai-assistant/")).status).toBe(403);
+    }, 300_000);
+
+    it("separate: Superset's page is a link; the panel holds everything", async () => {
+      await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }', "admin: { surface: separate }"]);
+      const page = await s.lp_lensadmin!.send("GET", "/ai-assistant/");
+      expect(shellOf(page.text)).toMatchObject({ surface: "separate", sections: "link", panelUrl: "/lenspack/_superset/admin/" });
+      const panel = await s.lp_lensadmin!.lp("GET", "_superset/admin/");
+      expect(panel.status).toBe(200);
+      expect(shellOf(panel.text)).toMatchObject({ surface: "separate", sections: "all" });
+    }, 300_000);
+
+    it("superset with named passwords: Superset's admins get Superset's page, password admins everything on their own sign-in's pages", async () => {
+      await stack.restartLenspack(['auth: { adminAccess: "superset-role,password", admins: ["Lenspack admin"] }', "admin: { surface: superset }"]);
+      expect(shellOf((await s.lp_lensadmin!.send("GET", "/ai-assistant/")).text)).toMatchObject({ sections: "all" });
+      const b = anon();
+      expect((await login(b, OPS, "ops")).status).toBe(303);
+      const own = await b.send("GET", "/lenspack/_admin/");
+      expect(own.status).toBe(200);
+      expect(shellOf(own.text)).toMatchObject({ sections: "all", access: "password" });
+    }, 300_000);
+  });
+
+  describe("a Superset Admin gives themselves the admin role", () => {
+    beforeAll(async () => {
+      await stack.restartLenspack(['auth: { adminAccess: superset-role, admins: ["Lenspack admin"] }']);
+    }, 300_000);
+
+    it("under superset-role: allowed, on the admins roster, with an audit line the first time", async () => {
+      expect((await s.lp_admin!.lp("GET", "_superset/admin/")).status).toBe(403);
+      stack.giveRole("lp_admin", "Lenspack admin");
+      expect((await s.lp_admin!.lp("GET", "_superset/admin/")).status).toBe(200);
+      const view = (await s.lp_lensadmin!.lp("GET", "_superset/settings/admins")).json;
+      expect(view.roster).toEqual(expect.arrayContaining([expect.objectContaining({ user: "lp_admin", via: "role", detail: "Lenspack admin", how: "Superset role Lenspack admin" })]));
+      const lines = (await audit(s.lp_lensadmin!)).map((e) => `${e.user} ${e.action} ${e.outcome} ${e.detail ?? ""}`.trim());
+      // lp_admin was an admin earlier in this suite through Superset's Admin role (the default), so the line says how they
+      // qualify now; on a deployment where they never were, it is "admin first use".
+      expect(lines).toContain("lp_admin admin qualifies another way ok Superset role Admin → Superset role Lenspack admin");
+    });
+
+    it("under superset-users: the same person, still holding the role, is refused", async () => {
+      await stack.restartLenspack(["auth: { adminAccess: superset-users, adminUsers: [lp_owner] }"]);
+      for (const path of ["_superset/admin/", "_superset/settings", "_superset/settings/admins"]) expect([path, (await s.lp_admin!.lp("GET", path)).status]).toEqual([path, 403]);
+      expect((await s.lp_admin!.lp("PUT", "_superset/settings/admins", { add: "lp_admin" })).status).toBe(403);
+    }, 300_000);
   });
 });

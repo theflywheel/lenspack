@@ -9,7 +9,8 @@ import type { AdminAccessMode } from "./access";
 //   separate  everything on the admin panel; the host's settings page only links to it.
 //
 // The surface says where, never who: who is an admin is the admin access mode (access.ts), decided the same on every
-// surface. One rule ties them: the password mode signs admins in on a page of its own, so it is always separate.
+// surface. One rule ties them: the password mode alone signs every admin in on a page of its own, so it is always
+// separate; combined with another mode, password admins use that page and everyone else the surface asked for.
 
 export const ADMIN_SURFACES = ["split", "superset", "separate"] as const;
 export type AdminSurface = (typeof ADMIN_SURFACES)[number];
@@ -37,9 +38,14 @@ export type SurfacePlan = {
   panel: AdminSections | "none";
 };
 
-/** The surface in force under an admin access mode, and what each page shows on it. */
-export function surfacePlan(asked: AdminSurface, access: AdminAccessMode): SurfacePlan {
-  const surface: AdminSurface = access === "password" ? "separate" : asked;
+/**
+ * The surface in force under the admin access modes, and what each page shows on it. With the password alone, nobody
+ * signs in through the host, so the pages are separate. Combined with another mode, the host's admins get the surface
+ * asked for, and password admins get every section on their own sign-in's pages (the host serves those apart).
+ */
+export function surfacePlan(asked: AdminSurface, access: AdminAccessMode | readonly AdminAccessMode[]): SurfacePlan {
+  const modes = typeof access === "string" ? [access] : access;
+  const surface: AdminSurface = modes.length === 1 && modes[0] === "password" ? "separate" : asked;
   const pages: Record<AdminSurface, Pick<SurfacePlan, "hostPage" | "panel">> = {
     split: { hostPage: "host", panel: "lenspack" },
     superset: { hostPage: "all", panel: "none" },

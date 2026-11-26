@@ -83,7 +83,7 @@ layouts](../../features/personal-dashboards.md#where-the-chat-may-edit-editscope
 ## Who may administer
 
 This section describes the default mode, Superset roles. A deployment can instead name its admins one by one, or give
-them one shared password: see [Who can use and administer the assistant](../../access/admin-access.md).
+them named passwords: see [Who can use and administer the assistant](../../access/admin-access.md).
 
 Lenspack decides who its admins are, by Superset role name: `auth.admins` in the config (or `LENSPACK_ADMIN_ROLES`,
 comma-separated). The default is `["Admin"]`, Superset's own admins, as before.

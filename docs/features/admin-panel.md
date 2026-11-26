@@ -12,8 +12,35 @@ The panel is served by Lenspack itself, so it looks the same in every host.
 - **In the standalone server**, it is at `/_lenspack/admin/`, behind the server's own sign-in. Admins by the
   `auth.admins` rule can open it; without a rule, anyone with a sign-in role named `admin`. It needs a `state:` directory in `lenspack.yaml`.
 
-A deployment can also name its admins one by one, or give them one shared password on a sign-in page of their own:
+A deployment can also name its admins one by one, or give each a named password on a sign-in page of their own:
 see [Who can use and administer the assistant](../access/admin-access.md).
+
+## Where the admin pages are
+
+In Superset there are two places an admin can work: Superset's own **Settings → Manage → AI assistant** page
+(`/ai-assistant/`) and the admin panel (`/lenspack/_superset/admin/`). Both are drawn by the same script, with the same
+look, so the choice is only where things live. Pick one with `admin.surface` in `superset.yaml`, or
+`LENSPACK_ADMIN_SURFACE` in the environment (the environment wins):
+
+| `admin.surface` | Superset's AI assistant page | The admin panel |
+|---|---|---|
+| `split` (the default) | What Superset needs: the name and button, the connection, languages and datasets | Everything else: usage, review, recordings, models, off switches, cost and the audit log, access |
+| `superset` | Everything, inside Superset's own frame | Its address leads to Superset's page |
+| `separate` | A link to the panel | Everything |
+
+```yaml
+admin:
+  surface: superset   # or LENSPACK_ADMIN_SURFACE=superset
+```
+
+- **Who may open either page** is the admin access mode, the same on every surface. Superset's page opens for anyone
+  Lenspack calls an admin, including a Gamma user with a role of its own; Superset's list of databases on it is shown
+  only to Superset Admins.
+- **Named passwords:** admins who sign in with a password always get everything on their own sign-in's pages
+  (`/lenspack/_admin/`). With the password alone, the surface is always `separate`, and the log says so if you asked for
+  another.
+- **Under a path** (`SUPERSET_APP_ROOT=/superset`), every address on both pages starts with it.
+- **An unknown value** stops the server at start.
 
 Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the
 policy layer, from the roles the host says the caller holds and the deployment's `admins` rule, never a dashboard's

@@ -55,22 +55,34 @@ describe.sequential("Superset 6.1.0 under /superset", () => {
     expect(back.status).toBe(200);
   });
 
-  it("serves the admin panel, the settings page and its redirects below the root", async () => {
+  /** The admin pages' settings for the script on Superset's page (window.__lpAdmin). */
+  const shellOf = (html: string) => JSON.parse(/window\.__lpAdmin = (\{.*?\});<\/script>/.exec(html)![1]!);
+
+  it("serves the admin panel and the settings page below the root, every address the script gets starting with it", async () => {
     const panel = await admin.send("GET", "/lenspack/_superset/admin/");
     expect(panel.status).toBe(200);
     const settings = await admin.send("GET", "/ai-assistant/");
     expect(settings.status).toBe(200);
-    const actions = [...settings.text.matchAll(/<form[^>]* action="([^"]+)"/g)].map((m) => m[1]!);
-    expect(actions.length).toBeGreaterThan(0);
-    for (const a of actions) expect(a.startsWith(`${ROOT}/ai-assistant/`), a).toBe(true);
-    expect(settings.text).toContain(`href="${ROOT}/lenspack/_superset/admin/"`);
+    // No forms: the page is the admin pages' script, which asks the assistant's server through Superset's route.
+    expect(settings.text).not.toContain("<form");
+    const shell = shellOf(settings.text);
+    expect(shell).toMatchObject({ shell: "superset", surface: "split", sections: "host", api: { panel: `${ROOT}/lenspack/_superset/admin/api/`, host: `${ROOT}/lenspack/_superset/` }, assets: `${ROOT}/lenspack/_superset/admin/`, panelUrl: `${ROOT}/lenspack/_superset/admin/` });
+    expect(settings.text).toContain(`src="${ROOT}/lenspack/_superset/admin/panel.js"`);
     expect(settings.text).toContain(`href="${ROOT}/superset/welcome/"`);
-    // A form sent back: Superset's CSRF token from the page, then a redirect below the root.
-    const token = /name="csrf_token" value="([^"]+)"/.exec(settings.text)![1]!;
-    const sent = await admin.send("POST", "/ai-assistant/telemetry", { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ csrf_token: token, retentionDays: "30" }).toString() });
-    expect(sent.status).toBe(302);
-    expect(new URL(String(sent.headers.location), stack.superset).pathname).toBe(`${ROOT}/ai-assistant/`);
+    // What the script loads and asks for answers at those addresses.
+    expect((await admin.send("GET", "/lenspack/_superset/admin/panel.js")).status).toBe(200);
+    expect((await admin.send("GET", "/lenspack/_superset/settings")).status).toBe(200);
+    expect((await admin.send("GET", "/lenspack/_superset/admin/api/packs")).status).toBe(200);
   });
+
+  it("superset surface: the panel's address leads to Superset's page below the root, which holds everything", async () => {
+    await stack.restartLenspack(["admin: { surface: superset }"]);
+    const panel = await admin.send("GET", "/lenspack/_superset/admin/");
+    expect([panel.status, new URL(String(panel.headers.location), stack.superset).pathname]).toEqual([302, `${ROOT}/ai-assistant/`]);
+    const shell = shellOf((await admin.send("GET", "/ai-assistant/")).text);
+    expect(shell).toMatchObject({ surface: "superset", sections: "all", panelUrl: null, api: { panel: `${ROOT}/lenspack/_superset/admin/api/` } });
+    await stack.restartLenspack();
+  }, 300_000);
 
   it("puts the settings menu entry below the root", async () => {
     const home = await admin.send("GET", "/superset/welcome/");

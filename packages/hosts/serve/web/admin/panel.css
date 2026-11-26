@@ -370,3 +370,4 @@ body.lpa-page { margin: 0; background: #f5f7f8; }
 .lpa .brand-langs { margin-top: 10px; }
 .lpa .brand-langs summary { cursor: pointer; color: var(--mute); font-size: 13px; margin-bottom: 8px; }
 .lpa td.n { white-space: nowrap; }
+.lpa .warn-line.notice { margin: 0 0 16px; }

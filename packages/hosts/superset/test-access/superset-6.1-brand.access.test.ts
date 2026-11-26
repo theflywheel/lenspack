@@ -58,10 +58,14 @@ describe.sequential("Superset 6.1.0 with the assistant named and moved", () => {
     const settings = await admin.send("GET", "/ai-assistant/");
     expect(settings.status).toBe(200);
     expect(settings.text).toContain(`<h1>${NAME}</h1>`);
-    // The whole page is drawn: the server answered every part of it.
-    for (const part of ["Chat model", "Off switches", "Audit log", "Where to change things"]) expect(settings.text).toContain(part);
+    // The page is the admin pages' script, given the assistant's name and the moved route.
+    const shell = JSON.parse(/window\.__lpAdmin = (\{.*?\});<\/script>/.exec(settings.text)![1]!);
+    expect(shell).toMatchObject({ name: NAME, api: { host: `${PATH}/_superset/` }, panelUrl: `${PATH}/_superset/admin/` });
     expect(readable(settings.text)).not.toMatch(/lenspack/i);
     expect(settings.text).toContain(`href="${PATH}/_superset/admin/"`);
+    // The script itself names nothing: what people read comes from the server's brand.
+    const script = await admin.send("GET", `${PATH}/_superset/admin/panel.js`);
+    expect(script.status).toBe(200);
   });
 
   it("serves the admin panel and the server's own page without the product's name", async () => {

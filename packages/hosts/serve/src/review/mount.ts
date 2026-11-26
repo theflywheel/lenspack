@@ -42,7 +42,7 @@ export function reviewMount(admin: { features: Features; settings: SettingsStore
      * The admin panel's routes once the runtime has its models. `more` mounts it again elsewhere, sharing everything
      * (a deployment whose admins sign in on a page of their own: base and prefix /_admin).
      */
-    routes(rt: { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } }, more: Partial<Pick<PanelOptions, "prefix" | "base" | "shell" | "pageRedirect" | "adminName">> = {}) {
+    routes(rt: { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } }, more: Partial<Pick<PanelOptions, "prefix" | "base" | "shell" | "pageRedirect" | "adminName" | "seen">> = {}) {
       models = rt.providers;
       // Usage as a board of its own (the panel's Overview), over the turn telemetry when it is written, the audit log otherwise. Made once.
       const usage = (usageOnce ??= usageBoard({ stateDir: o.stateDir, events: o.events, providers: () => rt.providers, ledger: rt.ledger, budget: rt.budget, roles: rt.roles, audit: o.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log: o.log }).catch((e) => {

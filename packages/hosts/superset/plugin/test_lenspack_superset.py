@@ -582,6 +582,12 @@ class SettingsPage(unittest.TestCase):
         with cls.client.session_transaction() as s:
             s["_user_id"] = str(admin.id)
             s["_fresh"] = True
+        # A Gamma user: an admin only if the assistant's server says so (a role of its own, or a named owner).
+        gamma = sm.find_user(username="lp_settings_gamma") or sm.add_user("lp_settings_gamma", "lp", "Test", "lp_settings_gamma@example.invalid", [sm.find_role("Gamma")], password=PASSWORD)
+        cls.gamma = cls.app.test_client()
+        with cls.gamma.session_transaction() as s:
+            s["_user_id"] = str(gamma.id)
+            s["_fresh"] = True
 
     @classmethod
     def tearDownClass(cls):
@@ -594,7 +600,7 @@ class SettingsPage(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("server down in the tests")):
             return self.client.get("/ai-assistant/")
 
-    def answered(self, info, refuse=False, base_url="http://localhost"):
+    def answered(self, info, refuse=False, base_url="http://localhost", client=None):
         """The page with the assistant's server answering: GET /_superset/settings (or a 403) and GET /_superset/info."""
         import io
         import json as js
@@ -616,11 +622,18 @@ class SettingsPage(unittest.TestCase):
             r.__exit__ = lambda *a: False
             return r
 
+        from flask import g
+
         saved = dict(lp._SERVER_BRAND)
+        # The class keeps one app context open, so Flask-Login's cached user would carry over from the other client.
+        for k in ("_login_user", "user"):
+            g.pop(k, None)
         try:
             with mock.patch("urllib.request.urlopen", side_effect=urlopen):
-                return self.client.get("/ai-assistant/", base_url=base_url), calls
+                return (client or self.client).get("/ai-assistant/", base_url=base_url), calls
         finally:
+            for k in ("_login_user", "user"):
+                g.pop(k, None)
             # The name the server gave is kept for the menu entry: put back what was there, for the other tests.
             lp._SERVER_BRAND.clear()
             lp._SERVER_BRAND.update(saved)
@@ -689,6 +702,29 @@ class SettingsPage(unittest.TestCase):
         # Refused where the admin pages are not elsewhere: no page.
         r, _ = self.answered({"admin": {"access": "superset-users", "surface": "split", "page": "host"}}, refuse=True)
         self.assertEqual(r.status_code, 403)
+        # The password combined with a role: Superset's admins get the surface asked for, not the link.
+        r, _ = self.answered({"admin": {"access": "superset-role,password", "surface": "superset", "page": "all", "panel": None}})
+        self.assertEqual(self.shell_of(r.get_data(as_text=True))["sections"], "all")
+
+    def test_opens_for_whoever_the_assistant_calls_an_admin_not_only_supersets_admins(self):
+        # A Gamma user with the assistant's own admin role: the page, without Superset's connections.
+        r, calls = self.answered({"admin": {"access": "superset-role", "surface": "superset", "page": "all", "panel": None}}, client=self.gamma)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True)[:300])
+        self.assertEqual(self.shell_of(r.get_data(as_text=True))["facts"], None)
+        # The same person, refused by the assistant: no page, and no link either.
+        for page in ("all", "host", "link"):
+            r, _ = self.answered({"admin": {"access": "superset-role", "surface": "split", "page": page}}, refuse=True, client=self.gamma)
+            self.assertEqual(r.status_code, 403)
+        # Nobody signed in: sent to Superset's sign-in.
+        from flask import g
+
+        for k in ("_login_user", "user"):
+            g.pop(k, None)
+        anon = self.app.test_client()
+        r = anon.get("/ai-assistant/")
+        for k in ("_login_user", "user"):
+            g.pop(k, None)
+        self.assertIn(r.status_code, (302, 401))
 
 
 class UnderARoot(unittest.TestCase):

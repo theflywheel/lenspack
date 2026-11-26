@@ -969,8 +969,10 @@ export function accessSuite(version: string) {
         expect((await s.lp_lensadmin.lp("PUT", "_superset/settings/edit-scope", { scope: "own" })).status).toBe(200);
         expect((await s.lp_lensadmin.lp("GET", "_superset/settings")).json.editScope.scope).toBe("own");
         expect((await s.lp_lensadmin.lp("PUT", "_superset/settings/edit-scope", { scope: null })).status).toBe(200);
-        // Superset's own settings page lists Superset's databases: it stays a Superset Admin's page.
-        expect((await s.lp_lensadmin.send("GET", "/ai-assistant/")).status).toBe(403);
+        // Superset's own settings page follows Lenspack's answer too, without Superset's databases (a Superset Admin's to see).
+        const settings = await s.lp_lensadmin.send("GET", "/ai-assistant/");
+        expect(settings.status).toBe(200);
+        expect(JSON.parse(/window\.__lpAdmin = (\{.*?\});<\/script>/.exec(settings.text)![1]!).facts).toBeNull();
       });
 
       it("but only their own data access: the admin role widens no dataset, row, dashboard or edit right", async () => {
