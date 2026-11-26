@@ -167,7 +167,7 @@ function placedCharts(position: Position, ids: number[]): PlacedChart[] {
 }
 
 /** Sends what changed between two board configs to the dashboard. Returns the updated state. */
-export async function pushBoard(client: SupersetClient, before: BoardConfig, after: BoardConfig, pack: Pack, binding: Binding, given: DashboardState, log: (s: string) => void = () => {}): Promise<DashboardState> {
+export async function pushBoard(client: SupersetClient, before: BoardConfig, after: BoardConfig, pack: Pack, binding: Binding, given: DashboardState, log: (s: string) => void = () => {}, owners?: number[]): Promise<DashboardState> {
   const state: DashboardState = structuredClone(given);
   const dashId = state.dashboardId;
   const ids = new Set([...Object.keys(before.widgets), ...Object.keys(after.widgets)]);
@@ -210,7 +210,8 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
       await client.put(`/api/v1/chart/${chartId}`, body);
       log(`chart ${chartId} ← ${id}`);
     } else {
-      const made = await client.post<{ id: number }>("/api/v1/chart", { ...body, dashboards: [dashId] });
+      // On a person's own dashboard, a new chart is theirs in Superset too (else it would be Lenspack's account's).
+      const made = await client.post<{ id: number }>("/api/v1/chart", { ...body, dashboards: [dashId], ...(owners?.length ? { owners } : {}) });
       state.charts[id] = made.id;
       state.created.push(made.id);
       log(`chart ${made.id} ← new ${id}`);

@@ -238,3 +238,4 @@ export function boardRights(who: Principal, b: Ownership): { view: boolean; edit
     edit: b.owner ? b.owner === who.user && sameTenant && who.edit : !!who.maintain,
   };
 }
+export * from "./personal";

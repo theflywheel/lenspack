@@ -182,12 +182,12 @@ so raise `SERVER_THREADS_AMOUNT` for more than about ten chats at once.
 ## Who is asking
 
 Browsers never reach this server directly. Superset forwards `/lenspack/...` to it for signed-in users and adds
-`x-lenspack-identity`: base64url JSON `{u, a, r, d, b, p, e, v, t}` (user, Superset admin, their Superset role
-names, the dashboard the request is about, its board `superset-<d>` and the pack in the path, whether Superset lets
-them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
+`x-lenspack-identity`: base64url JSON `{u, i, a, r, d, b, p, e, v, t}` (user, their Superset user id, Superset admin,
+their Superset role names, the dashboard the request is about, its board `superset-<d>` and the pack in the path,
+whether Superset lets them edit and view it, signed-at) and an HMAC-SHA256 of it. The key is derived from
 Superset's `SECRET_KEY` on the Superset side; this server fetches it on start
 (`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid
-signature less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `chat.css` and
+signature less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `mine.js`, `chat.css` and
 `/healthz` are public.
 
 - **One dashboard per request.** The plugin reads the dashboard from the place where this server reads a board
@@ -195,14 +195,16 @@ signature less than five minutes old is not signed in (401). Only `overlay.js`, 
   from its own route and refuses the request (403) when it is not the board Superset signed for. The same happens
   when the pack differs, or when the path names a `superset-<id>` board that Superset signed nothing for. Both
   sides refuse a path with a `.` or `..` segment or an encoded slash (`%2e`, `%2f`, `%5c`; 400). Binding a
-  dashboard (`/_superset/bind`) works only for the dashboard Superset checked. A plugin from before `b` and `p`
+  dashboard (`/_superset/bind`), and the own-dashboard and saved-layout routes (`/_superset/my...?dashboard=<id>`),
+  work only for the dashboard Superset checked. A plugin from before `b` and `p`
   signs only `d`, and this server then checks `superset-<d>` against its route.
 - **Edits** follow `LENSPACK_EDIT_POLICY` (or `editPolicy` in the config). `superset`, the default: whoever
   Superset lets edit that dashboard, its owners with `can_write` on Dashboard and admins. That right counts on
   that dashboard's board only. Everyone else who can view it may still ask questions; the chat's edit tools then
   answer "you can view this dashboard but not edit it in Superset", which the model passes on. `signed-in`:
   anyone signed in may edit (the behaviour before). The `boardEdits` off switch (below) comes first: off, nobody
-  edits through the chat, admins included.
+  edits through the chat, admins included. Someone who can only view a dashboard can make their own copy and change that: see
+  [your own dashboards and saved layouts](../../../docs/my-dashboards.md).
 - **Settings** writes, the audit log and the usage page (`GET /api/_usage`, which names every user's spend) need
   a Superset admin. Owning a dashboard does not give them.
 - **Its own account.** On first start it signs in once as a Superset admin (`SUPERSET_ADMIN_USERNAME`, default
@@ -353,6 +355,7 @@ LENSPACK_FEATURES="voice=off,maps=on"             # or "-voice,+maps", or a JSON
 | `heatmap` | new heatmaps are refused (existing ones stay) | the server |
 | `maps` | map queries are refused (existing deck_scatter charts stay in Superset) | the server |
 | `reviewer` | no second model call checking each change: edits are saved as they are made, and a wrong one is not caught before the reply | the server |
+| `personalDashboards` | no My dashboards or Saved layouts menus; the chat can't make, copy or delete dashboards or save or apply layouts (dashboards already made stay) | the server |
 
 `/_superset/info` returns `features` (the effective booleans) for the page. `GET /_superset/settings` returns
 `features: {values, defaults, source, options, writable}`: `defaults` is what the deployment says without the

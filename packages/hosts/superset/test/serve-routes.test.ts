@@ -206,13 +206,14 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "providers", "publicPath", "speech", "superset", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["audit", "budget", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "features", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "speech", "superset", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
       measures: [expect.objectContaining({ key: expect.any(String), agg: "count" })],
       providers: [],
       llmFrom: null,
+      personal: { on: true, maxDashboardsPerUser: 20, maxSavedLayoutsPerUser: 50 },
       budget: { usdPerDay: 5 },
       superset: { url: supersetUrl, username: "lenspack", account: "env" },
       editPolicy: "superset",

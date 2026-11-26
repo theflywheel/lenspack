@@ -40,6 +40,8 @@ export type Identity = {
   v?: boolean;
   /** The user's Superset role names. */
   r?: string[];
+  /** The user's Superset id, so a dashboard Lenspack makes for them can be theirs in Superset. Older plugins do not sign it. */
+  i?: number;
   /** Signed at, unix seconds. */
   t: number;
 };

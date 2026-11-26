@@ -277,6 +277,7 @@ More in [docs/security.md](docs/security.md).
 - [Compute](docs/compute.md): rates, changes and averages over the pack's measures, worked out after the source answers
 - [Query IR](docs/query-ir.md), [SQL drivers](docs/drivers.md), [chat models](docs/llm.md)
 - [Security model](docs/security.md)
+- [Your own dashboards and saved layouts](docs/my-dashboards.md) in Superset: a copy to change when you can only view, and layouts kept by name
 
 ## Status
 

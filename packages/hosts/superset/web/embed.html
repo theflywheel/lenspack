@@ -31,6 +31,7 @@
     <iframe id="frame" title="Superset dashboard"></iframe>
   </main>
 </div>
+<script src="__BASE__/mine.js"></script>
 <script src="__BASE__/chat.js"></script>
 <script>
   const v = window.__lp;
@@ -49,7 +50,7 @@
       k.textContent = `Kept as Superset has them (Lenspack can move or remove these, not edit them): ${b.notes.join("; ")}`;
       k.style.display = "block";
     }
-    LenspackChat.mount(document.getElementById("chat"), { api: v.base, pack: v.pack, board: b.board, title: b.title, examples: v.examples, onChanged: () => { frame.src = `${url}?standalone=1&t=${Date.now()}`; } });
+    LenspackChat.mount(document.getElementById("chat"), { api: v.base, pack: v.pack, board: b.board, title: b.title, examples: v.examples, onChanged: () => { frame.src = `${url}?standalone=1&t=${Date.now()}`; }, openDashboard: (id) => location.assign(`${v.base}/superset/${id}`) });
   }).catch((e) => { document.getElementById("chat").textContent = `Could not open this dashboard: ${e.message}`; });
 </script>
 </body>

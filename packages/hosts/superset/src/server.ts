@@ -13,7 +13,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { memoryStore } from "@lenspack/core";
+import { type PersonalDashboard, type SavedLayout, memoryStore } from "@lenspack/core";
+import { decide, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, adminRoutes, adminSettings, json, resolveSecrets, rotatingAudit, scriptJson, startRuntime } from "@lenspack/serve";
 import YAML from "yaml";
 
@@ -23,7 +24,10 @@ import { supersetClient } from "./client";
 import { supersetConnector } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
 import { supersetPolicy } from "./access";
-import { editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
+import { canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, supersetAuth } from "./identity";
+import { personalDashboards } from "./personal";
+import { actorOf, personalRoutes } from "./personal-routes";
+import { fileRecords } from "./records";
 import { supersetBoards } from "./store";
 import { defaultMapStyle, supersetVersion } from "./version";
 
@@ -64,6 +68,12 @@ export type SupersetConfig = AdminConfig & {
   datasets: (number | string)[];
   dashboards?: number[];
   overlay?: Overlay;
+  /**
+   * People's own dashboards and saved layouts (docs/my-dashboards.md). The switch is the personalDashboards
+   * feature (on by default); the limits may also come from LENSPACK_MAX_DASHBOARDS_PER_USER and
+   * LENSPACK_MAX_SAVED_CONFIGS_PER_USER, and an admin can change them on a running server.
+   */
+  personal?: { maxDashboardsPerUser?: number; maxSavedConfigsPerUser?: number };
   /** Else LENSPACK_HOST, else 127.0.0.1. */
   host?: string;
   /** Else LENSPACK_PORT, else 8795. */
@@ -134,7 +144,23 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
   const connector = supersetConnector(client, binding, { log, capabilities: () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) }) });
   const dashboards: Record<string, number> = Object.fromEntries((config.dashboards ?? []).map((d) => [`superset-${d}`, d]));
-  const store = supersetBoards({ inner: memoryStore(), client, pack, binding, dashboards, stateFile: statePath, log });
+  // People's own dashboards and saved layouts: kept in files in the state directory, behind RecordStore.
+  const links = fileRecords<PersonalDashboard>(join(stateDir, "personal-dashboards.json"), log);
+  const layouts = fileRecords<SavedLayout>(join(stateDir, "saved-layouts.json"), log);
+  const store = supersetBoards({
+    inner: memoryStore(),
+    client,
+    pack,
+    binding,
+    dashboards,
+    stateFile: statePath,
+    log,
+    // A chart Lenspack adds to someone's own dashboard is theirs in Superset.
+    ownersOf: async (board) => {
+      const link = dashboards[board] === undefined ? null : await links.get(String(dashboards[board]));
+      return link ? [link.ownerId] : undefined;
+    },
+  });
   await store.seed();
 
   // The identity key comes from Superset (derived there from its SECRET_KEY); without it nobody is signed in.
@@ -149,6 +175,27 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
   log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
   if (hostPolicy === "off") log(`host policy off: anyone signed in to Superset can read all ${datasets.length} configured dataset(s) through Lenspack, without Superset's dataset access or row-level security (hostPolicy: superset applies them)`);
+
+  /** Binds a dashboard Lenspack knows the person may use (one they are on, or one just made for them). */
+  async function bindId(id: number) {
+    const board = `superset-${id}`;
+    if (dashboards[board] === undefined) {
+      dashboards[board] = id;
+      await store.pull(board, true);
+      log(`bound dashboard ${id}`);
+    }
+    return board;
+  }
+  const configLimits = personalLimitsFrom(config.personal, env);
+  const limits = () => {
+    const saved = admin.settings.get<{ maxDashboardsPerUser?: number; maxSavedConfigsPerUser?: number }>("personal") ?? {};
+    return {
+      on: admin.features.on("personalDashboards"),
+      maxDashboardsPerUser: saved.maxDashboardsPerUser ?? configLimits.maxDashboardsPerUser,
+      maxSavedLayoutsPerUser: saved.maxSavedConfigsPerUser ?? configLimits.maxSavedLayoutsPerUser,
+    };
+  };
+  const personal = personalDashboards({ client, store, pack, bindBoard: bindId, links, layouts, limits, audit: auditLog?.audit, log });
 
   /**
    * Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. Only the one
@@ -197,11 +244,54 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     }
   };
 
+  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined);
+  const supersetBase = (req: IncomingMessage) => (base ? "" : (pageVars(req).supersetUrl ?? ""));
+  const mine = personalRoutes({
+    personal,
+    identity: (req) => identityOf(req, () => idKey),
+    canEdit: (id) => canEdit(id, editPolicy, admin.features.on("boardEdits")),
+    // What the person may use of the pack, decided by policy from what Superset says about them.
+    scope: async (req) => {
+      const caller = await auth.identify(req);
+      const d = caller && decide(principalOf(caller), pack, { host: {} });
+      return d ? { ctx: d.ctx, capabilities: connector.capabilities } : null;
+    },
+    bind: bindId,
+    shownBoard: async (board, ctx) => {
+      const b = await store.get(board);
+      return b ? { config: shownConfig(b.config, ctx), title: b.config.title } : null;
+    },
+    limits,
+    setLimits: (body) => {
+      const next: Record<string, number> = { ...(admin.settings.get<Record<string, number>>("personal") ?? {}) };
+      for (const [k, v] of Object.entries(body)) {
+        if (k !== "maxDashboardsPerUser" && k !== "maxSavedConfigsPerUser") return { ok: false, error: `unknown setting "${k}" (maxDashboardsPerUser, maxSavedConfigsPerUser)` };
+        if (v === null) delete next[k];
+        else if (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 10_000) next[k] = v as number;
+        else return { ok: false, error: `${k} must be a whole number from 0 to 10000, or null` };
+      }
+      admin.settings.set("personal", Object.keys(next).length ? next : undefined);
+      return { ok: true };
+    },
+    base: supersetBase,
+    reply: (res, status, body) => json(res, status, body, NO_STORE),
+  });
+
   const port = Number(config.port ?? env.LENSPACK_PORT ?? 8795);
   const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
-    app: { auth: supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log }) : undefined), audit: auditLog?.audit, ...admin.app },
+    app: {
+      auth,
+      audit: auditLog?.audit,
+      ...admin.app,
+      // The chat's tools for the person's own dashboards and layouts, on the dashboard Superset signed for.
+      personal: (req, turn) => {
+        const id = identityOf(req, () => idKey);
+        if (!id || typeof id.d !== "number" || turn.boardId !== `superset-${id.d}` || !limits().on) return undefined;
+        return personal.port(actorOf(id), { dashboard: id.d, board: turn.boardId, view: id.v !== false, edit: !turn.readOnly }, supersetBase(req));
+      },
+    },
     port,
     host,
     budget: config.budget,
@@ -230,6 +320,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           // Only when on, so the page reads as before while it is off.
           ...(hostPolicy === "superset" ? { hostPolicy } : {}),
           dashboards: Object.values(dashboards),
+          // People's own dashboards and saved layouts: the switch and the limits (PUT /_superset/settings/personal).
+          personal: limits(),
           publicPath: base,
           panel,
         }),
@@ -242,12 +334,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (bad) return json(res, 400, { error: bad }, NO_STORE);
         if (url.pathname.startsWith("/api/") || url.pathname === "/healthz") return;
         // The scripts are public (Superset only includes them for signed-in users); everything else needs Superset's signature.
-        const asset = /^\/(chat\.js|overlay\.js|chat\.css)$/.exec(url.pathname);
+        const asset = /^\/(chat\.js|overlay\.js|mine\.js|chat\.css)$/.exec(url.pathname);
         if (asset) return send(res, 200, readFileSync(join(web, asset[1]!), "utf8"), TYPES[asset[1]!.slice(asset[1]!.lastIndexOf("."))]!);
         const who = await signedIn();
         if (!who) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
+        if (await mine(req, res, url)) return;
         if (url.pathname === "/_superset/bind") {
           const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, () => idKey)?.d);
           return bound ? json(res, 200, bound, NO_STORE) : json(res, 403, { error: "Superset did not check your access to this dashboard." }, NO_STORE);

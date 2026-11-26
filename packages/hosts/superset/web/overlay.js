@@ -201,10 +201,16 @@
 
   function loadChat(cb) {
     if (window.LenspackChat) return cb();
-    var s = document.createElement("script");
-    s.src = origin + "/chat.js";
-    s.onload = cb;
-    document.head.appendChild(s);
+    // mine.js ("My dashboards", "Saved layouts") first, so the panel finds it; the chat loads without it if it fails.
+    var m = document.createElement("script");
+    m.src = origin + "/mine.js";
+    m.onload = m.onerror = function () {
+      var s = document.createElement("script");
+      s.src = origin + "/chat.js";
+      s.onload = cb;
+      document.head.appendChild(s);
+    };
+    document.head.appendChild(m);
   }
   function relayout() {
     // Superset sizes its grid from the window; tell it the width changed.

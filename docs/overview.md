@@ -111,6 +111,8 @@ lenspack came out of a consultation tool whose dashboard logic was welded to one
 
 The security model in full: [security.md](security.md).
 
+In Superset, a shared dashboard is changed only by the people Superset lets edit it; anyone else can make their own copy and change that, or save a layout by name: [my-dashboards.md](my-dashboards.md).
+
 ## The demo app
 
 `pnpm demo` serves the example packs in the board app (`examples/demo`). You can build boards with the chat, drag widgets and restore versions. Its look carries one idea: colour is provenance. A key that the pack declares is always mono and blue, whether in prose, in the metrics reference or in a board title. Something the compiler refuses is always ochre.

@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type ProposalStore, boardTools, toVercelAI } from "@lenspack/agent";
 import { type Principal, boardRights, decide, otherTenant, principalOf, shownConfig, showsStatement } from "@lenspack/policy";
@@ -100,6 +100,11 @@ export type AppOptions = {
    * `language` ("auto", "fr", …) is the user's pick.
    */
   language?: () => Omit<LanguagePolicy, "reply">;
+  /**
+   * The caller's own dashboards and saved layouts, for a host that keeps them (Superset): the chat's tools to
+   * make, copy and delete one and to save and apply layouts. Absent, or undefined for a request, the tools are not offered.
+   */
+  personal?: (req: IncomingMessage, turn: { user: string; pack: string; boardId: string; readOnly?: string }) => PersonalPort | undefined;
 };
 
 const OPEN = principalOf({ user: "anonymous", edit: true, maintain: true, usage: true });
@@ -591,7 +596,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const scope = { user, pack: h.name, board: boardId, turn: randomUUID(), sinks: [ledger, ...(opts.usageSinks ?? [])], collect: calls };
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
-    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged,
+    const personal = opts.personal?.(req, { user, pack: h.name, boardId, readOnly });
+    const tools = toVercelAI(boardTools({ pack: h.pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal,
       onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }));
     const since = typeof body.since === "number" && Number.isInteger(body.since) && body.since < startVersion ? body.since : null;
     const view = (c: BoardConfig) => shownConfig(c, h.ctx);
