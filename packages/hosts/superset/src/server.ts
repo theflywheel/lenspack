@@ -13,14 +13,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { type PersonalDashboard, type SavedLayout, memoryStore } from "@lenspack/core";
+import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, boardRights, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, startRuntime, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
 import { identityKey, serviceAccount } from "./bootstrap";
-import { type Overlay, fetchDatasets, packFromDatasets } from "./catalogue";
+import { type Overlay, fetchDatasets, packFromDatasets, packScope } from "./catalogue";
 import { supersetClient } from "./client";
 import { supersetConnector } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
@@ -96,6 +96,13 @@ export type SupersetConfig = AdminConfig & {
   audit?: false | { retentionDays?: number };
   /** Superset datasets by id, or by table name (schema.table or table). */
   datasets: (number | string)[];
+  /**
+   * The pack's own row scope: filters every answer carries, for everyone, whatever they ask or pick on a dashboard
+   * (one campaign: [{ dimension: campaign, op: eq, value: "2026-spring" }]). Each names a dimension; one with an
+   * `entity` narrows only that dataset. A question on a dataset that can't be narrowed by it is refused (OUT_OF_SCOPE).
+   * It narrows what Lenspack answers, not what Superset's own charts draw.
+   */
+  scope?: ScopeClause[];
   dashboards?: number[];
   overlay?: Overlay;
   /**
@@ -168,9 +175,17 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // Each dataset is retried inside fetchDatasets; the whole build is retried too, so a partial answer under load isn't a crash loop.
   const datasets = await retried("building the pack", () => fetchDatasets(client, config.datasets, { log }), [2000, 5000, 10_000], log);
   // A column or metric the pack can't use is left out or renamed with a warning, never a failed start.
-  const { pack, packYaml, binding, warnings } = packFromDatasets(datasets, config.overlay);
+  const built = packFromDatasets(datasets, config.overlay);
+  const { pack, packYaml, binding } = built;
+  // Mistakes in the overlay (a measure on a column that isn't there) leave that part out; they are said like the rest.
+  const warnings = [...built.problems, ...built.warnings];
   for (const w of warnings) log(`warning: ${w}`);
   log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
+  // The pack's own context: its row scope, which every query anyone runs carries (decide() adds it to theirs).
+  const scope = packScope(config.scope, pack);
+  for (const w of scope.warnings) log(`warning: ${w}`);
+  const packCtx = scope.clauses.length ? { scope: scope.clauses } : {};
+  if (scope.clauses.length) log(`pack scope: ${scope.clauses.map((c) => `${c.entity ? `${c.entity}.` : ""}${c.dimension} ${c.op} ${JSON.stringify(c.value)}`).join("; ")}`);
   // What differs between Superset 5 and 6 on this side: the default basemap of the maps Lenspack writes.
   const superset = await supersetVersion(client);
   binding.mapStyle ??= defaultMapStyle(superset.major);
@@ -382,7 +397,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // directory; the admin panel at /_superset/admin/ (through Superset: /lenspack/_superset/admin/).
   const review = admin.review({
     stateDir,
-    hosts: [{ name: pack.pack, pack, connector, ctx: {} }],
+    hosts: [{ name: pack.pack, pack, connector, ctx: packCtx }],
     events: auditLog ? (from) => auditLog.since(from) : undefined,
     audit: auditLog?.audit,
     prefix: "/_superset",
@@ -406,7 +421,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     // What the person may use of the pack, decided by policy from what Superset says about them, on the dashboard they are on.
     scope: async (req, board) => {
       const caller = await auth.identify(req);
-      const d = caller && decide(settle(caller), pack, { host: {}, board });
+      const d = caller && decide(settle(caller), pack, { host: packCtx, board });
       return d ? { ctx: d.ctx, capabilities: connector.capabilities } : null;
     },
     bind: bindId,
@@ -450,7 +465,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     reply: (res, status, body) => json(res, status, body, NO_STORE),
   });
   startRuntime({
-    hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: {}, boards: [] }],
+    hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: packCtx, boards: [] }],
     app: {
       // Signed in by Superset; its role names read by the deployment's role rules (supersetRights), which auth carries.
       auth,
@@ -504,6 +519,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           measures: pack.measures.map((m) => ({ key: m.key, label: m.label, agg: m.agg })),
           // What the pack left out of Superset's catalogue or renamed, and why.
           warnings,
+          // The pack's own row scope, which every answer carries.
+          scope: scope.clauses,
           superset: { url: supersetUrl, username: account.username, account: account.source },
           editPolicy,
           hostPolicy,

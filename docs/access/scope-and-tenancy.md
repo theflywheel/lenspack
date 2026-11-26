@@ -41,6 +41,30 @@ A clause may name an entity (`{ entity: customers, dimension: country, … }`); 
 that entity, as a table's row-level security does. A host may also keep whole entities from a caller: their measures
 and the dimensions only they have are hidden, and a query that reads one is refused (`NOT_PERMITTED`).
 
+## Pinning every answer in Superset
+
+In Superset, the pack's own row scope is `scope:` in `superset.yaml`. Every answer carries it, for everyone, whatever
+they ask or pick on a dashboard. For a deployment that should only ever talk about one campaign:
+
+```yaml
+scope:
+  - { dimension: campaign, op: eq, value: 2026-spring }
+```
+
+- `dimension` is a pack key (a column's key: `campaign` for a column `Campaign`), and `op` and `value` are a query
+  filter's ([Filters](../concepts/filters.md)). A clause with `entity: orders` narrows only that dataset.
+- It applies on every path that asks Superset for a number: the chat's tools, the explain card and `/explain`, saved
+  answers (it is part of the access they are kept under, so one saved under it is never served without it), the
+  suggested questions they feed, computed charts, board data and filter menus. It is added to the person's own
+  Superset access and row-level security, never in place of it.
+- A dashboard filter can't widen it. Picking another campaign on the dashboard adds that filter to the scope's, so the
+  answer is empty, not another campaign's.
+- A dataset without the column can't be narrowed, so a question about it is refused (`OUT_OF_SCOPE`). The startup log
+  names such datasets. A clause on a dimension the pack doesn't have refuses every question, and the log says so.
+- It narrows what Lenspack answers. Superset draws its own charts, including any chart the chat adds to a dashboard:
+  give the dashboard a filter on the same column, or a row-level security rule, to pin those too.
+- The settings API (`GET /_superset/settings`) shows it as `scope`.
+
 ## Failing closed
 
 A query that a scope cannot narrow (its entity has no path to the scope's dimension) is refused with `OUT_OF_SCOPE`

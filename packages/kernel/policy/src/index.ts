@@ -274,6 +274,24 @@ export function visibleCatalogue(catalogue: Catalogue, ctx: Pick<Scoped, "hidden
   return off?.size ? { ...shown, entities: shown.entities.filter((e) => !off.has(e.key)) } : shown;
 }
 
+/**
+ * The viewer's dashboard selections (field → picked value) as a turn may carry them: only those on a dimension of the
+ * pack this caller may use, or on the time range. Any other (a filter on a column the pack leaves out, such as one a
+ * deployment excludes, or on a key kept from the caller) is dropped here, so its value never reaches the model, a saved
+ * answer's key, telemetry or the answer card. `dropped` says how many were, so the card can say a filter on the
+ * dashboard was not used.
+ */
+export function viewerSelections(selections: Record<string, string> | undefined, pack: Pick<Pack, "dimensions">, ctx: Pick<Scoped, "hidden">): { selections: Record<string, string>; dropped: number } {
+  const keys = new Set(pack.dimensions.map((d) => d.key));
+  const kept: Record<string, string> = {};
+  let dropped = 0;
+  for (const [field, value] of Object.entries(selections ?? {})) {
+    if ((field === "time" || keys.has(field)) && !ctx.hidden?.has(field)) kept[field] = value;
+    else dropped++;
+  }
+  return { selections: kept, dropped };
+}
+
 /** The caller's tenant is not the one the pack is pinned to. A tenant may narrow an unpinned pack, never open another tenant's. */
 export const otherTenant = (who: Pick<Identity, "tenant">, host?: Pick<Scoped, "tenant">) => !!(who.tenant && host?.tenant && who.tenant !== host.tenant);
 
