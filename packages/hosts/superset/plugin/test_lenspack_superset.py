@@ -587,14 +587,43 @@ class SettingsPage(unittest.TestCase):
     def tearDownClass(cls):
         cls.ctx.pop()
 
-    def page(self, flashes=()):
+    def page(self):
         import urllib.error
         from unittest import mock
 
-        with self.client.session_transaction() as s:
-            s["_flashes"] = list(flashes)
         with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("server down in the tests")):
             return self.client.get("/ai-assistant/")
+
+    def answered(self, info, refuse=False, base_url="http://localhost"):
+        """The page with the assistant's server answering: GET /_superset/settings (or a 403) and GET /_superset/info."""
+        import io
+        import json as js
+        import urllib.error
+        from unittest import mock
+
+        calls = []
+
+        def urlopen(req, timeout=None):
+            calls.append((req.full_url, req.headers))
+            if req.full_url.endswith("/_superset/settings"):
+                if refuse:
+                    raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, io.BytesIO(b'{"error":"only assistant admins"}'))
+                body = {"brand": {"values": {"name": "Field desk"}}, "superset": {"username": "lenspack"}}
+            else:
+                body = info
+            r = io.BytesIO(js.dumps(body).encode())
+            r.__enter__ = lambda *a: r
+            r.__exit__ = lambda *a: False
+            return r
+
+        saved = dict(lp._SERVER_BRAND)
+        try:
+            with mock.patch("urllib.request.urlopen", side_effect=urlopen):
+                return self.client.get("/ai-assistant/", base_url=base_url), calls
+        finally:
+            # The name the server gave is kept for the menu entry: put back what was there, for the other tests.
+            lp._SERVER_BRAND.clear()
+            lp._SERVER_BRAND.update(saved)
 
     def test_uses_superset_5s_page_frame_or_its_own_on_superset_6(self):
         # Superset 6 dropped the server-rendered page frame (superset/basic.html) that 5 had.
@@ -612,15 +641,54 @@ class SettingsPage(unittest.TestCase):
             self.assertIn("superset-theme-mode", html)
             self.assertIn("Back to Superset", html)
 
-    def test_shows_its_own_messages_and_not_superset_s_leftovers(self):
+    def shell_of(self, html):
+        import json as js
         import re
 
-        html = self.page([("lenspack-info", "Chat language saved."), ("lenspack-danger", "Chat model not saved: nope"), ("message", "A message left from another page")]).get_data(as_text=True)
-        # Superset 5 also hands every message to its menu bar, in the page's bootstrap data; the page's own list is what counts.
-        html = re.sub(r'data-bootstrap="[^"]*"', "", html)
-        self.assertIn("Chat language saved.", html)
-        self.assertIn("Chat model not saved: nope", html)
-        self.assertNotIn("A message left from another page", html)
+        m = re.search(r"window.__lpAdmin = (\{.*?\});</script>", html)
+        self.assertIsNotNone(m, html[:800])
+        return js.loads(m.group(1))
+
+    def test_draws_the_admin_pages_script_with_what_superset_alone_knows(self):
+        r, calls = self.answered({"admin": {"access": "superset-role", "surface": "split", "page": "host", "panel": "/x/_superset/admin/"}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True)[:500])
+        html = r.get_data(as_text=True)
+        shell = self.shell_of(html)
+        self.assertEqual(shell["shell"], "superset")
+        self.assertEqual(shell["sections"], "host")
+        self.assertEqual(shell["surface"], "split")
+        self.assertEqual(shell["api"], {"panel": "/lenspack/_superset/admin/api/", "host": "/lenspack/_superset/"})
+        self.assertEqual(shell["panelUrl"], "/lenspack/_superset/admin/")
+        self.assertIsInstance(shell["facts"]["databases"], list)
+        # No database address, ever: names, engines and dataset counts only.
+        for d in shell["facts"]["databases"]:
+            self.assertEqual(set(d), {"name", "backend", "datasets"})
+        self.assertIn('src="/lenspack/_superset/admin/panel.js"', html)
+        self.assertIn('href="/lenspack/_superset/admin/panel.css"', html)
+        # No forms: every change goes to the assistant's server through Superset's route, signed as the person.
+        self.assertNotIn("<form", html)
+        # The page asks as the person, with their admin flag and roles, as Superset's own route signs them.
+        self.assertTrue(any(h.get("X-lenspack-identity") for _u, h in calls))
+        # Below Superset's root (SUPERSET_APP_ROOT=/superset), every address the script gets starts with it.
+        r, _ = self.answered({"admin": {"access": "superset-role", "surface": "split", "page": "host"}}, base_url="http://localhost/superset")
+        shell = self.shell_of(r.get_data(as_text=True))
+        self.assertEqual(shell["api"], {"panel": "/superset/lenspack/_superset/admin/api/", "host": "/superset/lenspack/_superset/"})
+        self.assertEqual((shell["assets"], shell["panelUrl"]), ("/superset/lenspack/_superset/admin/", "/superset/lenspack/_superset/admin/"))
+
+    def test_shows_everything_or_a_link_as_the_deployment_puts_the_admin_pages(self):
+        r, _ = self.answered({"admin": {"access": "superset-role", "surface": "superset", "page": "all", "panel": None}})
+        shell = self.shell_of(r.get_data(as_text=True))
+        self.assertEqual((shell["sections"], shell["panelUrl"]), ("all", None))
+        r, _ = self.answered({"admin": {"access": "superset-role", "surface": "separate", "page": "link", "panel": "/x/"}})
+        self.assertEqual(self.shell_of(r.get_data(as_text=True))["sections"], "link")
+        # Under the password the assistant refuses Superset's admins, and the page links to the password sign-in.
+        r, _ = self.answered({"admin": {"access": "password", "surface": "separate", "page": "link", "panel": "/x/"}}, refuse=True)
+        self.assertEqual(r.status_code, 200)
+        shell = self.shell_of(r.get_data(as_text=True))
+        self.assertEqual((shell["sections"], shell["panelUrl"], shell["facts"]), ("link", "/lenspack/_admin/", None))
+        # Refused where the admin pages are not elsewhere: no page.
+        r, _ = self.answered({"admin": {"access": "superset-users", "surface": "split", "page": "host"}}, refuse=True)
+        self.assertEqual(r.status_code, 403)
 
 
 class UnderARoot(unittest.TestCase):
@@ -671,7 +739,7 @@ class UnderARoot(unittest.TestCase):
 
         for base_url, root in [("http://localhost", ""), (self.ROOT, "/superset")]:
             html = self.settings_page(base_url)
-            self.assertIn(f'href="{root}/lenspack/_superset/admin/"', html)
+            self.assertIn(f'href="{root}/lenspack/_superset/admin/panel.css"', html)
             if lp.lenspack_settings_layout(self.app) == "lenspack/layout.html":
                 self.assertIn(f'href="{root}/superset/welcome/"', html)
                 # No address that would leave Superset's root (Superset 6's page; on 5, Superset draws the menu bar).
@@ -687,27 +755,9 @@ class UnderARoot(unittest.TestCase):
             self.assertEqual(re.findall(r'(?:href|action|src)="/[^"]*"', template), [], name)
             self.assertNotIn('"/lenspack', template, name)
             self.assertNotIn('"/ai-assistant', template, name)
-        actions = re.findall(r'action="([^"]+)"', lp.SETTINGS_HTML)
-        self.assertGreaterEqual(len(actions), 9)
-        for action in actions:
-            self.assertTrue(action.startswith("{{ lenspack_root }}/ai-assistant/"), action)
-
-    def test_the_settings_page_s_forms_come_back_below_superset_s_root(self):
-        import urllib.error
-        from unittest import mock
-
-        before = self.app.config.get("WTF_CSRF_ENABLED", True)
-        self.app.config["WTF_CSRF_ENABLED"] = False
-        try:
-            for base_url, root in [("http://localhost", ""), (self.ROOT, "/superset")]:
-                with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("server down in the tests")):
-                    r = self.client.post("/ai-assistant/telemetry", data={"retentionDays": "x"}, base_url=base_url)
-                self.assertEqual(r.status_code, 302, base_url)
-                self.assertTrue(r.headers["Location"].endswith(f"{root}/ai-assistant/"), (base_url, r.headers["Location"]))
-                if root:
-                    self.assertIn("/superset/ai-assistant/", r.headers["Location"])
-        finally:
-            self.app.config["WTF_CSRF_ENABLED"] = before
+        # The page's scripts come from the address the view works out below Superset's root (lp_assets).
+        self.assertIn('src="{{ lp_assets }}panel.js"', lp.SETTINGS_HTML)
+        self.assertNotIn("<form", lp.SETTINGS_HTML)
 
 
 class BrandLabel(unittest.TestCase):

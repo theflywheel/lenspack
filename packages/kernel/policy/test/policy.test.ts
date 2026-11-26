@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { ADMIN_ROLE, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { ADMIN_ROLE, adminSurfaceFrom, surfacePlan, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -469,5 +469,27 @@ describe("who may use the assistant: the user-access modes", () => {
     expect(mayUse(principalOf(gamma, rights(usersUnder(a, roles))))).toBe(true);
     expect(mayUse(principalOf(field, rights(usersUnder(a, roles))))).toBe(false);
     expect(mayUse(principalOf({ user: "ana", roles: ["Admin"] }, rights(usersUnder(a, roles))))).toBe(true);
+  });
+});
+
+describe("where the admin pages are (admin surfaces)", () => {
+  it("reads the surface from config or the environment, the environment winning; split when absent", () => {
+    expect(adminSurfaceFrom(undefined)).toBe("split");
+    expect(adminSurfaceFrom("superset")).toBe("superset");
+    expect(adminSurfaceFrom("superset", " Separate ")).toBe("separate");
+    expect(adminSurfaceFrom("separate", "")).toBe("separate");
+  });
+  it("refuses a surface it doesn't know, naming the allowed ones", () => {
+    expect(() => adminSurfaceFrom("both")).toThrow(/split, superset or separate/);
+    expect(() => adminSurfaceFrom(undefined, "panel")).toThrow(/not "panel"/);
+  });
+  it("says what each page shows on each surface", () => {
+    expect(surfacePlan("split", "superset-role")).toEqual({ surface: "split", hostPage: "host", panel: "lenspack" });
+    expect(surfacePlan("superset", "superset-users")).toEqual({ surface: "superset", hostPage: "all", panel: "none" });
+    expect(surfacePlan("separate", "superset-role")).toEqual({ surface: "separate", hostPage: "link", panel: "all" });
+  });
+  it("puts the password mode on a page of its own, whatever surface was asked, and says it did", () => {
+    expect(surfacePlan("superset", "password")).toEqual({ surface: "separate", asked: "superset", hostPage: "link", panel: "all" });
+    expect(surfacePlan("separate", "password")).toEqual({ surface: "separate", hostPage: "link", panel: "all" });
   });
 });

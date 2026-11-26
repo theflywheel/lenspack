@@ -421,19 +421,13 @@ def lenspack_url(script_root, path: str) -> str:
 LENSPACK_PATH = lenspack_mount_path(os.environ.get("LENSPACK_PATH"))
 
 
-# Flash categories of the settings page's own messages: the page shows only these, not a message another part
-# of Superset left in the session (Superset 6 leaves an "Access is Denied" from signing in, which its frontend
-# never shows).
-FLASH_OK, FLASH_BAD = "lenspack-info", "lenspack-danger"
-
-
 def lenspack_app_mutator(app):
     import urllib.error
     import urllib.request
     from urllib.parse import urlparse
 
     import requests
-    from flask import Response, abort, flash, g, jsonify, redirect, request, stream_with_context
+    from flask import Response, abort, g, jsonify, redirect, request, stream_with_context
     from flask_appbuilder import BaseView, expose
     from flask_appbuilder.security.decorators import has_access
     from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
@@ -703,16 +697,20 @@ def lenspack_app_mutator(app):
     app.add_url_rule("/api/v1/lenspack/bootstrap", "lenspack_bootstrap", bootstrap_view, methods=["POST"])
 
     # --- Settings → Manage → AI assistant ---------------------------------------------------------------
+    # The page is the admin pages' own script (Lenspack's panel.js) drawn inside Superset's frame: what it shows depends
+    # on where the deployment puts the admin pages (admin.surface in the assistant's config). Every change it makes goes
+    # straight to the assistant's server through Superset's own route (LENSPACK_PATH), signed as the person, so there are
+    # no forms here and Lenspack's admin rule decides each one.
     class Refused(Exception):
-        """Lenspack said no (403): its admins rule (auth.admins in superset.yaml) does not name this user's roles."""
+        """Lenspack said no (403): its admin rule (auth.adminAccess, auth.admins) does not make this user an admin."""
 
     def call(method, path, body=None, refuse=False):
-        """Lenspack's settings API, as the signed-in admin. refuse: raise Refused when Lenspack answers 403."""
+        """Lenspack's settings API, as the signed-in user. refuse: raise Refused when Lenspack answers 403."""
         req = urllib.request.Request(
             LENSPACK_INTERNAL_URL + path,
             data=json.dumps(body).encode() if body is not None else None,
             method=method,
-            headers={"content-type": "application/json", "x-lenspack-identity": lenspack_sign(g.user.username, True, roles=role_names(g.user))},
+            headers={"content-type": "application/json", "x-lenspack-identity": lenspack_sign(g.user.username, is_admin(g.user), roles=role_names(g.user), user_id=getattr(g.user, "id", None))},
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as r:
@@ -727,20 +725,10 @@ def lenspack_app_mutator(app):
         except Exception as e:  # unreachable, not JSON: say so on the page
             return None, f"{type(e).__name__}: {str(e)[:160]}"
 
-    def back():
-        """Back to the settings page, below Superset's root."""
-        return redirect(lenspack_url(request.script_root, "/ai-assistant/"))
-
-    def saved(what, result):
-        _data, error = result
-        flash(f"{what} saved." if error is None else f"{what} not saved: {error}", FLASH_OK if error is None else FLASH_BAD)
-        return back()
-
     class LenspackSettingsView(BaseView):
         route_base = "/ai-assistant"
         default_view = "index"
-        # The forms below use the page's own permission (can_index), so no new permissions to sync.
-        method_permission_name = {"index": "index", "chat": "index", "speech": "index", "speech_hold": "index", "speech_audio": "index", "audio_delete": "index", "audio_export": "index", "language": "index", "features": "index", "telemetry": "index"}
+        method_permission_name = {"index": "index"}
 
         @expose("/")
         @has_access
@@ -749,165 +737,48 @@ def lenspack_app_mutator(app):
                 abort(403)
             from superset.models.core import Database
 
-            # Lenspack decides who its admins are: a Superset admin its admins rule does not name gets no page.
+            # Lenspack decides who its admins are. One it refuses gets no page, unless the admin pages are elsewhere
+            # for this deployment (its own password sign-in, or everything on the panel): then a link to them.
+            refused = False
             try:
-                settings, settings_error = call("GET", "/_superset/settings", refuse=True)
+                settings, error = call("GET", "/_superset/settings", refuse=True)
             except Refused:
+                settings, error, refused = None, None, True
+            info, info_error = call("GET", "/_superset/info")
+            error = error or (info_error if info is None else None)
+            adm = (info or {}).get("admin") or {}
+            # What this page shows (admin.surface): "host", what Superset needs (split, the default, and a Lenspack
+            # that says nothing); "all", everything (superset); "link", a link to the admin panel (separate, password).
+            page = adm.get("page") if adm.get("page") in ("host", "all", "link") else "host"
+            if adm.get("access") == "password":
+                page = "link"
+            if refused and page != "link":
                 abort(403)
-            stt_models = None
-            if settings and settings.get("speech"):
-                stt_models, _ = call("GET", "/_superset/settings/speech/models")
-            info = None
-            if settings is None:
-                info, _ = call("GET", "/_superset/info")
-            usage, usage_error = call("GET", "/api/_usage")
-            audit, audit_error = call("GET", "/_superset/audit?limit=20")
-            # What each answer cost, from the audit log (absent on a Lenspack without /_superset/turns: the card hides).
-            turns, _ = call("GET", "/_superset/turns?limit=50")
-            databases = [
-                {"name": d.database_name, "backend": d.backend, "uri": d.sqlalchemy_uri, "datasets": len(d.tables)}  # URI password already masked
-                for d in db.session.query(Database).order_by(Database.database_name)
-            ]
-            account = security_manager.find_user(username=(settings or {}).get("superset", {}).get("username") or LENSPACK_SERVICE_USER)
+            lp = lenspack_root(request.script_root) + LENSPACK_PATH
+            panel = None if page == "all" else lp + ("/_admin/" if adm.get("access") == "password" else "/_superset/admin/")
             # The assistant's own name, as its server says: kept for the menu entry, and used on this page.
             server_name = ((settings or {}).get("brand") or {}).get("values", {}).get("name") or ((info or {}).get("brand") or {}).get("name")
             if server_name:
                 _SERVER_BRAND.update(name=str(server_name), at=time.time())
             label = lenspack_brand_label(app.config, server=_SERVER_BRAND["name"])
+            # What only Superset knows, for the Assistant section: its data connections (no addresses) and the roles
+            # of the assistant's own account.
+            account = security_manager.find_user(username=(settings or {}).get("superset", {}).get("username") or LENSPACK_SERVICE_USER)
+            facts = None
+            if page != "link":
+                facts = {
+                    "databases": [{"name": d.database_name, "backend": d.backend, "datasets": len(d.tables)} for d in db.session.query(Database).order_by(Database.database_name)],
+                    "accountRoles": [r.name for r in account.roles] if account else None,
+                }
+            shell = {
+                "shell": "superset", "name": label, "superset": True, "surface": adm.get("surface") or "split", "sections": page,
+                "host": lp + "/_superset/", "api": {"panel": lp + "/_superset/admin/api/", "host": lp + "/_superset/"}, "assets": lp + "/_superset/admin/",
+                "panelUrl": panel, "access": adm.get("access"), "facts": facts, "nonce": getattr(request, "csp_nonce", None),
+            }
             return self.render_template(
                 "lenspack/settings.html",
-                settings=settings, settings_error=settings_error, info=info, usage=usage, usage_error=usage_error,
-                audit=audit, audit_error=audit_error, turns=turns, databases=databases,
-                account_roles=[r.name for r in account.roles] if account else None,
-                internal_url=LENSPACK_INTERNAL_URL, lenspack_path=lenspack_root(request.script_root) + LENSPACK_PATH, stt_models=stt_models, stt_bench=STT_BENCH,
-                lp_layout=settings_layout, lp_flash=[FLASH_OK, FLASH_BAD], lp_brand=label, service_user=LENSPACK_SERVICE_USER,
-                lp_assistant=label if label != "AI assistant" else "the assistant",
+                lp_layout=settings_layout, lp_brand=label, lp_error=error, lp_shell=shell, lp_assets=shell["assets"], lp_panel=panel,
             )
-
-        # Forms on the page. Admin only, Superset's CSRF token required (Flask-WTF checks every POST).
-        @expose("/chat", methods=["POST"])
-        @has_access
-        def chat(self):
-            if not security_manager.is_admin():
-                abort(403)
-            if request.form.get("reset"):
-                return saved("Chat model", call("PUT", "/_superset/settings/chat", {"model": None}))
-            model, _, effort = request.form.get("choice", "").partition("|")
-            return saved("Chat model", call("PUT", "/_superset/settings/chat", {"model": model, "effort": effort or None}))
-
-        @expose("/speech", methods=["POST"])
-        @has_access
-        def speech(self):
-            if not security_manager.is_admin():
-                abort(403)
-            model = None if request.form.get("reset") else request.form.get("model", "")
-            return saved("Speech-to-text model", call("PUT", "/_superset/settings/speech", {"model": model}))
-
-        @expose("/speech-hold", methods=["POST"])
-        @has_access
-        def speech_hold(self):
-            if not security_manager.is_admin():
-                abort(403)
-            if request.form.get("reset"):
-                return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": None}))
-            try:
-                hold = int(request.form.get("holdMs", ""))
-            except ValueError:
-                flash("Space-bar hold: enter a whole number of milliseconds.", FLASH_BAD)
-                return back()
-            return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": hold}))
-
-        # Kept recordings of spoken questions: how long, how much, and the consent notice. Whether they are kept at all is
-        # the voice-audio item on the admin panel's Telemetry tab, which asks the admin to confirm first.
-        @expose("/speech-audio", methods=["POST"])
-        @has_access
-        def speech_audio(self):
-            if not security_manager.is_admin():
-                abort(403)
-            if request.form.get("reset"):
-                body = {"audioRetentionDays": None, "maxStoredMb": None, "consentNotice": None}
-            else:
-                body = {"consentNotice": request.form.get("consentNotice", "")}
-                try:
-                    body["audioRetentionDays"] = int(request.form.get("audioRetentionDays", ""))
-                    body["maxStoredMb"] = int(request.form.get("maxStoredMb", ""))
-                except ValueError:
-                    flash("Kept recordings: enter whole numbers of days and MB.", FLASH_BAD)
-                    return back()
-            return saved("Kept recordings", call("PUT", "/_superset/settings/speech", body))
-
-        @expose("/audio-delete", methods=["POST"])
-        @has_access
-        def audio_delete(self):
-            if not security_manager.is_admin():
-                abort(403)
-            from urllib.parse import quote
-
-            user = request.form.get("user", "").strip()
-            done, error = call("DELETE", f"/_superset/audio?user={quote(user)}" if user else "/_superset/audio?all=1")
-            if error is None:
-                flash(f"Deleted {done.get('deleted', 0)} kept recording(s){' of ' + user if user else ''}.", FLASH_OK)
-            else:
-                flash(f"Recordings not deleted: {error}", FLASH_BAD)
-            return back()
-
-        @expose("/audio-export", methods=["POST"])
-        @has_access
-        def audio_export(self):
-            if not security_manager.is_admin():
-                abort(403)
-            done, error = call("POST", "/_superset/audio/export", {})
-            if error is None:
-                flash(f"Manifest written: {done.get('clips', 0)} clip(s) in {done.get('file')}, {done.get('flagged', 0)} set aside in {done.get('flaggedFile')}.", FLASH_OK)
-            else:
-                flash(f"Manifest not written: {error}", FLASH_BAD)
-            return back()
-
-        @expose("/telemetry", methods=["POST"])
-        @has_access
-        def telemetry(self):
-            if not security_manager.is_admin():
-                abort(403)
-            if request.form.get("reset"):
-                return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": None}))
-            try:
-                days = int(request.form.get("retentionDays", ""))
-            except ValueError:
-                flash("Usage telemetry: enter a whole number of days.", FLASH_BAD)
-                return back()
-            return saved("Usage telemetry", call("PUT", "/_superset/settings/telemetry", {"retentionDays": days}))
-
-        @expose("/language", methods=["POST"])
-        @has_access
-        def language(self):
-            if not security_manager.is_admin():
-                abort(403)
-            if request.form.get("reset"):
-                body = {"default": None, "titles": None, "board": None}
-            else:
-                body = {k: request.form[k] for k in ("default", "titles", "board") if request.form.get(k)}
-            return saved("Chat language", call("PUT", "/_superset/settings/language", body))
-
-        @expose("/features", methods=["POST"])
-        @has_access
-        def features(self):
-            if not security_manager.is_admin():
-                abort(403)
-            current, error = call("GET", "/_superset/settings")
-            ft = (current or {}).get("features")
-            if not ft:
-                flash(f"Off switches not saved: {error or 'this version of the server has no off switches'}", FLASH_BAD)
-                return back()
-            keys = [o["key"] for o in ft["options"]]
-            if request.form.get("reset"):
-                body = {k: None for k in keys}
-            else:
-                # Only what changed: a switch left alone keeps its source (config, LENSPACK_FEATURES).
-                body = {k: request.form.get(k) == "on" for k in keys if (request.form.get(k) == "on") != ft["values"][k]}
-                if not body:
-                    flash("Off switches: nothing changed.", FLASH_OK)
-                    return back()
-            return saved("Off switches", call("PUT", "/_superset/settings/features", body))
 
     appbuilder.add_view_no_menu(LenspackSettingsView)
 
@@ -992,316 +863,27 @@ TAIL_JS = r'''{# The "Ask Lenspack" button: one small script on every page, for 
 '''
 
 # Settings → Manage → AI assistant.
-SETTINGS_HTML = r"""{# Settings → Manage → AI assistant. What the assistant's server runs with and Superset's data connections. Never shows a secret.
-   Prose names the assistant by its brand (lp_name) or says "the assistant"; names of settings and variables stay as code.
-   lp_layout: Superset 5's own layout, or on Superset 6 lenspack/layout.html (light or dark, as Superset is). #}
-{% extends lp_layout | default("appbuilder/base.html") %}
-{% block title %}{{ lp_brand | default("AI assistant") }} · Settings{% endblock %}
-{# Only this page's own messages, below; not whatever else Superset left in the session. #}
+SETTINGS_HTML = r"""{# Settings → Manage → AI assistant: the admin pages' own script (panel.js, served by the assistant's server) drawn in
+   Superset's frame. What it shows follows admin.surface: what Superset needs, everything, or a link to the admin panel.
+   The heading and any error are drawn here, so the page says something when the assistant's server is down. #}
+{% extends lp_layout %}
+{% block title %}{{ lp_brand | default("AI assistant") }}{% endblock %}
 {% block messages %}{% endblock %}
 {% block content %}
-<style>
-  .lp-wrap{--lp-fg:#1f2328;--lp-mute:#667085;--lp-card:#fff;--lp-line:#e4e7ec;--lp-line2:#f0f2f5;--lp-code:#f5f7fa;--lp-acc:#1a85a0;--lp-ok:#067647;--lp-bad:#b42318;--lp-okbg:#ecfdf3;--lp-badbg:#fef3f2;--lp-input:#fff;--lp-inline:#d0d5dd;
-    max-width:1040px;margin:24px auto;padding:0 16px;font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--lp-fg)}
-  [data-lp-theme=dark] .lp-wrap{--lp-fg:#e6e8eb;--lp-mute:#98a2b3;--lp-card:#1b1d21;--lp-line:#343842;--lp-line2:#2a2e35;--lp-code:#262a31;--lp-acc:#3fb1cc;--lp-ok:#47cd89;--lp-bad:#f97066;--lp-okbg:rgba(71,205,137,.12);--lp-badbg:rgba(249,112,102,.12);--lp-input:#14161a;--lp-inline:#3a3f48}
-  .lp-wrap h1{font-size:22px;margin:0 0 4px}
-  .lp-wrap .lede{color:var(--lp-mute);margin:0 0 20px}
-  .lp-card{background:var(--lp-card);border:1px solid var(--lp-line);border-radius:8px;padding:16px 18px;margin:0 0 16px}
-  .lp-card h2{font-size:15px;margin:0 0 10px}
-  .lp-wrap table{border-collapse:collapse;width:100%}
-  .lp-wrap th,.lp-wrap td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--lp-line2);vertical-align:top}
-  .lp-wrap th{color:var(--lp-mute);font-weight:500;width:220px}
-  .lp-wrap code{background:var(--lp-code);color:inherit;border-radius:4px;padding:1px 5px;font-size:12.5px}
-  .lp-wrap .ok{color:var(--lp-ok)}.lp-wrap .bad{color:var(--lp-bad)}.lp-wrap .mute{color:var(--lp-mute)}
-  .lp-wrap a{color:var(--lp-acc)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .lp-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 0}
-  .lp-form select,.lp-form input[type=number]{padding:6px 8px;border:1px solid var(--lp-inline);border-radius:6px;background:var(--lp-input);color:var(--lp-fg);font:inherit}
-  .lp-form select{min-width:280px;max-width:100%}
-  .lp-form button{padding:6px 14px;border-radius:6px;border:1px solid #1a85a0;background:#1a85a0;color:#fff;font:inherit;cursor:pointer}
-  .lp-form button.ghost{background:transparent;color:var(--lp-acc);border-color:var(--lp-acc)}
-  .lp-form button[disabled]{opacity:.5;cursor:not-allowed}
-  .lp-flash{padding:8px 12px;border-radius:6px;margin:0 0 12px}
-  .lp-flash.info{background:var(--lp-okbg);color:var(--lp-ok)}.lp-flash.danger{background:var(--lp-badbg);color:var(--lp-bad)}
-  .bench{font-variant-numeric:tabular-nums}
-  .bench td,.bench th{padding:3px 8px!important;font-size:12.5px}
-  @media (max-width:820px){.grid2{grid-template-columns:1fr}.lp-wrap th{width:auto}}
-</style>
-<div class="lp-wrap">
-  {% set lp_named = (settings or {}).get('brand', {}).get('values') or {} %}
-  {% set lp_name = lp_named.get('name') or lp_assistant | default("the assistant") %}
-  <h1>{{ lp_brand | default("AI assistant") }}</h1>
-  <p class="lede">A chat on Superset dashboards{% if lp_named.get('buttonLabel') %}: the <b>{{ lp_named.get('buttonLabel') }}</b> button on a dashboard{% endif %}.
-    Models are chosen here; the rest comes from the assistant's config file and environment. This page never shows a secret.</p>
-
-  <div class="lp-card">
-    <h2>Admin panel</h2>
-    <p class="mute" style="margin:0 0 8px">How people use {{ lp_name }} each day, the daily review and its proposed fixes, open questions about definitions, the definitions you have added, and every switch. Served by the assistant's server, for its admins.</p>
-    <p style="margin:0"><a href="{{ lenspack_path }}/_superset/admin/" target="_blank" rel="noopener">Open the admin panel</a></p>
-  </div>
-
-  {% for category, message in get_flashed_messages(with_categories=true, category_filter=lp_flash or ["lenspack-info", "lenspack-danger"]) %}
-    <div class="lp-flash {{ 'danger' if category.endswith('danger') else 'info' }}">{{ message }}</div>
-  {% endfor %}
-
-  {% if settings and settings.chat %}{% set c = settings.chat %}
-  <div class="lp-card">
-    <h2>Chat model</h2>
-    <p class="mute" style="margin:0 0 8px">The model that answers in the chat and edits dashboards, for everyone. Applies to the next question; no restart.</p>
-    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/chat">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <select name="choice" aria-label="Chat model" {% if not c.writable %}disabled{% endif %}>
-        {% for p in c.options %}
-          {% if p.efforts %}
-            <optgroup label="{{ p.name }} ({{ p.model }}){% if p.available is sameas false %}: not answering{% endif %}">
-              {% for e in p.efforts.levels %}
-                <option value="{{ p.name }}|{{ e }}" {% if p.name == c.model and e == c.effort %}selected{% endif %} {% if p.available is sameas false %}disabled{% endif %}>{{ p.name }} · {{ e }} effort{% if e == p.efforts.default %} (its default){% endif %}</option>
-              {% endfor %}
-            </optgroup>
-          {% else %}
-            <option value="{{ p.name }}|" {% if p.name == c.model %}selected{% endif %} {% if p.available is sameas false %}disabled{% endif %}>{{ p.name }} ({{ p.model }}){% if p.available is sameas false %}: not answering{% endif %}</option>
-          {% endif %}
-        {% endfor %}
-      </select>
-      <button type="submit" {% if not c.writable %}disabled{% endif %}>Save</button>
-      {% if c.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not c.writable %}disabled{% endif %}>Back to default ({{ c.defaultModel }})</button>{% endif %}
-    </form>
-    <p class="mute" style="margin:8px 0 0">Now: <b>{{ c.model or 'none' }}</b>{% if c.effort %} · {{ c.effort }} effort{% endif %} · {{ 'chosen here' if c.source == 'settings' else 'the deployment default' }}.
-      Models come from the configured keys{% if settings.llmFrom %} (<code>{{ settings.llmFrom }}</code>){% endif %}; adding an OpenRouter key adds its models.</p>
-    {% if not c.writable %}<p class="bad" style="margin:6px 0 0">Read-only: the assistant's server has no identity key from Superset yet (restart it once Superset is up).</p>{% endif %}
-  </div>
-  {% endif %}
-
-  {% if settings %}
-  <div class="lp-card">
-    <h2>Speech to text</h2>
-    {% if settings.speech %}{% set sp = settings.speech %}
-      <p class="mute" style="margin:0 0 8px">Turns the chat's microphone recordings into text.
-        {% if sp.enabled %}Key from <code>{{ sp.keyFrom }}</code> (value never shown).{% else %}<span class="bad">No key set (<code>OPENROUTER_API_KEY</code>): the microphone is hidden.</span>{% endif %}</p>
-      <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/speech">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <select name="model" aria-label="Speech-to-text model" {% if not sp.writable %}disabled{% endif %}>
-          {% set ids = (stt_models or [])|map(attribute='id')|list %}
-          {% for m in (stt_models or []) %}
-            <option value="{{ m.id }}" {% if m.id == sp.model %}selected{% endif %}>{{ m.name or m.id }}{% if m.id in stt_bench %} · WER {{ stt_bench[m.id][0] }} / {{ stt_bench[m.id][2] }} fr / {{ stt_bench[m.id][3] }} hi · {{ stt_bench[m.id][4] }}{% endif %}{% if m.usdPerMinute %} · ${{ m.usdPerMinute }}/min{% endif %}</option>
-          {% endfor %}
-          {% if sp.model not in ids %}<option value="{{ sp.model }}" selected>{{ sp.model }}</option>{% endif %}
-        </select>
-        <button type="submit" {% if not sp.writable %}disabled{% endif %}>Save</button>
-        {% if sp.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to default ({{ sp.defaultModel }})</button>{% endif %}
-      </form>
-      {% if sp.defaultHoldMs is defined %}
-        {% set rng = sp.holdMsRange if sp.holdMsRange is defined and sp.holdMsRange else [500, 3000] %}
-        {% set lo = rng.min if rng is mapping else rng[0] %}{% set hi = rng.max if rng is mapping else rng[1] %}
-        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/speech-hold" style="margin-top:8px">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label class="mute" for="lp-hold">Hold the space bar for</label>
-          <input id="lp-hold" type="number" name="holdMs" min="{{ lo }}" max="{{ hi }}" step="100" value="{{ sp.holdMs or sp.defaultHoldMs }}" style="width:90px" {% if not sp.writable %}disabled{% endif %}>
-          <span class="mute">ms to start recording ({{ lo }}–{{ hi }}; default {{ sp.defaultHoldMs }})</span>
-          <button type="submit" {% if not sp.writable %}disabled{% endif %}>Save</button>
-          {% if sp.holdMs is not none and sp.holdMs != sp.defaultHoldMs %}<button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to default</button>{% endif %}
-        </form>
-      {% endif %}
-      {% if sp.keepAudio is defined %}
-        <h3 style="font-size:13.5px;margin:14px 0 6px">Kept recordings</h3>
-        <p class="mute" style="margin:0 0 6px">{% if sp.keepAudio %}<b>On.</b>{% else %}<b>Off.</b>{% endif %} Turned on or off as "Kept recordings" on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>, which shows what it means first. On, each spoken question's recording is kept in the assistant's state folder for checking speech to text, deleted after the days below or, oldest first, when over the size cap. Only Superset admins can play one, and each play is in the audit log. The speech provider receives the recording either way.
-          {% if sp.stored %}Kept now: {{ sp.stored.files }} recording(s), {{ (sp.stored.bytes / 1048576)|round(1) }} MB.{% endif %}</p>
-        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/speech-audio">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <label class="mute">Keep for <input type="number" name="audioRetentionDays" min="1" max="3650" value="{{ sp.audioRetentionDays }}" style="width:70px" {% if not sp.writable %}disabled{% endif %}> days</label>
-          <label class="mute">at most <input type="number" name="maxStoredMb" min="1" max="100000" value="{{ sp.maxStoredMb }}" style="width:90px" {% if not sp.writable %}disabled{% endif %}> MB</label>
-          <label class="mute" style="flex-basis:100%">Notice each person acknowledges once before recording (optional)<br><textarea name="consentNotice" rows="2" maxlength="2000" style="width:100%" {% if not sp.writable %}disabled{% endif %}>{{ sp.consentNotice or '' }}</textarea></label>
-          <button type="submit" {% if not sp.writable %}disabled{% endif %}>Save</button>
-          <button class="ghost" type="submit" name="reset" value="1" {% if not sp.writable %}disabled{% endif %}>Back to defaults</button>
-        </form>
-        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/audio-delete" style="margin-top:8px">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="text" name="user" placeholder="Superset username (empty: everyone's)" aria-label="Superset username" style="width:240px" {% if not sp.writable %}disabled{% endif %}>
-          <button class="ghost" type="submit" {% if not sp.writable %}disabled{% endif %}>Delete stored audio</button>
-        </form>
-        <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/audio-export" style="margin-top:8px">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="ghost" type="submit" {% if not sp.writable or not sp.stored or not sp.stored.files %}disabled{% endif %}>Export for evaluation</button>
-          <span class="mute">writes manifest.jsonl beside the recordings, in the speech benchmark's format (evals/speech)</span>
-        </form>
-      {% endif %}
-      {% if stt_bench %}<details style="margin-top:8px"><summary class="mute">Measured word error rate (with a language hint) and median latency</summary>
-        <table class="bench"><tr><th>Model</th><th>Field fr A</th><th>Field fr B</th><th>FLEURS fr</th><th>FLEURS hi</th><th>Latency</th></tr>
-          {% for id, r in stt_bench|dictsort %}<tr><td><code>{{ id }}</code>{% if id == sp.model %} <b>(current)</b>{% endif %}</td><td>{{ r[0] }}</td><td>{{ r[1] }}</td><td>{{ r[2] }}</td><td>{{ r[3] }}</td><td>{{ r[4] }}</td></tr>{% endfor %}
-        </table></details>{% endif %}
-    {% else %}
-      <p class="mute">Speech-to-text isn't installed in this build of the assistant.</p>
-    {% endif %}
-  </div>
-
-  {% if settings.language %}{% set lg = settings.language %}
-  {% set names = {'auto': 'Follow the person (Superset language / browser)', 'en': 'English', 'fr': 'French', 'hi': 'Hindi', 'pt': 'Portuguese', "board": "The board's language", 'speaker': 'The language of the question'} %}
-  {% set opts = lg.options if lg.options is mapping else {} %}
-  <div class="lp-card">
-    <h2>Chat language</h2>
-    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/language">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label>Replies in <select name="default" {% if not lg.writable %}disabled{% endif %}>{% for o in (opts.default or ['auto', 'en', 'fr', 'hi', 'pt']) %}<option value="{{ o }}" {% if o == lg.default %}selected{% endif %}>{{ names.get(o, o) }}</option>{% endfor %}</select></label>
-      <label>Chart titles in <select name="titles" {% if not lg.writable %}disabled{% endif %}>{% for o in (opts.titles or ['board', 'speaker']) %}<option value="{{ o }}" {% if o == lg.titles %}selected{% endif %}>{{ names.get(o, o) }}</option>{% endfor %}</select></label>
-      <label>Board language <select name="board" {% if not lg.writable %}disabled{% endif %}>{% for o in (opts.board or ['en', 'fr', 'hi', 'pt']) %}<option value="{{ o }}" {% if o == lg.board %}selected{% endif %}>{{ names.get(o, o) }}</option>{% endfor %}</select></label>
-      <button type="submit" {% if not lg.writable %}disabled{% endif %}>Save</button>
-      {% if lg.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not lg.writable %}disabled{% endif %}>Back to defaults</button>{% endif %}
-    </form>
-  </div>
-  {% endif %}
-
-  {% if settings.telemetry %}{% set tl = settings.telemetry %}
-  <div class="lp-card">
-    <h2>Usage telemetry</h2>
-    <p class="mute" style="margin:0 0 8px">One record per question (who asked, the kind of question, how it went, time and cost) and the thumbs under each answer, in <code>{{ tl.file }}</code>.
-      {% if not tl.enabled %}<span class="bad">Off (Off switches).</span>{% endif %} Read it as an admin at <code>{{ lenspack_path }}/_superset/telemetry</code>.
-      What is recorded, item by item, is switched on the <a href="{{ lenspack_path }}/_superset/admin/#telemetry" target="_blank" rel="noopener">admin panel's Telemetry tab</a>.</p>
-    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/telemetry">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label class="mute">Keep for <input type="number" name="retentionDays" min="1" max="3650" value="{{ tl.retentionDays }}" style="width:80px" {% if not tl.writable %}disabled{% endif %}> days</label>
-      <button type="submit" {% if not tl.writable %}disabled{% endif %}>Save</button>
-      {% if tl.source == 'settings' %}<button class="ghost" type="submit" name="reset" value="1" {% if not tl.writable %}disabled{% endif %}>Back to defaults</button>{% endif %}
-    </form>
-  </div>
-  {% endif %}
-
-  {% if settings.features %}{% set ft = settings.features %}
-  {% set from = {'config': 'set in the config file', 'env': 'set by LENSPACK_FEATURES', 'settings': 'set on this page'} %}
-  <div class="lp-card">
-    <h2>Off switches</h2>
-    <p class="mute">Turn parts of the assistant off for everyone. A change applies to the next dashboard each person opens.</p>
-    <form class="lp-form" method="post" action="{{ lenspack_root }}/ai-assistant/features">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <table>
-      {% for o in ft.options %}{% set src = ft.source[o.key] %}
-        <tr>
-          <th><label><input type="checkbox" name="{{ o.key }}" {% if ft['values'][o.key] %}checked{% endif %} {% if not ft.writable %}disabled{% endif %}> {{ o.label }}</label></th>
-          <td>{{ o.help }}{% if src != 'default' %} <span class="mute">({{ from.get(src, src) }}{% if src == 'settings' and ft.defaults[o.key] != ft['values'][o.key] %}; the deployment says {{ 'on' if ft.defaults[o.key] else 'off' }}{% endif %})</span>{% endif %}</td>
-        </tr>
-      {% endfor %}
-      </table>
-      <button type="submit" {% if not ft.writable %}disabled{% endif %}>Save</button>
-      {% if 'settings' in ft.source.values() %}<button class="ghost" type="submit" name="reset" value="1" {% if not ft.writable %}disabled{% endif %}>Back to the deployment's values</button>{% endif %}
-    </form>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  <div class="lp-card">
-    <h2>The assistant's server</h2>
-    <table>
-      <tr><th>Status</th><td>
-        {% if settings %}<span class="ok">● running</span>
-        {% elif info %}<span class="ok">● running</span> <span class="mute">(this version of the server reports less; update it for the full page)</span>
-        {% else %}<span class="bad">● not reachable</span> <span class="mute">{{ settings_error }}</span>{% endif %}
-      </td></tr>
-      <tr><th>Address inside the cluster</th><td><code>{{ internal_url }}</code> <span class="mute">(<code>LENSPACK_INTERNAL_URL</code>)</span></td></tr>
-      {% set s = settings or info or {} %}
-      {% if s.pack %}<tr><th>Pack</th><td><code>{{ s.pack }}</code></td></tr>{% endif %}
-      {% if settings %}
-        <tr><th>Datasets it reads</th><td>{% for d in settings.datasets %}<code>{{ d.schema ~ '.' if d.schema }}{{ d.table }}</code> as <b>{{ d.entity }}</b>{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
-        <tr><th>Vocabulary</th><td>{{ settings.dimensions }} dimensions, {{ settings.measures|length }} measures
-          <details><summary class="mute">measures</summary>{% for m in settings.measures %}<code>{{ m.key }}</code> {{ m.label }} <span class="mute">({{ m.agg }})</span><br>{% endfor %}</details></td></tr>
-        <tr><th>Superset account</th><td><code>{{ settings.superset.username }}</code>{% if account_roles is not none %} · roles: {{ account_roles|join(', ') or 'none' }}{% endif %}
-          {% if settings.superset.account %}<span class="mute">({{ {'bootstrap': 'made by the assistant on first start', 'state': 'made by the assistant; password in its state directory', 'env': 'password from an environment variable'}.get(settings.superset.account, settings.superset.account) }})</span>{% endif %}</td></tr>
-        <tr><th>Who may edit dashboards</th><td>{% if settings.editPolicy == 'signed-in' %}Anyone signed in to Superset <span class="mute">(edit policy <code>signed-in</code>)</span>{% else %}Whoever Superset lets edit that dashboard: its owners with write access, and admins. Everyone who can view it may ask questions. <span class="mute">(edit policy <code>superset</code>, the default)</span>{% endif %}</td></tr>
-        {% if settings.hostPolicy %}<tr><th>Whose access applies to answers</th><td>{% if settings.hostPolicy == 'off' %}<strong>The assistant's own account, for everyone.</strong> Anyone signed in reads every configured dataset in full, without Superset's dataset permissions or row-level security. <span class="mute">(<code>hostPolicy: off</code>)</span>{% else %}Each user's own Superset access: their dataset permissions, row-level security and the dashboards they may open. <span class="mute">(<code>hostPolicy: superset</code>, the default)</span>{% endif %}</td></tr>{% endif %}
-        <tr><th>Dashboards bound</th><td>{{ settings.dashboards|join(', ') or 'none yet (a dashboard binds when the chat opens on it)' }}</td></tr>
-      {% elif account_roles is not none %}
-        <tr><th>Superset account</th><td><code>{{ service_user }}</code> · roles: {{ account_roles|join(', ') or 'none' }}</td></tr>
-      {% endif %}
-      {% if settings %}<tr><th>Chat opens as</th><td>{{ 'a side panel' if settings.panel == 'dock' else 'a floating window' }} <span class="mute">(default for everyone, set by <code>overlay.panel</code> in the config; each person can change it with the gear in the chat)</span></td></tr>{% endif %}
-      {% if s.examples %}<tr><th>Example questions</th><td>{% for e in s.examples %}{{ e }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>{% endif %}
-    </table>
-  </div>
-
-  <div class="grid2">
-    <div class="lp-card">
-      <h2>Language models</h2>
-      {% if settings %}
-        <table>
-          <tr><th>Key from</th><td>{% if settings.llmFrom %}<code>{{ settings.llmFrom }}</code> <span class="mute">(environment; the value is never shown)</span>{% else %}<span class="bad">no key set: the chat is off</span>{% endif %}</td></tr>
-          {% for p in settings.providers %}
-            <tr><th>{{ p.name }}</th><td><code>{{ p.model }}</code> <span class="mute">{{ p.kind }}</span>
-              {% if p.available %}<span class="ok">● answering</span>{% elif p.available is sameas false %}<span class="bad">● {{ p.error or 'not answering' }}</span>{% else %}<span class="mute">● not checked yet</span>{% endif %}</td></tr>
-          {% endfor %}
-        </table>
-      {% else %}<p class="mute">Shown once the assistant's server reports its settings.</p>{% endif %}
-    </div>
-    <div class="lp-card">
-      <h2>Spend today</h2>
-      {% if usage %}
-        <table>
-          <tr><th>Spent</th><td>${{ '%.4f'|format(usage.budget.spent if usage.budget else usage.total.usd) }}{% if usage.budget and usage.budget.usdPerDay %} of ${{ usage.budget.usdPerDay }} a day{% endif %}</td></tr>
-          {% if usage.budget and usage.budget.usdPerUserPerDay %}<tr><th>Per person</th><td>${{ usage.budget.usdPerUserPerDay }} a day</td></tr>{% endif %}
-          <tr><th>Chat turns</th><td>{{ usage.total.turns }}</td></tr>
-          <tr><th>Model calls</th><td>{{ usage.total.calls }}{% if usage.total.failed %} <span class="bad">({{ usage.total.failed }} failed)</span>{% endif %}</td></tr>
-          <tr><th>Tokens</th><td>{{ usage.total.inputTokens }} in, {{ usage.total.outputTokens }} out</td></tr>
-        </table>
-      {% else %}<p class="mute">Not available: {{ usage_error }}</p>{% endif %}
-    </div>
-  </div>
-
-  {% if turns and turns.enabled %}
-  <div class="lp-card">
-    <h2>Cost per answer</h2>
-    <p class="mute" style="margin:0 0 8px">What each chat answer cost: every model call it made (chat steps and the reviewer) plus speech to text when the question was spoken. {{ turns.estimate }} Read from the audit log, so it survives restarts.{% if settings and settings.features and settings.features.values.turnCost is sameas false %} The cost line in the chat is turned off (Off switches); costs are still recorded here.{% endif %}</p>
-    <table>
-      <tr><th>Today (UTC)</th><td>≈ ${{ '%.4f'|format(turns.today.costUsd) }} for {{ turns.today.turns }} answer{{ '' if turns.today.turns == 1 else 's' }}{% if turns.today.sttUsd %} <span class="mute">(speech to text ${{ '%.4f'|format(turns.today.sttUsd) }})</span>{% endif %} · {{ '{:,}'.format(turns.today.tokensIn) }} tokens in, {{ '{:,}'.format(turns.today.tokensOut) }} out</td></tr>
-      <tr><th>Last 7 days</th><td>≈ ${{ '%.4f'|format(turns.week.costUsd) }} for {{ turns.week.turns }} answer{{ '' if turns.week.turns == 1 else 's' }}{% if turns.week.sttUsd %} <span class="mute">(speech to text ${{ '%.4f'|format(turns.week.sttUsd) }})</span>{% endif %} · {{ '{:,}'.format(turns.week.tokensIn) }} tokens in, {{ '{:,}'.format(turns.week.tokensOut) }} out{% if turns.week.unpriced %} <span class="mute">({{ turns.week.unpriced }} unpriced calls not counted)</span>{% endif %}</td></tr>
-    </table>
-    {% if turns.recent %}
-    <details open><summary class="mute">Recent answers (newest first, last {{ turns.recent|length }})</summary>
-      <table class="lp-turns">
-        <tr><th>Time (UTC)</th><th>User</th><th>Dashboard</th><th>Model</th><th>Tokens in / out</th><th>Cost</th></tr>
-        {% for r in turns.recent %}<tr><td>{{ r.at[:19]|replace('T', ' ') }}</td><td>{{ r.user }}</td><td>{% if r.board and r.board.startswith('superset-') %}<a href="{{ lenspack_root }}/superset/dashboard/{{ r.board[9:] }}/">{{ r.board[9:] }}</a>{% else %}{{ r.board or '' }}{% endif %}</td><td><code>{{ r.models|join(', ') }}</code></td><td>{{ '{:,}'.format(r.tokens['in']) }} / {{ '{:,}'.format(r.tokens.out) }}</td><td>≈ ${{ '%.4f'|format(r.costUsd) }}{% if r.sttUsd %} <span class="mute">(speech ${{ '%.4f'|format(r.sttUsd) }})</span>{% endif %}</td></tr>
-        {% endfor %}
-      </table>
-    </details>
-    {% else %}<p class="mute">No answers in the last 7 days.</p>{% endif %}
-  </div>
-  {% endif %}
-
-  <div class="lp-card">
-    <h2>Audit log</h2>
-    {% if audit and audit.enabled %}
-      <p class="mute" style="margin:0 0 8px">Every board change, refused change, chat turn and settings change, with who made it. Kept {{ audit.retentionDays }} days in the assistant's state directory (<code>audit.jsonl</code>, one file a month); the spend figures above reset when its server restarts, this does not.</p>
-      <table class="bench">
-        <tr><th>When (UTC)</th><th>Who</th><th>What</th><th>Outcome</th><th>Detail</th></tr>
-        {% for e in audit.events %}<tr><td>{{ e.at[:19]|replace('T', ' ') }}</td><td>{{ e.user }}</td><td>{{ e.action }}{% if e.board %} <span class="mute">{{ e.board }}</span>{% endif %}</td><td class="{{ 'ok' if e.outcome == 'ok' else 'bad' }}">{{ e.outcome }}</td><td class="mute">{{ (e.detail or '')[:120] }}</td></tr>
-        {% else %}<tr><td colspan="5" class="mute">Nothing yet this month.</td></tr>{% endfor %}
-      </table>
-      {% if audit.months|length > 1 %}<p class="mute" style="margin:6px 0 0">Earlier months on file: {{ audit.months[1:]|join(', ') }}.</p>{% endif %}
-    {% elif audit %}<p class="mute">Off (<code>audit: false</code> in the config).</p>
-    {% else %}<p class="mute">Not available: {{ audit_error or 'this version of the server has no audit log' }}</p>{% endif %}
-  </div>
-
-  <div class="lp-card">
-    <h2>Data connections in Superset</h2>
-    <table>
-      <tr><th>Name</th><td class="mute">Backend · connection (password masked) · datasets</td></tr>
-      {% for d in databases %}
-        <tr><th>{{ d.name }}</th><td><code>{{ d.backend }}</code> · <code>{{ d.uri }}</code> · {{ d.datasets }}</td></tr>
-      {% else %}
-        <tr><td colspan="2" class="mute">None yet.</td></tr>
-      {% endfor %}
-    </table>
-    <p class="mute">Add or edit them under Settings → Database Connections. Saved passwords are encrypted with Superset's secret key.</p>
-  </div>
-
-  <div class="lp-card">
-    <h2>Where to change things</h2>
-    <table>
-      <tr><th>Chat and speech models</th><td>On this page (saved in the assistant's state, kept across restarts)</td></tr>
-      <tr><th>LLM and speech keys</th><td><code>ANTHROPIC_API_KEY</code>, <code>LENSPACK_LLM_PROVIDERS</code>, <code>OPENROUTER_API_KEY</code> in the assistant's environment</td></tr>
-      <tr><th>Datasets, guidance, budget</th><td>The assistant's config file (<code>--config &lt;file&gt;</code>)</td></tr>
-      <tr><th>Who may use the chat</th><td>Anyone signed in to Superset who can view the dashboard. Superset's <code>{{ lenspack_path }}/</code> route checks the session and signs who is asking for every request to the assistant.</td></tr>
-      <tr><th>Whose data access applies</th><td><code>LENSPACK_HOST_POLICY</code> on the assistant's container: <code>superset</code> (default), each user's own dataset access and row-level security; <code>off</code>, the answers use what the assistant's own account may read.</td></tr>
-      <tr><th>Who may edit through it</th><td><code>LENSPACK_EDIT_POLICY</code> on the assistant's container: <code>superset</code> (default) or <code>signed-in</code>. The Dashboard edits switch above turns edits off for everyone.</td></tr>
-      <tr><th>Off switches</th><td>On this page, or <code>features:</code> in the assistant's config file and <code>LENSPACK_FEATURES</code> on its container (this page wins)</td></tr>
-    </table>
-  </div>
+{% set lp_nonce = csp_nonce() if csp_nonce is defined else "" %}
+<link rel="stylesheet" href="{{ lp_assets }}panel.css">
+<div id="lp-admin" class="lpa" data-shell="superset">
+  <header class="page-h lpa-static">
+    <h1>{{ lp_brand | default("AI assistant") }}</h1>
+    {% if lp_error %}<p class="bad-line">The assistant's server didn't answer: {{ lp_error }}</p>
+    {% elif lp_panel %}<p><a href="{{ lp_panel }}">Open the admin panel</a></p>{% endif %}
+  </header>
 </div>
+{% if not lp_error %}
+<script{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}>window.__lpAdmin = {{ lp_shell | tojson }};</script>
+<script src="{{ lp_assets }}checklist.js"{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}></script>
+<script src="{{ lp_assets }}panel.js"{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}></script>
+{% endif %}
 {% endblock %}
 """
 
@@ -1321,21 +903,28 @@ LAYOUT_HTML = r"""<!DOCTYPE html>
     } catch (e) {}
   </script>
   <style>
-    :root{--lp-page:#f5f6f8;--lp-bar:#fff;--lp-barline:#e4e7ec;--lp-text:#1f2328;--lp-dim:#667085;--lp-link:#1a85a0;color-scheme:light}
-    [data-lp-theme=dark]{--lp-page:#0f1012;--lp-bar:#16181b;--lp-barline:#2a2e35;--lp-text:#e6e8eb;--lp-dim:#98a2b3;--lp-link:#3fb1cc;color-scheme:dark}
-    body{margin:0;background:var(--lp-page);color:var(--lp-text);font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
-    .lp-top{display:flex;align-items:center;gap:10px;height:56px;padding:0 24px;background:var(--lp-bar);border-bottom:1px solid var(--lp-barline);box-sizing:border-box}
-    .lp-top a{color:var(--lp-link);text-decoration:none}
-    .lp-top a:hover{text-decoration:underline}
-    .lp-top .lp-home{font-weight:600;font-size:16px;color:var(--lp-text)}
-    .lp-top .lp-sep{color:var(--lp-dim)}
-    .lp-top .lp-back{margin-left:auto}
+    /* Superset 6.1's header, as its antd theme draws it: white bar, 4px radii, its teal for links and the active item. */
+    :root{--lp-page:#f5f5f5;--lp-bar:#fff;--lp-barline:#f0f0f0;--lp-text:rgba(0,0,0,.88);--lp-dim:rgba(0,0,0,.55);--lp-link:#2893b3;color-scheme:light}
+    [data-lp-theme=dark]{--lp-page:#141414;--lp-bar:#1f1f1f;--lp-barline:#303030;--lp-text:rgba(255,255,255,.85);--lp-dim:rgba(255,255,255,.55);--lp-link:#3fb1cc;color-scheme:dark}
+    body{margin:0;background:var(--lp-page);color:var(--lp-text);font:14px/1.5715 Inter,Helvetica,Arial,sans-serif}
+    .lp-top{display:flex;align-items:center;gap:4px;min-height:53px;padding:0 16px;background:var(--lp-bar);border-bottom:1px solid var(--lp-barline);box-sizing:border-box;flex-wrap:wrap}
+    .lp-top a{color:var(--lp-text);text-decoration:none;padding:6px 12px;border-radius:4px}
+    .lp-top a:hover{color:var(--lp-link)}
+    .lp-top .lp-home{font-weight:700;font-size:16px;letter-spacing:-.01em;margin-right:12px;padding-left:0}
+    .lp-top .lp-crumb{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--lp-dim)}
+    .lp-top .lp-crumb b{color:var(--lp-text);font-weight:600}
+    .lp-top .lp-back{color:var(--lp-link)}
+    @media (max-width:760px){.lp-top .lp-nav{display:none}.lp-top .lp-crumb span{display:none}}
   </style>
 </head>
 <body>
   <header class="lp-top">
-    <a class="lp-home" href="{{ lenspack_root }}/superset/welcome/">Superset</a><span class="lp-sep">/</span><span class="lp-sep">Settings</span><span class="lp-sep">/</span><b>{{ lp_brand | default("AI assistant") }}</b>
-    <a class="lp-back" href="{{ lenspack_root }}/superset/welcome/">← Back to Superset</a>
+    <a class="lp-home" href="{{ lenspack_root }}/superset/welcome/">Superset</a>
+    <a class="lp-nav" href="{{ lenspack_root }}/dashboard/list/">Dashboards</a>
+    <a class="lp-nav" href="{{ lenspack_root }}/chart/list/">Charts</a>
+    <a class="lp-nav" href="{{ lenspack_root }}/tablemodelview/list/">Datasets</a>
+    <a class="lp-nav" href="{{ lenspack_root }}/sqllab/">SQL</a>
+    <span class="lp-crumb"><span>Settings /</span><b>{{ lp_brand | default("AI assistant") }}</b><a class="lp-back" href="{{ lenspack_root }}/superset/welcome/">← Back to Superset</a></span>
   </header>
   {% block messages %}{% endblock %}
   {% block content %}{% endblock %}

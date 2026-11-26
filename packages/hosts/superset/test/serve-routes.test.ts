@@ -237,7 +237,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["adminAccess", "audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],

@@ -114,7 +114,7 @@ describe("the admin panel", () => {
     const put = (body: unknown, admin = true) => fetch(`${base}/api/settings/brand`, { method: "PUT", headers: { ...as(admin ? "ana" : "viv", admin), "content-type": "application/json" }, body: JSON.stringify(body) });
     expect((await put({ name: "Campaign assistant" }, false)).status).toBe(403);
     expect(lines.some((l) => l.user === "viv" && l.action === "PUT /_x/admin/api/settings/brand" && l.outcome === "denied")).toBe(true);
-    expect((await (await fetch(`${base}/`, { headers: as("ana", true) })).text())).toContain("<h1 data-t=\"title\">Lenspack admin</h1>");
+    expect((await (await fetch(`${base}/`, { headers: as("ana", true) })).text())).toContain('data-name="Lenspack"');
     const r = await put({ name: "Campaign assistant", buttonLabel: "Ask the data", i18n: { fr: { buttonLabel: "Interroger les données" } } });
     expect(r.status).toBe(200);
     expect((await r.json()).brand).toMatchObject({ values: { name: "Campaign assistant", buttonLabel: "Ask the data", i18n: { fr: { buttonLabel: "Interroger les données" } } }, source: { name: "settings" }, writable: true });
@@ -144,13 +144,19 @@ describe("the admin panel", () => {
     const js = await (await fetch(`${base}/panel.js`, { headers: as("ana", true) })).text();
     // The script parses, and has both languages and every tab.
     expect(() => new Script(js)).not.toThrow();
-    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, access, settings };");
+    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, cache, models, access, settings, assistant: assistantTab, telemetry, spend };");
     expect(js).toContain('fr: {');
     expect((await fetch(`${base}/panel.css`, { headers: as("ana", true) })).status).toBe(200);
     // The Cache tab reads the saved answers' own admin routes (docs/features/saved-answers.md).
     for (const route of ["${HOST}cache${path}", "/chart-candidates", "/boards", "/suggestions?board=", "/prewarm", '"unpin" : "pin"', "/evict"]) expect(js).toContain(route);
     // Where the host routes are comes from the page (window.__lpAdmin): one level up here.
-    expect(html).toContain(`window.__lpAdmin={"host":"../"}`);
+    expect(html).toContain(`window.__lpAdmin={"shell":"panel","host":"../","api":{"panel":"api/","host":"../"}}`);
+    expect(html).toContain('<div id="lp-admin" class="lpa" data-shell="panel">');
+    // The scripts and styles hold no data: anyone who reaches the route gets them (a host's own page draws from them);
+    // the page and its calls stay an admin's.
+    expect((await fetch(`${base}/panel.js`, { headers: as("viv", false) })).status).toBe(200);
+    expect((await fetch(`${base}/`, { headers: as("viv", false) })).status).toBe(403);
+    expect((await fetch(`${base}/api/packs`, { headers: as("viv", false) })).status).toBe(403);
     const packs = await (await fetch(`${base}/api/packs`, { headers: as("ana", true) })).json();
     expect(packs.usage).toEqual({ board: "overview", source: "telemetry" });
   });
