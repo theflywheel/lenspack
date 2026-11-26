@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { type Identity, signIdentity } from "../src/identity";
 import { type Position, layoutProblems, reachable } from "../src/layout";
-import { type ChatResult, PACK, type Session, type Stack, http, readChat, startStack } from "./stack";
+import { type ChatResult, PACK, type Session, type Stack, http, openPage, readChat, startStack } from "./stack";
 
 const VISITS = { North: 3, South: 4, East: 8, West: 16 };
 const STOCK = { North: 32, South: 64, East: 128, West: 256 };
@@ -274,6 +274,75 @@ export function accessSuite(version: string) {
         expect(layoutProblems(pos)).toEqual([]);
         const charts = (await s.lp_admin.send("GET", `/api/v1/dashboard/${stack.fixtures.dashboards.t}/charts`)).json.result.map((c: { slice_name: string }) => c.slice_name);
         expect(sorted(charts)).toEqual(["Stock again", "Stock total", "Visits total"]);
+      });
+    });
+
+    // What a person sees: a headless browser on the dashboard, the overlay's chat asked to remove a chart. The page must
+    // match the saved dashboard afterwards without a reload, also when the reply is cut off after the turn has
+    // already removed the chart (the browser drops the connection once the server has finished).
+    describe("the open page after a chat edit", () => {
+      it("drops a removed chart without a reload, and says so plainly when the reply was cut off on its way", async () => {
+        const copied = await s.lp_admin.lp("POST", `_superset/my/dashboards?dashboard=${stack.fixtures.dashboards.a}`, { copy: true });
+        expect(copied.status, copied.text).toBe(200);
+        const dash = copied.json.dashboard as number;
+        const board = `superset-${dash}`;
+        let browser: Awaited<ReturnType<typeof openPage>> | null = null;
+        try {
+          // A third chart, so the dashboard is never left empty.
+          const kpi = await s.lp_admin.lp("POST", `api/${PACK}/${board}/ops`, { ops: [{ op: "add_widget", id: "stock_kpi", widget: { title: "Stock total", kind: "kpi", query: { kind: "value", measure: "stock_total" } }, placement: { place: "bottom", width: "quarter" } }] });
+          expect(kpi.json, kpi.text).toMatchObject({ ok: true });
+          const widgets = (await s.lp_admin.lp("GET", `api/${PACK}/${board}`)).json.board.config.widgets as Record<string, { title: string }>;
+          const idOf = (title: string) => Object.entries(widgets).find(([, w]) => w.title === title)![0];
+          browser = await openPage(s.lp_admin, `/superset/dashboard/${dash}/`);
+          const { page } = browser;
+          const shown = () => page.evaluate(() => (document.querySelector(".dashboard-content") as HTMLElement | null)?.innerText ?? "");
+          const charts = () => page.evaluate(() => document.querySelectorAll(".dashboard-content .anchor-link-container[id^='CHART-']").length);
+          await page.waitForFunction(() => document.querySelectorAll(".dashboard-content .anchor-link-container[id^='CHART-']").length === 3, null, { timeout: 60_000 });
+          expect(await shown()).toContain("Stock by region");
+          // Set on the page now: a reload would lose it.
+          await page.evaluate(() => ((window as unknown as { __samePage: boolean }).__samePage = true));
+          const samePage = () => page.evaluate(() => (window as unknown as { __samePage?: boolean }).__samePage === true);
+          await page.click(".lpo-btn");
+          await page.waitForSelector(".lpc-in");
+          const ask = async (words: string) => {
+            await page.fill(".lpc-in", words);
+            await page.click(".lpc-go");
+          };
+
+          // The reply arrives: the chart goes from the page, in place.
+          await ask(`TOOL remove_widget ${JSON.stringify({ id: idOf("Stock by region") })}`);
+          await page.waitForFunction(() => document.querySelectorAll(".dashboard-content .anchor-link-container[id^='CHART-']").length === 2, null, { timeout: 30_000 });
+          expect(await shown()).not.toContain("Stock by region");
+          expect(await samePage()).toBe(true);
+
+          // The reply is cut off after the server has removed the chart (as when a phone changes networks): the chat
+          // finds out, says so, and the chart goes from the page all the same. Nothing is sent again.
+          let chatPosts = 0;
+          await page.route(
+            (u) => /\/chat$/.test(u.pathname),
+            async (route) => {
+              chatPosts++;
+              await (await route.fetch()).text();
+              await route.abort("connectionreset");
+            },
+          );
+          await ask(`TOOL remove_widget ${JSON.stringify({ id: idOf("Visits by region") })}`);
+          await page.waitForFunction(() => document.querySelector(".lpo-panel")?.textContent?.includes("Your change was made"), null, { timeout: 30_000 });
+          const notes = await page.evaluate(() => Array.from(document.querySelectorAll(".lpc-note")).map((n) => n.textContent));
+          expect(notes.at(-1)).toBe("Your change was made: removed “Visits by region”. The connection dropped before the reply finished.");
+          await page.waitForFunction(() => document.querySelectorAll(".dashboard-content .anchor-link-container[id^='CHART-']").length === 1, null, { timeout: 30_000 });
+          expect(await shown()).not.toContain("Visits by region");
+          expect(await shown()).toContain("Stock total");
+          expect(await charts()).toBe(1);
+          expect(await samePage()).toBe(true);
+          expect(await page.locator(".lpc-note.bad").count()).toBe(0);
+          expect(chatPosts).toBe(1);
+          const after = JSON.parse((await s.lp_admin.send("GET", `/api/v1/dashboard/${dash}`)).json.result.position_json) as Position;
+          expect(Object.values(after).filter((c: any) => c?.type === "CHART" && reachable(after).has(c.id))).toHaveLength(1);
+        } finally {
+          await browser?.close();
+          await s.lp_admin.lp("POST", "_superset/my/dashboards/delete", { dashboard: dash });
+        }
       });
     });
 

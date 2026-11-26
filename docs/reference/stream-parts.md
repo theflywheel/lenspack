@@ -16,6 +16,7 @@ calls and their results, `finish`), Lenspack adds its own `data-*` parts.
 | `data-reuse` | the answer came from a saved answer | the saved-answer line (`tier`, the money saved, how fresh the data is). See [Saved answers](../features/saved-answers.md) |
 | `data-queue` | the turn is waiting, or turned away | waiting (transient, not kept in the message): `{ state: "waiting", reason: "busy" \| "edit", position, etaSeconds }`; turned away: `{ state: "full", why: "full" \| "timeout", retryAfterSeconds }`, followed by the same message as text so any client can show it. See [Busy hours](../features/busy-hours.md) |
 | `data-answer-card` | the turn read data | the answer card behind "How this was worked out": each data call in plain words, the measures behind each figure, the SQL that ran and the rows. The browser keeps it beside the conversation and never sends it back. See [How this was worked out](../features/explain.md) |
+| `data-recovered` | the question was asked again under a `turnKey` already answered (Retry after a cut-off reply) | `{ state, from, to, changes, reply }`: what the first asking did, followed by its reply as text. No model is called and nothing is changed again. See [Dashboard edits](../features/dashboard-edits.md#when-the-reply-is-cut-off) |
 | `data-usage` | at the end of every turn | `{ total, models, queries, summary }`: tokens and dollars by role and provider, the queries the tools ran, and a one-line summary. See [Costs](../operating/costs.md#metering) |
 
 A transient part is shown while the turn runs and not stored in the message.
