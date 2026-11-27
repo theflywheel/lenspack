@@ -11,6 +11,12 @@ brought it.
 
 ### 26 November 2026
 
+- **Choose where the admin pages are.** `admin.surface` / `LENSPACK_ADMIN_SURFACE`: `split` (the default: Superset's AI
+  assistant page holds what Superset needs, the panel the rest), `superset` (everything on Superset's page, in its own
+  frame; the panel's address leads there) or `separate` (everything on the panel; Superset's page links to it). Both
+  pages are now drawn by one script, with one look in light and dark and at phone width, sections you can jump to, and
+  one pager on every list. Superset's page opens for anyone Lenspack calls an admin, not only Superset Admins.
+
 - **Choose who is an admin and who may use the assistant.** In Superset, admins can now be Superset roles (the
   default, as before), named Superset users (`superset-users`: owners from `LENSPACK_ADMIN_USERS`, who add other
   admins on the admin panel's new **Access** tab; Superset's own Admin role then grants nothing), or named

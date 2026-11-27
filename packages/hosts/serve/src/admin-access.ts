@@ -1,4 +1,4 @@
-import { type AdminAccess, type AdminAccessMode, type AdminRights, type Rights, type UserAccess, type UserAccessMode, adminAccessModesFrom, adminRights, adminUsersFrom, rightsUnder, userAccessModesFrom, usersUnder } from "@lenspack/policy";
+import { type AdminAccess, type AdminAccessMode, type AdminRights, type Rights, type UserAccess, type UserAccessMode, adminAccessModesFrom, adminMenuHint, adminRights, adminUsersFrom, rightsUnder, userAccessModesFrom, usersUnder } from "@lenspack/policy";
 
 import { type AdminPassword, adminPasswordsFrom } from "./admin-signin";
 import type { AuditEvent } from "./audit";
@@ -149,6 +149,8 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
     grants: o.grants,
     state,
     warnings,
+    /** What a host's menu needs to show its admin entry by itself (adminMenuHint): a hint, never a right. */
+    menuHint: () => adminMenuHint(state()),
     /** The admin passwords, for the admin sign-in (adminSignIn). Their secrets go nowhere else. */
     passwords,
     /** Whether the admin sign-in is on: the password mode with a password set. */

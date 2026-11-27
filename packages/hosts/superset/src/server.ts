@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
-import { type EditScope, boardRights, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
+import { type EditScope, adminSurfaceFrom, boardRights, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
@@ -103,6 +103,13 @@ export type SupersetConfig = AdminConfig & {
   };
   /** The audit log in the state directory (audit.jsonl, monthly files). false turns it off. */
   audit?: false | { retentionDays?: number };
+  /**
+   * Where the admin pages are (docs/features/admin-panel.md#where-the-admin-pages-are). surface: "split" (the default:
+   * Superset's Settings → AI assistant page holds what Superset needs, the admin panel the rest), "superset" (everything
+   * on Superset's page, inside Superset's frame), or "separate" (everything on the admin panel; Superset's page links to
+   * it). LENSPACK_ADMIN_SURFACE wins. Under auth.adminAccess: password, the pages are always separate.
+   */
+  admin?: { surface?: "split" | "superset" | "separate" };
   /** Superset datasets by id, or by table name (schema.table or table). */
   datasets: (number | string)[];
   /**
@@ -265,7 +272,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   adminAccess.auditTo(auditLog?.audit);
   log(`${adminAccess.line()}${adminAccess.has("superset-role") && roleRules.usage ? `; user names on the usage board: ${roleRules.usage.join(", ") || "(none)"}` : ""}`);
   log(userAccess.line());
-  for (const w of [...adminAccess.warnings, ...userAccess.warnings]) log(`warning: ${w}`);
+  // Where the admin pages are: the surface asked for, unless the password mode puts them on a page of their own.
+  const surfaceFrom = env.LENSPACK_ADMIN_SURFACE?.trim() ? "LENSPACK_ADMIN_SURFACE" : config.admin?.surface ? "admin.surface" : null;
+  const surface = surfacePlan(adminSurfaceFrom(config.admin?.surface, env.LENSPACK_ADMIN_SURFACE), adminAccess.modes);
+  const surfaceWords = { split: "split (Superset's settings page holds what Superset needs; the admin panel the rest)", superset: "superset (everything on Superset's settings page)", separate: "separate (everything on the admin panel; Superset's settings page links to it)" };
+  log(`admin pages: ${surfaceWords[surface.surface]} (${surfaceFrom ? `from ${surfaceFrom}` : "the default"})`);
+  const surfaceWarnings = surface.asked ? [`admin pages: ${surfaceFrom} asks for ${surface.asked}, but admins sign in with a password (access password), so the admin pages are on their own (separate)`] : [];
+  for (const w of [...adminAccess.warnings, ...userAccess.warnings, ...surfaceWarnings]) log(`warning: ${w}`);
   if (hostPolicy === "off")
     for (const line of [
       "WARNING: host policy is off (hostPolicy: off or LENSPACK_HOST_POLICY=off).",
@@ -518,10 +531,17 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     ready: () => (idKey() ? { ready: true } : { ready: false, reason: "no identity key from Superset yet: is lenspack_superset.py loaded there?" }),
     routes: (rt) => {
       const { providers, budget } = rt;
-      // Under the password, Superset's own address for the panel leads to the password sign-in's.
-      // With the password alone, nobody signs in through Superset: its address for the panel leads to the admin sign-in.
+      // Superset's settings page, as the admin pages link to it.
+      const supersetPage = (req: IncomingMessage) => `${paths(req).root}/ai-assistant/`;
+      // The panel's page on each surface: the rest of the settings (split), everything (separate), or Superset's page
+      // instead (superset). With the password alone, nobody signs in through Superset: its address for the panel leads to
+      // the admin sign-in.
       const passwordOnly = adminAccess.modes.join(",") === "password";
-      const adminPanel = review.routes(rt, { seen: adminAccess.seen, ...(passwordOnly ? { pageRedirect: (req: IncomingMessage) => `${paths(req).base}/_admin/` } : {}) });
+      const adminPanel = review.routes(rt, {
+        seen: adminAccess.seen,
+        shell: (req) => ({ surface: surface.surface, sections: surface.panel === "none" ? "all" : surface.panel, superset: true, supersetPage: supersetPage(req) }),
+        ...(passwordOnly ? { pageRedirect: (req: IncomingMessage) => `${paths(req).base}/_admin/` } : surface.panel === "none" ? { pageRedirect: supersetPage } : {}),
+      });
       const settingsPage = adminRoutes({
         prefix: "/_superset",
         settings: admin,
@@ -537,7 +557,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         },
         // supersetRoot: where Superset runs on its host ("" or "/superset"), for the overlay's links to Superset's pages.
         // admin: how admins sign in, and where the admin pages are, for Superset's settings page (no names, no secrets).
-        info: (url, req) => ({ pack: pack.pack, examples: examplesFor(examples, url.searchParams.get("lang")), examplesByLang: examples, panel, supersetRoot: paths(req).root, admin: { access: adminAccess.modes.join(","), panel: `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
+        info: (url, req) => ({ pack: pack.pack, examples: examplesFor(examples, url.searchParams.get("lang")), examplesByLang: examples, panel, supersetRoot: paths(req).root, admin: { access: adminAccess.modes.join(","), surface: surface.surface, page: surface.hostPage, panel: surface.panel === "none" ? null : `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
         details: () => ({
           pack: pack.pack,
           datasets: datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: binding.entityOf.get(d.id) ?? null })),
@@ -558,12 +578,15 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           editScope: { ...editScope(), defaults: configScope, warning: scopeWarning() },
           publicPath: base,
           panel,
+          // Where the admin pages are (admin.surface), and what each page shows.
+          adminPages: surface,
         }),
         access: adminAccess,
         users: userAccess,
       });
       // The password sign-in's admin pages: the same panel and settings routes under /_admin, for the password admin.
-      const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password" }) }) : null;
+      // Password admins always get every section there, whatever the surface: they have no Superset page to use.
+      const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password", surface: "separate", sections: "all", superset: true, supersetPage: supersetPage(req) }) }) : null;
       const passwordSettings = passwordAdmin
         ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess })
         : null;
@@ -591,6 +614,16 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           await passwordSettings!(req, res, url, who);
           if (res.headersSent) return;
           return json(res, 404, { error: "not found" }, NO_STORE);
+        }
+        // What Superset's plugin needs to draw its "AI assistant" menu entry by itself: the assistant's name, and the
+        // role names or user names that make an admin (adminMenuHint). The plugin asks at most every five minutes, as the
+        // assistant's own Superset account, so drawing a menu never waits for this server. Only that account may read it
+        // (it names admins), and before the users rule: the account need not be a user. Showing the entry grants nothing.
+        if (url.pathname === "/_superset/menu" && req.method === "GET") {
+          const id = identityOf(req, idKey);
+          if (!id) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
+          if (id.u !== account.username) return json(res, 403, { error: "only the assistant's own Superset account reads this" }, NO_STORE);
+          return json(res, 200, { brand: { name: admin.brand.get().name }, admin: adminAccess.menuHint() }, NO_STORE);
         }
         // The scripts are public (Superset only includes them for signed-in users); everything else needs Superset's signature.
         const asset = /^\/(chat\.js|overlay\.js|mine\.js|chat\.css)$/.exec(url.pathname);
@@ -641,7 +674,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       };
     },
     onListening: ({ providers }) => {
-      log(`http://${host}:${port}/ (Superset ${supersetUrl}, ${Object.keys(dashboards).length} dashboard(s) bound, chat ${providers.length ? "on" : "off"}); admin panel at ${base}/_superset/admin/`);
+      log(`http://${host}:${port}/ (Superset ${supersetUrl}, ${Object.keys(dashboards).length} dashboard(s) bound, chat ${providers.length ? "on" : "off"}); admin pages at ${surface.surface === "separate" && adminAccess.modes.join(",") === "password" ? `${base}/_admin/` : `${surface.panel === "none" ? "Superset's /ai-assistant/" : `${base}/_superset/admin/`}${adminAccess.has("password") ? `, and ${base}/_admin/ for named passwords` : ""}`}`);
       void review.start();
     },
   });

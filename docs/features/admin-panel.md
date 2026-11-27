@@ -15,6 +15,54 @@ The panel is served by Lenspack itself, so it looks the same in every host.
 A deployment can also name its admins one by one, or give each a named password on a sign-in page of their own:
 see [Who can use and administer the assistant](../access/admin-access.md).
 
+## Where the admin pages are
+
+In Superset there are two places an admin can work: Superset's own **Settings → Manage → AI assistant** page
+(`/ai-assistant/`) and the admin panel (`/lenspack/_superset/admin/`). Both are drawn by the same script, with the same
+look, so the choice is only where things live. Pick one with `admin.surface` in `superset.yaml`, or
+`LENSPACK_ADMIN_SURFACE` in the environment (the environment wins):
+
+| `admin.surface` | Superset's AI assistant page | The admin panel |
+|---|---|---|
+| `split` (the default) | What Superset needs: the name and button, the connection, languages and datasets | Everything else: usage, review, recordings, models, off switches, cost and the audit log, access |
+| `superset` | Everything, inside Superset's own frame | Its address leads to Superset's page |
+| `separate` | A link to the panel | Everything |
+
+```yaml
+admin:
+  surface: superset   # or LENSPACK_ADMIN_SURFACE=superset
+```
+
+- **Who may open either page** is the admin access mode, the same on every surface. Superset's page opens for anyone
+  Lenspack calls an admin, including a Gamma user with a role of its own; Superset's list of databases on it is shown
+  only to Superset Admins.
+- **Named passwords:** admins who sign in with a password always get everything on their own sign-in's pages
+  (`/lenspack/_admin/`). With the password alone, the surface is always `separate`, and the log says so if you asked for
+  another.
+- **Under a path** (`SUPERSET_APP_ROOT=/superset`), every address on both pages starts with it.
+- **An unknown value** stops the server at start.
+
+### The menu entry
+
+Superset's **Settings → Manage → AI assistant** entry shows to:
+
+- Superset's Admins, as before;
+- under `superset-role`, everyone who holds one of the admin roles (`auth.admins`, `LENSPACK_ADMIN_ROLES`), such as a
+  Gamma user with `Lenspack admin`. The role needs no permissions in Superset;
+- under `superset-users`, the owners and the admins they added, by user name or `id:12`.
+
+Under `password` alone, it shows to Superset's Admins only.
+
+Superset decides this by itself each time it draws its menu, from a short list the plugin keeps: the admin role names
+and user names, with the assistant's name. The plugin asks the server for that list in the background, as the
+assistant's own Superset account, at most every five minutes (`LENSPACK_MENU_REFRESH_SECONDS` in Superset's
+environment). So a new admin, or a rename, reaches the menu within five minutes, and drawing a menu never waits for
+the server. Only the assistant's own account may read the list.
+
+**Seeing the entry grants nothing.** No Superset permission is added to any role. The page behind it, and every change
+made on it, is still decided by the server on each request. A Superset Admin who is not an admin by the mode sees the
+entry and is refused by the page.
+
 Anyone else gets a refusal, and the refusal is written to the audit log. Who may open it is decided in one place, the
 policy layer, from the roles the host says the caller holds and the deployment's `admins` rule, never a dashboard's
 edit right. In Superset, the rule lists Superset role names and defaults to `["Admin"]`; Superset's signed admin flag

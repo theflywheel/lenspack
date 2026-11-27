@@ -239,7 +239,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -473,6 +473,18 @@ describe("Superset mode's server", () => {
       { dashboard: 7, chart: null, event: "copy_permalink", user: "ben" },
     ] });
     expect(r.body.actions).toHaveLength(2);
+  });
+
+  it("tells the assistant's own Superset account, and nobody else, what the menu entry needs", async () => {
+    // The plugin asks as the assistant's account (superset.username, "lenspack" by default), with no roles and no admin flag.
+    const r = await call("/_superset/menu", { as: { u: "lenspack", a: false } });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ brand: { name: expect.any(String) }, admin: { roles: ["Admin"], users: [], everyone: false } });
+    expect(r.headers.get("cache-control")).toMatch(/no-store/);
+    // Anyone else, a Superset admin included, gets no list of who the admins are.
+    expect((await call("/_superset/menu", { as: ADMIN })).status).toBe(403);
+    expect((await call("/_superset/menu", { as: VIEWER })).status).toBe(403);
+    expect((await call("/_superset/menu")).status).toBe(401);
   });
 
   it("answers 404 for a signed request to nowhere", async () => {

@@ -310,7 +310,9 @@ Change the setting (or the environment variable) and restart the server. Nothing
 - **Admin modes and user modes are separate.** Any admin mode works with any user mode.
 - **Being an admin gives no more data.** An admin added under `superset-users` still sees only their own Superset access.
   An admin signed in with a password has no Superset account at all, so no dashboard or dataset of their own.
-- **Superset's Settings → AI assistant page** stays a Superset Admin's page. Under `superset-users` and `password`, its
-  changes are refused unless the person is also an admin by the mode; use the admin panel instead.
+- **Superset's Settings → Manage → AI assistant page** opens for anyone the mode makes an admin, and its menu entry
+  shows to them and to Superset's Admins (see [The menu entry](../features/admin-panel.md#the-menu-entry)). A Superset
+  Admin who is not an admin by the mode sees the entry, but the page refuses them. Under `password` alone, the entry
+  shows to Superset's Admins only, and the page links to the password sign-in.
 - The decision is made in one place, Lenspack's policy layer, from what Superset signs about each person (user name, id
   and roles) and the lists above. See [Rights](rights.md#admin).

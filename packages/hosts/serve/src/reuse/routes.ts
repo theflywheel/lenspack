@@ -18,6 +18,8 @@ import type { AuditLog } from "../audit";
 import type { Principal } from "../auth";
 import { NO_STORE, json, readJson } from "../http";
 
+import { pageFrom, pagedAsk } from "../paging";
+
 export function cacheRoutes(o: { prefix: string; reuse: Reuse; queue?: TurnGate; audit?: Pick<AuditLog, "audit"> | null; adminName: string }) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<void> => {
     const base = `${o.prefix}/cache`;
@@ -29,7 +31,20 @@ export function cacheRoutes(o: { prefix: string; reuse: Reuse; queue?: TurnGate;
     }
     const rest = url.pathname.slice(base.length);
     if (req.method === "GET") {
-      if (rest === "" || rest === "/") return send(200, { ...(await o.reuse.list()), ...(o.queue ? { queue: o.queue.stats() } : {}) });
+      if (rest === "" || rest === "/") {
+        const all = await o.reuse.list();
+        const head = { ...all, ...(o.queue ? { queue: o.queue.stats() } : {}) };
+        // Paged when asked (?cursor=, ?offset=, ?q=): entries a page at a time, ?q= matching the question or the board.
+        if (!pagedAsk(url, ["q"])) return send(200, head);
+        const q = url.searchParams.get("q")?.trim().toLowerCase();
+        const shown = q ? all.entries.filter((e) => `${e.question} ${e.board ?? ""}`.toLowerCase().includes(q)) : all.entries;
+        try {
+          const { items, page } = pageFrom(shown, url, { limit: 25 });
+          return send(200, { ...head, total: all.entries.length, entries: items, page });
+        } catch (e) {
+          return send(400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
       if (rest === "/suggestions") {
         const board = url.searchParams.get("board");
         if (!board) return send(400, { error: "name the board: ?board=<id>" });

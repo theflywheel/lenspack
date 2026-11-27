@@ -118,6 +118,8 @@
     const render = () => p.render();
     let pendingField = p.field || null;
     const HOST = typeof p.host === "string" ? p.host : "../";
+    // Dialogs and tooltips go inside the admin pages' frame, so its styles and colours apply (in Superset's page too).
+    const frame = () => document.getElementById("lp-admin") || document.body;
 
     /** The telemetry checklist (GET <prefix>/telemetry/checklist), if the server has it: null when it does not (404). */
     async function telemetryApi() {
@@ -183,7 +185,7 @@
             h("button", { class: "btn quiet", type: "button", onclick: () => { d.close(); resolve(false); } }, t("cancel")),
             yes));
         d.addEventListener("cancel", () => resolve(false));
-        document.body.append(d);
+        frame().append(d);
         d.showModal();
         yes.focus();
         d.addEventListener("close", () => d.remove());
@@ -197,7 +199,7 @@
       if (!text) return;
       if (!tlPop) tlPop = h("div", { class: "tl-pop", role: "tooltip", id: "tl-pop" });
       tlPop.textContent = text;
-      document.body.append(tlPop);
+      frame().append(tlPop);
       const r = el.getBoundingClientRect();
       const w = Math.min(340, window.innerWidth - 24);
       tlPop.style.maxWidth = `${w}px`;

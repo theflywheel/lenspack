@@ -5,22 +5,22 @@ import { type CacheSettings, type ChecklistInput, fieldNotices, type QueueSettin
 import { type DeploymentContext, adminRights, adminUsersFrom, deploymentContextSchema, recordRights } from "@lenspack/policy";
 
 import type { AdminAccessSetup, UserAccessSetup } from "./admin-access";
-import { PageError, pageFrom } from "./paging";
 
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
 import { type AudioSettings, audioManifest, fileAudioStore } from "./audio";
-import { type AuditLog, turnsReport } from "./audit";
+import { type AuditEvent, type AuditLog, turnRow, turnsReport } from "./audit";
 import { type BrandConfig, brandAuditDetail, brandSettings } from "./brand";
 import type { Principal } from "./auth";
 import { type ExplainConfig, explainFrom } from "./config";
 import { type FeatureValues, features as featureSwitches } from "./features";
 import { NO_STORE, json, readJson } from "./http";
-import { type Provider, effortFor, publicView } from "./llm";
+import { type Provider, effortFor, modelLabel, publicView } from "./llm";
 import type { Budget } from "./metering";
 import { cacheRoutes } from "./reuse";
 import { type ReviewMountOptions, reviewMount } from "./review/mount";
 import { settingsStore } from "./settings";
-import { DEFAULT_SPEECH_MODEL, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
+import { DEFAULT_SPEECH_MODEL, SPEECH_MEASURED, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
+import { PageError, pageAsk, pageFrom, pageOf, pagedAsk } from "./paging";
 import { fileTelemetry } from "./telemetry";
 import { type TelemetryConfig, telemetrySwitches } from "./telemetry-switches";
 
@@ -223,6 +223,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       audioRetentionRange: AUDIO_DAYS,
       maxStoredMbRange: AUDIO_MB,
       stored: await audio.stats(),
+      // Measured word error rate and latency per model (speech.ts), shown beside the picker.
+      measured: SPEECH_MEASURED,
       writable,
     }),
     languageView: (writable: boolean) => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: saved("language") ? "settings" : "default", writable }),
@@ -263,11 +265,18 @@ export function adminRoutes(o: AdminRouteOptions) {
   const chatSettings = () => {
     const saved = s.settings.get<ChatSetting>("chat");
     const current = pickChatModel(o.providers, null, saved);
+    // The deployment's default is the first model it configures, whether or not it answers right now; when it is down,
+    // another answers in its place, and `fallback` says so. (Before, the default named whichever model answered first.)
+    const configured = o.providers[0] ?? null;
+    const source = saved?.model && current?.name === saved.model ? "settings" : "default";
     return {
       model: current?.name ?? null,
+      label: current ? modelLabel(current) : null,
       effort: (current && effortFor(current, pickEffort(current, null, saved))) ?? null,
-      defaultModel: pickChatModel(o.providers, null)?.name ?? null,
-      source: saved?.model && current?.name === saved.model ? "settings" : "default",
+      defaultModel: configured?.name ?? null,
+      defaultLabel: configured ? modelLabel(configured) : null,
+      fallback: source === "default" && !!current && !!configured && current.name !== configured.name,
+      source,
       writable: o.writable(),
       options: o.providers.map(publicView),
     };
@@ -351,7 +360,18 @@ export function adminRoutes(o: AdminRouteOptions) {
         audit("audio export", `${lines.length} clips, ${flagged.length} flagged`);
         return send(200, { file, flaggedFile, clips: lines.length, flagged: flagged.length, note: "Audio paths are relative to the audio folder in the state directory; copy it beside evals/speech/data to score." });
       }
-      if (req.method === "GET" && !id) return send(200, { ...(await s.audio.stats()), settings: s.audioSettings(), clips: (await s.audio.list()).map(({ id: cid, user, at, bytes, format }) => ({ id: cid, user, at, bytes, format })) });
+      if (req.method === "GET" && !id) {
+        // Newest first; ?cursor=/?offset= and ?limit= page it (page in the answer), as every admin list.
+        const clips = (await s.audio.list()).map(({ id: cid, user, at, bytes, format }) => ({ id: cid, user, at, bytes, format })).sort((a, b) => b.at.localeCompare(a.at));
+        const base = { ...(await s.audio.stats()), settings: s.audioSettings() };
+        if (!pagedAsk(url)) return send(200, { ...base, clips });
+        try {
+          const { items, page } = pageFrom(clips, url);
+          return send(200, { ...base, clips: items, page });
+        } catch (e) {
+          return send(400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
       if (req.method === "GET" && id) {
         const found = await s.audio.read(id);
         audit("audio play", id, found ? "ok" : "denied");
@@ -489,18 +509,56 @@ export function adminRoutes(o: AdminRouteOptions) {
       return send(200, o.access.view(me));
     }
     // What chat has cost: the newest turns and the totals for today and the last 7 days, from the audit log.
+    // Paged (any of from, to, user, cursor, offset): the turns in [from, to) newest first (default the last 7 days),
+    // one page of them as `recent`, the range's totals as `range`, and page. Asked the old way (?limit=N), as before.
     if (path === "/turns") {
       if (!o.audit) return send(200, { enabled: false });
       const now = new Date();
-      const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit")) || 50, 500));
-      return send(200, { enabled: true, ...turnsReport(o.audit.since(new Date(now.getTime() - 7 * 86_400_000)), now, limit) });
+      if (!pagedAsk(url, ["from", "to", "user"])) {
+        const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit")) || 50, 500));
+        return send(200, { enabled: true, ...turnsReport(o.audit.since(new Date(now.getTime() - 7 * 86_400_000)), now, limit) });
+      }
+      try {
+        const { from, to } = range(url, now, 7);
+        const user = url.searchParams.get("user")?.trim();
+        const report = turnsReport(o.audit.since(new Date(Math.min(from.getTime(), now.getTime() - 7 * 86_400_000))), now, 0);
+        const rows = o.audit
+          .since(from)
+          .filter((e) => e.at < to.toISOString() && (!user || e.user === user))
+          .map(turnRow)
+          .filter((r): r is NonNullable<typeof r> => !!r);
+        const totals = rows.reduce((t, r) => ({ turns: t.turns + 1, costUsd: t.costUsd + r.costUsd, sttUsd: t.sttUsd + r.sttUsd, tokensIn: t.tokensIn + r.tokens.in, tokensOut: t.tokensOut + r.tokens.out, unpriced: t.unpriced + r.unpriced }), { turns: 0, costUsd: 0, sttUsd: 0, tokensIn: 0, tokensOut: 0, unpriced: 0 });
+        const { items, page } = pageFrom(rows, url);
+        return send(200, { enabled: true, today: report.today, week: report.week, estimate: report.estimate, from: from.toISOString(), to: to.toISOString(), range: { ...totals, costUsd: Math.round(totals.costUsd * 1e6) / 1e6, sttUsd: Math.round(totals.sttUsd * 1e6) / 1e6 }, recent: items, page });
+      } catch (e) {
+        return send(400, { error: e instanceof Error ? e.message : String(e) });
+      }
     }
-    // The audit log, newest first: ?month=YYYY-MM (default the current month), ?limit=N.
+    // The audit log, newest first. The old way: ?month=YYYY-MM (default the current month), ?limit=N. Paged (any of
+    // cursor, offset, from, to, user, action, outcome, q): every month on file, filtered, one page at a time.
     if (path === "/audit") {
       if (!o.audit) return send(200, { enabled: false, events: [] });
       try {
-        const events = o.audit.read({ month: url.searchParams.get("month") ?? undefined, limit: Number(url.searchParams.get("limit")) || 200 });
-        return send(200, { enabled: true, retentionDays: o.audit.retentionDays, months: o.audit.months(), events });
+        const head = { enabled: true, retentionDays: o.audit.retentionDays, months: o.audit.months() };
+        if (!pagedAsk(url, ["from", "to", "user", "action", "outcome", "q"])) {
+          const events = o.audit.read({ month: url.searchParams.get("month") ?? undefined, limit: Number(url.searchParams.get("limit")) || 200 });
+          return send(200, { ...head, events });
+        }
+        const ask = pageAsk(url, { limit: 50 });
+        const f = (k: string) => url.searchParams.get(k)?.trim() || undefined;
+        const [user, action, outcome, q] = [f("user"), f("action"), f("outcome"), f("q")?.toLowerCase()];
+        const from = f("from") ? dateParam(url, "from") : new Date(0);
+        const to = f("to") ? dateParam(url, "to") : undefined;
+        const toIso = to?.toISOString();
+        const keep = (e: AuditEvent) =>
+          (!toIso || e.at < toIso) &&
+          (!user || e.user === user) &&
+          (!action || e.action === action || e.action.startsWith(`${action} `)) &&
+          (!outcome || e.outcome === outcome) &&
+          (!q || `${e.user} ${e.action} ${e.board ?? ""} ${e.detail ?? ""}`.toLowerCase().includes(q));
+        const all = o.audit.since(from!).filter(keep);
+        const { items, page } = pageOf(all, ask);
+        return send(200, { ...head, events: items, page });
       } catch (e) {
         return send(400, { error: e instanceof Error ? e.message : String(e) });
       }
@@ -523,7 +581,9 @@ export function adminRoutes(o: AdminRouteOptions) {
         const from = date("from") ?? new Date((to ?? new Date()).getTime() - 7 * 86_400_000);
         const type = url.searchParams.get("type") || undefined;
         if (type && !["turn", "event", "transcript"].includes(type)) throw new Error("type must be turn, event or transcript");
-        const page = await s.telemetry.read({ from, to, type: type as TelemetryLine["type"] | undefined, offset: Number(url.searchParams.get("offset")) || 0, limit: Number(url.searchParams.get("limit")) || 500 });
+        // ?cursor= (a page's next or prev) works as everywhere; ?offset= as before.
+        const at = url.searchParams.get("cursor") ? pageAsk(url, { limit: 500, max: 5000 }) : { offset: Number(url.searchParams.get("offset")) || 0, limit: Number(url.searchParams.get("limit")) || 500 };
+        const page = await s.telemetry.read({ from, to, type: type as TelemetryLine["type"] | undefined, offset: at.offset, limit: at.limit });
         // User names only for a reader policy lets see them; else a stable stand-in per name.
         const records = may.usernames ? page.records : withoutNames(page.records, s.telemetry.hash);
         return send(200, { enabled: s.telemetry.enabled(), retentionDays: s.telemetryLog.retentionDays, fields: [...s.telemetry.fields()], usernames: may.usernames, from: from.toISOString(), to: (to ?? new Date()).toISOString(), ...page, records });
@@ -656,4 +716,20 @@ export function adminRoutes(o: AdminRouteOptions) {
     o.log(`settings: chat model ${p.name}${effort ? ` (${effort})` : ""}`);
     return send(200, chatSettings());
   };
+}
+
+/** A date or time from the query (2026-11-01, or an ISO time); a bad one is a 400. */
+function dateParam(url: URL, k: string): Date {
+  const v = url.searchParams.get(k)!;
+  // A bare day means that whole day: "to=2026-11-03" reads up to the end of the 3rd.
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(v) && k === "to" ? `${v}T24:00:00Z` : v);
+  if (Number.isNaN(d.getTime())) throw new PageError(`${k} must be a date or time, like 2026-11-01`);
+  return d;
+}
+
+/** ?from= and ?to= (to defaults to now, from to `days` before to). */
+function range(url: URL, now: Date, days: number) {
+  const to = url.searchParams.get("to") ? dateParam(url, "to") : now;
+  const from = url.searchParams.get("from") ? dateParam(url, "from") : new Date(to.getTime() - days * 86_400_000);
+  return { from, to };
 }

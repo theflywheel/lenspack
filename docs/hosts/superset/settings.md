@@ -6,9 +6,10 @@ rule, by default Superset's Admin role (see [Who is asking](identity.md#who-may-
 
 ## The settings page
 
-**Settings → Manage → AI assistant** (`/ai-assistant/`) is for Superset admins whom the `auth.admins` rule also
-names; Lenspack refuses it to any Superset admin the rule leaves out. An admin by the rule who isn't a Superset admin
-uses the [admin panel](../../features/admin-panel.md) instead. It holds the chat and speech
+**Settings → Manage → AI assistant** (`/ai-assistant/`) opens for anyone Lenspack calls an admin, Superset admin or
+not; Lenspack refuses it to anyone else, Superset admins included. Its menu entry shows to Superset's admins and to
+Lenspack's admins (see [The menu entry](../../features/admin-panel.md#the-menu-entry)). What the page shows depends on
+`admin.surface` (see [Where the admin pages are](../../features/admin-panel.md#where-the-admin-pages-are)). It holds the chat and speech
 models, languages, switches, spend, cost per answer and the audit log, and links to the
 [admin panel](../../features/admin-panel.md) (`/lenspack/_superset/admin/`, or below `LENSPACK_PATH`). Its menu
 entry and heading say the assistant's name once it has one (see

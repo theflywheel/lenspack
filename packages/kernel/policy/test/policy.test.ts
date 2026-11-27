@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { ADMIN_ROLE, PASSWORD_ROLE, adminAccessModesFrom, passwordNameOk, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { ADMIN_ROLE, PASSWORD_ROLE, adminAccessModesFrom, adminMenuHint, passwordNameOk, adminSurfaceFrom, surfacePlan, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -470,6 +470,19 @@ describe("who is an admin: the access modes, alone and combined", () => {
     // Without the password mode, the same session lets nobody in.
     expect(adminRights(passwordAdmin("breakglass"), access(["superset-users"], { owners: ["olga"] })).administer).toBe(false);
   });
+
+  it("the menu hint names what makes an admin under each mode, and nothing for passwords", () => {
+    // superset-role: the role names, without their prefix; "*" means everyone.
+    expect(adminMenuHint(access(["superset-role"], { roles: ["role:Lenspack admin"] }))).toEqual({ roles: ["Lenspack admin"], users: [], everyone: false });
+    expect(adminMenuHint(access(["superset-role"], { roles: ["*"] }))).toMatchObject({ everyone: true });
+    // superset-users: the owners and the granted users, never a role (not even Superset's Admin).
+    expect(adminMenuHint(access(["superset-users"], { owners: ["olga", "id:12"], granted: ["bea", "olga"] }))).toEqual({ roles: [], users: ["olga", "id:12", "bea"], everyone: false });
+    // With no owner, the grants count for nothing, as in rightsUnder.
+    expect(adminMenuHint(access(["superset-users"], { granted: ["bea"] })).users).toEqual([]);
+    // password alone: nobody from the host; combined, the other mode's names.
+    expect(adminMenuHint(access(["password"], { passwords: ["ops"] }))).toEqual({ roles: [], users: [], everyone: false });
+    expect(adminMenuHint(access(["superset-role", "password"], { roles: ["role:Lenspack admin"], passwords: ["ops"] })).roles).toEqual(["Lenspack admin"]);
+  });
 });
 
 describe("who may use the assistant: the user-access modes", () => {
@@ -522,5 +535,31 @@ describe("who may use the assistant: the user-access modes", () => {
     expect(mayUse(principalOf(gamma, rights(usersUnder(a, roles))))).toBe(true);
     expect(mayUse(principalOf(field, rights(usersUnder(a, roles))))).toBe(false);
     expect(mayUse(principalOf({ user: "ana", roles: ["Admin"] }, rights(usersUnder(a, roles))))).toBe(true);
+  });
+});
+
+describe("where the admin pages are (admin surfaces)", () => {
+  it("reads the surface from config or the environment, the environment winning; split when absent", () => {
+    expect(adminSurfaceFrom(undefined)).toBe("split");
+    expect(adminSurfaceFrom("superset")).toBe("superset");
+    expect(adminSurfaceFrom("superset", " Separate ")).toBe("separate");
+    expect(adminSurfaceFrom("separate", "")).toBe("separate");
+  });
+  it("refuses a surface it doesn't know, naming the allowed ones", () => {
+    expect(() => adminSurfaceFrom("both")).toThrow(/split, superset or separate/);
+    expect(() => adminSurfaceFrom(undefined, "panel")).toThrow(/not "panel"/);
+  });
+  it("says what each page shows on each surface", () => {
+    expect(surfacePlan("split", "superset-role")).toEqual({ surface: "split", hostPage: "host", panel: "lenspack" });
+    expect(surfacePlan("superset", "superset-users")).toEqual({ surface: "superset", hostPage: "all", panel: "none" });
+    expect(surfacePlan("separate", "superset-role")).toEqual({ surface: "separate", hostPage: "link", panel: "all" });
+  });
+  it("puts the password mode on a page of its own, whatever surface was asked, and says it did", () => {
+    expect(surfacePlan("superset", "password")).toEqual({ surface: "separate", asked: "superset", hostPage: "link", panel: "all" });
+    expect(surfacePlan("separate", "password")).toEqual({ surface: "separate", hostPage: "link", panel: "all" });
+    // Combined with a host mode, the host's admins get the surface asked for; password admins use their own pages.
+    expect(surfacePlan("superset", ["superset-role", "password"])).toEqual({ surface: "superset", hostPage: "all", panel: "none" });
+    expect(surfacePlan("split", ["superset-users", "password"])).toEqual({ surface: "split", hostPage: "host", panel: "lenspack" });
+    expect(surfacePlan("superset", ["password"])).toMatchObject({ surface: "separate", asked: "superset" });
   });
 });

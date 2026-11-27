@@ -1,5 +1,6 @@
-// The Lenspack admin panel: plain JavaScript, no framework, no build. Every call is relative to the
-// page (api/…, ../cache), so the panel works wherever a host mounts it. English and French.
+// The Lenspack admin pages: plain JavaScript, no framework, no build. The same script draws them on Lenspack's own page
+// (shell "panel") and inside Superset's page (shell "superset"); the host says where its routes are (window.__lpAdmin),
+// so the pages work wherever a host mounts them. English and French.
 (function () {
   "use strict";
 
@@ -107,7 +108,99 @@
       acNoPeople: "Personne n'est encore ajouté.", acSearch: "Rechercher", acRange: "{0}–{1} sur {2}", acPrev: "Précédent", acNext: "Suivant", acRoles: "Rôles : {0}",
       acEveryone: "Toute personne connectée", acSignOut: "Se déconnecter", acNoneSet: "Indisponible sur ce serveur.",
     },
-  };
+  };  // The admin pages' frame, the new tabs and the pager: terse, in both languages.
+  Object.assign(STRINGS.en, {
+    gUsage: "Usage", gAnswers: "Answers", gConfig: "Configuration", gRecords: "Records",
+    tabModels: "Models & voice", tabSpend: "Spend & audit", tabAssistant: "Assistant",
+    lede_overview: "How people use {name}, and what waits for you.",
+    lede_review: "The daily review of answers, and what it found.",
+    lede_questions: "Questions with more than one reading. Pick the one that counts.",
+    lede_proposals: "Changes the review suggests. Nothing applies until you accept it.",
+    lede_definitions: "What {name} is told about your data, with its history.",
+    lede_cache: "Answers kept for questions asked again.",
+    lede_models: "The models that answer and listen, and kept recordings.",
+    lede_access: "Who is an admin, and who may use {name}.",
+    lede_settings: "Switches and limits for this server.",
+    lede_telemetry: "What this deployment records, item by item.",
+    lede_spend: "What answers cost, and every admin action.",
+    lede_assistant: "What Superset needs: the name, the connection, languages and datasets.",
+    lede_link: "This deployment keeps every admin setting on the admin panel.",
+    signOut: "Sign out", sections: "Sections",
+    pgRange: "{0}–{1} of {2}", pgPrev: "Previous", pgNext: "Next", pgSize: "Per page", pgPage: "Page {0}",
+    // Models & voice
+    chatModelH: "Chat model", chatNow: "Now: {0}", chatFromSettings: "chosen here", chatFromDefault: "the deployment's default", chatFallback: "{0} is not answering; {1} answers until it is back.",
+    chatBack: "Back to the deployment's default: {0}", effort: "Effort", effortN: "{0} effort", notAnswering: "not answering", saveModel: "Save model",
+    modelsH: "Language models", mName: "Model", mKind: "Kind", mState: "State", mLatency: "Latency", mPriced: "Priced", up: "answering", down: "not answering",
+    sttH: "Speech to text", sttOff: "Off: no speech key is set (LENSPACK_STT_API_KEY).", sttModel: "Model", sttHold: "Hold Space to talk after (ms)", sttSave: "Save",
+    measuredH: "Measured accuracy", measuredLede: "Word error rate with a language hint, and median latency, on our test sets.",
+    keptH: "Kept recordings", keptOn: "Kept: {0} recordings, {1}.", keptOff: "Off. Turn on “voice audio” on the Telemetry tab to keep recordings.", keptOnLine: "On.",
+    keptDays: "Keep for (days)", keptMb: "At most (MB)", consent: "Notice each person accepts once before recording", keptSave: "Save", keptReset: "Back to defaults",
+    clipsH: "Recordings", clipWhen: "When", clipUser: "User", clipSize: "Size", clipPlay: "Play", clipDelete: "Delete", clipDeleteQ: "Delete this recording?", noClips: "No recordings kept.",
+    delUser: "Delete every recording of", delUserPh: "Superset user name", delUserBtn: "Delete", exportBtn: "Export for evaluation", exported: "{0} clips exported, {1} set aside.", openTelemetry: "Open Telemetry",
+    // Spend & audit
+    costH: "Cost per answer", today: "Today (UTC)", week: "Last 7 days", rangeT: "This range", answers: "answers", fromD: "From", toD: "To", userF: "User", apply: "Apply", clear: "Clear",
+    tWhen: "When", tUser: "User", tBoard: "Board", tModel: "Model", tTokens: "Tokens", tCost: "Cost", tStt: "Speech", noTurns: "No answers in this range.", costOff: "Cost per answer needs the audit log (audit: on).", unpricedN: "{0} unpriced",
+    auditH: "Audit log", auditLede: "Kept {0} days in {1}.", aAction: "Action", aOutcome: "Outcome", aDetail: "Detail", aAll: "All", aOk: "ok", aDenied: "denied", search: "Search", noEvents: "No events match.", auditOff: "The audit log is off (audit: false).",
+    // Cache settings
+    cacheSetH: "Saved answer settings", cOn: "Keep and serve saved answers", cTtl: "Drop entries older than (hours)", cRouter: "Match differently worded questions", cMax: "At most (entries)", cFresh: "Show as is for (minutes)", cPw: "Refresh before busy times", cPwTimes: "At (local times, comma-separated)", cPwTop: "Most-asked to refresh", cPwUsd: "Most per refresh (US$)",
+    queueH: "Turn queue", qConc: "At once", qWait: "Waiting at most", qSecs: "Longest wait (s)",
+    resetDefaults: "Back to the deployment's values", saveB: "Save",
+    // Settings
+    offH: "Off switches", personalH: "Own dashboards", pOn: "People may keep their own dashboards and layouts", pDash: "Dashboards per person", pLayouts: "Saved layouts per person",
+    scopeH: "Where the chat may edit", scopeSuperset: "Any dashboard Superset lets the person edit", scopeOwn: "Only their own dashboards", scopeExempt: "Admins may edit shared ones",
+    configH: "From the deployment's config", whereH: "Where to change things", wWhat: "What", wWhere: "Where",
+    budgetDay: "Spend per day", budgetUser: "Spend per person per day", none2: "none", contextN: "{0} context labels", nameHere: "The name and button label are set on the Assistant tab.", nameElsewhere: "The name and button label are set on Superset's settings page.",
+    // Assistant (Superset)
+    panelH: "Admin panel", panelLede: "Models, voice, costs, logs, switches, review and saved answers.", openPanel: "Open the admin panel", panelPassword: "Admins sign in with the deployment's admin password.",
+    whoH: "Who can use it", onOff: "The assistant", isOn: "on", isOff: "off (the Assistant button switch)", hostPolicyL: "Whose data access applies", hostSuperset: "each person's own Superset access", hostOff: "the assistant's own account (off)", editPolicyL: "Who may edit dashboards", editSuperset: "whoever Superset lets edit", editSigned: "anyone signed in", scopeL: "Edit scope",
+    connH: "Connection", cServer: "Server", cAccount: "Service account", cIdentity: "Signing key", cReceived: "received", cMissing: "missing: settings can't be saved", cChat: "Chat", cChatOk: "answering", cChatDown: "no model answering", cUrl: "Superset at", cRoles: "Service account roles", dbH: "Superset databases", dbName: "Database", dbBackend: "Engine", dbDatasets: "Datasets",
+    langH: "Language", lReplies: "Replies in", lTitles: "Chart titles in", lBoard: "Board language", lAuto: "the asker's language", lTitleBoard: "the board's language", lTitleSpeaker: "the asker's language",
+    dataH: "Datasets", dPack: "Pack", dEntity: "Read as", dTable: "Dataset", dWarnings: "Left out or renamed", dDashboards: "Dashboards opened", dEdit: "Edit in Superset",
+  });
+  Object.assign(STRINGS.fr, {
+    gUsage: "Usage", gAnswers: "Réponses", gConfig: "Configuration", gRecords: "Registres",
+    tabModels: "Modèles et voix", tabSpend: "Coûts et journal", tabAssistant: "Assistant",
+    lede_overview: "Comment {name} est utilisé, et ce qui vous attend.",
+    lede_review: "La revue quotidienne des réponses, et ce qu'elle a trouvé.",
+    lede_questions: "Les questions à plusieurs lectures. Choisissez celle qui compte.",
+    lede_proposals: "Les changements proposés par la revue. Rien ne s'applique sans votre accord.",
+    lede_definitions: "Ce que {name} sait de vos données, avec l'historique.",
+    lede_cache: "Les réponses gardées pour les questions reposées.",
+    lede_models: "Les modèles qui répondent et écoutent, et les enregistrements gardés.",
+    lede_access: "Qui administre, et qui peut utiliser {name}.",
+    lede_settings: "Interrupteurs et limites de ce serveur.",
+    lede_telemetry: "Ce que ce déploiement enregistre, élément par élément.",
+    lede_spend: "Le coût des réponses, et chaque action d'administration.",
+    lede_assistant: "Ce dont Superset a besoin : le nom, la connexion, les langues et les jeux de données.",
+    lede_link: "Ce déploiement garde tous les réglages d'administration dans le panneau.",
+    signOut: "Se déconnecter", sections: "Sections",
+    pgRange: "{0}–{1} sur {2}", pgPrev: "Précédent", pgNext: "Suivant", pgSize: "Par page", pgPage: "Page {0}",
+    chatModelH: "Modèle de discussion", chatNow: "Actuel : {0}", chatFromSettings: "choisi ici", chatFromDefault: "par défaut du déploiement", chatFallback: "{0} ne répond pas ; {1} répond en attendant.",
+    chatBack: "Revenir au modèle par défaut : {0}", effort: "Effort", effortN: "effort {0}", notAnswering: "ne répond pas", saveModel: "Enregistrer",
+    modelsH: "Modèles de langage", mName: "Modèle", mKind: "Type", mState: "État", mLatency: "Latence", mPriced: "Tarifé", up: "répond", down: "ne répond pas",
+    sttH: "Reconnaissance vocale", sttOff: "Désactivée : aucune clé (LENSPACK_STT_API_KEY).", sttModel: "Modèle", sttHold: "Maintenir Espace pour parler après (ms)", sttSave: "Enregistrer",
+    measuredH: "Précision mesurée", measuredLede: "Taux d'erreur par mot avec indication de langue, et latence médiane, sur nos jeux de test.",
+    keptH: "Enregistrements gardés", keptOn: "Gardés : {0} enregistrements, {1}.", keptOff: "Désactivé. Activez « voix » dans l'onglet Télémétrie pour garder les enregistrements.", keptOnLine: "Activé.",
+    keptDays: "Garder pendant (jours)", keptMb: "Au plus (Mo)", consent: "Avis accepté une fois avant tout enregistrement", keptSave: "Enregistrer", keptReset: "Valeurs par défaut",
+    clipsH: "Enregistrements", clipWhen: "Quand", clipUser: "Utilisateur", clipSize: "Taille", clipPlay: "Écouter", clipDelete: "Supprimer", clipDeleteQ: "Supprimer cet enregistrement ?", noClips: "Aucun enregistrement gardé.",
+    delUser: "Supprimer tous les enregistrements de", delUserPh: "Nom d'utilisateur Superset", delUserBtn: "Supprimer", exportBtn: "Exporter pour évaluation", exported: "{0} extraits exportés, {1} mis de côté.", openTelemetry: "Ouvrir Télémétrie",
+    costH: "Coût par réponse", today: "Aujourd'hui (UTC)", week: "7 derniers jours", rangeT: "Cette période", answers: "réponses", fromD: "Du", toD: "Au", userF: "Utilisateur", apply: "Appliquer", clear: "Effacer",
+    tWhen: "Quand", tUser: "Utilisateur", tBoard: "Tableau", tModel: "Modèle", tTokens: "Jetons", tCost: "Coût", tStt: "Voix", noTurns: "Aucune réponse sur cette période.", costOff: "Le coût par réponse demande le journal d'audit (audit : activé).", unpricedN: "{0} sans tarif",
+    auditH: "Journal d'audit", auditLede: "Gardé {0} jours dans {1}.", aAction: "Action", aOutcome: "Résultat", aDetail: "Détail", aAll: "Tous", aOk: "ok", aDenied: "refusé", search: "Rechercher", noEvents: "Aucun événement.", auditOff: "Le journal d'audit est désactivé (audit : false).",
+    cacheSetH: "Réglages des réponses gardées", cOn: "Garder et servir les réponses", cTtl: "Supprimer après (heures)", cRouter: "Rapprocher les questions formulées autrement", cMax: "Au plus (entrées)", cFresh: "Montrer telle quelle pendant (minutes)", cPw: "Actualiser avant les heures chargées", cPwTimes: "À (heures locales, séparées par des virgules)", cPwTop: "Questions les plus posées à actualiser", cPwUsd: "Maximum par actualisation (US$)",
+    queueH: "File des réponses", qConc: "En même temps", qWait: "En attente au plus", qSecs: "Attente maximale (s)",
+    resetDefaults: "Valeurs du déploiement", saveB: "Enregistrer",
+    offH: "Interrupteurs", personalH: "Tableaux personnels", pOn: "Chacun peut garder ses tableaux et dispositions", pDash: "Tableaux par personne", pLayouts: "Dispositions par personne",
+    scopeH: "Où la discussion peut modifier", scopeSuperset: "Tout tableau que Superset laisse modifier", scopeOwn: "Seulement ses propres tableaux", scopeExempt: "Les administrateurs modifient les tableaux partagés",
+    configH: "Depuis la configuration", whereH: "Où changer quoi", wWhat: "Quoi", wWhere: "Où",
+    budgetDay: "Dépense par jour", budgetUser: "Dépense par personne et par jour", none2: "aucune", contextN: "{0} libellés de contexte", nameHere: "Le nom et le libellé du bouton se règlent dans l'onglet Assistant.", nameElsewhere: "Le nom et le libellé du bouton se règlent sur la page de réglages de Superset.",
+    panelH: "Panneau d'administration", panelLede: "Modèles, voix, coûts, journaux, interrupteurs, revue et réponses gardées.", openPanel: "Ouvrir le panneau", panelPassword: "Les administrateurs se connectent avec le mot de passe du déploiement.",
+    whoH: "Qui peut l'utiliser", onOff: "L'assistant", isOn: "activé", isOff: "désactivé (interrupteur du bouton)", hostPolicyL: "Accès aux données appliqué", hostSuperset: "l'accès Superset de chacun", hostOff: "le compte de l'assistant (désactivé)", editPolicyL: "Qui modifie les tableaux", editSuperset: "qui Superset laisse modifier", editSigned: "toute personne connectée", scopeL: "Portée des modifications",
+    connH: "Connexion", cServer: "Serveur", cAccount: "Compte de service", cIdentity: "Clé de signature", cReceived: "reçue", cMissing: "absente : les réglages ne s'enregistrent pas", cChat: "Discussion", cChatOk: "répond", cChatDown: "aucun modèle ne répond", cUrl: "Superset à", cRoles: "Rôles du compte de service", dbH: "Bases de données Superset", dbName: "Base", dbBackend: "Moteur", dbDatasets: "Jeux de données",
+    langH: "Langue", lReplies: "Réponses en", lTitles: "Titres des graphiques en", lBoard: "Langue du tableau", lAuto: "la langue de la question", lTitleBoard: "la langue du tableau", lTitleSpeaker: "la langue de la question",
+    dataH: "Jeux de données", dPack: "Pack", dEntity: "Lu comme", dTable: "Jeu de données", dWarnings: "Écartés ou renommés", dDashboards: "Tableaux ouverts", dEdit: "Modifier dans Superset",
+  });
+
   // The switches' names and help in French; English comes from the server.
   const FEATURES_FR = {
     overlay: ["Bouton de l'assistant", "Le bouton et la discussion sur les tableaux de bord."],
@@ -127,14 +220,17 @@
     "review.compare": ["Comparer les lectures", "Après la revue, les lectures de chaque question ouverte sont calculées sur les données, sans modèle, pour comparer les chiffres."],
   };
 
-  // Values from the records that are words of the catalogue (kinds of question, feedback reasons, devices), in each language.
-
-
   // ---- State and helpers ------------------------------------------------------------------------
-  // What the host wrote into the page: where its own routes are from here ("../" under <prefix>/admin/, "" when the
-  // panel shares their prefix), and a sign-out address when the admin pages have a sign-in of their own.
+  // What the host wrote into the page: which shell draws it (Lenspack's own page or Superset's), where the panel's and
+  // the host's routes are from here, where the scripts are, which sections this page shows, and a sign-out address when
+  // the admin pages have a sign-in of their own.
   const shell = window.__lpAdmin || {};
-  const HOST = typeof shell.host === "string" ? shell.host : "../";
+  const SHELL = shell.shell === "superset" ? "superset" : "panel";
+  const apiBase = shell.api || {};
+  const HOST = typeof apiBase.host === "string" ? apiBase.host : typeof shell.host === "string" ? shell.host : "../";
+  const API = typeof apiBase.panel === "string" ? apiBase.panel : "api/";
+  const ASSETS = typeof shell.assets === "string" ? shell.assets : "";
+  const root = document.getElementById("lp-admin") || document.body.appendChild(document.createElement("div"));
   const store = {
     get(k) { try { return localStorage.getItem(`lp-admin-${k}`); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(`lp-admin-${k}`, v); } catch (e) { /* private window */ } },
@@ -143,10 +239,12 @@
   let lang = params.get("lang") || store.get("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
   if (!STRINGS[lang]) lang = "en";
   let theme = store.get("theme") || "auto";
-  // #telemetry/field/<id> opens the Telemetry tab at that field's row (a widget's link to a field that is off).
+  // #telemetry/field/<id> opens the Telemetry tab at that field's row (a widget's link to a field that is off); any
+  // other hash is #tab or #tab/section.
   const fieldLink = /^#telemetry\/field\/([\w-]+)$/.exec(location.hash || "");
   const pendingField = fieldLink ? fieldLink[1] : null;
-  let tab = fieldLink ? "telemetry" : (location.hash || "").slice(1) || params.get("tab") || "overview";
+  const [hashTab, hashSection] = fieldLink ? ["telemetry", ""] : (location.hash || "").slice(1).split("/");
+  let tab = hashTab || params.get("tab") || "";
   let pack = params.get("pack") || store.get("pack") || "";
   let packs = [];
   let qFilter = "open";
@@ -157,7 +255,7 @@
   let openRun = null;
 
   // {name} is the assistant's name (the deployment's brand), which the server writes into the page.
-  const named = document.documentElement.dataset.name;
+  const named = shell.name || document.documentElement.dataset.name;
   const assistant = named && named !== "__NAME__" ? named : "Lenspack";
   if (window.LenspackTelemetry) for (const l of Object.keys(STRINGS)) Object.assign(STRINGS[l], window.LenspackTelemetry.strings[l] || {});
   const t = (k, ...a) => String((STRINGS[lang] && STRINGS[lang][k]) ?? STRINGS.en[k] ?? k).replace(/\{name\}/g, () => assistant).replace(/\{(\d)\}/g, (_, i) => (a[i] === undefined ? "" : a[i]));
@@ -180,9 +278,8 @@
     for (const kid of kids.flat(Infinity)) if (kid !== null && kid !== undefined && kid !== false) e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
     return e;
   }
-  const main = document.getElementById("main");
   function toast(msg, bad) {
-    const el = document.getElementById("toast");
+    const el = root.querySelector(".toast");
     el.textContent = msg;
     el.className = `toast show${bad ? " bad" : ""}`;
     clearTimeout(toast.timer);
@@ -190,7 +287,7 @@
   }
   async function api(path, opts = {}) {
     const sep = path.includes("?") ? "&" : "?";
-    const res = await fetch(`api/${path}${pack ? `${sep}pack=${encodeURIComponent(pack)}` : ""}`, {
+    const res = await fetch(`${API}${path}${pack ? `${sep}pack=${encodeURIComponent(pack)}` : ""}`, {
       method: opts.method || (opts.body ? "POST" : "GET"),
       headers: opts.body ? { "content-type": "application/json" } : {},
       body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -246,44 +343,158 @@
   const queryText = (q) => (q ? Object.entries(q).map(([k, v]) => `${k}=${v}`).join("  ") : "");
 
   // ---- Chrome -----------------------------------------------------------------------------------
-  function applyChrome() {
-    document.documentElement.lang = lang;
-    if (theme === "auto") document.documentElement.removeAttribute("data-theme");
-    else document.documentElement.setAttribute("data-theme", theme);
-    const tb = document.getElementById("theme");
-    tb.textContent = theme === "dark" ? "☾" : theme === "light" ? "☀" : "◐";
-    tb.title = tb.ariaLabel = t(theme === "dark" ? "themeDark" : theme === "light" ? "themeLight" : "themeAuto");
-    for (const el of document.querySelectorAll("[data-t]")) el.textContent = t(el.dataset.t);
-    for (const b of document.querySelectorAll("#langs button")) b.setAttribute("aria-pressed", String(b.dataset.lang === lang));
-    for (const b of document.querySelectorAll("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
-    document.title = `${t("title")}`;
+  // The tabs, in groups. `superset` tabs exist only when Superset is the host; which tabs a page shows depends on where
+  // it is (shell.sections): "all", "lenspack" (all but the host's own), "host" (the host's own only) or "link".
+  const TAB_DEFS = [
+    { id: "overview", grp: "gUsage", label: "tabOverview" },
+    { id: "review", grp: "gAnswers", label: "tabReview" },
+    { id: "questions", grp: "gAnswers", label: "tabQuestions" },
+    { id: "proposals", grp: "gAnswers", label: "tabProposals" },
+    { id: "definitions", grp: "gAnswers", label: "tabDefinitions" },
+    { id: "cache", grp: "gAnswers", label: "tabCache" },
+    { id: "models", grp: "gConfig", label: "tabModels" },
+    { id: "access", grp: "gConfig", label: "tabAccess" },
+    { id: "settings", grp: "gConfig", label: "tabSettings" },
+    { id: "assistant", grp: "gConfig", label: "tabAssistant", superset: true },
+    { id: "telemetry", grp: "gRecords", label: "tabTelemetry" },
+    { id: "spend", grp: "gRecords", label: "tabSpend" },
+  ];
+  const sections = shell.sections || "all";
+  const shownTabs = () => TAB_DEFS.filter((d) => (d.superset ? !!shell.superset : true) && (sections === "all" || (sections === "lenspack" ? !d.superset : d.superset)));
+  const markEl = root.querySelector(".mark") || h("span", { class: "mark", "aria-hidden": "true" });
+  if (!markEl.classList.contains("icon")) markEl.textContent = Array.from(assistant.trim())[0]?.toLocaleUpperCase() || "L";
+  const titleEl = h("h1", {});
+  const subEl = h("div", { class: "who" });
+  const packSel = h("select", { "aria-label": "Pack" });
+  const packPick = h("label", { class: "sel", hidden: true }, packSel);
+  const langs = h("div", { class: "seg", role: "group", "aria-label": "Language" }, ["en", "fr"].map((l) => h("button", { type: "button", "data-lang": l }, l.toUpperCase())));
+  const themeBtn = h("button", { type: "button", class: "icon theme-tool" });
+  const signOutEl = shell.signOut ? h("a", { class: "icon", href: shell.signOut, title: "", "aria-label": "" }, "⎋") : null;
+  const navEl = h("nav", { class: "lpa-nav", "aria-label": "Tabs" });
+  const secnavEl = h("nav", { class: "secnav", "aria-label": "Sections" });
+  const pageHead = h("header", { class: "page-h" });
+  const main = h("div", { id: "main" });
+  const mainWrap = h("main", { class: "lpa-main", tabindex: "-1" }, pageHead, secnavEl, main);
+  root.classList.add("lpa");
+  root.dataset.shell = SHELL;
+  root.replaceChildren(
+    h("header", { class: "lpa-top" }, h("div", { class: "lpa-brand" }, markEl, h("div", { style: "min-width:0" }, titleEl, subEl)), h("div", { class: "tools" }, packPick, langs, themeBtn, signOutEl)),
+    h("div", { class: "lpa-body" }, navEl, mainWrap),
+    h("div", { class: "toast", id: "toast", role: "status", "aria-live": "polite" }));
+
+  function paintNav() {
+    const tabs = shownTabs();
+    root.dataset.nav = tabs.length < 2 ? "none" : "tabs";
+    let grp = null;
+    const kids = [];
+    for (const d of tabs) {
+      if (d.grp !== grp) { grp = d.grp; kids.push(h("div", { class: "grp" }, t(grp))); }
+      kids.push(h("button", { type: "button", role: "tab", "data-tab": d.id, "aria-selected": String(d.id === tab), onclick: () => go(d.id) }, h("span", {}, t(d.label))));
+    }
+    navEl.replaceChildren(...kids);
   }
-  document.getElementById("theme").onclick = () => {
+  function applyChrome() {
+    root.lang = lang;
+    if (SHELL === "panel") document.documentElement.lang = lang;
+    // Inside Superset the theme is Superset's own (its layout marks the page); on the panel's page, the reader's pick.
+    if (theme === "auto" || SHELL === "superset") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", theme);
+    themeBtn.textContent = theme === "dark" ? "☾" : theme === "light" ? "☀" : "◐";
+    themeBtn.title = themeBtn.ariaLabel = t(theme === "dark" ? "themeDark" : theme === "light" ? "themeLight" : "themeAuto");
+    if (signOutEl) signOutEl.title = signOutEl.ariaLabel = t("signOut");
+    titleEl.textContent = t("title");
+    for (const b of langs.querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.lang === lang));
+    paintNav();
+    const d = TAB_DEFS.find((x) => x.id === tab);
+    pageHead.replaceChildren(h("h1", {}, d ? t(d.label) : ""), h("p", {}, t(sections === "link" ? "lede_link" : `lede_${tab}`)));
+    if (SHELL === "panel") document.title = `${d ? t(d.label) : ""} · ${t("title")}`;
+  }
+  /** Opens a tab (and a section of it): #tab or #tab/section, so a link or a reload lands in the same place. */
+  function go(id, section) {
+    tab = id;
+    openRun = null;
+    history.replaceState(null, "", `#${id}${section ? `/${section}` : ""}`);
+    applyChrome();
+    render(section);
+    if (!section) mainWrap.focus({ preventScroll: true });
+  }
+  themeBtn.onclick = () => {
     theme = theme === "auto" ? "light" : theme === "light" ? "dark" : "auto";
     store.set("theme", theme);
     applyChrome();
   };
-  for (const b of document.querySelectorAll("#langs button"))
+  for (const b of langs.querySelectorAll("button"))
     b.onclick = () => {
       lang = b.dataset.lang;
       store.set("lang", lang);
       applyChrome();
       render();
     };
-  for (const b of document.querySelectorAll("#tabs button"))
-    b.onclick = () => {
-      tab = b.dataset.tab;
-      openRun = null;
-      history.replaceState(null, "", `#${tab}`);
-      applyChrome();
-      render();
-      main.focus({ preventScroll: true });
-    };
-  document.getElementById("pack").onchange = (e) => {
+  packSel.onchange = (e) => {
     pack = e.target.value;
     store.set("pack", pack);
     render();
   };
+  window.addEventListener("hashchange", () => {
+    if (/^#telemetry\/field\//.test(location.hash || "")) return followLink(location.hash);
+    const [id, section] = (location.hash || "").slice(1).split("/");
+    if (id && id !== tab && TAB_DEFS.some((d) => d.id === id)) go(id, section);
+    else if (section) scrollToSection(section);
+  });
+
+  /** The section nav: each section heading on the page, as a link; the one in view is marked. */
+  let watching = null;
+  function paintSections() {
+    const heads = [...main.querySelectorAll(":scope > section.card > h2")];
+    if (watching) watching.disconnect();
+    if (heads.length < 2) return secnavEl.replaceChildren();
+    const links = heads.map((hd) => {
+      const id = hd.parentElement.id || slug(hd.textContent);
+      hd.parentElement.id = id;
+      return h("a", { href: `#${tab}/${id}`, onclick: (e) => { e.preventDefault(); history.replaceState(null, "", `#${tab}/${id}`); scrollToSection(id); } }, hd.textContent);
+    });
+    secnavEl.setAttribute("aria-label", t("sections"));
+    secnavEl.replaceChildren(...links);
+    if ("IntersectionObserver" in window) {
+      watching = new IntersectionObserver((entries) => {
+        for (const en of entries) if (en.isIntersecting) for (const a of links) a.setAttribute("aria-current", String(a.getAttribute("href") === `#${tab}/${en.target.id}`));
+      }, { rootMargin: "-120px 0px -60% 0px" });
+      heads.forEach((hd) => watching.observe(hd.parentElement));
+    }
+  }
+  const slug = (s) => `s-${String(s).toLowerCase().normalize("NFKD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`;
+  function scrollToSection(id) {
+    const el = main.querySelector(`#${CSS.escape(id)}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---- The pager: one for every list. -------------------------------------------------------------
+  // page is what the server answered ({offset, limit, total, next, prev}); go(query) loads another page, with a query
+  // like "cursor=…&limit=25" or "offset=50&limit=25".
+  const pagingState = {};
+  /** The query for a list's current page ("limit=25&offset=0" by default: offset asks the server for a page). */
+  const pageQuery = (key, limit = 25) => pagingState[key] || `limit=${limit}&offset=0`;
+  function pager(page, goTo, o = {}) {
+    if (!page || !page.total) return null;
+    const { offset, limit, total } = page;
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const cur = Math.floor(offset / limit) + 1;
+    const from = offset + 1, to = Math.min(offset + limit, total);
+    const nums = [];
+    for (let n = 1; n <= pages; n++) if (n === 1 || n === pages || Math.abs(n - cur) <= 1) nums.push(n); else if (nums[nums.length - 1] !== "…") nums.push("…");
+    const btn = (label, q, extra = {}) => h("button", { type: "button", class: "pg", disabled: !q, onclick: () => q && goTo(q), ...extra }, label);
+    const sizes = o.sizes || [10, 25, 50, 100];
+    const size = h("select", { "aria-label": t("pgSize"), onchange: (e) => goTo(`limit=${e.target.value}&offset=0`) }, [...new Set([...sizes, limit])].sort((a, b) => a - b).map((n) => h("option", { value: String(n), selected: n === limit ? "" : null }, String(n))));
+    return h("nav", { class: "pager", "aria-label": t("pgRange", from, to, total) },
+      h("span", { class: "range" }, t("pgRange", nf(from), nf(to), nf(total))),
+      h("div", { class: "pages" },
+        pages > 1 ? btn("‹", page.prev ? `cursor=${encodeURIComponent(page.prev)}&limit=${limit}` : null, { "aria-label": t("pgPrev") }) : null,
+        pages > 1 ? nums.map((n) => (n === "…" ? h("span", { class: "gap" }, "…") : btn(String(n), n === cur ? null : `offset=${(n - 1) * limit}&limit=${limit}`, { "aria-label": t("pgPage", n), "aria-current": n === cur ? "page" : null }))) : null,
+        pages > 1 ? btn("›", page.next ? `cursor=${encodeURIComponent(page.next)}&limit=${limit}` : null, { "aria-label": t("pgNext") }) : null,
+        h("label", { class: "row", style: "gap:6px;margin-left:8px" }, h("span", { class: "mute" }, t("pgSize")), size)));
+  }
+  /** A pager that keeps its list's page in pagingState and draws the tab again. */
+  const listPager = (key, page) => pager(page, (q) => { pagingState[key] = q; render(); });
 
   // ---- Tabs ---------------------------------------------------------------------------------------
   // The board renderer (@lenspack/react, bundled as board.js), loaded once, when the Overview first opens.
@@ -291,9 +502,9 @@
   function loadBoardLib() {
     if (boardLib) return boardLib;
     boardLib = new Promise((resolve, reject) => {
-      const css = h("link", { rel: "stylesheet", href: "board.css" });
+      const css = h("link", { rel: "stylesheet", href: `${ASSETS}board.css` });
       document.head.append(css);
-      const js = h("script", { src: "board.js" });
+      const js = h("script", { src: `${ASSETS}board.js`, nonce: shell.nonce || null });
       js.onload = () => (window.LenspackBoard ? resolve(window.LenspackBoard) : reject(new Error("board.js did not load")));
       js.onerror = () => { boardLib = null; reject(new Error("board.js is missing: build @lenspack/react")); };
       document.head.append(js);
@@ -330,7 +541,7 @@
       paintLog();
       const history = chat.filter((m) => m !== reply && !m.bad).map((m, i) => ({ id: `m${i}`, role: m.role, parts: [{ type: "text", text: m.text }] }));
       try {
-        const res = await fetch(`api/usage/${board}/chat?language=${lang}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history.slice(-16), language: lang }) });
+        const res = await fetch(`${API}usage/${board}/chat?language=${lang}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history.slice(-16), language: lang }) });
         if (!res.ok || !res.body) throw new Error(((await res.json().catch(() => ({}))).error) || `HTTP ${res.status}`);
         const reader = res.body.getReader();
         const dec = new TextDecoder();
@@ -384,7 +595,7 @@
         if (!boardEl.isConnected) return;
         if (mounted) mounted.unmount();
         boardEl.replaceChildren();
-        mounted = lib.mount(boardEl, { api: `api/usage/${board}` });
+        mounted = lib.mount(boardEl, { api: `${API}usage/${board}` });
       } catch (e) {
         boardEl.replaceChildren(h("p", { class: "bad" }, t("boardOff", e.message)));
       }
@@ -396,9 +607,8 @@
   function followLink(href) {
     const field = /^#telemetry\/field\/([\w-]+)$/.exec(href || "");
     if (field) return openField(field[1]);
-    const name = (href || "").slice(1);
-    const btn = document.querySelector(`#tabs [data-tab="${name}"]`);
-    if (btn) btn.click();
+    const [id, section] = (href || "").slice(1).split("/");
+    if (TAB_DEFS.some((d) => d.id === id)) go(id, section);
   }
 
   async function overview() {
@@ -441,7 +651,7 @@
 
   async function review() {
     if (openRun) return runReport(openRun);
-    const [s, runs] = await Promise.all([api("review/settings"), api("runs")]);
+    const [s, runs] = await Promise.all([api("review/settings"), api(`runs?${pageQuery("runs", 10)}`)]);
     const f = {
       enabled: h("input", { type: "checkbox", checked: s.enabled }),
       time: h("input", { type: "time", value: s.time }),
@@ -504,7 +714,7 @@
           }))))
       : h("p", { class: "empty" }, t("noRuns"));
     if (s.running) setTimeout(() => { if (tab === "review" && !openRun) render(); }, 5000);
-    return [settingsCard, card(t("runs"), null, list)];
+    return [settingsCard, card(t("runs"), null, list, listPager("runs", runs.page))];
   }
 
   async function runReport(id) {
@@ -550,9 +760,9 @@
   }
 
   async function questions() {
-    const { questions: list } = await api(`questions${qFilter === "all" ? "" : `?status=${qFilter}`}`);
+    const { questions: list, page: qPage } = await api(`questions?${qFilter === "all" ? "" : `status=${qFilter}&`}${pageQuery("questions", 10)}`);
     const filters = h("div", { class: "seg", role: "group", style: "margin:0 0 12px" }, ["open", "answered", "dismissed", "all"].map((k) =>
-      h("button", { type: "button", "aria-pressed": String(qFilter === k), onclick: () => { qFilter = k; render(); } }, t(`filter${k[0].toUpperCase()}${k.slice(1)}`))));
+      h("button", { type: "button", "aria-pressed": String(qFilter === k), onclick: () => { qFilter = k; delete pagingState.questions; render(); } }, t(`filter${k[0].toUpperCase()}${k.slice(1)}`))));
     const items = list.map((q) => {
       const cmp = q.compared;
       const runnable = q.readings.filter((r) => r.query).length >= 2;
@@ -581,13 +791,11 @@
     const readings = h("textarea", { rows: 3, placeholder: "Stock dispatched: units sent from the facility store\nDoses given: doses given to children there" });
     const addCard = card(t("addQuestion"), null, h("div", { class: "form" }, h("label", { class: "field wide" }, h("span", {}, t("pattern")), pattern), h("label", { class: "field wide" }, h("span", {}, t("readingsJson")), readings)),
       h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(() => api("questions", { body: { pattern: pattern.value, readings: readings.value.split("\n").filter(Boolean).map((l) => { const [label, ...rest] = l.split(":"); return { label: label.trim(), explanation: rest.join(":").trim() }; }) } })) }, t("add"))));
-    return [h("p", { class: "lede mute", style: "margin:0 0 12px" }, t("qLede")), filters, items.length ? items : h("p", { class: "empty" }, t("noQuestions")), addCard];
+    return [h("p", { class: "lede mute", style: "margin:0 0 12px" }, t("qLede")), filters, items.length ? items : h("p", { class: "empty" }, t("noQuestions")), listPager("questions", qPage), addCard];
   }
 
   async function proposals() {
-    const { proposals: list } = await api("proposals");
-    const pending = list.filter((p) => p.status === "pending");
-    const decided = list.filter((p) => p.status !== "pending");
+    const [{ proposals: pending }, { proposals: decided, page: dPage }] = await Promise.all([api("proposals?status=pending"), api(`proposals?status=decided&${pageQuery("proposals", 10)}`)]);
     const body = (p) => (p.kind === "definition" ? `${p.when} → ${p.text}` : p.kind === "synonym" ? (p.words || []).join(", ") : p.text);
     const item = (p) => h("article", { class: "q" },
       h("div", { class: "spread" }, h("div", { class: "row" }, pill(t(`kind_${p.kind}`), "acc"), p.key ? h("code", {}, p.key) : null, h("span", { class: "mute", style: "font-size:12.5px" }, `${p.pack} · ${t("fromRun", when(p.createdAt))}`)), statusPill(p.status, p.status === "pending" ? t("pending") : t(p.status))),
@@ -605,11 +813,12 @@
           await act(() => api(`proposals/${p.id}/accept`, { body: { edit, why: v[v.length - 1] } }))(ev);
         } }, t("editAccept")),
         h("button", { class: "btn sm danger", type: "button", onclick: async (ev) => { const v = await ask(t("reject"), [{ label: t("rejectWhy"), area: true }]); if (v) await act(() => api(`proposals/${p.id}/reject`, { body: { why: v[0] } }))(ev); } }, t("reject"))) : null);
-    return [h("p", { class: "lede mute", style: "margin:0 0 12px" }, t("pLede")), pending.length ? pending.map(item) : h("p", { class: "empty" }, t("noProposals")), decided.length ? card(t("decided"), null, decided.slice(0, 30).map(item)) : null];
+    return [h("p", { class: "lede mute", style: "margin:0 0 12px" }, t("pLede")), pending.length ? pending.map(item) : h("p", { class: "empty" }, t("noProposals")), decided.length ? card(t("decided"), null, decided.map(item), listPager("proposals", dPage)) : null];
   }
 
   async function definitions() {
-    const d = await api("definitions");
+    const [d, hist0] = await Promise.all([api("definitions"), api(`definitions/history?${pageQuery("history", 20)}`).catch(() => null)]);
+    const histItems = hist0 ? hist0.history : d.history.slice().reverse();
     const over = d.size > d.budget;
     const kind = h("select", {}, ["instruction", "definition", "hint", "synonym"].map((k) => h("option", { value: k }, t(`kind_${k}`))));
     const key = h("select", {}, d.keys.map((k) => h("option", { value: k.key }, `${k.key} (${k.kind})`)));
@@ -643,8 +852,8 @@
               } }, t("edit")), " ",
               h("button", { class: "btn sm danger", type: "button", onclick: async (ev) => { const v = await ask(t("remove"), [{ label: t("removeWhy") }]); if (v) await act(() => api(`definitions/${e.id}/remove`, { body: { why: v[0] } }))(ev); } }, t("remove"))))))))
       : h("p", { class: "empty" }, t("noDefs"));
-    const hist = d.history.length
-      ? h("div", { class: "scroll" }, h("table", {}, h("tbody", {}, d.history.slice(0, 40).map((c) => h("tr", {},
+    const hist = histItems.length
+      ? h("div", { class: "scroll" }, h("table", {}, h("tbody", {}, histItems.map((c) => h("tr", {},
           h("td", { class: "mono" }, `v${c.version}`), h("td", {}, c.summary, c.why ? h("div", { class: "mute", style: "font-size:12.5px" }, c.why) : null, c.undone ? h("span", { class: "pill warn", style: "margin-left:6px" }, "undone") : null),
           h("td", { class: "mute hide-s", style: "font-size:12.5px;white-space:nowrap" }, `${c.by}, ${when(c.at)}`),
           h("td", {}, c.version !== d.version ? h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("definitions/restore", { body: { version: c.version } })) }, t("restore")) : null))))))
@@ -656,7 +865,7 @@
         h("div", { style: "margin-top:12px" }, entries),
         d.history.length ? h("div", { class: "actions" }, h("button", { class: "btn sm ghost", type: "button", onclick: act(() => api("definitions/undo", { body: {} })) }, t("undo"))) : null),
       card(t("addDef"), null, h("div", { class: "form" }, h("label", { class: "field" }, h("span", {}, t("kind")), kind), keyField, whenField, h("label", { class: "field wide" }, textLabel, text), h("label", { class: "field wide" }, h("span", {}, t("why")), why)), h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: add }, t("add")))),
-      hist ? card(t("history"), null, hist) : null,
+      hist ? card(t("history"), null, hist, hist0 ? listPager("history", hist0.page) : null) : null,
       card(t("packOwn"), null, h("pre", {}, d.packInstructions || t("none"))),
     ];
   }
@@ -665,7 +874,7 @@
     // The saved answers' admin routes (docs/features/saved-answers.md): <prefix>/cache, …/suggestions, …/chart-candidates, …/boards.
     let data;
     try {
-      data = await cacheApi("");
+      data = await cacheApi(`?${pageQuery("cache")}`);
     } catch (e) {
       data = null;
     }
@@ -696,6 +905,7 @@
     const pw = data.prewarm;
     const settled = ((boardInfo && boardInfo.boards) || []).filter((b) => b.settled);
     const candidates = (cands && cands.candidates) || [];
+    const host = await hostSettings().catch(() => null);
     return [
       h("p", { class: "lede mute", style: "margin:0 0 12px" }, t("cacheLede"), st.since ? ` ${t("since", when(st.since))}.` : ""),
       h("div", { class: "tiles" },
@@ -703,7 +913,7 @@
         tile(t("hits"), nf(totalHits), st.turns ? `${nf((100 * totalHits) / st.turns)}%` : null),
         tile(t("misses"), nf(st.misses)),
         tile(t("saved$"), usd(st.savedUsd)),
-        tile(t("entries"), nf(entries.length)),
+        tile(t("entries"), nf(data.total ?? entries.length)),
         q ? tile(t("queueNow"), `${nf(q.running)} / ${nf(q.waiting)}`, t("queueHelp")) : null),
       h("p", { class: "mute", style: "margin:-6px 0 14px;font-size:12.5px" }, tierLine),
       card(t("prewarmH"), pw ? t("prewarmLast", when(pw.at), t(`pwr_${pw.reason}`), nf(pw.refreshed), nf(pw.entries), nf(pw.rewritten), usd(pw.spentUsd)) : t("prewarmNever"),
@@ -712,11 +922,12 @@
         h("tbody", {}, entries.map((e) => h("tr", {},
           h("td", {}, e.question, e.kind === "edit" ? h("span", { class: "pill", style: "margin-left:6px" }, t("kindEdit")) : null, e.pinned ? h("span", { class: "pill acc", style: "margin-left:6px" }, t("pinned")) : null, e.variants && e.variants.length ? h("div", { class: "mute", style: "font-size:12px" }, e.variants.slice(0, 3).join(" · ")) : null),
           h("td", { class: "hide-s" }, e.board || ""), h("td", { class: "n" }, nf(e.hits)), h("td", { class: "n hide-s" }, nf(e.asks7d)), h("td", { class: "hide-s mute" }, when(e.dataAsOf)),
-          h("td", { style: "white-space:nowrap" }, h("button", { class: "btn sm quiet", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/${e.pinned ? "unpin" : "pin"}`) }, e.pinned ? t("unpin") : t("pin")), " ", h("button", { class: "btn sm danger", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/evict`) }, t("evict")))))))) : h("p", { class: "empty" }, t("noEntries")),
+          h("td", { style: "white-space:nowrap" }, h("button", { class: "btn sm quiet", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/${e.pinned ? "unpin" : "pin"}`) }, e.pinned ? t("unpin") : t("pin")), " ", h("button", { class: "btn sm danger", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/evict`) }, t("evict")))))))) : h("p", { class: "empty" }, t("noEntries")), listPager("cache", data.page),
         entries.length ? h("div", { class: "actions" }, clearButton()) : null),
       sugg.some((x) => x && x.suggestions && x.suggestions.length) ? card(t("suggestions"), t("suggestionsLede"), boards.map((b, i) => (sugg[i] && sugg[i].suggestions.length ? h("div", {}, h("h3", {}, b), h("ul", {}, sugg[i].suggestions.map((x) => h("li", {}, x)))) : null))) : null,
       candidates.length ? card(t("chartCandidates"), t("candidatesLede"), h("ul", {}, candidates.map((c) => h("li", {}, c.question, h("span", { class: "mute" }, ` · ${c.board} · ${t("askedN", nf(c.asks))}`))))) : null,
       settled.length ? card(t("settledH"), t("settledLede"), h("ul", {}, settled.map((b) => h("li", {}, b.board, h("span", { class: "mute" }, ` · ${t("lastEdit", when(b.lastEdit))}`))))) : null,
+      host ? cacheSettingsCards(host) : null,
     ];
   }
 
@@ -787,7 +998,15 @@
         h("div", { class: "help" }, fr ? fr[1] : o.help)));
     });
     const changed = Object.values(features.source).some((s) => s === "settings");
-    return [brand ? brandCard(brand) : null, card(t("tabSettings"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null)];
+    const host = await hostSettings().catch(() => null);
+    // On a Superset host the name card is on the Assistant tab (here, or on Superset's page in the split surface).
+    const nameCard = !shell.superset ? (brand ? brandCard(brand) : null) : card(t("bTitle"), null, h("p", { class: "row" }, sections === "lenspack" ? t("nameElsewhere") : t("nameHere"), sections === "lenspack" && shell.supersetPage ? h("a", { class: "btn sm quiet", href: shell.supersetPage }, t("tabAssistant")) : sections !== "lenspack" ? h("button", { class: "btn sm quiet", type: "button", onclick: () => go("assistant") }, t("tabAssistant")) : null));
+    return [
+      card(t("offH"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null),
+      nameCard,
+      host ? supersetSettingsCards(host) : null,
+      host ? configCards(host) : null,
+    ];
   }
 
   /** A host route (<prefix>/settings/…): null when the server has none (404). */
@@ -805,16 +1024,6 @@
     return data;
   }
 
-  /** Prev and next under a list, with the range it shows: "21–40 of 75". */
-  function pager(page, go) {
-    if (!page || page.total <= page.limit) return null;
-    const from = page.total ? page.offset + 1 : 0, to = Math.min(page.offset + page.limit, page.total);
-    return h("nav", { class: "pager", "aria-label": t("acRange", from, to, page.total) },
-      h("span", { class: "mute num" }, t("acRange", nf(from), nf(to), nf(page.total))),
-      h("button", { class: "btn sm quiet", type: "button", disabled: !page.prev, onclick: () => go(page.prev) }, t("acPrev")),
-      h("button", { class: "btn sm quiet", type: "button", disabled: !page.next, onclick: () => go(page.next) }, t("acNext")));
-  }
-
   const fromText = (f) => (f === "default" ? t("acFromDefault") : f);
   /** A small form with one text box and a button: add a person. */
   function addForm(label, send) {
@@ -823,13 +1032,13 @@
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(e); } });
     return h("div", { class: "row add-row" }, input, h("button", { class: "btn sm", type: "button", onclick: go }, t("acAdd")));
   }
-  let usersQuery = "", usersCursor = null;
+  let usersQuery = "";
 
   // Access: who administers and who may use the assistant, as the deployment set them; the people admins added.
   async function access() {
     const [adm, usr] = await Promise.all([
       hostApi("settings/admins").catch(() => null),
-      hostApi(`settings/users?limit=20${usersQuery ? `&q=${encodeURIComponent(usersQuery)}` : ""}${usersCursor ? `&cursor=${encodeURIComponent(usersCursor)}` : ""}`).catch(() => null),
+      hostApi(`settings/users?${pageQuery("users", 20)}${usersQuery ? `&q=${encodeURIComponent(usersQuery)}` : ""}`).catch(() => null),
     ]);
     if ((!adm || !adm.mode) && (!usr || !usr.modes)) return card(t("tabAccess"), t("acNoneSet"));
     const warn = (list) => (list || []).map((w) => h("p", { class: "warn-line" }, w));
@@ -863,12 +1072,12 @@
     if (usr && usr.modes && usr.modes.includes("granted")) {
       const remove = (u) => (ev) => (confirm(t("acRemoveQ", u)) ? act(() => hostApi("settings/users", { body: { remove: u } }), t("saved"))(ev) : null);
       const search = h("input", { type: "search", value: usersQuery, placeholder: t("acSearch"), "aria-label": t("acSearch") });
-      search.addEventListener("change", () => { usersQuery = search.value.trim(); usersCursor = null; render(); });
+      search.addEventListener("change", () => { usersQuery = search.value.trim(); delete pagingState.users; render(); });
       out.push(card(t("acUsers"), null,
         usr.seeded && usr.seeded.length ? [h("h3", { class: "sub-h" }, t("acSeeded")), h("ul", { class: "people" }, usr.seeded.map((u) => h("li", {}, h("b", {}, u)))), usr.seededFrom ? h("p", { class: "mute small" }, usr.seededFrom) : null] : null,
         h("div", { class: "row between" }, h("h3", { class: "sub-h" }, t("acPeople")), search),
         usr.users.length ? peopleTable(usr.users, remove) : h("p", { class: "mute" }, t("acNoPeople")),
-        pager(usr.page, (c) => { usersCursor = c; render(); }),
+        listPager("users", usr.page),
         addForm(t("acUsers"), (u) => hostApi("settings/users", { body: { add: u } }))));
     }
     return out;
@@ -880,24 +1089,297 @@
         remove ? h("td", { class: "end" }, h("button", { class: "btn sm quiet", type: "button", onclick: remove(g.user), "aria-label": `${t("acRemove")} ${g.user}` }, t("acRemove"))) : null)))));
   }
 
+  // ---- Host settings, shared by the tabs that read them ------------------------------------------------------
+  /** The host's settings (GET <prefix>/settings), once per drawing. */
+  let hostSettingsAt = 0, hostSettingsP = null;
+  const hostSettings = () => {
+    if (!hostSettingsP || Date.now() - hostSettingsAt > 1500) { hostSettingsAt = Date.now(); hostSettingsP = hostApi("settings"); }
+    return hostSettingsP;
+  };
+  const put = (path, body, msg) => act(() => hostApi(path, { body }), msg || t("saved"));
+  const fld = (label, input, wide) => h("label", { class: `field${wide ? " wide" : ""}` }, h("span", {}, label), input);
+  const num = (value, min, max, step) => h("input", { type: "number", value: value === null || value === undefined ? "" : String(value), min: min === undefined ? null : String(min), max: max === undefined ? null : String(max), step: step ? String(step) : null, inputmode: "numeric" });
+  const sourcePill = (src) => pill(t(`source_${src === "settings" ? "settings" : src === "env" ? "env" : src === "config" ? "config" : "default"}`), src === "settings" ? "acc" : "");
+  const kvList = (rows) => h("dl", { class: "kvs" }, rows.filter(Boolean).map(([k, v]) => h("div", { class: "kv" }, h("dt", {}, k), h("dd", {}, v))));
+  const mb = (bytes) => ((bytes || 0) < 1048576 ? `${nf((bytes || 0) / 1024)} KB` : `${nf(bytes / 1048576, 1)} MB`);
+  const table = (heads, rows, empty) => (rows.length
+    ? h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, heads.map((x) => (typeof x === "string" ? h("th", {}, x) : h("th", { class: x.n ? "n" : x.cls || "" }, x.t))))), h("tbody", {}, rows)))
+    : h("p", { class: "empty" }, empty));
+
+  // ---- Models & voice ------------------------------------------------------------------------------------------
+  async function models() {
+    const s = await hostSettings();
+    const c = s.chat;
+    const out = [];
+    // The chat model: model × effort; models that are down are greyed. "Back to" names the deployment's default plainly.
+    if (c) {
+      const choices = [];
+      for (const p of c.options) {
+        const levels = p.efforts ? p.efforts.levels : [null];
+        for (const e of levels) choices.push({ value: `${p.name}|${e || ""}`, label: `${p.label || p.name}${e ? ` · ${t("effortN", e)}` : ""}${p.available === false ? ` · ${t("notAnswering")}` : ""}`, disabled: p.available === false });
+      }
+      const sel = h("select", { "aria-label": t("chatModelH"), disabled: !c.writable }, choices.map((o) => h("option", { value: o.value, disabled: o.disabled ? "" : null, selected: o.value === `${c.model}|${c.effort || ""}` ? "" : null }, o.label)));
+      const save = act(() => { const [model, effort] = sel.value.split("|"); return hostApi("settings/chat", { body: { model, effort: effort || null } }); }, t("saved"));
+      out.push(card(t("chatModelH"), null,
+        h("p", { class: "row" }, t("chatNow", `${c.label || c.model || "—"}${c.effort ? ` · ${t("effortN", c.effort)}` : ""}`), sourcePill(c.source)),
+        c.fallback ? h("p", { class: "warn-line" }, t("chatFallback", c.defaultLabel, c.label)) : null,
+        h("div", { class: "row", style: "margin-top:12px" }, sel, h("button", { class: "btn", type: "button", onclick: save, disabled: !c.writable }, t("saveModel")),
+          c.source === "settings" && c.defaultLabel ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/chat", { model: null }), disabled: !c.writable }, t("chatBack", c.defaultLabel)) : null)));
+      out.push(card(t("modelsH"), null, table([t("mName"), t("mKind"), t("mState"), { t: t("mLatency"), n: true }, t("mPriced")],
+        c.options.map((p) => h("tr", {}, h("td", {}, h("b", {}, p.label || p.name), h("div", { class: "mute small mono" }, p.model)), h("td", {}, p.kind), h("td", {}, pill(p.available === false ? t("down") : t("up"), p.available === false ? "bad" : "ok")), h("td", { class: "n" }, p.latencyMs ? `${nf(p.latencyMs)} ms` : "—"), h("td", {}, p.priced ? "✓" : "—"))), t("none"))));
+    }
+    // Speech to text: model and hold-to-talk, then the measured table, then kept recordings.
+    const sp = s.speech;
+    if (sp) {
+      if (!sp.enabled) out.push(card(t("sttH"), null, h("p", { class: "mute" }, t("sttOff"))));
+      else {
+        const list = await hostApi("settings/speech/models").catch(() => null);
+        const opts = (Array.isArray(list) ? list : []).map((m) => (typeof m === "string" ? m : m.id || m.name)).filter(Boolean);
+        if (!opts.includes(sp.model)) opts.unshift(sp.model);
+        const sel = h("select", { "aria-label": t("sttModel"), disabled: !sp.writable }, opts.map((m) => h("option", { value: m, selected: m === sp.model ? "" : null }, m)));
+        const hold = num(sp.holdMs, sp.holdMsRange && sp.holdMsRange.min, sp.holdMsRange && sp.holdMsRange.max, 50);
+        out.push(card(t("sttH"), null,
+          h("div", { class: "form" }, fld(t("sttModel"), sel), fld(t("sttHold"), hold)),
+          h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !sp.writable, onclick: act(() => hostApi("settings/speech", { body: { model: sel.value === sp.defaultModel ? null : sel.value, holdMs: hold.value === "" ? null : Number(hold.value) } }), t("saved")) }, t("sttSave")), sourcePill(sp.source))));
+      }
+      const measured = sp.measured && sp.measured.rows ? Object.entries(sp.measured.rows) : [];
+      if (measured.length)
+        out.push(card(t("measuredH"), t("measuredLede"), table([t("mName"), ...sp.measured.columns.map((c2) => ({ t: c2, n: true }))],
+          measured.map(([m, vals]) => h("tr", { class: m === sp.model ? "on" : "" }, h("td", { class: "mono small" }, m === sp.model ? h("b", {}, m) : m), vals.map((v) => h("td", { class: "n" }, v)))), t("none"))));
+      out.push(await keptRecordings(sp));
+    }
+    return out;
+  }
+  async function keptRecordings(sp) {
+    const a = await hostApi(`audio?${pageQuery("audio", 10)}`).catch(() => null);
+    const on = !!sp.keepAudio;
+    const days = num(sp.audioRetentionDays, sp.audioRetentionRange && sp.audioRetentionRange.min, sp.audioRetentionRange && sp.audioRetentionRange.max);
+    const maxMb = num(sp.maxStoredMb, sp.maxStoredMbRange && sp.maxStoredMbRange.min, sp.maxStoredMbRange && sp.maxStoredMbRange.max);
+    const notice = h("textarea", { rows: 2, maxlength: "2000", value: sp.consentNotice || "" });
+    const who = h("input", { type: "text", placeholder: t("delUserPh"), "aria-label": t("delUser") });
+    const clips = (a && a.clips) || [];
+    const remove = (id) => (ev) => (confirm(t("clipDeleteQ")) ? act(() => hostApi(`audio/${encodeURIComponent(id)}`, { method: "DELETE" }), t("done"))(ev) : null);
+    return card(t("keptH"), null,
+      h("p", { class: "row" }, on ? t("keptOn", nf(a ? a.files ?? clips.length : 0), mb(a && a.bytes)) : t("keptOff"), h("button", { class: "btn sm quiet", type: "button", onclick: () => go("telemetry") }, t("openTelemetry"))),
+      h("div", { class: "form", style: "margin-top:8px" }, fld(t("keptDays"), days), fld(t("keptMb"), maxMb), fld(t("consent"), notice, true)),
+      h("div", { class: "actions" },
+        h("button", { class: "btn", type: "button", disabled: !sp.writable, onclick: act(() => hostApi("settings/speech", { body: { audioRetentionDays: days.value === "" ? null : Number(days.value), maxStoredMb: maxMb.value === "" ? null : Number(maxMb.value), consentNotice: notice.value.trim() || null } }), t("saved")) }, t("keptSave")),
+        h("button", { class: "btn quiet", type: "button", disabled: !sp.writable, onclick: put("settings/speech", { audioRetentionDays: null, maxStoredMb: null, consentNotice: null }) }, t("keptReset"))),
+      h("h3", {}, t("clipsH")),
+      table([t("clipWhen"), t("clipUser"), { t: t("clipSize"), n: true }, t("clipPlay"), { t: "", cls: "end" }],
+        clips.map((c) => h("tr", {}, h("td", { class: "num" }, when(c.at)), h("td", {}, c.user), h("td", { class: "n" }, mb(c.bytes)),
+          h("td", {}, h("audio", { controls: true, preload: "none", src: `${HOST}audio/${encodeURIComponent(c.id)}`, "aria-label": `${t("clipPlay")} ${c.user} ${when(c.at)}` })),
+          h("td", { class: "end" }, h("button", { class: "btn sm danger", type: "button", onclick: remove(c.id) }, t("clipDelete"))))), t("noClips")),
+      listPager("audio", a && a.page),
+      h("div", { class: "row", style: "margin-top:16px" }, h("span", { class: "mute" }, t("delUser")), who,
+        h("button", { class: "btn sm danger", type: "button", onclick: (ev) => (who.value.trim() ? act(() => hostApi(`audio?user=${encodeURIComponent(who.value.trim())}`, { method: "DELETE" }), t("done"))(ev) : null) }, t("delUserBtn")),
+        h("button", { class: "btn sm ghost", type: "button", disabled: !clips.length, style: "margin-left:auto", onclick: act(async () => { const r = await hostApi("audio/export", { method: "POST" }); toast(t("exported", nf(r.clips), nf(r.flagged))); }, false) }, t("exportBtn"))));
+  }
+
+  // ---- Spend & audit -----------------------------------------------------------------------------------------
+  const spendF = { from: "", to: "", user: "" };
+  const auditF = { from: "", to: "", user: "", action: "", outcome: "", q: "" };
+  const filterQuery = (f) => Object.entries(f).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  function filterBar(f, keys, onApply) {
+    const inputs = {};
+    const box = (k) => {
+      if (k === "outcome") return (inputs[k] = h("select", {}, [["", t("aAll")], ["ok", t("aOk")], ["denied", t("aDenied")]].map(([v, l]) => h("option", { value: v, selected: f[k] === v ? "" : null }, l))));
+      return (inputs[k] = h("input", { type: k === "from" || k === "to" ? "date" : k === "q" ? "search" : "text", value: f[k] || "", size: k === "q" ? 18 : 12 }));
+    };
+    const label = { from: "fromD", to: "toD", user: "userF", action: "aAction", outcome: "aOutcome", q: "search" };
+    const apply = () => { for (const k of keys) f[k] = inputs[k].value.trim(); onApply(); };
+    const bar = h("form", { class: "filters", onsubmit: (e) => { e.preventDefault(); apply(); } },
+      keys.map((k) => h("label", {}, t(label[k]), box(k))),
+      h("button", { class: "btn sm", type: "submit" }, t("apply")),
+      keys.some((k) => f[k]) ? h("button", { class: "btn sm quiet", type: "button", onclick: () => { for (const k of keys) f[k] = ""; onApply(); } }, t("clear")) : null);
+    return bar;
+  }
+  async function spend() {
+    const fq = filterQuery(spendF);
+    const [turns, audit] = await Promise.all([
+      hostApi(`turns?${pageQuery("turns")}${fq ? `&${fq}` : ""}`).catch((e) => ({ error: e.message })),
+      hostApi(`audit?${pageQuery("audit", 50)}${filterQuery(auditF) ? `&${filterQuery(auditF)}` : ""}`).catch((e) => ({ error: e.message })),
+    ]);
+    const out = [];
+    const tot = (label, x) => h("span", {}, `${label}: `, h("b", {}, usd(x && x.costUsd)), x ? ` · ${nf(x.turns)} ${t("answers")}` : "");
+    if (turns.error) out.push(card(t("costH"), null, h("p", { class: "bad-line" }, turns.error)));
+    else if (!turns.enabled) out.push(card(t("costH"), null, h("p", { class: "mute" }, t("costOff"))));
+    else
+      out.push(card(t("costH"), null,
+        h("div", { class: "totals" }, tot(t("today"), turns.today), tot(t("week"), turns.week), turns.range ? tot(t("rangeT"), turns.range) : null, turns.range && turns.range.unpriced ? h("span", { class: "pill warn" }, t("unpricedN", nf(turns.range.unpriced))) : null),
+        filterBar(spendF, ["from", "to", "user"], () => { delete pagingState.turns; render(); }),
+        table([t("tWhen"), t("tUser"), t("tBoard"), t("tModel"), { t: t("tTokens"), n: true }, { t: t("tStt"), n: true }, { t: t("tCost"), n: true }],
+          (turns.recent || []).map((r) => h("tr", {}, h("td", { class: "num" }, when(r.at)), h("td", {}, r.user), h("td", { class: "mono small" }, r.board || "—"), h("td", { class: "small" }, (r.models || []).join(", ") || "—"),
+            h("td", { class: "n" }, r.tokens ? `${nf(r.tokens.in)} / ${nf(r.tokens.out)}` : "—"), h("td", { class: "n" }, r.sttUsd ? usd(r.sttUsd) : "—"), h("td", { class: "n" }, usd(r.costUsd)))), t("noTurns")),
+        listPager("turns", turns.page)));
+    if (audit.error) out.push(card(t("auditH"), null, h("p", { class: "bad-line" }, audit.error)));
+    else if (!audit.enabled) out.push(card(t("auditH"), null, h("p", { class: "mute" }, t("auditOff"))));
+    else
+      out.push(card(t("auditH"), t("auditLede", nf(audit.retentionDays), (audit.months || []).length ? audit.months.join(", ") : "—"),
+        filterBar(auditF, ["from", "to", "user", "action", "outcome", "q"], () => { delete pagingState.audit; render(); }),
+        table([t("tWhen"), t("tUser"), t("aAction"), t("aOutcome"), t("aDetail")],
+          (audit.events || []).map((e) => h("tr", {}, h("td", { class: "num", style: "white-space:nowrap" }, when(e.at)), h("td", {}, e.user), h("td", {}, e.action, e.board ? h("div", { class: "mute small mono" }, e.board) : null), h("td", {}, pill(e.outcome === "ok" ? t("aOk") : t("aDenied"), e.outcome === "ok" ? "ok" : "bad")), h("td", { class: "small", style: "overflow-wrap:anywhere" }, e.detail || ""))), t("noEvents")),
+        listPager("audit", audit.page)));
+    return out;
+  }
+
+  // ---- Saved answers' settings and the queue (on the Cache tab) -------------------------------------------------
+  function cacheSettingsCards(s) {
+    const out = [];
+    const c = s.cache;
+    if (c) {
+      const on = h("input", { type: "checkbox", checked: c.enabled, disabled: !c.writable });
+      const router = h("input", { type: "checkbox", checked: c.router === "on", disabled: !c.writable });
+      const ttl = num(c.ttlHours, 1, 2160), max = num(c.maxEntries, 10, 20000), fresh = num(c.freshMinutes, 0, 1440);
+      const pw = c.prewarm || {};
+      const pwOn = h("input", { type: "checkbox", checked: !!pw.enabled, disabled: !c.writable });
+      const pwTimes = h("input", { type: "text", value: (pw.times || []).join(", ") });
+      const pwTop = num(pw.topN, 1, 100), pwUsd = num(pw.maxUsd, 0, 100, 0.01);
+      const save = act(() => hostApi("settings/cache", { body: { enabled: on.checked, router: router.checked ? "on" : "off", ttlHours: Number(ttl.value), maxEntries: Number(max.value), freshMinutes: Number(fresh.value), prewarm: { enabled: pwOn.checked, times: pwTimes.value.split(",").map((x) => x.trim()).filter(Boolean), topN: Number(pwTop.value), maxUsd: Number(pwUsd.value) } } }), t("saved"));
+      out.push(card(t("cacheSetH"), null,
+        h("label", { class: "switch" }, on, h("div", {}, h("div", { class: "lbl" }, t("cOn")))),
+        h("label", { class: "switch" }, router, h("div", {}, h("div", { class: "lbl" }, t("cRouter")))),
+        h("div", { class: "form", style: "margin-top:8px" }, fld(t("cTtl"), ttl), fld(t("cMax"), max), fld(t("cFresh"), fresh)),
+        h("label", { class: "switch", style: "margin-top:8px" }, pwOn, h("div", {}, h("div", { class: "lbl" }, t("cPw")))),
+        h("div", { class: "form" }, fld(t("cPwTimes"), pwTimes), fld(t("cPwTop"), pwTop), fld(t("cPwUsd"), pwUsd)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: save, disabled: !c.writable }, t("saveB")), c.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/cache", { enabled: null, router: null, ttlHours: null, maxEntries: null, freshMinutes: null, prewarm: null }) }, t("resetDefaults")) : null, sourcePill(c.source))));
+    }
+    const q = s.queue;
+    if (q) {
+      const conc = num(q.maxConcurrent, 1, 1000), wait = num(q.maxWaiting, 0, 10000), secs = num(q.maxWaitSeconds, 1, 3600);
+      out.push(card(t("queueH"), null,
+        h("div", { class: "form" }, fld(t("qConc"), conc), fld(t("qWait"), wait), fld(t("qSecs"), secs)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !q.writable, onclick: act(() => hostApi("settings/queue", { body: { maxConcurrent: Number(conc.value), maxWaiting: Number(wait.value), maxWaitSeconds: Number(secs.value) } }), t("saved")) }, t("saveB")),
+          q.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/queue", { maxConcurrent: null, maxWaiting: null, maxWaitSeconds: null }) }, t("resetDefaults")) : null, sourcePill(q.source))));
+    }
+    return out;
+  }
+
+  // ---- Settings: own dashboards, edit scope, config, where to change things (Superset host) ----------------------
+  function supersetSettingsCards(s) {
+    const out = [];
+    if (s.personal) {
+      const p = s.personal;
+      const dash = num(p.maxDashboardsPerUser, 0, 10000), lay = num(p.maxSavedLayoutsPerUser, 0, 10000);
+      out.push(card(t("personalH"), null,
+        h("p", { class: "row" }, t("pOn"), pill(p.on ? t("isOn") : t("isOff"), p.on ? "ok" : "")),
+        h("div", { class: "form", style: "margin-top:8px" }, fld(t("pDash"), dash), fld(t("pLayouts"), lay)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(() => hostApi("settings/personal", { body: { maxDashboardsPerUser: Number(dash.value), maxSavedConfigsPerUser: Number(lay.value) } }), t("saved")) }, t("saveB")),
+          h("button", { class: "btn quiet", type: "button", onclick: put("settings/personal", { maxDashboardsPerUser: null, maxSavedConfigsPerUser: null }) }, t("resetDefaults")))));
+    }
+    if (s.editScope) {
+      const e = s.editScope;
+      const radio = (v, label) => h("label", { class: "row", style: "gap:8px" }, h("input", { type: "radio", name: "lp-scope", value: v, checked: e.scope === v }), label);
+      const exempt = h("input", { type: "checkbox", checked: !!e.adminsExempt });
+      const box = h("div", {}, radio("superset", t("scopeSuperset")), radio("own", t("scopeOwn")));
+      out.push(card(t("scopeH"), null, box,
+        h("label", { class: "switch" }, exempt, h("div", {}, h("div", { class: "lbl" }, t("scopeExempt")))),
+        e.warning ? h("p", { class: "warn-line" }, e.warning) : null,
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(() => hostApi("settings/edit-scope", { body: { scope: box.querySelector("input:checked").value, adminsExempt: exempt.checked } }), t("saved")) }, t("saveB")),
+          h("button", { class: "btn quiet", type: "button", onclick: put("settings/edit-scope", { scope: null, adminsExempt: null }) }, t("resetDefaults")))));
+    }
+    return out;
+  }
+  function configCards(s) {
+    const b = s.budget || {};
+    const rows = [
+      [t("budgetDay"), b.usdPerDay ? usd(b.usdPerDay) : t("none2")],
+      [t("budgetUser"), b.usdPerUserPerDay ? usd(b.usdPerUserPerDay) : t("none2")],
+      s.telemetry && s.telemetry.context ? [t("tabTelemetry"), t("contextN", nf(s.telemetry.context))] : null,
+      s.hostPolicy ? [t("hostPolicyL"), s.hostPolicy === "superset" ? t("hostSuperset") : t("hostOff")] : null,
+      s.editPolicy ? [t("editPolicyL"), s.editPolicy === "superset" ? t("editSuperset") : t("editSigned")] : null,
+    ];
+    // Where each kind of setting is changed. hostPolicy defaults to superset (each person's own access), not off.
+    const where = [
+      [t("chatModelH"), `${t("tabModels")} · superset.yaml llm.providers · LENSPACK_LLM_PROVIDERS`],
+      [t("sttH"), `${t("tabModels")} · LENSPACK_STT_API_KEY`],
+      [t("dataH"), "superset.yaml datasets, overlay, budget"],
+      [t("whoH"), `${t("tabAccess")} · auth.userAccess, auth.users · LENSPACK_USER_ACCESS, LENSPACK_USER_ROLES`],
+      [t("acAdmins"), `${t("tabAccess")} · auth.adminAccess · LENSPACK_ADMIN_ACCESS`],
+      [t("hostPolicyL"), "hostPolicy: superset (default) or off · LENSPACK_HOST_POLICY"],
+      [t("editPolicyL"), "editPolicy: superset (default) or signed-in · LENSPACK_EDIT_POLICY"],
+      [t("offH"), `${t("tabSettings")} · features · LENSPACK_FEATURES`],
+    ];
+    return [
+      card(t("configH"), null, kvList(rows)),
+      s.superset ? card(t("whereH"), null, table([t("wWhat"), t("wWhere")], where.map(([a, b2]) => h("tr", {}, h("td", {}, a), h("td", { class: "small" }, b2))), "")) : null,
+    ];
+  }
+
+  // ---- Assistant: what Superset needs (Superset host only) -----------------------------------------------------
+  async function assistantTab() {
+    const info = await hostApi("info").catch(() => null);
+    const adminInfo = (info && info.admin) || {};
+    const panelLink = shell.panelUrl || adminInfo.panel;
+    const link = card(t("panelH"), null, h("div", { class: "linkcard" },
+      h("div", {}, h("b", {}, t("panelLede")), adminInfo.access === "password" ? h("p", { class: "note" }, t("panelPassword")) : null),
+      panelLink ? h("a", { class: "btn", href: panelLink }, t("openPanel")) : null));
+    if (sections === "link") return [link];
+    const s = await hostSettings();
+    const out = [];
+    if (sections === "host" && panelLink) out.push(link);
+    const ua = s.userAccess || {};
+    out.push(card(t("whoH"), null, kvList([
+      [t("onOff"), s.features && s.features.values ? (s.features.values.overlay ? t("isOn") : t("isOff")) : "—"],
+      [t("acUsers"), ua.label || "—"],
+      [t("acAdmins"), (s.adminAccess && s.adminAccess.label) || "—"],
+      [t("hostPolicyL"), s.hostPolicy === "off" ? t("hostOff") : t("hostSuperset")],
+      [t("editPolicyL"), s.editPolicy === "signed-in" ? t("editSigned") : t("editSuperset")],
+      s.editScope ? [t("scopeL"), s.editScope.scope === "own" ? t("scopeOwn") : t("scopeSuperset")] : null,
+    ])));
+    if (s.brand) out.push(brandCard(s.brand, true));
+    const sup = s.superset || {};
+    // What only Superset knows (its data connections, the service account's roles), written into its page.
+    const facts = shell.facts || null;
+    const chatUp = (s.providers || []).some((p) => p.available !== false);
+    out.push(card(t("connH"), null, kvList([
+      [t("cUrl"), sup.url ? h("code", {}, sup.url) : "—"],
+      [t("cAccount"), sup.username ? `${sup.username} (${sup.account || ""})` : "—"],
+      [t("cIdentity"), s.chat && s.chat.writable === false ? h("span", { class: "pill bad" }, t("cMissing")) : h("span", { class: "pill ok" }, t("cReceived"))],
+      [t("cChat"), h("span", { class: `pill ${chatUp ? "ok" : "bad"}` }, chatUp ? t("cChatOk") : t("cChatDown"))],
+      facts && facts.accountRoles ? [t("cRoles"), facts.accountRoles.join(", ") || "—"] : null,
+    ]),
+    facts && facts.databases && facts.databases.length ? [h("h3", {}, t("dbH")), table([t("dbName"), t("dbBackend"), { t: t("dbDatasets"), n: true }], facts.databases.map((d) => h("tr", {}, h("td", {}, d.name), h("td", { class: "mono small" }, d.backend || "—"), h("td", { class: "n" }, nf(d.datasets)))), "")] : null));
+    const l = s.language;
+    if (l) {
+      const opt = (v, label, cur) => h("option", { value: v, selected: v === cur ? "" : null }, label);
+      const rep = h("select", {}, l.options.map((o) => opt(o, o === "auto" ? t("lAuto") : LANG_NAMES[o] || o, l.default)));
+      const titles = h("select", {}, [opt("board", t("lTitleBoard"), l.titles), opt("speaker", t("lTitleSpeaker"), l.titles)]);
+      const board = h("select", {}, l.options.filter((o) => o !== "auto").map((o) => opt(o, LANG_NAMES[o] || o, l.board)));
+      out.push(card(t("langH"), null,
+        h("div", { class: "form" }, fld(t("lReplies"), rep), fld(t("lTitles"), titles), fld(t("lBoard"), board)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !l.writable, onclick: act(() => hostApi("settings/language", { body: { default: rep.value, titles: titles.value, board: board.value } }), t("saved")) }, t("saveB")),
+          l.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/language", { default: null, titles: null, board: null }) }, t("resetDefaults")) : null, sourcePill(l.source))));
+    }
+    if (s.datasets) {
+      const root2 = (info && info.supersetRoot) || "";
+      out.push(card(t("dataH"), s.pack ? `${t("dPack")}: ${s.pack}` : null,
+        table([t("dTable"), t("dEntity"), ""], s.datasets.map((d) => h("tr", {}, h("td", { class: "mono" }, d.schema ? `${d.schema}.${d.table}` : d.table), h("td", {}, d.entity || "—"), h("td", { class: "end" }, h("a", { href: `${root2}/tablemodelview/edit/${d.id}` }, t("dEdit"))))), t("none")),
+        s.warnings && s.warnings.length ? [h("h3", {}, t("dWarnings")), h("ul", { class: "small" }, s.warnings.map((w) => h("li", {}, typeof w === "string" ? w : JSON.stringify(w))))] : null,
+        s.dashboards && s.dashboards.length ? [h("h3", {}, t("dDashboards")), h("p", { class: "small mute" }, s.dashboards.map((d) => (typeof d === "object" ? d.title || d.id : d)).join(", "))] : null));
+    }
+    return out;
+  }
+
   // The Telemetry tab is its own module (telemetry.js), mounted here with the helpers it needs.
   const tel = window.LenspackTelemetry
     ? window.LenspackTelemetry.create({
       h, t, nf, when, store, toast, card, pill, assistant, usageBoardView, field: pendingField, host: HOST,
       render: () => render(), lang: () => lang, tab: () => tab, usageInfo: () => usageInfo,
-      goTab: (name) => document.querySelector(`#tabs [data-tab="${name}"]`).click(),
+      goTab: (name) => go(name),
     })
     : null;
   const telemetry = tel ? tel.render : async () => [card(t("tabTelemetry"), null, h("p", { class: "empty" }, t("failed", "telemetry.js")))];
   const openField = (id) => (tel ? tel.openField(id) : null);
-  const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, access, settings };
+  const TABS = { overview, review, questions, proposals, definitions, cache, models, access, settings, assistant: assistantTab, telemetry, spend };
   let rendering = 0;
   // Who became an admin since this admin's last visit (the admins roster): said at the top of every tab, once loaded.
   let newAdmins = [];
-  const newAdminsNotice = () => (newAdmins.length ? h("p", { class: "warn-line notice", role: "status" }, t("acNewSince", newAdmins.map((e) => `${e.user} (${e.how})`).join(", ")), " ", tab !== "access" ? h("a", { href: "#access", onclick: (e) => { const b = document.querySelector('#tabs [data-tab="access"]'); if (b) { e.preventDefault(); b.click(); } } }, t("acNewOpen")) : null) : null);
-  async function render() {
+  const newAdminsNotice = () => (newAdmins.length ? h("p", { class: "warn-line notice", role: "status" }, t("acNewSince", newAdmins.map((e) => `${e.user} (${e.how})`).join(", ")), " ", tab !== "access" && shownTabs().some((d) => d.id === "access") ? h("a", { href: "#access/roster", onclick: (e) => { e.preventDefault(); go("access", "roster"); } }, t("acNewOpen")) : null) : null);
+  async function render(section) {
     const mine = ++rendering;
-    if (!TABS[tab]) tab = "overview";
+    const shown = shownTabs();
+    if (!shown.some((d) => d.id === tab)) tab = shown[0] ? shown[0].id : "overview";
     applyChrome();
     try {
       const nodes = await TABS[tab]();
@@ -907,6 +1389,8 @@
       if (mine !== rendering) return;
       main.replaceChildren(h("p", { class: "pad bad" }, t("failed", e.message)));
     }
+    paintSections();
+    if (section) scrollToSection(section);
     counts();
   }
   async function counts() {
@@ -914,7 +1398,8 @@
     try {
       const [q, p] = await Promise.all([api("questions?status=open"), api("proposals?status=pending")]);
       for (const [name, n] of [["questions", q.questions.length], ["proposals", p.proposals.length]]) {
-        const b = document.querySelector(`#tabs [data-tab="${name}"]`);
+        const b = navEl.querySelector(`[data-tab="${name}"]`);
+        if (!b) continue;
         const old = b.querySelector(".count");
         if (old) old.remove();
         if (n) b.append(h("span", { class: "count" }, String(n)));
@@ -929,19 +1414,22 @@
       packs = r.packs;
       usageInfo = r.usage || null;
       if (!packs.some((p) => p.name === pack)) pack = packs[0] ? packs[0].name : "";
-      const pick = document.getElementById("pack");
-      pick.replaceChildren(...packs.map((p) => h("option", { value: p.name, selected: p.name === pack ? "" : null }, p.name)));
-      document.getElementById("packPick").hidden = packs.length < 2;
-      document.getElementById("sub").textContent = `${r.me.user} · ${packs.map((p) => p.name).join(", ")}`;
+      packSel.replaceChildren(...packs.map((p) => h("option", { value: p.name, selected: p.name === pack ? "" : null }, p.name)));
+      packPick.hidden = packs.length < 2;
+      subEl.textContent = `${r.me.user} · ${packs.map((p) => p.name).join(", ")}`;
     } catch (e) {
-      main.replaceChildren(h("p", { class: "pad" }, t("failed", e.message)));
-      return;
+      // A link to the admin panel needs nothing from it (the person may not be its admin: the password signs in there).
+      if (sections !== "link") {
+        main.replaceChildren(h("p", { class: "pad" }, t("failed", e.message)));
+        return;
+      }
     }
-    render();
-    hostApi("settings/admins").then((a) => {
-      newAdmins = (a && a.newSince) || [];
-      if (newAdmins.length) render();
-    }, () => {});
+    render(hashSection);
+    if (sections !== "link")
+      hostApi("settings/admins").then((a) => {
+        newAdmins = (a && a.newSince) || [];
+        if (newAdmins.length) render();
+      }, () => {});
   }
   start();
 })();

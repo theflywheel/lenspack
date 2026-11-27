@@ -241,6 +241,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `auth.usage` | the same roles as `auth.admins` (`LENSPACK_USAGE_ROLES` wins) | Superset roles that also see user names on the usage pages |
 | `auth.users` | everyone signed in (`LENSPACK_USER_ROLES` wins) | Superset roles that may use the assistant at all; admins always may. See [Who is asking](../hosts/superset/identity.md#who-may-use-the-assistant) |
 | `auth.adminAccess` | `superset-role` (`LENSPACK_ADMIN_ACCESS` wins) | who is an admin: `superset-role`, `superset-users` or `password`, or `password` with one of the others (`superset-role,password`). See [Who can use and administer the assistant](../access/admin-access.md) |
+| `admin.surface` | `split` (`LENSPACK_ADMIN_SURFACE` wins) | where the admin pages are: `split`, `superset` or `separate`. See [Where the admin pages are](../features/admin-panel.md#where-the-admin-pages-are) |
 | `auth.adminUsers` | none (`LENSPACK_ADMIN_USERS` wins) | the owners under `superset-users`: Superset user names or `id:<n>` |
 | `auth.userAccess` | `superset-role` (`LENSPACK_USER_ACCESS` wins) | who may use the assistant: `superset-role`, `granted`, `everyone`, or a combination like `superset-role,granted` |
 | `auth.seedUsers` | none (`LENSPACK_USERS` wins) | people always let in under `granted`: Superset user names or `id:<n>` |
@@ -296,6 +297,7 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_ADMIN_ACCESS`, `LENSPACK_ADMIN_USERS` | superset | `auth.adminAccess` (one mode, or `password` with another: `superset-role,password`), `auth.adminUsers` (comma-separated) | over the file |
 | `LENSPACK_ADMIN_PASSWORDS`, `LENSPACK_ADMIN_PASSWORDS_FILE` | superset | the named admin passwords when `auth.adminAccess` includes `password`: `name:password` pairs separated by commas, or a file with one per line (12+ characters each; a value starting `scrypt$` is a hash) | only source |
 | `LENSPACK_ADMIN_PASSWORD`, `LENSPACK_ADMIN_PASSWORD_HASH` | superset | one more admin password, named `password` (signed in to with the name left empty), or its scrypt hash | only source |
+| `LENSPACK_ADMIN_SURFACE` | superset | `admin.surface`: where the admin pages are, `split` (default), `superset` or `separate` | over the file |
 | `LENSPACK_ADMIN_SESSION_HOURS`, `LENSPACK_ADMIN_SESSION_SECRET` | superset | how long an admin's password sign-in lasts (8 hours), and the key that signs it (else a file in the state directory) | only source |
 | `LENSPACK_USER_ACCESS`, `LENSPACK_USERS` | superset | `auth.userAccess`, `auth.seedUsers` (comma-separated) | over the file |
 | `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |
@@ -316,6 +318,7 @@ Read by the Superset plugin, in Superset's environment:
 | `LENSPACK_SERVICE_USER` | `lenspack` | Lenspack's Superset account |
 | `LENSPACK_PATH` | `/lenspack` | where browsers reach the assistant below Superset's path |
 | `LENSPACK_BRAND_NAME` | | the settings page's menu entry and heading |
+| `LENSPACK_MENU_REFRESH_SECONDS` | `300` | how often the menu entry asks the server for its name and who its admins are |
 | `LENSPACK_TEMPLATES` | | a folder of replacement templates |
 | `LENSPACK_CLICKHOUSE_LABEL_SUFFIX` | `on` | `off` keeps Superset 6.1's own ClickHouse column names |
 

@@ -38,7 +38,8 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
   const audit = async (who: Session, path = "_superset/audit?limit=200"): Promise<Event[]> => (await who.lp("GET", path)).json.events;
 
   beforeAll(async () => {
-    stack = await startStack("6.1.0", { lenspackEnv: { LENSPACK_ADMIN_PASSWORD: PASSWORD, LENSPACK_ADMIN_PASSWORDS: `ops:${OPS},vendor:${VENDOR}` } });
+    // The menu entry asks Lenspack who its admins are every second here (five minutes by default), so a restart shows at once.
+    stack = await startStack("6.1.0", { lenspackEnv: { LENSPACK_ADMIN_PASSWORD: PASSWORD, LENSPACK_ADMIN_PASSWORDS: `ops:${OPS},vendor:${VENDOR}` }, supersetEnv: { LENSPACK_MENU_REFRESH_SECONDS: "1" } });
     A = `superset-${stack.fixtures.dashboards.a}`;
     for (const u of ["lp_admin", "lp_owner", "lp_viewer", "lp_north", "lp_lensuser", "lp_lensadmin"]) s[u] = await stack.as(u);
     const a = await s.lp_admin!.lp("POST", `api/${PACK}/${A}/ops`, { ops: [{ op: "add_widget", id: "visits", widget: { title: "Visits", kind: "chart", chart: "bar", query: { kind: "breakdown", dimension: "region", measure: "visit_total" } }, placement: { place: "bottom", width: "half" } }] });
@@ -235,6 +236,64 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
       expect(how).toMatchObject({ lp_owner: "owner", lp_north: "granted by an owner" });
       expect((await s.lp_owner!.lp("PUT", "_superset/settings/admins", { remove: "lp_north" })).status).toBe(200);
     });
+  });
+
+  describe("where the admin pages are (admin.surface), with a role of its own and with named passwords", () => {
+    const shellOf = (html: string) => JSON.parse(/window\.__lpAdmin\s*=\s*(\{.*?\});<\/script>/.exec(html)![1]!);
+    /** Whether Superset's menu, as its home page hands it to the browser, has Settings → Manage → AI assistant. */
+    const menuEntry = async (who: string) => {
+      const html = (await s[who]!.send("GET", "/superset/welcome/")).text;
+      const raw = /data-bootstrap="([^"]*)"/.exec(html)?.[1] ?? "{}";
+      const unescaped = raw.replace(/&(#\d+|quot|amp|lt|gt|#x27);/g, (_m, e: string) => (e === "quot" ? '"' : e === "amp" ? "&" : e === "lt" ? "<" : e === "gt" ? ">" : e === "#x27" ? "'" : String.fromCharCode(Number(e.slice(1)))));
+      const menu: { name: string; childs?: ({ name: string; url?: string } | string)[] }[] = JSON.parse(unescaped).common?.menu_data?.menu ?? [];
+      return menu.find((c) => c.name === "Manage")?.childs?.some((i) => typeof i === "object" && i.name === "AI assistant") ?? false;
+    };
+    /** The menu as it settles: the plugin asks Lenspack in the background, so the first draw may not have it yet. */
+    const menuSettles = async (who: string, shown: boolean) => {
+      let now = await menuEntry(who);
+      for (let i = 0; i < 20 && now !== shown; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        now = await menuEntry(who);
+      }
+      expect([who, now]).toEqual([who, shown]);
+    };
+
+    it("superset: the panel's address leads to Superset's page, which a Gamma user with the role opens, without Superset's databases", async () => {
+      await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }', "admin: { surface: superset }"]);
+      const panel = await s.lp_lensadmin!.lp("GET", "_superset/admin/");
+      expect([panel.status, panel.headers.location]).toEqual([302, "/ai-assistant/"]);
+      const page = await s.lp_lensadmin!.send("GET", "/ai-assistant/");
+      expect(page.status).toBe(200);
+      expect(shellOf(page.text)).toMatchObject({ surface: "superset", sections: "all", panelUrl: null, facts: null });
+      // The API stays the panel's: the page is a frame, Lenspack decides.
+      expect((await s.lp_lensadmin!.lp("GET", "_superset/admin/api/packs")).status).toBe(200);
+      // A Superset Admin without the role: no page.
+      expect((await s.lp_admin!.send("GET", "/ai-assistant/")).status).toBe(403);
+      // Superset's menu shows the entry to the role's holder, a Gamma user, and to Superset's Admins as before; not to
+      // anyone else. Showing it opens nothing: the Superset Admin above still has no page.
+      await menuSettles("lp_lensadmin", true);
+      await menuSettles("lp_admin", true);
+      await menuSettles("lp_viewer", false);
+    }, 300_000);
+
+    it("separate: Superset's page is a link; the panel holds everything", async () => {
+      await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }', "admin: { surface: separate }"]);
+      const page = await s.lp_lensadmin!.send("GET", "/ai-assistant/");
+      expect(shellOf(page.text)).toMatchObject({ surface: "separate", sections: "link", panelUrl: "/lenspack/_superset/admin/" });
+      const panel = await s.lp_lensadmin!.lp("GET", "_superset/admin/");
+      expect(panel.status).toBe(200);
+      expect(shellOf(panel.text)).toMatchObject({ surface: "separate", sections: "all" });
+    }, 300_000);
+
+    it("superset with named passwords: Superset's admins get Superset's page, password admins everything on their own sign-in's pages", async () => {
+      await stack.restartLenspack(['auth: { adminAccess: "superset-role,password", admins: ["Lenspack admin"] }', "admin: { surface: superset }"]);
+      expect(shellOf((await s.lp_lensadmin!.send("GET", "/ai-assistant/")).text)).toMatchObject({ sections: "all" });
+      const b = anon();
+      expect((await login(b, OPS, "ops")).status).toBe(303);
+      const own = await b.send("GET", "/lenspack/_admin/");
+      expect(own.status).toBe(200);
+      expect(shellOf(own.text)).toMatchObject({ sections: "all", access: "password" });
+    }, 300_000);
   });
 
   describe("a Superset Admin gives themselves the admin role", () => {
