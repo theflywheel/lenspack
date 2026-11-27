@@ -544,7 +544,12 @@
 
   window.LenspackMine = {
     attach,
-    /** The chat's step lines for these tools. */
-    TOOLS: { list_my_dashboards: "read your dashboards", create_dashboard: "made a dashboard", copy_dashboard: "made your copy", delete_dashboard: "deleted a dashboard", save_layout: "saved the layout", apply_layout: "applied a layout", rename_layout: "renamed a layout", delete_layout: "deleted a layout" },
+    /** The chat's step lines for these tools, by language (chat.js picks the panel's). */
+    TOOLS: {
+      en: { list_my_dashboards: "Read your dashboards", create_dashboard: "Made a dashboard", copy_dashboard: "Made your copy", delete_dashboard: "Deleted a dashboard", save_layout: "Saved the layout", apply_layout: "Applied a layout", rename_layout: "Renamed a layout", delete_layout: "Deleted a layout" },
+      fr: { list_my_dashboards: "Vos tableaux de bord lus", create_dashboard: "Tableau de bord créé", copy_dashboard: "Votre copie créée", delete_dashboard: "Tableau de bord supprimé", save_layout: "Disposition enregistrée", apply_layout: "Disposition appliquée", rename_layout: "Disposition renommée", delete_layout: "Disposition supprimée" },
+      pt: { list_my_dashboards: "Os seus painéis lidos", create_dashboard: "Painel criado", copy_dashboard: "A sua cópia criada", delete_dashboard: "Painel eliminado", save_layout: "Disposição guardada", apply_layout: "Disposição aplicada", rename_layout: "Disposição com novo nome", delete_layout: "Disposição eliminada" },
+      hi: { list_my_dashboards: "आपके डैशबोर्ड देखे", create_dashboard: "डैशबोर्ड बनाया", copy_dashboard: "आपकी कॉपी बनाई", delete_dashboard: "डैशबोर्ड मिटाया", save_layout: "लेआउट सहेजा", apply_layout: "लेआउट लागू किया", rename_layout: "लेआउट का नाम बदला", delete_layout: "लेआउट मिटाया" },
+    },
   };
 })();

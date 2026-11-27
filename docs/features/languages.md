@@ -11,8 +11,9 @@ this.
 ## The chat panel's languages
 
 The chat panel inside Superset has a language menu: **Auto**, **English**, **Français**, **हिन्दी** and
-**Português**, remembered per browser. The panel's own words (its button, menu and grip) and the suggested
-questions follow the pick.
+**Português**, remembered per browser. The panel's own words (its button, menu and grip, the step lines under a
+question such as "Ran a query", status and error lines, and limit messages) and the suggested questions follow the pick.
+A tool the panel has no words for shows a neutral "Other step" in the panel's language, never its internal name.
 
 - **Auto** sends no language hint (the model detects it), and the reply follows whatever language the person used.
 - **A picked language** is the speech hint, the reply language and the panel's own words.
