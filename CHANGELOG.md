@@ -22,6 +22,16 @@ brought it.
   settings API (`PUT /_superset/settings/tabs`) and the start-up log; `GET /_superset/tabs` lists the tabs made through
   the chat with their makers. Superset has no per-tab permissions, so these rules bind the chat only. See
   [Tabs on dashboards](docs/features/tabs.md).
+- **Question limits per person.** A deployment can now limit how many questions each person asks: a number per day
+  (UTC, kept in `limits.json` in the state folder so a restart does not reset it), and a number in any minute and in
+  any hour. Over a limit, the chat answers `429` with `Retry-After` before any model call or data read, and says which
+  limit was reached and when the person can ask again, in English, French, Hindi or Portuguese. A saved answer counts
+  toward the minute and hour limits but not the daily one. Admins are held to the limits unless `adminsExempt` is on.
+  Off by default. Set `limits.perUser` in `superset.yaml` or `lenspack.yaml`, or `LENSPACK_LIMIT_*`; admins change
+  them with `PUT /_superset/settings/limits`, see who reached one with `GET /_superset/limits`, and clear a person's
+  count with `DELETE /_superset/limits?user=`. Refusals are in the audit log. See
+  [Question limits](docs/features/limits.md).
+
 - **Every option that isn't a secret can change without a redeploy.** On a deployment where the deploy config is in
   another team's hands, the admin pages and the admin API key are now enough. New settings routes: the daily budget
   caps (`settings/budget`; `0` means no cap), which of the deployment's models answer and which plays each role

@@ -10,6 +10,7 @@ import { buildBoard, seedBoards } from "./app";
 import { type AuditEvent, auditFileSince, fileAudit, rotatingAudit } from "./audit";
 import { authFrom, effectiveAuth, principalOf } from "./auth";
 import { adminSettings } from "./admin";
+import { limitCounter, limitSettings, limitsLine } from "./limits";
 import { brandSettings } from "./brand";
 import { cacheRoutes } from "./reuse";
 import { fileTelemetry, staticFields } from "./telemetry";
@@ -70,7 +71,7 @@ async function main() {
       const audit = auditFile ? fileAudit(auditFile) : monthly?.audit;
       const auditLog = audit ? { audit } : null;
       const events: ((from: Date) => AuditEvent[]) | undefined = auditFile ? auditFileSince(auditFile) : monthly ? (from) => monthly.since(from) : undefined;
-      const admin = stateDir ? adminSettings(stateDir, { features: config.features as never, cache: cacheConfig as never, queue: config.queue, brand: config.brand }) : null;
+      const admin = stateDir ? adminSettings(stateDir, { features: config.features as never, cache: cacheConfig as never, queue: config.queue, brand: config.brand, limits: config.limits }) : null;
       // What the assistant is called: with state, the admin panel may change it; without, the config and LENSPACK_BRAND_* alone.
       const brand = admin ? admin.brand : brandSettings({ config: config.brand, settings: null });
       const log = (m: string) => console.error(`lenspack: ${m}`);
@@ -79,6 +80,9 @@ async function main() {
       const cache = cacheSettings(null, cacheConfig);
       const reuse = config.cache ? (admin ? admin.reuse : reuseLayer({ store: resolve(dir, cacheFile ?? "reuse.json"), settings: () => ({ ...cache.get(), on: true }), log })) : undefined;
       const gate = admin ? admin.gate : localTurnGate(queueSettings(null, config.queue).get);
+      // Per-person question limits (docs/features/limits.md): with state, today's counts outlive a restart; without, memory only.
+      const limits = admin ? admin.limitCounts : limitCounter({ limits: limitSettings(null, config.limits?.perUser).get, log });
+      log(admin ? admin.limitsLine() : `${limitsLine(limitSettings(null, config.limits?.perUser).get())}${limits.on() ? "; counts kept in memory (no state: directory)" : ""}`);
       const cachePage = reuse ? cacheRoutes({ prefix: "/_lenspack", reuse, queue: gate, audit: auditLog ?? null, adminName: "admin" }) : null;
       // Usage telemetry, when the config has a telemetry: section (docs/features/telemetry.md).
       const tc = config.telemetry;
@@ -92,7 +96,7 @@ async function main() {
         // With usage: in the config, every model call is also kept in a file that outlives the process.
         usageFile: config.usage ? resolve(dir, config.usage) : undefined,
         budget: config.budget,
-        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, reuse, queue: gate, explain: () => explainFrom(config.explain), brand: brand.get, ...(telemetry ? { telemetry } : {}), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
+        app: { ui, page, auth: adapter, rights, audit, historyTurns: config.historyTurns, reuse, queue: gate, limits, explain: () => explainFrom(config.explain), brand: brand.get, ...(telemetry ? { telemetry } : {}), ...(admin && review ? { review: admin.app.review, definitions: review.turn } : {}) },
         log,
         routes: (rt) => {
           if (!review && !cachePage) return () => {};

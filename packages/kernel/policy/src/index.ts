@@ -572,3 +572,4 @@ export * from "./pack-layer";
 export * from "./query-safety";
 export * from "./runtime-config";
 export * from "./query-checks";
+export * from "./limits";

@@ -15,6 +15,7 @@ Every feature listed here is on the main branch; what changed lately, and what i
 | [How this was worked out](explain.md) | Under each answer: each data call in plain words, its SQL and its rows. | Superset, standalone |
 | [Saved answers](saved-answers.md) | A repeated question is answered again on fresh data, without the model. | Superset, standalone |
 | [Busy hours](busy-hours.md) | A queue with a place in line, retries on rate limits, one change at a time per board. | Superset, standalone |
+| [Question limits](limits.md) | How many questions each person may ask a day, a minute and an hour. Off unless set. | Superset, standalone |
 
 ## Changing dashboards
 

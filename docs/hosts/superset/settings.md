@@ -42,6 +42,9 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}`; `null` drops the admin's value |
 | `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes, prewarm}` for [saved answers](../../features/saved-answers.md); `null` resets a field |
 | `PUT /_superset/settings/queue` | any of `{maxConcurrent, maxWaiting, maxWaitSeconds}` for [busy hours](../../features/busy-hours.md) |
+| `PUT /_superset/settings/limits` | any of `{questionsPerDay, perMinute, perHour, adminsExempt, users}` for [question limits](../../features/limits.md) (`0`: no limit); `null` puts a field back to the deployment's value. `GET /_superset/settings` shows them as `limits` |
+| `GET /_superset/limits` | who is at a question limit now or was refused today (`?all=1`: everyone counted today) |
+| `DELETE /_superset/limits?user=<name>` | sets one person's counts for today back to zero; audited |
 | `PUT /_superset/settings/chat` | `{model, effort}`: the chat model used when the panel asks for none, and its reasoning effort; `{model: null}` goes back to the default |
 | `PUT /_superset/settings/telemetry` | any of `{"telemetry", "fields.<field>": true \| false \| null, "categories.<category>": true \| false, "retentionDays": n}`; turning on a privacy-sensitive field also needs `"confirm": true`, or the answer is `409` and nothing changes. See [Telemetry](../../features/telemetry.md#privacy-sensitive-fields) |
 | `GET /_superset/cache` and below | saved answers: stats, queue, last refresh, entries, pin, unpin, evict, suggestions, chart candidates, settled boards |
