@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Capabilities, Ctx } from "@lenspack/engine";
 import { type PersonalActor, type PersonalLimits, type Principal, type Rights, adminRights, principalOf } from "@lenspack/policy";
 
+import { OUT_OF_SCOPE_MESSAGE } from "./dashboard-scope";
 import { type Identity, rolesOf, supersetRights } from "./identity";
 import type { PersonalDashboards, SignedRights } from "./personal";
 
@@ -23,7 +24,7 @@ export type PersonalRoutesOptions = {
    * What policy (boardRights) says that identity may do on the dashboard it was signed for: Superset's rights, the
    * edit policy and switch, narrowed by the edit scope; `byScope` when only the edit scope refuses the edit.
    */
-  rightsOn: (id: Identity) => Promise<{ view: boolean; edit: boolean; byScope?: boolean }>;
+  rightsOn: (id: Identity) => Promise<{ view: boolean; edit: boolean; byScope?: boolean; outOfScope?: boolean }>;
   /** The engine context and capabilities the person's queries run with on that board (their hidden keys and datasets). */
   scope: (req: IncomingMessage, board: string) => Promise<{ ctx: Ctx; capabilities?: Capabilities } | null>;
   /** Binds a dashboard the person is on, so the board exists before a save or an apply. */
@@ -75,12 +76,14 @@ export const actorOf = (id: Identity, rights: Rights = supersetRights()): Person
 export function personalRoutes(o: PersonalRoutesOptions) {
   const { personal } = o;
   /** The rights Superset signed for ?dashboard=, or null when it signed none for that dashboard (an older plugin, another dashboard). */
-  const signedFor = async (id: Identity, url: URL): Promise<(SignedRights & { dashboard: number; byScope?: boolean }) | null> => {
+  const signedFor = async (id: Identity, url: URL): Promise<(SignedRights & { dashboard: number; byScope?: boolean; outOfScope?: boolean }) | null> => {
     const want = Number(url.searchParams.get("dashboard"));
     if (!Number.isSafeInteger(want) || want <= 0 || id.d !== want) return null;
     const rights = await o.rightsOn(id);
-    return { dashboard: want, view: rights.view, edit: rights.view && rights.edit, ...(rights.byScope ? { byScope: true } : {}) };
+    return { dashboard: want, view: rights.view, edit: rights.view && rights.edit, ...(rights.byScope ? { byScope: true } : {}), ...(rights.outOfScope ? { outOfScope: true } : {}) };
   };
+  /** A dashboard the deployment doesn't put the assistant on (dashboardScope: listed): nothing is copied or saved from it. */
+  const outOfScope = { error: OUT_OF_SCOPE_MESSAGE, code: "out-of-scope" };
   const audited = (who: PersonalActor, action: string, outcome: "ok" | "refused" | "denied", detail: string) => o.audit?.({ at: new Date().toISOString(), user: who.user, action, outcome, detail: detail.slice(0, 300) });
   const unsigned = { error: "Superset did not check your access to this dashboard. Reload the page; if it keeps happening, lenspack_superset.py in Superset needs updating.", code: "unsigned" };
   const status = (r: { ok: boolean; code?: string }) => (r.ok ? 200 : r.code === "not-yours" || r.code === "no-view" || r.code === "no-edit" || r.code === "no-write" || r.code === "no-user-id" ? 403 : r.code === "missing" ? 404 : r.code === "limit" || r.code === "off" ? 409 : 400);
@@ -124,7 +127,9 @@ export function personalRoutes(o: PersonalRoutesOptions) {
     try {
       if (await forAdmin(req, res, url, who)) return true;
       if (path === "/_superset/my" && req.method === "GET") {
-        const here = url.searchParams.has("dashboard") ? await signedFor(id, url) : null;
+        const signedHere = url.searchParams.has("dashboard") ? await signedFor(id, url) : null;
+        // Off the deployment's dashboards, nothing is offered for the page the person is on.
+        const here = signedHere?.outOfScope ? null : signedHere;
         const view = await personal.overview(who, here, base);
         // byScope: Superset would let them edit here, but the deployment keeps the chat to their own dashboards.
         return o.reply(res, 200, view.here && here?.byScope ? { ...view, here: { ...view.here, byScope: true } } : view), true;
@@ -136,6 +141,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         if (b.copy !== true) return send(await personal.create(who, str("title"), base)), true;
         const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
+        if (here.outOfScope) return o.reply(res, 403, outOfScope), true;
         return send(await personal.copy(who, here, str("title") || undefined, base)), true;
       }
       if (path === "/_superset/my/dashboards/delete") {
@@ -146,6 +152,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
       if (path === "/_superset/my/layouts") {
         const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
+        if (here.outOfScope) return o.reply(res, 403, outOfScope), true;
         const board = await o.bind(here.dashboard);
         const scope = await o.scope(req, board);
         const shown = scope && (await o.shownBoard(board, scope.ctx));
@@ -159,6 +166,7 @@ export function personalRoutes(o: PersonalRoutesOptions) {
         if (action === "delete") return send(await personal.deleteLayout(who, layoutId)), true;
         const here = await signedFor(id, url);
         if (!here) return o.reply(res, 403, unsigned), true;
+        if (here.outOfScope) return o.reply(res, 403, outOfScope), true;
         const board = await o.bind(here.dashboard);
         const scope = await o.scope(req, board);
         if (!scope) return o.reply(res, 403, unsigned), true;

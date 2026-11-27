@@ -20,6 +20,14 @@ brought it.
   `GET …/_admin/whoami` checks a key without changing anything. Wrong keys are limited per caller and audited without
   the key. Off by default; update the plugin file with the server, since it now passes the header on for
   `/lenspack/_admin/` only. See [The admin API key](docs/access/admin-api.md).
+- **The assistant can be limited to some Superset dashboards.** On a Superset shared by several projects, set
+  `dashboardScope: listed` (or `LENSPACK_DASHBOARD_SCOPE=listed`) and list the dashboards in `dashboards:` (or
+  `LENSPACK_DASHBOARDS=25,31`). The button then shows on those dashboards only, and every route that takes a
+  dashboard (the chat, the board and its data, copying, saving layouts) refuses any other, for admins too. People's
+  own copies of a listed dashboard, and blank ones made through the assistant, stay usable. The default, `any`, keeps
+  today's behaviour. The start-up log and the settings API say the scope; an unknown value, or `listed` with no
+  dashboards, stops the server at start. A refused dashboard now also hides a button or panel left open from the
+  dashboard before. See [Which dashboards the assistant is on](docs/hosts/superset/datasets-and-dashboards.md#which-dashboards-the-assistant-is-on).
 
 ### 26 November 2026
 

@@ -14,7 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
-import { type EditScope, adminSurfaceFrom, boardRights, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
+import { type EditScope, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, type Principal, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
@@ -23,6 +23,7 @@ import { identityKeeper, identityKey, serviceAccount } from "./bootstrap";
 import { type Overlay, fetchDatasets, packFromDatasets, packScope } from "./catalogue";
 import { supersetClient } from "./client";
 import { supersetConnector, timeZoneWarnings } from "./connector";
+import { OUT_OF_SCOPE_MESSAGE, dashboardBoard, dashboardLabel, dashboardScopeFrom, madeBoards } from "./dashboard-scope";
 import { examplesByLanguage, examplesFor } from "./examples";
 import { accessFallbackFrom, supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, signedClient, supersetAuth, supersetRights, userIdOf } from "./identity";
@@ -119,7 +120,17 @@ export type SupersetConfig = AdminConfig & {
    * It narrows what Lenspack answers, not what Superset's own charts draw.
    */
   scope?: ScopeClause[];
+  /**
+   * Superset dashboard ids to read at start (LENSPACK_DASHBOARDS, comma-separated, wins). Under dashboardScope:
+   * listed, also the only dashboards the assistant works on.
+   */
   dashboards?: number[];
+  /**
+   * Which dashboards the assistant works on (env LENSPACK_DASHBOARD_SCOPE wins): "any" (the default), every dashboard
+   * the person may open in Superset; "listed", only those in `dashboards`, and people's own copies of them made
+   * through Lenspack. Elsewhere there is no button, and every route that takes a dashboard refuses it.
+   */
+  dashboardScope?: "any" | "listed";
   overlay?: Overlay;
   /**
    * People's own dashboards and saved layouts (docs/features/personal-dashboards.md). The switch is the personalDashboards
@@ -170,6 +181,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const log = (s: string) => console.error(`lenspack-superset: ${s}`);
   const supersetUrl = config.superset?.url ?? env.LENSPACK_SUPERSET_URL;
   if (!supersetUrl) throw new Error(`${file}: say where Superset's API is, as superset.url or LENSPACK_SUPERSET_URL`);
+  // Which dashboards the assistant works on: checked before anything else, so a mistake stops the start at once.
+  const dashboardScope = (() => {
+    try {
+      return dashboardScopeFrom(config, env);
+    } catch (e) {
+      throw new Error(`${file}: ${(e as Error).message}`);
+    }
+  })();
   const statePath = resolve(dir, config.state ?? (env.LENSPACK_STATE_DIR ? join(env.LENSPACK_STATE_DIR, "superset-boards.json") : "state/superset-boards.json"));
   const stateDir = dirname(statePath);
   mkdirSync(stateDir, { recursive: true });
@@ -214,7 +233,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
   const connector = supersetConnector(client, binding, { log, capabilities: () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) }) });
-  const dashboards: Record<string, number> = Object.fromEntries((config.dashboards ?? []).map((d) => [`superset-${d}`, d]));
+  const dashboards: Record<string, number> = Object.fromEntries(dashboardScope.dashboards.map((d) => [dashboardBoard(d), d]));
+  log(`dashboards: ${boardScopeLine(dashboardScope.scope, dashboardLabel)}`);
   // People's own dashboards and saved layouts: kept in files in the state directory, behind RecordStore.
   const links = fileRecords<PersonalDashboard>(join(stateDir, "personal-dashboards.json"), log);
   const layouts = fileRecords<SavedLayout>(join(stateDir, "saved-layouts.json"), log);
@@ -322,6 +342,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     store,
     pack,
     bindBoard: bindId,
+    // "My dashboards" lists only those in the deployment's dashboard scope.
+    boardScope: () => dashboardScope.scope,
     links,
     layouts,
     limits,
@@ -346,17 +368,26 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     const own = on ? (await links.list()).filter((l) => l.ownerId === id.i || l.owner === id.u).map((l) => l.board) : [];
     return editScopeFacts(scope, { own, personalOn: on });
   };
-  /** The deployment's facts about a person for policy: the edit scope, and other people's own dashboards, which they may not open. */
+  /**
+   * The deployment's facts about a person for policy: the edit scope, other people's own dashboards, which they may
+   * not open, and under dashboardScope: listed, the only dashboards the assistant is on (the listed ones and the copies
+   * of them people made through Lenspack, while that feature is on).
+   */
   const callerFacts: CallerFacts = async (id, o) => {
     const facts = o.edit ? await editScopeOf(id) : undefined;
-    const hidden = hiddenPersonalBoards(actorOf(id, rights), await links.list());
-    return { ...(facts ? { editScope: facts } : {}), ...(hidden.length ? { hiddenBoards: hidden } : {}) };
+    const all = await links.list();
+    const hidden = hiddenPersonalBoards(actorOf(id, rights), all);
+    const only = boardsInScope(dashboardScope.scope, madeBoards(all), { personalOn: limits().on });
+    return { ...(facts ? { editScope: facts } : {}), ...(hidden.length ? { hiddenBoards: hidden } : {}), ...(only ? { onlyBoards: only } : {}) };
   };
   /** What policy says this person may do on the dashboard Superset signed for: Superset's rights, narrowed by the deployment's facts. */
   const rightsOn = async (id: Identity) => {
     const caller = callerOf(id, editPolicy, admin.features.on("boardEdits"));
-    const r = boardRights(settle({ ...caller, ...(await callerFacts(id, { edit: !!caller.edit })) }), { id: `superset-${id.d}` });
-    return { view: id.v === true && r.view, edit: r.edit, ...(r.readOnly ? { byScope: true } : {}) };
+    const facts = await callerFacts(id, { edit: !!caller.edit });
+    const board = `superset-${id.d}`;
+    const r = boardRights(settle({ ...caller, ...facts }), { id: board });
+    // outOfScope: the deployment doesn't put the assistant on this dashboard (dashboardScope: listed).
+    return { view: id.v === true && r.view, edit: r.edit, ...(r.readOnly ? { byScope: true } : {}), ...(inBoardScope(facts, board) ? {} : { outOfScope: true }) };
   };
   log(`edit scope ${configScope.scope}${configScope.scope === "own" ? ` (admins ${configScope.adminsExempt ? "exempt" : "not exempt"})` : ""}`);
   {
@@ -365,14 +396,16 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   }
 
   /**
-   * Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard. Only the one
-   * Superset checked the user may view (the signed d); null for any other.
+   * Binds a dashboard (by id or slug) to a board on first use, so the overlay works on any dashboard in the
+   * deployment's scope. Only the one Superset checked the user may view (the signed d), and only when policy puts it
+   * in scope (a slug is read as its id first); a refusal for any other.
    */
-  async function bind(idOrSlug: string, signed: number | null | undefined) {
+  async function bind(idOrSlug: string, signed: number | null | undefined, who: { onlyBoards?: readonly string[] }) {
     const head = await client.get<{ result: { id: number; dashboard_title: string } }>(`/api/v1/dashboard/${encodeURIComponent(idOrSlug)}`);
     const id = head.result.id;
-    if (signed !== id) return null;
-    const board = `superset-${id}`;
+    if (signed !== id) return { refused: "Superset did not check your access to this dashboard." };
+    const board = dashboardBoard(id);
+    if (!inBoardScope(who, board)) return { refused: OUT_OF_SCOPE_MESSAGE, code: "out-of-scope" };
     if (dashboards[board] === undefined) {
       dashboards[board] = id;
       await store.pull(board, true);
@@ -576,6 +609,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           hostPolicy,
           accessFallback,
           dashboards: Object.values(dashboards),
+          // Which dashboards the assistant works on: any, or only the listed ones (and people's own copies of them).
+          dashboardScope: dashboardScope.scope.scope === "any" ? { scope: "any" } : { scope: "listed", dashboards: dashboardScope.scope.boards.map((b) => Number(dashboardLabel(b))) },
           // People's own dashboards and saved layouts: the switch and the limits (PUT /_superset/settings/personal).
           personal: limits(),
           // Where the chat may change dashboards (PUT /_superset/settings/edit-scope), with a warning when no one can.
@@ -684,8 +719,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (await mine(req, res, url)) return;
         if (await actionLog(res, url, who)) return;
         if (url.pathname === "/_superset/bind") {
-          const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, idKey)?.d);
-          return bound ? json(res, 200, bound, NO_STORE) : json(res, 403, { error: "Superset did not check your access to this dashboard." }, NO_STORE);
+          const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, idKey)?.d, who);
+          return "refused" in bound ? json(res, 403, { error: bound.refused, ...(bound.code ? { code: bound.code } : {}) }, NO_STORE) : json(res, 200, bound, NO_STORE);
         }
         if (url.pathname === "/_superset/dashboards") {
           const list = await client.get<{ result: { id: number; dashboard_title: string; changed_on_delta_humanized: string }[] }>("/api/v1/dashboard/?q=(page_size:100,order_column:changed_on_delta_humanized,order_direction:desc)");

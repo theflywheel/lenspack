@@ -102,6 +102,22 @@ describe("overlay while Lenspack restarts", () => {
     expect(calls.filter((u) => u.includes("/_superset/bind")).length).toBe(1);
     expect(btn().style.display).not.toBe("inline-flex");
   });
+
+  it("hides the button and panel when the next dashboard is not one the assistant is on (dashboardScope: listed)", async () => {
+    server = (url) => (url.includes("/_superset/bind?dashboard=8") ? { status: 403, body: { error: "The assistant isn't turned on for this dashboard.", code: "out-of-scope" } } : up(url));
+    startOverlay();
+    await tick(50);
+    expect(btn().style.display).toBe("inline-flex");
+    // Superset moves to another dashboard without a page load.
+    window.history.pushState({}, "", "/superset/dashboard/8/");
+    await tick(1000);
+    expect(calls.some((u) => u.includes("/_superset/bind?dashboard=8"))).toBe(true);
+    expect(btn().style.display).toBe("none");
+    // And back: the button returns.
+    window.history.pushState({}, "", "/superset/dashboard/6/");
+    await tick(1000);
+    expect(btn().style.display).toBe("inline-flex");
+  });
 });
 
 type Chat = { mount: (root: HTMLElement, opts: Record<string, unknown>) => { send: (t: string) => Promise<void>; setOffline: (on: boolean) => void } };
