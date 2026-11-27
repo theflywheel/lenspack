@@ -1,8 +1,9 @@
 import { type ScopeClause, filterClauseSchema } from "@lenspack/core";
 import { type BuiltPack, type Pack, type PackDimension, WHERE_OPS, emitPack, packBuilder, slug as packSlug } from "@lenspack/pack";
 
-import { type SupersetClient, rison } from "./client";
+import { SupersetError, type SupersetClient, rison } from "./client";
 import { examplesForPack } from "./examples";
+import { StartupConfigError, transient } from "./startup";
 
 // Superset's datasets are the catalogue: a dataset is an entity, its saved
 // metrics are measures, its groupable columns are dimensions. The pack built
@@ -229,6 +230,12 @@ export type FetchOptions = {
   backoffMs?: number[];
   sleep?: (ms: number) => Promise<void>;
   log?: (s: string) => void;
+  /**
+   * false: only answers that came back wrong (another dataset's, incomplete, none) are tried again here; a request
+   * that failed (no connection, a 5xx, a refused sign-in) is thrown at once, for a caller that retries on its own
+   * (the start-up, startup.ts). Default true.
+   */
+  retryErrors?: boolean;
 };
 
 /**
@@ -248,6 +255,7 @@ export async function fetchDatasets(client: SupersetClient, refs: (number | stri
         return await once();
       } catch (e) {
         last = e;
+        if (opts.retryErrors === false && (e instanceof SupersetError || transient(e))) throw e;
         if (i < attempts - 1) {
           opts.log?.(`${what}: ${e instanceof Error ? e.message : String(e)}; trying again`);
           await sleep(backoff[Math.min(i, backoff.length - 1)] ?? 1000);
@@ -268,8 +276,10 @@ export async function fetchDatasets(client: SupersetClient, refs: (number | stri
       const rows = found?.result ?? [];
       const exact = rows.filter((r) => r.table_name === table && (!schema || r.schema === schema));
       if (exact.length === 1) return exact[0]!.id;
-      if (exact.length > 1) throw new Error(`Superset dataset "${ref}": more than one matches; name the schema`);
-      throw new Error(`Superset dataset "${ref}": ${rows.length ? `the lookup answered with ${rows.map((r) => `"${r.schema ? `${r.schema}.` : ""}${r.table_name}"`).join(", ")}` : "not found"}`);
+      // Signed in, and Superset says so: a mistake in datasets: that no wait fixes (StartupConfigError stops a start).
+      if (exact.length > 1) throw new StartupConfigError(`Superset dataset "${ref}": more than one matches; name the schema`);
+      if (!rows.length) throw new StartupConfigError(`Superset dataset "${ref}": not found`);
+      throw new Error(`Superset dataset "${ref}": the lookup answered with ${rows.map((r) => `"${r.schema ? `${r.schema}.` : ""}${r.table_name}"`).join(", ")}`);
     });
   };
   const out: SupersetDataset[] = [];
@@ -278,7 +288,12 @@ export async function fetchDatasets(client: SupersetClient, refs: (number | stri
     const table = typeof ref === "string" && !/^\d+$/.test(ref) ? (ref.includes(".") ? ref.split(".", 2)[1] : ref) : undefined;
     out.push(
       await retry(`Superset dataset ${id}${table ? ` ("${table}")` : ""}`, async () => {
-        const ds = (await client.get<{ result: SupersetDataset }>(`/api/v1/dataset/${id}`))?.result;
+        const ds = (
+          await client.get<{ result: SupersetDataset }>(`/api/v1/dataset/${id}`).catch((e) => {
+            if (e instanceof SupersetError && e.status === 404) throw new StartupConfigError(`Superset dataset ${id}${table ? ` ("${table}")` : ""}: not found`);
+            throw e;
+          })
+        )?.result;
         const why = incompleteDataset(ds, id, table);
         if (why) throw new Error(`Superset dataset ${id}${table ? ` ("${table}")` : ""} came back incomplete: ${why}`);
         return ds;

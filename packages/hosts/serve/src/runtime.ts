@@ -1,4 +1,4 @@
-import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
+import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
 
 import type { Principal } from "@lenspack/policy";
 
@@ -41,8 +41,54 @@ export function budgetFromEnv(env: NodeJS.ProcessEnv = process.env): Budget | un
   return day || user ? { ...(day ? { usdPerDay: day } : {}), ...(user ? { usdPerUserPerDay: user } : {}) } : undefined;
 }
 
+/**
+ * The server's address, answered while a host is still starting (reaching its source, building its pack): GET /healthz
+ * 200 with ready false (the process is alive), GET /readyz 503 with why, and anything else 503 "starting" with a
+ * Retry-After, which the chat's scripts read as "restarting, reconnecting". startRuntime({ starting }) takes the same
+ * listening socket over, so the address never goes dark between the two. close() stops it, for a start that fails.
+ */
+export type StartingServer = {
+  readonly server: Server;
+  /** Why it is not ready yet, for /readyz and /healthz (one plain sentence). */
+  reason(why: string): void;
+  /** Hands the socket on (startRuntime does this): the request handler and the SIGTERM and SIGINT handlers are removed. */
+  release(): Server;
+  close(): void;
+};
+
+export function startingServer(o: { port: number; host: string; reason?: string; log?: (line: string) => void }): StartingServer {
+  let why = o.reason ?? "starting";
+  const handler = (req: IncomingMessage, res: ServerResponse) => {
+    const path = new URL(req.url ?? "/", "http://x").pathname;
+    if (path === "/healthz") return json(res, 200, { ok: true, ready: false, starting: why }, NO_STORE);
+    if (path === "/readyz") return json(res, 503, { ready: false, reason: why }, NO_STORE);
+    json(res, 503, { error: `The assistant is starting and can't answer yet (${why}). Try again shortly.`, code: "starting" }, { ...NO_STORE, "retry-after": "5" });
+  };
+  const server = createServer(handler);
+  // As a container's PID 1, node ignores SIGTERM unless told otherwise: nothing to close yet, so just leave.
+  const quit = () => process.exit(0);
+  for (const sig of ["SIGTERM", "SIGINT"] as const) process.on(sig, quit);
+  const off = () => {
+    server.off("request", handler);
+    for (const sig of ["SIGTERM", "SIGINT"] as const) process.off(sig, quit);
+  };
+  server.listen(o.port, o.host, () => o.log?.(`answering /healthz and /readyz on ${o.host}:${o.port} while starting; not ready yet`));
+  return {
+    server,
+    reason: (r) => void (why = r),
+    release: () => (off(), server),
+    close: () => {
+      off();
+      server.close();
+      server.closeAllConnections();
+    },
+  };
+}
+
 export function startRuntime(o: {
   hosts: Host[];
+  /** The address already answering while the host started (startingServer): taken over instead of listening anew. */
+  starting?: StartingServer;
   /** The board API's options; the runtime adds providers, roles, ledger, budget and log. */
   app?: Omit<AppOptions, "providers" | "roles" | "ledger" | "budget" | "log">;
   port: number;
@@ -95,7 +141,7 @@ export function startRuntime(o: {
     setHost: api.setHost,
   };
   const routes = o.routes?.(rt);
-  const server = createServer(async (req, res) => {
+  const handle = async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://x");
     try {
       await routes?.(req, res, url, async () => (access ? access(req) : null));
@@ -112,7 +158,17 @@ export function startRuntime(o: {
       // A settings write the disk refused changed nothing, and saying so beats a bare 500.
       if (!res.headersSent) json(res, e instanceof SettingsSaveError ? 503 : 500, { error: message }, NO_STORE);
     }
-  });
-  server.listen(o.port, o.host, () => o.onListening?.(rt));
+  };
+  const listening = () => o.onListening?.(rt);
+  let server: Server;
+  if (o.starting) {
+    server = o.starting.release();
+    server.on("request", handle);
+    if (server.listening) setImmediate(listening);
+    else server.once("listening", listening);
+  } else {
+    server = createServer(handle);
+    server.listen(o.port, o.host, listening);
+  }
   return { server, ledger, ...rt };
 }

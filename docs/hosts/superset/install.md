@@ -148,7 +148,8 @@ does the same.
 
 It is the same server runtime as `lenspack serve` (models, metering, budget, audit, `/healthz`, a clean exit on
 SIGTERM), with Superset as its host. On Kubernetes, point the readiness probe at `/readyz` and the liveness probe at
-`/healthz`: the server is not ready until Superset gives it the identity key, which it keeps asking for (see
+`/healthz`. If Superset is not up yet, or refuses Lenspack's sign-in, the server keeps trying (up to once a minute)
+and stays up, not ready, until Superset answers and gives it the identity key; it does not exit and restart (see
 [Health and shutdown](../../operating/deploying.md#health-and-shutdown)).
 
 **Who is an admin, and who may use it.** By default Superset's admins run the assistant and everyone signed in may use

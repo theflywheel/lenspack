@@ -4,10 +4,11 @@ import type { Board, BoardConfig, BoardOp, BoardStore, BoardTab, BoardView } fro
 import type { Pack } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
-import type { SupersetClient } from "./client";
+import { SupersetError, type SupersetClient } from "./client";
 import { type DashboardState, MOVE_REFUSAL, type PlacementHint, dashboardToBoard, pushBoard, readDashboard } from "./dashboard";
 import { type Position, hasTabs, nestedLayout, tabsOf } from "./layout";
 import { diskProblem, writeWhole } from "@lenspack/serve";
+import { StartupConfigError, startupCause, transient } from "./startup";
 
 // Superset stays the record. A board bound to a dashboard is read from
 // Superset when Superset has changed (someone edited it there), and every
@@ -34,11 +35,19 @@ export type SupersetBoardsOptions = {
   protectedTabs?: (boardId: string, before: BoardConfig) => readonly string[] | Promise<readonly string[]>;
   /** How often a read checks Superset for edits made there. Default 3s. */
   checkEveryMs?: number;
+  /** seed()'s waits before reading a dashboard again after a dropped connection or a 5xx. Default 0.5, 1, 2 s. */
+  seedWaitsMs?: number[];
+  sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
 };
 
 export type SupersetBoards = BoardStore & {
   pull(id: string, force?: boolean): Promise<void>;
+  /**
+   * Reads every bound dashboard from Superset, at start. A dashboard whose read fails in passing (Superset closed the
+   * connection, a 5xx) is read again after a short wait, a few times, before seed() fails (and the start-up tries it
+   * again later); a dashboard Superset says doesn't exist stops the start (StartupConfigError).
+   */
   seed(): Promise<void>;
   notes: Map<string, string[]>;
   /** The board's widgets that stand for Superset charts Lenspack can't redraw. */
@@ -182,7 +191,21 @@ export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
       return tabsOf(pos).map((t) => ({ id: t.id, title: t.titles.join(" › "), widgets: t.components.map((c) => widgetOf.get(c)).filter((w): w is string => !!w) }));
     },
     async seed() {
-      for (const id of Object.keys(opts.dashboards)) await serial(id, () => pullNow(id, true));
+      const waits = opts.seedWaitsMs ?? [500, 1000, 2000];
+      const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+      for (const id of Object.keys(opts.dashboards)) {
+        for (let i = 0; ; i++) {
+          try {
+            await serial(id, () => pullNow(id, true));
+            break;
+          } catch (e) {
+            if (e instanceof SupersetError && e.status === 404) throw new StartupConfigError(`dashboard ${opts.dashboards[id]} (in dashboards:) does not exist in Superset: ${e.message}`);
+            if (!transient(e) || i >= waits.length) throw e;
+            log(`${id}: reading dashboard ${opts.dashboards[id]} failed (${startupCause(e)}); reading it again in ${waits[i]! / 1000} s`);
+            await sleep(waits[i]!);
+          }
+        }
+      }
     },
     pull: (id, force = false) => serial(id, () => pullNow(id, force)),
     async get(id) {

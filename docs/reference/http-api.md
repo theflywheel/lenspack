@@ -11,8 +11,10 @@ caller may not open answers `404`, the same as one that is not there.
 
 `GET /healthz` answers `{ "ok": true, … }` without sign-in, on `lenspack serve` and the Superset host (the demo has
 none). Use it for liveness checks. `GET /readyz` answers `200 { "ready": true }` when the server can answer requests,
-else `503 { "ready": false, "reason": "…" }` (the Superset host, until Superset has given it the identity key). Use it
-for readiness checks.
+else `503 { "ready": false, "reason": "…" }` (the Superset host, while it is still starting: until it has reached
+Superset, read the datasets and dashboards and been given the identity key; the reason says which step it is on and
+when it tries again). Use it for readiness checks. While the Superset host is starting, every other route answers
+`503 { "error": "…", "code": "starting" }` with a `Retry-After` header.
 
 ## The board API
 

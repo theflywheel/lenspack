@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type SupersetClient, supersetClient } from "./client";
+import { StartupConfigError } from "./startup";
 
 export type ServiceAccount = { username: string; password: string; source: "env" | "state" | "bootstrap" };
 
@@ -50,7 +51,7 @@ export async function serviceAccount(o: BootstrapOptions): Promise<ServiceAccoun
   }
 
   if (!o.admin?.password)
-    throw new Error(
+    throw new StartupConfigError(
       `No Superset account for Lenspack: set SUPERSET_ADMIN_PASSWORD (and SUPERSET_ADMIN_USERNAME if the admin isn't "admin") for the first start, or LENSPACK_SUPERSET_PASSWORD for an account you manage`,
     );
   const admin = make({ url: o.url, username: o.admin.username || "admin", password: o.admin.password });
