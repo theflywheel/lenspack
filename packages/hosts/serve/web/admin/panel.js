@@ -201,6 +201,36 @@
     dataH: "Jeux de données", dPack: "Pack", dEntity: "Lu comme", dTable: "Jeu de données", dWarnings: "Écartés ou renommés", dDashboards: "Tableaux ouverts", dEdit: "Modifier dans Superset",
   });
 
+  // The Pack tab (a host that lets admins change the pack while it runs: Superset).
+  Object.assign(STRINGS.en, {
+    tabPack: "Pack", lede_pack: "The pack {name} reads: change its words, measures and example questions here, with no redeploy.",
+    pkNow: "As it runs", pkVersion: "Version {0}, by {1}, {2}", pkConfigOnly: "The deploy config alone (version 0).",
+    pkNotApplied: "The changes saved as version {0} no longer build against Superset's datasets, so the deploy config alone is in force: {1}. Fix them below, or reset.",
+    pkPart: "Part", pkFrom: "From", pk_config: "the deploy config", pk_settings: "changed here", "pk_config and settings": "the deploy config, and more here", pk_none: "not set",
+    pkCounts: "{0} datasets, {1} dimensions, {2} measures",
+    pkResetPart: "Back to the config", pkResetAll: "Everything back to the config", pkResetQ: "Hand {0} back to the deploy config?", pkResetAllQ: "Hand every change back to the deploy config?",
+    pkEdit: "Edit", pkEditLede: "The pack's parts that may change while it runs, as YAML. A part you remove follows the deploy config. Validate checks the change against Superset's datasets now; Save also makes it a new version, in force at once.",
+    pkWhy: "Why (kept with the version)", pkValidate: "Validate", pkSave: "Save", pkOk: "The change is valid: {0}.", pkOkNone: "Nothing would change.", pkProblems: "Not changed. Fix these first:", pkWarnings: "Warnings (not blocking):",
+    pkSaved: "Saved as version {0}.", pkConfigOnlyH: "Set in the deploy config only", pkConfigOnlyLede: "These parts, the datasets, the row scope, dashboards, access, budgets and models change only with the deploy config.",
+    pkVersions: "Versions", pkV: "Version", pkWhen: "When", pkBy: "By", pkWhat: "What changed", pkRevert: "Go back to this", pkRevertQ: "Go back to version {0}? It becomes a new version.", pkDiff: "Changes", pkCurrent: "in force",
+    pkExport: "Export as YAML", pkExportLede: "The whole overlay as it runs, to paste as overlay: in superset.yaml. Once it is there, reset the changes here.", pkNoVersions: "No changes yet: the deploy config alone decides.", pkV0: "the deploy config alone",
+    pkWas: "Before", pkIs: "After", pkNotHere: "This host does not let the pack change while it runs.",
+  });
+  Object.assign(STRINGS.fr, {
+    tabPack: "Pack", lede_pack: "Le pack que lit {name} : changez ici ses mots, ses mesures et ses questions d'exemple, sans redéploiement.",
+    pkNow: "Tel qu'il tourne", pkVersion: "Version {0}, par {1}, {2}", pkConfigOnly: "La configuration du déploiement seule (version 0).",
+    pkNotApplied: "Les changements enregistrés en version {0} ne se construisent plus avec les jeux de données de Superset ; la configuration seule s'applique : {1}. Corrigez-les ci-dessous, ou réinitialisez.",
+    pkPart: "Partie", pkFrom: "Origine", pk_config: "la configuration", pk_settings: "changé ici", "pk_config and settings": "la configuration, et plus ici", pk_none: "non défini",
+    pkCounts: "{0} jeux de données, {1} dimensions, {2} mesures",
+    pkResetPart: "Revenir à la configuration", pkResetAll: "Tout revenir à la configuration", pkResetQ: "Rendre {0} à la configuration du déploiement ?", pkResetAllQ: "Rendre tous les changements à la configuration du déploiement ?",
+    pkEdit: "Modifier", pkEditLede: "Les parties du pack modifiables pendant qu'il tourne, en YAML. Une partie retirée suit la configuration. Valider vérifie le changement avec les jeux de données de Superset ; Enregistrer en fait aussi une nouvelle version, appliquée aussitôt.",
+    pkWhy: "Pourquoi (gardé avec la version)", pkValidate: "Valider", pkSave: "Enregistrer", pkOk: "Le changement est valide : {0}.", pkOkNone: "Rien ne changerait.", pkProblems: "Rien n'a changé. À corriger d'abord :", pkWarnings: "Avertissements (non bloquants) :",
+    pkSaved: "Enregistré en version {0}.", pkConfigOnlyH: "Fixé par la configuration seule", pkConfigOnlyLede: "Ces parties, les jeux de données, le périmètre des lignes, les tableaux de bord, les accès, les budgets et les modèles ne changent qu'avec la configuration du déploiement.",
+    pkVersions: "Versions", pkV: "Version", pkWhen: "Quand", pkBy: "Par", pkWhat: "Ce qui a changé", pkRevert: "Revenir à celle-ci", pkRevertQ: "Revenir à la version {0} ? Elle devient une nouvelle version.", pkDiff: "Changements", pkCurrent: "en vigueur",
+    pkExport: "Exporter en YAML", pkExportLede: "Tout l'overlay tel qu'il tourne, à coller sous overlay: dans superset.yaml. Une fois fait, réinitialisez les changements ici.", pkNoVersions: "Aucun changement : la configuration seule décide.", pkV0: "la configuration seule",
+    pkWas: "Avant", pkIs: "Après", pkNotHere: "Cet hôte ne permet pas de changer le pack pendant qu'il tourne.",
+  });
+
   // The switches' names and help in French; English comes from the server.
   const FEATURES_FR = {
     overlay: ["Bouton de l'assistant", "Le bouton et la discussion sur les tableaux de bord."],
@@ -351,6 +381,8 @@
     { id: "questions", grp: "gAnswers", label: "tabQuestions" },
     { id: "proposals", grp: "gAnswers", label: "tabProposals" },
     { id: "definitions", grp: "gAnswers", label: "tabDefinitions" },
+    // A host's own route, beside the definitions: only where the host offers it (Superset).
+    { id: "pack", grp: "gAnswers", label: "tabPack", host: true },
     { id: "cache", grp: "gAnswers", label: "tabCache" },
     { id: "models", grp: "gConfig", label: "tabModels" },
     { id: "access", grp: "gConfig", label: "tabAccess" },
@@ -360,7 +392,7 @@
     { id: "spend", grp: "gRecords", label: "tabSpend" },
   ];
   const sections = shell.sections || "all";
-  const shownTabs = () => TAB_DEFS.filter((d) => (d.superset ? !!shell.superset : true) && (sections === "all" || (sections === "lenspack" ? !d.superset : d.superset)));
+  const shownTabs = () => TAB_DEFS.filter((d) => (d.superset || d.host ? !!shell.superset : true) && (sections === "all" || (sections === "lenspack" ? !d.superset : d.superset)));
   const markEl = root.querySelector(".mark") || h("span", { class: "mark", "aria-hidden": "true" });
   if (!markEl.classList.contains("icon")) markEl.textContent = Array.from(assistant.trim())[0]?.toLocaleUpperCase() || "L";
   const titleEl = h("h1", {});
@@ -1371,7 +1403,124 @@
     : null;
   const telemetry = tel ? tel.render : async () => [card(t("tabTelemetry"), null, h("p", { class: "empty" }, t("failed", "telemetry.js")))];
   const openField = (id) => (tel ? tel.openField(id) : null);
-  const TABS = { overview, review, questions, proposals, definitions, cache, models, access, settings, assistant: assistantTab, telemetry, spend };
+
+  // ---- Pack -------------------------------------------------------------------------------------
+  // The pack's runtime parts (the host's <prefix>/settings/pack): as YAML, checked and saved as versions.
+  /** A pack route's answer whatever its status, so refusals (with their problems) are shown, not thrown. */
+  async function packApi(path, opts = {}) {
+    const res = await fetch(`${HOST}settings/pack${path}`, {
+      method: opts.method || (opts.body ? "POST" : "GET"),
+      headers: opts.body ? { "content-type": "application/json" } : {},
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      credentials: "same-origin",
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON */ }
+    return { ok: res.ok, status: res.status, data: data || {} };
+  }
+  async function packTab() {
+    const [now, list] = await Promise.all([packApi(""), packApi("/versions?limit=50")]);
+    if (now.status === 404) return card(null, null, h("p", { class: "empty" }, t("pkNotHere")));
+    if (!now.ok) throw new Error(now.data.error || `HTTP ${now.status}`);
+    const p = now.data;
+    const versions = list.ok ? list.data.versions : [];
+    const byOf = (v) => v.by || "—";
+    const result = h("div", { "aria-live": "polite" });
+    const showResult = (r, okText) => {
+      const d = r.data;
+      const problems = d.problems || (r.ok ? [] : [d.error || `HTTP ${r.status}`]);
+      result.replaceChildren(
+        problems.length ? h("div", { class: "bad-line" }, h("b", {}, t("pkProblems")), h("ul", {}, problems.map((x) => h("li", { class: "mono" }, x)))) : h("p", { class: "note" }, okText(d)),
+        d.warnings && d.warnings.length ? h("details", { class: "note" }, h("summary", {}, t("pkWarnings")), h("ul", {}, d.warnings.map((x) => h("li", {}, x)))) : null);
+    };
+    const yaml = h("textarea", { rows: 22, class: "mono", spellcheck: "false", "aria-label": t("pkEdit"), style: "width:100%;min-height:320px" });
+    yaml.value = p.yaml || "";
+    const why = h("input", { type: "text", maxlength: "500" });
+    const changedText = (d) => (d.changed && d.changed.length ? t("pkOk", d.changed.join(", ")) : t("pkOkNone"));
+    const validate = async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try { showResult(await packApi("/validate", { body: { yaml: yaml.value } }), changedText); } finally { b.disabled = false; }
+    };
+    const save = async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try {
+        const r = await packApi("", { method: "PUT", body: { yaml: yaml.value, why: why.value, version: p.version } });
+        if (!r.ok) return showResult(r, changedText);
+        toast(t("pkSaved", r.data.version.version));
+        await render("pack-edit");
+      } finally { if (b.isConnected) b.disabled = false; }
+    };
+    const post = (path, body, confirmText) => async (ev) => {
+      if (confirmText && !window.confirm(confirmText)) return;
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try {
+        const r = await packApi(path, { body });
+        if (!r.ok) { toast(r.data.error || `HTTP ${r.status}`, true); return; }
+        toast(t("pkSaved", r.data.version.version));
+        await render();
+      } finally { if (b.isConnected) b.disabled = false; }
+    };
+    const head = p.version
+      ? t("pkVersion", p.version, byOf({ by: p.changedBy || "" }), when(p.changedAt))
+      : t("pkConfigOnly");
+    const parts = h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, t("pkPart")), h("th", {}, t("pkFrom")), h("th", {}))),
+      h("tbody", {}, (p.runtimeFields || []).map((f) => {
+        const src = (p.sources || {})[f] || "none";
+        return h("tr", {}, h("td", {}, h("code", {}, f)), h("td", {}, pill(t(`pk_${src}`), src === "settings" || src === "config and settings" ? "acc" : "")),
+          h("td", { style: "text-align:right" }, f in (p.layer || {}) ? h("button", { class: "btn sm quiet", type: "button", onclick: post("/reset", { fields: [f] }, t("pkResetQ", f)) }, t("pkResetPart")) : null));
+      }))));
+    const exportHref = (v) => `${HOST}settings/pack/export?download=1${v === undefined ? "" : `&version=${v}`}`;
+    const diffBox = (v) => {
+      const box = h("div", {});
+      const btn = h("button", { class: "btn sm quiet", type: "button", onclick: async () => {
+        if (box.childNodes.length) return box.replaceChildren();
+        const r = await packApi(`/diff?from=${Math.max(0, v - 1)}&to=${v}`);
+        box.replaceChildren(...(r.ok ? r.data.fields : []).map((x) => h("div", { style: "margin-top:8px" }, h("code", {}, x.field),
+          h("div", { class: "row", style: "gap:8px;align-items:flex-start;flex-wrap:wrap" },
+            h("div", { style: "flex:1;min-width:200px" }, h("div", { class: "mute" }, t("pkWas")), h("pre", {}, x.from === null ? "—" : JSON.stringify(x.from, null, 2))),
+            h("div", { style: "flex:1;min-width:200px" }, h("div", { class: "mute" }, t("pkIs")), h("pre", {}, x.to === null ? "—" : JSON.stringify(x.to, null, 2)))))));
+      } }, t("pkDiff"));
+      return [btn, box];
+    };
+    const versionRows = versions.length
+      ? h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, t("pkV")), h("th", {}, t("pkWhat")), h("th", { class: "hide-s" }, t("pkBy")), h("th", {}))),
+          h("tbody", {}, versions.map((v) => {
+            const [btn, box] = diffBox(v.version);
+            return h("tr", {},
+              h("td", { class: "mono" }, `v${v.version}`, v.version === p.version && !p.notApplied ? h("div", {}, pill(t("pkCurrent"), "ok")) : null),
+              h("td", {}, v.summary, v.why ? h("div", { class: "mute", style: "font-size:12.5px" }, v.why) : null, box),
+              h("td", { class: "hide-s mute", style: "font-size:12.5px;white-space:nowrap" }, `${byOf(v)}, ${when(v.at)}`),
+              h("td", { style: "white-space:nowrap;text-align:right" }, btn, " ",
+                v.version !== p.version ? h("button", { class: "btn sm quiet", type: "button", onclick: post("/revert", { version: v.version }, t("pkRevertQ", v.version)) }, t("pkRevert")) : null, " ",
+                h("a", { class: "btn sm ghost", href: exportHref(v.version) }, "YAML")));
+          }))))
+      : h("p", { class: "empty" }, t("pkNoVersions"));
+    const configOnly = h("div", { class: "scroll" }, h("table", {}, h("tbody", {}, (p.configOnly || []).map((c) => h("tr", {},
+      h("td", {}, h("code", {}, c.field)), h("td", { class: "mono" }, c.value === null || c.value === undefined ? "—" : typeof c.value === "string" ? c.value : JSON.stringify(c.value)), h("td", { class: "mute hide-s", style: "font-size:12.5px" }, c.reason))))));
+    const edit = card(t("pkEdit"), t("pkEditLede"),
+      yaml,
+      h("label", { class: "field", style: "margin-top:10px" }, h("span", {}, t("pkWhy")), why),
+      h("div", { class: "actions" }, h("button", { class: "btn quiet", type: "button", onclick: validate }, t("pkValidate")), h("button", { class: "btn", type: "button", onclick: save }, t("pkSave"))),
+      result);
+    edit.id = "pack-edit";
+    return [
+      card(t("pkNow"), null,
+        h("div", { class: "spread" }, h("b", {}, head), h("span", { class: "mute" }, t("pkCounts", nf(p.pack.datasets), nf(p.pack.dimensions), nf(p.pack.measures)))),
+        p.notApplied ? h("div", { class: "bad-line" }, t("pkNotApplied", p.notApplied.version, p.notApplied.why)) : null,
+        h("div", { style: "margin-top:12px" }, parts),
+        Object.keys(p.layer || {}).length || p.notApplied ? h("div", { class: "actions" }, h("button", { class: "btn sm danger", type: "button", onclick: post("/reset", {}, t("pkResetAllQ")) }, t("pkResetAll"))) : null,
+        p.warnings && p.warnings.length ? h("details", { class: "note" }, h("summary", {}, t("pkWarnings")), h("ul", {}, p.warnings.map((x) => h("li", {}, x)))) : null),
+      edit,
+      card(t("pkVersions"), null, versionRows),
+      card(t("pkExport"), t("pkExportLede"), h("div", { class: "actions" }, h("a", { class: "btn quiet", href: exportHref() }, t("pkExport")))),
+      card(t("pkConfigOnlyH"), t("pkConfigOnlyLede"), configOnly),
+    ];
+  }
+
+  const TABS = { overview, review, questions, proposals, definitions, pack: packTab, cache, models, access, settings, assistant: assistantTab, telemetry, spend };
   let rendering = 0;
   // Who became an admin since this admin's last visit (the admins roster): said at the top of every tab, once loaded.
   let newAdmins = [];
