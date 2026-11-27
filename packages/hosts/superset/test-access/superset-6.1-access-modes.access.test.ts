@@ -344,6 +344,36 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
       expect((await script().send("PUT", "/lenspack/_admin/settings/brand", { headers: bearer(), body: { name: null } })).status).toBe(200);
     });
 
+    it("changes the pack through /lenspack/_admin/settings/pack: checked against Superset's datasets, used by the chat at once, then reset", async () => {
+      const send = (method: string, path: string, body?: object) => script().send(method, `/lenspack/_admin/settings/pack${path}`, { headers: bearer(), ...(body === undefined ? {} : { body }) });
+      // A measure on a column the dataset doesn't have: refused, as Superset describes the dataset, nothing changed.
+      const bad = await send("PUT", "", { fields: { measures: [{ dataset: "visits", name: "weight", agg: "sum", column: "weight_kg" }] } });
+      expect([bad.status, bad.json?.error]).toEqual([400, expect.stringMatching(/column "weight_kg" is not a column of Superset dataset "visits"/)]);
+      expect((await send("GET", "")).json.version).toBe(0);
+      const fields = {
+        labels: { region: "Sales region" },
+        measures: [{ dataset: "visits", name: "largest_visit", agg: "max", column: "visits" }],
+        examples: [{ question: "Largest visit by region", query: { kind: "breakdown", dimension: "region", measure: "largest_visit" } }],
+      };
+      expect((await send("POST", "/validate", { fields })).json).toMatchObject({ ok: true, changed: ["labels", "measures", "examples"] });
+      const put = await send("PUT", "", { why: "access suite", fields });
+      expect(put.status, put.text).toBe(200);
+      expect(put.json.version).toMatchObject({ version: 1, by: "api:ci", changed: ["labels", "measures", "examples"] });
+      // The chat's pack has it at once, and a question on the new measure is answered by Superset.
+      const pack = (await s.lp_admin!.lp("GET", `api/${PACK}/pack`)).json.yaml as string;
+      expect(pack).toContain("largest_visit");
+      expect(pack).toContain("Sales region");
+      const answered = readChat(await s.lp_admin!.lp("POST", `api/${PACK}/${A}/chat?review=off`, { messages: [{ id: `m${Date.now()}`, role: "user", parts: [{ type: "text", text: `TOOL query ${JSON.stringify({ query_kind: "breakdown", measure: "largest_visit", dimension: "region" })}` }] }] }));
+      expect(answered.status, answered.error).toBe(200);
+      expect(Object.keys(byGroup(answered.tools[0]!.output.rows)).length).toBeGreaterThan(0);
+      expect((await s.lp_viewer!.lp("GET", "_superset/info")).json.examples).toContain("Largest visit by region");
+      const lines = (await audit(s.lp_owner!)).map((e) => `${e.user} ${e.action} ${e.outcome} ${e.detail ?? ""}`.trim());
+      expect(lines).toContain("api:ci pack edit ok version 1: labels, measures, examples (access suite)");
+      // Everything back to the deploy config.
+      expect((await send("POST", "/reset", {})).json.version).toMatchObject({ version: 2, summary: "everything back to the deploy config" });
+      expect((await s.lp_admin!.lp("GET", `api/${PACK}/pack`)).json.yaml).not.toContain("largest_visit");
+    });
+
     it("refuses a wrong key, and is not passed on by any other Superset route", async () => {
       const wrong = await script().send("GET", "/lenspack/_admin/whoami", { headers: bearer(`${API_KEY}-wrong`) });
       expect([wrong.status, wrong.json?.error]).toEqual([401, "not a valid admin API key"]);

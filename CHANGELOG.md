@@ -11,6 +11,18 @@ brought it.
 
 ### 27 November 2026
 
+- **Change the pack while it runs.** Admins can change the pack's description, instructions, labels, hints, measures,
+  example questions, `notDimensions` and hierarchies, and add exclusions, with no redeploy and no restart: on the
+  settings routes (`/_superset/settings/pack`), or with an admin API key at `…/lenspack/_admin/settings/pack`. The
+  overlay in `superset.yaml` stays the base; the changes are a layer over it, kept as versions in `pack-layer.json` in
+  the state directory (who, when, why and what changed), which can be listed, compared, gone back to, reset part by
+  part, and exported as YAML to write back into `superset.yaml`. Each change is checked as at start-up against
+  Superset's datasets as they are now, example questions included, and refused with nothing changed if it adds a
+  problem. A change is in force from the next request; a question already being answered finishes on the old pack,
+  and saved answers kept under the old pack are not served. Datasets, the row scope, dashboards, access, budgets,
+  models, the pack's name, entity keys and time zone stay in `superset.yaml`, and an exclusion it makes can't be
+  removed. Each change is audited as `pack edit`, `pack revert` or `pack reset` with who made it. Nothing changes
+  until an admin makes a change. See [Changing the pack while it runs](docs/hosts/superset/pack-runtime.md).
 - **An admin API key, for scripts and for deployments with no server access.** Set `LENSPACK_ADMIN_API_KEYS` (one
   `name:key` per key, or a mounted file with `LENSPACK_ADMIN_API_KEYS_FILE`; best as a `scrypt$` hash from
   `lenspack hash-password`, so the Secret holds only the hash) and send `Authorization: Bearer <key>` to

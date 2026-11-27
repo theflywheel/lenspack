@@ -15,7 +15,14 @@ import { SettingsSaveError } from "./settings";
 
 /** A host's routes: they answer by responding, or leave the request to the rest. */
 export type Route = (req: IncomingMessage, res: ServerResponse, url: URL, who: () => Promise<Principal | null>) => void | Promise<void>;
-export type Runtime = { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } };
+export type Runtime = {
+  providers: Provider[];
+  budget?: Budget;
+  ledger?: UsageLedger;
+  roles?: { reviewer?: string; escalate?: string };
+  /** Hands a hosted pack name a new pack while the server runs (createApp's setHost). */
+  setHost?: ReturnType<typeof createApp>["setHost"];
+};
 
 /** LENSPACK_LLM_PROVIDERS (or LENSPACK_LLM_*); else, with ANTHROPIC_API_KEY, Claude Sonnet, Opus and Haiku 5.5. */
 export function serverProviders(env: NodeJS.ProcessEnv = process.env): ProviderConfig[] {
@@ -74,7 +81,7 @@ export function startRuntime(o: {
   const roles = env.LENSPACK_LLM_ROLES ? JSON.parse(env.LENSPACK_LLM_ROLES) : undefined;
   const api = createApp(o.hosts, { ...o.app, providers, roles, ledger, budget, log: o.log });
   const access = accessOf(o.app ?? {});
-  const rt: Runtime = { providers, budget, ledger, roles };
+  const rt: Runtime = { providers, budget, ledger, roles, setHost: api.setHost };
   const routes = o.routes?.(rt);
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");

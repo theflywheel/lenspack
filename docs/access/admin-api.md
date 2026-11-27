@@ -147,6 +147,19 @@ curl -s -X POST -H "$AUTH" -H 'content-type: application/json' -d '{"why": "wron
 `kind` is `instruction`, `hint` (with `key`, a measure or dimension), `synonym` (with `key` and `words`) or
 `definition` (with `when`). Edit or remove one with `POST …/definitions/<id>/edit` or `…/<id>/remove`.
 
+**Change the pack** (labels, hints, measures, example questions, `notDimensions`, hierarchies, more exclusions),
+**checking first, then go back if needed:**
+
+```sh
+curl -s -H "$AUTH" $LP/settings/pack
+curl -s -X POST -H "$AUTH" -H 'content-type: application/json' -d '{"fields": {"labels": {"region": "Sales region"}}}' $LP/settings/pack/validate
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"fields": {"labels": {"region": "Sales region"}}, "why": "clearer word"}' $LP/settings/pack
+curl -s -X POST -H "$AUTH" -H 'content-type: application/json' -d '{"version": 0}' $LP/settings/pack/revert
+```
+
+Each change is checked against Superset's datasets as at start-up, and refused with nothing changed if it adds a
+problem. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md) for every route and what can't change.
+
 **Read the audit log** (newest first; `?month=2026-11`, `?limit=`), **and recent turns and their cost:**
 
 ```sh
@@ -188,11 +201,13 @@ own. Each wrong key is in the audit log as `api:?` with the address, never the k
 
 These can't be changed with a key (or on the admin pages); they live in `superset.yaml` or the environment:
 
-- the datasets, dashboards and the pack's overlay in `superset.yaml`: labels, measures, the example questions and the
-  pack's own row scope;
+- the datasets, dashboards and the pack's own row scope, and the overlay's `pack`, `entities`, `timeZone`, `geo`,
+  `mapStyle` and `panel` (the rest of the overlay can change while the server runs: see
+  [Changing the pack while it runs](../hosts/superset/pack-runtime.md)); an exclusion `superset.yaml` makes can't be
+  removed;
 - the models on offer and their keys (`LENSPACK_LLM_PROVIDERS`, speech keys), and the daily budget caps;
 - who is an admin and who may use the assistant (`auth.adminAccess`, `auth.userAccess`, roles, owners, passwords),
   the admin API keys themselves, the host policy, the edit policy and where the admin pages are (`admin.surface`).
 
-Grants made on the Access tab (admins under `superset-users`, users under `granted`) and everything in the definitions
-are kept in the state directory and survive restarts.
+Grants made on the Access tab (admins under `superset-users`, users under `granted`), everything in the definitions and
+changes to the pack are kept in the state directory and survive restarts.
