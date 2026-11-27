@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { ADMIN_ROLE, PASSWORD_ROLE, adminAccessModesFrom, passwordNameOk, adminSurfaceFrom, surfacePlan, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { ADMIN_ROLE, PASSWORD_ROLE, adminAccessModesFrom, adminMenuHint, passwordNameOk, adminSurfaceFrom, surfacePlan, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -469,6 +469,19 @@ describe("who is an admin: the access modes, alone and combined", () => {
     expect(adminRights(passwordAdmin("breakglass"), a)).toMatchObject({ administer: true, owner: true, via: "password" });
     // Without the password mode, the same session lets nobody in.
     expect(adminRights(passwordAdmin("breakglass"), access(["superset-users"], { owners: ["olga"] })).administer).toBe(false);
+  });
+
+  it("the menu hint names what makes an admin under each mode, and nothing for passwords", () => {
+    // superset-role: the role names, without their prefix; "*" means everyone.
+    expect(adminMenuHint(access(["superset-role"], { roles: ["role:Lenspack admin"] }))).toEqual({ roles: ["Lenspack admin"], users: [], everyone: false });
+    expect(adminMenuHint(access(["superset-role"], { roles: ["*"] }))).toMatchObject({ everyone: true });
+    // superset-users: the owners and the granted users, never a role (not even Superset's Admin).
+    expect(adminMenuHint(access(["superset-users"], { owners: ["olga", "id:12"], granted: ["bea", "olga"] }))).toEqual({ roles: [], users: ["olga", "id:12", "bea"], everyone: false });
+    // With no owner, the grants count for nothing, as in rightsUnder.
+    expect(adminMenuHint(access(["superset-users"], { granted: ["bea"] })).users).toEqual([]);
+    // password alone: nobody from the host; combined, the other mode's names.
+    expect(adminMenuHint(access(["password"], { passwords: ["ops"] }))).toEqual({ roles: [], users: [], everyone: false });
+    expect(adminMenuHint(access(["superset-role", "password"], { roles: ["role:Lenspack admin"], passwords: ["ops"] })).roles).toEqual(["Lenspack admin"]);
   });
 });
 

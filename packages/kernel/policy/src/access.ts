@@ -102,6 +102,31 @@ export function rightsUnder(access: AdminAccess, host: Rights): Rights {
   return { ...host, admins: [], usage: [] };
 }
 
+/**
+ * What a host needs to decide, by itself, whether to show its menu entry for the admin pages to someone: the role names
+ * that make an admin under superset-role (`everyone` when the rule is "*"), and the owners and granted users under
+ * superset-users (names or "id:<n>"; none without an owner, as rightsUnder). The password mode adds nothing: password
+ * admins have no host account, so the entry stays for the host's own admins. A hint only: showing an entry grants
+ * nothing, and every request to the admin pages is still decided by adminRights().
+ */
+export type AdminMenuHint = { roles: string[]; users: string[]; everyone: boolean };
+
+export function adminMenuHint(access: AdminAccess): AdminMenuHint {
+  const roles: string[] = [];
+  const users: string[] = [];
+  let everyone = false;
+  if (access.modes.includes("superset-role")) {
+    for (const e of access.roles ?? []) {
+      if (e === "*") everyone = true;
+      else if (e.startsWith("role:")) roles.push(e.slice(5));
+    }
+  }
+  if (access.modes.includes("superset-users") && access.owners.length) {
+    for (const u of [...access.owners, ...access.granted]) if (!users.includes(u)) users.push(u);
+  }
+  return { roles, users, everyone };
+}
+
 /** The admin sign-in's user for a password's name: "admin:<name>" ("admin:password" for the unnamed one). */
 export const passwordUser = (name?: string) => (name ? `${PASSWORD_PREFIX}${name}` : PASSWORD_ADMIN);
 

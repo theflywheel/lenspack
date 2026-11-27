@@ -593,6 +593,16 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           if (res.headersSent) return;
           return json(res, 404, { error: "not found" }, NO_STORE);
         }
+        // What Superset's plugin needs to draw its "AI assistant" menu entry by itself: the assistant's name, and the
+        // role names or user names that make an admin (adminMenuHint). The plugin asks at most every five minutes, as the
+        // assistant's own Superset account, so drawing a menu never waits for this server. Only that account may read it
+        // (it names admins), and before the users rule: the account need not be a user. Showing the entry grants nothing.
+        if (url.pathname === "/_superset/menu" && req.method === "GET") {
+          const id = identityOf(req, () => idKey);
+          if (!id) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
+          if (id.u !== account.username) return json(res, 403, { error: "only the assistant's own Superset account reads this" }, NO_STORE);
+          return json(res, 200, { brand: { name: admin.brand.get().name }, admin: adminAccess.menuHint() }, NO_STORE);
+        }
         // The scripts are public (Superset only includes them for signed-in users); everything else needs Superset's signature.
         const asset = /^\/(chat\.js|overlay\.js|mine\.js|chat\.css)$/.exec(url.pathname);
         // Someone the users rule leaves out gets an overlay that does nothing: no button, no chat (never cached).

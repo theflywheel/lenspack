@@ -315,6 +315,7 @@ Read by the Superset plugin, in Superset's environment:
 | `LENSPACK_SERVICE_USER` | `lenspack` | Lenspack's Superset account |
 | `LENSPACK_PATH` | `/lenspack` | where browsers reach the assistant below Superset's path |
 | `LENSPACK_BRAND_NAME` | | the settings page's menu entry and heading |
+| `LENSPACK_MENU_REFRESH_SECONDS` | `300` | how often the menu entry asks the server for its name and who its admins are |
 | `LENSPACK_TEMPLATES` | | a folder of replacement templates |
 | `LENSPACK_CLICKHOUSE_LABEL_SUFFIX` | `on` | `off` keeps Superset 6.1's own ClickHouse column names |
 

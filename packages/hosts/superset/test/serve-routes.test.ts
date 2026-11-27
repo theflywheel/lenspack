@@ -473,6 +473,18 @@ describe("Superset mode's server", () => {
     expect(r.body.actions).toHaveLength(2);
   });
 
+  it("tells the assistant's own Superset account, and nobody else, what the menu entry needs", async () => {
+    // The plugin asks as the assistant's account (superset.username, "lenspack" by default), with no roles and no admin flag.
+    const r = await call("/_superset/menu", { as: { u: "lenspack", a: false } });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ brand: { name: expect.any(String) }, admin: { roles: ["Admin"], users: [], everyone: false } });
+    expect(r.headers.get("cache-control")).toMatch(/no-store/);
+    // Anyone else, a Superset admin included, gets no list of who the admins are.
+    expect((await call("/_superset/menu", { as: ADMIN })).status).toBe(403);
+    expect((await call("/_superset/menu", { as: VIEWER })).status).toBe(403);
+    expect((await call("/_superset/menu")).status).toBe(401);
+  });
+
   it("answers 404 for a signed request to nowhere", async () => {
     expect(await call("/nowhere", { as: VIEWER })).toMatchObject({ status: 404, body: { error: "not found" } });
   });

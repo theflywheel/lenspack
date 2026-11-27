@@ -19,7 +19,8 @@ caught. AccessEndpoint makes a throwaway SQLite database, a dataset, a role with
 in Superset's metadata, and dashboards with and without dashboard roles, and calls /api/v1/lenspack/access (and
 /api/v1/lenspack/version) through Flask's test client; it turns DASHBOARD_RBAC on and off itself where a case needs it. SettingsPage renders Settings -> AI assistant as an admin, with Lenspack unreachable. UnderARoot draws Superset's home page and the
 settings page with Superset under /superset (base_url), and sends one form back. BrandLabel, MountPath and
-NoProductName check the name the plugin shows and the route's path. ClickHouseLabels
+NoProductName check the name the plugin shows and the route's path. MenuEntry draws Superset's menu for an Admin, a
+role holder, a named owner and a plain Gamma user under each hint the server can give. ClickHouseLabels
 checks the ClickHouse column-name suffix, and runs a query against ClickHouse when one is given (above).
 """
 
@@ -725,6 +726,170 @@ class SettingsPage(unittest.TestCase):
         for k in ("_login_user", "user"):
             g.pop(k, None)
         self.assertIn(r.status_code, (302, 401))
+
+
+class MenuEntry(unittest.TestCase):
+    """Settings → Manage → AI assistant in Superset's menu: drawn for Superset's Admins and for the people the
+    assistant's server last named as its admins (a hint cached in the plugin), never asking the server per draw, and
+    granting nothing (the page still asks the server)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = superset_app()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        from superset.extensions import security_manager as sm
+
+        cls.sm = sm
+        own = sm.find_role("Lenspack admin") or sm.add_role("Lenspack admin")
+        gamma = sm.find_role("Gamma")
+
+        def user(name, roles):
+            return sm.find_user(username=name) or sm.add_user(name, "lp", "Test", f"{name}@example.invalid", roles, password=PASSWORD)
+
+        cls.admin = user("lp_menu_admin", [sm.find_role("Admin")])
+        cls.holder = user("lp_menu_holder", [gamma, own])
+        cls.owner = user("lp_menu_owner", [gamma])
+        cls.plain = user("lp_menu_plain", [gamma])
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.ctx.pop()
+
+    def setUp(self):
+        self.saved = dict(lp._SERVER_MENU)
+
+    def tearDown(self):
+        lp._SERVER_MENU.clear()
+        lp._SERVER_MENU.update(self.saved)
+
+    def hint(self, hint):
+        """The server's last answer, fresh, so drawing the menu asks for nothing."""
+        import time
+
+        lp._SERVER_MENU.update(hint=hint, at=time.time())
+
+    def entry(self, user):
+        """The AI assistant entry as Superset would draw it for this user (Flask-AppBuilder's menu data), or None."""
+        from flask import g
+        from flask_login import login_user
+
+        for k in ("_login_user", "user"):
+            g.pop(k, None)
+        try:
+            with self.app.test_request_context("/"):
+                login_user(user)
+                g.user = user
+                data = self.app.appbuilder.menu.get_data()
+        finally:
+            for k in ("_login_user", "user"):
+                g.pop(k, None)
+        manage = next((c for c in data if isinstance(c, dict) and c.get("name") == "Manage"), None)
+        return next((i for i in (manage or {}).get("childs", []) if isinstance(i, dict) and i.get("name") == "AI assistant"), None)
+
+    def test_decides_from_the_cached_hint_alone(self):
+        role = lambda n: SimpleNamespace(name=n)  # noqa: E731
+        holder = SimpleNamespace(is_authenticated=True, username="bea", id=7, roles=[role("Gamma"), role("Lenspack admin")])
+        owner = SimpleNamespace(is_authenticated=True, username="olga", id=12, roles=[role("Gamma")])
+        self.assertTrue(lp.lenspack_menu_shows(owner, None, True))  # Superset's Admins, whatever the hint
+        self.assertFalse(lp.lenspack_menu_shows(holder, None, False))  # nothing heard yet
+        self.assertTrue(lp.lenspack_menu_shows(holder, {"roles": ["Lenspack admin"], "users": [], "everyone": False}, False))
+        self.assertFalse(lp.lenspack_menu_shows(owner, {"roles": ["Lenspack admin"], "users": [], "everyone": False}, False))
+        self.assertTrue(lp.lenspack_menu_shows(owner, {"roles": [], "users": ["olga"], "everyone": False}, False))
+        self.assertTrue(lp.lenspack_menu_shows(owner, {"roles": [], "users": ["id:12"], "everyone": False}, False))
+        self.assertFalse(lp.lenspack_menu_shows(holder, {"roles": [], "users": ["id:12", "olga"], "everyone": False}, False))
+        self.assertTrue(lp.lenspack_menu_shows(owner, {"roles": [], "users": [], "everyone": True}, False))
+        # The password alone names nobody: Superset's Admins only, as before.
+        self.assertFalse(lp.lenspack_menu_shows(holder, {"roles": [], "users": [], "everyone": False}, False))
+        anon = SimpleNamespace(is_authenticated=False, username=None, id=None, roles=[])
+        self.assertFalse(lp.lenspack_menu_shows(anon, {"roles": [], "users": [], "everyone": True}, False))
+
+    def test_draws_the_entry_for_the_people_the_assistant_calls_admins(self):
+        # superset-role with a role of its own: its holder (a Gamma user, the role with no permissions) sees the entry.
+        self.hint({"roles": ["Lenspack admin"], "users": [], "everyone": False})
+        self.assertIsNotNone(self.entry(self.admin))
+        found = self.entry(self.holder)
+        self.assertIsNotNone(found)
+        self.assertTrue(found["url"].endswith("/ai-assistant/"))
+        self.assertIsNone(self.entry(self.plain))
+        self.assertIsNone(self.entry(self.owner))
+        # superset-users: the owners and granted admins by name or id; no role counts.
+        self.hint({"roles": [], "users": ["lp_menu_owner", f"id:{self.plain.id}"], "everyone": False})
+        self.assertIsNotNone(self.entry(self.owner))
+        self.assertIsNotNone(self.entry(self.plain))
+        self.assertIsNone(self.entry(self.holder))
+        # The password alone, or a server that said nothing: Superset's Admins only.
+        for hint in ({"roles": [], "users": [], "everyone": False}, None):
+            self.hint(hint)
+            self.assertIsNone(self.entry(self.holder))
+            self.assertIsNotNone(self.entry(self.admin))
+
+    def test_showing_the_entry_adds_no_permission(self):
+        self.hint({"roles": ["Lenspack admin"], "users": [], "everyone": False})
+        self.assertIsNotNone(self.entry(self.holder))
+        # No role gained a permission: the menu may draw the entry, nothing more.
+        own = self.sm.find_role("Lenspack admin")
+        self.assertEqual(list(own.permissions), [])
+        # The page behind it is still the assistant's to refuse.
+        import io
+        from flask import g
+        import json as js
+        import urllib.error
+        from unittest import mock
+
+        def urlopen(req, timeout=None):
+            if req.full_url.endswith("/_superset/settings"):
+                raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, io.BytesIO(b'{"error":"only assistant admins"}'))
+            r = io.BytesIO(js.dumps({"admin": {"access": "superset-role", "surface": "superset", "page": "all"}}).encode())
+            r.__enter__ = lambda *a: r
+            r.__exit__ = lambda *a: False
+            return r
+
+        client = self.app.test_client()
+        with client.session_transaction() as s:
+            s["_user_id"] = str(self.holder.id)
+            s["_fresh"] = True
+        for k in ("_login_user", "user"):
+            g.pop(k, None)
+        try:
+            with mock.patch("urllib.request.urlopen", side_effect=urlopen):
+                self.assertEqual(client.get("/ai-assistant/").status_code, 403)
+        finally:
+            for k in ("_login_user", "user"):
+                g.pop(k, None)
+
+    def test_reads_how_often_to_ask(self):
+        for given, seconds in [(None, 300.0), ("", 300.0), ("60", 60.0), ("0", 1.0), ("soon", 300.0)]:
+            self.assertEqual(lp.lenspack_menu_refresh_seconds(given), seconds, given)
+
+    def test_asks_the_server_in_the_background_at_most_every_five_minutes(self):
+        import io
+        import json as js
+        import time
+        from unittest import mock
+
+        asked = []
+
+        def urlopen(req, timeout=None):
+            asked.append((req.full_url, req.headers.get("X-lenspack-identity")))
+            r = io.BytesIO(js.dumps({"brand": {"name": "Lenspack"}, "admin": {"roles": ["Lenspack admin"], "users": [], "everyone": False}}).encode())
+            r.__enter__ = lambda *a: r
+            r.__exit__ = lambda *a: False
+            return r
+
+        lp._SERVER_MENU.update(hint=None, at=0.0)
+        with mock.patch("urllib.request.urlopen", side_effect=urlopen):
+            # The first draw doesn't wait: the entry comes once the answer is in.
+            self.entry(self.holder)
+            for _ in range(50):
+                if lp._SERVER_MENU["hint"]:
+                    break
+                time.sleep(0.05)
+            self.assertIsNotNone(self.entry(self.holder))
+            self.entry(self.holder)
+        self.assertEqual(len(asked), 1)
+        self.assertTrue(asked[0][0].endswith("/_superset/menu"))
+        self.assertTrue(asked[0][1])  # signed, as Lenspack's own account
 
 
 class UnderARoot(unittest.TestCase):

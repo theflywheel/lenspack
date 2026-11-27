@@ -16,8 +16,9 @@ It adds:
     Superset under a path of its host (SUPERSET_APP_ROOT=/superset, Superset 6.1) works the same: every address this
     file gives a browser starts from request.script_root, and the route tells Lenspack both paths (lenspack_root).
   - the "Ask Lenspack" button on every page (Superset's tail_js_custom_extra.html), for signed-in users;
-  - Settings → Manage → "AI assistant" (Superset admins whom Lenspack's admins rule also names; Lenspack refuses the
-    page for anyone else): models, languages, spend, the audit log, and a link to Lenspack's own
+  - Settings → Manage → "AI assistant" (for anyone Lenspack calls an admin; Lenspack refuses the page for anyone
+    else). The menu entry shows to Superset's Admins and to the people Lenspack last said are its admins (see
+    lenspack_menu_shows): models, languages, spend, the audit log, and a link to Lenspack's own
     admin panel (/lenspack/_superset/admin/: a board of how the assistant is used, the daily review, open questions, definitions). On Superset 6, whose pages
     are all drawn by its frontend, this page has a layout of its own that follows Superset's light or dark theme;
     on Superset 5 it sits in Superset's server-drawn layout;
@@ -42,6 +43,8 @@ Environment (all optional):
   LENSPACK_BRAND_NAME     the menu entry's and settings page's name, when superset_config sets none (see
                           lenspack_brand_label); without either, the assistant's own name from its server.
   LENSPACK_SERVICE_USER   Lenspack's Superset account (default lenspack).
+  LENSPACK_MENU_REFRESH_SECONDS  how often the menu entry asks Lenspack for its name and who its admins are
+                          (default 300, at least 1).
   LENSPACK_TEMPLATES      a folder whose tail_js_custom_extra.html or lenspack/settings.html replace the
                           ones built in here.
   LENSPACK_CLICKHOUSE_LABEL_SUFFIX  off keeps Superset 6.1's ClickHouse aliases without the hash suffix.
@@ -392,6 +395,43 @@ def lenspack_mount_path(value) -> str:
 # The assistant's name as its server last said it (the settings page reads it; the menu entry refreshes it now and
 # then), for the menu entry and the settings page when neither superset_config nor the environment names it.
 _SERVER_BRAND = {"name": None, "at": 0.0}
+
+# What the assistant's server last said the menu entry needs (GET /_superset/menu, which the menu asks for in the
+# background at most every 5 minutes): the role names or user names that make an admin. None until it has answered.
+_SERVER_MENU = {"hint": None, "at": 0.0}
+
+
+def lenspack_menu_refresh_seconds(value) -> float:
+    """How often the menu asks (LENSPACK_MENU_REFRESH_SECONDS): 300 seconds unless a number of at least 1 is given."""
+    try:
+        return max(1.0, float(value)) if value not in (None, "") else 300.0
+    except (TypeError, ValueError):
+        return 300.0
+
+
+MENU_REFRESH_SECONDS = lenspack_menu_refresh_seconds(os.environ.get("LENSPACK_MENU_REFRESH_SECONDS"))
+
+
+def lenspack_menu_shows(user, hint, superset_admin) -> bool:
+    """Whether Superset's menu shows the "AI assistant" entry to this user. Superset's Admins always, as before. Anyone
+    else when the hint the assistant's server last gave names them: a role they hold (its admin roles, under
+    superset-role; "everyone" when that rule is "*"), or their user name or id:<n> (its owners and granted admins, under
+    superset-users). Under the password alone the hint names nobody, so only Superset's Admins see the entry.
+
+    Decided here from the cached hint, so drawing a menu never calls the server. Showing the entry grants nothing:
+    the page and every change on it are decided by the assistant's server on each request."""
+    if superset_admin:
+        return True
+    if not isinstance(hint, dict) or user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if hint.get("everyone") is True:
+        return True
+    roles = {str(r) for r in hint.get("roles") or [] if isinstance(r, str)}
+    if roles and any(getattr(r, "name", None) in roles for r in getattr(user, "roles", []) or []):
+        return True
+    users = {str(u) for u in hint.get("users") or [] if isinstance(u, str)}
+    uid = getattr(user, "id", None)
+    return bool(users) and (getattr(user, "username", None) in users or (uid is not None and f"id:{uid}" in users))
 
 
 # Superset can run below a path of its host (SUPERSET_APP_ROOT=/superset, Superset 6.1 and later; or a proxy's
@@ -786,22 +826,48 @@ def lenspack_app_mutator(app):
 
     appbuilder.add_view_no_menu(LenspackSettingsView)
 
+    def refresh_menu():
+        """What the menu entry needs from the assistant's server (its name, and who its admins are), fetched in the
+        background at most every 5 minutes (LENSPACK_MENU_REFRESH_SECONDS): the menu follows a rename or a new admin
+        without a restart, and drawing the menu never waits for the server."""
+        if time.time() - _SERVER_MENU["at"] <= MENU_REFRESH_SECONDS:
+            return
+        _SERVER_MENU["at"] = time.time()
+        try:
+            header = lenspack_sign(LENSPACK_SERVICE_USER, False)
+        except Exception:  # no app context: try again next time
+            _SERVER_MENU["at"] = 0.0
+            return
+        import threading
+
+        threading.Thread(target=fetch_menu, args=(header,), daemon=True).start()
+
+    def fetch_menu(header):
+        """GET /_superset/menu as Lenspack's own account. A server from before that route still gives its name
+        (GET /_superset/info), and then the entry stays for Superset's Admins only."""
+        def get(path):
+            req = urllib.request.Request(LENSPACK_INTERNAL_URL + path, headers={"x-lenspack-identity": header})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return json.load(r)
+
+        try:
+            try:
+                body = get("/_superset/menu")
+            except urllib.error.HTTPError:
+                body = {"brand": (get("/_superset/info") or {}).get("brand"), "admin": None}
+        except Exception:  # unreachable: keep what it said last
+            return
+        name = ((body or {}).get("brand") or {}).get("name")
+        if name:
+            _SERVER_BRAND["name"] = str(name)
+        hint = (body or {}).get("admin")
+        _SERVER_MENU["hint"] = hint if isinstance(hint, dict) else None
+
     class MenuLabel:
-        """The menu entry's name, read each time Superset draws its menu (lenspack_brand_label). When only the
-        assistant's server names it, its name is fetched in the background at most every 5 minutes, so the menu
-        follows a rename made in the admin panel without a restart, and drawing the menu never waits for it."""
+        """The menu entry's name, read each time Superset draws its menu (lenspack_brand_label)."""
 
         def __str__(self):
-            if not (app.config.get("LENSPACK_BRAND_NAME") or os.environ.get("LENSPACK_BRAND_NAME")) and time.time() - _SERVER_BRAND["at"] > 300:
-                _SERVER_BRAND["at"] = time.time()
-                try:
-                    header = lenspack_sign(LENSPACK_SERVICE_USER, False)
-                except Exception:  # no app context: try again next time
-                    _SERVER_BRAND["at"] = 0.0
-                else:
-                    import threading
-
-                    threading.Thread(target=fetch_brand, args=(header,), daemon=True).start()
+            refresh_menu()
             return lenspack_brand_label(app.config, server=_SERVER_BRAND["name"])
 
         def __html__(self):
@@ -809,19 +875,29 @@ def lenspack_app_mutator(app):
 
             return str(escape(str(self)))
 
-    def fetch_brand(header):
-        try:
-            req = urllib.request.Request(LENSPACK_INTERNAL_URL + "/_superset/info", headers={"x-lenspack-identity": header})
-            with urllib.request.urlopen(req, timeout=5) as r:
-                name = (json.load(r).get("brand") or {}).get("name")
-            if name:
-                _SERVER_BRAND["name"] = str(name)
-        except Exception:
-            pass
+    def menu_shows():
+        """Whether this menu draw shows the entry (lenspack_menu_shows), from the cached hint."""
+        refresh_menu()
+        return lenspack_menu_shows(getattr(g, "user", None), _SERVER_MENU["hint"], security_manager.is_admin())
+
+    # Superset draws an entry only for roles with "menu_access" on it and on its category, Manage, which Superset's
+    # Admin role holds and a role made for the assistant ("Lenspack admin", with no permissions) does not. For the
+    # people menu_shows names, the menu may also draw these two, and nothing more: no permission is added to any role,
+    # Manage's other entries still need their own, and the page behind the entry still asks the assistant's server.
+    own_menu_access = appbuilder.sm.get_user_menu_access
+
+    def get_user_menu_access(menu_names=None):
+        allowed = own_menu_access(menu_names)
+        if MENU_NAMES <= set(allowed) or not menu_shows():
+            return allowed
+        return set(allowed) | {n for n in MENU_NAMES if menu_names is None or n in menu_names}
+
+    MENU_NAMES = {"AI assistant", "Manage"}
+    appbuilder.sm.get_user_menu_access = get_user_menu_access
     # A menu entry's address is fixed when Superset starts, so it takes Superset's root from its config, as Superset's
     # own entries do (APPLICATION_ROOT, which SUPERSET_APP_ROOT sets).
     menu_href = lenspack_url("" if app.config.get("APPLICATION_ROOT") in (None, "", "/") else app.config["APPLICATION_ROOT"], "/ai-assistant/")
-    appbuilder.add_link("AI assistant", label=MenuLabel(), href=menu_href, icon="fa-comments", category="Manage", cond=lambda: security_manager.is_admin())
+    appbuilder.add_link("AI assistant", label=MenuLabel(), href=menu_href, icon="fa-comments", category="Manage", cond=menu_shows)
 
 
 FLASK_APP_MUTATOR = lenspack_app_mutator
