@@ -70,7 +70,7 @@ limits:
 Or with environment variables, which win over the file: `LENSPACK_LIMIT_QUESTIONS_PER_DAY`,
 `LENSPACK_LIMIT_PER_MINUTE`, `LENSPACK_LIMIT_PER_HOUR` and `LENSPACK_LIMIT_ADMINS_EXEMPT` (`true` or `false`).
 
-An admin's change through the settings API wins over both, and applies to the next question:
+An admin's change on that card, or through the settings API, wins over both, and applies to the next question:
 `PUT /_superset/settings/limits` with any of the settings above; `null` puts one back to the deployment's value.
 `GET /_superset/settings` shows them under `limits`, with the deployment's values and where the current ones came
 from. See [Superset settings](../hosts/superset/settings.md#the-routes-behind-it).
@@ -82,6 +82,10 @@ limits per person: 200 questions a day (UTC), 60 an hour, 5 a minute; admins not
 ```
 
 ## Who reached a limit
+
+On the admin pages, the **Settings** tab has a **Question limits per person** card: everyone's limits, whether admins
+are held to them, other limits for named people, and a table of everyone counted today (UTC), with those at a limit
+or refused first and a **Reset** button for each.
 
 `GET /_superset/limits` lists who is at a limit now or was refused today, with their counts for today and the last
 minute and hour. `?all=1` lists everyone counted today. `DELETE /_superset/limits?user=<name>` sets one person's

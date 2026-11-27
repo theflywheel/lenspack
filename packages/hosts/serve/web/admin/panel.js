@@ -144,6 +144,12 @@
     // Cache settings
     cacheSetH: "Saved answer settings", cOn: "Keep and serve saved answers", cTtl: "Drop entries older than (hours)", cRouter: "Match differently worded questions", cMax: "At most (entries)", cFresh: "Show as is for (minutes)", cPw: "Refresh before busy times", cPwTimes: "At (local times, comma-separated)", cPwTop: "Most-asked to refresh", cPwUsd: "Most per refresh (US$)",
     queueH: "Turn queue", qConc: "At once", qWait: "Waiting at most", qSecs: "Longest wait (s)",
+    limH: "Question limits per person", limLede: "How many questions each person may ask. 0 means no limit. A day ends at midnight UTC; the minute and hour are rolling.",
+    limDay: "Questions per day", limHour: "Questions per hour", limMinute: "Questions per minute", limExempt: "Admins are not held to the limits",
+    limPeople: "Other limits for named people (an empty box uses everyone's)", limName: "Superset user name", limAdd: "Add a person", limRemove: "Remove",
+    limTodayH: "Today", limTodayLede: "Everyone counted today (UTC), those at a limit or refused first.", limNone: "No one has asked a question today.",
+    limWho: "Person", limToday: "Today", limHourN: "Last hour", limMinuteN: "Last minute", limAt: "At a limit", limRefused: "Refused today", limReset: "Reset", limResetQ: "Set {0}'s counts for today back to zero?",
+    lim_questionsPerDay: "per day", lim_perHour: "per hour", lim_perMinute: "per minute",
     qsH: "Query limits", qsLede: "Every query sent to the database is checked against these first; one past a limit is refused with a plain message. Tighter is always allowed; looser than the deployment's own values asks you to confirm.",
     qsRows: "Rows a query", qsGroups: "Groups a breakdown", qsPoints: "Series points", qsWindow: "Longest time range (days, empty: none)", qsTurn: "Queries a question", qsTimeout: "Wait for an answer (s)", qsConc: "At once",
     qsHeavy: "Heavy (needs a time range, last {0} days by default)", qsDatasets: "Datasets", qsRisks: "Worth a look in the pack",
@@ -201,6 +207,12 @@
     auditH: "Journal d'audit", auditLede: "Gardé {0} jours dans {1}.", aAction: "Action", aOutcome: "Résultat", aDetail: "Détail", aAll: "Tous", aOk: "ok", aDenied: "refusé", search: "Rechercher", noEvents: "Aucun événement.", auditOff: "Le journal d'audit est désactivé (audit : false).",
     cacheSetH: "Réglages des réponses gardées", cOn: "Garder et servir les réponses", cTtl: "Supprimer après (heures)", cRouter: "Rapprocher les questions formulées autrement", cMax: "Au plus (entrées)", cFresh: "Montrer telle quelle pendant (minutes)", cPw: "Actualiser avant les heures chargées", cPwTimes: "À (heures locales, séparées par des virgules)", cPwTop: "Questions les plus posées à actualiser", cPwUsd: "Maximum par actualisation (US$)",
     queueH: "File des réponses", qConc: "En même temps", qWait: "En attente au plus", qSecs: "Attente maximale (s)",
+    limH: "Limites de questions par personne", limLede: "Combien de questions chacun peut poser. 0 : sans limite. La journée finit à minuit UTC ; la minute et l'heure sont glissantes.",
+    limDay: "Questions par jour", limHour: "Questions par heure", limMinute: "Questions par minute", limExempt: "Les administrateurs ne sont pas limités",
+    limPeople: "Autres limites pour des personnes nommées (une case vide reprend celle de tous)", limName: "Nom d'utilisateur Superset", limAdd: "Ajouter une personne", limRemove: "Retirer",
+    limTodayH: "Aujourd'hui", limTodayLede: "Chaque personne comptée aujourd'hui (UTC), d'abord celles à une limite ou refusées.", limNone: "Personne n'a posé de question aujourd'hui.",
+    limWho: "Personne", limToday: "Aujourd'hui", limHourN: "Dernière heure", limMinuteN: "Dernière minute", limAt: "À une limite", limRefused: "Refusées aujourd'hui", limReset: "Remettre à zéro", limResetQ: "Remettre à zéro les compteurs de {0} pour aujourd'hui ?",
+    lim_questionsPerDay: "par jour", lim_perHour: "par heure", lim_perMinute: "par minute",
     qsH: "Limites des requêtes", qsLede: "Chaque requête envoyée à la base est d'abord vérifiée ; celle qui dépasse une limite est refusée avec un message clair. Resserrer est toujours permis ; relâcher au-delà des valeurs du déploiement demande confirmation.",
     qsRows: "Lignes par requête", qsGroups: "Groupes par répartition", qsPoints: "Points d'une série", qsWindow: "Période la plus longue (jours, vide : aucune)", qsTurn: "Requêtes par question", qsTimeout: "Attente d'une réponse (s)", qsConc: "En même temps",
     qsHeavy: "Lourd (période requise, {0} derniers jours par défaut)", qsDatasets: "Jeux de données", qsRisks: "À vérifier dans le pack",
@@ -1362,6 +1374,53 @@
       h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: save, disabled: !m.writable }, t("saveB")),
         m.source === "settings" || Object.values(m.rolesSource).includes("settings") ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/models", { offered: null, roles: null }) }, t("resetDefaults")) : null, sourcePill(m.source)));
   }
+  // Question limits per person (docs/features/limits.md): everyone's, admins, named people's own (PUT settings/limits,
+  // with the settings' revision like every change), and who was counted today with a reset each (GET and DELETE limits).
+  function limitsCard(l) {
+    const off = !l.writable;
+    const day = num(l.questionsPerDay, 0, 100000), hour = num(l.perHour, 0, 10000), minute = num(l.perMinute, 0, 1000);
+    const exempt = h("input", { type: "checkbox", checked: !!l.adminsExempt, disabled: off });
+    const rows = h("div", {});
+    const blank = (v) => (v === undefined || v === null ? "" : v);
+    const addRow = (name, own) => {
+      const box = h("input", { type: "text", value: name || "", placeholder: t("limName"), "aria-label": t("limName"), maxlength: "200", autocomplete: "off" });
+      const d = num(blank(own && own.questionsPerDay), 0, 100000), hr = num(blank(own && own.perHour), 0, 10000), m = num(blank(own && own.perMinute), 0, 1000);
+      const row = h("div", { class: "form", style: "margin-top:6px" }, fld(t("limName"), box), fld(t("limDay"), d), fld(t("limHour"), hr), fld(t("limMinute"), m),
+        h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: () => row.remove() }, t("limRemove"))));
+      row._read = () => {
+        const out = {};
+        for (const [k, i] of [["questionsPerDay", d], ["perHour", hr], ["perMinute", m]]) if (i.value !== "") out[k] = Number(i.value);
+        return [box.value.trim(), out];
+      };
+      rows.append(row);
+    };
+    for (const [u, own] of Object.entries(l.users || {})) addRow(u, own);
+    const users = () => Object.fromEntries([...rows.children].map((r) => r._read()).filter(([u]) => u));
+    const save = act(() => hostApi("settings/limits", { body: { questionsPerDay: Number(day.value || 0), perHour: Number(hour.value || 0), perMinute: Number(minute.value || 0), adminsExempt: exempt.checked, users: users() } }), t("saved"));
+    // Who was counted today, drawn once the counts arrive.
+    const today = h("div", {}, h("p", { class: "mute" }, t("loading")));
+    if (l.on)
+      hostApi("limits?all=1").then((r) => {
+        const people = (r && r.people) || [];
+        const reset = (u) => (ev) => (confirm(t("limResetQ", u)) ? act(() => hostApi(`limits?user=${encodeURIComponent(u)}`, { method: "DELETE" }), t("done"))(ev) : null);
+        const of = (n, max) => (max ? `${nf(n)} / ${nf(max)}` : nf(n));
+        today.replaceChildren(h("h3", {}, t("limTodayH")), h("p", { class: "mute small" }, t("limTodayLede")),
+          table([t("limWho"), { t: t("limToday"), n: true }, { t: t("limHourN"), n: true }, { t: t("limMinuteN"), n: true }, t("limAt"), { t: t("limRefused"), n: true }, ""],
+            people.map((p) => h("tr", {}, h("td", {}, p.user), h("td", { class: "n" }, of(p.today, p.limits.questionsPerDay)), h("td", { class: "n" }, of(p.lastHour, p.limits.perHour)), h("td", { class: "n" }, of(p.lastMinute, p.limits.perMinute)),
+              h("td", {}, p.atLimit ? pill(t(`lim_${p.atLimit}`), "warn") : "—"), h("td", { class: "n" }, nf(p.refusedToday)),
+              h("td", {}, h("button", { class: "btn sm quiet", type: "button", onclick: reset(p.user) }, t("limReset"))))), t("limNone")));
+      }).catch((e) => today.replaceChildren(h("p", { class: "bad-line" }, e.message)));
+    else today.replaceChildren();
+    return card(t("limH"), t("limLede"),
+      h("div", { class: "form" }, fld(t("limDay"), day), fld(t("limHour"), hour), fld(t("limMinute"), minute)),
+      h("label", { class: "switch", style: "margin-top:8px" }, exempt, h("div", {}, h("div", { class: "lbl" }, t("limExempt")))),
+      h("h3", {}, t("limPeople")), rows,
+      h("div", { class: "actions" }, h("button", { class: "btn sm ghost", type: "button", disabled: off, onclick: () => addRow("", {}) }, t("limAdd"))),
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: off, onclick: save }, t("saveB")),
+        l.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/limits", { questionsPerDay: null, perHour: null, perMinute: null, adminsExempt: null, users: null }) }, t("resetDefaults")) : null, sourcePill(l.source)),
+      today);
+  }
+
   function runtimeCards(s) {
     const out = [];
     const b = s.budget;
@@ -1399,6 +1458,7 @@
         h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(async () => { await hostApi("settings/panel", { body: { panel: panelSel.value } }); return hostApi("settings/admin-surface", { body: { surface: surfSel.value } }); }, t("saved")) }, t("saveB")),
           s.panelSetting.source === "settings" || s.adminSurface.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: act(async () => { await hostApi("settings/panel", { body: { panel: null } }); return hostApi("settings/admin-surface", { body: { surface: null } }); }, t("saved")) }, t("resetDefaults")) : null)));
     }
+    if (s.limits) out.push(limitsCard(s.limits));
     if (Array.isArray(s.runtime) && s.runtime.length)
       out.push(card(t("runtimeH"), t("runtimeLede"), table([t("rKey"), t("rHow"), t("rNote")],
         s.runtime.map((r) => h("tr", {}, h("td", { class: "small" }, h("code", {}, r.key)), h("td", {}, pill(t(`r_${r.runtime}`), r.runtime === "yes" ? "ok" : r.runtime === "narrow" ? "warn" : "")), h("td", { class: "small" }, r.note || (r.area ? `settings/${r.area}` : "")))), "")));

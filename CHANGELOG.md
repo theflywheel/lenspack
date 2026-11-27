@@ -11,6 +11,11 @@ brought it.
 
 ### 27 November 2026
 
+- **Question limits on the admin pages.** The Settings tab has a card for the per-person question limits: everyone's,
+  admins, other limits for named people (set while the server runs, like every setting), and a table of who was
+  counted today, with those at a limit or refused first and a Reset button for each. The limits are also listed among
+  the options that change without a redeploy. See [Question limits](docs/features/limits.md#who-reached-a-limit).
+
 - **Question limits per person.** A deployment can now limit how many questions each person asks: a number per day
   (UTC, kept in `limits.json` in the state folder so a restart does not reset it), and a number in any minute and in
   any hour. Over a limit, the chat answers `429` with `Retry-After` before any model call or data read, and says which

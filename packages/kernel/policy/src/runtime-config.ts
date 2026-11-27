@@ -55,6 +55,7 @@ export const RUNTIME_CONFIG: readonly RuntimeKey[] = [
   { key: "features", runtime: "yes", area: "features" },
   { key: "cache", runtime: "yes", area: "cache" },
   { key: "queue", runtime: "yes", area: "queue" },
+  { key: "limits (questionsPerDay, perMinute, perHour, adminsExempt, users)", runtime: "yes", area: "limits" },
   { key: "explain", runtime: "yes", area: "explain", note: "the explain switch is on the switches; whether the SQL shows is here" },
   { key: "brand", runtime: "yes", area: "brand" },
   { key: "telemetry", runtime: "yes", area: "telemetry" },
