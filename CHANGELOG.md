@@ -11,6 +11,16 @@ brought it.
 
 ### 27 November 2026
 
+- **Question limits per person.** A deployment can now limit how many questions each person asks: a number per day
+  (UTC, kept in `limits.json` in the state folder so a restart does not reset it), and a number in any minute and in
+  any hour. Over a limit, the chat answers `429` with `Retry-After` before any model call or data read, and says which
+  limit was reached and when the person can ask again, in English, French, Hindi or Portuguese. A saved answer counts
+  toward the minute and hour limits but not the daily one. Admins are held to the limits unless `adminsExempt` is on.
+  Off by default. Set `limits.perUser` in `superset.yaml` or `lenspack.yaml`, or `LENSPACK_LIMIT_*`; admins change
+  them with `PUT /_superset/settings/limits`, see who reached one with `GET /_superset/limits`, and clear a person's
+  count with `DELETE /_superset/limits?user=`. Refusals are in the audit log. See
+  [Question limits](docs/features/limits.md).
+
 - **The assistant can be limited to some Superset dashboards.** On a Superset shared by several projects, set
   `dashboardScope: listed` (or `LENSPACK_DASHBOARD_SCOPE=listed`) and list the dashboards in `dashboards:` (or
   `LENSPACK_DASHBOARDS=25,31`). The button then shows on those dashboards only, and every route that takes a

@@ -228,6 +228,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   log(`Superset ${superset.version ?? "5.x (no version reported)"}${config.overlay?.mapStyle ? "" : `; maps drawn on ${binding.mapStyle}`}`);
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
+  log(admin.limitsLine());
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
   const connector = supersetConnector(client, binding, { log, capabilities: () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) }) });

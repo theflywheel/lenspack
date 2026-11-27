@@ -6,11 +6,12 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, recentRemovals, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, type Notice, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseBase, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, type TurnLog, type TurnResult, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, memoryTurnLog, quickReplyOf, selectionsFrom, tabsText, toVercelAI, turnKeyOf, viewFrom, widgetChanges } from "@lenspack/agent";
-import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement, viewerSelections } from "@lenspack/policy";
+import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, adminRights, answerView, boardRights, decide, limitLanguage, limitMessage, mayUse, otherTenant, principalOf, shownConfig, showsStatement, viewerSelections } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
 import { type Access, type AuthAdapter, NO_RIGHTS, type PackRule, type Rights, withRights } from "./auth";
+import type { LimitCounter, LimitPlace } from "./limits";
 import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson, serveStatic } from "./http";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
 import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
@@ -96,6 +97,11 @@ export type AppOptions = {
   usageSinks?: UsageSink[];
   /** Daily caps on priced chat spend; over one, chat answers 429 before any model call. */
   budget?: Budget;
+  /**
+   * Per-person question limits (limits.ts, docs/features/limits.md): a daily quota and rolling windows. Over one, chat
+   * answers 429 with Retry-After before any model or data call. Absent, or with no limit set: no limits.
+   */
+  limits?: LimitCounter;
   /**
    * The chat model (a provider name) and effort to use when the client asks for none, read on
    * every turn so a settings page can change them on a running server. Unset, unknown or
@@ -452,8 +458,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       // What chat has cost since the server started: for those given the usage right (maintainers, unless said otherwise), as it names every user.
       if (packName === "_usage" && req.method === "GET") {
         if (!who.usage) return json(res, 403, { error: "usage is not shown to you" });
-        // The caps go with it, so whoever watches spend sees how near they are.
-        return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
+        // The caps go with it, so whoever watches spend sees how near they are, and who is at a per-person limit or was refused today.
+        return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}), ...(opts.limits?.on() ? { limits: opts.limits.report() } : {}) });
       }
       // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
       if (packName === "_stt") {
@@ -713,7 +719,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
             return json(res, 403, { error: d.notice });
           }
           audit({ user: who.user, pack: packName, board: boardId, action: "chat", outcome: "ok" });
-          return chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : (rights.readOnly ?? who.readOnly), asker);
+          {
+            // A question let through the per-person limits holds a place in today's quota until the turn says whether it
+            // reached the model; any way out before that (a saved answer, a full queue, an error) gives the place back.
+            const held: { place?: LimitPlace } = {};
+            try {
+              return await chat(req, res, url, { ...h, pack: d.pack(), catalogue, ctx }, shown(board).config, board.version, boardId, who.user, rights.edit ? undefined : (rights.readOnly ?? who.readOnly), asker, { admin: adminRights(who).administer, held });
+            } finally {
+              held.place?.release();
+            }
+          }
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
@@ -723,7 +738,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
 
   // Everything the chat model and the reviewer read of the board is as the caller is shown it (shownConfig, from h.ctx):
   // the prompt, the summaries before and after, and the tools' results.
-  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string, asker: Asker = { user, roles: [] }) {
+  async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string, asker: Asker = { user, roles: [] }, limit: { admin: boolean; held: { place?: LimitPlace } } = { admin: false, held: {} }) {
     const started = Date.now();
     const fallback = opts.chatDefault?.();
     const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
@@ -763,7 +778,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const defsVersion = await definitionsVersion(defs, h.name, h.pack);
     // since: the board's version when this conversation's last turn ended, so
     // the model is told what the user changed by hand in between.
-    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown; transcriptIds?: unknown; client?: unknown; view?: unknown; turnKey?: unknown };
+    const body = (await read(req)) as { messages: UIMessage[]; since?: unknown; language?: unknown; uiLanguage?: unknown; speech?: unknown; quickReply?: unknown; fresh?: unknown; selections?: unknown; transcriptIds?: unknown; client?: unknown; view?: unknown; turnKey?: unknown };
     // The client's key for this question (@lenspack/agent turns.ts). The same key again is the same question asked
     // again, as Retry does after a reply was cut off: it is answered from what the first asking did, never run twice.
     const turnKey = turnKeyOf(body.turnKey);
@@ -772,6 +787,20 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       const outcome = await turnLog.settled(turnScope, 120_000);
       audit({ user, pack: h.name, board: boardId, action: "chat-turn", outcome: "ok", detail: JSON.stringify({ replayed: turnKey, state: outcome?.state ?? "gone", from: outcome?.from, to: outcome?.to }) });
       return respond(res, recoveredStream(outcome));
+    }
+    // The per-person limits (docs/features/limits.md), before any model or data call and after a repeated asking (above),
+    // which is not a new question. Policy decides (decideQuestion), from the counts kept here; the reply says which
+    // limit and when it frees up, in the reader's language (the one picked, else the panel's, else the browser's).
+    if (opts.limits) {
+      const let_ = opts.limits.admit({ user, admin: limit.admin });
+      if (!let_.ok) {
+        // Nothing ran: the same key asked again later is a new try, not this refusal replayed.
+        if (turnScope) turnLog.end(turnScope, { from: startVersion, to: startVersion, failed: true });
+        audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: `limit: ${let_.limit} (${let_.max}); free in ${let_.retryAfterSeconds} s` });
+        const lang = limitLanguage(body.language, body.uiLanguage, req.headers["accept-language"]);
+        return json(res, 429, { error: limitMessage(let_, lang), code: "limit", limit: let_.limit, max: let_.max, retryAfterSeconds: let_.retryAfterSeconds, freeAt: let_.freeAt }, { "retry-after": String(let_.retryAfterSeconds) });
+      }
+      limit.held.place = let_.place;
     }
     // Ends this turn's record: the board's version now, and what changed since the turn started, as the asker is shown it.
     const endTurn = async (reply: string | undefined, failed: boolean) => {
@@ -891,6 +920,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       await tel?.record();
       return audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: "busy" });
     }
+    // The question goes to the model: it counts against today's quota (a saved answer above, or a full queue, does not).
+    limit.held.place?.charge();
     tel?.mark({ queueMs: place.queueMs });
     if (place.boardWaited) {
       // The edit before this one may have changed the board: read it as that edit left it.
