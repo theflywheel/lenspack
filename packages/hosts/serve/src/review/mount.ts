@@ -65,7 +65,7 @@ export function reviewMount(
       }));
       // The Telemetry tab's "Used by": the widgets of the usage board that read each field.
       admin.telemetry?.setUses(async () => ((await usage)?.fieldUses() ?? {}));
-      return panelRoutes({ prefix: o.prefix, system, features: admin.features, brand: admin.brand, providers: () => rt.providers, adminName: o.adminName, title: o.title, log: o.log, usage, ...more });
+      return panelRoutes({ prefix: o.prefix, system, features: admin.features, brand: admin.brand, settings: admin.settings, providers: () => rt.providers, adminName: o.adminName, title: o.title, log: o.log, usage, ...more });
     },
   };
 }

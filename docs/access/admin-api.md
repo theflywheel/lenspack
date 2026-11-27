@@ -107,6 +107,16 @@ AUTH="Authorization: Bearer $KEY"
 curl -s -H "$AUTH" $LP/settings
 ```
 
+**Don't undo someone else's change.** Every settings answer carries the revision it is at as its `ETag`. Send it back
+as `If-Match`, and a change to something changed since is refused with `409` and the values as they are now, instead of
+silently overwriting it (see [Changes made elsewhere](../hosts/superset/settings.md#changes-made-elsewhere)). Without
+`If-Match`, the last change wins, as before.
+
+```sh
+TAG=$(curl -s -o /dev/null -D - -H "$AUTH" $LP/settings | awk 'tolower($1)=="etag:" {print $2}' | tr -d '\r')
+curl -s -X PUT -H "$AUTH" -H "If-Match: $TAG" -H 'content-type: application/json' -d '{"default": "fr"}' $LP/settings/language
+```
+
 **Turn a feature off, and back to the deployment's value** (`null`):
 
 ```sh

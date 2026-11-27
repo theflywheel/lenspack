@@ -141,8 +141,9 @@ describe("changing the deploy config's options on a running Superset-mode server
     await gone;
   };
 
-  const call = async (path: string, o: { method?: string; key?: string; as?: Partial<Identity>; body?: unknown } = {}) => {
+  const call = async (path: string, o: { method?: string; key?: string; as?: Partial<Identity>; body?: unknown; headers?: Record<string, string> } = {}) => {
     const headers: Record<string, string> = {
+      ...o.headers,
       ...(o.key ? { authorization: `Bearer ${o.key}` } : {}),
       ...(o.as ? { [IDENTITY_HEADER]: signed(o.as) } : {}),
       ...(o.body !== undefined ? { "content-type": "application/json" } : {}),
@@ -262,6 +263,9 @@ describe("changing the deploy config's options on a running Superset-mode server
     expect((await audited("settings admin-surface"))[0]?.detail).toBe("surface superset");
     expect((await audit()).find((e) => e.action === "settings panel" && e.outcome === "refused")?.detail).toMatch(/panel must be/);
     expect((await keyed("admin-surface", { surface: null })).body.surface).toBe("separate");
+    // A change made on an older copy of the settings (If-Match) is refused, like every settings change.
+    const stale = await call("/_admin/settings/panel", { key: CI, body: { panel: "dock" }, headers: { "if-match": '"settings-0"' } });
+    expect([stale.status, stale.body.code]).toEqual([409, "changed-elsewhere"]);
   });
 
   it("keeps every admin's value after a restart", async () => {

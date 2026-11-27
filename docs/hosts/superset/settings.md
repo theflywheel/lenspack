@@ -62,6 +62,7 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `GET /_superset/settings/pack/versions`, `…/versions/<n>`, `…/diff?from=&to=` | the pack's versions, newest first, one of them, or what differs between two |
 | `POST /_superset/settings/pack/revert`, `POST /_superset/settings/pack/reset` | `{ version }`: go back to a version; `{ fields }` (or `{}` for all): hand parts back to the config |
 | `GET /_superset/settings/pack/export` | the whole overlay as it runs, as YAML for `superset.yaml` |
+| `GET /_superset/settings/revision` | the settings' revision, who made the last change and when, and the pack's version: small enough for an open page to ask often. See [Changes made elsewhere](#changes-made-elsewhere) |
 | `GET /_superset/turns?limit=N` | the newest chat turns with their cost, and the totals for today and the last 7 days |
 | `GET /_superset/audit?month=YYYY-MM&limit=N` | the audit log |
 | `GET /_superset/telemetry`, `GET /_superset/telemetry/checklist` | the usage records and the switchboard. See [Telemetry](../../features/telemetry.md#reading-it) |
@@ -69,6 +70,33 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 `/_superset/info` is for every signed-in user and returns what the chat panel needs, including `features` (the
 effective switches) and the example questions. The whole list of routes is in
 [HTTP API](../../reference/http-api.md#superset-routes).
+
+## Changes made elsewhere
+
+The same settings can be changed in several places: Superset's settings page, Lenspack's admin panel, another admin's
+open page, or a script with an [admin API key](../../access/admin-api.md). They all change the same `settings.json`, so
+there is only ever one value; what can go wrong is a page that still shows an old one. Two things stop that from
+undoing someone else's change:
+
+- **Every settings answer says the revision it is at**, as `revision` in `GET /_superset/settings` and as the `ETag`
+  header (`"settings-12"`). Send it back as `If-Match` with a change. If what you change was changed after that
+  revision, the change is refused with `409`, nothing is changed, and the answer says what changed, who changed it and
+  when, with the settings as they are now in `current`:
+
+  ```json
+  { "error": "the language settings changed elsewhere by ben since this copy was read (now revision 13; this change was made on revision 12). Nothing was changed: read it again and make the change on that",
+    "code": "changed-elsewhere", "section": "language", "by": "ben", "at": "2026-11-27T09:12:00.000Z", "revision": 13, "current": { … } }
+  ```
+
+  A change to something nobody else changed goes through, even on an older revision. A change sent without
+  `If-Match` also goes through, as before: the last change wins. Scripts should send `If-Match` too.
+- **The admin pages always send it**, and on a refusal they show the values as they are now and say who changed them.
+  While open, they ask `GET …/settings/revision` every 30 seconds and whenever they come back into view, and draw the
+  tab again when something changed, or, while you are typing in it, say so with a **Reload** button.
+
+The same holds for every settings route: the switches, voice, language, saved answers, the queue, the name, telemetry,
+the query limits, personal-dashboard limits, the edit scope, who is an admin or a user, the review's settings on the admin panel, and the
+pack, whose `ETag` is its version (`"pack-3"`; see [Changing the pack while it runs](pack-runtime.md)).
 
 ## Switches
 
