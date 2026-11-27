@@ -355,12 +355,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const signOutUrl = opts.auth?.signOutUrl ?? opts.signOutUrl;
   const ledger = opts.ledger ?? usageLedger();
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
-  const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
+  const entry = (h: Host) => ({ ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) });
+  const byName = new Map(hosts.map((h) => [h.name, entry(h)]));
+  // The hosts as they are now: setHost replaces one here and in byName, never in place, so a turn already running keeps
+  // the host it started with.
+  const live = [...hosts];
   const providers = opts.providers ?? [];
   const queue = opts.queue ?? localTurnGate();
   const turnLog = opts.turns ?? memoryTurnLog();
   // Saved answers refreshed on a schedule or when data changes run as their askers, from these hosts (reuse/index.ts).
-  opts.reuse?.attach(prewarmTurns({ hosts, providers, router: opts.roles?.router, rules: () => opts.language?.(), promptVersion: () => promptVersionFor(opts.brand?.().name), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
+  opts.reuse?.attach(prewarmTurns({ hosts: live, providers, router: opts.roles?.router, rules: () => opts.language?.(), promptVersion: () => promptVersionFor(opts.brand?.().name), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
   // What every saved answer of a pack shares on this deployment (the kernel's ReuseBase): the pack as hosted, before any
   // caller's access narrows it, its definitions, the prompt version, the language rules and the pack's own row scope.
   const reuseBase = async (h: Host): Promise<ReuseBase> => ({ pack: h.pack, definitions: await definitionsVersion(opts.definitions, h.name, h.pack), promptVersion: promptVersionFor(opts.brand?.().name), rules: opts.language?.(), scope: h.ctx.scope ?? [] });
@@ -417,7 +421,23 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   // What the client needs to show the mic; null when speech is off.
   const speechInfo = () => (opts.speech?.apiKey ? { maxSeconds: opts.speech.maxSeconds ?? 60 } : null);
 
-  return async function handle(req: IncomingMessage, res: ServerResponse) {
+  /**
+   * A new pack for a hosted pack name (an admin's change to the pack while the server runs): the board API, the chat and
+   * refreshes of saved answers use it from the next request on, and turns already running finish on the one they began
+   * with. Saved answers kept under the old pack are dropped, as at start (their key holds the pack's hash, so none is
+   * served meanwhile).
+   */
+  async function setHost(name: string, next: Pick<Host, "pack" | "packYaml" | "connector"> & { catalogue?: Catalogue }) {
+    const i = live.findIndex((h) => h.name === name);
+    if (i < 0) throw new Error(`no pack ${name}`);
+    const host: Host = { ...live[i]!, ...next, catalogue: next.catalogue };
+    live[i] = host;
+    byName.set(name, entry(host));
+    if (opts.reuse) await opts.reuse.prune({ [name]: await reuseBase(host) }).catch((e) => opts.log?.(`reuse: could not drop stale saved answers: ${e instanceof Error ? e.message : String(e)}`));
+  }
+
+  return Object.assign(handle, { setHost });
+  async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
     const { api, pack: packName, board: boardId, action } = apiRoute(req.url);
     try {

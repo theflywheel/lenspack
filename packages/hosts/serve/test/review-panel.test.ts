@@ -162,7 +162,7 @@ describe("the admin panel", () => {
     const js = await (await fetch(`${base}/panel.js`, { headers: as("ana", true) })).text();
     // The script parses, and has both languages and every tab.
     expect(() => new Script(js)).not.toThrow();
-    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, cache, models, access, settings, assistant: assistantTab, telemetry, spend };");
+    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, pack: packTab, cache, models, access, settings, assistant: assistantTab, telemetry, spend };");
     expect(js).toContain('fr: {');
     expect((await fetch(`${base}/panel.css`, { headers: as("ana", true) })).status).toBe(200);
     // The Telemetry tab is its own module and stylesheet, which the page loads before the panel mounts it.

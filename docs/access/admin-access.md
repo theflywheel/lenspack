@@ -20,6 +20,9 @@ more data. Whatever mode you pick, people still see only the datasets, rows and 
 | As above, plus a way in if no owner can sign in to Superset | `superset-users,password` | Owners and the people they add, plus named passwords kept for emergencies. |
 | The assistant's operators have no Superset account, or you can't count on Superset's user list | `password` | A named password for each admin, from your deployment's secrets, on a sign-in page of its own. |
 
+**For scripts and for when nobody can sign in**, any mode can have an [admin API key](admin-api.md) beside it: a master
+key, sent as a header through Superset's address, that does whatever an admin can on the admin pages.
+
 **Use a role of its own.** Under `superset-role`, create a Superset role named `Lenspack admin` (it needs no
 permissions) and set `LENSPACK_ADMIN_ROLES="Lenspack admin"`. Superset's own `Admin` role is still the default, so
 existing deployments keep working, but it makes every Superset Admin an assistant admin, and the log warns about it.
@@ -314,5 +317,7 @@ Change the setting (or the environment variable) and restart the server. Nothing
   shows to them and to Superset's Admins (see [The menu entry](../features/admin-panel.md#the-menu-entry)). A Superset
   Admin who is not an admin by the mode sees the entry, but the page refuses them. Under `password` alone, the entry
   shows to Superset's Admins only, and the page links to the password sign-in.
+- **An admin API key works in every mode** and doesn't change who else is an admin. It is shown on the Access tab as
+  "API key <name>" once used. See [The admin API key](admin-api.md).
 - The decision is made in one place, Lenspack's policy layer, from what Superset signs about each person (user name, id
   and roles) and the lists above. See [Rights](rights.md#admin).

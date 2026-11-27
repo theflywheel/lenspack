@@ -22,6 +22,29 @@ brought it.
   settings API (`PUT /_superset/settings/tabs`) and the start-up log; `GET /_superset/tabs` lists the tabs made through
   the chat with their makers. Superset has no per-tab permissions, so these rules bind the chat only. See
   [Tabs on dashboards](docs/features/tabs.md).
+- **Change the pack while it runs.** Admins can change the pack's description, instructions, labels, hints, measures,
+  example questions, `notDimensions` and hierarchies, and add exclusions, with no redeploy and no restart: on the
+  settings routes (`/_superset/settings/pack`), or with an admin API key at `…/lenspack/_admin/settings/pack`. The
+  overlay in `superset.yaml` stays the base; the changes are a layer over it, kept as versions in `pack-layer.json` in
+  the state directory (who, when, why and what changed), which can be listed, compared, gone back to, reset part by
+  part, and exported as YAML to write back into `superset.yaml`. Each change is checked as at start-up against
+  Superset's datasets as they are now, example questions included, and refused with nothing changed if it adds a
+  problem. A change is in force from the next request; a question already being answered finishes on the old pack,
+  and saved answers kept under the old pack are not served. Datasets, the row scope, dashboards, access, budgets,
+  models, the pack's name, entity keys and time zone stay in `superset.yaml`, and an exclusion it makes can't be
+  removed. Each change is audited as `pack edit`, `pack revert` or `pack reset` with who made it. Nothing changes
+  until an admin makes a change. The admin pages have a **Pack** tab for it: the YAML with Validate and Save,
+  problems shown inline, and the versions with Go back and Export. See
+  [Changing the pack while it runs](docs/hosts/superset/pack-runtime.md).
+- **An admin API key, for scripts and for deployments with no server access.** Set `LENSPACK_ADMIN_API_KEYS` (one
+  `name:key` per key, or a mounted file with `LENSPACK_ADMIN_API_KEYS_FILE`; best as a `scrypt$` hash from
+  `lenspack hash-password`, so the Secret holds only the hash) and send `Authorization: Bearer <key>` to
+  `https://<your Superset>/lenspack/_admin/<route>`: no Superset session needed. A key is a master override: an admin
+  in every admin access mode, who may also add admins, on the admin routes only; never the chat or data. Everything
+  done with it is in the audit log as `api:<name>`, and the Access tab lists it as "API key <name>" once used.
+  `GET …/_admin/whoami` checks a key without changing anything. Wrong keys are limited per caller and audited without
+  the key. Off by default; update the plugin file with the server, since it now passes the header on for
+  `/lenspack/_admin/` only. See [The admin API key](docs/access/admin-api.md).
 - **The assistant can be limited to some Superset dashboards.** On a Superset shared by several projects, set
   `dashboardScope: listed` (or `LENSPACK_DASHBOARD_SCOPE=listed`) and list the dashboards in `dashboards:` (or
   `LENSPACK_DASHBOARDS=25,31`). The button then shows on those dashboards only, and every route that takes a

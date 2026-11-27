@@ -72,7 +72,7 @@ admins. Being an admin opens these pages and gives no more data. See [Rights](..
 routes ask the same question. Usernames (on the usage board and in review reports) are shown only to those who may also
 read usage; an admin without that right sees the same figures with the user, the question text and the session hidden.
 
-It has nine tabs, in English and French, in light and dark, and it works at phone width:
+It has these tabs (Pack on a Superset deployment only), in English and French, in light and dark, and it works at phone width:
 
 | Tab | What it shows |
 | --- | --- |
@@ -81,6 +81,7 @@ It has nine tabs, in English and French, in light and dark, and it works at phon
 | **Open questions** | Each question with its readings, each reading's figures, and buttons to answer, dismiss, edit or compare. |
 | **Proposals** | The review's proposed changes, each with why and the questions it would fix. Accept, edit then accept, or reject. |
 | **Definitions** | What admins have added to the pack: the entries, how much of their size budget they use, undo, and the full history with restore. The pack's own instructions are shown read-only beside them. |
+| **Pack** | On a Superset deployment only: the pack's parts admins may change while it runs (labels, hints, measures, example questions and the rest) as YAML, with **Validate** and **Save**, each problem shown under the box, the parts set in the deploy config only, the versions with **Go back to this**, and **Export as YAML**. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md). |
 | **Telemetry** | A checklist of every signal Lenspack can record for this deployment (see [What is recorded](#what-is-recorded)). |
 | **Cache** | [Saved answers](saved-answers.md): how many questions they answered and what they saved, each entry with pin, unpin and evict, the last refresh with a **Refresh now** button, the most-asked questions per board, chart candidates and settled boards, and **Clear saved answers**, which removes them all at once. With saved answers switched off it lists nothing and says how many are still kept, with the same button. A server that keeps none says caching is not enabled. |
 | **Access** | Who is an admin and who may use the assistant, as the deployment set them; the admins owners added and the people admins added, with who added each and when. See [Who can use and administer the assistant](../access/admin-access.md). |

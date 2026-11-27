@@ -53,10 +53,17 @@ export type SupersetBoards = BoardStore & {
   replaceFrom<T extends { config: BoardConfig }>(id: string, make: (board: Board, locked: string[]) => T, how: { source: string; summary: string; check?: (before: BoardConfig, after: BoardConfig) => Promise<string | null> }): Promise<{ board: Board; made: T }>;
   /** Drops a board whose dashboard is gone (deleted): its links and its versions here. */
   forget(id: string): Promise<void>;
+  /**
+   * A new pack and binding (an admin changed the pack while the server runs): every bound board is read again from
+   * Superset under them, so a chart that now matches a measure, or no longer does, reads that way.
+   */
+  setPack(pack: Pack, binding: Binding): Promise<void>;
 };
 
 export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
-  const { inner, client, pack, binding } = opts;
+  const { inner, client } = opts;
+  // Replaced whole by setPack; each read and write takes the pair in force when it runs.
+  let { pack, binding } = opts;
   const log = opts.log ?? (() => {});
   const { states, save } = savedStates(opts.stateFile, log);
   const lastCheck = new Map<string, number>();
@@ -161,6 +168,11 @@ export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
       });
     },
     admit,
+    async setPack(next, nextBinding) {
+      pack = next;
+      binding = nextBinding;
+      for (const id of Object.keys(opts.dashboards)) await serial(id, () => pullNow(id, true)).catch((e) => log(`${id}: could not read Superset again under the new pack: ${e instanceof Error ? e.message : String(e)}`));
+    },
     async tabs(id): Promise<BoardTab[]> {
       if (!bound(id)) return [];
       const pos = positions.get(id);

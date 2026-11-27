@@ -28,7 +28,15 @@ export type AdminAccessMode = (typeof ADMIN_ACCESS_MODES)[number];
  * The deployment's way of deciding admins, with what it needs now: the admins rule over roles (superset-role), the owners
  * and granted users (superset-users; names or "id:<n>"), and the names of the passwords (password).
  */
-export type AdminAccess = { modes: readonly AdminAccessMode[]; roles?: readonly string[]; owners: readonly string[]; granted: readonly string[]; passwords: readonly string[] };
+export type AdminAccess = {
+  modes: readonly AdminAccessMode[];
+  roles?: readonly string[];
+  owners: readonly string[];
+  granted: readonly string[];
+  passwords: readonly string[];
+  /** The names of the admin API keys the deployment sets (LENSPACK_ADMIN_API_KEYS), in any mode. Absent: none. */
+  apiKeys?: readonly string[];
+};
 
 /** The unnamed password's admin (LENSPACK_ADMIN_PASSWORD alone), as the audit log names them. */
 export const PASSWORD_ADMIN = "admin:password";
@@ -79,6 +87,7 @@ export function adminUsersFrom(value: unknown): string[] {
     if (!e) continue;
     if (e.startsWith("role:")) throw new Error(`admin users name people, not roles ("${e}"): with superset-users, roles grant nothing`);
     if (e.startsWith(PASSWORD_PREFIX)) throw new Error(`"${e}": names starting with ${PASSWORD_PREFIX} are the admin sign-in's own`);
+    if (e.startsWith(API_KEY_PREFIX)) throw new Error(`"${e}": names starting with ${API_KEY_PREFIX} are the admin API keys' own`);
     if (e.startsWith("id:") && !/^id:\d+$/.test(e)) throw new Error(`"${e}" is not a user id: write id: and the number Superset shows, like id:12`);
     if (!out.includes(e)) out.push(e);
   }
@@ -144,6 +153,37 @@ export function passwordAdmin(name?: string) {
 
 /** Whether this principal was made by the admin sign-in (for the audit's words; the decision is adminRights). */
 export const viaPassword = (who: { user: string; roles?: readonly string[] }) => who.user.startsWith(PASSWORD_PREFIX) && !!who.roles?.includes(PASSWORD_ROLE) && !!who.roles?.includes(ADMIN_ROLE);
+
+// Admin API keys (LENSPACK_ADMIN_API_KEYS): a master override for administration from a script or a terminal. The host
+// only reads the Authorization header and the configured keys, and says which key's name matched; what that name may do
+// is decided here. A key is not an admin access mode: it works beside the modes, whichever are in force.
+//
+//   - It is the principal "api:<name>", with Lenspack's admin role and the usage right (user names on the admin pages).
+//     It may grant admins under superset-users, as an owner may: it is the override.
+//   - It is never a user of the assistant (uses: false): no chat, no boards, no data. It carries no host identity, so it
+//     has no Superset data rights either.
+//   - It administers only while its name is still set (access.apiKeys), so a removed key stops working at the restart.
+//   - Its mark (API_KEY_ROLE) is taken off every identity a host gives (principalOf), and a host user named "api:…" never
+//     administers, so no Superset user can pass for a key.
+
+/** Users an admin API key's principal has: "api:<name>". */
+export const API_KEY_PREFIX = "api:";
+/** The mark of a principal made from an admin API key; only apiKeyAdmin() sets it. */
+export const API_KEY_ROLE = "admin-api-key";
+/** A key's name: the same rule as a password's name. */
+export const apiKeyNameOk = passwordNameOk;
+/** The principal's user for a key's name: "api:<name>". */
+export const apiKeyUser = (name: string) => `${API_KEY_PREFIX}${name}`;
+
+/** An admin API key as a settled principal: the admin role and the usage right, and never a user of the assistant. */
+export function apiKeyAdmin(name: string) {
+  const user = apiKeyUser(name);
+  const p = principalOf({ user, roles: [], uses: false }, { editors: [], maintainers: [], admins: [user], usage: [user] });
+  return { ...p, roles: [...p.roles, API_KEY_ROLE] };
+}
+
+/** Whether this principal was made from an admin API key (for words; the decision is adminRights). */
+export const viaApiKey = (who: { user?: string; roles?: readonly string[] }) => !!who.user?.startsWith(API_KEY_PREFIX) && !!who.roles?.includes(API_KEY_ROLE);
 
 // Who may use the assistant at all (the button, the chat, every data route), the same way: one or more modes, chosen per
 // deployment (auth.userAccess, or LENSPACK_USER_ACCESS), comma-separated when combined ("superset-role,granted": either

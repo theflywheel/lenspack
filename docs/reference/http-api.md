@@ -148,7 +148,10 @@ caps when set. See [Costs](../operating/costs.md#metering).
 
 For admins only, under the host's admin prefix: `/_lenspack` on the standalone server, `/_superset` inside Superset
 (through Superset: `/lenspack/_superset`). A person who is not an admin gets `403`, and the attempt is written to the
-audit log. The admin panel itself is at `<prefix>/admin/`; see [The admin panel](../features/admin-panel.md).
+audit log. Inside Superset, an [admin API key](../access/admin-api.md) (`Authorization: Bearer <key>`) reaches the
+same routes at `/lenspack/_admin/<route>` through Superset with no Superset session, or at `/_admin/<route>` and
+`/_superset/<route>` on Lenspack's own address. `GET <prefix>/whoami` says who the caller is and what they may do,
+changing nothing. The admin panel itself is at `<prefix>/admin/`; see [The admin panel](../features/admin-panel.md).
 
 The panel's own data, on both hosts:
 
@@ -171,6 +174,7 @@ The Superset host's settings, beside the panel:
 | `PUT /_superset/settings/personal`, `…/edit-scope` | personal-dashboard limits and where the chat may edit. See [Personal dashboards](../features/personal-dashboards.md#routes) |
 | `GET`, `PUT /_superset/settings/tabs`; `GET /_superset/tabs`; `DELETE /_superset/tabs/<dashboard>/<tab>` | the tab rules, the tabs made through the chat with their makers, and an admin deleting one. See [Tabs on dashboards](../features/tabs.md#routes) |
 | `GET /_superset/settings/speech/models` | the transcription models on offer |
+| `GET`, `PUT /_superset/settings/pack`; `POST …/pack/validate`, `…/pack/revert`, `…/pack/reset`; `GET …/pack/versions`, `…/pack/versions/<n>`, `…/pack/diff`, `…/pack/export` | the pack's runtime parts (labels, measures, example questions and the rest): read, check, change, go back, reset to the config, compare versions and export as YAML. Admins. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md) |
 | `GET /_superset/turns`, `GET /_superset/audit` | recent turns and the audit log |
 
 ### Saved answers and the queue

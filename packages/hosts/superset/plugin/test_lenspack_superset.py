@@ -382,6 +382,18 @@ class AdminSignInProxy(unittest.TestCase):
         self.assertIn(r.status_code, (400, 401, 404))
         self.assertIsNone(forwarded)
 
+    def test_passes_an_admin_api_key_on_here_only(self):
+        key = "Bearer test-only-admin-api-key-0123456789abcdef"
+        r, (url, headers) = self.send("GET", "/lenspack/_admin/whoami", headers={"Authorization": key}, environ_base={"REMOTE_ADDR": "198.51.100.8"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(headers["authorization"], key)
+        self.assertIn("x-lenspack-client", headers)
+        self.assertNotIn("x-lenspack-identity", headers)
+        # Every other route: still a Superset session first, and the header never goes on.
+        for path in ("/lenspack/_superset/settings", "/lenspack/api/access", "/lenspack/_superset/admin/api/packs"):
+            r, forwarded = self.send("GET", path, headers={"Authorization": key})
+            self.assertEqual((path, r.status_code, forwarded), (path, 401, None))
+
     def test_passes_each_cookie_lenspack_sets_on_its_own_line(self):
         r, _ = self.send("POST", "/lenspack/_admin/auth/login", data="password=x", set_cookies=["lenspack_admin=a; Path=/; HttpOnly", "lenspack_admin_device=b; Path=/x; HttpOnly"])
         self.assertEqual(r.headers.getlist("Set-Cookie"), ["lenspack_admin=a; Path=/; HttpOnly", "lenspack_admin_device=b; Path=/x; HttpOnly"])

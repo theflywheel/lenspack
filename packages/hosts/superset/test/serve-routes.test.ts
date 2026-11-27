@@ -179,6 +179,13 @@ describe("Superset mode's server", () => {
     expect((await call("/_superset/info", { headers: { [IDENTITY_HEADER]: signIdentity({ u: "x", a: true, t: now() }, "z".repeat(64)) } })).status).toBe(401);
   });
 
+  it("ignores an Authorization header when no admin API key is set, as before", async () => {
+    expect(output).toContain("admin API keys: none");
+    const r = await call("/_superset/settings", { headers: { authorization: `Bearer ${"x".repeat(40)}` } });
+    expect([r.status, r.body.error]).toEqual([401, "sign in to Superset first"]);
+    expect((await call("/_admin/whoami", { headers: { authorization: `Bearer ${"x".repeat(40)}` } })).status).toBe(404);
+  });
+
   it("tells any signed-in user what the panel needs", async () => {
     const r = await call("/_superset/info?lang=fr", { as: VIEWER });
     expect(r.status).toBe(200);
@@ -239,7 +246,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "tabs", "telemetry", "userAccess", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "packLayer", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "tabs", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],

@@ -566,7 +566,9 @@ def lenspack_app_mutator(app):
 
     def lenspack_admin_signin_proxy(path):
         """Lenspack's own admin pages: no Superset session needed and no identity sent; Lenspack's sign-in decides.
-        Only its own cookies go through, with the caller's address signed so its attempt limiter counts per person."""
+        Only its own cookies go through, with the caller's address signed so its attempt limiter counts per person.
+        An Authorization header goes through here too, and on no other route: Lenspack reads it as an admin API key
+        (docs/access/admin-api.md), and its wrong-key limit counts per signed address as the sign-in's does."""
         if cross_site():
             return jsonify({"error": "cross-site request refused"}), 403
         if lenspack_route(path) is None:
@@ -578,7 +580,7 @@ def lenspack_app_mutator(app):
             "x-lenspack-superset-root": lenspack_root(request.script_root),
             "x-lenspack-client": lenspack_sign_client(request.remote_addr or "unknown"),
         }
-        for h in ("content-type", "accept", "accept-language", "origin", "sec-fetch-site"):
+        for h in ("content-type", "accept", "accept-language", "origin", "sec-fetch-site", "authorization"):
             if request.headers.get(h):
                 headers[h] = request.headers[h]
         jar = "; ".join(f"{k}={v}" for k, v in request.cookies.items() if k in LENSPACK_ADMIN_COOKIES)
