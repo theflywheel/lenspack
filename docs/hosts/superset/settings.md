@@ -25,7 +25,7 @@ table on [What can change without a redeploy](runtime.md). A page holding an old
 ## Voice and language
 
 `speech.model` (default `mistralai/voxtral-mini-transcribe-3-0`), `speech.holdMs` (2000), `speech.maxSeconds` (60)
-and `language.default` (`auto`), `language.titles` (`board`), `language.board` (`en`) in `superset.yaml` are
+and `language.default` (`auto`), `language.titles` (`board`), `language.board` (`en`), `language.offer` (all four; `LENSPACK_LANGUAGES`) in `superset.yaml` are
 defaults. An admin changes them on the settings page. What they do is in [Voice](../../features/voice.md) and
 [Languages](../../features/languages.md).
 
@@ -35,10 +35,10 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 
 | route | what it does |
 |---|---|
-| `GET /_superset/settings` | everything below, each with its value, default and source. Includes `speech` {enabled, keyFrom, model, defaultModel, source, holdMs, defaultHoldMs, holdMsRange, writable}, `language` {default, titles, board, options, defaults, source, writable} and `features` {values, defaults, source, options, writable} |
+| `GET /_superset/settings` | everything below, each with its value, default and source. Includes `speech` {enabled, keyFrom, model, defaultModel, source, holdMs, defaultHoldMs, holdMsRange, writable}, `language` {default, titles, board, offer, options, defaults, source, writable} and `features` {values, defaults, source, options, writable} |
 | `GET /_superset/settings/speech/models` | the provider's transcription models with a price per minute (cached an hour) |
 | `PUT /_superset/settings/speech` | any of `{model, holdMs, maxSeconds}`; a field left out is kept, `null` puts it back to the default |
-| `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
+| `PUT /_superset/settings/language` | any of `{default, titles, board, offer}`; `null` resets a field. `offer` is a list such as `["en","fr","pt"]`; `default` and `board` must be in it (400 otherwise) |
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}`; `null` drops the admin's value |
 | `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes, prewarm}` for [saved answers](../../features/saved-answers.md); `null` resets a field |
 | `PUT /_superset/settings/queue` | any of `{maxConcurrent, maxWaiting, maxWaitSeconds}` for [busy hours](../../features/busy-hours.md) |
@@ -62,6 +62,7 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/context` | `{context: {…}}`: the telemetry labels as a whole, or `{context: null}` for the deploy config's |
 | `PUT /_superset/settings/panel` | `{panel: "float" \| "dock" \| null}`: how the chat opens |
 | `PUT /_superset/settings/admin-surface` | `{surface: "split" \| "superset" \| "separate" \| null}`: where the admin pages are |
+| `PUT /_superset/settings/boundary` | narrows the data boundary: `{datasets, scope, dashboards, hostPolicy, accessFallback, editPolicy, adminAccess, adminRoles, usageRoles, adminUsers, userAccess, userRoles, seedUsers}`, any of them, `null` to hand one back. Never wider than the deploy config. See [The boundary narrows only](runtime.md#the-boundary-narrows-only) |
 | `GET /_superset/settings/pack` | the pack's runtime parts as they run (description, instructions, labels, hints, measures, examples, notDimensions, hierarchies, exclusions), the version in force and where each part comes from. See [Changing the pack while it runs](pack-runtime.md) |
 | `POST /_superset/settings/pack/validate`, `PUT /_superset/settings/pack` | check, or save, a change: `{ yaml }` (all the runtime parts) or `{ fields }` (only those named; `null` hands one back to the config), with an optional `why` and the `version` read. A change that adds a problem is refused with nothing changed |
 | `GET /_superset/settings/pack/versions`, `…/versions/<n>`, `…/diff?from=&to=` | the pack's versions, newest first, one of them, or what differs between two |

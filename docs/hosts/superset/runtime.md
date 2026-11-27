@@ -21,8 +21,9 @@ changed there.
 
 ## The table
 
-"Changes here" means any value. "Deploy config" means it can only be changed in `superset.yaml` or the environment,
-then a restart.
+"Changes here" means any value. "Narrows only" means it can be made narrower here, never wider than the deploy config
+sets it (see [The boundary narrows only](#the-boundary-narrows-only)). "Deploy config" means it can only be changed in
+`superset.yaml` or the environment, then a restart.
 
 | option | without a redeploy? | where |
 |---|---|---|
@@ -38,6 +39,7 @@ then a restart.
 | `features` (every switch) | changes here | `settings/features` |
 | `brand` | changes here | `settings/brand` |
 | `cache`, `queue` | changes here | `settings/cache`, `settings/queue` |
+| `limits` (question limits per person, and higher or lower ones for named people) | changes here | `settings/limits` |
 | `telemetry` (fields, retention) | changes here | `settings/telemetry` |
 | `context` (telemetry labels) | changes here, as a whole | `settings/context` |
 | `personal` (limits on people's own dashboards) | changes here | `settings/personal` |
@@ -48,9 +50,12 @@ then a restart.
 | `overlay`: description, instructions, labels, hints, measures, examples, `notDimensions`, hierarchies | changes here, as versions | `settings/pack` |
 | `overlay.exclude` | more exclusions only, never fewer than the deploy config's | `settings/pack` |
 | people let in under `granted`, admins granted under `superset-users` | changes here | `settings/users`, `settings/admins` |
-| `datasets`, `scope`, `dashboards`, `dashboardScope` | deploy config | |
-| `hostPolicy`, `accessFallback`, `editPolicy` | deploy config | |
-| `auth`: admin and user access modes, roles, owners, seeded people | deploy config | |
+| `datasets` | narrows only: fewer of them. The pack is built again and checked first | `settings/boundary` |
+| `scope` (filters every answer carries) | narrows only: more filters. The deploy config's always stay | `settings/boundary` |
+| `dashboards`, `dashboardScope` | narrows only: fewer dashboards | `settings/boundary` |
+| `hostPolicy`, `accessFallback` | narrows only: each person's own Superset access on, the `rls-only` fallback off | `settings/boundary` |
+| `editPolicy` | narrows only: from `signed-in` to `superset` | `settings/boundary` |
+| `auth`: admin and user access modes, admin, usage and user roles, owners, seeded people | narrows only: fewer of each | `settings/boundary` |
 | `overlay.pack`, `overlay.entities` | deploy config: saved definitions, saved answers and addresses are kept under these names | |
 | `overlay.timeZone` | deploy config: it decides what today means for every saved answer, and the daily schedules are set from it at start | |
 | `overlay.geo` | deploy config: which columns are people's locations. The `maps` switch turns maps off at runtime | |
@@ -73,6 +78,54 @@ curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"usdPerDay": 
 ```
 
 A bad value is refused with `400` and the reason, and nothing changes.
+
+## The boundary narrows only
+
+The deployment's data boundary is what the assistant may read and for whom: the datasets, the filters every answer
+carries (`scope`), the dashboards it is on, whether each person's own Superset access applies (`hostPolicy`,
+`accessFallback`), who may change dashboards through it (`editPolicy`), and who administers and uses it (`auth`).
+
+**On a running server, the boundary can be made narrower, never wider than the deploy config.** You can keep fewer
+datasets, add a filter, keep fewer dashboards, turn each person's own Superset access on, or keep fewer roles, owners
+or access modes. To read a dataset the deploy config doesn't list, drop one of its filters, or let in a role it leaves
+out, change the deploy config and restart.
+
+The reason: a deployment's Superset can hold data that belongs to other teams or other countries. Whoever holds an
+admin key could otherwise point the assistant at it. With this rule, a leaked key can make the assistant reach less,
+never more. This is a deliberate choice, and the project owner can change it.
+
+The fields, all on `PUT /_superset/settings/boundary` (send only the ones you narrow; `null` hands one back to the
+deploy config):
+
+| field | what you send | narrower means |
+|---|---|---|
+| `datasets` | a list of the deploy config's datasets (by id or table name, as it writes them) | fewer datasets; at least one |
+| `scope` | filter clauses, as in `superset.yaml` | more filters, added to the deploy config's |
+| `dashboards` | Superset dashboard ids | the assistant on these only. Under `dashboardScope: listed`, fewer of the listed ones |
+| `hostPolicy` | `"superset"` | each person's own Superset access applies |
+| `accessFallback` | `"none"` | no `rls-only` fallback |
+| `editPolicy` | `"superset"` | only people Superset lets edit may change dashboards through the chat |
+| `adminAccess`, `userAccess` | access modes | fewer of the deploy config's modes. When it lets everyone signed in use the assistant, any modes |
+| `adminRoles`, `usageRoles`, `userRoles` | Superset role names | fewer of the deploy config's roles. When it lets everyone signed in use the assistant, any user roles |
+| `adminUsers`, `seedUsers` | Superset user names or `id:<n>` | fewer owners, fewer seeded people |
+
+```sh
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"datasets": [11], "scope": [{"dimension": "campaign", "op": "eq", "value": "2026-spring"}]}' $LP/settings/boundary
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"datasets": null, "scope": null}' $LP/settings/boundary
+```
+
+- A value that would widen the boundary is refused with `400` and the reason, and nothing changes. So is one that
+  isn't a field's shape.
+- A change to the datasets or the scope has the pack built again over them and checked like any change to the pack. If
+  the new pack has a problem the old one didn't (a filter on a column it doesn't have, an example question on a dataset
+  no longer kept), the change is refused with the problems, and nothing changes. If it passes, it is in force from
+  the next question, and saved answers made under the old scope are no longer reused.
+- The other fields apply from the next request.
+- An admin API key works under any access mode, so narrowing the access never locks out the key that made the change.
+- Each change is audited as `settings boundary`, with who made it. `GET /_superset/settings` shows `boundary`: the
+  deploy config's, the narrowing and the boundary in force.
+- The narrowing is kept in `settings.json` and applied again at start. If the deploy config changed so that part of it
+  no longer narrows (a dataset it no longer lists), that part is set aside, said in the log and in `notApplied`.
 
 ## The audit log's floor
 

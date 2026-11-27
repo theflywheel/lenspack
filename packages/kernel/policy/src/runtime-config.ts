@@ -26,12 +26,12 @@ export type RuntimeKey = {
 
 /** Every option of a Superset deployment, in the order the docs list them. */
 export const RUNTIME_CONFIG: readonly RuntimeKey[] = [
-  { key: "datasets", runtime: "no", note: "which Superset datasets the assistant may read: the deployment's data boundary" },
-  { key: "scope", runtime: "no", note: "the filters every answer carries: the deployment's data boundary" },
-  { key: "dashboards, dashboardScope", runtime: "no", note: "which dashboards the assistant is on: the deployment's data boundary" },
-  { key: "hostPolicy, accessFallback", runtime: "no", note: "whose Superset access narrows what each person sees: the deployment's data boundary" },
-  { key: "editPolicy", runtime: "no", note: "who may change dashboards through the chat: the deployment's boundary" },
-  { key: "auth (admins, usage, users, adminAccess, adminUsers, userAccess, seedUsers)", runtime: "no", note: "who is an admin and who may use the assistant: the deployment's boundary. People are let in and admins granted on the Access page" },
+  { key: "datasets", runtime: "narrow", area: "boundary", note: "keep fewer of the deploy config's datasets; the pack is built again and checked first" },
+  { key: "scope", runtime: "narrow", area: "boundary", note: "add filters every answer carries; the deploy config's always stay" },
+  { key: "dashboards, dashboardScope", runtime: "narrow", area: "boundary", note: "put the assistant on fewer dashboards" },
+  { key: "hostPolicy, accessFallback", runtime: "narrow", area: "boundary", note: "turn each person's own Superset access on (hostPolicy superset), or the rls-only fallback off; never the reverse" },
+  { key: "editPolicy", runtime: "narrow", area: "boundary", note: "from signed-in to superset (who Superset lets edit), never the reverse" },
+  { key: "auth (admins, usage, users, adminAccess, adminUsers, userAccess, seedUsers)", runtime: "narrow", area: "boundary", note: "fewer access modes, roles, owners or seeded people. People are let in and admins granted on the Access page" },
   { key: "overlay.exclude", runtime: "narrow", area: "pack", note: "more exclusions on the Pack tab, never fewer than the deploy config's" },
   { key: "overlay (description, instructions, labels, hints, measures, examples, notDimensions, hierarchies)", runtime: "yes", area: "pack" },
   { key: "overlay.panel", runtime: "yes", area: "panel" },
@@ -56,6 +56,7 @@ export const RUNTIME_CONFIG: readonly RuntimeKey[] = [
   { key: "features", runtime: "yes", area: "features" },
   { key: "cache", runtime: "yes", area: "cache" },
   { key: "queue", runtime: "yes", area: "queue" },
+  { key: "limits (questionsPerDay, perMinute, perHour, adminsExempt, users)", runtime: "yes", area: "limits" },
   { key: "explain", runtime: "yes", area: "explain", note: "the explain switch is on the switches; whether the SQL shows is here" },
   { key: "brand", runtime: "yes", area: "brand" },
   { key: "telemetry", runtime: "yes", area: "telemetry" },

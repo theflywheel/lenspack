@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, type TabActor, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, readJson as readJsonBody, presentedKey, asSettingsWriter, revisionTag, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, userAccessSetup } from "@lenspack/serve";
-import { NOT_TURNED_ON_MESSAGE, type PackLayer, type PackRisk, applyPackLayer, type Principal, type QuerySafetyConfig, RUNTIME_CONFIG, adminRights, mayUse, packRisks, recordRights } from "@lenspack/policy";
+import { NOT_TURNED_ON_MESSAGE, type PackLayer, type PackRisk, applyPackLayer, type Principal, type QuerySafetyConfig, RUNTIME_CONFIG, type Rights, adminRights, mayUse, narrowRights, packRisks, recordRights } from "@lenspack/policy";
 import { guardedConnector, querySlots } from "@lenspack/engine";
 import YAML from "yaml";
 
@@ -36,6 +36,7 @@ import { actorOf, personalRoutes } from "./personal-routes";
 import { plainPath, requestPaths } from "./paths";
 import { fileRecords } from "./records";
 import { panelSetting, supersetSettingsRoutes, surfaceSetting } from "./runtime-settings";
+import { boundarySetup } from "./boundary";
 import { supersetBoards } from "./store";
 import { supersetActions } from "./actions";
 import { type TabRecord, type TabsConfig, type TabsSaved, reportsOnTab, supersetTabs, tabsConfigFrom, tabsLine, tabsSettingsChange } from "./tabs";
@@ -239,14 +240,66 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     log,
   );
   const client = supersetClient({ url: supersetUrl, username: account.username, password: account.password });
-  // Each dataset is retried inside fetchDatasets; the whole build is retried too, so a partial answer under load isn't a crash loop.
-  const fetchNow = () => fetchDatasets(client, config.datasets, { log });
-  const datasets = await retried("building the pack", fetchNow, [2000, 5000, 10_000], log);
-  // What differs between Superset 5 and 6 on this side: the default basemap of the maps Lenspack writes.
-  const superset = await supersetVersion(client);
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
   log(admin.limitsLine());
+  // The deployment's data boundary (@lenspack/policy boundary.ts, docs/hosts/superset/runtime.md): the deploy config's,
+  // which an admin may narrow while the server runs (PUT settings/boundary), never widen. Everything below that reads
+  // the datasets, the scope, the dashboards, the host and edit policies or the access modes reads it through boundary.
+  let boundary: ReturnType<typeof boundarySetup> | undefined;
+  const editPolicy = editPolicyFrom(env.LENSPACK_EDIT_POLICY ?? config.editPolicy);
+  // Who holds Lenspack's admin role, by Superset role name: policy settles it (principalOf), never Superset's admin flag.
+  const roleRules = roleRulesFrom(config.auth, env);
+  const hostRights = supersetRights(roleRules);
+  // Who is an admin and who may use the assistant, each one of three ways (docs/access/admin-access.md); policy decides
+  // (rightsUnder, usersUnder, adminRights), these read the settings and keep the grants admins make.
+  const adminAccess = adminAccessSetup({ config: config.auth, env, grants: settingsGrants(admin.settings, "adminGrants"), roster: settingsRoster(admin.settings), adminRoles: roleRules.admins ?? DEFAULT_SUPERSET_ADMINS, adminRolesFrom: env.LENSPACK_ADMIN_ROLES?.trim() ? "LENSPACK_ADMIN_ROLES" : config.auth?.admins ? "auth.admins" : undefined, log, narrow: () => boundary?.now() });
+  const userAccess = userAccessSetup({ config: config.auth, env, grants: settingsGrants(admin.settings, "userGrants"), roles: hostRights.users, rolesFrom: env.LENSPACK_USER_ROLES?.trim() ? "LENSPACK_USER_ROLES" : config.auth?.users ? "auth.users" : undefined, narrow: () => boundary?.now() });
+  // Read on every request: a grant or a revoke applies to the next one.
+  // The host's role rules, narrowed to the roles an admin kept (never more than the deploy config's).
+  const hostNow = {
+    editors: hostRights.editors,
+    maintainers: hostRights.maintainers,
+    get admins() {
+      return boundary ? narrowRights(hostRights, boundary.now()).admins : hostRights.admins;
+    },
+    get usage() {
+      return boundary ? narrowRights(hostRights, boundary.now()).usage : hostRights.usage;
+    },
+    ...(hostRights.users ? { users: hostRights.users } : {}),
+  } as Rights;
+  const rights = accessRights(hostNow, adminAccess, userAccess);
+  const ownRule = roleRules.admins !== undefined && roleRules.admins.join("\n") !== DEFAULT_SUPERSET_ADMINS.join("\n");
+  const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
+  const accessFallback = accessFallbackFrom(env.LENSPACK_ACCESS_FALLBACK ?? config.accessFallback);
+  if (config.scope !== undefined && config.scope !== null && !Array.isArray(config.scope)) throw new Error(`${file}: scope must be a list of filters, like [{ dimension: campaign, op: eq, value: 2026-spring }]`);
+  boundary = boundarySetup({
+    deploy: {
+      datasets: config.datasets,
+      scope: (config.scope as unknown[] | undefined) ?? [],
+      dashboards: dashboardScope.scope,
+      hostPolicy,
+      accessFallback,
+      editPolicy,
+      adminAccess: adminAccess.modes,
+      adminRoles: roleRules.admins ?? DEFAULT_SUPERSET_ADMINS,
+      usageRoles: roleRules.usage ?? roleRules.admins ?? DEFAULT_SUPERSET_ADMINS,
+      adminUsers: adminAccess.owners,
+      userAccess: userAccess.modes,
+      ...(roleRules.users ? { userRoles: roleRules.users } : {}),
+      seedUsers: userAccess.seeded,
+    },
+    settings: admin.settings,
+    log,
+    // Other datasets or another scope: the pack built again over them, checked as any pack change, then swapped in.
+    rebuild: (next, commit) => packs.rebuild({ fetch: () => fetchDatasets(client, [...next.datasets], { log }), scope: next.scope }, commit),
+  });
+  const bNow = () => boundary!.now();
+  // Each dataset is retried inside fetchDatasets; the whole build is retried too, so a partial answer under load isn't a crash loop.
+  const fetchNow = () => fetchDatasets(client, [...bNow().datasets], { log });
+  const datasets = await retried("building the pack", fetchNow, [2000, 5000, 10_000], log);
+  // What differs between Superset 5 and 6 on this side: the default basemap of the maps Lenspack writes.
+  const superset = await supersetVersion(client);
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
   const switchedOff = () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) });
@@ -265,7 +318,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     base: config.overlay ?? {},
     // The overlay as the file writes it, env: references kept, for the export.
     raw: (YAML.parse(readFileSync(file, "utf8")) as SupersetConfig | null)?.overlay ?? {},
-    scope: config.scope,
+    // The deploy config's scope, with any clauses an admin added (boundary): the pack is checked against it.
+    scope: () => bNow().scope,
+    scopeWords: (w) => {
+      const n = boundary!.deploy.scope.length;
+      const i = Number(/^scope\[(\d+)\]/.exec(w)?.[1] ?? -1);
+      return i >= n ? `the scope clause an admin added, ${w.replace(/^scope\[\d+\]/, `scope[${i - n}]`)}` : `the deploy config's ${w}`;
+    },
     store: packStore,
     fetch: fetchNow,
     capabilities: () => ({ ...SUPERSET_CAPABILITIES, ...switchedOff() }),
@@ -279,12 +338,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // In a pack outside UTC, a dataset whose series Superset can't draw in that zone is said now, not found one question at a time.
   for (const w of first.warnings) log(`warning: ${w}`);
   log(`pack ${packName}: ${Object.keys(first.pack.entities).length} datasets, ${first.pack.dimensions.length} dimensions, ${first.pack.measures.length} measures`);
-  // The pack's own context: its row scope, which every query anyone runs carries (decide() adds it to theirs). The scope
-  // is the deploy config's alone, so its clauses never change while the server runs.
-  const scope = packScope(config.scope, first.pack);
+  // The pack's own context: its row scope, which every query anyone runs carries (decide() adds it to theirs): the
+  // deploy config's clauses, and any an admin added (boundary). Set again when the pack is (swapPack).
+  let scope = packScope(bNow().scope, first.pack);
   for (const w of scope.warnings) log(`warning: ${w}`);
-  const packCtx = scope.clauses.length ? { scope: scope.clauses } : {};
-  if (scope.clauses.length) log(`pack scope: ${scope.clauses.map((c) => `${c.entity ? `${c.entity}.` : ""}${c.dimension} ${c.op} ${JSON.stringify(c.value)}`).join("; ")}`);
+  let packCtx: { scope?: ScopeClause[] } = scope.clauses.length ? { scope: scope.clauses } : {};
+  const scopeLine = () => scope.clauses.map((c) => `${c.entity ? `${c.entity}.` : ""}${c.dimension} ${c.op} ${JSON.stringify(c.value)}`).join("; ");
+  if (scope.clauses.length) log(`pack scope: ${scopeLine()}`);
   log(`Superset ${superset.version ?? "5.x (no version reported)"}${config.overlay?.mapStyle ? "" : `; maps drawn on ${first.binding.mapStyle}`}`);
   // Query safety: every query any caller sends (a board, the chat, the review) is checked against the deployment's
   // limits first, waits for one of maxConcurrent places, and is waited for at most timeoutSeconds.
@@ -354,17 +414,6 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   await Promise.race([keeper.first, new Promise((r) => setTimeout(r, 40_000).unref())]);
   const idKey = keeper.key;
   if (!idKey()) log("no identity key yet: every request is refused until Superset gives it (is lenspack_superset.py loaded in Superset?); still trying, and /readyz answers 503 until then");
-  const editPolicy = editPolicyFrom(env.LENSPACK_EDIT_POLICY ?? config.editPolicy);
-  // Who holds Lenspack's admin role, by Superset role name: policy settles it (principalOf), never Superset's admin flag.
-  const roleRules = roleRulesFrom(config.auth, env);
-  const hostRights = supersetRights(roleRules);
-  // Who is an admin and who may use the assistant, each one of three ways (docs/access/admin-access.md); policy decides
-  // (rightsUnder, usersUnder, adminRights), these read the settings and keep the grants admins make.
-  const adminAccess = adminAccessSetup({ config: config.auth, env, grants: settingsGrants(admin.settings, "adminGrants"), roster: settingsRoster(admin.settings), adminRoles: roleRules.admins ?? DEFAULT_SUPERSET_ADMINS, adminRolesFrom: env.LENSPACK_ADMIN_ROLES?.trim() ? "LENSPACK_ADMIN_ROLES" : config.auth?.admins ? "auth.admins" : undefined, log });
-  const userAccess = userAccessSetup({ config: config.auth, env, grants: settingsGrants(admin.settings, "userGrants"), roles: hostRights.users, rolesFrom: env.LENSPACK_USER_ROLES?.trim() ? "LENSPACK_USER_ROLES" : config.auth?.users ? "auth.users" : undefined });
-  // Read on every request: a grant or a revoke applies to the next one.
-  const rights = accessRights(hostRights, adminAccess, userAccess);
-  const ownRule = roleRules.admins !== undefined && roleRules.admins.join("\n") !== DEFAULT_SUPERSET_ADMINS.join("\n");
   // In refusals: a deployment that names its own admins (roles, people or a password) is not asking for Superset admins.
   const adminName = adminAccess.modes.join(",") === "superset-role" && !ownRule ? "Superset admin" : "assistant admin";
   const settle = (id: Parameters<typeof principalOf>[0]) => principalOf(id, rights);
@@ -378,10 +427,10 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     const id = identityOf(req, idKey);
     return !!id && !mayUse(settle({ user: id.u, roles: rolesOf(id), ...(userIdOf(id) !== undefined ? { userId: userIdOf(id) } : {}) }));
   };
-  const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
-  const accessFallback = accessFallbackFrom(env.LENSPACK_ACCESS_FALLBACK ?? config.accessFallback);
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: () => admin.runtime.audit.retentionDays() });
-  log(`identity: ${idKey() ? "signed by Superset" : "NO KEY (still trying)"}; edit policy ${editPolicy}; host policy ${hostPolicy}${hostPolicy === "superset" && accessFallback === "rls-only" ? " (rls-only fallback on a missing access route)" : ""}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
+  // The policies in force at start: the deploy config's, or narrower when an admin narrowed them before a restart.
+  const atStart = bNow();
+  log(`identity: ${idKey() ? "signed by Superset" : "NO KEY (still trying)"}; edit policy ${atStart.editPolicy}; host policy ${atStart.hostPolicy}${atStart.hostPolicy === "superset" && atStart.accessFallback === "rls-only" ? " (rls-only fallback on a missing access route)" : ""}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
   // Who is an admin and who may use it, in one line each, with where each setting came from (never the password).
   // First uses of admin rights go to the audit log (the admins roster).
   adminAccess.auditTo(auditLog?.audit);
@@ -393,20 +442,20 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const surfaceFrom = env.LENSPACK_ADMIN_SURFACE?.trim() ? "LENSPACK_ADMIN_SURFACE" : config.admin?.surface ? "admin.surface" : null;
   // An admin may move them while the server runs (PUT settings/admin-surface); every reader asks surfaceNow().
   const surfaceChoice = surfaceSetting(admin.settings, adminSurfaceFrom(config.admin?.surface, env.LENSPACK_ADMIN_SURFACE), surfaceFrom);
-  const surfaceNow = () => surfacePlan(surfaceChoice.value(), adminAccess.modes);
+  const surfaceNow = () => surfacePlan(surfaceChoice.value(), adminAccess.state().modes);
   const surface = surfaceNow();
   const surfaceWords = { split: "split (Superset's settings page holds what Superset needs; the admin panel the rest)", superset: "superset (everything on Superset's settings page)", separate: "separate (everything on the admin panel; Superset's settings page links to it)" };
   log(`admin pages: ${surfaceWords[surface.surface]} (${surfaceFrom ? `from ${surfaceFrom}` : "the default"})`);
   const surfaceWarnings = surface.asked ? [`admin pages: ${surfaceFrom} asks for ${surface.asked}, but admins sign in with a password (access password), so the admin pages are on their own (separate)`] : [];
   for (const w of [...adminAccess.warnings, ...userAccess.warnings, ...surfaceWarnings]) log(`warning: ${w}`);
-  if (hostPolicy === "off")
+  if (atStart.hostPolicy === "off")
     for (const line of [
       "WARNING: host policy is off (hostPolicy: off or LENSPACK_HOST_POLICY=off).",
       `WARNING: anyone signed in to Superset can read all ${datasets.length} configured dataset(s) in full through Lenspack: the chat, the filter menus and the board API.`,
       "WARNING: Superset's dataset permissions and row-level security do not apply to what Lenspack answers. Remove the setting to apply them (the default, hostPolicy: superset).",
     ])
       log(line);
-  if (hostPolicy === "superset" && accessFallback === "rls-only")
+  if (atStart.hostPolicy === "superset" && atStart.accessFallback === "rls-only")
     for (const line of [
       "WARNING: accessFallback is rls-only (accessFallback: rls-only or LENSPACK_ACCESS_FALLBACK=rls-only).",
       "WARNING: whenever Superset answers 404 for /api/v1/lenspack/access, Superset's dataset permissions and dashboard roles do not apply to that request: every configured dataset counts as readable, and only row-level security rules narrow it.",
@@ -419,7 +468,12 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   /** A change to the pack is in force (pack-runtime.ts): everything that reads the pack gets the new one from the next request on. */
   async function swapPack(l: LivePack) {
     connector = connectorFor(l.binding);
-    await setHost?.(packName, { pack: l.pack, packYaml: l.packYaml, connector });
+    // The row scope in force, over the new pack (an admin may have added clauses with it).
+    const was = scopeLine();
+    scope = packScope(bNow().scope, l.pack);
+    packCtx = scope.clauses.length ? { scope: scope.clauses } : {};
+    if (scopeLine() !== was) log(`pack scope: ${scopeLine() || "none"}`);
+    await setHost?.(packName, { pack: l.pack, packYaml: l.packYaml, connector, ctx: packCtx });
     // Every bound dashboard is read again under the new pack, in the background: a chart may now match a measure, or no longer.
     void store.setPack(l.pack, l.binding);
     for (const w of [...l.warnings, ...l.scopeWarnings]) log(`warning: ${w}`);
@@ -451,7 +505,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     pack: () => live().pack,
     bindBoard: bindId,
     // "My dashboards" lists only those in the deployment's dashboard scope.
-    boardScope: () => dashboardScope.scope,
+    boardScope: () => bNow().dashboards,
     links,
     layouts,
     limits,
@@ -487,12 +541,12 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     const facts = o.edit ? await editScopeOf(id) : undefined;
     const all = await links.list();
     const hidden = hiddenPersonalBoards(actorOf(id, rights), all);
-    const only = boardsInScope(dashboardScope.scope, madeBoards(all), { personalOn: limits().on });
+    const only = boardsInScope(bNow().dashboards, madeBoards(all), { personalOn: limits().on });
     return { ...(facts ? { editScope: facts } : {}), ...(hidden.length ? { hiddenBoards: hidden } : {}), ...(only ? { onlyBoards: only } : {}) };
   };
   /** What policy says this person may do on the dashboard Superset signed for: Superset's rights, narrowed by the deployment's facts. */
   const rightsOn = async (id: Identity) => {
-    const caller = callerOf(id, editPolicy, admin.features.on("boardEdits"));
+    const caller = callerOf(id, bNow().editPolicy, admin.features.on("boardEdits"));
     const facts = await callerFacts(id, { edit: !!caller.edit });
     const board = `superset-${id.d}`;
     const r = boardRights(settle({ ...caller, ...facts }), { id: board });
@@ -590,7 +644,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         get connector() {
           return connector;
         },
-        ctx: packCtx,
+        get ctx() {
+          return packCtx;
+        },
       },
     ],
     events: auditLog ? (from) => auditLog.since(from) : undefined,
@@ -600,7 +656,11 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     title: packName,
     log,
   });
-  const auth = supersetAuth(idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding: () => live().binding, log, dashboards: () => Object.values(dashboards), fallback: accessFallback }) : undefined, callerFacts, rights);
+  // The host and edit policies in force (boundary): an admin may turn the host policy on, or narrow the fallback and the
+  // edit policy, while the server runs; never the reverse.
+  const hostPolicyNow = () => bNow().hostPolicy;
+  const ownAccess = supersetPolicy({ client, binding: () => live().binding, log, dashboards: () => Object.values(dashboards), fallback: () => bNow().accessFallback });
+  const auth = supersetAuth(idKey, () => bNow().editPolicy, () => admin.features.on("boardEdits"), { current: () => (hostPolicyNow() === "superset" ? ownAccess : undefined) }, callerFacts, rights);
   // The start of a link to a Superset page: Superset's root when this server is reached through Superset's host
   // ("" or "/superset"), else Superset's address.
   const supersetBase = (req: IncomingMessage) => {
@@ -733,7 +793,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
 
   // The host's own options an admin changes while the server runs: how the chat opens, where the admin pages are.
   const hostSettings = supersetSettingsRoutes({
-    areas: { panel: panelChoice.area, "admin-surface": surfaceChoice.area },
+    areas: { panel: panelChoice.area, "admin-surface": surfaceChoice.area, boundary: boundary.area },
     access: () => adminAccess.state(),
     audit: auditLog?.audit,
     log,
@@ -754,7 +814,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         const id = identityOf(req, idKey);
         if (!id || typeof id.d !== "number" || turn.boardId !== `superset-${id.d}` || !limits().on) return undefined;
         // Refused by the edit scope alone: Superset would let them edit, the deployment keeps the chat to their own.
-        const byScope = !!turn.readOnly && canEdit(id, editPolicy, admin.features.on("boardEdits"));
+        const byScope = !!turn.readOnly && canEdit(id, bNow().editPolicy, admin.features.on("boardEdits"));
         return personal.port(actorOf(id, rights), { dashboard: id.d, board: turn.boardId, view: id.v !== false, edit: !turn.readOnly, byScope }, supersetBase(req));
       },
       // The tab rules on the dashboard Superset signed for: the chat's tab tools and the check before each edit.
@@ -822,7 +882,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         },
         // supersetRoot: where Superset runs on its host ("" or "/superset"), for the overlay's links to Superset's pages.
         // admin: how admins sign in, and where the admin pages are, for Superset's settings page (no names, no secrets).
-        info: (url, req) => ({ pack: packName, examples: examplesFor(examples(), url.searchParams.get("lang")), examplesByLang: examples(), panel: panelNow(), supersetRoot: paths(req).root, admin: { access: adminAccess.modes.join(","), surface: surfaceNow().surface, page: surfaceNow().hostPage, panel: surfaceNow().panel === "none" ? null : `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
+        info: (url, req) => ({ pack: packName, examples: examplesFor(examples(), url.searchParams.get("lang")), examplesByLang: examples(), panel: panelNow(), supersetRoot: paths(req).root, admin: { access: adminAccess.state().modes.join(","), surface: surfaceNow().surface, page: surfaceNow().hostPage, panel: surfaceNow().panel === "none" ? null : `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
         details: () => ({
           pack: packName,
           datasets: live().datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: live().binding.entityOf.get(d.id) ?? null })),
@@ -835,12 +895,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           // The pack's own row scope, which every answer carries.
           scope: scope.clauses,
           superset: { url: supersetUrl, username: account.username, account: account.source },
-          editPolicy,
-          hostPolicy,
-          accessFallback,
+          editPolicy: bNow().editPolicy,
+          hostPolicy: hostPolicyNow(),
+          accessFallback: bNow().accessFallback,
           dashboards: Object.values(dashboards),
           // Which dashboards the assistant works on: any, or only the listed ones (and people's own copies of them).
-          dashboardScope: dashboardScope.scope.scope === "any" ? { scope: "any" } : { scope: "listed", dashboards: dashboardScope.scope.boards.map((b) => Number(dashboardLabel(b))) },
+          dashboardScope: ((d) => (d.scope === "any" ? { scope: "any" } : { scope: "listed", dashboards: d.boards.map((b) => Number(dashboardLabel(b))) }))(bNow().dashboards),
+          // The data boundary: the deploy config's, and how an admin narrowed it (PUT /_superset/settings/boundary).
+          boundary: boundary!.area.view(!!idKey()),
           // People's own dashboards and saved layouts: the switch and the limits (PUT /_superset/settings/personal).
           personal: limits(),
           // Where the chat may change dashboards (PUT /_superset/settings/edit-scope), with a warning when no one can.
@@ -1027,7 +1089,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           // Lenspack's account sees every dashboard: list only those Superset lets this user open. Superset answers
           // for admins too (they open all), so the one rule is boardRights over what Superset said.
           let shown = list.result;
-          if (hostPolicy === "superset") {
+          if (hostPolicyNow() === "superset") {
             const open = await viewableDashboards(client, who.user, shown.map((d) => d.id));
             const hiddenBoards = shown.filter((d) => !open.has(d.id)).map((d) => `superset-${d.id}`);
             shown = shown.filter((d) => boardRights({ ...who, hiddenBoards: [...(who.hiddenBoards ?? []), ...hiddenBoards] }, { id: `superset-${d.id}` }).view);

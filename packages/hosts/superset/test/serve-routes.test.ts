@@ -246,7 +246,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "adminSurface", "audit", "brand", "budget", "cache", "chat", "context", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "explain", "features", "history", "hostPolicy", "language", "lastChange", "limits", "llmFrom", "measures", "models", "pack", "packLayer", "panel", "panelSetting", "personal", "providers", "publicPath", "querySafety", "queue", "revision", "runtime", "scope", "speech", "superset", "tabs", "telemetry", "userAccess", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "adminSurface", "audit", "boundary", "brand", "budget", "cache", "chat", "context", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "explain", "features", "history", "hostPolicy", "language", "lastChange", "limits", "llmFrom", "measures", "models", "pack", "packLayer", "panel", "panelSetting", "personal", "providers", "publicPath", "querySafety", "queue", "revision", "runtime", "scope", "speech", "superset", "tabs", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -362,6 +362,20 @@ describe("Superset mode's server", () => {
     expect(await put("/_superset/settings/language", { titles: "loud" })).toMatchObject({ status: 400, body: { error: "bad titles: loud" } });
     expect(await put("/_superset/settings/language", { board: "auto" })).toMatchObject({ status: 400, body: { error: "bad board: auto" } });
     expect((await put("/_superset/settings/language", { default: null, titles: null })).body).toMatchObject({ default: "auto", titles: "board", source: "default" });
+  });
+
+  it("sets the offered languages, and keeps the default and board among them", async () => {
+    const set = await put("/_superset/settings/language", { offer: ["pt", "en", "fr"] });
+    expect(set).toMatchObject({ status: 200, body: { offer: ["en", "fr", "pt"], options: ["auto", "en", "fr", "pt"], source: "settings" } });
+    expect((await call("/_superset/info", { as: VIEWER })).body.language).toMatchObject({ offer: ["en", "fr", "pt"], options: ["auto", "en", "fr", "pt"] });
+    expect(await put("/_superset/settings/language", { default: "hi" })).toMatchObject({ status: 400, body: { error: expect.stringContaining("language.default (hi) must be one of") } });
+    expect(await put("/_superset/settings/language", { board: "hi" })).toMatchObject({ status: 400 });
+    expect(await put("/_superset/settings/language", { offer: ["en", "de"] })).toMatchObject({ status: 400 });
+    expect(await put("/_superset/settings/language", { offer: [] })).toMatchObject({ status: 400 });
+    // Narrowing past the saved default is refused too.
+    await put("/_superset/settings/language", { default: "pt" });
+    expect(await put("/_superset/settings/language", { offer: ["en", "fr"] })).toMatchObject({ status: 400 });
+    expect((await put("/_superset/settings/language", { offer: null, default: null })).body).toMatchObject({ offer: ["en", "fr", "hi", "pt"], source: "default" });
   });
 
   it("checks a chat model against the providers, and resets it", async () => {

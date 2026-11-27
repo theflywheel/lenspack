@@ -154,6 +154,14 @@ curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"offered": ["
 curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"retentionDays": 180}' $LP/settings/audit
 ```
 
+**Narrow the data boundary**: fewer datasets, one more filter on every answer, or fewer roles. A key can narrow the
+boundary, never widen it past `superset.yaml`; see
+[The boundary narrows only](../hosts/superset/runtime.md#the-boundary-narrows-only):
+
+```sh
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"datasets": [11], "userRoles": ["<a role>"]}' $LP/settings/boundary
+```
+
 **Add an admin** (under `superset-users`) **or a user** (under `granted`), by Superset user name or `id:<n>`; `remove`
 takes them away:
 
@@ -238,15 +246,18 @@ own. Each wrong key is in the audit log as `api:?` with the address, never the k
 ## What still needs a redeploy
 
 Most options can change with a key: the budget caps, which models answer and their roles, the audit log's retention,
-how the chat opens, where the admin pages are, and everything on the settings page. The whole list, option by option,
+how the chat opens, where the admin pages are, everything on the settings page, and a narrower data boundary (fewer
+datasets, more filters, fewer dashboards, stricter access). The whole list, option by option,
 is on [What can change without a redeploy](../hosts/superset/runtime.md). These stay in `superset.yaml` or the
 environment:
 
-- the datasets, dashboards and the pack's own row scope, and the overlay's `pack`, `entities`, `timeZone`, `geo` and
-  `mapStyle`; an exclusion `superset.yaml` makes can't be removed;
+- anything that would widen the data boundary: more datasets, dashboards or roles than `superset.yaml` sets, fewer
+  of its filters, the host policy off, another access mode. A key can only narrow the boundary
+  ([The boundary narrows only](../hosts/superset/runtime.md#the-boundary-narrows-only)), so a leaked key can make
+  the assistant reach less, never more. An exclusion `superset.yaml` makes can't be removed either;
+- the overlay's `pack`, `entities`, `timeZone`, `geo` and `mapStyle`;
 - the model and speech keys (`LENSPACK_LLM_PROVIDERS`, speech keys) and where spoken questions are sent;
-- who is an admin and who may use the assistant (`auth.adminAccess`, `auth.userAccess`, roles, owners, passwords),
-  the admin API keys themselves, the host policy and the edit policy;
+- the admin passwords and the admin API keys themselves;
 - switching the audit log off, how the server reaches Superset, its port and its state directory.
 
 Grants made on the Access tab (admins under `superset-users`, users under `granted`), everything in the definitions and

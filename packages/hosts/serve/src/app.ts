@@ -447,7 +447,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
    * with. Saved answers kept under the old pack are dropped, as at start (their key holds the pack's hash, so none is
    * served meanwhile).
    */
-  async function setHost(name: string, next: Pick<Host, "pack" | "packYaml" | "connector"> & { catalogue?: Catalogue }) {
+  async function setHost(name: string, next: Pick<Host, "pack" | "packYaml" | "connector"> & Partial<Pick<Host, "ctx">> & { catalogue?: Catalogue }) {
     const i = live.findIndex((h) => h.name === name);
     if (i < 0) throw new Error(`no pack ${name}`);
     const host: Host = { ...live[i]!, ...next, catalogue: next.catalogue };

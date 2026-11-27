@@ -31,7 +31,7 @@ export const PACK_CONFIG_FIELDS: Readonly<Record<string, string>> = {
   panel: "how the chat opens: a deployment setting, changed on the settings page (settings/panel) rather than in the pack",
 };
 
-/** The deployment's data boundary outside the overlay: never part of the layer. */
+/** The deployment's data boundary outside the overlay: never part of the layer; narrowed only, on settings/boundary (boundary.ts). */
 export const PACK_DATA_BOUNDARY = ["datasets", "scope", "dashboards", "dashboardScope", "auth"] as const;
 
 /** Deployment settings that are not part of the pack, and where they change instead. */
@@ -99,7 +99,7 @@ export function packChangeRefusals(change: Record<string, unknown>, base: Overla
   for (const k of Object.keys(change)) {
     if (RUNTIME.has(k)) continue;
     if (PACK_CONFIG_FIELDS[k]) out.push(`${k} is set in the deploy config only (${PACK_CONFIG_FIELDS[k]})`);
-    else if ((PACK_DATA_BOUNDARY as readonly string[]).includes(k)) out.push(`${k} is part of the deployment's data boundary and is set in the deploy config only`);
+    else if ((PACK_DATA_BOUNDARY as readonly string[]).includes(k)) out.push(`${k} is part of the deployment's data boundary, never part of the pack: the deploy config sets it, and an admin may only narrow it (settings/boundary)`);
     else if (PACK_ELSEWHERE[k]) out.push(`${k}: ${PACK_ELSEWHERE[k]}`);
     else out.push(`${k} is not a part of the pack that can be changed here (${PACK_RUNTIME_FIELDS.join(", ")})`);
   }
