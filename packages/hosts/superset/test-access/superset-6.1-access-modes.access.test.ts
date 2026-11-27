@@ -11,6 +11,7 @@ import { type ChatResult, PACK, Session, type Stack, readChat, startStack } from
 const PASSWORD = "access-suite-admin-password-0123";
 const OPS = "access-suite-ops-password-4567";
 const VENDOR = "access-suite-vendor-password-89";
+const API_KEY = "access-suite-api-key-0123456789abcdef";
 const NOT_ON = /isn't turned on for your account/;
 const BREAKDOWN = { query_kind: "breakdown", measure: "visit_total", dimension: "region" };
 const byGroup = (rows: { group: string; value: number }[] | undefined) => Object.fromEntries((rows ?? []).map((r) => [r.group, r.value]));
@@ -39,7 +40,7 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
 
   beforeAll(async () => {
     // The menu entry asks Lenspack who its admins are every second here (five minutes by default), so a restart shows at once.
-    stack = await startStack("6.1.0", { lenspackEnv: { LENSPACK_ADMIN_PASSWORD: PASSWORD, LENSPACK_ADMIN_PASSWORDS: `ops:${OPS},vendor:${VENDOR}` }, supersetEnv: { LENSPACK_MENU_REFRESH_SECONDS: "1" } });
+    stack = await startStack("6.1.0", { lenspackEnv: { LENSPACK_ADMIN_PASSWORD: PASSWORD, LENSPACK_ADMIN_PASSWORDS: `ops:${OPS},vendor:${VENDOR}`, LENSPACK_ADMIN_API_KEYS: `ci:${API_KEY}` }, supersetEnv: { LENSPACK_MENU_REFRESH_SECONDS: "1" } });
     A = `superset-${stack.fixtures.dashboards.a}`;
     for (const u of ["lp_admin", "lp_owner", "lp_viewer", "lp_north", "lp_lensuser", "lp_lensadmin"]) s[u] = await stack.as(u);
     const a = await s.lp_admin!.lp("POST", `api/${PACK}/${A}/ops`, { ops: [{ op: "add_widget", id: "visits", widget: { title: "Visits", kind: "chart", chart: "bar", query: { kind: "breakdown", dimension: "region", measure: "visit_total" } }, placement: { place: "bottom", width: "half" } }] });
@@ -318,5 +319,42 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
       for (const path of ["_superset/admin/", "_superset/settings", "_superset/settings/admins"]) expect([path, (await s.lp_admin!.lp("GET", path)).status]).toEqual([path, 403]);
       expect((await s.lp_admin!.lp("PUT", "_superset/settings/admins", { add: "lp_admin" })).status).toBe(403);
     }, 300_000);
+  });
+  describe("an admin API key through Superset's public address (docs/access/admin-api.md)", () => {
+    const bearer = (key = API_KEY) => ({ authorization: `Bearer ${key}` });
+    // No Superset session at all: a script with nothing but the key and Superset's address.
+    const script = () => new Session(stack.superset, "script", stack.appRoot);
+
+    beforeAll(async () => {
+      await stack.restartLenspack(["auth: { adminAccess: superset-users, adminUsers: [lp_owner] }"]);
+      expect(stack.log()).toMatch(/admin API keys: 1 \(ci\) from LENSPACK_ADMIN_API_KEYS/);
+    }, 300_000);
+
+    it("reaches the admin routes through /lenspack/_admin/ without a Superset session, as api:ci, overriding the admin mode", async () => {
+      const me = await script().send("GET", "/lenspack/_admin/whoami", { headers: bearer() });
+      expect([me.status, me.json]).toEqual([200, { user: "api:ci", administer: true, users: true, owner: true, via: "api-key", detail: "ci", usesAssistant: false }]);
+      const changed = await script().send("PUT", "/lenspack/_admin/settings/brand", { headers: bearer(), body: { name: "Access suite helper" } });
+      expect(changed.status, changed.text).toBe(200);
+      expect((await script().send("PUT", "/lenspack/_admin/settings/admins", { headers: bearer(), body: { add: "lp_north" } })).status).toBe(200);
+      expect((await s.lp_north!.lp("GET", "_superset/admin/")).status).toBe(200);
+      expect((await script().send("PUT", "/lenspack/_admin/settings/admins", { headers: bearer(), body: { remove: "lp_north" } })).status).toBe(200);
+      const lines = (await audit(s.lp_owner!)).map((e) => `${e.user} ${e.action} ${e.outcome} ${e.detail ?? ""}`.trim());
+      expect(lines).toEqual(expect.arrayContaining(["api:ci admin first use ok API key ci", "api:ci settings admins grant ok lp_north"]));
+      expect(lines.some((l) => l.startsWith("api:ci settings brand ok"))).toBe(true);
+      expect((await script().send("PUT", "/lenspack/_admin/settings/brand", { headers: bearer(), body: { name: null } })).status).toBe(200);
+    });
+
+    it("refuses a wrong key, and is not passed on by any other Superset route", async () => {
+      const wrong = await script().send("GET", "/lenspack/_admin/whoami", { headers: bearer(`${API_KEY}-wrong`) });
+      expect([wrong.status, wrong.json?.error]).toEqual([401, "not a valid admin API key"]);
+      // Superset's other route still wants a Superset session first, key or not.
+      expect((await script().send("GET", "/lenspack/_superset/settings", { headers: bearer() })).status).toBe(401);
+      // Signed in as a Gamma user with the key: Lenspack sees the Gamma user only, as the header is not passed on.
+      expect((await s.lp_viewer!.send("GET", "/lenspack/_superset/settings", { headers: bearer() })).status).toBe(403);
+      // On the passthrough, anything but an admin route refuses a key, unchecked.
+      const other = await script().send("GET", "/lenspack/_admin/auth/login", { headers: bearer() });
+      expect([other.status, other.json?.code]).toEqual([403, "api-key-admin-only"]);
+      expect(JSON.stringify(await audit(s.lp_owner!))).not.toContain(API_KEY);
+    });
   });
 });

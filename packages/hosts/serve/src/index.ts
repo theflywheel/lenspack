@@ -16,6 +16,7 @@ export * from "./settings";
 export * from "./features";
 export * from "./brand";
 export * from "./admin";
+export * from "./admin-api-key";
 export * from "./admin-access";
 export * from "./admin-signin";
 export * from "./paging";

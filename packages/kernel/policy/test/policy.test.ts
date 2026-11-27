@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { catalogueFrom, parsePackText, type Pack } from "@lenspack/pack";
 import { describe, expect, it } from "vitest";
 
-import { ADMIN_ROLE, PASSWORD_ROLE, adminAccessModesFrom, adminMenuHint, passwordNameOk, adminSurfaceFrom, surfacePlan, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
+import { ADMIN_ROLE, API_KEY_ROLE, PASSWORD_ROLE, apiKeyAdmin, apiKeyNameOk, viaApiKey, adminAccessModesFrom, adminMenuHint, passwordNameOk, adminSurfaceFrom, surfacePlan, mayUseUnder, userAccessModesFrom, usersUnder, DEFAULT_HIDDEN_REASON, PASSWORD_ADMIN, PASSWORD_ADMIN_RIGHTS, adminAccessModeFrom, adminUsersFrom, matchesEntry, passwordAdmin, rightsUnder, type Identity, type PackRule, accessNote, adminRights, mayUse, answerView, boardGrant, boardRights, contextFor, decide, deploymentContextSchema, hiddenKeys, holds, mayAdminister, otherTenant, principalOf, recordRights, reportsOn, shownConfig, showsStatement } from "../src";
 
 // The policy kernel alone: no server, no source. Who a caller is in, what of
 // a pack they may use out. The server tests (serve/test/auth, access) prove
@@ -482,6 +482,48 @@ describe("who is an admin: the access modes, alone and combined", () => {
     // password alone: nobody from the host; combined, the other mode's names.
     expect(adminMenuHint(access(["password"], { passwords: ["ops"] }))).toEqual({ roles: [], users: [], everyone: false });
     expect(adminMenuHint(access(["superset-role", "password"], { roles: ["role:Lenspack admin"], passwords: ["ops"] })).roles).toEqual(["Lenspack admin"]);
+  });
+});
+
+describe("admin API keys: the master override", () => {
+  const host = { editors: [], maintainers: [], admins: ["role:Admin"], usage: ["role:Admin"] };
+  type Access = Parameters<typeof rightsUnder>[0];
+  const access = (modes: Access["modes"], more: Partial<Access> = {}): Access => ({ modes, roles: host.admins, owners: [], granted: [], passwords: [], apiKeys: ["ci"], ...more });
+
+  it("is api:<name>, an admin with the usage right, and never a user of the assistant", () => {
+    const k = apiKeyAdmin("ci");
+    expect(k).toMatchObject({ user: "api:ci", edit: false, usage: true, uses: false });
+    expect(k.roles).toEqual([ADMIN_ROLE, API_KEY_ROLE]);
+    expect(viaApiKey(k)).toBe(true);
+    expect(mayUse(k)).toBe(false);
+    // No data rights: it maintains and edits nothing, and settling it again changes nothing but the mark.
+    expect(k.maintain).toBeUndefined();
+    expect(recordRights(k)).toEqual({ settings: true, telemetry: true, usernames: true, audio: true });
+    expect(apiKeyNameOk("ci-deploy_2")).toBe(true);
+    expect(apiKeyNameOk("a b")).toBe(false);
+  });
+
+  it("administers in every admin access mode, and may grant admins, while its name is still set", () => {
+    for (const modes of [["superset-role"], ["superset-users"], ["password"], ["superset-role", "password"], ["superset-users", "password"]] as Access["modes"][]) {
+      expect([modes.join(","), adminRights(apiKeyAdmin("ci"), access(modes))]).toEqual([modes.join(","), { administer: true, users: true, owner: true, via: "api-key", detail: "ci" }]);
+    }
+    // Even under superset-users with no owner (where nobody else administers), the key does: it is the way in.
+    expect(adminRights(apiKeyAdmin("ci"), access(["superset-users"], { owners: [] })).administer).toBe(true);
+    // A key removed from the deployment administers nothing, nor does one when no key is set.
+    expect(adminRights(apiKeyAdmin("old"), access(["superset-role"])).administer).toBe(false);
+    expect(adminRights(apiKeyAdmin("ci"), access(["superset-role"], { apiKeys: undefined })).administer).toBe(false);
+    // Without the deployment's access, the admin role decides, as for every settled caller.
+    expect(adminRights(apiKeyAdmin("ci"))).toMatchObject({ administer: true, via: "api-key" });
+  });
+
+  it("can't be claimed by a host user: not by name, not by the mark, not as a grant", () => {
+    // A Superset user named api:ci holding the mark and Superset's Admin role: principalOf strips the mark.
+    const claimed = principalOf({ user: "api:ci", roles: ["Admin", API_KEY_ROLE] }, host);
+    expect(claimed.roles).not.toContain(API_KEY_ROLE);
+    expect(viaApiKey(claimed)).toBe(false);
+    expect(adminRights(claimed, access(["superset-role"])).administer).toBe(false);
+    expect(adminRights(claimed, access(["superset-users"], { owners: ["api:ci"] })).administer).toBe(false);
+    expect(() => adminUsersFrom(["api:ci"])).toThrow(/admin API keys' own/);
   });
 });
 

@@ -11,6 +11,15 @@ brought it.
 
 ### 27 November 2026
 
+- **An admin API key, for scripts and for deployments with no server access.** Set `LENSPACK_ADMIN_API_KEYS` (one
+  `name:key` per key, or a mounted file with `LENSPACK_ADMIN_API_KEYS_FILE`; best as a `scrypt$` hash from
+  `lenspack hash-password`, so the Secret holds only the hash) and send `Authorization: Bearer <key>` to
+  `https://<your Superset>/lenspack/_admin/<route>`: no Superset session needed. A key is a master override: an admin
+  in every admin access mode, who may also add admins, on the admin routes only; never the chat or data. Everything
+  done with it is in the audit log as `api:<name>`, and the Access tab lists it as "API key <name>" once used.
+  `GET …/_admin/whoami` checks a key without changing anything. Wrong keys are limited per caller and audited without
+  the key. Off by default; update the plugin file with the server, since it now passes the header on for
+  `/lenspack/_admin/` only. See [The admin API key](docs/access/admin-api.md).
 - **The assistant can be limited to some Superset dashboards.** On a Superset shared by several projects, set
   `dashboardScope: listed` (or `LENSPACK_DASHBOARD_SCOPE=listed`) and list the dashboards in `dashboards:` (or
   `LENSPACK_DASHBOARDS=25,31`). The button then shows on those dashboards only, and every route that takes a
