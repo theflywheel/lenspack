@@ -570,3 +570,4 @@ export * from "./board-scope";
 export * from "./pack-layer";
 export * from "./query-safety";
 export * from "./runtime-config";
+export * from "./query-checks";

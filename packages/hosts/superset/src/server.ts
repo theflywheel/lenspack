@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
-import { NOT_TURNED_ON_MESSAGE, type Principal, type QuerySafetyConfig, RUNTIME_CONFIG, adminRights, mayUse, recordRights } from "@lenspack/policy";
+import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, userAccessSetup } from "@lenspack/serve";
+import { NOT_TURNED_ON_MESSAGE, type PackLayer, type PackRisk, applyPackLayer, type Principal, type QuerySafetyConfig, RUNTIME_CONFIG, adminRights, mayUse, packRisks, recordRights } from "@lenspack/policy";
 import { guardedConnector, querySlots } from "@lenspack/engine";
 import YAML from "yaml";
 
@@ -28,9 +28,10 @@ import { OUT_OF_SCOPE_MESSAGE, dashboardBoard, dashboardLabel, dashboardScopeFro
 import { examplesByLanguage, examplesFor } from "./examples";
 import { accessFallbackFrom, supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, signedClient, supersetAuth, supersetRights, userIdOf } from "./identity";
-import { type LivePack, packRuntime } from "./pack-runtime";
+import { type LivePack, buildPack, packRuntime } from "./pack-runtime";
 import { personalDashboards } from "./personal";
 import { supersetQuerySafety } from "./query-safety";
+import { datasetFacts, dryRun, dryRunText, exampleRefusals } from "./dry-run";
 import { actorOf, personalRoutes } from "./personal-routes";
 import { plainPath, requestPaths } from "./paths";
 import { fileRecords } from "./records";
@@ -272,8 +273,19 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   log(safety.line());
   const slots = querySlots(() => safety.current().server.maxConcurrent);
   const connectorFor = (binding: Binding) => guardedConnector(supersetConnector(client, binding, { log, capabilities: switchedOff }), safety.guard, { slots });
+  // Risky definitions in the pack under the limits (a per-record column offered for grouping, a heavy dataset no time
+  // range narrows, an example question the limits would refuse): said at start and whenever the pack changes, and in
+  // the settings API. Warnings only; nothing is changed by them.
+  const risksNow = (): PackRisk[] => packRisks(live().pack, safety.current(), datasetFacts(live().datasets, live().binding));
+  let exampleRisks: PackRisk[] = [];
+  const checkPack = async () => {
+    for (const r of risksNow()) log(`${r.level === "warning" ? "warning" : "note"}: ${r.message}`);
+    exampleRisks = await exampleRefusals(live().pack, connector).catch(() => []);
+    for (const r of exampleRisks) log(`warning: ${r.message}`);
+  };
   // Replaced whole when the pack changes (swapPack): a turn already running keeps the one it began with.
   let connector = connectorFor(first.binding);
+  void checkPack();
   const dashboards: Record<string, number> = Object.fromEntries(dashboardScope.dashboards.map((d) => [dashboardBoard(d), d]));
   log(`dashboards: ${boardScopeLine(dashboardScope.scope, dashboardLabel)}`);
   // People's own dashboards and saved layouts: kept in files in the state directory, behind RecordStore.
@@ -371,6 +383,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     // Every bound dashboard is read again under the new pack, in the background: a chart may now match a measure, or no longer.
     void store.setPack(l.pack, l.binding);
     for (const w of [...l.warnings, ...l.scopeWarnings]) log(`warning: ${w}`);
+    void checkPack();
   }
 
   /** Binds a dashboard Lenspack knows the person may use (one they are on, or one just made for them). */
@@ -708,7 +721,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           // What can change while the server runs and what stays in the deploy config (@lenspack/policy runtime-config.ts).
           runtime: RUNTIME_CONFIG,
           // Limits on the queries sent to Superset (PUT /_superset/settings/query-safety).
-          querySafety: safety.view(!!idKey()),
+          querySafety: { ...safety.view(!!idKey()), packRisks: [...risksNow(), ...exampleRisks] },
         }),
         access: adminAccess,
         users: userAccess,
@@ -718,7 +731,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password", surface: "separate", sections: "all", superset: true, supersetPage: supersetPage(req) }) }) : null;
       const passwordPack = passwordAdmin ? packs.routes("/_admin", { access: () => adminAccess.state(), seen: (who) => adminAccess.seen(who), audit: auditLog?.audit, adminName: "assistant admin" }) : null;
       const passwordSettings = passwordAdmin
-        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, details: () => ({ querySafety: safety.view(true) }) })
+        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, details: () => ({ querySafety: { ...safety.view(true), packRisks: [...risksNow(), ...exampleRisks] } }) })
         : null;
       /**
        * PUT <prefix>/settings/query-safety: an admin changes the query limits on a running server. Tighter than the
@@ -726,10 +739,31 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
        * says "confirm": true. Audited either way.
        */
       const querySafetyRoute = async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal, prefix: string, name: string): Promise<boolean> => {
-        if (url.pathname !== `${prefix}/settings/query-safety`) return false;
-        const audit = (outcome: "ok" | "denied" | "refused", detail: string) => auditLog?.audit({ at: new Date().toISOString(), user: who.user, action: "settings query-safety", outcome, detail: detail.slice(0, 500) });
-        if (req.method !== "PUT") return json(res, 405, { error: "PUT" }, NO_STORE), true;
+        const dry = url.pathname === `${prefix}/settings/query-safety/dry-run`;
+        if (url.pathname !== `${prefix}/settings/query-safety` && !dry) return false;
+        const audit = (outcome: "ok" | "denied" | "refused", detail: string) => auditLog?.audit({ at: new Date().toISOString(), user: who.user, action: dry ? "query-safety dry run" : "settings query-safety", outcome, detail: detail.slice(0, 500) });
+        if (req.method !== (dry ? "POST" : "PUT")) return json(res, 405, { error: dry ? "POST" : "PUT" }, NO_STORE), true;
         if (!adminRights(who, adminAccess.state()).administer) return audit("denied", `not a ${name}`), json(res, 403, { error: `only ${name}s can do this` }, NO_STORE), true;
+        // POST …/dry-run: every query shape the pack allows, compiled by Superset with result_type "query" and read for
+        // risks; nothing is run. Optional body { cap } (default 200 shapes, at most 1000).
+        if (dry) {
+          const chunks: Buffer[] = [];
+          for await (const c of req) chunks.push(c as Buffer);
+          let cap = 200;
+          try {
+            const b = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { cap?: unknown };
+            if (b.cap !== undefined) {
+              if (typeof b.cap !== "number" || !Number.isInteger(b.cap) || b.cap < 1 || b.cap > 1000) return json(res, 400, { error: "cap is a whole number of query shapes from 1 to 1000" }, NO_STORE), true;
+              cap = b.cap;
+            }
+          } catch {
+            return json(res, 400, { error: "send the options as JSON" }, NO_STORE), true;
+          }
+          const l = live();
+          const report = await dryRun({ client, pack: l.pack, binding: l.binding, connector, safety: safety.current(), datasets: l.datasets, cap });
+          audit("ok", `${report.shapes} shapes, ${report.compiled} compiled, ${report.findings.filter((f) => f.level === "danger").length} dangerous, ${report.refused.length} refused`);
+          return json(res, 200, { ...report, text: dryRunText(report) }, NO_STORE), true;
+        }
         let body: unknown;
         try {
           const chunks: Buffer[] = [];
@@ -868,4 +902,41 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       void review.start();
     },
   });
+}
+
+/**
+ * `lenspack query-check --config superset.yaml`: the dry run (dry-run.ts) from a terminal, before go-live. It reads
+ * the same config as the server (the pack with any changes admins saved, the query limits with any an admin set),
+ * signs in to Superset as Lenspack's account, and asks Superset to compile each query shape with result_type
+ * "query": nothing is run. Returns the report and whether anything dangerous was found (exit code 1).
+ */
+export async function querySafetyCheck(path: string, o: { cap?: number; url?: string; username?: string } = {}, env: NodeJS.ProcessEnv = process.env) {
+  const file = resolve(path);
+  const dir = dirname(file);
+  const config = resolveSecrets(YAML.parse(readFileSync(file, "utf8")) as SupersetConfig, env, { file, allowEmpty: true });
+  const supersetUrl = o.url ?? config.superset?.url ?? env.LENSPACK_SUPERSET_URL;
+  if (!supersetUrl) throw new Error(`${file}: say where Superset's API is, as superset.url, LENSPACK_SUPERSET_URL or --url`);
+  const statePath = resolve(dir, config.state ?? (env.LENSPACK_STATE_DIR ? join(env.LENSPACK_STATE_DIR, "superset-boards.json") : "state/superset-boards.json"));
+  const stateDir = dirname(statePath);
+  const log = (s: string) => console.error(`lenspack query-check: ${s}`);
+  const account = await serviceAccount({
+    url: supersetUrl,
+    username: o.username ?? config.superset?.username ?? "lenspack",
+    stateDir,
+    password: config.superset?.password ?? env[config.superset?.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"] ?? undefined,
+    admin: { username: env.SUPERSET_ADMIN_USERNAME, password: env.SUPERSET_ADMIN_PASSWORD },
+    log,
+  });
+  const client = supersetClient({ url: supersetUrl, username: account.username, password: account.password });
+  const datasets = await fetchDatasets(client, config.datasets, { log });
+  const superset = await supersetVersion(client);
+  // The pack as the server would run it: the deploy config's overlay with the changes admins saved over it.
+  const saved = packLayerStore(stateDir, { log }).current();
+  const overlay = saved.version ? applyPackLayer(config.overlay ?? {}, saved.layer as PackLayer) : (config.overlay ?? {});
+  const built = buildPack(datasets, overlay, { scope: config.scope, capabilities: SUPERSET_CAPABILITIES, mapStyle: defaultMapStyle(superset.major) });
+  const settings = settingsStore(stateDir);
+  const safety = supersetQuerySafety({ config: config.querySafety, env, binding: () => built.binding, settings: { get: settings.get, set: () => {} }, log });
+  const connector = guardedConnector(supersetConnector(client, built.binding), safety.guard);
+  const report = await dryRun({ client, pack: built.pack, binding: built.binding, connector, safety: safety.current(), datasets, cap: o.cap });
+  return { report, text: dryRunText(report), dangerous: report.findings.some((f) => f.level === "danger") };
 }
