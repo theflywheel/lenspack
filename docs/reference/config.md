@@ -28,6 +28,7 @@ mode most options change while the server runs: see the "runtime?" column [below
 | `historyTurns` | how many recent turns the chat keeps (8) | [Answering](../features/answering.md#follow-ups-and-new-chats) |
 | `cache` | saved answers: `{ file, enabled, ttlHours, router, maxEntries, freshMinutes, prewarm }` | [Saved answers](../features/saved-answers.md#the-switches) |
 | `queue` | `{ maxConcurrent, maxWaiting, maxWaitSeconds }` | [Busy hours](../features/busy-hours.md) |
+| `limits` | per-person question limits: `{ perUser: { questionsPerDay, perMinute, perHour, adminsExempt, users } }`; off unless set | [Question limits](../features/limits.md) |
 | `explain` | `false`, or `{ sql: false }` | [How this was worked out](../features/explain.md#the-switches) |
 | `proposals` | the folder for each pack's `<name>.proposals.json` (default: the config's folder) | [Write a pack](../extending/write-a-pack.md#7-give-it-to-a-model) |
 | `features` | starting values for switches | [Feature switches](../operating/switches.md) |
@@ -193,6 +194,8 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `cache (form 2).maxEntries` | number |  |  |
 | `cache (form 2).freshMinutes` | number |  |  |
 | `cache (form 2).prewarm` | map of any |  |  |
+| `limits` | object |  |  |
+| `limits.perUser` | map of any |  |  |
 | `queue` | object |  |  |
 | `queue.maxConcurrent` | number |  |  |
 | `queue.maxWaiting` | number |  |  |
@@ -270,6 +273,7 @@ admin API key; see [What can change without a redeploy](../hosts/superset/runtim
 | `language` | `default: auto`, `titles: board`, `board: en` | see [Languages](../features/languages.md) | yes: `settings/language` |
 | `telemetry`, `context` | | as in `lenspack.yaml`; the telemetry sits in the state directory. See [Telemetry](../features/telemetry.md) | yes: `settings/telemetry`, `settings/context` |
 | `features`, `cache`, `queue`, `explain`, `brand` | | as in `lenspack.yaml`. For `brand`, see [Naming the assistant](../features/naming.md) | yes: `settings/<name>`; `explain.sql` at `settings/explain` |
+| `limits` | off | per-person question limits, as in `lenspack.yaml`; `LENSPACK_LIMIT_*` win over it, and the settings page over both. See [Question limits](../features/limits.md) | yes: `settings/limits` |
 
 ## Environment variables
 
@@ -287,6 +291,7 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `PORT` | serve | the port, when neither `--port` nor `port:` gives one | fallback (after `--port`, `port:`) | no |
 | `LENSPACK_FEATURES` | both | switches: `voice=off,maps=on`, `-voice,+maps`, or a JSON object | over the file; an admin's setting wins over it | yes: `settings/features` |
 | `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | both | daily caps when the config sets none | fallback (only when the file sets no `budget`) | yes: `settings/budget` |
+| `LENSPACK_LIMIT_QUESTIONS_PER_DAY`, `LENSPACK_LIMIT_PER_MINUTE`, `LENSPACK_LIMIT_PER_HOUR`, `LENSPACK_LIMIT_ADMINS_EXEMPT` | both | per-person question limits (`0`: none). See [Question limits](../features/limits.md) | over the file; an admin's setting wins over it | yes: `settings/limits` |
 | `LENSPACK_LLM_PROVIDERS` | both | model providers, as a JSON array. See [Chat models](../operating/models.md) | only source | keys: no; which answer: `settings/models` |
 | `LENSPACK_LLM_ROLES` | both | which provider plays `reviewer`, `escalate` and `router` | only source | yes: `settings/models` `roles` |
 | `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`, `LENSPACK_LLM_MODEL`, `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING` | both | a single OpenAI-compatible provider | only source | keys: no; which answer: `settings/models` |

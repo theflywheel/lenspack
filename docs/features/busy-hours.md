@@ -26,6 +26,8 @@ instead of failing.
   Portuguese and Hindi). A question mistaken for a change only waits a little longer; a change mistaken for a question
   still works, as it always did.
 - How long each turn waited is recorded as `queueMs` in its `chat-turn` audit record.
+- The queue shares the model between everyone. To stop one person (or a script) from taking more than their share,
+  set [question limits](limits.md) per person.
 
 Settings under `queue` (`PUT <prefix>/settings/queue`, or `queue:` in the deployment config):
 

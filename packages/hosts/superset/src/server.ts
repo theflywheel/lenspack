@@ -184,7 +184,7 @@ async function retried<T>(what: string, f: () => Promise<T>, waits: number[], lo
 
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 /** The admin routes an admin API key may call (docs/access/admin-api.md); every other path refuses a key. */
-const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal)(\/|$)/;
+const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal|limits)(\/|$)/;
 
 export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = process.env) {
   const file = resolve(path);
@@ -228,6 +228,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const superset = await supersetVersion(client);
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
+  log(admin.limitsLine());
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
   const switchedOff = () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) });

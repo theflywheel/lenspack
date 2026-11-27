@@ -130,6 +130,15 @@ curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"heatmap": nu
 curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"model": "<a model name>"}' $LP/settings/chat
 ```
 
+**Set question limits per person, see who reached one, and clear one person's count for today** (see
+[Question limits](../features/limits.md)). The key itself never chats, so it never counts against a limit:
+
+```sh
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"questionsPerDay": 200, "perMinute": 5}' $LP/settings/limits
+curl -s -H "$AUTH" $LP/limits
+curl -s -X DELETE -H "$AUTH" "$LP/limits?user=<name>"
+```
+
 **Rename the assistant:**
 
 ```sh
