@@ -9,6 +9,7 @@ import { catalogueFrom } from "@lenspack/pack";
 import { viewerSelections } from "@lenspack/policy";
 import { catalogueText } from "@lenspack/serve";
 
+import { dashboardToBoard } from "../src/dashboard";
 import { filtersFromNative } from "../src/filters";
 import { type Overlay, type SupersetDataset, adhocMetric, chartToWidget, packFromDatasets, packScope, queryObjects, supersetConnector, widgetToChart } from "../src/index";
 
@@ -115,6 +116,36 @@ describe("overlay.exclude", () => {
     const said = JSON.stringify(filters);
     expect(said).not.toMatch(/CustomerName|A\. Person|latitude|1\.5/);
     expect(filters[0]!.note).toMatch(/a field this assistant does not use/);
+  });
+
+  it("does not say an excluded column's name in a filter's own name, when that is what the filter is called", () => {
+    const { binding } = built();
+    const meta = { native_filter_configuration: [{ id: "NATIVE_FILTER-c", name: "Latitude", filterType: "filter_range", targets: [{ datasetId: 11, column: { name: "latitude" } }] }] };
+    const [f] = filtersFromNative(meta, binding, [], new Map());
+    expect(JSON.stringify(f)).not.toMatch(/latitude/i);
+    expect(f!.label).toBe("Filter on a field this assistant does not use");
+  });
+
+  it("keeps excluded column names out of what the model reads of Superset's own charts: their descriptions and the board notes", () => {
+    const { pack, binding } = built();
+    const chart = (id: number, slice_name: string, form: Record<string, unknown>) => ({ id, slice_name, form_data: { datasource: "11__table", ...form } });
+    const charts = [
+      // A map of the excluded coordinates.
+      chart(1, "Where orders are", { viz_type: "deck_scatter", spatial: { type: "latlong", latCol: "latitude", lonCol: "longitude" } }),
+      // A bar chart by an excluded column, one filtered on one, a heatmap and a map coloured by one.
+      chart(2, "Orders by customer", { viz_type: "echarts_timeseries_bar", metrics: ["count"], x_axis: "CustomerName" }),
+      chart(3, "Loyal orders", { viz_type: "big_number_total", metric: "count", adhoc_filters: [{ expressionType: "SIMPLE", subject: "loyalty_code", operator: "IN", comparator: ["X1"] }] }),
+      chart(4, "Heat", { viz_type: "heatmap_v2", metric: "count", groupby: "CustomerName", x_axis: "region" }),
+      chart(5, "Coloured map", { viz_type: "deck_scatter", spatial: { type: "latlong", latCol: "lat2", lonCol: "lon2" }, dimension: "loyalty_code" }),
+    ];
+    const position = Object.fromEntries([["ROOT_ID", { id: "ROOT_ID", type: "ROOT", children: ["GRID_ID"] }], ["GRID_ID", { id: "GRID_ID", type: "GRID", children: ["ROW-1"] }], ["ROW-1", { id: "ROW-1", type: "ROW", children: charts.map((c) => `CHART-${c.id}`) }], ...charts.map((c) => [`CHART-${c.id}`, { id: `CHART-${c.id}`, type: "CHART", children: [], meta: { chartId: c.id, width: 2, height: 50 } }])]);
+    const read = { dash: { id: 9, dashboard_title: "Shop", position_json: JSON.stringify(position), json_metadata: null, changed_on: "2026-01-01T00:00:00" }, charts, position } as never;
+    const { config, notes } = dashboardToBoard(read, pack, binding);
+    expect(Object.values(config.widgets).every((w) => w.kind === "text")).toBe(true);
+    const said = JSON.stringify({ bodies: Object.values(config.widgets).map((w) => (w as { body?: string }).body), notes });
+    expect(said).not.toMatch(/customername|loyalty_code|latitude|longitude/i);
+    expect(said).toMatch(/a field this assistant does not use/);
+    expect(said).toMatch(/its points are read from fields this assistant does not use/);
   });
 });
 

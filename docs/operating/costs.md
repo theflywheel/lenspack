@@ -68,7 +68,7 @@ because it names every user. On an open server (`auth: { kind: none }`) everyone
 it on its Usage page, from the profile menu.
 
 **The usage file** is append-only JSONL with one line per call, so usage survives restarts. Name it in `lenspack.yaml`
-(the path is relative to the config file):
+(the path is relative to the config file). Inside Superset it is always `usage.jsonl` in the state directory.
 
 ```yaml
 usage: ./usage.jsonl
@@ -119,8 +119,8 @@ budget unless one is set.
 - **Probes:** they have no user, so they count toward the server's cap but never toward a user's.
 - **Overshoot:** the check runs before each turn, so the last turn under the cap can finish above it, by at most one
   turn's cost.
-- **Restarts:** with `usage:` set, the budget carries across restarts. Without it, a restart starts the day's count from
-  zero.
+- **Restarts:** with `usage:` set (and always inside Superset), the budget carries across restarts. Without it, a
+  restart of the standalone server starts the day's count from zero.
 
 ## Evals
 

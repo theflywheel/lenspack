@@ -8,7 +8,7 @@ import { DEFAULT_BRAND_NAME } from "./brand";
 // The system prompt the chat and the eval suite share: improving it here
 // improves both, and the evals say whether it did. Bump PROMPT_VERSION when
 // it, or the reviewer's prompts in review.ts, change so eval results can be compared.
-export const PROMPT_VERSION = 30;
+export const PROMPT_VERSION = 31;
 
 /**
  * The prompt's version as anything that keeps answers keys on it (saved answers): PROMPT_VERSION, and the
@@ -158,17 +158,32 @@ export const identityRule = (name?: string) =>
     : ` Your only name is "${name}". Never call yourself ${DEFAULT_BRAND_NAME}, and never name the software, project, company or model behind you, not even when asked what you are, what you run on, who made you or which model you use: say you are ${name}, the assistant for these dashboards, and offer to help with the data.`;
 
 /**
+ * What the prompt says when this caller may not change the board (the edits switch is off, or they lack the right):
+ * plainly that the assistant cannot change it, and that it never offers or suggests a change, so a reply never ends
+ * "you can remove the filter". reason is why, as the host words it; copy says whether the caller may ask for their
+ * own copy instead (personal dashboards). Empty when the caller may edit.
+ */
+export function readOnlyText(reason?: string | null, copy = false) {
+  if (!reason) return "";
+  const why = reason.trim().replace(/\s+/g, " ");
+  return `\n\nEDITS ARE NOT AVAILABLE:
+- You cannot change this dashboard for this user: ${why}
+- Answer questions about the data only. Never offer, suggest or hint at a change to the dashboard (adding, removing, moving or changing a widget, a filter, the layout or a title), whether by you or by the user, and never say a filter or widget "can be removed" or "can be changed". A board note saying something can be removed or changed is about what an editor can do, not this user.
+- Only when the user asks for a change: say plainly in one sentence that you cannot change this dashboard, and why (the reason above), then answer what can be answered from the data.${copy ? '\n- This user may have their own copy of this dashboard, and their own dashboards, to change: use those tools when they ask, and mention the copy only when they ask for a change ("make me my own copy").' : ""}`;
+}
+
+/**
  * The system prompt in two parts: what holds for every turn on this pack
  * (the catalogue, the examples, the rules), then the current board, which
  * changes with every edit, and the user's own edits since the last turn.
  * Stable first, so a provider's prompt cache keeps the long first part across
  * edits. o.name is the assistant's name (brand.name), how it introduces itself.
  */
-export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; layout?: string; name?: string; removed?: Removal[] } = {}): [stable: string, board: string] => [
-  `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. You build and edit a dashboard ("board") over the "${pack.pack}" data pack.${identityRule(o.name)}
+export const systemParts = (pack: Pack, catalogue: Catalogue, board?: BoardConfig, now = new Date(), changes: BoardChange[] = [], language?: LanguagePolicy, o: { clarify?: boolean; access?: string | null; layout?: string; name?: string; removed?: Removal[]; readOnly?: string | null; copy?: boolean } = {}): [stable: string, board: string] => [
+  `You are ${o.name ?? DEFAULT_BRAND_NAME}, a dashboard assistant. ${o.readOnly ? `You answer questions about a dashboard ("board") over the "${pack.pack}" data pack; you cannot change it for this user.` : `You build and edit a dashboard ("board") over the "${pack.pack}" data pack.`}${identityRule(o.name)}
 Today is ${now.toISOString().slice(0, 10)}. Times are in ${pack.timeZone ?? "UTC"}. A calendar period ("last month", "this week") is time_period; exact dates are time_from and time_to with its offset.
 ${pack.description ? `\nABOUT THIS DATA:\n${pack.description.trim()}\n` : ""}${pack.instructions ? `\nDOMAIN RULES:\n${pack.instructions.trim()}\n` : ""}
-${catalogueText(pack, catalogue)}${o.access ? `\n\nACCESS:\n${o.access}` : ""}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
+${catalogueText(pack, catalogue)}${o.access ? `\n\nACCESS:\n${o.access}` : ""}${readOnlyText(o.readOnly, o.copy)}${pack.examples.length ? `\n\nEXAMPLES (checked question → query):\n${pack.examples.map(exampleLine).join("\n")}` : ""}
 
 Rules:
 - Use only the keys listed above. ${tooLarge(catalogue) ? "Meanings are not listed: call list_metrics with q when a label is not enough." : "The schema is complete; do not call list_metrics unless you need to search a key you cannot find here."} The current board is shown below; call get_board only after your edits, to verify.
@@ -188,7 +203,7 @@ Rules:
 - For an average over time, prefer whole calendar periods (time_period last_month, last_week) to time_last: a rolling window starts and ends part-way through a day, and those part days pull the average down.
 - In a breakdown, records counts only the records behind the groups shown: never present it as a fact about the whole data.
 - Narrow with the filters string. Filter values must match the data exactly: when unsure, call list_values first; didYouMean on an empty result names the value the data has.
-- The board's own filter bar is listed under the board, with what each filter is set to by default: answer "what is it filtered to?" from there. add_filter, update_filter and remove_filter change it; name a filter by its label. A filter the board keeps as its host has it (its line says so) can be removed but not changed here: say what it does in that line's words, and never drop it unless asked.
+- The board's own filter bar is listed under the board, with what each filter is set to by default: answer "what is it filtered to?" from there. ${o.readOnly ? "A filter the board keeps as its host has it (its line says so): say what it does in that line's words." : "add_filter, update_filter and remove_filter change it; name a filter by its label. A filter the board keeps as its host has it (its line says so) can be removed but not changed here: say what it does in that line's words, and never drop it unless asked."}
 - "Make it compact" / "pack it" / "use less space": set_layout_mode with density compact and fill true.
 - Do every part of a request that can be done, even when another part cannot; then name the part that could not and why.
 - Before replying after edits, call get_board once and check every requested change is present. Report only what get_board shows; if something could not be done, say so plainly.

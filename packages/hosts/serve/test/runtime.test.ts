@@ -53,8 +53,27 @@ describe("a request's way through the runtime", () => {
     };
     expect(await get("/mine")).toEqual({ status: 200, body: { mine: true } });
     expect(await get("/healthz")).toEqual({ status: 200, body: { ok: true, extra: 1 } });
+    // Without a readiness rule, ready as soon as it listens.
+    expect(await get("/readyz")).toEqual({ status: 200, body: { ready: true } });
     expect((await get("/api")).body).toMatchObject({ examples: [] });
     expect(await get("/boom")).toEqual({ status: 500, body: { error: "no" } });
+    server.close();
+  });
+
+  it("answers /readyz 503 while the host says it isn't ready, and keeps /healthz 200 for liveness", async () => {
+    let ready = false;
+    const { server } = startRuntime({ hosts: [], port: 0, host: "127.0.0.1", log: () => {}, env: {}, ready: () => (ready ? { ready: true } : { ready: false, reason: "no key yet" }) });
+    await new Promise((r) => server.once("listening", r));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const get = async (p: string) => {
+      const r = await fetch(base + p);
+      return { status: r.status, body: await r.json() };
+    };
+    expect(await get("/readyz")).toEqual({ status: 503, body: { ready: false, reason: "no key yet" } });
+    expect(await get("/healthz")).toEqual({ status: 200, body: { ok: true, ready: false } });
+    ready = true;
+    expect(await get("/readyz")).toEqual({ status: 200, body: { ready: true } });
+    expect(await get("/healthz")).toEqual({ status: 200, body: { ok: true, ready: true } });
     server.close();
   });
 });

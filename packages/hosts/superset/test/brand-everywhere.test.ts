@@ -11,7 +11,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { switchDefaults, telemetryChecklist } from "@lenspack/agent";
+import { fieldDefaults, telemetryChecklist } from "@lenspack/agent";
 import { POWERED_BY, type Brand, resolveBrand } from "@lenspack/serve";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -118,7 +118,7 @@ describe("with a brand set, the product's name is on no surface", () => {
     for (const supersetLogs of [null, { available: true, count: 3, lastSeen: "2026-11-19T00:00:00Z" }, { available: false, reason: "no access", count: 0, lastSeen: null }]) {
       const list = telemetryChecklist({
         now: new Date("2026-11-20T00:00:00Z"),
-        switches: { telemetry: true, ...switchDefaults() },
+        switches: { telemetry: true, fields: fieldDefaults() },
         settings: { retentionDays: 90, audioRetentionDays: 30, consentNotice: null },
         features: { telemetry: true, voice: true, cache: true, clarify: true, "review.daily": false },
         context: {},

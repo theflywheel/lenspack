@@ -83,6 +83,11 @@ describe("board tools", () => {
     expect(cleared.ok).toBe(true);
     expect(cleared.query).not.toHaveProperty("by");
     expect(cleared.query).not.toHaveProperty("filters");
+    const none = (await call("explain", { query_kind: "value", measure: "things", filters: "colour NOT  IN red, 'blue'; origin not in west" })) as { ok: boolean; query: Query };
+    expect(none.query.filters).toEqual([
+      { dimension: "colour", op: "not_in", value: ["red", "blue"] },
+      { dimension: "origin", op: "not_in", value: ["west"] },
+    ]);
     const eqeq = (await call("query", { query_kind: "value", measure: "things", filters: "colour == red" })) as { ok: boolean; error: string };
     expect(eqeq).toMatchObject({ ok: false, error: expect.stringContaining('"colour == red"') });
   });

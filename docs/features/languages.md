@@ -46,7 +46,9 @@ overlay:
 ```
 
 The model sees the English wording (else the first) as a worked example; a language an example lacks shows its
-English. `/_superset/info` returns `examplesByLang`, and `examples` for `?lang=` (English by default).
+English. `/_superset/info` returns `examplesByLang`, and `examples` for `?lang=` (English by default). The other
+languages go into the pack as the example's `wordings`, so a chip clicked in any of them is answered by the same checked
+query ([Saved answers](saved-answers.md#the-tiers-cheapest-first)).
 
 ## Settings
 

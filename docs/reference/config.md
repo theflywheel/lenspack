@@ -30,7 +30,7 @@ The standalone server's config. The blocks, in brief:
 | `proposals` | the folder for each pack's `<name>.proposals.json` (default: the config's folder) | [Write a pack](../extending/write-a-pack.md#7-give-it-to-a-model) |
 | `features` | starting values for switches | [Feature switches](../operating/switches.md) |
 | `brand` | the assistant's name and button label: `{ name, buttonLabel, i18n, icon, poweredBy }` | [Naming the assistant](../features/naming.md) |
-| `telemetry` | usage records: `{ dir, retentionDays, groups, items }` (`questionText` is the older name of `items.question-text`) | [Telemetry](../features/telemetry.md) |
+| `telemetry` | usage records: `{ dir, retentionDays, fields }` (`groups` and `items` are the older switches, still read; `questionText` is the older name of `fields.question-text`) | [Telemetry](../features/telemetry.md) |
 | `context` | your own labels for a board, a dataset or `role:<name>` (the fields are named `campaign`, `campaignType` and `country`), for telemetry | [Telemetry](../features/telemetry.md#tagging-records-with-your-own-context) |
 
 ### Packs
@@ -90,7 +90,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `packs[].access[].only` | list of string |  |  |
 | `packs[].access[].scope` | list of object |  |  |
 | `packs[].access[].scope[].dimension` | string | yes |  |
-| `packs[].access[].scope[].op` | `eq`, `neq`, `in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
+| `packs[].access[].scope[].op` | `eq`, `neq`, `in`, `not_in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
 | `packs[].access[].scope[].value` | string or number or boolean or list of string or number or boolean | yes |  |
 | `store` | object |  | `{"kind":"memory"}` |
 | `store (kind: memory).kind` | `"memory"` | yes |  |
@@ -128,7 +128,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `auth (kind: tokens).users[].tenant` | string |  |  |
 | `auth (kind: tokens).users[].scope` | list of object |  |  |
 | `auth (kind: tokens).users[].scope[].dimension` | string | yes |  |
-| `auth (kind: tokens).users[].scope[].op` | `eq`, `neq`, `in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
+| `auth (kind: tokens).users[].scope[].op` | `eq`, `neq`, `in`, `not_in`, `gte`, `lte`, `between`, `contains`, `subtree`, `segment` | yes |  |
 | `auth (kind: tokens).users[].scope[].value` | string or number or boolean or list of string or number or boolean | yes |  |
 | `auth (kind: tokens).users[].packs` | list of string |  |  |
 | `auth (kind: tokens).users[].roles` | list of string |  |  |
@@ -170,6 +170,7 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 | `telemetry` | object |  |  |
 | `telemetry.dir` | string | yes |  |
 | `telemetry.retentionDays` | number |  | `90` |
+| `telemetry.fields` | map of boolean |  |  |
 | `telemetry.groups` | map of boolean |  |  |
 | `telemetry.items` | map of boolean |  |  |
 | `telemetry.questionText` | boolean |  |  |
@@ -235,6 +236,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `superset.passwordEnv`, `superset.password` | `LENSPACK_SUPERSET_PASSWORD` | an account you manage instead: its password's variable, or the password |
 | `editPolicy` | `superset` (`LENSPACK_EDIT_POLICY` wins) | who may change dashboards through the chat: `superset` or `signed-in` |
 | `hostPolicy` | `superset` (`LENSPACK_HOST_POLICY` wins) | whose access narrows what each user sees: `superset` or `off` |
+| `accessFallback` | `none` (`LENSPACK_ACCESS_FALLBACK` wins) | what happens when Superset answers 404 for the plugin's access route: `none` refuses that request; `rls-only`, only for an old plugin without the route, applies Superset's row-level security rules alone and treats every dataset as readable. See [Access inside Superset](../access/superset.md#when-access-cant-be-checked) |
 | `auth.admins` | `["Admin"]` (`LENSPACK_ADMIN_ROLES` wins) | Superset roles whose members are Lenspack admins. See [Who is asking](../hosts/superset/identity.md#who-may-administer) |
 | `auth.usage` | the same roles as `auth.admins` (`LENSPACK_USAGE_ROLES` wins) | Superset roles that also see user names on the usage pages |
 | `auth.users` | everyone signed in (`LENSPACK_USER_ROLES` wins) | Superset roles that may use the assistant at all; admins always may. See [Who is asking](../hosts/superset/identity.md#who-may-use-the-assistant) |
@@ -290,6 +292,7 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback |
 | `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
+| `LENSPACK_ACCESS_FALLBACK` | superset | `accessFallback` | over the file |
 | `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file |
 | `LENSPACK_ADMIN_ACCESS`, `LENSPACK_ADMIN_USERS` | superset | `auth.adminAccess` (one mode, or `password` with another: `superset-role,password`), `auth.adminUsers` (comma-separated) | over the file |
 | `LENSPACK_ADMIN_PASSWORDS`, `LENSPACK_ADMIN_PASSWORDS_FILE` | superset | the named admin passwords when `auth.adminAccess` includes `password`: `name:password` pairs separated by commas, or a file with one per line (12+ characters each; a value starting `scrypt$` is a hash) | only source |

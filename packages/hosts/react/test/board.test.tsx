@@ -82,6 +82,23 @@ describe("<Board>", () => {
     expect(screen.getByTestId("kpi-value").textContent).toBe("1,234");
   });
 
+  it("says plainly what a widget needs, with the host's link, when its data can't be had right now", async () => {
+    const notice = { text: "Needs the device field, which is switched off.", action: { label: "Show the field", href: "#fields/device" } };
+    const h = host({ loadBoardData: async () => ({ ...data, c: { rows: [], total: 0, format: "number", error: "unavailable", notice }, k: { rows: [], total: 0, format: "number", notice: { text: "Needs the person field." } } }) });
+    render(
+      <BoardProvider board={board()} catalogue={catalogue} host={h}>
+        <Board />
+      </BoardProvider>,
+    );
+    await waitFor(() => expect(screen.getByText(notice.text).className).toBe("lp-notice-text"));
+    expect(screen.getByRole("link", { name: "Show the field" }).getAttribute("href")).toBe("#fields/device");
+    // The notice takes the place of the error and of the figure; the other widgets still draw.
+    expect(screen.queryByText("unavailable")).toBeNull();
+    expect(screen.getByText("Needs the person field.")).toBeTruthy();
+    expect(screen.queryByTestId("kpi-value")).toBeNull();
+    expect(screen.getByText("25%")).toBeTruthy();
+  });
+
   it("says beside the title when the source cut the answer", async () => {
     const note = "only the latest 20,000 hours are shown; the source has more than 20,000 rows for this series";
     const h = host({ loadBoardData: async () => ({ ...data, c: { ...data.c!, truncated: true, notes: [note] } }) });
@@ -269,6 +286,11 @@ describe("formatting", () => {
   it("formats by kind", () => {
     expect(formatValue(0.256, "percent")).toBe("25.6%");
     expect(formatValue(1234.5, "currency", { currency: "USD" })).toBe("$1,235");
+    // An amount under one keeps two significant digits rather than reading as nothing.
+    expect(formatValue(0.004452, "currency", { currency: "USD" })).toBe("$0.0045");
+    expect(formatValue(0.22, "currency", { currency: "USD" })).toBe("$0.22");
+    expect(formatValue(0.1023, "currency", { currency: "USD" })).toBe("$0.10");
+    expect(formatValue(0.004452, "number")).toBe("0.0045");
     expect(formatValue(12345678, "compact")).toBe("12.3M");
     expect(formatValue(null, "number")).toBe("—");
     expect(formatDelta(-0.1234)).toBe("-12.3%");

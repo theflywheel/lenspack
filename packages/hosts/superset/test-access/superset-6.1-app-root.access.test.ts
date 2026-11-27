@@ -3,7 +3,7 @@
 // suite runs at the root; this checks what changes under a path. Run with `pnpm test:access app-root`.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { PACK, type Session, type Stack, http, readChat, startStack } from "./stack";
+import { PACK, type Session, type Stack, http, openPage, readChat, startStack } from "./stack";
 
 const ROOT = "/superset";
 
@@ -45,6 +45,42 @@ describe.sequential("Superset 6.1.0 under /superset", () => {
     const turn = readChat(await owner.send("POST", `/lenspack/api/${PACK}/superset-${A}/chat?review=off`, { body: { messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "TOOL list_metrics {}" }] }] } }));
     expect(turn.status, turn.error).toBe(200);
     expect(turn.tools.map((t) => t.tool)).toEqual(["list_metrics"]);
+  });
+
+  it("after a chat removes a chart, the page drops it: the check against the saved dashboard reads Superset's API below the root", async () => {
+    const board = `superset-${A}`;
+    const added = await owner.send("POST", `/lenspack/api/${PACK}/${board}/ops`, {
+      body: { ops: ["one", "two"].map((n) => ({ op: "add_widget", id: `root_${n}`, widget: { title: `Root ${n}`, kind: "chart", chart: "bar", query: { kind: "breakdown", dimension: "region", measure: "visit_total" } }, placement: { place: "bottom", width: "half" } })) },
+    });
+    expect(added.json, added.text).toMatchObject({ ok: true });
+    const widgets = (await owner.send("GET", `/lenspack/api/${PACK}/${board}`)).json.board.config.widgets as Record<string, { title: string }>;
+    const id = Object.entries(widgets).find(([, w]) => w.title === "Root one")![0];
+    const browser = await openPage(owner, `${ROOT}/superset/dashboard/${A}/`);
+    try {
+      const { page } = browser;
+      // Every read of a saved dashboard the page makes (by id or by slug: Superset may show the slug in the address), by path, with Superset's answer.
+      const reads: [string, number][] = [];
+      page.on("response", (r) => {
+        const path = new URL(r.url()).pathname;
+        if (/\/api\/v1\/dashboard\/[^/]+$/.test(path)) reads.push([path, r.status()]);
+      });
+      await page.waitForFunction(() => document.querySelectorAll(".dashboard-content .anchor-link-container[id^='CHART-']").length === 2, null, { timeout: 60_000 });
+      await page.click(".lpo-btn");
+      await page.waitForSelector(".lpc-in");
+      reads.length = 0;
+      await page.fill(".lpc-in", `TOOL remove_widget ${JSON.stringify({ id })}`);
+      await page.click(".lpc-go");
+      // Under /superset, Superset's in-place refresh can leave the removed chart drawn: the check against the saved
+      // dashboard is what finds it and reloads the page. Without Superset's root on its read, it never did.
+      await page.waitForFunction(() => document.querySelectorAll(".dashboard-content .anchor-link-container[id^='CHART-']").length === 1, null, { timeout: 45_000 });
+      await new Promise((r) => setTimeout(r, 5000));
+      // Every read of the saved dashboard went below Superset's root, and Superset answered it.
+      expect(reads.length).toBeGreaterThan(0);
+      const key = /\/superset\/dashboard\/([^/]+)/.exec(new URL(page.url()).pathname)![1];
+      for (const [path, status] of reads) expect([path, status]).toEqual([`${ROOT}/api/v1/dashboard/${key}`, 200]);
+    } finally {
+      await browser.close();
+    }
   });
 
   it("links a person's own dashboards below the root", async () => {

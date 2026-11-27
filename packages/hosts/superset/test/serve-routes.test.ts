@@ -149,7 +149,9 @@ describe("Superset mode's server", () => {
 
   it("answers /healthz and the public scripts without a signature", async () => {
     const health = await call("/healthz");
-    expect(health).toMatchObject({ status: 200, body: { ok: true, identity: true } });
+    expect(health).toMatchObject({ status: 200, body: { ok: true, ready: true, identity: true } });
+    // Ready: Superset gave the identity key (a readiness probe reads this; /healthz is for liveness).
+    expect(await call("/readyz")).toEqual({ status: 200, headers: expect.anything(), body: { ready: true } });
     for (const f of ["chat.js", "overlay.js"]) {
       const r = await call(`/${f}`);
       expect(r.status).toBe(200);
@@ -237,7 +239,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],

@@ -49,8 +49,18 @@ See [What Lenspack keeps on disk](state.md).
 
 ## Health and shutdown
 
-`GET /healthz` answers `{ "ok": true }` (with a few host-specific fields) without sign-in. On SIGTERM or SIGINT the
-server closes its sources and stores and exits.
+`GET /healthz` answers `{ "ok": true }` (with a few host-specific fields) without sign-in, for as long as the process
+runs: use it for liveness. `GET /readyz` answers `200 { "ready": true }` once the server can answer requests, and
+`503 { "ready": false, "reason": … }` until then: use it for readiness. Inside Superset, the server is not ready until
+Superset has given it the identity key (it keeps asking, with backoff, and becomes ready by itself). Don't point the
+liveness probe at `/readyz`, or a Superset without the plugin restarts the server in a loop.
+
+```yaml
+livenessProbe:  { httpGet: { path: /healthz, port: 8795 } }
+readinessProbe: { httpGet: { path: /readyz, port: 8795 } }
+```
+
+On SIGTERM or SIGINT the server closes its sources and stores and exits.
 
 ## Behind a proxy
 

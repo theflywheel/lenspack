@@ -61,6 +61,8 @@ describe("a query in plain words", () => {
     const f = (op: string, value: unknown) => words({ kind: "value", measure: "movements", filters: [{ dimension: op === "gte" || op === "lte" || op === "between" ? "qty" : "ward", op, value }] });
     expect(f("neq", "North")).toContain("for Ward is not North");
     expect(f("neq", ["North", "South"])).toContain("for Ward is none of North or South");
+    expect(f("not_in", ["North", "South"])).toContain("for Ward is none of North or South");
+    expect(f("not_in", ["North"])).toContain("for Ward is not North");
     expect(f("gte", 5)).toContain("for Quantity ≥ 5");
     expect(f("lte", 5)).toContain("for Quantity ≤ 5");
     expect(f("between", [2, 9])).toContain("for Quantity between 2 and 9");

@@ -14,7 +14,7 @@ import { type ChatResult, PACK, type Session, type Stack, http, openPage, readCh
 const VISITS = { North: 3, South: 4, East: 8, West: 16 };
 const STOCK = { North: 32, South: 64, East: 128, West: 256 };
 const ALL_MEASURES = ["stock_count", "stock_total", "visit_count", "visit_total"];
-const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_rbac_off", "lp_noroles", "lp_outage", "lp_lensadmin", "lp_lensuser", "lp_reader", "lp_alpha"] as const;
+const USERS = ["lp_admin", "lp_owner", "lp_viewer", "lp_partial", "lp_north", "lp_inlist", "lp_complex", "lp_templ", "lp_rbac", "lp_rbac_off", "lp_noroles", "lp_outage", "lp_misroute", "lp_lensadmin", "lp_lensuser", "lp_reader", "lp_alpha"] as const;
 type User = (typeof USERS)[number];
 
 const READ_ONLY = /can view this dashboard but not edit it in Superset/;
@@ -474,6 +474,28 @@ export function accessSuite(version: string) {
         }
         expect(await measures("lp_outage")).toEqual(ALL_MEASURES);
         expect(byGroup(toolOutput(await chat("lp_outage", A, "query", BREAKDOWN("visit_total"))).rows)).toEqual(VISITS);
+      });
+
+      it("refuses, never answers, while Superset answers 404 for the access route, and forgets it once the route is back", async () => {
+        // A Superset pod without the plugin, or a path prefix sending the request elsewhere, in the middle of a run.
+        stack.missingRoute("/api/v1/lenspack/access");
+        try {
+          // lp_misroute may not read stock: asked about only now, they must be refused it, not answered from the service account.
+          for (const measure of ["stock_total", "visit_total"]) {
+            const r = await chat("lp_misroute", A, "query", BREAKDOWN(measure));
+            expect([measure, r.status, r.error]).toEqual([measure, 403, expect.stringMatching(/Superset access could not be checked/)]);
+          }
+          const d = (await s.lp_misroute.lp("GET", `api/${PACK}/${A}/data`)).json;
+          expect([d.visits_by_region.rows, d.stock_by_region.rows]).toEqual([[], []]);
+          expect((await catalogue("lp_misroute")).accessNotice).toMatch(/Superset access could not be checked/);
+        } finally {
+          stack.missingRoute(null);
+        }
+        expect(stack.log()).toMatch(/could not ask Superset about lp_misroute \(Superset answered 404 for \/api\/v1\/lenspack\/access/);
+        // Back: the very next request asks the route again, and their own access applies, dataset permissions included.
+        const stock = toolOutput(await chat("lp_misroute", A, "query", BREAKDOWN("stock_total")));
+        expect([stock.ok, stock.error]).toEqual([false, expect.stringMatching(NO_ACCESS)]);
+        expect(byGroup(toolOutput(await chat("lp_misroute", A, "query", BREAKDOWN("visit_total"))).rows)).toEqual(VISITS);
       });
     });
 
@@ -944,10 +966,27 @@ export function accessSuite(version: string) {
       const ADMIN_GETS = ["_superset/settings", "_superset/audit?limit=5", "_superset/turns?limit=5", "api/_usage", "_superset/admin/", "_superset/admin/api/packs", "_superset/telemetry/superset-actions", "_superset/personal"];
       const catalogue = async (who: User) => sorted(((await s[who].lp("GET", `api/${PACK}`)).json.catalogue.measures as { key: string }[]).map((m) => m.key));
 
+      // Today's spend before the restart, as the usage page showed it.
+      let spentBefore = 0;
+      let callsBefore = 0;
+
       beforeAll(async () => {
-        await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }']);
+        const usage = (await s.lp_admin.lp("GET", "api/_usage")).json as { turns: { day: string; llm: { usd: number; calls: number } }[] };
+        const today = new Date().toISOString().slice(0, 10);
+        for (const t of usage.turns.filter((x) => x.day === today)) (spentBefore += t.llm.usd), (callsBefore += t.llm.calls);
+        // A daily budget from now on, so the restarted server reports what it counts against it.
+        await stack.restartLenspack(['auth: { admins: ["Lenspack admin"] }', "budget: { usdPerDay: 1000 }"]);
         expect(stack.log()).toMatch(/admins: Superset role Lenspack admin/);
       }, 300_000);
+
+      it("keeps today's spend, and so the daily budget, across the restart", async () => {
+        expect(callsBefore).toBeGreaterThan(0);
+        expect(spentBefore).toBeGreaterThan(0);
+        const after = (await s.lp_lensadmin.lp("GET", "api/_usage")).json as { budget: { spent: number }; turns: { day: string; llm: { calls: number } }[] };
+        const today = new Date().toISOString().slice(0, 10);
+        expect(after.turns.filter((x) => x.day === today).reduce((n, t) => n + t.llm.calls, 0)).toBeGreaterThanOrEqual(callsBefore);
+        expect(after.budget.spent).toBeGreaterThanOrEqual(Math.round(spentBefore * 1e6) / 1e6 - 1e-6);
+      });
 
       it("refuses a Superset Admin without the role the panel, the settings, the audit log and every admin route", async () => {
         for (const path of ADMIN_GETS) expect([path, (await s.lp_admin.lp("GET", path)).status]).toEqual([path, 403]);

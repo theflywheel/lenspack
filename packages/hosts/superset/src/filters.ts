@@ -83,16 +83,18 @@ export function filtersFromNative(meta: Record<string, unknown>, binding: Bindin
     const controls = nf.controlValues ?? {};
     const covered = [...inScope(nf.scope, charts)].flatMap((c) => (widgetOf.has(c) ? [widgetOf.get(c)!] : []));
     const applies = covered.length === widgetOf.size ? ["*"] : covered;
+    // A column the overlay excludes is not named, and its default values (a person's name, a place) are not said. Its
+    // filter's own name often is the column's ("Latitude"), so it is not said either; the filter is kept in Superset as it is.
+    const hidden = !!column && !!binding.excluded?.has(column.trim().toLowerCase());
+    const shownLabel = hidden ? "Filter on a field this assistant does not use" : label;
     const kept = (what: string): Filter => ({
       id: boardId(nf.id),
       type: "host",
-      label,
+      label: shownLabel,
       field: field ?? "",
       applies: ["*"],
-      note: `Superset-only filter: “${label}”, ${what}. It stays as Superset has it: it can be removed here, but changed only in Superset.`.slice(0, 400),
+      note: `Superset-only filter: “${shownLabel}”, ${what}. It stays as Superset has it: it can be removed here, but changed only in Superset.`.slice(0, 400),
     });
-    // A column the overlay excludes is not named, and its default values (a person's name, a place) are not said.
-    const hidden = !!column && !!binding.excluded?.has(column.trim().toLowerCase());
     const on = hidden ? "of a field this assistant does not use" : column ? `of ${column}` : "";
     if (hidden) {
       out.push(kept(`a filter ${on}`));

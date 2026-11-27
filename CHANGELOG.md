@@ -34,6 +34,42 @@ brought it.
   [Who can use and administer the assistant](docs/access/admin-access.md).
 - **Name boxes show the deployment's name.** On the admin panel's Name card, an empty box now shows what applies
   without it, from the boxes above it and the deployment's own name and button label, never the default name.
+- **The spend file and a single-file audit log are private.** `usage.jsonl` (which names who asked) and an audit log
+  written to one file are now created readable by the server's own user only, and an existing file is made so at
+  start, like the saved-answers, telemetry and monthly audit files.
+- **The Telemetry tab shows what is recorded, and what it tells you, apart.** What's recorded lists the facts a
+  record carries (who asked, how it ended, what it cost, how long it took, and so on) in plain categories, each with
+  its switch, how many records from the last 7 days carry it, which figures on the board read it, and its privacy
+  note. What it tells you is a Lenspack board over the usage pack, with the same renderer and chat as Overview: a
+  section per question (users, volume and cost, quality, what people ask, speed, voice, trust and reuse), each figure
+  worked out from the records with simple measures and compute steps. A widget that needs a field that is off says so,
+  with a link to that field's switch. Boards anywhere can do the same: a host passes `ctx.unavailable` and the widget
+  shows its `notice` in place of a figure (refusal code `UNAVAILABLE`). Switches are now on fields
+  (`telemetry.fields.<field>`); a category's switch turns all its fields off, or all but the privacy-sensitive ones
+  on. A locked switch says why on its row. Older `telemetry.items` and `telemetry.groups` values keep their meaning;
+  scripts that switched items through the route need the new names. See [Telemetry](docs/features/telemetry.md) and [Upgrading](docs/operating/upgrading.md#telemetry-switches-by-field).
+  ([#100](https://github.com/theflywheel/lenspack/pull/100))
+- **Access checks fail closed, every time.** Inside Superset, when Superset answered 404 for the plugin's access
+  route even once (a pod without the plugin during a rollout, or a path prefix sending the request elsewhere), the
+  server switched for good, until restart, to Superset's row-level security rules alone, with every dataset readable.
+  Now any request whose access can't be checked is refused ("Your Superset access could not be checked just now"),
+  and the next request asks Superset again. The old fallback is there only for a Superset still running a plugin
+  without the route, as the explicit `accessFallback: rls-only` (`LENSPACK_ACCESS_FALLBACK`), with a warning at
+  every start. See [When access can't be checked](docs/access/superset.md#when-access-cant-be-checked). ([#104](https://github.com/theflywheel/lenspack/pull/104))
+- **Fixes from a read-only test on a real Superset 6.1.**
+  - When the chat cannot change the dashboard (the `boardEdits` switch is off, or the person may not edit), the
+    assistant's instructions now say so plainly, and it never offers or suggests a change ("you can remove the
+    filter"). The prompt version goes to 31, so saved answers are made afresh once.
+  - In a pack outside UTC, each Superset dataset whose time column has a time of day is named at start-up, in the log
+    and in the settings API's `warnings`, with what to do (a date column, or a pack kept in UTC). The refusal the
+    model gets for such a series says plainly that none can be drawn, so it stops trying.
+  - A chart made in Superset whose metric is one plain ad hoc aggregate (`SUM(quantity)`, `COUNT(*)`,
+    `COUNT(DISTINCT customer_id)`, `MIN`, `MAX`, `AVG`) is read as the pack measure that says the same, so the chat
+    can answer about the tile. Its `NOT IN` filters on a dimension are read too: queries take a new filter operator,
+    `not_in`, on every source.
+  - The eval runner applies the Superset config's `scope:` as the server does, so evals send the filters production
+    sends.
+
 - **One name everywhere.** Once the assistant has its own name (`brand.name`), the word Lenspack shows nowhere
   people look: the admin panel, Superset's settings page and menu entry, messages and refusals, and the assistant's
   own replies (asked what it is or what it runs on, it gives only its name). The only exception is the "Powered by
@@ -41,11 +77,25 @@ brought it.
   `LENSPACK_PATH` in Superset's environment moves the route from `/lenspack` (for example to `/assistant`). The
   prompt version goes to 30, so saved answers are made afresh once. Update the plugin file with the server. See
   [Naming the assistant](docs/features/naming.md). ([#102](https://github.com/theflywheel/lenspack/pull/102))
+- **Spend and the daily budget survive a restart inside Superset.** Every model call is now kept as one line in
+  `usage.jsonl` in the state directory, and today's calls are read back at start, as the standalone server does with
+  `usage:`. Before, a restart (every deploy, or a crash loop) started the day's spend at zero, so the daily budget
+  could be overspent. Under a path (`/superset`), the check that the open page matches the saved dashboard after a
+  chat edit now reads the dashboard below Superset's path; it did nothing there before. The docs no longer say that
+  the chat on Superset receives the viewer's dashboard filters: it does not yet. ([#107](https://github.com/theflywheel/lenspack/pull/107))
 - **Superset under a path.** Superset 6.1 running below a path of its host (`SUPERSET_APP_ROOT=/superset`) now
   gets the button, the chat, the settings page and its menu entry, and links to dashboards, all below that path,
   with no new setting. At the root nothing changes. Update the plugin file and the server image together. See
   [Superset under a path](docs/hosts/superset/install.md#superset-under-a-path).
   ([#99](https://github.com/theflywheel/lenspack/pull/99))
+- **Inside Superset, a missing identity key no longer needs a restart.** A server that started before Superset (or
+  before the plugin was loaded there) used to refuse every request until it was restarted, while `/healthz` stayed
+  green. It now keeps asking Superset for the key, with backoff up to once a minute, and signs people in as soon as it
+  has it. A new `GET /readyz` answers 503 until then, for a readiness probe; `/healthz` stays the liveness check. See
+  [Health and shutdown](docs/operating/deploying.md#health-and-shutdown).
+- **Excluded columns are not named to the model.** With `overlay.exclude`, the descriptions of Superset charts the
+  assistant keeps as they are, the board notes, and filters on an excluded column no longer name the column (a map
+  of excluded coordinates, a chart split or filtered by an excluded column, a filter called after it). ([#110](https://github.com/theflywheel/lenspack/pull/110))
 - **After a chat edit in Superset, the open page shows the dashboard as saved, even when the reply is cut off.** A
   reply can be cut off after the change was made, for example when a phone changes networks. The chat panel now finds
   out what happened before offering Retry: "Your change was made: removed …", and the page drops the chart without a

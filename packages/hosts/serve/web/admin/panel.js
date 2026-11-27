@@ -39,7 +39,7 @@
       budget: "{0} of {1} characters", version: "Version {0}", defsVersion: "Definitions version", addDef: "Add a definition", remove: "Remove", undo: "Undo last change", restore: "Restore", history: "History", noDefs: "Nothing added yet.",
       packOwn: "The pack's own instructions (read only)", none: "(none)", by: "by {0}", removeWhy: "Why remove it?", save: "Save", whenHelp: "The kind of question it settles", textHelpDef: "The reading to use",
       // Cache
-      cacheOff: "Caching is not enabled on this server.", cacheLede: "Answers kept for questions that repeat, and what they saved.", since: "Since {0}", hits: "Hits", misses: "Misses", entries: "Entries", question: "Question", board: "Board", lastHit: "Last hit", pin: "Pin", unpin: "Unpin", evict: "Evict", suggestions: "Suggestions", chartCandidates: "Chart candidates", pinned: "pinned",
+      cacheOff: "Caching is not enabled on this server.", clearCache: "Clear saved answers", clearConfirm: "Remove every saved answer now? This cannot be undone.", cleared: "Saved answers cleared.", cacheSwitchedOff: "Saved answers are switched off: nothing is served, kept, suggested or refreshed. {0} saved answers are still on disk until they expire or you clear them.", cacheLede: "Answers kept for questions that repeat, and what they saved.", since: "Since {0}", hits: "Hits", misses: "Misses", entries: "Entries", question: "Question", board: "Board", lastHit: "Last hit", pin: "Pin", unpin: "Unpin", evict: "Evict", suggestions: "Suggestions", chartCandidates: "Chart candidates", pinned: "pinned",
       tier_t1: "same question, fresh data", tier_t2: "same question, re-run", tier_t3: "another place or time", tier_t4: "other words", queueNow: "Running / waiting", queueHelp: "model turns now",
       prewarmH: "Refreshing saved answers", prewarmLast: "Last refresh {0} ({1}): {2} of {3} refreshed, {4} rewritten, {5}.", prewarmNever: "No refresh yet. Refreshes run at the times set in Settings, when the data pipeline reports a load, or now.", prewarmNow: "Refresh now",
       pwr_schedule: "scheduled", pwr_data: "data changed", pwr_admin: "by an admin", asks7d: "Asked, 7 days", dataAsOf: "Data as of", kindEdit: "board change", noEntries: "No saved answers yet.",
@@ -49,18 +49,8 @@
       bName: "Name", bButton: "Button label", bButtonHelp: "{0} in the label stands for the name.", bIcon: "Icon: an https:// address, a path on this site, or a small data:image file", bPowered: "Show a small “Powered by Lenspack” credit under the chat (only when the assistant has its own name)", bIn: "In {0}", bSave: "Save name", bPreview: "Preview",
       sLede: "Switches for this server. A change applies to the next question. Where a value comes from: default, the config file, the environment, or this page.",
       source_default: "default", source_config: "config", source_env: "environment", source_settings: "set here", reset: "Reset to the deployment's value",
-      // Telemetry
-      tabTelemetry: "Telemetry", tlTitle: "What this deployment records", tlLede: "Every item {name} can record for this deployment, each with its switch. A change applies to the next question. Print it or copy it into a pilot report.",
-      tlGenerated: "Checked {0}.", tlSumRecording: "{0} of {1} recording", tlSumNoData: "{0} on but no data", tlSumConfig: "{0} need configuration", tlSumOff: "{0} off", tlSumNot: "{0} not telemetry",
-      tlMaster: "Record telemetry", tlRetention: "Keep records for (days)", tlNote: "Switching something off stops new records. What was already recorded stays until it ages out (the days set here) or is deleted per user.", tlOn: "on", tlOff: "off", tlNoSwitch: "no switch",
-      tlColOn: "On", tlItem: "Item", tlStatus: "Status", tl7d: "7 days", tlLastSeen: "Last seen", tlDecision: "Drives", tlPrivacyCol: "Privacy", tlDetailsCol: "Details", tlNotes: "Notes",
-      tlDetails: "Details for {0}", tlSection: "Record the {0} section", tlShowHide: "Show or hide {0}", tlGroupCount: "{0} of {1} recording", tlSince: "since {0} · {1}", tlOffSince: "Off since {0}, by {1}.",
-      tlHow: "How to enable", tlFields: "Fields read", tlPrivacy: "Privacy", tlWhy: "Why it can't be switched here", tlSource: "Source", tlDefault: "Default", tlSensitive: "Privacy-sensitive: turning it on asks you to confirm.",
-      tlOwned: "Change it with the {0} switch on the Settings tab.", tlGoSettings: "Open Settings",
-      tlConfirmTitle: "Turn on {0}?", tlConfirmLede: "This item is privacy-sensitive. Here is what it records:", tlConsent: "Each user sees this notice once, and agrees, before the mic records:", tlNoConsent: "No consent notice is set yet. Set one under Kept recordings on the Models & voice tab so people are told before they are recorded.", tlConfirmOn: "Turn on",
-      tlSavedOn: "Saved. Applies to the next question.", tlSavedOff: "Saved. What was already recorded is kept until it ages out.",
-      st_recording: "recording", "st_enabled-no-data": "on, no data yet", st_off: "off", "st_needs-config": "needs configuration", "st_not-telemetry": "not telemetry",
-      tlLegend: "✓ recording · ◐ on but no data · ○ off · ⚠ needs configuration · — not telemetry", tlPrint: "Print", tlCopy: "Copy as Markdown", tlCopied: "Copied.",
+      tabTelemetry: "Telemetry",
+      tmFrom: "From {0} records.",
       // Access
       tabAccess: "Access", acWho: "Who has access", acAdmins: "Admins", acUsers: "Users", acFrom: "set by {0}", acFromDefault: "default",
       acOwners: "Owners", acOwnerNote: "Change owners in the deployment, then restart.", acGranted: "Granted admins", acNoGranted: "No granted admins.",
@@ -69,7 +59,6 @@
       acRoster: "Admins roster", acRosterLede: "Everyone who has used admin rights here, and how they qualify. A Superset Admin can give themselves an admin role; this list shows it when they use it.", acHow: "How", acFirst: "First seen", acLast: "Last seen", acNoRoster: "Nobody yet.", acNew: "new", acNewSince: "New admin since your last visit: {0}.", acNewOpen: "See the roster", acPasswords: "Named passwords: {0}", acOwnersN: "Owners: {0}",
       acNoPeople: "Nobody granted yet.", acSearch: "Search", acRange: "{0}–{1} of {2}", acPrev: "Previous", acNext: "Next", acRoles: "Roles: {0}",
       acEveryone: "Everyone signed in", acSignOut: "Sign out", acNoneSet: "Not available on this server.",
-      tlAbsent: "Telemetry is not available on this server.", tlAbsentHelp: "This server does not report its telemetry yet. The checklist appears here once it does.", tlSwitchAbsent: "This server cannot change that setting from here.",
     },
     fr: {
       title: "Administration {name}", pack: "Pack", loading: "Chargement…", failed: "Chargement impossible : {0}", saved: "Enregistré.", done: "Fait.",
@@ -99,7 +88,7 @@
       dLede: "Ce que les administrateurs ont ajouté au pack sur ce serveur. Envoyé avec chaque question, appliqué tout de suite sans redémarrage, sans jamais modifier le fichier du pack du déploiement.",
       budget: "{0} sur {1} caractères", version: "Version {0}", defsVersion: "Version des définitions", addDef: "Ajouter une définition", remove: "Retirer", undo: "Annuler la dernière modification", restore: "Restaurer", history: "Historique", noDefs: "Rien d'ajouté pour l'instant.",
       packOwn: "Consignes du pack lui-même (lecture seule)", none: "(aucune)", by: "par {0}", removeWhy: "Pourquoi la retirer ?", save: "Enregistrer", whenHelp: "Le type de question qu'elle tranche", textHelpDef: "La lecture à utiliser",
-      cacheOff: "Le cache n'est pas activé sur ce serveur.", cacheLede: "Les réponses gardées pour les questions qui reviennent, et ce qu'elles ont économisé.", since: "Depuis {0}", hits: "Réutilisations", misses: "Absences", entries: "Entrées", question: "Question", board: "Tableau", lastHit: "Dernière réutilisation", pin: "Épingler", unpin: "Détacher", evict: "Retirer", suggestions: "Suggestions", chartCandidates: "Graphiques à créer", pinned: "épinglée",
+      cacheOff: "Le cache n'est pas activé sur ce serveur.", clearCache: "Effacer les réponses gardées", clearConfirm: "Supprimer toutes les réponses gardées maintenant ? C'est définitif.", cleared: "Réponses gardées effacées.", cacheSwitchedOff: "Les réponses gardées sont désactivées : rien n'est servi, gardé, suggéré ni rafraîchi. {0} réponses gardées restent sur le disque jusqu'à leur expiration ou leur effacement.", cacheLede: "Les réponses gardées pour les questions qui reviennent, et ce qu'elles ont économisé.", since: "Depuis {0}", hits: "Réutilisations", misses: "Absences", entries: "Entrées", question: "Question", board: "Tableau", lastHit: "Dernière réutilisation", pin: "Épingler", unpin: "Détacher", evict: "Retirer", suggestions: "Suggestions", chartCandidates: "Graphiques à créer", pinned: "épinglée",
       tier_t1: "même question, données récentes", tier_t2: "même question, relancée", tier_t3: "autre lieu ou période", tier_t4: "autres mots", queueNow: "En cours / en attente", queueHelp: "échanges avec le modèle",
       prewarmH: "Rafraîchir les réponses gardées", prewarmLast: "Dernier rafraîchissement {0} ({1}) : {2} sur {3} rafraîchies, {4} réécrites, {5}.", prewarmNever: "Pas encore de rafraîchissement. Ils ont lieu aux heures réglées, quand le chargement des données le signale, ou maintenant.", prewarmNow: "Rafraîchir maintenant",
       pwr_schedule: "planifié", pwr_data: "données modifiées", pwr_admin: "par un administrateur", asks7d: "Posées, 7 jours", dataAsOf: "Données du", kindEdit: "modification du tableau", noEntries: "Aucune réponse gardée pour l'instant.",
@@ -108,17 +97,8 @@
       bName: "Nom", bButton: "Libellé du bouton", bButtonHelp: "{0} dans le libellé représente le nom.", bIcon: "Icône : une adresse https://, un chemin sur ce site, ou un petit fichier data:image", bPowered: "Afficher une petite mention « Propulsé par Lenspack » sous la discussion (seulement quand l'assistant a son propre nom)", bIn: "En {0}", bSave: "Enregistrer le nom", bPreview: "Aperçu",
       sLede: "Les interrupteurs de ce serveur. Un changement s'applique à la question suivante. Origine de chaque valeur : défaut, fichier de configuration, environnement ou cette page.",
       source_default: "défaut", source_config: "configuration", source_env: "environnement", source_settings: "réglé ici", reset: "Revenir à la valeur du déploiement",
-      tabTelemetry: "Télémétrie", tlTitle: "Ce que ce déploiement enregistre", tlLede: "Chaque élément que {name} peut enregistrer pour ce déploiement, avec son interrupteur. Un changement s'applique à la question suivante. À imprimer ou à copier dans un rapport de pilote.",
-      tlGenerated: "Vérifié le {0}.", tlSumRecording: "{0} sur {1} enregistrés", tlSumNoData: "{0} activés sans données", tlSumConfig: "{0} à configurer", tlSumOff: "{0} désactivés", tlSumNot: "{0} hors télémétrie",
-      tlMaster: "Enregistrer la télémétrie", tlRetention: "Conserver (jours)", tlNote: "Désactiver un élément arrête les nouveaux enregistrements. Ce qui a déjà été enregistré reste jusqu'à expiration (les jours réglés ici) ou suppression par utilisateur.", tlOn: "activé", tlOff: "désactivé", tlNoSwitch: "sans interrupteur",
-      tlColOn: "Actif", tlItem: "Élément", tlStatus: "État", tl7d: "7 jours", tlLastSeen: "Dernier", tlDecision: "Sert à", tlPrivacyCol: "Confidentialité", tlDetailsCol: "Détails", tlNotes: "Remarques",
-      tlDetails: "Détails : {0}", tlSection: "Enregistrer la section {0}", tlShowHide: "Afficher ou masquer {0}", tlGroupCount: "{0} sur {1} enregistrés", tlSince: "depuis le {0} · {1}", tlOffSince: "Désactivé depuis le {0}, par {1}.",
-      tlHow: "Pour l'activer", tlFields: "Champs lus", tlPrivacy: "Confidentialité", tlWhy: "Pourquoi il ne se règle pas ici", tlSource: "Source", tlDefault: "Par défaut", tlSensitive: "Sensible pour la vie privée : l'activer demande une confirmation.",
-      tlOwned: "Se règle avec l'interrupteur {0} dans l'onglet Réglages.", tlGoSettings: "Ouvrir les réglages",
-      tlConfirmTitle: "Activer « {0} » ?", tlConfirmLede: "Cet élément touche à la vie privée. Voici ce qu'il enregistre :", tlConsent: "Chaque utilisateur voit cet avis une fois, et l'accepte, avant que le micro n'enregistre :", tlNoConsent: "Aucun avis de consentement n'est défini. Ajoutez-en un sous Enregistrements gardés, dans l'onglet Modèles et voix, pour prévenir chacun avant tout enregistrement.", tlConfirmOn: "Activer",
-      tlSavedOn: "Enregistré. S'applique à la question suivante.", tlSavedOff: "Enregistré. Ce qui a déjà été enregistré est gardé jusqu'à expiration.",
-      st_recording: "enregistré", "st_enabled-no-data": "activé, sans données", st_off: "désactivé", "st_needs-config": "à configurer", "st_not-telemetry": "hors télémétrie",
-      tlLegend: "✓ enregistré · ◐ activé sans données · ○ désactivé · ⚠ à configurer · — hors télémétrie", tlPrint: "Imprimer", tlCopy: "Copier en Markdown", tlCopied: "Copié.",
+      tabTelemetry: "Télémétrie",
+      tmFrom: "Sur {0} enregistrements.",
       // Accès
       tabAccess: "Accès", acWho: "Qui a accès", acAdmins: "Administrateurs", acUsers: "Utilisateurs", acFrom: "défini par {0}", acFromDefault: "par défaut",
       acOwners: "Propriétaires", acOwnerNote: "Les propriétaires se changent dans le déploiement, puis redémarrage.", acGranted: "Administrateurs ajoutés", acNoGranted: "Aucun administrateur ajouté.",
@@ -127,7 +107,6 @@
       acRoster: "Registre des administrateurs", acRosterLede: "Toute personne ayant utilisé des droits d'administration ici, et à quel titre. Un administrateur Superset peut s'attribuer un rôle d'administration ; cette liste le montre dès qu'il s'en sert.", acHow: "À quel titre", acFirst: "Première fois", acLast: "Dernière fois", acNoRoster: "Personne pour l'instant.", acNew: "nouveau", acNewSince: "Nouvel administrateur depuis votre dernière visite : {0}.", acNewOpen: "Voir le registre", acPasswords: "Mots de passe nommés : {0}", acOwnersN: "Propriétaires : {0}",
       acNoPeople: "Personne n'est encore ajouté.", acSearch: "Rechercher", acRange: "{0}–{1} sur {2}", acPrev: "Précédent", acNext: "Suivant", acRoles: "Rôles : {0}",
       acEveryone: "Toute personne connectée", acSignOut: "Se déconnecter", acNoneSet: "Indisponible sur ce serveur.",
-      tlAbsent: "La télémétrie n'est pas disponible sur ce serveur.", tlAbsentHelp: "Ce serveur ne communique pas encore sa télémétrie. La liste apparaîtra ici dès qu'il le fera.", tlSwitchAbsent: "Ce réglage ne peut pas être modifié d'ici sur ce serveur.",
     },
   };  // The admin pages' frame, the new tabs and the pager: terse, in both languages.
   Object.assign(STRINGS.en, {
@@ -241,62 +220,6 @@
     "review.compare": ["Comparer les lectures", "Après la revue, les lectures de chaque question ouverte sont calculées sur les données, sans modèle, pour comparer les chiffres."],
   };
 
-  // The telemetry catalogue in French (sections, items, and the privacy notes of the sensitive ones); English comes from the server.
-  const TL_FR = {
-    groups: { users: "Utilisateurs", "volume-cost": "Volume et coût", quality: "Qualité", asks: "Ce que l'on demande", speed: "Rapidité", voice: "Voix et langue", conversation: "Conversation", "trust-reuse": "Confiance et réutilisation", "device-network": "Appareil et réseau" },
-    items: {
-      "users-active": ["Utilisateurs actifs par jour et par semaine", "Le pilote touche-t-il les gens, et l'usage progresse-t-il ?"],
-      "users-by-role": ["Utilisateurs actifs par rôle", "Quels rôles s'en servent, et qui a besoin de formation ou d'un autre point d'entrée ?"],
-      "users-by-country": ["Utilisateurs actifs par pays", "Où mettre le support et le prochain déploiement."],
-      "users-return": ["Utilisateurs qui reviennent à la campagne suivante", "Garde-t-il ses utilisateurs d'une campagne à l'autre ?"],
-      "volume-per-user": ["Questions par utilisateur", "À quel point chacun s'en sert ; dimensionnement et budgets."],
-      "cost-per-question": ["Coût par question (modèle, voix, vérification)", "Quel modèle utiliser, et si la vérification vaut son coût."],
-      "cost-per-user": ["Coût par utilisateur", "Le budget par superviseur pour une campagne."],
-      "cost-voice": ["Coût de la reconnaissance vocale", "Si la voix reste abordable à l'échelle d'une campagne."],
-      "quality-answer-rate": ["Taux de réponse par type de campagne et langue", "Où le pack ou le modèle est en défaut."],
-      "quality-unanswered": ["Questions sans réponse les plus fréquentes", "Ce qu'il faut ajouter au pack ensuite."],
-      "quality-thumbs-down": ["Pouces vers le bas et leurs raisons", "Quelles réponses inspirent peu confiance, et pourquoi."],
-      "quality-clarify": ["Questions de clarification : répondues ou abandonnées", "Si redemander aide ou fait fuir."],
-      "asks-top-by-role": ["Les 10 questions les plus posées par rôle", "Ce qu'il faut mettre sur les tableaux et dans les suggestions."],
-      "asks-repeated-direct": ["Questions directes répétées", "Quels chiffres méritent un graphique plutôt qu'une question."],
-      "asks-repeated-derived": ["Questions dérivées répétées", "Quels taux ou comparaisons ajouter comme mesures."],
-      "asks-mix": ["Part des questions directes, dérivées et graphiques", "Si l'on s'en sert pour demander ou pour construire."],
-      "question-text": ["Texte des questions", "Lire les mots derrière les questions fréquentes et sans réponse."],
-      "speed-p95": ["Réponses les plus lentes (95e centile) par type", "Si les réponses sont assez rapides sur les réseaux de terrain."],
-      "speed-abandoned": ["Réponses quittées avant la fin", "Où l'attente fait perdre des gens."],
-      "speed-queue": ["Attente d'une place libre", "Quand ajouter de la capacité aux pics de campagne."],
-      "speed-time-saved": ["Temps gagné par rapport à avant", "Si l'outil vaut le changement."],
-      "voice-share": ["Part des questions dites à voix haute", "Si la voix vaut d'être gardée et améliorée."],
-      "voice-edit-rate": ["Transcriptions corrigées avant envoi", "Quelles langues la reconnaissance vocale comprend mal."],
-      "voice-reask": ["Retapé après avoir parlé", "Si les échecs de la voix ramènent au clavier."],
-      "voice-not-sent": ["Transcriptions jamais envoyées", "Si l'on abandonne après avoir vu la transcription."],
-      "language-mix": ["Langues utilisées", "Quelles langues bien prendre en charge."],
-      "voice-wer-proxy": ["Taux d'erreur de mots (estimé d'après les corrections)", "Quel modèle de reconnaissance utiliser par langue."],
-      "voice-wer-true": ["Vrai taux d'erreur de mots", "Quel modèle de reconnaissance utiliser par langue."],
-      "transcript-text": ["Texte des transcriptions", "Voir ce que la reconnaissance a entendu, pour trouver les mots qu'elle rate."],
-      "voice-audio": ["Enregistrements conservés", "De quoi tester les modèles de reconnaissance sur du vrai son de terrain."],
-      "conv-rephrase": ["Questions reposées autrement", "Où la première réponse manque sa cible."],
-      "conv-follow-ups": ["Relances par conversation", "Si l'on explore ou si l'on pose une question puis part."],
-      "trust-explain": ["« Comment c'est calculé » ouvert", "Si l'on vérifie d'où viennent les chiffres."],
-      "trust-export-share": ["Graphiques exportés ou tableaux partagés depuis la discussion", "Si les réponses circulent au-delà de qui les a demandées."],
-      "trust-superset-actions": ["Exports et partages dans Superset sur les tableaux construits par l'assistant", "Si les tableaux construits par l'assistant servent."],
-      "reuse-hit-rate": ["Réponses gardées réutilisées, par niveau", "Ce que la réutilisation fait gagner, et si ses niveaux sont justes."],
-      "reuse-saved": ["Argent économisé par les réponses gardées", "Si la réutilisation est rentable."],
-      "review-runs": ["Passages de la revue quotidienne", "À quelle fréquence les réponses sont vérifiées après coup."],
-      "review-proposals": ["Propositions de la revue quotidienne", "Quels changements de définitions la revue suggère, et lesquels sont acceptés."],
-      "review-open-questions": ["Questions ouvertes (deux lectures)", "Ce qui attend une décision humaine."],
-      "device-class": ["Téléphone, tablette ou ordinateur, et largeur d'écran", "Pour quels écrans concevoir d'abord."],
-      "device-network": ["Type de réseau et économiseur de données", "À quel point les réponses doivent être légères sur le terrain."],
-    },
-    sensitive: {
-      "question-text": "Garde les mots de chaque question telle qu'envoyée, les valeurs des filtres du tableau et les commentaires. Une question peut nommer des lieux, des personnes ou des chiffres. Désactivé, seule une empreinte chiffrée est gardée : les questions répétées se comptent toujours.",
-      "transcript-text": "Garde mot pour mot ce que la reconnaissance vocale a entendu, à côté de la question envoyée. Une question dite peut nommer des lieux, des personnes ou des chiffres. Désactivé, une empreinte chiffrée suffit à compter les corrections.",
-      "voice-audio": "Garde l'enregistrement de chaque question dite pendant le nombre de jours réglé sous Voix dans les réglages, pour que les administrateurs l'écoutent, l'exportent et le suppriment. Une voix peut identifier la personne. Chaque utilisateur voit l'avis de consentement une fois avant que le micro n'enregistre.",
-      "device-class": "Enregistre le type d'appareil et la largeur d'écran de chaque utilisateur à chaque question. Avec le nom d'utilisateur, cela décrit l'équipement de chacun.",
-      "device-network": "Enregistre le type de réseau de chaque utilisateur (wifi, mobile, 2g à 4g) et si l'économiseur de données est actif, à chaque question.",
-    },
-  };
-
   // ---- State and helpers ------------------------------------------------------------------------
   // What the host wrote into the page: which shell draws it (Lenspack's own page or Superset's), where the panel's and
   // the host's routes are from here, where the scripts are, which sections this page shows, and a sign-out address when
@@ -316,19 +239,25 @@
   let lang = params.get("lang") || store.get("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
   if (!STRINGS[lang]) lang = "en";
   let theme = store.get("theme") || "auto";
-  const [hashTab, hashSection] = (location.hash || "").slice(1).split("/");
+  // #telemetry/field/<id> opens the Telemetry tab at that field's row (a widget's link to a field that is off); any
+  // other hash is #tab or #tab/section.
+  const fieldLink = /^#telemetry\/field\/([\w-]+)$/.exec(location.hash || "");
+  const pendingField = fieldLink ? fieldLink[1] : null;
+  const [hashTab, hashSection] = fieldLink ? ["telemetry", ""] : (location.hash || "").slice(1).split("/");
   let tab = hashTab || params.get("tab") || "";
   let pack = params.get("pack") || store.get("pack") || "";
   let packs = [];
   let qFilter = "open";
   let usageInfo = null;
-  let usageChat = [];
+  // Each usage board's chat so far (the Overview's, the Telemetry tab's), and the board drawn on the page.
+  const usageChats = {};
   let mounted = null;
   let openRun = null;
 
   // {name} is the assistant's name (the deployment's brand), which the server writes into the page.
   const named = shell.name || document.documentElement.dataset.name;
   const assistant = named && named !== "__NAME__" ? named : "Lenspack";
+  if (window.LenspackTelemetry) for (const l of Object.keys(STRINGS)) Object.assign(STRINGS[l], window.LenspackTelemetry.strings[l] || {});
   const t = (k, ...a) => String((STRINGS[lang] && STRINGS[lang][k]) ?? STRINGS.en[k] ?? k).replace(/\{name\}/g, () => assistant).replace(/\{(\d)\}/g, (_, i) => (a[i] === undefined ? "" : a[i]));
   const nf = (v, d = 0) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? "—" : Number(v).toLocaleString(lang, { maximumFractionDigits: d }));
   const usd = (v) => (v === null || v === undefined ? "—" : Number(v) < 0.01 && Number(v) > 0 ? `$${Number(v).toFixed(4)}` : `$${Number(v).toLocaleString(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -507,6 +436,7 @@
     render();
   };
   window.addEventListener("hashchange", () => {
+    if (/^#telemetry\/field\//.test(location.hash || "")) return followLink(location.hash);
     const [id, section] = (location.hash || "").slice(1).split("/");
     if (id && id !== tab && TAB_DEFS.some((d) => d.id === id)) go(id, section);
     else if (section) scrollToSection(section);
@@ -582,30 +512,36 @@
     return boardLib;
   }
 
-  async function overview() {
-    if (!usageInfo) return overviewCounts();
-    const [o] = await Promise.all([api("overview?days=14").catch(() => null)]);
-    // What waits for an admin, as links to the tabs: words, not charts. The charts are the board below.
-    const waiting = o ? h("p", { class: "row", style: "margin:0 0 12px" },
-      h("span", { class: "mute" }, `${t("waiting")}:`),
-      h("a", { href: "#questions" }, `${t("openQ")}: ${nf(o.open)}`),
-      h("a", { href: "#proposals" }, `${t("pending")}: ${nf(o.pending)}`)) : null;
+  /**
+   * A board of the usage pack (api/usage/<board>), drawn by the board renderer, with a chat about it underneath: the
+   * Overview's usage board and the Telemetry tab's "What it tells you". Only admins reach either; the chat's turns are
+   * logged and costed but marked internal, so the daily review leaves them out. A widget that needs a telemetry field
+   * that is off links to it (#telemetry/field/<id>); the panel follows such links itself.
+   */
+  function usageBoardView(board, o) {
+    const chat = (usageChats[board] ??= []);
     const boardEl = h("div", { class: "usage-board" }, h("p", { class: "mute" }, t("loading")));
+    boardEl.addEventListener("click", (e) => {
+      const a = e.target.closest && e.target.closest("a[href^='#']");
+      if (!a || !boardEl.contains(a)) return;
+      e.preventDefault();
+      followLink(a.getAttribute("href"));
+    });
     const log = h("div", { class: "uchat-log", "aria-live": "polite" });
-    const input = h("textarea", { rows: 2, placeholder: t("askPlaceholder"), "aria-label": t("askUsage") });
+    const input = h("textarea", { rows: 2, placeholder: o.placeholder, "aria-label": o.title });
     const button = h("button", { class: "btn", type: "submit" }, t("send"));
-    const paintLog = () => log.replaceChildren(...usageChat.map((m) => h("div", { class: `uchat-msg ${m.role}${m.bad ? " bad" : ""}` }, m.text)));
-    async function askUsage(text) {
+    const paintLog = () => log.replaceChildren(...chat.map((m) => h("div", { class: `uchat-msg ${m.role}${m.bad ? " bad" : ""}` }, m.text)));
+    async function ask(text) {
       text = text.trim();
       if (!text || button.disabled) return;
       button.disabled = true;
-      usageChat.push({ role: "user", text });
+      chat.push({ role: "user", text });
       const reply = { role: "assistant", text: t("thinking") };
-      usageChat.push(reply);
+      chat.push(reply);
       paintLog();
-      const history = usageChat.filter((m) => m !== reply && !m.bad).map((m, i) => ({ id: `m${i}`, role: m.role, parts: [{ type: "text", text: m.text }] }));
+      const history = chat.filter((m) => m !== reply && !m.bad).map((m, i) => ({ id: `m${i}`, role: m.role, parts: [{ type: "text", text: m.text }] }));
       try {
-        const res = await fetch(`${API}usage/${usageInfo.board}/chat?language=${lang}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history.slice(-16), language: lang }) });
+        const res = await fetch(`${API}usage/${board}/chat?language=${lang}`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history.slice(-16), language: lang }) });
         if (!res.ok || !res.body) throw new Error(((await res.json().catch(() => ({}))).error) || `HTTP ${res.status}`);
         const reader = res.body.getReader();
         const dec = new TextDecoder();
@@ -648,16 +584,10 @@
       button.disabled = false;
       paintLog();
     }
-    const form = h("form", { class: "uchat-form", onsubmit: (e) => { e.preventDefault(); const v = input.value; input.value = ""; askUsage(v); } }, input, button);
+    const form = h("form", { class: "uchat-form", onsubmit: (e) => { e.preventDefault(); const v = input.value; input.value = ""; ask(v); } }, input, button);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
-    const examples = h("div", { class: "row", style: "margin-top:8px" }, ["usageEx1", "usageEx2", "usageEx3"].map((k) => h("button", { class: "btn quiet sm", type: "button", onclick: () => askUsage(t(k)) }, t(k))));
+    const examples = h("div", { class: "row no-print", style: "margin-top:8px" }, o.examples.map((q) => h("button", { class: "btn quiet sm", type: "button", onclick: () => ask(q) }, q)));
     paintLog();
-    const nodes = [
-      h("p", { class: "mute", style: "margin:0 0 6px" }, t("usageLede"), " ", t("usageFrom", t(`src_${usageInfo.source}`)), " ", t("estimateNote")),
-      waiting,
-      boardEl,
-      card(t("askUsage"), t("askUsageLede"), log, form, examples),
-    ];
     // Mounted once the nodes are on the page.
     setTimeout(async () => {
       try {
@@ -665,12 +595,35 @@
         if (!boardEl.isConnected) return;
         if (mounted) mounted.unmount();
         boardEl.replaceChildren();
-        mounted = lib.mount(boardEl, { api: `${API}usage/${usageInfo.board}` });
+        mounted = lib.mount(boardEl, { api: `${API}usage/${board}` });
       } catch (e) {
         boardEl.replaceChildren(h("p", { class: "bad" }, t("boardOff", e.message)));
       }
     });
-    return nodes;
+    return [boardEl, h("div", { class: "no-print" }, card(o.title, o.lede, log, form, examples))];
+  }
+
+  /** A link inside the panel (#settings, #telemetry/field/<id>): to that tab, and for a field, to its row. */
+  function followLink(href) {
+    const field = /^#telemetry\/field\/([\w-]+)$/.exec(href || "");
+    if (field) return openField(field[1]);
+    const [id, section] = (href || "").slice(1).split("/");
+    if (TAB_DEFS.some((d) => d.id === id)) go(id, section);
+  }
+
+  async function overview() {
+    if (!usageInfo) return overviewCounts();
+    const [o] = await Promise.all([api("overview?days=14").catch(() => null)]);
+    // What waits for an admin, as links to the tabs: words, not charts. The charts are the board below.
+    const waiting = o ? h("p", { class: "row", style: "margin:0 0 12px" },
+      h("span", { class: "mute" }, `${t("waiting")}:`),
+      h("a", { href: "#questions" }, `${t("openQ")}: ${nf(o.open)}`),
+      h("a", { href: "#proposals" }, `${t("pending")}: ${nf(o.pending)}`)) : null;
+    return [
+      h("p", { class: "mute", style: "margin:0 0 6px" }, t("usageLede"), " ", t("usageFrom", t(`src_${usageInfo.source}`)), " ", t("estimateNote")),
+      waiting,
+      usageBoardView(usageInfo.board, { title: t("askUsage"), lede: t("askUsageLede"), placeholder: t("askPlaceholder"), examples: [t("usageEx1"), t("usageEx2"), t("usageEx3")] }),
+    ];
   }
 
   // Without the usage board (no DuckDB on this server): the counts as a plain table.
@@ -937,6 +890,16 @@
       const res = await fetch(`${HOST}cache${path}`, { method: "POST", credentials: "same-origin" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     });
+    // Clear saved answers: every entry off the disk at once, on or off (audited by the server).
+    const clearAll = act(async () => {
+      const res = await fetch(`${HOST}cache/clear`, { method: "POST", credentials: "same-origin" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    }, t("cleared"));
+    const clearButton = () => h("button", { class: "btn sm danger", type: "button", onclick: (ev) => (window.confirm(t("clearConfirm")) ? clearAll(ev) : undefined) }, t("clearCache"));
+    // Switched off: nothing listed or suggested; only how many are still kept, and the way to clear them.
+    if (data.on === false) {
+      return [card(null, null, h("p", { class: "empty" }, t("cacheSwitchedOff", nf(data.stored || 0))), data.stored ? h("div", { class: "actions" }, clearButton()) : null)];
+    }
     const tierLine = ["t1", "t2", "t3", "t4"].map((k) => `${t(`tier_${k}`)} ${nf(hits[k] || 0)}`).join(" · ");
     const q = data.queue;
     const pw = data.prewarm;
@@ -959,7 +922,8 @@
         h("tbody", {}, entries.map((e) => h("tr", {},
           h("td", {}, e.question, e.kind === "edit" ? h("span", { class: "pill", style: "margin-left:6px" }, t("kindEdit")) : null, e.pinned ? h("span", { class: "pill acc", style: "margin-left:6px" }, t("pinned")) : null, e.variants && e.variants.length ? h("div", { class: "mute", style: "font-size:12px" }, e.variants.slice(0, 3).join(" · ")) : null),
           h("td", { class: "hide-s" }, e.board || ""), h("td", { class: "n" }, nf(e.hits)), h("td", { class: "n hide-s" }, nf(e.asks7d)), h("td", { class: "hide-s mute" }, when(e.dataAsOf)),
-          h("td", { style: "white-space:nowrap" }, h("button", { class: "btn sm quiet", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/${e.pinned ? "unpin" : "pin"}`) }, e.pinned ? t("unpin") : t("pin")), " ", h("button", { class: "btn sm danger", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/evict`) }, t("evict")))))))) : h("p", { class: "empty" }, t("noEntries")), listPager("cache", data.page)),
+          h("td", { style: "white-space:nowrap" }, h("button", { class: "btn sm quiet", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/${e.pinned ? "unpin" : "pin"}`) }, e.pinned ? t("unpin") : t("pin")), " ", h("button", { class: "btn sm danger", type: "button", onclick: post(`/${encodeURIComponent(e.id)}/evict`) }, t("evict")))))))) : h("p", { class: "empty" }, t("noEntries")), listPager("cache", data.page),
+        entries.length ? h("div", { class: "actions" }, clearButton()) : null),
       sugg.some((x) => x && x.suggestions && x.suggestions.length) ? card(t("suggestions"), t("suggestionsLede"), boards.map((b, i) => (sugg[i] && sugg[i].suggestions.length ? h("div", {}, h("h3", {}, b), h("ul", {}, sugg[i].suggestions.map((x) => h("li", {}, x)))) : null))) : null,
       candidates.length ? card(t("chartCandidates"), t("candidatesLede"), h("ul", {}, candidates.map((c) => h("li", {}, c.question, h("span", { class: "mute" }, ` · ${c.board} · ${t("askedN", nf(c.asks))}`))))) : null,
       settled.length ? card(t("settledH"), t("settledLede"), h("ul", {}, settled.map((b) => h("li", {}, b.board, h("span", { class: "mute" }, ` · ${t("lastEdit", when(b.lastEdit))}`))))) : null,
@@ -1042,212 +1006,6 @@
       nameCard,
       host ? supersetSettingsCards(host) : null,
       host ? configCards(host) : null,
-    ];
-  }
-
-  /** The telemetry checklist (GET <prefix>/telemetry/checklist), if the server has it: null when it does not (404). */
-  async function telemetryApi() {
-    const res = await fetch(`${HOST}telemetry/checklist`, { credentials: "same-origin" });
-    if (res.status === 404) return null;
-    let data = null;
-    try { data = await res.json(); } catch (e) { return null; }
-    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
-    return data && Array.isArray(data.groups) ? data : null;
-  }
-  /**
-   * A change to the switchboard through the host's Settings routes: PUT <prefix>/settings/telemetry {"<switch>": value}.
-   * A privacy-sensitive item the server wants confirmed (409 with confirm) opens the confirm step, then goes again.
-   */
-  async function setTelemetrySwitch(body) {
-    const put = (b) => fetch(`${HOST}settings/telemetry`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
-    let res = await put(body);
-    if (res.status === 404) throw new Error(t("tlSwitchAbsent"));
-    let data = null;
-    try { data = await res.json(); } catch (e) { /* not JSON */ }
-    if (res.status === 409 && data && data.confirm) {
-      if (!(await confirmSensitive(data.confirm.key.replace(/^items\./, ""), data.confirm.label, data.confirm.sensitive, data.confirm.consent, data.confirm.key === "items.voice-audio"))) return null;
-      res = await put({ ...body, confirm: true });
-      data = null;
-      try { data = await res.json(); } catch (e) { /* not JSON */ }
-    }
-    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
-    return data;
-  }
-  const tlLabel = (it) => (lang === "fr" && TL_FR.items[it.id] ? TL_FR.items[it.id][0] : it.label);
-  const tlDecision = (it) => (lang === "fr" && TL_FR.items[it.id] ? TL_FR.items[it.id][1] : it.decision);
-  const tlGroup = (g) => (lang === "fr" && TL_FR.groups[g.id]) || g.title;
-  const tlSensitive = (id, text) => (lang === "fr" && TL_FR.sensitive[id]) || text;
-  /** The confirm step before a privacy-sensitive item turns on: its privacy note, and for recordings the consent notice. Resolves true to go ahead. */
-  function confirmSensitive(id, label, sensitive, consent, audio) {
-    return new Promise((resolve) => {
-      const title = h("h2", { id: "tl-confirm-t", style: "font-size:15px;margin:0 0 10px" }, t("tlConfirmTitle", label));
-      const yes = h("button", { class: "btn", type: "button", onclick: () => { d.close(); resolve(true); } }, t("tlConfirmOn"));
-      const d = h("dialog", { class: "modal tl-confirm", "aria-labelledby": "tl-confirm-t" },
-        title,
-        h("p", {}, t("tlConfirmLede")),
-        h("blockquote", {}, tlSensitive(id, sensitive)),
-        audio ? (consent ? [h("p", {}, t("tlConsent")), h("blockquote", {}, consent)] : h("p", { class: "mute" }, t("tlNoConsent"))) : null,
-        h("div", { class: "actions" },
-          h("button", { class: "btn quiet", type: "button", onclick: () => { d.close(); resolve(false); } }, t("cancel")),
-          yes));
-      d.addEventListener("cancel", () => resolve(false));
-      document.body.append(d);
-      d.showModal();
-      yes.focus();
-      d.addEventListener("close", () => d.remove());
-    });
-  }
-  /** One tooltip for the table's truncated text and privacy marks, on hover and on keyboard focus. */
-  let tlPop = null;
-  function showTip(e) {
-    const el = e.currentTarget;
-    const text = el.dataset.tip;
-    if (!text) return;
-    if (!tlPop) tlPop = h("div", { class: "tl-pop", role: "tooltip", id: "tl-pop" });
-    tlPop.textContent = text;
-    document.body.append(tlPop);
-    const r = el.getBoundingClientRect();
-    const w = Math.min(340, window.innerWidth - 24);
-    tlPop.style.maxWidth = `${w}px`;
-    tlPop.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - w - 12))}px`;
-    const below = r.bottom + 6;
-    tlPop.style.top = `${below + tlPop.offsetHeight > window.innerHeight - 8 ? r.top - tlPop.offsetHeight - 6 : below}px`;
-    el.setAttribute("aria-describedby", "tl-pop");
-  }
-  function hideTip(e) {
-    if (tlPop) tlPop.remove();
-    if (e && e.currentTarget && e.currentTarget.removeAttribute) e.currentTarget.removeAttribute("aria-describedby");
-  }
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
-  const tip = (cls, text, kid, extra) => h("span", { class: `tl-tip ${cls || ""}`, tabindex: "0", "data-tip": text, onmouseenter: showTip, onmouseleave: hideTip, onfocus: showTip, onblur: hideTip, ...(extra || {}) }, kid);
-  const LOCK = () => {
-    const ns = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(ns, "svg");
-    svg.setAttribute("viewBox", "0 0 16 16");
-    svg.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS(ns, "path");
-    path.setAttribute("fill", "currentColor");
-    path.setAttribute("d", "M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm-2 3.5a2 2 0 1 1 4 0V6H6V4.5Z");
-    svg.append(path);
-    return svg;
-  };
-  const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString(lang, { day: "numeric", month: "short" }) : "—");
-  const collapsedGroups = () => { try { return new Set(JSON.parse(store.get("tl-collapsed") || "[]")); } catch (e) { return new Set(); } };
-
-  async function telemetry() {
-    const C = window.LenspackChecklist;
-    let data = null;
-    try { data = C ? await telemetryApi() : null; } catch (e) { data = null; }
-    if (!data) return [card(t("tlTitle"), null, h("p", { class: "empty" }, t("tlAbsent")), h("p", { class: "mute" }, t("tlAbsentHelp")))];
-    const view = { ...data, groups: data.groups.map((g) => ({ ...g, title: tlGroup(g), items: g.items.map((it) => ({ ...it, label: tlLabel(it), decision: tlDecision(it) })) })) };
-    const md = () => C.markdown(view, t, { date: (iso) => when(iso), num: (n) => nf(n) });
-    const copy = async () => {
-      const text = md();
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch (e) {
-        // No clipboard access (an http page, an old browser): select the text instead.
-        const area = h("textarea", { style: "position:fixed;top:0;left:0;opacity:0" }, text);
-        document.body.append(area);
-        area.select();
-        try { document.execCommand("copy"); } finally { area.remove(); }
-      }
-      toast(t("tlCopied"));
-    };
-    // A change: saved, said (turning off keeps what was recorded), and the table drawn again from the server's answer.
-    const change = (body, on, input) => async () => {
-      if (input) input.disabled = true;
-      try {
-        const r = await setTelemetrySwitch(body);
-        if (r !== null) toast(on ? t("tlSavedOn") : t("tlSavedOff"));
-      } catch (e) {
-        toast(e.message, true);
-      }
-      await render();
-    };
-    const toggle = (it, input) => {
-      const on = input.checked;
-      const key = it.switch.key;
-      if (on && it.switch.sensitive) {
-        input.checked = false;
-        return confirmSensitive(it.id, it.label, it.switch.sensitive, it.switch.consent, it.id === "voice-audio").then((ok) => (ok ? change({ [key]: true, confirm: true }, true, input)() : null));
-      }
-      return change({ [key]: on }, on, input)();
-    };
-    const statusCls = (st) => (st === "recording" ? "ok" : st === "needs-config" ? "warn" : st === "enabled-no-data" ? "acc" : "");
-    const collapsed = collapsedGroups();
-    const groupBody = (g) => {
-      const gid = `tl-g-${g.id}`;
-      const rec = g.items.filter((i) => i.status === "recording").length;
-      const body = h("tbody", { class: collapsed.has(g.id) ? "collapsed" : "", id: `${gid}-rows` });
-      const chev = h("button", { class: "tl-chev", type: "button", "aria-expanded": String(!collapsed.has(g.id)), "aria-controls": `${gid}-rows`, "aria-label": t("tlShowHide", g.title), onclick: () => {
-        const open = body.classList.toggle("collapsed");
-        chev.setAttribute("aria-expanded", String(!open));
-        const now = collapsedGroups();
-        if (open) now.add(g.id); else now.delete(g.id);
-        store.set("tl-collapsed", JSON.stringify([...now]));
-      } }, "▾");
-      const gsw = h("input", { class: "tg", type: "checkbox", role: "switch", checked: g.on, "aria-label": t("tlSection", g.title), onchange: () => change({ [`groups.${g.id}`]: gsw.checked }, gsw.checked, gsw)() });
-      body.append(h("tr", { class: "tl-g" }, h("th", { colspan: "8", scope: "rowgroup", id: gid },
-        h("div", { class: "tl-gin" }, chev, gsw, h("span", {}, g.title), h("span", { class: "tl-gn" }, t("tlGroupCount", rec, g.items.length)),
-          !g.on && g.changed ? h("span", { class: "tl-gsince" }, t("tlSince", shortDate(g.changed.at), g.changed.by)) : null))));
-      for (const it of g.items) {
-        const did = `tl-d-${it.id}`;
-        const sw = it.switch || {};
-        const input = h("input", { class: "tg", type: "checkbox", role: "switch", checked: sw.on, disabled: !sw.editable, "aria-label": it.label, "aria-describedby": sw.editable ? null : `${did}-why`, title: sw.editable ? null : sw.reason, onchange: () => toggle(it, input) });
-        const x = h("button", { class: "tl-x", type: "button", "aria-expanded": "false", "aria-controls": did, "aria-label": t("tlDetails", it.label) }, "›");
-        const off = it.status === "off" && it.offSince;
-        const privacy = [sw.sensitive ? tlSensitive(it.id, sw.sensitive) : null, ...(it.privacy || [])].filter(Boolean).join(" · ");
-        const row = h("tr", { class: `tl-i${it.status === "off" || it.status === "not-telemetry" ? " is-off" : ""}` },
-          h("td", { class: "c-on" }, input, h("span", { class: "print-on" }, sw.key || sw.feature ? (sw.on ? t("tlOn") : t("tlOff")) : t("tlNoSwitch"))),
-          h("th", { class: "c-name", scope: "row" }, it.label),
-          h("td", { class: "c-st" }, pill(t(`st_${it.status}`), statusCls(it.status)), off ? h("span", { class: "tl-since" }, t("tlSince", shortDate(it.offSince), it.offBy)) : null),
-          h("td", { class: "c-n" }, it.status === "not-telemetry" ? "—" : nf(it.count7d)),
-          h("td", { class: "c-seen" }, it.lastSeen ? shortDate(it.lastSeen) : "—"),
-          h("td", { class: "c-dr" }, tip("", it.decision, it.decision)),
-          h("td", { class: "c-pv" }, privacy ? tip("tl-pv", privacy, LOCK(), { role: "img", "aria-label": `${t("tlPrivacy")}: ${privacy}` }) : null),
-          h("td", { class: "c-x" }, x));
-        // The row's detail, collapsed: the long text, and on a phone the columns that do not fit.
-        const dl = h("dl", { class: "tl-dl" },
-          h("dt", {}, t("tlDecision")), h("dd", {}, it.decision),
-          h("div", { class: "p-only" }, h("dt", {}, t("tl7d")), h("dd", {}, it.status === "not-telemetry" ? "—" : nf(it.count7d)), h("dt", {}, t("tlLastSeen")), h("dd", {}, it.lastSeen ? when(it.lastSeen) : "—")),
-          off ? [h("dt", {}, t("tlStatus")), h("dd", {}, t("tlOffSince", when(it.offSince), it.offBy))] : null,
-          !sw.editable && sw.reason ? [h("dt", {}, t("tlWhy")), h("dd", { id: `${did}-why` }, sw.reason, sw.feature ? [" ", h("button", { class: "btn sm quiet", type: "button", onclick: () => document.querySelector('#tabs [data-tab="settings"]').click() }, t("tlGoSettings"))] : null)] : null,
-          it.status !== "recording" && it.howToEnable && it.howToEnable !== sw.reason ? [h("dt", {}, t("tlHow")), h("dd", {}, h("span", { class: "tl-warn" }, it.howToEnable))] : null,
-          privacy ? [h("dt", {}, t("tlPrivacy")), h("dd", {}, privacy, sw.sensitive ? h("div", { class: "mute" }, t("tlSensitive")) : null)] : null,
-          (it.fields || []).length ? [h("dt", {}, t("tlFields")), h("dd", {}, (it.fields || []).map((f) => h("code", {}, f)))] : null,
-          h("dt", {}, t("tlSource")), h("dd", {}, h("code", {}, it.source)),
-          sw.key ? [h("dt", {}, t("tlDefault")), h("dd", {}, sw.default ? t("tlOn") : t("tlOff"), " · ", h("code", {}, `telemetry.${sw.key}`))] : null);
-        const detail = h("tr", { class: "tl-d", id: did, hidden: true }, h("td", { colspan: "8" }, dl));
-        x.onclick = () => {
-          const open = detail.hidden;
-          detail.hidden = !open;
-          x.setAttribute("aria-expanded", String(open));
-        };
-        body.append(row, detail);
-      }
-      return body;
-    };
-    const master = h("input", { class: "tg", type: "checkbox", role: "switch", checked: data.telemetry ? data.telemetry.on : data.switches.telemetry, "aria-label": t("tlMaster"), onchange: () => change({ telemetry: master.checked }, master.checked, master)() });
-    const days = h("input", { type: "number", min: "1", max: "3650", value: String((data.settings && data.settings.retentionDays) || data.switches.retentionDays || 90), "aria-label": t("tlRetention") });
-    const masterSince = data.telemetry && !data.telemetry.on && data.telemetry.changed ? data.telemetry.changed : null;
-    return [
-      h("div", { class: "tl-head" },
-        h("div", {}, h("h2", { class: "tl-title" }, t("tlTitle")), h("p", { class: "lede mute", style: "margin:2px 0 0" }, t("tlLede"))),
-        h("div", { class: "row no-print" }, h("button", { class: "btn sm ghost", type: "button", onclick: () => window.print() }, t("tlPrint")), h("button", { class: "btn sm", type: "button", onclick: copy }, t("tlCopy")))),
-      h("p", { class: "tl-summary" }, C.summary(data, t)),
-      h("div", { class: "tl-bar" },
-        h("label", {}, master, h("b", {}, t("tlMaster")), h("span", { class: "print-on" }, data.telemetry && data.telemetry.on ? t("tlOn") : t("tlOff")), masterSince ? h("span", { class: "mute", style: "font-size:12px" }, t("tlSince", shortDate(masterSince.at), masterSince.by)) : null),
-        h("label", {}, h("span", {}, t("tlRetention")), days, h("button", { class: "btn sm quiet no-print", type: "button", onclick: change({ retentionDays: Number(days.value) }, true) }, t("save"))),
-        h("p", { class: "tl-note" }, t("tlNote"))),
-      h("div", { class: "tl-wrap" }, h("table", { class: "tl" },
-        h("caption", { class: "vh" }, t("tlTitle")),
-        h("thead", {}, h("tr", {},
-          h("th", { class: "c-on", scope: "col" }, t("tlColOn")), h("th", { class: "c-name", scope: "col" }, t("tlItem")), h("th", { class: "c-st", scope: "col" }, t("tlStatus")),
-          h("th", { class: "c-n", scope: "col" }, t("tl7d")), h("th", { class: "c-seen", scope: "col" }, t("tlLastSeen")), h("th", { class: "c-dr", scope: "col" }, t("tlDecision")),
-          h("th", { class: "c-pv", scope: "col" }, h("span", { class: "vh" }, t("tlPrivacyCol"))), h("th", { class: "c-x", scope: "col" }, h("span", { class: "vh" }, t("tlDetailsCol"))))),
-        view.groups.map(groupBody))),
-      h("p", { class: "tl-legend" }, t("tlGenerated", when(data.generatedAt)), " ", t("tlLegend")),
     ];
   }
 
@@ -1603,6 +1361,16 @@
     return out;
   }
 
+  // The Telemetry tab is its own module (telemetry.js), mounted here with the helpers it needs.
+  const tel = window.LenspackTelemetry
+    ? window.LenspackTelemetry.create({
+      h, t, nf, when, store, toast, card, pill, assistant, usageBoardView, field: pendingField, host: HOST,
+      render: () => render(), lang: () => lang, tab: () => tab, usageInfo: () => usageInfo,
+      goTab: (name) => go(name),
+    })
+    : null;
+  const telemetry = tel ? tel.render : async () => [card(t("tabTelemetry"), null, h("p", { class: "empty" }, t("failed", "telemetry.js")))];
+  const openField = (id) => (tel ? tel.openField(id) : null);
   const TABS = { overview, review, questions, proposals, definitions, cache, models, access, settings, assistant: assistantTab, telemetry, spend };
   let rendering = 0;
   // Who became an admin since this admin's last visit (the admins roster): said at the top of every tab, once loaded.

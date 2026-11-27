@@ -952,6 +952,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant: the admin pages' ow
 {% block content %}
 {% set lp_nonce = csp_nonce() if csp_nonce is defined else "" %}
 <link rel="stylesheet" href="{{ lp_assets }}panel.css">
+<link rel="stylesheet" href="{{ lp_assets }}telemetry.css">
 <div id="lp-admin" class="lpa" data-shell="superset">
   <header class="page-h lpa-static">
     <h1>{{ lp_brand | default("AI assistant") }}</h1>
@@ -962,6 +963,7 @@ SETTINGS_HTML = r"""{# Settings → Manage → AI assistant: the admin pages' ow
 {% if not lp_error %}
 <script{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}>window.__lpAdmin = {{ lp_shell | tojson }};</script>
 <script src="{{ lp_assets }}checklist.js"{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}></script>
+<script src="{{ lp_assets }}telemetry.js"{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}></script>
 <script src="{{ lp_assets }}panel.js"{% if lp_nonce %} nonce="{{ lp_nonce }}"{% endif %}></script>
 {% endif %}
 {% endblock %}

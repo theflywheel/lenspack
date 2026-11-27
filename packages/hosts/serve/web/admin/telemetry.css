@@ -1,0 +1,99 @@
+/* The Telemetry tab (telemetry.js): what's recorded is the switchboard, one dense row per field; what it tells you is
+   a usage board (the board renderer's own styles) with its chat. It uses the panel's tokens (panel.css) and, like it, styles
+   nothing outside the admin pages (.lpa). Both views print and fit a phone. */
+.lpa .tl-title { font-size: 17px; margin: 0; }
+.lpa .tl-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 16px; flex-wrap: wrap; }
+.lpa .tl-head > div:first-child { flex: 1 1 420px; min-width: 0; }
+.lpa .tl-views { margin: 12px 0 2px; }
+.lpa .tl-views button { padding: 7px 14px; font-size: 13.5px; }
+.lpa .tl-vlede { margin: 10px 0 0; font-size: 13px; }
+.lpa .tl-lede { margin: 2px 0 0; }
+.lpa .tl-bar .tl-since { color: var(--mute); font-size: 12px; }
+.lpa .tl-summary { font-size: 15px; font-weight: 600; margin: 6px 0 8px; }
+.lpa .tl-bar { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center; padding: 7px 14px; margin: 0 0 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.lpa .tl-bar .tl-note { flex: 1 1 260px; font-size: 12.5px; color: var(--mute); margin: 0; }
+.lpa .tl-bar label { display: inline-flex; align-items: center; gap: 8px; }
+.lpa .tl-bar input[type="number"] { width: 76px; background: var(--card); border: 1px solid var(--line); border-radius: 7px; padding: 3px 7px; min-height: 28px; }
+.lpa .tl-banner { margin: 0 0 10px; padding: 8px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--fg); border: 1px solid var(--line); font-size: 13px; }
+.lpa .tg { width: 32px; height: 18px; appearance: none; -webkit-appearance: none; border-radius: 9px; background: var(--line); position: relative; cursor: pointer; flex: none; margin: 0; vertical-align: middle; transition: background .15s; }
+.lpa .tg::after { content: ""; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; top: 2px; left: 2px; transition: left .15s; box-shadow: 0 1px 1px rgba(0,0,0,.2); }
+.lpa .tg:checked { background: var(--acc); }
+.lpa .tg:checked::after { left: 16px; }
+/* A category with some switches on and some off: the knob sits in the middle. */
+.lpa .tg:indeterminate { background: var(--bar); }
+.lpa .tg:indeterminate::after { left: 9px; }
+.lpa .tg:disabled { cursor: not-allowed; opacity: .45; }
+.lpa .tg:focus-visible, .lpa .tl-x:focus-visible, .lpa .tl-tip:focus-visible, .lpa .tl-chev:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.lpa .tl-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+.lpa table.tl { table-layout: fixed; font-size: 13px; }
+.lpa .tl th, .lpa .tl td { padding: 0 8px; height: 34px; vertical-align: middle; border-bottom: 1px solid var(--line2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lpa .tl thead th { height: 30px; background: var(--soft); font-size: 12px; position: sticky; top: 0; z-index: 1; }
+.lpa .tl .c-on { width: 52px; text-align: center; padding: 0; text-overflow: clip; }
+.lpa .tl .c-name { width: 38%; font-weight: 500; color: var(--fg); font-size: 13px; }
+.lpa .tl tbody .c-name { white-space: normal; line-height: 1.3; padding-top: 5px; padding-bottom: 5px; }
+.lpa .tl .c-name .tl-fname { white-space: nowrap; }
+.lpa .tl .c-st { width: 190px; }
+.lpa .tl .c-n { width: 104px; text-align: right; font-variant-numeric: tabular-nums; }
+.lpa .tl .c-used { color: var(--mute); }
+.lpa .tl .c-pv { width: 30px; text-align: center; padding: 0; }
+.lpa .tl .c-x { width: 36px; text-align: center; padding: 0; }
+.lpa .tl tbody th { font-weight: 500; }
+.lpa .tl-sub { font-size: 11.5px; font-weight: 400; color: var(--mute); }
+.lpa .tl-lock { font-size: 12px; font-weight: 400; color: var(--warn); display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin-top: 1px; }
+.lpa .tl-lock .btn.sm { min-height: 22px; padding: 0 8px; font-size: 12px; color: var(--fg); }
+.lpa .tl tr.tl-g th { height: 34px; background: var(--soft); color: var(--fg); font-size: 13px; font-weight: 650; border-top: 1px solid var(--line); white-space: normal; }
+.lpa .tl tr.tl-g .tl-gin { display: flex; align-items: center; gap: 10px; }
+.lpa .tl tr.tl-g .tl-gn { color: var(--mute); font-weight: 400; font-size: 12px; }
+.lpa .tl tr.tl-g .tl-gnote { color: var(--mute); font-weight: 400; font-size: 12px; padding: 0 0 6px 74px; line-height: 1.35; }
+.lpa .tl-chev { border: 0; background: none; cursor: pointer; width: 22px; height: 22px; border-radius: 5px; color: var(--mute); display: inline-grid; place-items: center; padding: 0; font-size: 12px; transition: transform .15s; }
+.lpa .tl-chev[aria-expanded="false"] { transform: rotate(-90deg); }
+.lpa .tl tbody.collapsed tr.tl-i, .lpa .tl tbody.collapsed tr.tl-d { display: none; }
+.lpa .tl tr.tl-i:hover td, .lpa .tl tr.tl-i:hover th { background: var(--soft); }
+.lpa .tl tr.tl-i.flash td, .lpa .tl tr.tl-i.flash th { background: var(--acc-soft); transition: background .3s; }
+.lpa .tl tr.tl-i.is-off th .tl-fname, .lpa .tl tr.tl-i.is-off td.c-n, .lpa .tl tr.tl-i.is-off td.c-used { color: var(--mute); }
+.lpa .tl .pill { font-size: 11.5px; padding: 0 7px; line-height: 18px; }
+.lpa .tl .tl-since { color: var(--mute); font-size: 11.5px; margin-left: 6px; }
+.lpa .tl-tip { position: relative; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; border-radius: 3px; cursor: default; }
+.lpa .tl-pop { position: fixed; z-index: 20; max-width: 340px; padding: 7px 10px; border-radius: 7px; background: var(--fg); color: var(--bg); font-size: 12.5px; line-height: 1.4; white-space: normal; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.lpa .tl-pv { color: var(--acc); display: inline-grid; place-items: center; width: 22px; height: 22px; }
+.lpa .tl-pv svg { width: 15px; height: 15px; }
+.lpa .tl-x { border: 0; background: none; cursor: pointer; width: 26px; height: 26px; border-radius: 6px; color: var(--mute); font-size: 13px; padding: 0; transition: transform .15s; }
+.lpa .tl-x:hover, .lpa .tl-chev:hover { background: var(--line2); color: var(--fg); }
+.lpa .tl-x[aria-expanded="true"] { transform: rotate(90deg); color: var(--acc); }
+.lpa .tl tr.tl-d td { height: auto; padding: 8px 14px 12px 60px; white-space: normal; background: var(--bg); font-size: 12.5px; color: var(--fg); }
+.lpa .tl-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
+.lpa .tl-dl dt { color: var(--mute); }
+.lpa .tl-dl dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.lpa .tl-dl code { margin-right: 4px; font-size: 11.5px; }
+.lpa .tl-dl .tl-warn { background: var(--warn-soft); border-radius: 5px; padding: 2px 7px; }
+.lpa .tl .p-only { display: none; }
+.lpa .tl-legend { font-size: 12px; color: var(--mute); margin: 8px 2px 0; }
+.lpa .tl-confirm-title { font-size: 15px; margin: 0 0 10px; }
+.lpa .tl-confirm p { margin: 0 0 10px; }
+.lpa .tl-confirm blockquote { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 6px 6px 0; }
+.lpa .tl-confirm .actions { display: flex; gap: 8px; justify-content: flex-end; }
+@media (max-width: 720px) {
+  /* The columns stay (the category rows span them) but take no room; their values are in the row detail. */
+  .lpa .tl .c-n, .lpa .tl .c-used, .lpa .tl .c-pv { width: 0; padding: 0; border-left: 0; border-right: 0; font-size: 0; visibility: hidden; }
+  .lpa .tl .c-name { width: auto; }
+  .lpa .tl .c-name .tl-fname { white-space: normal; }
+  .lpa .tl .c-st { width: 112px; padding-right: 4px; white-space: normal; }
+  .lpa .tl .c-st .pill { white-space: normal; }
+  .lpa .tl .c-on { width: 46px; }
+  .lpa .tl .tl-since { display: none; }
+  .lpa .tl tr.tl-d td { padding-left: 14px; }
+  .lpa .tl tr.tl-g .tl-gnote { padding-left: 4px; }
+  .lpa .tl .p-only { display: contents; }
+  .lpa .tl .hide-p { display: none; }
+  .lpa .tl-views { display: flex; }
+  .lpa .tl-views button { flex: 1; }
+}
+@media print {
+  .lpa .tl-chev, .lpa .tl-x, .lpa .tl-pop { display: none !important; }
+  .lpa .tl-wrap { border-color: var(--line); overflow: visible; }
+  .lpa .tl tbody.collapsed tr.tl-i { display: table-row; }
+  .lpa .tl .tg { display: none; }
+  .lpa h2.print-on.tl-ptitle { display: block !important; font-size: 15px; margin: 10px 0 0; }
+  .lpa .tl thead th { position: static; }
+  .lpa .tl tr, .lpa .lp-widget { break-inside: avoid; }
+}

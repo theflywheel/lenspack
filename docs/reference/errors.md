@@ -28,6 +28,7 @@ carries:
 | `OUT_OF_SCOPE` | the person's view is limited by a dimension this entity cannot be narrowed by, so its rows cannot be shown safely | nothing on the query side; see [Scope and tenancy](../access/scope-and-tenancy.md) |
 | `NOT_PERMITTED` | the pack's access rules hide this key from the person | see [Pack access rules](../access/pack-rules.md) |
 | `ACCESS_HIDDEN` | the host keeps this key from the person (their Superset access), with the reason in words, so it is not mistaken for "not in the pack" | give access in the host. See [Access inside Superset](../access/superset.md) |
+| `UNAVAILABLE` | the source can't answer this key right now: what it reads is not collected or not set up (for example a telemetry field switched off). The refusal carries the host's `notice`, words and an optional link, which a board shows in place of the widget's figure | what the notice says, such as switching the field on |
 | `NOT_SUPPORTED` | what the source cannot compute: a percentile on MySQL or SQLite, a two-stage `per` measure on Elasticsearch, a zoned series on SQLite or MySQL, a fragment with no entry for this database, `compare` on a cross-entity ratio, a filter that cannot narrow every operand | use another measure or shape, or a source that can. See [SQL databases](../sources/sql.md#capability-matrix) |
 
 `GET /api/<pack>/explain?q=…` also answers `{ ok: false, code: "INVALID" }` for a query that is not well formed (a

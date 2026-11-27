@@ -63,14 +63,15 @@ of the whole) shows each statement.
 **The rows** are the ones behind the answer: what the caller was already allowed to see, nothing more.
 
 **A saved answer** ([Saved answers](saved-answers.md)) shows the stored description, statement and rows, with "saved
-answer, data as of …".
+answer · numbers read at …".
 
 **The dashboard filters** are the ones the viewer had picked on the board when they asked, named by the pack's
 labels. Each says whether the answer used it: "applied" when every data call in the answer was filtered on that
 field, otherwise "not applied to these numbers". That tells a viewer looking at one area's dashboard when the
 answer is about everywhere. The serve UI sends the board's filters with each question. The Superset panel sends
-them when the page that mounts it passes a `selections` function. Reading Superset's own filter bar is not wired
-in yet.
+them when the page that mounts it passes a `selections` function; the overlay on Superset's own dashboards does
+not read Superset's filter bar yet, so there the card shows no dashboard filters. The chat does not add the picks
+to its queries by itself yet, so a pick is "applied" only when the question asked for the same filter.
 
 **Checks on the reply** have a place on the same card. A check made in code, such as "every number in the reply
 appears in a data call's result", reads the full results of the turn's calls, not the shortened card, and adds

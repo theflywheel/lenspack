@@ -19,12 +19,12 @@ import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAcce
 import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
-import { identityKey, serviceAccount } from "./bootstrap";
+import { identityKeeper, identityKey, serviceAccount } from "./bootstrap";
 import { type Overlay, fetchDatasets, packFromDatasets, packScope } from "./catalogue";
 import { supersetClient } from "./client";
-import { supersetConnector } from "./connector";
+import { supersetConnector, timeZoneWarnings } from "./connector";
 import { examplesByLanguage, examplesFor } from "./examples";
-import { supersetPolicy, viewableDashboards } from "./access";
+import { accessFallbackFrom, supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, signedClient, supersetAuth, supersetRights, userIdOf } from "./identity";
 import { personalDashboards } from "./personal";
 import { actorOf, personalRoutes } from "./personal-routes";
@@ -66,6 +66,14 @@ export type SupersetConfig = AdminConfig & {
    * Needs lenspack_superset.py's /api/v1/lenspack/access for dataset access and templated clauses.
    */
   hostPolicy?: "superset" | "off";
+  /**
+   * With hostPolicy: superset, what happens when Superset answers 404 for the plugin's access route (env
+   * LENSPACK_ACCESS_FALLBACK wins). "none" (the default): that request is refused, as for any failure to check access,
+   * and the route is asked again on the next. "rls-only", only for a Superset that runs an old plugin without the
+   * route: Superset's row-level security rules alone apply to that request, and every dataset counts as readable
+   * (a warning says so at every start).
+   */
+  accessFallback?: "none" | "rls-only";
   /**
    * Who holds Lenspack's admin role (the settings, the admin panel, the audit log, the usage page), by Superset role
    * name: admins, default [Admin]; and who also sees user names there: usage, default the same roles as admins.
@@ -186,7 +194,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const built = packFromDatasets(datasets, config.overlay);
   const { pack, packYaml, binding } = built;
   // Mistakes in the overlay (a measure on a column that isn't there) leave that part out; they are said like the rest.
-  const warnings = [...built.problems, ...built.warnings];
+  // In a pack outside UTC, a dataset whose series Superset can't draw in that zone is said now, not found one question at a time.
+  const warnings = [...built.problems, ...built.warnings, ...timeZoneWarnings(pack, binding)];
   for (const w of warnings) log(`warning: ${w}`);
   log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
   // The pack's own context: its row scope, which every query anyone runs carries (decide() adds it to theirs).
@@ -223,13 +232,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   });
   await store.seed();
 
-  // The identity key comes from Superset (derived there from its SECRET_KEY); without it nobody is signed in.
-  let idKey: string | null = null;
-  try {
-    idKey = await retried("fetching the identity key", () => identityKey(client), [2000, 5000, 10_000, 20_000], log);
-  } catch (e) {
-    log(`no identity key (${e instanceof Error ? e.message : String(e)}): every request will be refused until Lenspack restarts with lenspack_superset.py loaded in Superset`);
-  }
+  // The identity key comes from Superset (derived there from its SECRET_KEY); without it nobody is signed in. It is
+  // tried for until Superset gives it, never given up on: a start before Superset (or before the plugin is loaded
+  // there) recovers by itself, and GET /readyz says not ready meanwhile. The start waits for it about as long as before.
+  const keeper = identityKeeper({ fetch: () => identityKey(client), log });
+  await Promise.race([keeper.first, new Promise((r) => setTimeout(r, 40_000).unref())]);
+  const idKey = keeper.key;
+  if (!idKey()) log("no identity key yet: every request is refused until Superset gives it (is lenspack_superset.py loaded in Superset?); still trying, and /readyz answers 503 until then");
   const editPolicy = editPolicyFrom(env.LENSPACK_EDIT_POLICY ?? config.editPolicy);
   // Who holds Lenspack's admin role, by Superset role name: policy settles it (principalOf), never Superset's admin flag.
   const roleRules = roleRulesFrom(config.auth, env);
@@ -251,12 +260,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
    */
   const leftOut = (req: IncomingMessage) => {
     if (!rights.users) return false;
-    const id = identityOf(req, () => idKey);
+    const id = identityOf(req, idKey);
     return !!id && !mayUse(settle({ user: id.u, roles: rolesOf(id), ...(userIdOf(id) !== undefined ? { userId: userIdOf(id) } : {}) }));
   };
   const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
+  const accessFallback = accessFallbackFrom(env.LENSPACK_ACCESS_FALLBACK ?? config.accessFallback);
   const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
-  log(`identity: ${idKey ? "signed by Superset" : "NO KEY"}; edit policy ${editPolicy}; host policy ${hostPolicy}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
+  log(`identity: ${idKey() ? "signed by Superset" : "NO KEY (still trying)"}; edit policy ${editPolicy}; host policy ${hostPolicy}${hostPolicy === "superset" && accessFallback === "rls-only" ? " (rls-only fallback on a missing access route)" : ""}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
   // Who is an admin and who may use it, in one line each, with where each setting came from (never the password).
   // First uses of admin rights go to the audit log (the admins roster).
   adminAccess.auditTo(auditLog?.audit);
@@ -274,6 +284,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       "WARNING: host policy is off (hostPolicy: off or LENSPACK_HOST_POLICY=off).",
       `WARNING: anyone signed in to Superset can read all ${datasets.length} configured dataset(s) in full through Lenspack: the chat, the filter menus and the board API.`,
       "WARNING: Superset's dataset permissions and row-level security do not apply to what Lenspack answers. Remove the setting to apply them (the default, hostPolicy: superset).",
+    ])
+      log(line);
+  if (hostPolicy === "superset" && accessFallback === "rls-only")
+    for (const line of [
+      "WARNING: accessFallback is rls-only (accessFallback: rls-only or LENSPACK_ACCESS_FALLBACK=rls-only).",
+      "WARNING: whenever Superset answers 404 for /api/v1/lenspack/access, Superset's dataset permissions and dashboard roles do not apply to that request: every configured dataset counts as readable, and only row-level security rules narrow it.",
+      "WARNING: load lenspack_superset.py in every Superset process and remove the setting (the default, none, refuses such a request instead).",
     ])
       log(line);
 
@@ -372,7 +389,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const paths = (req: IncomingMessage) => requestPaths(req, base);
   // Under admin access "password", the admin pages have a sign-in of their own at <base>/_admin/ (reachable through
   // Superset's route without a Superset session; docs/access/admin-access.md). Without a password set: refused, with why.
-  const signIn = adminAccess.has("password") ? adminSignIn({ prefix: "/_admin", dir: stateDir, env, passwords: adminAccess.passwords, publicBase: (req) => paths(req).base, clientAddress: (req) => signedClient(req, idKey), audit: auditLog?.audit, name: () => admin.brand.get().name, log }) : null;
+  const signIn = adminAccess.has("password") ? adminSignIn({ prefix: "/_admin", dir: stateDir, env, passwords: adminAccess.passwords, publicBase: (req) => paths(req).base, clientAddress: (req) => signedClient(req, idKey()), audit: auditLog?.audit, name: () => admin.brand.get().name, log }) : null;
   const passwordAdmin = signIn && !("refused" in signIn) ? signIn : null;
   if (signIn && "refused" in signIn) log(`warning: ${signIn.refused}`);
   // The assistant's name in the page's own words (brand), as text: escaped, never markup.
@@ -421,7 +438,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     title: pack.pack,
     log,
   });
-  const auth = supersetAuth(() => idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards) }) : undefined, callerFacts, rights);
+  const auth = supersetAuth(idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards), fallback: accessFallback }) : undefined, callerFacts, rights);
   // The start of a link to a Superset page: Superset's root when this server is reached through Superset's host
   // ("" or "/superset"), else Superset's address.
   const supersetBase = (req: IncomingMessage) => {
@@ -432,7 +449,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     personal,
     rights,
     adminName,
-    identity: (req) => identityOf(req, () => idKey),
+    identity: (req) => identityOf(req, idKey),
     rightsOn,
     // What the person may use of the pack, decided by policy from what Superset says about them, on the dashboard they are on.
     scope: async (req, board) => {
@@ -489,7 +506,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       ...admin.app,
       // The chat's tools for the person's own dashboards and layouts, on the dashboard Superset signed for.
       personal: (req, turn) => {
-        const id = identityOf(req, () => idKey);
+        const id = identityOf(req, idKey);
         if (!id || typeof id.d !== "number" || turn.boardId !== `superset-${id.d}` || !limits().on) return undefined;
         // Refused by the edit scope alone: Superset would let them edit, the deployment keeps the chat to their own.
         const byScope = !!turn.readOnly && canEdit(id, editPolicy, admin.features.on("boardEdits"));
@@ -497,7 +514,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       },
       // Telemetry records the user's Superset role names as Superset signed them (none signed: none), and datasets by name.
       telemetryRoles: (req) => {
-        const id = identityOf(req, () => idKey);
+        const id = identityOf(req, idKey);
         return id ? (id.r ?? []) : undefined;
       },
       telemetryDataset: (entity) => binding.datasets.get(entity)?.table,
@@ -505,9 +522,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     },
     port,
     host,
+    // Every model call, one JSON line in the state directory: today's spend (the budget, GET /api/_usage) is read back at start.
+    usageFile: join(stateDir, "usage.jsonl"),
     budget: config.budget,
     log,
-    health: () => ({ identity: !!idKey }),
+    health: () => ({ identity: !!idKey() }),
+    // Not ready while there is no identity key: every request would be refused. /healthz stays 200 (liveness).
+    ready: () => (idKey() ? { ready: true } : { ready: false, reason: "no identity key from Superset yet: is lenspack_superset.py loaded there?" }),
     routes: (rt) => {
       const { providers, budget } = rt;
       // Superset's settings page, as the admin pages link to it.
@@ -529,7 +550,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         audit: auditLog,
         log,
         adminName,
-        writable: () => !!idKey,
+        writable: () => !!idKey(),
         supersetLogs: async (since) => {
           const r = await supersetActions(client, { dashboards: Object.values(dashboards), from: since, to: new Date() });
           return { available: r.available, ...(r.reason ? { reason: r.reason } : {}), count: r.actions.length, lastSeen: r.actions.reduce<string | null>((m, a) => (m === null || a.at > m ? a.at : m), null) };
@@ -549,6 +570,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           superset: { url: supersetUrl, username: account.username, account: account.source },
           editPolicy,
           hostPolicy,
+          accessFallback,
           dashboards: Object.values(dashboards),
           // People's own dashboards and saved layouts: the switch and the limits (PUT /_superset/settings/personal).
           personal: limits(),
@@ -574,7 +596,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         // Before the path is read at all: URL would resolve "..", so what the route acts on could differ from what Superset checked.
         const bad = pathRefusal(req.url);
         if (bad) return json(res, 400, { error: bad }, NO_STORE);
-        if (url.pathname.startsWith("/api/") || url.pathname === "/healthz") return;
+        if (url.pathname.startsWith("/api/") || url.pathname === "/healthz" || url.pathname === "/readyz") return;
         // The password sign-in's admin pages, before Superset's signature is asked for: they carry none.
         if (url.pathname === "/_admin" || url.pathname.startsWith("/_admin/")) {
           if (!adminAccess.has("password")) return json(res, 404, { error: "not found: admins sign in through Superset on this deployment" }, NO_STORE);
@@ -598,7 +620,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         // assistant's own Superset account, so drawing a menu never waits for this server. Only that account may read it
         // (it names admins), and before the users rule: the account need not be a user. Showing the entry grants nothing.
         if (url.pathname === "/_superset/menu" && req.method === "GET") {
-          const id = identityOf(req, () => idKey);
+          const id = identityOf(req, idKey);
           if (!id) return json(res, 401, { error: "sign in to Superset first" }, NO_STORE);
           if (id.u !== account.username) return json(res, 403, { error: "only the assistant's own Superset account reads this" }, NO_STORE);
           return json(res, 200, { brand: { name: admin.brand.get().name }, admin: adminAccess.menuHint() }, NO_STORE);
@@ -630,7 +652,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           return json(res, 200, { from: from.toISOString(), to: to.toISOString(), ...(await supersetActions(client, { dashboards: Object.values(dashboards), from, to })) }, NO_STORE);
         }
         if (url.pathname === "/_superset/bind") {
-          const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, () => idKey)?.d);
+          const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, idKey)?.d);
           return bound ? json(res, 200, bound, NO_STORE) : json(res, 403, { error: "Superset did not check your access to this dashboard." }, NO_STORE);
         }
         if (url.pathname === "/_superset/dashboards") {

@@ -102,17 +102,27 @@ function BusyNote({ suggestions, onAsk }: { suggestions: string[]; onAsk?: (q: s
   );
 }
 
-type ReuseData = { tier: string; kind?: "answer" | "edit"; dataAsOf: string; savedUsd?: number; how?: string };
+type ReuseData = { tier: string; kind?: "answer" | "edit"; dataAsOf: string; savedUsd?: number; how?: string; model?: string };
 
-// A reply served from a saved answer: when its data was read, and a way to have the assistant work it out again.
+// What ran for a saved answer, said truly per tier: nothing (T1), its queries again, or a small model as well.
+const savedTitle = (r: ReuseData) =>
+  r.kind === "edit"
+    ? "The same change as one made before on a dashboard like this one, made again. No AI model was used."
+    : r.model
+      ? `Answered from an earlier answer, with the numbers read again just now. A small AI model (${r.model}) matched your question to it or worded the reply.`
+      : r.tier === "t1"
+        ? "The answer given a few minutes ago to the same question, shown again as it was. No query ran and no AI model was used."
+        : "Answered from an earlier answer, with the numbers read again just now. No AI model was used.";
+
+// A reply served from a saved answer: when its numbers were read (not how recent the source's data is), and a way to have the assistant work it out again.
 function SavedNote({ r, onFresh }: { r: ReuseData; onFresh?: () => void }) {
   const when = new Date(r.dataAsOf);
   const today = when.toDateString() === new Date().toDateString();
   const at = Number.isNaN(when.getTime()) ? "" : today ? when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : when.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground" data-testid="saved-answer" title={`Answered from an earlier answer to the same question${r.how ? ` (${r.how})` : ""}. No AI model was used for the answer itself.`}>
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground" data-testid="saved-answer" title={savedTitle(r)}>
       <Bookmark className="size-3 shrink-0" aria-hidden="true" />
-      <span>{r.kind === "edit" ? "Saved change, made as before" : `Saved answer, data as of ${at}`}</span>
+      <span>{r.kind === "edit" ? "Saved change, made as before" : `Saved answer · numbers read at ${at}`}</span>
       {onFresh && (
         <button type="button" className="font-medium text-foreground underline underline-offset-2 hover:text-primary" onClick={onFresh} data-testid="ask-fresh">
           Ask fresh

@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 
+import type { FieldNotice, Fix } from "@lenspack/agent";
+import { queryKeys } from "@lenspack/core";
+import type { Notice } from "@lenspack/engine";
 import { parsePackText } from "@lenspack/pack";
 import { type Principal, adminRights, principalOf } from "@lenspack/policy";
 
@@ -10,7 +13,7 @@ import type { Audit, AuditEvent } from "../audit";
 import { readBoards } from "../config";
 import type { Provider } from "../llm";
 import type { Budget, UsageLedger } from "../metering";
-import { USAGE_HOST, usageSource } from "./usage-source";
+import { USAGE_HOST, keyFields, usageSource } from "./usage-source";
 
 // Usage as a Lenspack board. The admin panel's Overview is not a hand-drawn chart: it is a board, drawn
 // by the same engine and renderer people use, over an ordinary pack (packs/usage/pack.yaml, with its
@@ -18,6 +21,11 @@ import { USAGE_HOST, usageSource } from "./usage-source";
 // this server's own record of its chat turns. Admins can change the board like any other, and ask the
 // chat about it ("which board cost most this week?"). Those chat turns are marked internal: logged and
 // costed like any other, but left out of the daily review, so the review never reviews itself.
+//
+// The Telemetry tab's "What it tells you" is another board over the same pack (packs/usage/boards/telemetry.json).
+// A record leaves out the fields whose telemetry switch is off, so a key that reads one would draw a wrong figure:
+// while the board reads the telemetry, such a key is unavailable instead (the engine's ctx.unavailable), and the
+// widget says which field it needs and links to its switch.
 
 
 /** packs/usage, found from the source tree (src/review) or the built package (dist). */
@@ -49,6 +57,8 @@ export type UsageBoardOptions = {
   days?: number;
   /** Seconds between refreshes (default 30): the tables are read again when the board is opened after that. */
   refreshSeconds?: number;
+  /** Why each telemetry field group that is not recording now is not (fieldNotices in @lenspack/agent), by id. */
+  notices?: () => Record<string, FieldNotice>;
   now?: () => Date;
 };
 
@@ -61,7 +71,19 @@ export async function usageBoard(o: UsageBoardOptions) {
   const dir = o.packDir ?? usagePackDir();
   const packYaml = readFileSync(`${dir}pack.yaml`, "utf8");
   const pack = parsePackText(packYaml);
-  const host: Host = { name: USAGE_HOST, pack, packYaml, connector: source.connector, store: source.store, ctx: {}, boards: readBoards(`${dir}boards`) };
+  const needs = keyFields(pack);
+  // While the tables come from the telemetry: each key that reads a field group not recording now, with why.
+  const unavailable = () => {
+    if (!o.notices || source.source() !== "telemetry") return undefined;
+    const notices = o.notices();
+    const gone = new Map<string, Notice>();
+    for (const [key, fields] of Object.entries(needs)) {
+      const f = fields.find((id) => notices[id]);
+      if (f) gone.set(key, noticeFor(notices[f]!));
+    }
+    return gone;
+  };
+  const host: Host = { name: USAGE_HOST, pack, packYaml, connector: source.connector, store: source.store, ctx: {}, boards: readBoards(`${dir}boards`), unavailable };
   await seedBoards(host);
   // Who asks is settled by the panel (an admin); the board API reads it off the request.
   const WHO = Symbol("lenspack-usage-who");
@@ -82,6 +104,23 @@ export async function usageBoard(o: UsageBoardOptions) {
   return {
     pack,
     host,
+    /** The keys of the pack and the telemetry field groups each reads. */
+    needs,
+    /**
+     * What reads each field group on a board (the Telemetry tab's by default): its widgets, by field group id. Read
+     * from the board as it stands, so a widget an admin adds or removes counts.
+     */
+    async fieldUses(boardId = TELEMETRY_BOARD): Promise<Record<string, { id: string; label: string }[]>> {
+      const board = await host.store.get(boardId);
+      const out: Record<string, { id: string; label: string }[]> = {};
+      for (const [id, w] of Object.entries(board?.config.widgets ?? {})) {
+        if (w.kind === "text") continue;
+        const k = queryKeys(w.query);
+        const fields = new Set([...k.measures, ...k.dimensions].flatMap((key) => needs[key] ?? []));
+        for (const f of fields) (out[f] ??= []).push({ id, label: w.title });
+      }
+      return out;
+    },
     refresh: source.refresh,
     /** Where the tables were last read from. */
     source: source.source,
@@ -105,6 +144,17 @@ export async function usageBoard(o: UsageBoardOptions) {
     close: source.close,
   };
 }
+
+/** The usage pack's board on the Telemetry tab ("What it tells you"). */
+export const TELEMETRY_BOARD = "telemetry";
+
+/** A field notice as a widget shows it: its words, and a link to where it is fixed in the admin panel. */
+export function noticeFor(n: FieldNotice): Notice {
+  const action = actionFor(n.fix);
+  return { text: n.text, ...(action ? { action } : {}) };
+}
+const actionFor = (fix: Fix | null): Notice["action"] =>
+  !fix ? undefined : fix.kind === "field" ? { label: "Show the field", href: `#telemetry/field/${fix.id}` } : fix.kind === "settings" ? { label: "Open Settings", href: "#settings" } : undefined;
 
 /** The usage pack's keys that say who asked or what: hidden from an admin the policy does not let see usernames. */
 export const USAGE_PEOPLE_KEYS = ["user", "question", "session"];

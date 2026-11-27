@@ -91,7 +91,9 @@ describe("heatmaps in Superset", () => {
     expect(why({ sort_y_axis: "value_asc" })).toMatch(/A to Z/);
     expect(why({ groupby: ["site", "region"] })).toMatch(/not one column/);
     expect(why({ x_axis: "not_a_column" })).toMatch(/not a pack dimension/);
-    expect(why({ metric: { expressionType: "SQL", sqlExpression: "COUNT(*)" } })).toMatch(/saved metric/);
+    expect(why({ metric: { expressionType: "SQL", sqlExpression: "SUM(people) / COUNT(*)" } })).toMatch(/saved metric/);
+    // A simple aggregate a saved metric also is: read as that metric.
+    expect(why({ metric: { expressionType: "SQL", sqlExpression: "COUNT(*)" } })).toBe("(read)");
     expect(why({ x_axis: "visit_date", time_grain_sqla: "P1D" })).toMatch(/columns are time/);
   });
 
