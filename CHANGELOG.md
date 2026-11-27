@@ -11,6 +11,12 @@ brought it.
 
 ### 27 November 2026
 
+- **The chat's step lines follow the panel's language.** Under a question, lines such as "ran a query" showed in
+  English while the rest of the panel was in French, Hindi or Portuguese. They now use the panel's language, for
+  every tool the assistant can call (charts, filters, tabs, saved layouts, your own dashboards), and a tool with no
+  words shows a neutral "Other step" rather than its internal name. A refusal for the daily spend cap, and a refusal
+  with no words from a proxy, are said in the panel's language too, as are the close button's label and the
+  seconds in the language menu. A test now fails when any word table lacks a language.
 - **The Superset host no longer exits when Superset is down or refuses its sign-in at start.** It used to give up
   after about 20 seconds and exit, which Kubernetes turned into a crash loop with growing waits, even after Superset
   was fixed. Now it listens at once, keeps trying (after 2, 5, 10 and 30 seconds, then every minute, for as long as it
