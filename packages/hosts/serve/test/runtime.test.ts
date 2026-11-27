@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 
 import { describe, expect, it } from "vitest";
 
-import { budgetFromEnv, json, serverProviders, startRuntime } from "../src";
+import { budgetFromEnv, json, serverProviders, startRuntime, startingServer } from "../src";
 
 describe("the models a server offers", () => {
   it("defaults to Claude Sonnet, Opus and Haiku 5.5 with only ANTHROPIC_API_KEY, and says where the key came from", () => {
@@ -74,6 +74,27 @@ describe("a request's way through the runtime", () => {
     ready = true;
     expect(await get("/readyz")).toEqual({ status: 200, body: { ready: true } });
     expect(await get("/healthz")).toEqual({ status: 200, body: { ok: true, ready: true } });
+    server.close();
+  });
+  it("answers while the host is still starting, then hands the same address to the runtime", async () => {
+    const starting = startingServer({ port: 0, host: "127.0.0.1", reason: "signing in to the source" });
+    await new Promise((r) => starting.server.once("listening", r));
+    const base = `http://127.0.0.1:${(starting.server.address() as AddressInfo).port}`;
+    const get = async (p: string) => {
+      const r = await fetch(base + p);
+      return { status: r.status, retry: r.headers.get("retry-after"), body: await r.json() };
+    };
+    expect(await get("/healthz")).toMatchObject({ status: 200, body: { ok: true, ready: false, starting: "signing in to the source" } });
+    starting.reason("reading the datasets failed: the source answered 503; trying again in 5 s");
+    expect(await get("/readyz")).toMatchObject({ status: 503, body: { ready: false, reason: "reading the datasets failed: the source answered 503; trying again in 5 s" } });
+    expect(await get("/api")).toMatchObject({ status: 503, retry: "5", body: { code: "starting" } });
+    let listened = false;
+    const { server } = startRuntime({ starting, hosts: [], port: 0, host: "127.0.0.1", log: () => {}, env: {}, onListening: () => (listened = true) });
+    expect(server).toBe(starting.server);
+    await new Promise((r) => setImmediate(r));
+    expect(listened).toBe(true);
+    expect(await get("/readyz")).toMatchObject({ status: 200, body: { ready: true } });
+    expect((await get("/api")).body).toMatchObject({ examples: [] });
     server.close();
   });
 });

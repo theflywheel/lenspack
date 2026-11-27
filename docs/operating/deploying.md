@@ -51,9 +51,29 @@ See [What Lenspack keeps on disk](state.md).
 
 `GET /healthz` answers `{ "ok": true }` (with a few host-specific fields) without sign-in, for as long as the process
 runs: use it for liveness. `GET /readyz` answers `200 { "ready": true }` once the server can answer requests, and
-`503 { "ready": false, "reason": … }` until then: use it for readiness. Inside Superset, the server is not ready until
-Superset has given it the identity key (it keeps asking, with backoff, and becomes ready by itself). Don't point the
-liveness probe at `/readyz`, or a Superset without the plugin restarts the server in a loop.
+`503 { "ready": false, "reason": … }` until then: use it for readiness. Don't point the liveness probe at `/readyz`,
+or a Superset that is down restarts the server in a loop.
+
+**Starting before Superset is ready.** Inside Superset, the server listens as soon as its config is read, and is not
+ready until it has signed in to Superset, read the datasets and dashboards, built the pack and been given the
+identity key. If Superset can't be reached, answers with an error (5xx), refuses Lenspack's sign-in (401 or 403) or
+closes the connection, the server does not stop: it tries again after 2, 5, 10 and 30 seconds, then every minute,
+for as long as it takes, and logs one line per try with the cause and the next wait, such as:
+
+```
+reading the datasets from Superset failed: Superset answered 503 (not up yet, or restarting); trying again in 10 s (try 3; the server stays up, not ready)
+```
+
+Meanwhile `/healthz` answers 200, `/readyz` answers 503 with the same words as `reason`, and every other request
+answers 503 "starting", which the chat shows as "restarting, reconnecting". It becomes ready by itself as soon as
+Superset answers: no restart is needed. `LENSPACK_STARTUP_RETRY_SECONDS` changes the waits (`2,5,10,30,60`, the
+last one repeating).
+
+A mistake that waiting can't fix still stops the server at once, with a message saying what to change: a config
+file that isn't valid YAML, a setting with a wrong value (`LENSPACK_ADMIN_API_KEYS` with a key that is too short, for
+example), a dataset or dashboard that Superset says doesn't exist once Lenspack is signed in, a dataset name that
+matches more than one dataset, or no password to make Lenspack's Superset account with. These are checked before
+Superset is asked anything, where they can be.
 
 ```yaml
 livenessProbe:  { httpGet: { path: /healthz, port: 8795 } }

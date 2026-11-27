@@ -148,7 +148,7 @@
   };
 
   // The panel's words, by language. "auto" shows the page's language (Superset's, else the
-  // browser's) when it is one of these, else English. Tool names stay as the model's steps.
+  // browser's) when it is one of these, else English. The step lines' words are in TOOL, below.
   // {name} is the assistant's name, and the title is the button's label: both from the deployment's brand.
   const STRINGS = {
     en: {
@@ -164,6 +164,7 @@
       restarting: "{name} is restarting, reconnecting…", lost: "The connection to {name} was lost before the answer finished (it may be restarting).", retry: "Retry",
       checking: "The connection dropped. Checking whether your change was made…", recoveredChange: "Your change was made: {0}. The connection dropped before the reply finished.", recoveredAnswer: "The connection dropped before the reply finished; this is the answer it was sending.", changedMeanwhile: "The dashboard changed while the connection was down: {0}. The page now shows it. If that was not your change, ask again.",
       removedW: "removed “{0}”", addedW: "added “{0}”", changedW: "changed “{0}”", otherW: "changed the dashboard",
+      secs: "{0} s", tooMany: "Too many requests right now. Wait a minute, then send it again.", budgetUsed: "Chat has used today's budget. It resets at 00:00 UTC.",
       busyWait: "Busy, about {0} s (number {1} in line)…", waitEdit: "Waiting for another edit on this dashboard…", busyFull: "{name} is too busy right now. Try again in a minute, or pick a common question below: those are answered at once.",
       savedAnswer: "Saved answer · numbers read at {0}", savedEdit: "Saved change, made as before", savedTitle: "Answered from an earlier answer, with the numbers read again just now. No AI model was used.", savedTitleAsIs: "The answer given a few minutes ago to the same question, shown again as it was. No query ran and no AI model was used.", savedTitleModel: "Answered from an earlier answer, with the numbers read again just now. A small AI model matched your question to it or worded the reply.", savedEditTitle: "The same change as one made before on a dashboard like this one, made again. No AI model was used.", askFresh: "Ask fresh", askFreshTitle: "Have the assistant work this out again from scratch",
     },
@@ -180,6 +181,7 @@
       restarting: "{name} redémarre, reconnexion…", lost: "La connexion à {name} a été perdue avant la fin de la réponse (il redémarre peut-être).", retry: "Réessayer",
       checking: "La connexion a été coupée. Vérification de votre modification…", recoveredChange: "Votre modification a été faite : {0}. La connexion a été coupée avant la fin de la réponse.", recoveredAnswer: "La connexion a été coupée avant la fin de la réponse ; voici la réponse qui était envoyée.", changedMeanwhile: "Le tableau de bord a changé pendant la coupure : {0}. La page l'affiche maintenant. Si ce n'était pas votre modification, redemandez.",
       removedW: "« {0} » retiré", addedW: "« {0} » ajouté", changedW: "« {0} » modifié", otherW: "tableau de bord modifié",
+      secs: "{0} s", tooMany: "Trop de demandes en ce moment. Attendez une minute, puis renvoyez la question.", budgetUsed: "Le budget du jour du chat est épuisé. Il repart à zéro à 00:00 UTC.",
       busyWait: "Occupé, environ {0} s (n° {1} dans la file)…", waitEdit: "En attente d'une autre modification de ce tableau de bord…", busyFull: "{name} est très sollicité en ce moment. Réessayez dans une minute, ou choisissez une question courante ci-dessous : elles ont une réponse immédiate.",
       savedAnswer: "Réponse enregistrée · chiffres lus à {0}", savedEdit: "Modification enregistrée, refaite comme avant", savedTitle: "Réponse tirée d'une réponse précédente, avec les chiffres relus à l'instant. Aucun modèle d'IA n'a été utilisé.", savedTitleAsIs: "La réponse donnée il y a quelques minutes à la même question, affichée telle quelle. Aucune requête n'a été exécutée et aucun modèle d'IA n'a été utilisé.", savedTitleModel: "Réponse tirée d'une réponse précédente, avec les chiffres relus à l'instant. Un petit modèle d'IA a rapproché votre question de celle-ci ou rédigé la réponse.", savedEditTitle: "La même modification qu'une modification faite avant sur un tableau de bord identique, refaite. Aucun modèle d'IA n'a été utilisé.", askFresh: "Redemander", askFreshTitle: "Faire refaire la réponse par l'assistant depuis le début",
     },
@@ -198,6 +200,7 @@
       restarting: "{name} फिर से शुरू हो रहा है, दोबारा जुड़ रहे हैं…", lost: "जवाब पूरा होने से पहले {name} से कनेक्शन टूट गया (शायद वह फिर से शुरू हो रहा है)।", retry: "फिर से कोशिश करें",
       checking: "कनेक्शन टूट गया। देख रहे हैं कि आपका बदलाव हुआ या नहीं…", recoveredChange: "आपका बदलाव हो गया: {0}। जवाब पूरा होने से पहले कनेक्शन टूट गया।", recoveredAnswer: "जवाब पूरा होने से पहले कनेक्शन टूट गया; यह वही जवाब है जो भेजा जा रहा था।", changedMeanwhile: "कनेक्शन टूटे रहने के दौरान डैशबोर्ड बदला: {0}। पेज अब यही दिखा रहा है। अगर यह आपका बदलाव नहीं था, तो फिर से पूछें।",
       removedW: "“{0}” हटाया", addedW: "“{0}” जोड़ा", changedW: "“{0}” बदला", otherW: "डैशबोर्ड बदला",
+      secs: "{0} सेकंड", tooMany: "अभी बहुत ज़्यादा अनुरोध हैं। एक मिनट रुककर फिर से भेजें।", budgetUsed: "चैट का आज का बजट खत्म हो गया है। यह 00:00 UTC पर फिर से शुरू होगा।",
     },
     // Neutral Portuguese, read in Mozambique, Angola and Portugal as well as Brazil: noun forms where the
     // two split (Em escuta, not Ouvindo / A ouvir), words both use (gravado, conexão, padrão), formal imperatives.
@@ -213,6 +216,7 @@
       restarting: "{name} em reinício, reconexão em curso…", lost: "A conexão com o {name} foi interrompida antes do fim da resposta (talvez esteja em reinício).", retry: "Tentar de novo",
       checking: "A conexão caiu. Verificação da sua alteração em curso…", recoveredChange: "A sua alteração foi feita: {0}. A conexão caiu antes do fim da resposta.", recoveredAnswer: "A conexão caiu antes do fim da resposta; esta é a resposta que estava a ser enviada.", changedMeanwhile: "O painel mudou enquanto a conexão estava em baixo: {0}. A página já o mostra. Se não foi a sua alteração, peça de novo.",
       removedW: "“{0}” removido", addedW: "“{0}” adicionado", changedW: "“{0}” alterado", otherW: "painel alterado",
+      secs: "{0} s", tooMany: "Muitos pedidos neste momento. Aguarde um minuto e envie de novo.", budgetUsed: "O chat esgotou o orçamento de hoje. É reposto às 00:00 UTC.",
       busyWait: "Ocupado, cerca de {0} s (n.º {1} na fila)…", waitEdit: "À espera de outra alteração neste painel…", busyFull: "O {name} está muito ocupado neste momento. Tente de novo dentro de um minuto, ou escolha uma pergunta frequente abaixo: essas têm resposta imediata.",
       savedAnswer: "Resposta guardada · números lidos às {0}", savedEdit: "Alteração guardada, refeita como antes", savedTitle: "Resposta tirada de uma resposta anterior, com os números lidos de novo agora. Nenhum modelo de IA foi usado.", savedTitleAsIs: "A resposta dada há poucos minutos à mesma pergunta, mostrada tal como estava. Não correu nenhuma consulta nem nenhum modelo de IA.", savedTitleModel: "Resposta tirada de uma resposta anterior, com os números lidos de novo agora. Um pequeno modelo de IA associou a sua pergunta a ela ou redigiu a resposta.", savedEditTitle: "A mesma alteração feita antes num painel igual, refeita. Nenhum modelo de IA foi usado.", askFresh: "Perguntar de novo", askFreshTitle: "Pedir ao assistente que refaça a resposta desde o início",
       cost: "≈ US$ {0}", costTitle: "Custo estimado desta resposta, segundo os preços de tabela", costTokens: "{0}: {1} tokens de entrada, {2} de saída", costSpeech: "inclui transcrição de voz: US$ {0}", costUnpriced: "algumas chamadas não têm preço e não foram contadas", sessionCost: "Esta sessão: ≈ US$ {0} em {1} respostas (estimativa segundo os preços de tabela)",
@@ -265,10 +269,37 @@
   const MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
   const STOP_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
 
+  // The step lines under a question, one per tool the model calls, by language. Reads say what was done; edits name
+  // the change (they are marked done or failed beside it). _other is a tool not listed here (mine.js has its own).
   const TOOL = {
-    get_board: "read the dashboard", list_metrics: "read the metrics", query: "ran a query", explain: "checked a query", list_values: "listed values",
-    list_versions: "read the history", restore_version: "restored a version", add_widget: "add chart", update_widget: "change chart", move_widget: "move chart",
-    resize_widget: "resize chart", remove_widget: "remove chart", add_filter: "add filter", update_filter: "change filter", remove_filter: "remove filter", set_layout_mode: "layout", rename_board: "rename dashboard", propose_measure: "proposed a metric",
+    en: {
+      get_board: "Read the dashboard", list_metrics: "Read the metrics", query: "Ran a query", explain: "Checked a query", list_values: "Listed values", run_sql: "Ran SQL",
+      list_versions: "Read the history", restore_version: "Restored a version", propose_measure: "Proposed a metric", clarify: "Checked what the question means",
+      add_widget: "Add chart", update_widget: "Change chart", move_widget: "Move chart", resize_widget: "Resize chart", remove_widget: "Remove chart",
+      add_filter: "Add filter", update_filter: "Change filter", remove_filter: "Remove filter", set_layout_mode: "Layout", rename_board: "Rename dashboard",
+      add_tab: "Add tab", rename_tab: "Rename tab", remove_tab: "Remove tab", _other: "Other step",
+    },
+    fr: {
+      get_board: "Tableau de bord lu", list_metrics: "Métriques lues", query: "Requête exécutée", explain: "Requête vérifiée", list_values: "Valeurs listées", run_sql: "SQL exécuté",
+      list_versions: "Historique lu", restore_version: "Version restaurée", propose_measure: "Métrique proposée", clarify: "Sens de la question vérifié",
+      add_widget: "Ajouter un graphique", update_widget: "Modifier le graphique", move_widget: "Déplacer le graphique", resize_widget: "Redimensionner le graphique", remove_widget: "Retirer le graphique",
+      add_filter: "Ajouter un filtre", update_filter: "Modifier le filtre", remove_filter: "Retirer le filtre", set_layout_mode: "Mise en page", rename_board: "Renommer le tableau de bord",
+      add_tab: "Ajouter un onglet", rename_tab: "Renommer l'onglet", remove_tab: "Retirer l'onglet", _other: "Autre étape",
+    },
+    hi: {
+      get_board: "डैशबोर्ड पढ़ा", list_metrics: "मेट्रिक्स पढ़े", query: "क्वेरी चलाई", explain: "क्वेरी जाँची", list_values: "मानों की सूची देखी", run_sql: "SQL चलाया",
+      list_versions: "इतिहास देखा", restore_version: "पुराना संस्करण वापस लाया", propose_measure: "मेट्रिक सुझाया", clarify: "सवाल का मतलब जाँचा",
+      add_widget: "चार्ट जोड़ें", update_widget: "चार्ट बदलें", move_widget: "चार्ट खिसकाएँ", resize_widget: "चार्ट का आकार बदलें", remove_widget: "चार्ट हटाएँ",
+      add_filter: "फ़िल्टर जोड़ें", update_filter: "फ़िल्टर बदलें", remove_filter: "फ़िल्टर हटाएँ", set_layout_mode: "लेआउट", rename_board: "डैशबोर्ड का नाम बदलें",
+      add_tab: "टैब जोड़ें", rename_tab: "टैब का नाम बदलें", remove_tab: "टैब हटाएँ", _other: "अन्य चरण",
+    },
+    pt: {
+      get_board: "Painel lido", list_metrics: "Métricas lidas", query: "Consulta executada", explain: "Consulta verificada", list_values: "Valores listados", run_sql: "SQL executado",
+      list_versions: "Histórico lido", restore_version: "Versão restaurada", propose_measure: "Métrica proposta", clarify: "Sentido da pergunta verificado",
+      add_widget: "Adicionar gráfico", update_widget: "Alterar gráfico", move_widget: "Mover gráfico", resize_widget: "Redimensionar gráfico", remove_widget: "Remover gráfico",
+      add_filter: "Adicionar filtro", update_filter: "Alterar filtro", remove_filter: "Remover filtro", set_layout_mode: "Disposição", rename_board: "Mudar o nome do painel",
+      add_tab: "Adicionar separador", rename_tab: "Mudar o nome do separador", remove_tab: "Remover separador", _other: "Outro passo",
+    },
   };
 
   function el(tag, cls, text) {
@@ -471,8 +502,13 @@
     return frag;
   }
 
-  function describe(name, input) {
-    const what = TOOL[name] || (window.LenspackMine && window.LenspackMine.TOOLS[name]) || name;
+  /** A step line in the panel's language: this file's words for the tool, else mine.js's, else a neutral "Other step". */
+  function describe(name, input, lang) {
+    const word = (tables) => {
+      if (!tables || !Object.prototype.hasOwnProperty.call(tables.en || {}, name)) return null;
+      return (tables[lang] || tables.en)[name] || tables.en[name];
+    };
+    const what = (name !== "_other" && (word(TOOL) || word(window.LenspackMine && window.LenspackMine.TOOLS))) || (TOOL[lang] || TOOL.en)._other;
     const w = input && input.widget;
     if (w && w.title) return `${what}: “${w.title}”`;
     if (input && input.id && /widget/.test(name)) return `${what}: ${input.id}`;
@@ -850,7 +886,7 @@
           return o;
         };
         sel.append(opt("", t("holdDefault", secs(micState.holdMs))));
-        for (const ms of HOLD_CHOICES) sel.append(opt(String(ms), `${secs(ms)} s`));
+        for (const ms of HOLD_CHOICES) sel.append(opt(String(ms), t("secs", secs(ms))));
         sel.value = prefsNow.holdMs ? String(prefsNow.holdMs) : "";
         sel.onchange = () => {
           const { holdMs: _old, ...rest } = prefsNow;
@@ -873,11 +909,12 @@
     newBtn.type = "button";
     newBtn.innerHTML = NEW_SVG;
     head.append(newBtn);
+    let closeBtn = null;
     if (opts.onClose) {
-      const x = el("button", "lpc-x", "×");
-      x.title = t("close");
-      x.onclick = opts.onClose;
-      head.append(x);
+      closeBtn = el("button", "lpc-x", "×");
+      closeBtn.type = "button";
+      closeBtn.onclick = opts.onClose;
+      head.append(closeBtn);
     }
     const log = el("div", "lpc-log");
     const status = el("div", "lpc-status");
@@ -1407,10 +1444,14 @@
         const heardNoId = unlinked.splice(0);
         if (!res.ok || !res.body) {
           let msg = `${res.status}`;
+          let code;
+          let said = false;
           try {
-            msg = (await res.json()).error || msg;
+            const j = await res.json();
+            if (j.error) (msg = j.error), (said = true);
+            code = j.code;
           } catch (e) {}
-          throw Object.assign(new Error(msg), { status: res.status });
+          throw Object.assign(new Error(msg), { status: res.status, code, said });
         }
         // The stream ends with a finish event and [DONE]; a stream that stops short was cut (Lenspack restarted).
         let finished = false;
@@ -1468,7 +1509,7 @@
                     steps = el("div", "lpc-steps");
                     log.append(steps);
                   }
-                  const s = el("div", "lpc-step run", describe(ev.toolName, ev.input));
+                  const s = el("div", "lpc-step run", describe(ev.toolName, ev.input, uiLang()));
                   steps.append(s);
                   calls[ev.toolCallId] = s;
                   scroll();
@@ -1620,15 +1661,15 @@
             return;
           }
         }
-        // Over a per-person limit or a spend cap (429): the server's own words say which and when it frees up, in the
-        // panel's language. The question leaves the history and stays in the box, to send again later.
+        // Over a per-person limit or a spend cap (429): said in the panel's language (limitWords). The question leaves
+        // the history and stays in the box, to send again later.
         if (e.status === 429) {
           const lastQ = history[history.length - 1];
           if (lastQ && lastQ.role === "user") history.pop();
           persist();
           userB.remove();
           if (!input.value) input.value = text;
-          log.append(el("div", "lpc-note bad", e.message));
+          log.append(el("div", "lpc-note bad", limitWords(e.said ? e.message : "", e.code)));
           scroll();
           return;
         }
@@ -1675,6 +1716,14 @@
         go.disabled = offline || !!noAccess;
         if (!offline) input.focus();
       }
+    }
+
+    // A refusal for a limit (429). A per-person limit's words come from the server in the panel's language (code "limit"),
+    // so they are shown as they are; the daily spend cap's are English, so another language gets the panel's own; a 429
+    // with no words (a proxy's) gets the panel's "too many requests".
+    function limitWords(said, code) {
+      if (said && (code === "limit" || uiLang() === "en")) return said;
+      return said ? t("budgetUsed") : t("tooMany");
     }
 
     // ---- New chat. The model starts over but still hears of edits made after this point (since =
@@ -1744,6 +1793,10 @@
       micTitle();
       downBar.textContent = t("restarting");
       for (const b of retries) b.textContent = t("retry");
+      if (closeBtn) {
+        closeBtn.title = t("close");
+        closeBtn.setAttribute("aria-label", t("close"));
+      }
       newBtn.title = t("newChatHelp");
       newBtn.setAttribute("aria-label", t("newChat"));
       log.querySelectorAll(".lpc-fb").forEach((f) => f.relabel && f.relabel());
@@ -1907,7 +1960,7 @@
           setStatus("");
           return note(j.error === "wrong_script" ? t("missedIn", (NAMES_IN[uiLang()] || NAMES_IN.en)[j.language] || j.language) : t("unsureLang"), "bad");
         }
-        if (!r.ok) throw new Error(r.status === 503 ? t("sttOff") : j.error || String(r.status));
+        if (!r.ok) throw new Error(r.status === 503 ? t("sttOff") : r.status === 429 ? limitWords(j.error, j.code) : j.error || String(r.status));
         const text = (j.text || "").trim();
         if (text && typeof j.clip === "string") clips.push(j.clip);
         else if (text) unlinked.push(text);

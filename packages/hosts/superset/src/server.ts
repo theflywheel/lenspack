@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, type TabActor, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, readJson as readJsonBody, presentedKey, asSettingsWriter, revisionTag, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, userAccessSetup } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, readJson as readJsonBody, presentedKey, asSettingsWriter, revisionTag, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, startingServer, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, type PackLayer, type PackRisk, applyPackLayer, type Principal, type QuerySafetyConfig, RUNTIME_CONFIG, type Rights, adminRights, mayUse, narrowRights, packRisks, recordRights } from "@lenspack/policy";
 import { guardedConnector, querySlots } from "@lenspack/engine";
 import YAML from "yaml";
@@ -38,6 +38,7 @@ import { fileRecords } from "./records";
 import { panelSetting, supersetSettingsRoutes, surfaceSetting } from "./runtime-settings";
 import { boundarySetup } from "./boundary";
 import { supersetBoards } from "./store";
+import { startupWaits, untilItWorks } from "./startup";
 import { supersetActions } from "./actions";
 import { type TabRecord, type TabsConfig, type TabsSaved, reportsOnTab, supersetTabs, tabsConfigFrom, tabsLine, tabsSettingsChange } from "./tabs";
 import { catalogueFrom } from "@lenspack/pack";
@@ -180,19 +181,6 @@ export type SupersetConfig = AdminConfig & {
   budget?: Budget;
 };
 
-/** A start-up step, tried again while Superset may still be starting. */
-async function retried<T>(what: string, f: () => Promise<T>, waits: number[], log: (s: string) => void): Promise<T> {
-  for (let i = 0; ; i++) {
-    try {
-      return await f();
-    } catch (e) {
-      if (i >= waits.length) throw e;
-      log(`${what} failed (${e instanceof Error ? e.message : String(e)}); trying again in ${waits[i]! / 1000} s`);
-      await new Promise((r) => setTimeout(r, waits[i]));
-    }
-  }
-}
-
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 /** The admin routes an admin API key may call (docs/access/admin-api.md); every other path refuses a key. */
 const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal|limits|tabs)(\/|$)/;
@@ -220,26 +208,19 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       throw new Error(`${file}: ${(e as Error).message}`);
     }
   })();
+  // The waits between start-up tries while Superset can't be reached or refuses (startup.ts), and where browsers reach
+  // this server: checked now, with the rest of the config, so a mistake stops the start before Superset is asked anything.
+  const waits = startupWaits(env);
+  const configured = config.publicPath ?? env.LENSPACK_PUBLIC_PATH ?? "";
+  const base = plainPath(configured);
+  if (base === null) throw new Error(`${file}: publicPath (LENSPACK_PUBLIC_PATH) must be a plain path like /lenspack, not "${configured}"`);
+  const port = Number(config.port ?? env.LENSPACK_PORT ?? 8795);
+  const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
   const statePath = resolve(dir, config.state ?? (env.LENSPACK_STATE_DIR ? join(env.LENSPACK_STATE_DIR, "superset-boards.json") : "state/superset-boards.json"));
   const stateDir = dirname(statePath);
   mkdirSync(stateDir, { recursive: true });
-
-  // Lenspack's Superset account: given (LENSPACK_SUPERSET_PASSWORD), saved from an earlier start, or made now from a one-time admin sign-in.
-  const account = await retried(
-    "signing in to Superset",
-    () =>
-      serviceAccount({
-        url: supersetUrl,
-        username: config.superset?.username ?? "lenspack",
-        stateDir,
-        password: config.superset?.password ?? env[config.superset?.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"] ?? undefined,
-        admin: { username: env.SUPERSET_ADMIN_USERNAME, password: env.SUPERSET_ADMIN_PASSWORD },
-        log,
-      }),
-    [2000, 5000, 10_000, 20_000],
-    log,
-  );
-  const client = supersetClient({ url: supersetUrl, username: account.username, password: account.password });
+  // Set below, once the settings are read and Lenspack's Superset account is known.
+  let client!: ReturnType<typeof supersetClient>;
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
   log(admin.limitsLine());
@@ -295,9 +276,35 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     rebuild: (next, commit) => packs.rebuild({ fetch: () => fetchDatasets(client, [...next.datasets], { log }), scope: next.scope }, commit),
   });
   const bNow = () => boundary!.now();
-  // Each dataset is retried inside fetchDatasets; the whole build is retried too, so a partial answer under load isn't a crash loop.
+
+  // Everything the config alone decides is checked by now. From here on the start needs Superset, which may be down,
+  // restarting or refusing for a while: the address answers meanwhile (/healthz alive, /readyz not ready and why, the
+  // rest 503 "starting"), and each step below is tried until it works (startup.ts). A mistake no wait fixes still stops
+  // the start at once (StartupConfigError).
+  const starting = startingServer({ port, host, log, reason: "signing in to Superset" });
+  const step = <T>(what: string, f: () => Promise<T>) => {
+    starting.reason(what);
+    return untilItWorks(what, f, { log, waits, waiting: starting.reason }).catch((e: unknown) => {
+      starting.close();
+      throw e;
+    });
+  };
+  // Lenspack's Superset account: given (LENSPACK_SUPERSET_PASSWORD), saved from an earlier start, or made now from a one-time admin sign-in.
+  const account = await step("signing in to Superset", () =>
+    serviceAccount({
+      url: supersetUrl,
+      username: config.superset?.username ?? "lenspack",
+      stateDir,
+      password: config.superset?.password ?? env[config.superset?.passwordEnv ?? "LENSPACK_SUPERSET_PASSWORD"] ?? undefined,
+      admin: { username: env.SUPERSET_ADMIN_USERNAME, password: env.SUPERSET_ADMIN_PASSWORD },
+      log,
+    }),
+  );
+  client = supersetClient({ url: supersetUrl, username: account.username, password: account.password });
+  // Each dataset is retried inside fetchDatasets when its answer comes back wrong (another dataset's, incomplete); a
+  // request that fails is the start-up's to try again, so it says so once, with the wait.
   const fetchNow = () => fetchDatasets(client, [...bNow().datasets], { log });
-  const datasets = await retried("building the pack", fetchNow, [2000, 5000, 10_000], log);
+  const datasets = await step("reading the datasets from Superset", () => fetchDatasets(client, [...bNow().datasets], { log, retryErrors: false }));
   // What differs between Superset 5 and 6 on this side: the default basemap of the maps Lenspack writes.
   const superset = await supersetVersion(client);
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
@@ -405,11 +412,12 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       return link ? [link.ownerId] : undefined;
     },
   });
-  await store.seed();
+  await step("reading the dashboards from Superset", () => store.seed());
 
   // The identity key comes from Superset (derived there from its SECRET_KEY); without it nobody is signed in. It is
   // tried for until Superset gives it, never given up on: a start before Superset (or before the plugin is loaded
   // there) recovers by itself, and GET /readyz says not ready meanwhile. The start waits for it about as long as before.
+  starting.reason("waiting for the identity key from Superset");
   const keeper = identityKeeper({ fetch: () => identityKey(client), log });
   await Promise.race([keeper.first, new Promise((r) => setTimeout(r, 40_000).unref())]);
   const idKey = keeper.key;
@@ -584,9 +592,6 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   };
   // Where browsers reach this server when nothing says otherwise. Through the plugin, each request says it (with
   // Superset's own root, when Superset runs below a path of its host): see paths.ts.
-  const configured = config.publicPath ?? env.LENSPACK_PUBLIC_PATH ?? "";
-  const base = plainPath(configured);
-  if (base === null) throw new Error(`${file}: publicPath (LENSPACK_PUBLIC_PATH) must be a plain path like /lenspack, not "${configured}"`);
   const paths = (req: IncomingMessage) => requestPaths(req, base);
   // Under admin access "password", the admin pages have a sign-in of their own at <base>/_admin/ (reachable through
   // Superset's route without a Superset session; docs/access/admin-access.md). Without a password set: refused, with why.
@@ -628,8 +633,6 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     }
   };
 
-  const port = Number(config.port ?? env.LENSPACK_PORT ?? 8795);
-  const host = config.host ?? env.LENSPACK_HOST ?? "127.0.0.1";
   // The definitions overlay, open questions and the daily review (review/ in @lenspack/serve), kept in the state
   // directory; the admin panel at /_superset/admin/ (through Superset: /lenspack/_superset/admin/).
   const review = admin.review({
@@ -810,6 +813,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     headers: () => ({ ETag: revisionTag(admin.settings.revision()) }),
   });
   startRuntime({
+    // The address that answered while starting: taken over, so it never goes dark.
+    starting,
     hosts: [{ name: packName, pack: first.pack, packYaml: first.packYaml, connector, store, ctx: packCtx, boards: [] }],
     app: {
       // Signed in by Superset; its role names read by the deployment's role rules (supersetRights), which auth carries.

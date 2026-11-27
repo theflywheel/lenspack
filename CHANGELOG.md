@@ -16,6 +16,21 @@ brought it.
   one to protect it, see who made each chat tab with each person's count against the limits, and delete one (asking
   again when email reports are sent from it). `GET /_superset/tabs` now also returns each dashboard's tabs. See
   [Tabs on dashboards](docs/features/tabs.md#on-the-settings-page).
+- **The chat's step lines follow the panel's language.** Under a question, lines such as "ran a query" showed in
+  English while the rest of the panel was in French, Hindi or Portuguese. They now use the panel's language, for
+  every tool the assistant can call (charts, filters, tabs, saved layouts, your own dashboards), and a tool with no
+  words shows a neutral "Other step" rather than its internal name. A refusal for the daily spend cap, and a refusal
+  with no words from a proxy, are said in the panel's language too, as are the close button's label and the
+  seconds in the language menu. A test now fails when any word table lacks a language.
+- **The Superset host no longer exits when Superset is down or refuses its sign-in at start.** It used to give up
+  after about 20 seconds and exit, which Kubernetes turned into a crash loop with growing waits, even after Superset
+  was fixed. Now it listens at once, keeps trying (after 2, 5, 10 and 30 seconds, then every minute, for as long as it
+  takes; `LENSPACK_STARTUP_RETRY_SECONDS` changes this), logs one line per try with the cause and the next wait, and
+  becomes ready by itself when Superset answers. Meanwhile `/healthz` answers 200, `/readyz` 503 with the reason, and
+  the chat shows "restarting, reconnecting". Superset closing the connection while the dashboards are read at start
+  no longer fails the start either. Mistakes no wait fixes (bad YAML, a wrong setting, a dataset or dashboard
+  Superset doesn't have) still stop it at once. See [Health and shutdown](docs/operating/deploying.md#health-and-shutdown).
+  ([#133](https://github.com/theflywheel/lenspack/pull/133))
 - **Tabs: protected tabs, tabs made through the chat, limits, and playground tabs.** On a Superset dashboard in tabs, a
   deployment can protect tabs (`tabs.protected`, by tab id per dashboard) so the chat never changes them, for admins
   too, or let the chat change only tabs it made (`tabs.editable: own`). With the `chatTabs` switch, people who may

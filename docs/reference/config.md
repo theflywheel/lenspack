@@ -290,6 +290,7 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_STATE_DIR` | both | the state folder (`/data` in the image); the password sign-in's default `dir` | fallback (for `state:`, `auth.dir`) | no |
 | `LENSPACK_UI` | serve | the board app's folder | between: `--ui`, then it, then `ui:` | no |
 | `LENSPACK_HOST`, `LENSPACK_PORT` | superset | where it listens (the image sets `LENSPACK_HOST=0.0.0.0`) | fallback (for `host`, `port`) | no |
+| `LENSPACK_STARTUP_RETRY_SECONDS` | superset | the waits between start-up tries while Superset can't be reached or refuses, in seconds, separated by commas; the last one repeats (default `2,5,10,30,60`). See [Health and shutdown](../operating/deploying.md#health-and-shutdown) | only source | no |
 | `PORT` | serve | the port, when neither `--port` nor `port:` gives one | fallback (after `--port`, `port:`) | no |
 | `LENSPACK_FEATURES` | both | switches: `voice=off,maps=on`, `-voice,+maps`, or a JSON object | over the file; an admin's setting wins over it | yes: `settings/features` |
 | `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | both | daily caps when the config sets none | fallback (only when the file sets no `budget`) | yes: `settings/budget` |
