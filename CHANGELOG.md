@@ -22,6 +22,15 @@ brought it.
   settings API (`PUT /_superset/settings/tabs`) and the start-up log; `GET /_superset/tabs` lists the tabs made through
   the chat with their makers. Superset has no per-tab permissions, so these rules bind the chat only. See
   [Tabs on dashboards](docs/features/tabs.md).
+- **Checking a pack's queries before go-live.** `lenspack query-check --config superset.yaml` (or, with no server
+  access, `POST …/_admin/settings/query-safety/dry-run` with an admin API key) tries every query shape the pack allows
+  and has Superset compile each one with `result_type: "query"`, which returns the SQL without running it. The SQL is
+  read for no `LIMIT`, grouping by a column with a value per record, and no time condition on a heavy dataset; the
+  report also lists what Lenspack's own limits refuse. At start and on every pack change, Lenspack also warns about
+  risky definitions (an id-like dimension, a heavy dataset with no time column, an example question the limits would
+  refuse), shown in `GET /_superset/settings` as `querySafety.packRisks`. The docs page now lists every query shape
+  Lenspack can send and what bounds it, and suggests limits for the database user. See
+  [Query safety](docs/operating/query-safety.md#checking-a-pack-before-go-live).
 - **Limits on the queries sent to the database.** Lenspack now checks every query it sends to Superset before
   sending it, and refuses one that is too heavy with a plain message the assistant passes on or acts on ("use a
   coarser grain", "pick a coarser level"). On by default, with no change to any answer: at most 20,000 rows and
