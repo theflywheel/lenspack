@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, presentedKey, asSettingsWriter, revisionTag, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, type Principal, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
@@ -224,12 +224,19 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // docs/hosts/superset/pack-runtime.md). A column or metric the pack can't use is left out or renamed with a warning,
   // never a failed start; so are mistakes in the overlay (a measure on a column that isn't there). Saved changes that no
   // longer build are set aside for the deploy config alone, said in the log and in the settings API.
+  const packStore = packLayerStore(stateDir, { log });
+  /** The pack's version in force and who made it, for an open admin page to notice a change made elsewhere. */
+  const packRevision = () => {
+    const v = live().version;
+    const by = packStore.get(v);
+    return { pack: { version: v, ...(v && by ? { by: by.by, at: by.at } : {}) } };
+  };
   const packs = packRuntime({
     base: config.overlay ?? {},
     // The overlay as the file writes it, env: references kept, for the export.
     raw: (YAML.parse(readFileSync(file, "utf8")) as SupersetConfig | null)?.overlay ?? {},
     scope: config.scope,
-    store: packLayerStore(stateDir, { log }),
+    store: packStore,
     fetch: fetchNow,
     capabilities: () => ({ ...SUPERSET_CAPABILITIES, ...switchedOff() }),
     mapStyle: defaultMapStyle(superset.major),
@@ -575,7 +582,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     },
     audit: auditLog?.audit,
     base: supersetBase,
-    reply: (res, status, body) => json(res, status, body, NO_STORE),
+    // Every answer says the settings' revision, so a page that just changed the limits holds the new one.
+    reply: (res, status, body) => json(res, status, body, { ...NO_STORE, ETag: revisionTag(admin.settings.revision()) }),
+    settingsWriter: (req, res, who, run) => asSettingsWriter(admin.settings, req, res, who, run),
   });
   startRuntime({
     hosts: [{ name: packName, pack: first.pack, packYaml: first.packYaml, connector, store, ctx: packCtx, boards: [] }],
@@ -670,13 +679,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         }),
         access: adminAccess,
         users: userAccess,
+        revisionExtras: packRevision,
       });
       // The password sign-in's admin pages: the same panel and settings routes under /_admin, for the password admin.
       // Password admins always get every section there, whatever the surface: they have no Superset page to use.
       const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password", surface: "separate", sections: "all", superset: true, supersetPage: supersetPage(req) }) }) : null;
       const passwordPack = passwordAdmin ? packs.routes("/_admin", { access: () => adminAccess.state(), seen: (who) => adminAccess.seen(who), audit: auditLog?.audit, adminName: "assistant admin" }) : null;
       const passwordSettings = passwordAdmin
-        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess })
+        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, revisionExtras: packRevision })
         : null;
       /** Exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (admins only). */
       const actionLog = async (res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {

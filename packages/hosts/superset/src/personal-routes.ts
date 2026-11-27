@@ -43,6 +43,8 @@ export type PersonalRoutesOptions = {
   /** Where browsers reach Superset, for links ("" when the panel runs on Superset's own pages). */
   base: (req: IncomingMessage) => string;
   reply: (res: ServerResponse, status: number, body: unknown) => void;
+  /** Runs a settings write as one writer of the settings store (asSettingsWriter in @lenspack/serve): If-Match, attribution, 409. */
+  settingsWriter?: (req: IncomingMessage, res: ServerResponse, who: { user: string }, run: () => Promise<unknown>) => Promise<void>;
 };
 
 const MAX_BODY = 64 * 1024;
@@ -102,11 +104,17 @@ export function personalRoutes(o: PersonalRoutesOptions) {
       const action = `PUT ${path}`;
       const admins = o.adminName ?? "Superset admin";
       if (!adminRights(who).administer) return audited(who, action, "denied", `not a ${admins}`), o.reply(res, 403, { error: `only ${admins}s can change this` }), true;
-      const b = await body(req);
-      const r = path === "/_superset/settings/personal" ? o.setLimits(b) : o.setEditScope(b);
-      audited(who, action, r.ok ? "ok" : "refused", r.ok ? JSON.stringify(b) : r.error);
-      if (!r.ok) return o.reply(res, 400, r), true;
-      return o.reply(res, 200, path === "/_superset/settings/personal" ? { ok: true, limits: o.limits() } : { ok: true, editScope: o.editScope() }), true;
+      const write = async () => {
+        const b = await body(req);
+        const r = path === "/_superset/settings/personal" ? o.setLimits(b) : o.setEditScope(b);
+        audited(who, action, r.ok ? "ok" : "refused", r.ok ? JSON.stringify(b) : r.error);
+        if (!r.ok) return o.reply(res, 400, r);
+        return o.reply(res, 200, path === "/_superset/settings/personal" ? { ok: true, limits: o.limits() } : { ok: true, editScope: o.editScope() });
+      };
+      // As one writer of the settings store: a write made on an older revision (If-Match) is refused there with 409.
+      if (o.settingsWriter) await o.settingsWriter(req, res, who, write);
+      else await write();
+      return true;
     }
     return false;
   }

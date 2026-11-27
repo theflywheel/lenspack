@@ -116,13 +116,17 @@ Superset host they are under `/_superset/settings/pack`. Through Superset's addr
 |---|---|
 | `GET …/settings/pack` | the pack as it runs: `version`, the runtime parts as `yaml` and `overlay`, the `layer`, each part's `sources` (`config`, `settings`, `config and settings`, `none`), the `configOnly` parts with why, `warnings`, and `notApplied` when saved changes were set aside at start |
 | `POST …/settings/pack/validate` | checks `{ yaml }` or `{ fields }` as Save would; changes nothing. Answers `{ ok, problems, changed, warnings }` |
-| `PUT …/settings/pack` | saves a change. `{ yaml }`: the runtime parts as the pack should use them (a part left out follows the file). `{ fields }`: only the parts named; `null` hands a part back to the file. Optional `why`, and `version` (the version you read: if the pack changed since, `409`) |
+| `PUT …/settings/pack` | saves a change. `{ yaml }`: the runtime parts as the pack should use them (a part left out follows the file). `{ fields }`: only the parts named; `null` hands a part back to the file. Optional `why`, and the version you read, as `If-Match: "pack-<n>"` or `version` in the body: if the pack changed since, `409` with who changed it and the pack as it is now (`current`) |
 | `GET …/settings/pack/versions` | every version, newest first (`?limit=`, default 50); `current` is the one in force |
 | `GET …/settings/pack/versions/<n>` | one version, with its layer and its runtime parts as YAML; `0` is the file alone |
 | `GET …/settings/pack/diff?from=<a>&to=<b>` | what differs between two versions, part by part (default: the one in force and the one before it) |
 | `POST …/settings/pack/revert` | `{ version, why }`: goes back to a version, as a new version, checked like any change |
 | `POST …/settings/pack/reset` | `{ fields: [...], why }` hands those parts back to the file; `{}` hands back everything |
 | `GET …/settings/pack/export` | the whole overlay as it runs, as YAML to paste under `overlay:` in `superset.yaml` (`?version=<n>` for an earlier one, `?download=1` to save it as a file). Values the file reads from the environment (`env:NAME`) stay written that way |
+
+Every answer carries the version in force as its `ETag` (`"pack-3"`). `revert` and `reset` take `If-Match` too.
+Without it, the last change wins. This is the same rule as for the other settings: see
+[Changes made elsewhere](settings.md#changes-made-elsewhere).
 
 The settings API (`GET /_superset/settings`) also says `packLayer: { version, fields }`.
 

@@ -86,7 +86,7 @@ export function settingsRoster(settings: SettingsStore): AdminRosterStore {
     put(e) {
       const now = read();
       const i = now.findIndex((x) => x.user === e.user);
-      settings.set("adminRoster", i < 0 ? [...now, e] : now.map((x, j) => (j === i ? e : x)));
+      settings.set("adminRoster", i < 0 ? [...now, e] : now.map((x, j) => (j === i ? e : x)), { record: true });
     },
   };
 }

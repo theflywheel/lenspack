@@ -338,7 +338,9 @@ describe("changing the pack on a running Superset-mode server", () => {
 
   it("goes back to a version, resets parts or everything, and refuses a change made on an old copy", async () => {
     const stale = await admin("", { method: "PUT", body: { version: 2, fields: { description: "Old copy" } } });
-    expect([stale.status, stale.body.error]).toEqual([409, expect.stringMatching(/^the pack was changed since this page read it \(now version 4, by ana\)/)]);
+    expect([stale.status, stale.body.error]).toEqual([409, expect.stringMatching(/^the pack changed elsewhere by ana since this copy was read \(now version 4; this change was made on version 2\)/)]);
+    // Who changed it, and the pack as it is now, to make the change on.
+    expect(stale.body).toMatchObject({ code: "changed-elsewhere", section: "pack", by: "ana", revision: 4, current: { version: 4 } });
     const rev = await admin("/revert", { method: "POST", body: { version: 1, why: "the new labels confused people" } });
     expect(rev.body.version).toMatchObject({ version: 5, action: "revert", reverts: 1, summary: "back to version 1 (labels, hints)" });
     expect((await packYaml()).dimensions.find((d: { key: string }) => d.key === "region").label).toBe("Region");

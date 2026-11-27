@@ -10,7 +10,7 @@ import { BodyTooLarge, NO_STORE, TYPES, escapeHtml, json, readJson, scriptJson }
 import { PageError, pageFrom, pagedAsk } from "../paging";
 import { publicView } from "../llm";
 import type { Provider } from "../llm";
-import { SettingsSaveError } from "../settings";
+import { SettingsSaveError, type SettingsStore, asSettingsWriter, revisionTag } from "../settings";
 import { OverlayError, overlaySize } from "./overlay";
 import { QuestionError } from "./questions";
 import { ReviewBusy, type ReviewSystem } from "./system";
@@ -57,6 +57,8 @@ export type PanelOptions = {
   seen?: (who: Principal) => void;
   /** Where a page request goes instead of the page (the superset surface: Superset's own settings page; the password sign-in's pages). Null: the page. */
   pageRedirect?: (req: IncomingMessage) => string | null;
+  /** The settings store the switches, the name and the review's settings are kept in: its revision guards their writes (If-Match). */
+  settings?: SettingsStore;
 };
 
 // board.js and board.css are the board renderer (@lenspack/react) bundled for a page with no build: its build writes them here.
@@ -140,6 +142,21 @@ export function panelRoutes(o: PanelOptions) {
     }
     const why = typeof body.why === "string" ? body.why : "";
     const post = req.method === "POST" || req.method === "PUT";
+    // The switches, the name and the review's settings live in the settings store: their answers carry its revision
+    // (ETag), and a write made on an older one (If-Match) is refused there, as on the host's settings routes.
+    const inSettings = !!o.settings && (path[0] === "settings" || (path[0] === "review" && path[1] === "settings"));
+    if (inSettings) {
+      const store = o.settings!;
+      const plain = send;
+      const tagged = (status: number, b: unknown) => (json(res, status, b, { ...NO_STORE, ETag: revisionTag(store.revision()) }), true);
+      let done = false;
+      await asSettingsWriter(store, req, res, who, async () => {
+        done = await answer(tagged);
+      });
+      return done || res.headersSent || plain(404, { error: "not found" });
+    }
+    return answer(send);
+    async function answer(send: (status: number, body: unknown) => boolean): Promise<boolean> {
     try {
       const [a, id, action] = path;
       switch (a) {
@@ -284,6 +301,7 @@ export function panelRoutes(o: PanelOptions) {
       if (e instanceof ReviewBusy) return send(409, { error: e.message });
       if (e instanceof SettingsSaveError) return send(503, { error: e.message });
       throw e;
+    }
     }
   };
 }

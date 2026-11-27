@@ -215,6 +215,9 @@
     pkVersions: "Versions", pkV: "Version", pkWhen: "When", pkBy: "By", pkWhat: "What changed", pkRevert: "Go back to this", pkRevertQ: "Go back to version {0}? It becomes a new version.", pkDiff: "Changes", pkCurrent: "in force",
     pkExport: "Export as YAML", pkExportLede: "The whole overlay as it runs, to paste as overlay: in superset.yaml. Once it is there, reset the changes here.", pkNoVersions: "No changes yet: the deploy config alone decides.", pkV0: "the deploy config alone",
     pkWas: "Before", pkIs: "After", pkNotHere: "This host does not let the pack change while it runs.",
+    changedElsewhere: "Changed elsewhere by {0}, reloaded. Make your change again on what is shown now.", changedElsewhereNobody: "Changed elsewhere, reloaded. Make your change again on what is shown now.",
+    pkDraft: "Your text, not saved: copy what you still want into the box above.",
+    refreshed: "Changed elsewhere by {0}; this page now shows it.", staleNotice: "Changed elsewhere by {0} while you were editing here.", staleReload: "Reload", someone: "someone",
   });
   Object.assign(STRINGS.fr, {
     tabPack: "Pack", lede_pack: "Le pack que lit {name} : changez ici ses mots, ses mesures et ses questions d'exemple, sans redéploiement.",
@@ -229,6 +232,9 @@
     pkVersions: "Versions", pkV: "Version", pkWhen: "Quand", pkBy: "Par", pkWhat: "Ce qui a changé", pkRevert: "Revenir à celle-ci", pkRevertQ: "Revenir à la version {0} ? Elle devient une nouvelle version.", pkDiff: "Changements", pkCurrent: "en vigueur",
     pkExport: "Exporter en YAML", pkExportLede: "Tout l'overlay tel qu'il tourne, à coller sous overlay: dans superset.yaml. Une fois fait, réinitialisez les changements ici.", pkNoVersions: "Aucun changement : la configuration seule décide.", pkV0: "la configuration seule",
     pkWas: "Avant", pkIs: "Après", pkNotHere: "Cet hôte ne permet pas de changer le pack pendant qu'il tourne.",
+    changedElsewhere: "Modifié ailleurs par {0}, rechargé. Refaites votre changement sur ce qui est affiché maintenant.", changedElsewhereNobody: "Modifié ailleurs, rechargé. Refaites votre changement sur ce qui est affiché maintenant.",
+    pkDraft: "Votre texte, non enregistré : copiez ce que vous voulez garder dans la zone ci-dessus.",
+    refreshed: "Modifié ailleurs par {0} ; cette page l'affiche maintenant.", staleNotice: "Modifié ailleurs par {0} pendant que vous modifiiez ici.", staleReload: "Recharger", someone: "quelqu'un",
   });
 
   // The switches' names and help in French; English comes from the server.
@@ -315,17 +321,41 @@
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => (el.className = "toast"), bad ? 6000 : 2500);
   }
+  let hostSettingsP = null;
+  // ---- Settings that don't drift apart --------------------------------------------------------------
+  // Every settings answer carries the revision it is at (ETag "settings-<n>"). The page keeps the newest it has seen and
+  // sends it back (If-Match) with every settings change; the server refuses a change to something changed since (409,
+  // "changed-elsewhere"), and the page then reloads what it shows and says who changed it. The rule is the server's.
+  let settingsRev = -1;
+  const revOf = (tag) => { const m = /"settings-(\d+)"/.exec(tag || ""); return m ? Number(m[1]) : -1; };
+  function noteRevision(res) {
+    const r = revOf(res.headers && res.headers.get ? res.headers.get("ETag") : null);
+    if (r > settingsRev) settingsRev = r;
+  }
+  const isSettingsPath = (path) => /^(settings|review\/settings)(\/|\?|$)/.test(path);
+  const writeHeaders = (path, body) => ({
+    ...(body ? { "content-type": "application/json" } : {}),
+    ...(body && isSettingsPath(path) && settingsRev >= 0 ? { "If-Match": `"settings-${settingsRev}"` } : {}),
+  });
+  /** A refusal because the settings changed elsewhere: the message names who, and act() reloads the page's section. */
+  function failure(res, data) {
+    const conflict = res.status === 409 && data && data.code === "changed-elsewhere";
+    const err = new Error(conflict ? (data.by ? t("changedElsewhere", data.by) : t("changedElsewhereNobody")) : (data && data.error) || `HTTP ${res.status}`);
+    if (conflict) { err.changedElsewhere = true; hostSettingsP = null; }
+    return err;
+  }
   async function api(path, opts = {}) {
     const sep = path.includes("?") ? "&" : "?";
     const res = await fetch(`${API}${path}${pack ? `${sep}pack=${encodeURIComponent(pack)}` : ""}`, {
       method: opts.method || (opts.body ? "POST" : "GET"),
-      headers: opts.body ? { "content-type": "application/json" } : {},
+      headers: writeHeaders(path, opts.body),
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       credentials: "same-origin",
     });
+    noteRevision(res);
     let data = null;
     try { data = await res.json(); } catch (e) { /* not JSON */ }
-    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    if (!res.ok) throw failure(res, data);
     return data;
   }
   /** A cache route, if the server has one: null when it does not (404). */
@@ -346,6 +376,8 @@
       await render();
     } catch (e) {
       toast(e.message, true);
+      // Changed elsewhere: show what is there now, so the change can be made again on it.
+      if (e.changedElsewhere) await render();
     } finally {
       if (b && b.isConnected) b.disabled = false;
     }
@@ -1045,14 +1077,17 @@
   async function hostApi(path, opts = {}) {
     const res = await fetch(`${HOST}${path}`, {
       method: opts.method || (opts.body ? "PUT" : "GET"),
-      headers: opts.body ? { "content-type": "application/json" } : {},
+      headers: writeHeaders(path, opts.body),
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       credentials: "same-origin",
     });
+    // The revision check itself leaves the page's revision alone: only values the page shows move it.
+    if (!opts.peek) noteRevision(res);
     if (res.status === 404 && !opts.body) return null;
     let data = null;
     try { data = await res.json(); } catch (e) { /* not JSON */ }
-    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    if (!res.ok) throw failure(res, data);
+    if (opts.body) hostSettingsP = null;
     return data;
   }
 
@@ -1123,7 +1158,7 @@
 
   // ---- Host settings, shared by the tabs that read them ------------------------------------------------------
   /** The host's settings (GET <prefix>/settings), once per drawing. */
-  let hostSettingsAt = 0, hostSettingsP = null;
+  let hostSettingsAt = 0;
   const hostSettings = () => {
     if (!hostSettingsP || Date.now() - hostSettingsAt > 1500) { hostSettingsAt = Date.now(); hostSettingsP = hostApi("settings"); }
     return hostSettingsP;
@@ -1407,22 +1442,33 @@
   // ---- Pack -------------------------------------------------------------------------------------
   // The pack's runtime parts (the host's <prefix>/settings/pack): as YAML, checked and saved as versions.
   /** A pack route's answer whatever its status, so refusals (with their problems) are shown, not thrown. */
+  // The pack's version is its revision (ETag "pack-<n>"): every change sends the one the tab shows (If-Match).
+  let packVersion = -1;
   async function packApi(path, opts = {}) {
     const res = await fetch(`${HOST}settings/pack${path}`, {
       method: opts.method || (opts.body ? "POST" : "GET"),
-      headers: opts.body ? { "content-type": "application/json" } : {},
+      headers: { ...(opts.body ? { "content-type": "application/json" } : {}), ...(opts.body && path !== "/validate" && packVersion >= 0 ? { "If-Match": `"pack-${packVersion}"` } : {}) },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       credentials: "same-origin",
     });
     let data = null;
     try { data = await res.json(); } catch (e) { /* not JSON */ }
-    return { ok: res.ok, status: res.status, data: data || {} };
+    const changedElsewhere = res.status === 409 && !!data && data.code === "changed-elsewhere";
+    return { ok: res.ok, status: res.status, data: data || {}, changedElsewhere };
+  }
+  /** Changed elsewhere: say who, and show the pack as it is now; the text the admin had typed is kept beside it to copy from. */
+  let packDraft = null;
+  async function packConflict(r, draft) {
+    toast(r.data.by ? t("changedElsewhere", r.data.by) : t("changedElsewhereNobody"), true);
+    packDraft = draft || null;
+    await render();
   }
   async function packTab() {
     const [now, list] = await Promise.all([packApi(""), packApi("/versions?limit=50")]);
     if (now.status === 404) return card(null, null, h("p", { class: "empty" }, t("pkNotHere")));
     if (!now.ok) throw new Error(now.data.error || `HTTP ${now.status}`);
     const p = now.data;
+    packVersion = p.version;
     const versions = list.ok ? list.data.versions : [];
     const byOf = (v) => v.by || "—";
     const result = h("div", { "aria-live": "polite" });
@@ -1447,6 +1493,7 @@
       b.disabled = true;
       try {
         const r = await packApi("", { method: "PUT", body: { yaml: yaml.value, why: why.value, version: p.version } });
+        if (r.changedElsewhere) return packConflict(r, yaml.value);
         if (!r.ok) return showResult(r, changedText);
         toast(t("pkSaved", r.data.version.version));
         await render("pack-edit");
@@ -1458,6 +1505,7 @@
       b.disabled = true;
       try {
         const r = await packApi(path, { body });
+        if (r.changedElsewhere) return packConflict(r);
         if (!r.ok) { toast(r.data.error || `HTTP ${r.status}`, true); return; }
         toast(t("pkSaved", r.data.version.version));
         await render();
@@ -1500,8 +1548,11 @@
       : h("p", { class: "empty" }, t("pkNoVersions"));
     const configOnly = h("div", { class: "scroll" }, h("table", {}, h("tbody", {}, (p.configOnly || []).map((c) => h("tr", {},
       h("td", {}, h("code", {}, c.field)), h("td", { class: "mono" }, c.value === null || c.value === undefined ? "—" : typeof c.value === "string" ? c.value : JSON.stringify(c.value)), h("td", { class: "mute hide-s", style: "font-size:12.5px" }, c.reason))))));
+    const draft = packDraft;
+    packDraft = null;
     const edit = card(t("pkEdit"), t("pkEditLede"),
       yaml,
+      draft !== null && draft !== yaml.value ? h("details", { class: "note", open: true }, h("summary", {}, t("pkDraft")), h("pre", {}, draft)) : null,
       h("label", { class: "field", style: "margin-top:10px" }, h("span", {}, t("pkWhy")), why),
       h("div", { class: "actions" }, h("button", { class: "btn quiet", type: "button", onclick: validate }, t("pkValidate")), h("button", { class: "btn", type: "button", onclick: save }, t("pkSave"))),
       result);
@@ -1533,6 +1584,7 @@
     try {
       const nodes = await TABS[tab]();
       if (mine !== rendering) return;
+      editing = false;
       main.replaceChildren(...[newAdminsNotice(), nodes].flat(Infinity).filter(Boolean));
     } catch (e) {
       if (mine !== rendering) return;
@@ -1555,6 +1607,40 @@
       }
     } catch (e) { /* badges are a nicety */ }
   }
+
+  // ---- Changes made elsewhere, while the page is open ------------------------------------------------
+  // Every 30 seconds while the page is in view, and whenever it comes back into view, the page asks the host's settings
+  // revision (and the pack's version). When either moved, a tab that shows settings is drawn again, unless the admin is
+  // typing in it: then a notice says who changed what, with a button to reload when they are ready.
+  const REFRESHED = new Set(["review", "pack", "cache", "models", "access", "settings", "telemetry", "spend", "assistant"]);
+  let editing = false;
+  main.addEventListener("input", () => { editing = true; });
+  let stale = null;
+  async function checkElsewhere() {
+    if (document.visibilityState === "hidden" || sections === "link") return;
+    let r;
+    try { r = await hostApi("settings/revision", { peek: true }); } catch (e) { return; }
+    if (!r) return;
+    // The page's own changes moved settingsRev and packVersion already (their answers carry the new ones).
+    const settingsMoved = settingsRev >= 0 && r.revision > settingsRev;
+    const packMoved = tab === "pack" && packVersion >= 0 && !!r.pack && r.pack.version !== packVersion;
+    // settingsRev moves only when the page shows the new values (render reads them again): a change sent from a form
+    // still showing the old ones is refused by the server, not let through.
+    if (!(settingsMoved || packMoved) || !REFRESHED.has(tab)) return;
+    const by = (packMoved ? r.pack.by : r.lastChange && r.lastChange.by) || t("someone");
+    hostSettingsP = null;
+    if (editing) {
+      if (stale) stale.remove();
+      stale = h("div", { class: "bad-line", role: "status" }, t("staleNotice", by), " ", h("button", { class: "btn sm quiet", type: "button", onclick: () => { stale = null; render(); } }, t("staleReload")));
+      main.prepend(stale);
+      return;
+    }
+    await render();
+    toast(t("refreshed", by));
+  }
+  setInterval(checkElsewhere, 30_000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkElsewhere(); });
+  window.addEventListener("focus", () => checkElsewhere());
 
   async function start() {
     applyChrome();

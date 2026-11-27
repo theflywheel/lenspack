@@ -11,6 +11,14 @@ brought it.
 
 ### 27 November 2026
 
+- **Settings changed in two places don't undo each other.** Every settings answer now says the revision it is at
+  (`revision`, and the `ETag` header), and every settings change, including who is an admin or a user and the pack,
+  takes it back as `If-Match`: a change to something changed since is refused with `409`, nothing changed, naming who
+  changed it, with the values as they are now. The admin pages always send it, reload and say who on a refusal, and
+  notice changes made elsewhere while open (every 30 seconds and when they come back into view). A change without
+  `If-Match` still goes through as before, the last change winning; scripts should send it. New route:
+  `GET /_superset/settings/revision`. See
+  [Changes made elsewhere](docs/hosts/superset/settings.md#changes-made-elsewhere).
 - **Change the pack while it runs.** Admins can change the pack's description, instructions, labels, hints, measures,
   example questions, `notDimensions` and hierarchies, and add exclusions, with no redeploy and no restart: on the
   settings routes (`/_superset/settings/pack`), or with an admin API key at `…/lenspack/_admin/settings/pack`. The
