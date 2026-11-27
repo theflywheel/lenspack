@@ -243,15 +243,14 @@ export function accessFallbackFrom(value: string | undefined): AccessFallback {
 /** Superset's own 404 for the access route (no such route), not the endpoint's (no such user). */
 const routeMissing = (e: unknown) => e instanceof SupersetError && e.status === 404 && (e.body as { message?: string } | undefined)?.message !== "no such user";
 
-export function supersetPolicy(o: { client: SupersetClient; /** The binding, or how to read the one in force (an admin can change the pack while the server runs). */ binding: Binding | (() => Binding); log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number; fallback?: AccessFallback }): HostPolicy {
+export function supersetPolicy(o: { client: SupersetClient; /** The binding, or how to read the one in force (an admin can change the pack while the server runs). */ binding: Binding | (() => Binding); log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number; /** Read per request: an admin may narrow rls-only to none while the server runs. */ fallback?: AccessFallback | (() => AccessFallback) }): HostPolicy {
   const ttl = o.ttlMs ?? 60_000;
   const now = o.now ?? Date.now;
   const bindingNow = () => (typeof o.binding === "function" ? o.binding() : o.binding);
-  // Datasets are the deploy config's alone: a change to the pack never adds or takes one away.
-  const datasets = [...bindingNow().entityOf.keys()];
+  // The datasets asked about are the binding's: the deploy config's, or fewer when an admin narrowed them (never more).
   // An answer is read through the binding it was worked out under: a new pack (a new binding) asks again.
   const cache = new Map<string, { at: number; value: Promise<HostAnswer>; binding: Binding }>();
-  const rlsOnly = o.fallback === "rls-only";
+  const rlsOnly = () => (typeof o.fallback === "function" ? o.fallback() : o.fallback) === "rls-only";
   let rbacSaid: string | undefined;
   const boardsOf = (ids: number[], open: (id: number) => boolean) => {
     const hiddenBoards = ids.filter((id) => !open(id)).map((id) => `superset-${id}`);
@@ -259,6 +258,7 @@ export function supersetPolicy(o: { client: SupersetClient; /** The binding, or 
   };
   const ask = async (user: string, roles: string[] | undefined, binding: Binding): Promise<HostAnswer> => {
     const dashboards = o.dashboards?.() ?? [];
+    const datasets = [...binding.entityOf.keys()];
     try {
       try {
         const r = await o.client.get<{ result: PluginAnswer }>(`/api/v1/lenspack/access?user=${encodeURIComponent(user)}&datasets=${datasets.join(",")}${dashboards.length ? `&dashboards=${dashboards.join(",")}` : ""}`);
@@ -283,7 +283,7 @@ export function supersetPolicy(o: { client: SupersetClient; /** The binding, or 
       } catch (e) {
         // Asked again on the next request whatever happened: a 404 during a rollout or a misroute is not remembered.
         if (!routeMissing(e)) throw e;
-        if (!rlsOnly) throw new Error("Superset answered 404 for /api/v1/lenspack/access: lenspack_superset.py is not loaded in the Superset that answered, or a path prefix sends the request elsewhere");
+        if (!rlsOnly()) throw new Error("Superset answered 404 for /api/v1/lenspack/access: lenspack_superset.py is not loaded in the Superset that answered, or a path prefix sends the request elsewhere");
         o.log(`access: no /api/v1/lenspack/access for ${user}; reading RLS rules from Superset's REST API (accessFallback: rls-only; dataset permissions need the plugin)`);
       }
       // A regular rule is matched by role: without the signed roles (an older plugin), it cannot be.
