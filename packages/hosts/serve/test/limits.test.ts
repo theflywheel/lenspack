@@ -181,6 +181,35 @@ describe("per-person question limits", () => {
     expect(limitSettings(null).line()).toBe("limits per person: off");
   });
 
+  it("a named person's own limits, set at runtime with the settings' revision, apply to their next question", async () => {
+    const state = mkdtempSync(join(tmpdir(), "lenspack-limits-users-"));
+    const admin = adminSettings(state, { limits: { perUser: { questionsPerDay: 1 } } }, {});
+    const routes = adminRoutes({ prefix: "/_x", settings: admin, providers: [], audit: null, log: () => {}, adminName: "admin", writable: () => true });
+    const adminServer = createServer((req, res) => void routes(req, res, new URL(req.url!, "http://x"), { user: "boss", roles: ["admin"], edit: true } as never));
+    servers.push(adminServer);
+    await new Promise<void>((r) => adminServer.listen(0, "127.0.0.1", r));
+    const at = `http://127.0.0.1:${(adminServer.address() as { port: number }).port}/_x`;
+    const first = await fetch(`${at}/settings`);
+    const tag = first.headers.get("etag")!;
+    expect(tag).toMatch(/^"settings-\d+"$/);
+    const put = await fetch(`${at}/settings/limits`, { method: "PUT", headers: { "if-match": tag }, body: JSON.stringify({ users: { ada: { questionsPerDay: 3 } } }) });
+    expect(put.status).toBe(200);
+    expect(await put.json()).toMatchObject({ questionsPerDay: 1, users: { ada: { questionsPerDay: 3 } }, source: "settings" });
+    // A page still holding the copy from before is refused, and nothing changes.
+    const stale = await fetch(`${at}/settings/limits`, { method: "PUT", headers: { "if-match": tag }, body: JSON.stringify({ users: {} }) });
+    expect(stale.status).toBe(409);
+    expect(admin.limits.get().users).toEqual({ ada: { questionsPerDay: 3 } });
+    expect(() => admin.limits.update({ users: { ada: { perDay: 2 } } })).not.toThrow();
+    expect(admin.limits.update({ users: { ada: { perDay: 2 } } })).toMatchObject({ ok: false, error: expect.stringMatching(/users\.ada: unknown setting "perDay"/) });
+    // The chat reads them on every question: ada may ask three today, everyone else one.
+    limits = admin.limits.get();
+    const { base } = await start(limitCounter({ limits: () => admin.limits.get(), now: () => clock.now }));
+    for (let i = 0; i < 3; i++) expect((await ask(base, { user: "ada" })).status).toBe(200);
+    expect((await ask(base, { user: "ada" })).body).toMatchObject({ limit: "questionsPerDay", max: 3 });
+    expect((await ask(base)).status).toBe(200);
+    expect((await ask(base)).body).toMatchObject({ limit: "questionsPerDay", max: 1 });
+  });
+
   it("the admin routes read and change the limits, and never count as questions", async () => {
     const state = mkdtempSync(join(tmpdir(), "lenspack-limits-admin-"));
     const admin = adminSettings(state, { limits: { perUser: { perMinute: 5 } } }, {});

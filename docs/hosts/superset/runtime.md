@@ -39,6 +39,7 @@ sets it (see [The boundary narrows only](#the-boundary-narrows-only)). "Deploy c
 | `features` (every switch) | changes here | `settings/features` |
 | `brand` | changes here | `settings/brand` |
 | `cache`, `queue` | changes here | `settings/cache`, `settings/queue` |
+| `limits` (question limits per person, and higher or lower ones for named people) | changes here | `settings/limits` |
 | `telemetry` (fields, retention) | changes here | `settings/telemetry` |
 | `context` (telemetry labels) | changes here, as a whole | `settings/context` |
 | `personal` (limits on people's own dashboards) | changes here | `settings/personal` |

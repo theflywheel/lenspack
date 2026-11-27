@@ -11,6 +11,11 @@ brought it.
 
 ### 27 November 2026
 
+- **Question limits on the admin pages.** The Settings tab has a card for the per-person question limits: everyone's,
+  admins, other limits for named people (set while the server runs, like every setting), and a table of who was
+  counted today, with those at a limit or refused first and a Reset button for each. The limits are also listed among
+  the options that change without a redeploy. See [Question limits](docs/features/limits.md#who-reached-a-limit).
+
 - **The data boundary can be narrowed while the server runs, never widened.** With an admin API key or on the Settings
   tab (`PUT /_superset/settings/boundary`), an admin can keep fewer datasets, add filters every answer carries, keep
   fewer dashboards, turn each person's own Superset access on, make the edit policy stricter, and keep fewer admin and
