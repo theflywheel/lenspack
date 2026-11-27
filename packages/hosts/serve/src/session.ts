@@ -30,8 +30,8 @@ export function sealer(secret: string, now: () => number = Date.now) {
   };
 }
 
-export function cookie(name: string, value: string, o: { path: string; maxAgeS: number; secure: boolean }) {
-  return `${name}=${value}; Path=${o.path}; HttpOnly; SameSite=Lax${o.secure ? "; Secure" : ""}; Max-Age=${o.maxAgeS}`;
+export function cookie(name: string, value: string, o: { path: string; maxAgeS: number; secure: boolean; sameSite?: "Lax" | "Strict" }) {
+  return `${name}=${value}; Path=${o.path}; HttpOnly; SameSite=${o.sameSite ?? "Lax"}${o.secure ? "; Secure" : ""}; Max-Age=${o.maxAgeS}`;
 }
 
 export function cookies(req: IncomingMessage): Record<string, string> {

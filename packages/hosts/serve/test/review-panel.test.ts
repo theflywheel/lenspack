@@ -162,7 +162,7 @@ describe("the admin panel", () => {
     const js = await (await fetch(`${base}/panel.js`, { headers: as("ana", true) })).text();
     // The script parses, and has both languages and every tab.
     expect(() => new Script(js)).not.toThrow();
-    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };");
+    expect(js).toContain("const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, access, settings };");
     expect(js).toContain('fr: {');
     expect((await fetch(`${base}/panel.css`, { headers: as("ana", true) })).status).toBe(200);
     // The Telemetry tab is its own module and stylesheet, which the page loads before the panel mounts it.
@@ -178,7 +178,9 @@ describe("the admin panel", () => {
     expect(js).toContain("window.LenspackTelemetry.create(");
     expect((await fetch(`${base}/telemetry.css`, { headers: as("ana", true) })).status).toBe(200);
     // The Cache tab reads the saved answers' own admin routes (docs/features/saved-answers.md).
-    for (const route of ["../cache${path}", "/chart-candidates", "/boards", "/suggestions?board=", "/prewarm", '"unpin" : "pin"', "/evict"]) expect(js).toContain(route);
+    for (const route of ["${HOST}cache${path}", "/chart-candidates", "/boards", "/suggestions?board=", "/prewarm", '"unpin" : "pin"', "/evict"]) expect(js).toContain(route);
+    // Where the host routes are comes from the page (window.__lpAdmin): one level up here.
+    expect(html).toContain(`window.__lpAdmin={"host":"../"}`);
     const packs = await (await fetch(`${base}/api/packs`, { headers: as("ana", true) })).json();
     expect(packs.usage).toEqual({ board: "overview", telemetryBoard: "telemetry", source: "telemetry" });
   });

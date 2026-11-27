@@ -2,7 +2,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import { type CacheSettings, type ChecklistInput, fieldNotices, type QueueSettings, type TelemetryLine, type TranscriptLine, type TurnLine, cacheSettings, localTurnGate, queueSettings, reuseLayer, telemetryChecklist, withoutNames } from "@lenspack/agent";
-import { type DeploymentContext, adminRights, deploymentContextSchema, recordRights } from "@lenspack/policy";
+import { type DeploymentContext, adminRights, adminUsersFrom, deploymentContextSchema, recordRights } from "@lenspack/policy";
+
+import type { AdminAccessSetup, UserAccessSetup } from "./admin-access";
+import { PageError, pageFrom } from "./paging";
 
 import { type AppOptions, pickChatModel, pickEffort } from "./app";
 import { type AudioSettings, audioManifest, fileAudioStore } from "./audio";
@@ -247,6 +250,10 @@ export type AdminRouteOptions = {
   supersetLogs?: (since: Date) => Promise<ChecklistInput["supersetLogs"]>;
   /** What features that own a checklist item counted since a date (review runs, proposals, open questions). */
   owned?: (since: Date) => Promise<ChecklistInput["owned"]>;
+  /** Who is an admin (admin-access.ts): shown on the settings, and under named users, the owners' grants (<prefix>/settings/admins). */
+  access?: AdminAccessSetup;
+  /** Who may use the assistant (admin-access.ts): shown on the settings, and under granted, the people admins let in (<prefix>/settings/users). */
+  users?: UserAccessSetup;
 };
 
 /** The settings page's routes, answering by responding. A caller who is not signed in never reaches them: the host answers 401 first. */
@@ -373,13 +380,18 @@ export function adminRoutes(o: AdminRouteOptions) {
       }
       return send(405, { error: "not a method this route takes" });
     }
-    if (!["/settings", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/telemetry", "/settings/brand"].includes(path))) return;
+    if (!["/settings", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/telemetry", "/settings/brand"].includes(path))) return;
     const may = recordRights(who);
     // The settings and every switch: the admin role (adminRights in @lenspack/policy); the records: recordRights.
-    if (path.startsWith("/telemetry") ? !may.telemetry : !adminRights(who).administer) {
+    const access = o.access?.state();
+    const rights = adminRights(who, access);
+    if (path.startsWith("/telemetry") ? !may.telemetry : !rights.administer) {
       audit(`${req.method} ${url.pathname}`, `not a ${o.adminName}`, "denied");
       return send(403, { error: `only ${o.adminName}s can do this` });
     }
+    // On the admins roster, with how they qualify; the first time, an audit line (admin-access.ts).
+    if (rights.administer) o.access?.seen(who);
+    const me = { ...rights, user: who.user };
 
     if (path === "/settings")
       return send(200, {
@@ -396,7 +408,86 @@ export function adminRoutes(o: AdminRouteOptions) {
         telemetry: s.telemetryView(writable),
         cache: s.cache.view(writable),
         queue: s.queue.view(writable),
+        ...(o.access ? { adminAccess: o.access.view(me) } : {}),
+        ...(o.users ? { userAccess: o.users.view() } : {}),
       });
+    // Who may use the assistant. GET: the modes, and under granted the people let in, newest first, ?q= to search, paged
+    // (?cursor=, ?limit=). PUT { add } or { remove }: any admin, under granted; seeded people stay.
+    if (path === "/settings/users" && !put) {
+      if (!o.users) return send(200, { modes: null });
+      const q = url.searchParams.get("q")?.trim().toLowerCase();
+      const all = [...o.users.grants.list()].filter((g) => !o.users!.seeded.includes(g.user)).reverse().filter((g) => !q || g.user.toLowerCase().includes(q) || g.by.toLowerCase().includes(q));
+      try {
+        const { items, page } = pageFrom(all, url, { limit: 20 });
+        return send(200, { ...o.users.view(), seeded: o.users.seeded.filter((u) => !q || u.toLowerCase().includes(q)), users: items, page });
+      } catch (e) {
+        return send(e instanceof PageError ? 400 : 500, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    if (path === "/settings/users") {
+      if (!o.users?.granting) return send(409, { error: `people are granted only when user access includes granted (now ${o.users?.modes.join(",") ?? "not set"})` });
+      let b: Record<string, unknown>;
+      try {
+        b = (await readJson(req, 2_000)) as Record<string, unknown>;
+        if (!b || typeof b !== "object" || Array.isArray(b)) throw new Error("body must be a JSON object");
+      } catch (e) {
+        return send(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      const op = typeof b.add === "string" ? "add" : typeof b.remove === "string" ? "remove" : null;
+      let user: string | undefined;
+      try {
+        user = op ? adminUsersFrom([String(b[op])])[0] : undefined;
+      } catch (e) {
+        return send(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      if (!op || !user) return send(400, { error: 'send { "add": "<Superset user name or id:n>" } or { "remove": "<…>" }' });
+      if (o.users.seeded.includes(user)) return send(400, { error: `${user} is seeded from ${o.users.seededFrom ?? "the deployment"}: change it there, then restart` });
+      if (op === "add") {
+        if (!o.users.grants.add({ user, by: who.user, at: new Date().toISOString() })) return send(409, { error: `${user} may already use the assistant` });
+        audit("settings users grant", user);
+        o.log(`users: ${who.user} let ${user} use the assistant`);
+      } else {
+        if (!o.users.grants.remove(user)) return send(404, { error: `${user} was not granted` });
+        audit("settings users revoke", user);
+        o.log(`users: ${who.user} removed ${user}`);
+      }
+      return send(200, o.users.view());
+    }
+    // Who is an admin, and under named Superset users the grants: GET for any admin; PUT { add } or { remove } for owners.
+    if (path === "/settings/admins" && !put) return send(200, o.access ? o.access.view(me) : { mode: null });
+    if (path === "/settings/admins") {
+      if (!o.access || !o.access.has("superset-users")) return send(409, { error: `admins are granted only when admin access includes superset-users (now ${o.access?.modes.join(",") ?? "not set"})` });
+      if (!rights.owner) {
+        audit("PUT settings admins", "not an owner", "denied");
+        return send(403, { error: "only owners (LENSPACK_ADMIN_USERS), or an admin signed in with a password, can grant or remove admins" });
+      }
+      let b: Record<string, unknown>;
+      try {
+        b = (await readJson(req, 2_000)) as Record<string, unknown>;
+        if (!b || typeof b !== "object" || Array.isArray(b)) throw new Error("body must be a JSON object");
+      } catch (e) {
+        return send(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      const op = typeof b.add === "string" ? "add" : typeof b.remove === "string" ? "remove" : null;
+      let user: string | undefined;
+      try {
+        user = op ? adminUsersFrom([String(b[op])])[0] : undefined;
+      } catch (e) {
+        return send(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+      if (!op || !user) return send(400, { error: 'send { "add": "<Superset user name or id:n>" } or { "remove": "<…>" }' });
+      if (o.access.owners.includes(user)) return send(400, { error: `${user} is an owner, from ${o.access.ownersFrom ?? "the deployment"}: change owners there, then restart` });
+      if (op === "add") {
+        if (!o.access.grants.add({ user, by: who.user, at: new Date().toISOString() })) return send(409, { error: `${user} is already an admin` });
+        audit("settings admins grant", user);
+        o.log(`admins: ${who.user} granted admin to ${user}`);
+      } else {
+        if (!o.access.grants.remove(user)) return send(404, { error: `${user} is not a granted admin` });
+        audit("settings admins revoke", user);
+        o.log(`admins: ${who.user} removed admin from ${user}`);
+      }
+      return send(200, o.access.view(me));
+    }
     // What chat has cost: the newest turns and the totals for today and the last 7 days, from the audit log.
     if (path === "/turns") {
       if (!o.audit) return send(200, { enabled: false });

@@ -174,6 +174,24 @@ def lenspack_sign(user: str, admin: bool, dashboard=None, can_edit=None, can_vie
     return body + "." + hmac.new(lenspack_identity_key().encode(), body.encode(), hashlib.sha256).hexdigest()
 
 
+def lenspack_sign_client(address: str) -> str:
+    """The caller's address, signed for Lenspack's own admin sign-in (identity.ts signedClient): its requests carry no
+    identity, and without this every failed try would count against Superset's one address. base64url(JSON {c, t}) "."
+    HMAC-SHA256 hex of "client:" + body, with the identity key."""
+    body = base64.urlsafe_b64encode(json.dumps({"c": str(address)[:64], "t": int(time.time())}, separators=(",", ":")).encode()).rstrip(b"=").decode()
+    return body + "." + hmac.new(lenspack_identity_key().encode(), ("client:" + body).encode(), hashlib.sha256).hexdigest()
+
+
+# The cookies Lenspack's own admin sign-in sets (admin-signin.ts); the only cookies forwarded, and only on its pages.
+LENSPACK_ADMIN_COOKIES = ("lenspack_admin", "lenspack_admin_device")
+
+
+def lenspack_is_admin_signin_path(path: str) -> bool:
+    """Lenspack's own admin pages, under admin access "password" (docs/access/admin-access.md): forwarded without a
+    Superset session, since their sign-in is the deployment's admin password. Lenspack answers 404 under any other mode."""
+    return path == "_admin" or path.startswith("_admin/")
+
+
 _DOT_SEGMENTS = {".", ".."}
 # Left after Flask decoded the path once, these were encoded twice: an encoded dot, slash or backslash.
 _ENCODED = re.compile(r"%(?:2e|2f|5c)", re.IGNORECASE)
@@ -465,17 +483,24 @@ def lenspack_app_mutator(app):
     HOP ={"connection", "keep-alive", "transfer-encoding", "content-encoding", "content-length", "te", "trailer", "upgrade", "proxy-authenticate", "proxy-authorization"}
 
     # --- /lenspack/...: Superset forwards to Lenspack -------------------------------------------------
-    def lenspack_proxy(path=""):
-        user = g.user if getattr(g, "user", None) is not None else None
-        if user is None or not getattr(user, "is_authenticated", False) or getattr(user, "is_anonymous", True):
-            return jsonify({"error": "sign in to Superset first"}), 401
+    def cross_site():
         # No CSRF token on these calls (the chat is a script on Superset's own pages): refuse a change sent from
         # another site instead. Browsers send Sec-Fetch-Site / Origin with every cross-site POST.
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             site = request.headers.get("Sec-Fetch-Site")
             origin = request.headers.get("Origin")
             if (site and site not in ("same-origin", "none")) or (origin and urlparse(origin).netloc != request.host):
-                return jsonify({"error": "cross-site request refused"}), 403
+                return True
+        return False
+
+    def lenspack_proxy(path=""):
+        if lenspack_is_admin_signin_path(path):
+            return lenspack_admin_signin_proxy(path)
+        user = g.user if getattr(g, "user", None) is not None else None
+        if user is None or not getattr(user, "is_authenticated", False) or getattr(user, "is_anonymous", True):
+            return jsonify({"error": "sign in to Superset first"}), 401
+        if cross_site():
+            return jsonify({"error": "cross-site request refused"}), 403
         # The dashboard this request is about: the board "superset-<id>" where Lenspack reads a board, or ?dashboard=
         # when binding. A path Lenspack would read differently (a dot segment, an encoded slash) is not forwarded.
         route = lenspack_route(path)
@@ -504,6 +529,31 @@ def lenspack_app_mutator(app):
         for h in ("content-type", "accept", "accept-language"):
             if request.headers.get(h):
                 headers[h] = request.headers[h]
+        return lenspack_forward(path, headers)
+
+    def lenspack_admin_signin_proxy(path):
+        """Lenspack's own admin pages: no Superset session needed and no identity sent; Lenspack's sign-in decides.
+        Only its own cookies go through, with the caller's address signed so its attempt limiter counts per person."""
+        if cross_site():
+            return jsonify({"error": "cross-site request refused"}), 403
+        if lenspack_route(path) is None:
+            return jsonify({"error": "a path with a dot segment or an encoded slash is not accepted"}), 400
+        headers = {
+            "x-forwarded-proto": request.scheme,
+            "x-forwarded-host": request.host,
+            "x-forwarded-prefix": lenspack_root(request.script_root) + LENSPACK_PATH,
+            "x-lenspack-superset-root": lenspack_root(request.script_root),
+            "x-lenspack-client": lenspack_sign_client(request.remote_addr or "unknown"),
+        }
+        for h in ("content-type", "accept", "accept-language", "origin", "sec-fetch-site"):
+            if request.headers.get(h):
+                headers[h] = request.headers[h]
+        jar = "; ".join(f"{k}={v}" for k, v in request.cookies.items() if k in LENSPACK_ADMIN_COOKIES)
+        if jar:
+            headers["cookie"] = jar
+        return lenspack_forward(path, headers)
+
+    def lenspack_forward(path, headers):
         try:
             upstream = requests.request(
                 request.method,
@@ -518,7 +568,13 @@ def lenspack_app_mutator(app):
         except requests.RequestException as e:
             return jsonify({"error": f"The assistant's server is not reachable: {type(e).__name__}"}), 502
 
-        out = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP]
+        out = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP and k.lower() != "set-cookie"]
+        # Each cookie on its own line: requests joins repeated Set-Cookie headers with commas, which breaks them.
+        raw = getattr(getattr(upstream, "raw", None), "headers", None)
+        cookies = raw.getlist("Set-Cookie") if raw is not None and hasattr(raw, "getlist") else None
+        if not isinstance(cookies, list):
+            cookies = [upstream.headers["set-cookie"]] if upstream.headers.get("set-cookie") else []
+        out += [("Set-Cookie", c) for c in cookies]
         # Chat replies stream: no buffering in a proxy in front of Superset, no compression here.
         out += [("X-Accel-Buffering", "no"), ("Cache-Control", upstream.headers.get("cache-control", "no-store"))]
 

@@ -6,10 +6,10 @@ import type { Features } from "../features";
 import type { Provider } from "../llm";
 import type { Budget, UsageLedger } from "../metering";
 import type { SettingsStore } from "../settings";
-import { panelRoutes } from "./panel";
+import { type PanelOptions, panelRoutes } from "./panel";
 import type { DocStore } from "./store";
 import { type ReviewHost, reviewSystem } from "./system";
-import { usageBoard } from "./usage";
+import { type UsageBoard, usageBoard } from "./usage";
 
 export type ReviewMountOptions = {
   stateDir: string;
@@ -46,21 +46,26 @@ export function reviewMount(
   o: ReviewMountOptions,
 ) {
   let models: Provider[] = [];
+  let usageOnce: Promise<UsageBoard | null> | undefined;
   const system = reviewSystem({ stateDir: o.stateDir, docs: o.docs, hosts: o.hosts, features: admin.features, settings: admin.settings, providers: () => models, events: o.events, audit: o.audit, log: o.log });
   return {
     system,
     turn: system.turn,
     start: () => system.start(),
-    routes(rt: { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } }) {
+    /**
+     * The admin panel's routes once the runtime has its models. `more` mounts it again elsewhere, sharing everything
+     * (a deployment whose admins sign in on a page of their own: base and prefix /_admin).
+     */
+    routes(rt: { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } }, more: Partial<Pick<PanelOptions, "prefix" | "base" | "shell" | "pageRedirect" | "adminName" | "seen">> = {}) {
       models = rt.providers;
-      // Usage as a board of its own (the panel's Overview), over the turn telemetry when it is written, the audit log otherwise.
-      const usage = usageBoard({ stateDir: o.stateDir, events: o.events, providers: () => rt.providers, ledger: rt.ledger, budget: rt.budget, roles: rt.roles, audit: o.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log: o.log, notices: admin.telemetry?.notices }).catch((e) => {
+      // Usage as a board of its own (the panel's Overview), over the turn telemetry when it is written, the audit log otherwise. Made once.
+      const usage = (usageOnce ??= usageBoard({ stateDir: o.stateDir, events: o.events, providers: () => rt.providers, ledger: rt.ledger, budget: rt.budget, roles: rt.roles, audit: o.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log: o.log, notices: admin.telemetry?.notices }).catch((e) => {
         o.log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
         return null;
-      });
+      }));
       // The Telemetry tab's "Used by": the widgets of the usage board that read each field.
       admin.telemetry?.setUses(async () => ((await usage)?.fieldUses() ?? {}));
-      return panelRoutes({ prefix: o.prefix, system, features: admin.features, brand: admin.brand, providers: () => rt.providers, adminName: o.adminName, title: o.title, log: o.log, usage });
+      return panelRoutes({ prefix: o.prefix, system, features: admin.features, brand: admin.brand, providers: () => rt.providers, adminName: o.adminName, title: o.title, log: o.log, usage, ...more });
     },
   };
 }

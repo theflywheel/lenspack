@@ -11,6 +11,23 @@ brought it.
 
 ### 26 November 2026
 
+- **Choose who is an admin and who may use the assistant.** In Superset, admins can now be Superset roles (the
+  default, as before), named Superset users (`superset-users`: owners from `LENSPACK_ADMIN_USERS`, who add other
+  admins on the admin panel's new **Access** tab; Superset's own Admin role then grants nothing), or named
+  passwords on a sign-in page of their own (`password`, reached at `/lenspack/_admin/`: one `name:password` per
+  person in `LENSPACK_ADMIN_PASSWORDS` or a mounted file, `LENSPACK_ADMIN_PASSWORDS_FILE`, each shown as
+  `admin:<name>` in the audit log; `LENSPACK_ADMIN_PASSWORD` still works as one unnamed entry). `password` combines
+  with either of the others (`superset-role,password`, `superset-users,password`). The **Access** tab lists every admin
+  who has used admin rights and how they qualified, the audit log notes each one's first use, and the panel names anyone
+  new since your last visit. The docs now recommend a role of its own, `Lenspack admin`, over Superset's `Admin`.
+  Users can be Superset roles (the default), people admins add one by one (`granted`), everyone signed in, or a
+  role and a grant together (`superset-role,granted`). Set with `auth.adminAccess` / `LENSPACK_ADMIN_ACCESS` and
+  `auth.userAccess` / `LENSPACK_USER_ACCESS`; the start-up log and the Access tab say which modes are in force.
+  Misconfigured modes let nobody in and say why; an unknown mode stops the server. Nothing changes until you set
+  them. Update the plugin file with the server for the password sign-in. See
+  [Who can use and administer the assistant](docs/access/admin-access.md).
+- **Name boxes show the deployment's name.** On the admin panel's Name card, an empty box now shows what applies
+  without it, from the boxes above it and the deployment's own name and button label, never the default name.
 - **The spend file and a single-file audit log are private.** `usage.jsonl` (which names who asked) and an audit log
   written to one file are now created readable by the server's own user only, and an existing file is made so at
   start, like the saved-answers, telemetry and monthly audit files.

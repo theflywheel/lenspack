@@ -66,7 +66,7 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 export const actorOf = (id: Identity, rights: Rights = supersetRights()): PersonalActor => ({
   user: id.u,
   userId: typeof id.i === "number" && Number.isSafeInteger(id.i) && id.i > 0 ? id.i : null,
-  roles: principalOf({ user: id.u, roles: rolesOf(id) }, rights).roles,
+  roles: principalOf({ user: id.u, roles: rolesOf(id), ...(typeof id.i === "number" ? { userId: id.i } : {}) }, rights).roles,
   // Superset's own right to write dashboards; a plugin too old to sign it: Superset admins only, who always have it.
   writes: typeof id.w === "boolean" ? id.w : id.a === true,
   hostRoles: id.r ?? [],

@@ -23,6 +23,7 @@ On top of what the host allows, a deployment can add:
 | layer | decides | page |
 |---|---|---|
 | **Rights** | who may make boards, change the pack's own boards, read usage and administer | [Rights](rights.md) |
+| **Admin and user access** | in Superset: who is an admin (roles, named people or a password) and who may use the assistant | [Who can use and administer the assistant](admin-access.md) |
 | **Pack access rules** | by role: who may open each pack, which keys they may use, which rows | [Pack access rules](pack-rules.md) |
 | **Row scope and tenancy** | which rows every query is held to | [Row scope and tenancy](scope-and-tenancy.md) |
 

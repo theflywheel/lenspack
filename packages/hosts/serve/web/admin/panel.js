@@ -50,6 +50,14 @@
       source_default: "default", source_config: "config", source_env: "environment", source_settings: "set here", reset: "Reset to the deployment's value",
       tabTelemetry: "Telemetry",
       tmFrom: "From {0} records.",
+      // Access
+      tabAccess: "Access", acWho: "Who has access", acAdmins: "Admins", acUsers: "Users", acFrom: "set by {0}", acFromDefault: "default",
+      acOwners: "Owners", acOwnerNote: "Change owners in the deployment, then restart.", acGranted: "Granted admins", acNoGranted: "No granted admins.",
+      acUser: "User", acBy: "Granted by", acAt: "When", acRemove: "Remove", acAdd: "Add", acAddPh: "Superset user name or id:12",
+      acOwnersOnly: "Only owners can add or remove admins.", acRemoveQ: "Remove {0}?", acSeeded: "From the deployment", acPeople: "People granted",
+      acRoster: "Admins roster", acRosterLede: "Everyone who has used admin rights here, and how they qualify. A Superset Admin can give themselves an admin role; this list shows it when they use it.", acHow: "How", acFirst: "First seen", acLast: "Last seen", acNoRoster: "Nobody yet.", acNew: "new", acNewSince: "New admin since your last visit: {0}.", acNewOpen: "See the roster", acPasswords: "Named passwords: {0}", acOwnersN: "Owners: {0}",
+      acNoPeople: "Nobody granted yet.", acSearch: "Search", acRange: "{0}–{1} of {2}", acPrev: "Previous", acNext: "Next", acRoles: "Roles: {0}",
+      acEveryone: "Everyone signed in", acSignOut: "Sign out", acNoneSet: "Not available on this server.",
     },
     fr: {
       title: "Administration {name}", pack: "Pack", loading: "Chargement…", failed: "Chargement impossible : {0}", saved: "Enregistré.", done: "Fait.",
@@ -90,6 +98,14 @@
       source_default: "défaut", source_config: "configuration", source_env: "environnement", source_settings: "réglé ici", reset: "Revenir à la valeur du déploiement",
       tabTelemetry: "Télémétrie",
       tmFrom: "Sur {0} enregistrements.",
+      // Accès
+      tabAccess: "Accès", acWho: "Qui a accès", acAdmins: "Administrateurs", acUsers: "Utilisateurs", acFrom: "défini par {0}", acFromDefault: "par défaut",
+      acOwners: "Propriétaires", acOwnerNote: "Les propriétaires se changent dans le déploiement, puis redémarrage.", acGranted: "Administrateurs ajoutés", acNoGranted: "Aucun administrateur ajouté.",
+      acUser: "Utilisateur", acBy: "Ajouté par", acAt: "Quand", acRemove: "Retirer", acAdd: "Ajouter", acAddPh: "Nom d'utilisateur Superset ou id:12",
+      acOwnersOnly: "Seuls les propriétaires ajoutent ou retirent des administrateurs.", acRemoveQ: "Retirer {0} ?", acSeeded: "Du déploiement", acPeople: "Personnes ajoutées",
+      acRoster: "Registre des administrateurs", acRosterLede: "Toute personne ayant utilisé des droits d'administration ici, et à quel titre. Un administrateur Superset peut s'attribuer un rôle d'administration ; cette liste le montre dès qu'il s'en sert.", acHow: "À quel titre", acFirst: "Première fois", acLast: "Dernière fois", acNoRoster: "Personne pour l'instant.", acNew: "nouveau", acNewSince: "Nouvel administrateur depuis votre dernière visite : {0}.", acNewOpen: "Voir le registre", acPasswords: "Mots de passe nommés : {0}", acOwnersN: "Propriétaires : {0}",
+      acNoPeople: "Personne n'est encore ajouté.", acSearch: "Rechercher", acRange: "{0}–{1} sur {2}", acPrev: "Précédent", acNext: "Suivant", acRoles: "Rôles : {0}",
+      acEveryone: "Toute personne connectée", acSignOut: "Se déconnecter", acNoneSet: "Indisponible sur ce serveur.",
     },
   };
   // The switches' names and help in French; English comes from the server.
@@ -115,6 +131,10 @@
 
 
   // ---- State and helpers ------------------------------------------------------------------------
+  // What the host wrote into the page: where its own routes are from here ("../" under <prefix>/admin/, "" when the
+  // panel shares their prefix), and a sign-out address when the admin pages have a sign-in of their own.
+  const shell = window.__lpAdmin || {};
+  const HOST = typeof shell.host === "string" ? shell.host : "../";
   const store = {
     get(k) { try { return localStorage.getItem(`lp-admin-${k}`); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(`lp-admin-${k}`, v); } catch (e) { /* private window */ } },
@@ -183,7 +203,7 @@
   }
   /** A cache route, if the server has one: null when it does not (404). */
   async function cacheApi(path, opts = {}) {
-    const res = await fetch(`../cache${path}`, { method: opts.method || "GET", credentials: "same-origin" });
+    const res = await fetch(`${HOST}cache${path}`, { method: opts.method || "GET", credentials: "same-origin" });
     if (res.status === 404) return null;
     let data = null;
     try { data = await res.json(); } catch (e) { return null; }
@@ -658,12 +678,12 @@
     const boards = [...new Set(entries.map((e) => e.board).filter(Boolean))].slice(0, 4);
     const sugg = await Promise.all(boards.map((b) => cacheApi(`/suggestions?board=${encodeURIComponent(b)}`).catch(() => null)));
     const post = (path) => act(async () => {
-      const res = await fetch(`../cache${path}`, { method: "POST", credentials: "same-origin" });
+      const res = await fetch(`${HOST}cache${path}`, { method: "POST", credentials: "same-origin" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     });
     // Clear saved answers: every entry off the disk at once, on or off (audited by the server).
     const clearAll = act(async () => {
-      const res = await fetch("../cache/clear", { method: "POST", credentials: "same-origin" });
+      const res = await fetch(`${HOST}cache/clear`, { method: "POST", credentials: "same-origin" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     }, t("cleared"));
     const clearButton = () => h("button", { class: "btn sm danger", type: "button", onclick: (ev) => (window.confirm(t("clearConfirm")) ? clearAll(ev) : undefined) }, t("clearCache"));
@@ -724,7 +744,21 @@
       const letter = Array.from(Array.from(n.trim())[0]?.toLocaleUpperCase() || "?")[0] || "?";
       preview.firstChild.replaceChildren(src ? h("img", { src, alt: "" }) : letter);
     };
-    [name, label, icon, ...Object.values(own).flatMap((w) => [w.name, w.buttonLabel])].forEach((i) => i.addEventListener("input", show));
+    // An empty box shows what applies without it, from the boxes above it and the deployment's own words (its config
+    // and environment): a renamed deployment never shows the default name there.
+    const fill = (tpl, n) => String(tpl).replace(/\{name\}/g, () => n);
+    const hints = () => {
+      const n = name.value.trim() || d.name;
+      label.placeholder = fill(label.value.trim() ? label.value.trim() : b.templates.en, n);
+      for (const l of b.languages) {
+        const ownName = d.i18n[l] && d.i18n[l].name !== d.name ? d.i18n[l].name : null;
+        const ln = own[l].name.value.trim() || ownName || n;
+        own[l].name.placeholder = ownName || n;
+        own[l].buttonLabel.placeholder = fill(label.value.trim() || b.templates[l], ln);
+      }
+    };
+    [name, label, icon, ...Object.values(own).flatMap((w) => [w.name, w.buttonLabel])].forEach((i) => i.addEventListener("input", () => { hints(); show(); }));
+    hints();
     show();
     const orNull = (i) => i.value.trim() || null;
     const save = act(() => api("settings/brand", { body: {
@@ -756,18 +790,111 @@
     return [brand ? brandCard(brand) : null, card(t("tabSettings"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null)];
   }
 
+  /** A host route (<prefix>/settings/…): null when the server has none (404). */
+  async function hostApi(path, opts = {}) {
+    const res = await fetch(`${HOST}${path}`, {
+      method: opts.method || (opts.body ? "PUT" : "GET"),
+      headers: opts.body ? { "content-type": "application/json" } : {},
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      credentials: "same-origin",
+    });
+    if (res.status === 404 && !opts.body) return null;
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON */ }
+    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    return data;
+  }
+
+  /** Prev and next under a list, with the range it shows: "21–40 of 75". */
+  function pager(page, go) {
+    if (!page || page.total <= page.limit) return null;
+    const from = page.total ? page.offset + 1 : 0, to = Math.min(page.offset + page.limit, page.total);
+    return h("nav", { class: "pager", "aria-label": t("acRange", from, to, page.total) },
+      h("span", { class: "mute num" }, t("acRange", nf(from), nf(to), nf(page.total))),
+      h("button", { class: "btn sm quiet", type: "button", disabled: !page.prev, onclick: () => go(page.prev) }, t("acPrev")),
+      h("button", { class: "btn sm quiet", type: "button", disabled: !page.next, onclick: () => go(page.next) }, t("acNext")));
+  }
+
+  const fromText = (f) => (f === "default" ? t("acFromDefault") : f);
+  /** A small form with one text box and a button: add a person. */
+  function addForm(label, send) {
+    const input = h("input", { type: "text", placeholder: t("acAddPh"), "aria-label": label, maxlength: "150", autocomplete: "off" });
+    const go = act(async () => { const v = input.value.trim(); if (!v) return; await send(v); input.value = ""; }, t("saved"));
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(e); } });
+    return h("div", { class: "row add-row" }, input, h("button", { class: "btn sm", type: "button", onclick: go }, t("acAdd")));
+  }
+  let usersQuery = "", usersCursor = null;
+
+  // Access: who administers and who may use the assistant, as the deployment set them; the people admins added.
+  async function access() {
+    const [adm, usr] = await Promise.all([
+      hostApi("settings/admins").catch(() => null),
+      hostApi(`settings/users?limit=20${usersQuery ? `&q=${encodeURIComponent(usersQuery)}` : ""}${usersCursor ? `&cursor=${encodeURIComponent(usersCursor)}` : ""}`).catch(() => null),
+    ]);
+    if ((!adm || !adm.mode) && (!usr || !usr.modes)) return card(t("tabAccess"), t("acNoneSet"));
+    const warn = (list) => (list || []).map((w) => h("p", { class: "warn-line" }, w));
+    const line = (label, mode, from, extra) => h("div", { class: "kv" }, h("dt", {}, label), h("dd", {}, h("b", {}, mode), " ", h("span", { class: "mute" }, t("acFrom", fromText(from))), extra ? h("div", { class: "mute" }, extra) : null));
+    const out = [card(t("acWho"), null,
+      h("dl", { class: "kvs" },
+        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, [adm.roles ? t("acRoles", adm.roles.join(", ")) : null, adm.owners ? t("acOwnersN", adm.owners.join(", ") || "—") : null, adm.passwordNames ? t("acPasswords", adm.passwordNames.join(", ") || "—") : null].filter(Boolean).join(" · ") || null) : null,
+        usr && usr.modes ? line(t("acUsers"), usr.label, usr.from, usr.everyone ? t("acEveryone") : usr.roles && usr.roles.length ? t("acRoles", usr.roles.join(", ")) : null) : null),
+      warn(adm && adm.warnings), warn(usr && usr.warnings),
+      shell.signOut ? h("div", { class: "actions" }, h("a", { class: "btn sm quiet", href: shell.signOut }, t("acSignOut"))) : null)];
+
+    if (adm && adm.roster) {
+      const fresh = new Set((adm.newSince || []).map((e) => e.user));
+      out.push(h("section", { class: "card", id: "roster" }, h("h2", {}, t("acRoster")), h("p", { class: "lede" }, t("acRosterLede")),
+        adm.roster.length
+          ? h("div", { class: "table-wrap" }, h("table", { class: "people-table" },
+              h("thead", {}, h("tr", {}, h("th", {}, t("acUser")), h("th", {}, t("acHow")), h("th", {}, t("acFirst")), h("th", {}, t("acLast")))),
+              h("tbody", {}, adm.roster.map((e) => h("tr", {}, h("td", {}, h("b", {}, e.user), fresh.has(e.user) ? h("span", { class: "pill acc", style: "margin-left:6px" }, t("acNew")) : null), h("td", {}, e.how), h("td", { class: "num" }, when(e.firstSeen)), h("td", { class: "num" }, when(e.lastSeen)))))))
+          : h("p", { class: "mute" }, t("acNoRoster"))));
+    }
+    if (adm && adm.modes && adm.modes.includes("superset-users")) {
+      const remove = (u) => (ev) => (confirm(t("acRemoveQ", u)) ? act(() => hostApi("settings/admins", { body: { remove: u } }), t("saved"))(ev) : null);
+      out.push(card(t("acAdmins"), null,
+        h("h3", { class: "sub-h" }, t("acOwners")),
+        h("ul", { class: "people" }, adm.owners.map((o) => h("li", {}, h("b", {}, o)))),
+        h("p", { class: "mute small" }, adm.ownersFrom ? `${t("acOwnerNote")} (${adm.ownersFrom})` : t("acOwnerNote")),
+        h("h3", { class: "sub-h" }, t("acGranted")),
+        adm.granted.length ? peopleTable(adm.granted, adm.canGrant ? remove : null) : h("p", { class: "mute" }, t("acNoGranted")),
+        adm.canGrant ? addForm(t("acAdmins"), (u) => hostApi("settings/admins", { body: { add: u } })) : h("p", { class: "mute small" }, t("acOwnersOnly"))));
+    }
+    if (usr && usr.modes && usr.modes.includes("granted")) {
+      const remove = (u) => (ev) => (confirm(t("acRemoveQ", u)) ? act(() => hostApi("settings/users", { body: { remove: u } }), t("saved"))(ev) : null);
+      const search = h("input", { type: "search", value: usersQuery, placeholder: t("acSearch"), "aria-label": t("acSearch") });
+      search.addEventListener("change", () => { usersQuery = search.value.trim(); usersCursor = null; render(); });
+      out.push(card(t("acUsers"), null,
+        usr.seeded && usr.seeded.length ? [h("h3", { class: "sub-h" }, t("acSeeded")), h("ul", { class: "people" }, usr.seeded.map((u) => h("li", {}, h("b", {}, u)))), usr.seededFrom ? h("p", { class: "mute small" }, usr.seededFrom) : null] : null,
+        h("div", { class: "row between" }, h("h3", { class: "sub-h" }, t("acPeople")), search),
+        usr.users.length ? peopleTable(usr.users, remove) : h("p", { class: "mute" }, t("acNoPeople")),
+        pager(usr.page, (c) => { usersCursor = c; render(); }),
+        addForm(t("acUsers"), (u) => hostApi("settings/users", { body: { add: u } }))));
+    }
+    return out;
+  }
+  function peopleTable(rows, remove) {
+    return h("div", { class: "table-wrap" }, h("table", { class: "people-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, t("acUser")), h("th", {}, t("acBy")), h("th", {}, t("acAt")), remove ? h("th", {}, h("span", { class: "sr" }, t("acRemove"))) : null)),
+      h("tbody", {}, rows.map((g) => h("tr", {}, h("td", {}, h("b", {}, g.user)), h("td", {}, g.by), h("td", { class: "num" }, when(g.at)),
+        remove ? h("td", { class: "end" }, h("button", { class: "btn sm quiet", type: "button", onclick: remove(g.user), "aria-label": `${t("acRemove")} ${g.user}` }, t("acRemove"))) : null)))));
+  }
+
   // The Telemetry tab is its own module (telemetry.js), mounted here with the helpers it needs.
   const tel = window.LenspackTelemetry
     ? window.LenspackTelemetry.create({
-      h, t, nf, when, store, toast, card, pill, assistant, usageBoardView, field: pendingField,
+      h, t, nf, when, store, toast, card, pill, assistant, usageBoardView, field: pendingField, host: HOST,
       render: () => render(), lang: () => lang, tab: () => tab, usageInfo: () => usageInfo,
       goTab: (name) => document.querySelector(`#tabs [data-tab="${name}"]`).click(),
     })
     : null;
   const telemetry = tel ? tel.render : async () => [card(t("tabTelemetry"), null, h("p", { class: "empty" }, t("failed", "telemetry.js")))];
   const openField = (id) => (tel ? tel.openField(id) : null);
-  const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, settings };
+  const TABS = { overview, review, questions, proposals, definitions, telemetry, cache, access, settings };
   let rendering = 0;
+  // Who became an admin since this admin's last visit (the admins roster): said at the top of every tab, once loaded.
+  let newAdmins = [];
+  const newAdminsNotice = () => (newAdmins.length ? h("p", { class: "warn-line notice", role: "status" }, t("acNewSince", newAdmins.map((e) => `${e.user} (${e.how})`).join(", ")), " ", tab !== "access" ? h("a", { href: "#access", onclick: (e) => { const b = document.querySelector('#tabs [data-tab="access"]'); if (b) { e.preventDefault(); b.click(); } } }, t("acNewOpen")) : null) : null);
   async function render() {
     const mine = ++rendering;
     if (!TABS[tab]) tab = "overview";
@@ -775,7 +902,7 @@
     try {
       const nodes = await TABS[tab]();
       if (mine !== rendering) return;
-      main.replaceChildren(...[nodes].flat(Infinity).filter(Boolean));
+      main.replaceChildren(...[newAdminsNotice(), nodes].flat(Infinity).filter(Boolean));
     } catch (e) {
       if (mine !== rendering) return;
       main.replaceChildren(h("p", { class: "pad bad" }, t("failed", e.message)));
@@ -811,6 +938,10 @@
       return;
     }
     render();
+    hostApi("settings/admins").then((a) => {
+      newAdmins = (a && a.newSince) || [];
+      if (newAdmins.length) render();
+    }, () => {});
   }
   start();
 })();

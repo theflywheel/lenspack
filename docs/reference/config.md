@@ -240,6 +240,10 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `auth.admins` | `["Admin"]` (`LENSPACK_ADMIN_ROLES` wins) | Superset roles whose members are Lenspack admins. See [Who is asking](../hosts/superset/identity.md#who-may-administer) |
 | `auth.usage` | the same roles as `auth.admins` (`LENSPACK_USAGE_ROLES` wins) | Superset roles that also see user names on the usage pages |
 | `auth.users` | everyone signed in (`LENSPACK_USER_ROLES` wins) | Superset roles that may use the assistant at all; admins always may. See [Who is asking](../hosts/superset/identity.md#who-may-use-the-assistant) |
+| `auth.adminAccess` | `superset-role` (`LENSPACK_ADMIN_ACCESS` wins) | who is an admin: `superset-role`, `superset-users` or `password`, or `password` with one of the others (`superset-role,password`). See [Who can use and administer the assistant](../access/admin-access.md) |
+| `auth.adminUsers` | none (`LENSPACK_ADMIN_USERS` wins) | the owners under `superset-users`: Superset user names or `id:<n>` |
+| `auth.userAccess` | `superset-role` (`LENSPACK_USER_ACCESS` wins) | who may use the assistant: `superset-role`, `granted`, `everyone`, or a combination like `superset-role,granted` |
+| `auth.seedUsers` | none (`LENSPACK_USERS` wins) | people always let in under `granted`: Superset user names or `id:<n>` |
 | `editScope` | `superset` (`LENSPACK_EDIT_SCOPE` wins) | where the chat may edit: `superset` (any dashboard Superset lets the person edit) or `own` (their own dashboards only); or `{ scope, adminsExempt }` (admins exempt by default). See [Personal dashboards](../features/personal-dashboards.md#where-the-chat-may-edit-editscope) |
 | `personal` | `maxDashboardsPerUser: 20`, `maxSavedConfigsPerUser: 50` | limits for [personal dashboards and saved layouts](../features/personal-dashboards.md) |
 | `audit` | on, 90 days | `false`, or `{ retentionDays }` (`LENSPACK_AUDIT_RETENTION_DAYS`) |
@@ -289,6 +293,11 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
 | `LENSPACK_ACCESS_FALLBACK` | superset | `accessFallback` | over the file |
 | `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file |
+| `LENSPACK_ADMIN_ACCESS`, `LENSPACK_ADMIN_USERS` | superset | `auth.adminAccess` (one mode, or `password` with another: `superset-role,password`), `auth.adminUsers` (comma-separated) | over the file |
+| `LENSPACK_ADMIN_PASSWORDS`, `LENSPACK_ADMIN_PASSWORDS_FILE` | superset | the named admin passwords when `auth.adminAccess` includes `password`: `name:password` pairs separated by commas, or a file with one per line (12+ characters each; a value starting `scrypt$` is a hash) | only source |
+| `LENSPACK_ADMIN_PASSWORD`, `LENSPACK_ADMIN_PASSWORD_HASH` | superset | one more admin password, named `password` (signed in to with the name left empty), or its scrypt hash | only source |
+| `LENSPACK_ADMIN_SESSION_HOURS`, `LENSPACK_ADMIN_SESSION_SECRET` | superset | how long an admin's password sign-in lasts (8 hours), and the key that signs it (else a file in the state directory) | only source |
+| `LENSPACK_USER_ACCESS`, `LENSPACK_USERS` | superset | `auth.userAccess`, `auth.seedUsers` (comma-separated) | over the file |
 | `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |
 | `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it |
 | `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file |

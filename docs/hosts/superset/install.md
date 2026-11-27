@@ -149,6 +149,10 @@ SIGTERM), with Superset as its host. On Kubernetes, point the readiness probe at
 `/healthz`: the server is not ready until Superset gives it the identity key, which it keeps asking for (see
 [Health and shutdown](../../operating/deploying.md#health-and-shutdown)).
 
+**Who is an admin, and who may use it.** By default Superset's admins run the assistant and everyone signed in may use
+it. On a shared Superset, name the admins or give them a password, and choose users one by one: see
+[Who can use and administer the assistant](../../access/admin-access.md).
+
 **Its own Superset account.** On first start the server signs in once as a Superset admin
 (`SUPERSET_ADMIN_USERNAME`, default `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls the plugin's bootstrap route,
 which makes the `lenspack` user with the Admin role (it edits dashboards it does not own, which Superset allows only
