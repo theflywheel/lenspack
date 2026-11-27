@@ -42,6 +42,7 @@ export const RUNTIME_CONFIG: readonly RuntimeKey[] = [
   { key: "admin.surface", runtime: "yes", area: "admin-surface" },
   { key: "editScope", runtime: "yes", area: "edit-scope" },
   { key: "personal", runtime: "yes", area: "personal" },
+  { key: "tabs", runtime: "yes", area: "tabs" },
   { key: "querySafety", runtime: "yes", area: "query-safety", note: "tighter at once; looser only with confirm" },
   { key: "budget (usdPerDay, usdPerUserPerDay)", runtime: "yes", area: "budget" },
   { key: "the models offered and the role each plays (LENSPACK_LLM_ROLES)", runtime: "yes", area: "models", note: "chosen from the models the deployment has keys for" },

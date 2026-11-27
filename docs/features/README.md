@@ -24,6 +24,7 @@ Every feature listed here is on the main branch; what changed lately, and what i
 | [Dashboard edits, versions and undo](dashboard-edits.md) | Change a board by asking; a reviewer checks each change; every change is a version you can restore. | all |
 | [Charts, maps and heatmaps](charts.md) | KPIs, bar, line, area and pie charts, tables, text, heatmaps and point maps. | all |
 | [Personal dashboards and saved layouts](personal-dashboards.md) | Your own copy of a dashboard to change, and layouts kept by name. | Superset |
+| [Tabs on dashboards](tabs.md) | Protected tabs, tabs made through the chat, limits, and playground tabs for viewers. | Superset |
 
 ## Keeping answers right
 

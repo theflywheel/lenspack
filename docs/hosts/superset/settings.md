@@ -52,6 +52,8 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/brand` | any of `{name, buttonLabel, i18n, icon, poweredBy}` ([naming the assistant](../../features/naming.md)); `null` hands a field back to the deployment |
 | `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}` for [personal dashboards](../../features/personal-dashboards.md); `null` resets |
 | `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
+| `GET`, `PUT /_superset/settings/tabs` | the tab rules: any of `{editable: "all" \| "own", protected: {<dashboard id>: [TAB-…]}, maxPerDashboard, maxPerUser, maxWidgetsPerTab: "auto" \| n}`; `null` resets. See [Tabs on dashboards](../../features/tabs.md) |
+| `GET /_superset/tabs`, `DELETE /_superset/tabs/<dashboard>/<tab>` | the tabs made through the chat, with their makers; an admin deletes one (`?confirm=1` when email reports are sent from it) |
 | `PUT /_superset/settings/budget` | any of `{usdPerDay, usdPerUserPerDay}` in US dollars (`0`: no cap); `null` hands a cap back to the deploy config |
 | `PUT /_superset/settings/models` | `{offered: [<model names>], roles: {reviewer, escalate, router}}`: which of the deployment's models answer, and which plays each role; `null` resets |
 | `PUT /_superset/settings/audit` | `{retentionDays}`: from 30 (or the deploy config's own, if shorter) to 3650; `null` resets |
@@ -99,7 +101,7 @@ undoing someone else's change:
   tab again when something changed, or, while you are typing in it, say so with a **Reload** button.
 
 The same holds for every settings route: the switches, voice, language, saved answers, the queue, the name, telemetry,
-the query limits, personal-dashboard limits, the edit scope, who is an admin or a user, the review's settings on the admin panel, and the
+the query limits, personal-dashboard limits, the edit scope, the tab rules, who is an admin or a user, the review's settings on the admin panel, and the
 pack, whose `ETag` is its version (`"pack-3"`; see [Changing the pack while it runs](pack-runtime.md)).
 
 ## Switches

@@ -21,7 +21,7 @@ and the environment only.
 
 ## The switches
 
-All are on by default except the daily review, which costs money.
+All are on by default except the daily review, which costs money, and the two tab switches, `chatTabs` and `playground`.
 
 | switch | label | off means | enforced by |
 |---|---|---|---|
@@ -44,6 +44,8 @@ All are on by default except the daily review, which costs money.
 | `review.compare` | Compare readings | open questions' readings are not run on the data after a review | the server |
 | `telemetry` | Telemetry | no usage records, no thumbs under answers; `/api/_telemetry` answers 404 (see [Telemetry](../features/telemetry.md)) | the server |
 | `personalDashboards` | My dashboards and saved layouts | no My dashboards or Saved layouts menus; the chat can't make, copy or delete dashboards or save or apply layouts (dashboards already made stay). Superset only; see [Personal dashboards](../features/personal-dashboards.md) | the server |
+| `chatTabs` | Tabs made through the chat | (off by default) the chat doesn't make, rename or delete tabs. On: people who may edit a dashboard can, within the limits. Superset only; see [Tabs on dashboards](../features/tabs.md) | the server |
+| `playground` | Playground tabs | (off by default) viewers change nothing. On: anyone who can open a dashboard can have tabs of their own on it, named after them, and change only those. Superset only; see [Tabs on dashboards](../features/tabs.md#the-playground) | the server |
 
 ## Reading them
 

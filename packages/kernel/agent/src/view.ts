@@ -28,7 +28,7 @@ export function tabsText(tabs: readonly BoardTab[] | undefined, view?: TurnView)
   const lines = tabs.map((t) => `- “${t.title}”: ${t.widgets.length ? t.widgets.join(", ") : "(no widgets)"}`);
   return `\n\nTABS (the board is laid out in tabs; the rows above list every widget, tab after tab):\n${lines.join("\n")}
 ${open ? `The viewer is on the tab “${open.title}”.` : "Which tab the viewer is on is not known."}
-- To put a new widget on a tab, place it after: or below: a widget on that tab. With top or bottom it goes at the top or bottom of ${open ? "the viewer's tab" : "the first tab"}.
+- To put a new widget on a tab, give add_widget that tab's title (tab), or place it after: or below: a widget on that tab. With neither, it goes on ${open ? "the viewer's tab" : "the first tab"}.
 - get_board and edit results list rows without tabs: a widget placed after: or below: another is on that widget's tab.
 - When you say where a widget is, name its tab.`;
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, type PersonalPort, type Filter, type Query, type Widget, describeChanges, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, CHART_KINDS, applyOps, type PersonalPort, type Filter, type Query, type Widget, describeChanges, layoutChanges, nearest, summarise, verifiedOnly } from "@lenspack/core";
 import { type Connector, type Ctx, type SourceCall, type WidgetData, checkOps, explain, nowOf, run, tracedConnector, valuesQuery } from "@lenspack/engine";
 import { shownConfig, showsStatement, visibleCatalogue } from "@lenspack/policy";
 import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
@@ -8,6 +8,7 @@ import { AGGS, FORMATS, type Pack, catalogueFrom } from "@lenspack/pack";
 import { CHART, PAGE_SIZE, PATCH_SHAPE, PLACE, QUERY, QUERY_SHAPE, type QueryArgs, WIDGET_KINDS, WIDTH, assembleQuery, bool, given, num, oneOf, parseClear, patchQuery, str } from "./args";
 import { personalTools } from "./personal";
 import { type Proposal, type ProposalStore, memoryProposals } from "./proposals";
+import { type TabPort, tabForNew, tabTools } from "./tabs";
 import type { TurnView } from "./view";
 
 export type Tool<A extends z.ZodRawShape = z.ZodRawShape> = {
@@ -79,6 +80,11 @@ export type BoardToolsOptions = {
   onData?: (e: DataCall) => void;
   /** Where the viewer is on the host's page (the tab they have open): passed with every edit, so a store that keeps a host's layout can place a new widget there. */
   view?: TurnView;
+  /**
+   * The deployment's tab rules for this person on this board (a host with tabs): adds the tab tools, and every edit
+   * and restore is checked against them before it is queued, so the reply and the reviewer see a refusal.
+   */
+  tabs?: TabPort;
 };
 
 /** One data call a tool made, as onData hears it. */
@@ -231,7 +237,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
     }
   };
   const apply = (edit: BoardOp[] | (() => Promise<BoardOp[] | { applied: boolean; [k: string]: unknown }>)) => {
-    if (opts.readOnly) {
+    // On the playground a viewer's edits go on to the tab check, which keeps them to tabs of their own.
+    if (opts.readOnly && !opts.tabs?.playground) {
       told({ outcome: "refused", ops: Array.isArray(edit) ? edit.map((o) => o.op) : [], error: "read-only" });
       // A host with personal dashboards offers a copy the caller can change instead.
       const offer = opts.personal?.offersCopy ? { offer: "copy_dashboard" as const, error: `${opts.readOnly} You can also have your own copy of this dashboard to change: say “make me my own copy”.`, ...(opts.personal.ownOnly ? { ownOnly: true as const } : {}) } : {};
@@ -246,6 +253,16 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       if (!checked.ok) {
         told({ outcome: "refused", ops: names, error: checked.error });
         return { applied: false, error: checked.error, ...(checked.hint ? { didYouMean: checked.hint } : {}) };
+      }
+      // The deployment's tab rules, asked before the edit is queued: a refusal is the tool's answer.
+      if (opts.tabs) {
+        const current = (await store.get(boardId))?.config;
+        const next = current ? applyOps(current, ops, catalogue) : null;
+        const refused = current && next?.ok ? await opts.tabs.check(current, next.config) : null;
+        if (refused) {
+          told({ outcome: "refused", ops: names, error: refused });
+          return { applied: false, error: refused, tabRule: true };
+        }
       }
       const layoutEdit = ops.some((op) => op.op === "move_widget" || op.op === "resize_widget" || op.op === "remove_widget");
       const before = layoutEdit ? (await store.get(boardId))?.config : undefined;
@@ -405,6 +422,15 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
           const target = /^(baseline|original|default|reset|start)$/.test(wanted) ? baselineOf(all) : all.find((v) => v.version === Number(wanted.replace(/^v/, "")));
           if (!target) throw new Error(`No version "${to}". Versions run from ${all.at(-1)?.version ?? 1} to ${all[0]?.version ?? 1}; call list_versions.`);
           const before = all[0]?.version;
+          // A restore keeps to the tab rules too: it may not change a tab this person may not change.
+          if (opts.tabs) {
+            const current = (await store.get(boardId))?.config;
+            const refused = current ? await opts.tabs.check(current, target.config) : null;
+            if (refused) {
+              told({ outcome: "refused", ops: ["restore"], error: refused });
+              return { applied: false, error: refused, tabRule: true };
+            }
+          }
           const board = await store.revertTo(boardId, target.version);
           if (!board) throw new Error(`Version ${target.version} could not be restored`);
           return { applied: true as const, restored: target.version, version: board.version, unchanged: board.version === before, board: shown(board.config) };
@@ -422,6 +448,7 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
         body: str().describe("Only when kind is text: the note itself, in markdown (paragraphs, **bold**, *italics*, - lists; no links, since a board holds no URLs); up to 2000 characters"),
         ...QUERY_SHAPE,
         place: PLACE,
+        tab: str().describe("On a board in tabs: the tab to put it on, by title. Empty: the anchor's tab with after:/below:, else the tab the viewer is on"),
         width: WIDTH,
         height: num(0, 0, 20).describe("Rows tall; 0 lets the server choose"),
         page_size: PAGE_SIZE,
@@ -435,7 +462,13 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
               : a.kind === "table"
                 ? tableOf(a.title, assembleQuery(a, pack), a.page_size || DEFAULT_PAGE_SIZE, a.limit > 0)
                 : chartWidget(a.chart, a.title, assembleQuery(a, pack));
-        return apply([{ op: "add_widget", id: a.id, widget, placement: { place: a.place, width: a.width, ...(a.height > 0 ? { height: a.height } : {}) } }]);
+        return apply(async () => {
+          // A board in tabs: every new widget names its tab, so the tab rules (and the host) know where it goes.
+          const anchored = /^(after|below):/.test(a.place);
+          const config = (await store.get(boardId))?.config;
+          const tab = config && (!anchored || a.tab.trim()) ? tabForNew(config, a.tab, opts.view) : undefined;
+          return [{ op: "add_widget", id: a.id, widget, placement: { place: a.place, width: a.width, ...(a.height > 0 ? { height: a.height } : {}), ...(tab ? { tab } : {}) } }];
+        });
       },
     }),
     defineTool({
@@ -592,6 +625,8 @@ export function boardTools(opts: BoardToolsOptions): Tool[] {
       },
     }),
   ];
+
+  if (opts.tabs) tools.push(...tabTools({ port: opts.tabs, store, boardId, edit: apply }));
 
   if (opts.personal)
     tools.push(...personalTools({ port: opts.personal, pack, connector, store, boardId, ctx, readOnly: opts.readOnly, shown, edit: apply, afterEdits, held: opts.held }));

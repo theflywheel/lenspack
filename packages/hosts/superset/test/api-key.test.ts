@@ -171,6 +171,14 @@ describe("admin API keys on the Superset-mode server", () => {
     expect((await call("/_admin/settings/features", { method: "PUT", key: CI, body: { heatmap: null } })).status).toBe(200);
   });
 
+  it("reads and changes the tab rules and lists the tabs made through the chat, audited as api:<name>", async () => {
+    expect((await call("/_admin/settings/tabs", { method: "PUT", key: CI, body: { editable: "own", protected: { "7": ["TAB-abc"] }, maxPerUser: 2 } })).body).toMatchObject({ editable: "own", protected: { "7": ["TAB-abc"] }, maxPerUser: 2 });
+    expect((await call("/_admin/settings", { key: CI })).body.tabs).toMatchObject({ editable: "own", maxPerUser: 2 });
+    expect(await call("/_admin/tabs", { key: CI })).toMatchObject({ status: 200, body: { tabs: [] } });
+    expect((await audit())).toContainEqual(expect.objectContaining({ user: "api:ci", action: "PUT /_superset/settings/tabs", outcome: "ok" }));
+    expect((await call("/_admin/settings/tabs", { method: "PUT", key: CI, body: { editable: null, protected: null, maxPerUser: null } })).body).toMatchObject({ editable: "all", protected: {}, saved: {} });
+  });
+
   it("reads and edits the pack's definitions, clears saved answers, and reads usage and the audit log", async () => {
     const added = await call("/_admin/admin/api/definitions", { method: "POST", key: CI, body: { kind: "instruction", text: "Visits are counted per day.", why: "from a script" } });
     expect(added.status).toBe(200);

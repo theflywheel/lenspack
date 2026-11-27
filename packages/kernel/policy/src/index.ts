@@ -567,6 +567,7 @@ export * from "./personal";
 export * from "./access";
 export * from "./surface";
 export * from "./board-scope";
+export * from "./tabs";
 export * from "./pack-layer";
 export * from "./query-safety";
 export * from "./runtime-config";

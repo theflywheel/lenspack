@@ -14,10 +14,10 @@ import { settingsStore } from "@lenspack/serve";
 const dir = () => join(mkdtempSync(join(tmpdir(), "lp-features-")), "state");
 
 describe("off switches", () => {
-  it("are all on by default, but the daily review, which costs money, is off", () => {
+  it("are all on by default, but the daily review, which costs money, and the two tab switches are off", () => {
     const f = features({ settings: settingsStore(dir()) });
-    const { "review.daily": daily, ...rest } = f.values();
-    expect(daily).toBe(false);
+    const { "review.daily": daily, chatTabs, playground, ...rest } = f.values();
+    expect([daily, chatTabs, playground]).toEqual([false, false, false]);
     expect(Object.values(rest).every(Boolean)).toBe(true);
     expect(Object.keys(f.values())).toEqual([...FEATURES]);
   });

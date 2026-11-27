@@ -11,4 +11,5 @@ export * from "./clarify";
 export * from "./definitions";
 export * from "./personal";
 export * from "./view";
+export * from "./tabs";
 export * from "./turns";

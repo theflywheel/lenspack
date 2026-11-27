@@ -7,12 +7,12 @@
 
 import type { SettingsStore } from "./settings";
 
-export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "cache", "explain", "clarify", "review.daily", "review.compare", "telemetry", "personalDashboards"] as const;
+export const FEATURES = ["overlay", "voice", "spaceHold", "languageMenu", "markdown", "inPlaceRefresh", "newChat", "boardEdits", "heatmap", "maps", "reviewer", "turnCost", "cache", "explain", "clarify", "review.daily", "review.compare", "telemetry", "personalDashboards", "chatTabs", "playground"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type FeatureValues = Partial<Record<Feature, boolean>>;
 
 /** The switches that start off; every other one starts on. */
-export const FEATURE_DEFAULTS: FeatureValues = { "review.daily": false };
+export const FEATURE_DEFAULTS: FeatureValues = { "review.daily": false, chatTabs: false, playground: false };
 
 /** What each switch does, for the settings page. */
 export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
@@ -34,6 +34,14 @@ export const FEATURE_HELP: Record<Feature, { label: string; help: string }> = {
   personalDashboards: {
     label: "Own dashboards and saved layouts",
     help: "Anyone may make dashboards of their own (blank, or a copy of one they can view) and save layouts to apply to dashboards they control. Off hides the menus and refuses these requests; dashboards already made stay in Superset.",
+  },
+  chatTabs: {
+    label: "Tabs made through the chat",
+    help: "People who may edit a dashboard can have the chat make, rename and delete tabs on it, within the tab limits. Off by default. Protected tabs are never changed (docs/features/tabs.md).",
+  },
+  playground: {
+    label: "Playground tabs",
+    help: "Anyone who can open a dashboard, viewers too, can have the chat make tabs of their own on it, named after them, and add, change and delete widgets only there, within the tab limits. The assistant's own Superset account saves them. Off by default (docs/features/tabs.md).",
   },
   turnCost: { label: "Cost per answer", help: "A line under each reply with what the turn cost (an estimate from list prices), and a running total in the chat menu. Off hides them; the audit log still records each turn's cost." },
   telemetry: { label: "Usage telemetry", help: "One record per question in telemetry.jsonl (who asked, what kind of question, how it went, how long it took, what it cost) and the thumbs under each answer. Off stops recording and hides the thumbs; the audit log is unaffected." },

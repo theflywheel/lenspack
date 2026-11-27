@@ -27,6 +27,11 @@ export type SupersetBoardsOptions = {
   stateFile: string;
   /** The Superset user ids a board's new charts belong to: its owner's, on a person's own dashboard. Else Lenspack's account. */
   ownersOf?: (boardId: string) => number[] | undefined | Promise<number[] | undefined>;
+  /**
+   * The tabs nobody changes through Lenspack on a board (policy's protectedTabIds), given the board before a write:
+   * checked against Superset's own layout as the last step before saving. The store is given the list; it doesn't decide.
+   */
+  protectedTabs?: (boardId: string, before: BoardConfig) => readonly string[] | Promise<readonly string[]>;
   /** How often a read checks Superset for edits made there. Default 3s. */
   checkEveryMs?: number;
   log?: (line: string) => void;
@@ -45,7 +50,7 @@ export type SupersetBoards = BoardStore & {
    * latest is read, in the same turn as the write, so nothing changed in Superset in between is written back.
    * `make` gets that board and its widgets that stand for Superset's charts.
    */
-  replaceFrom<T extends { config: BoardConfig }>(id: string, make: (board: Board, locked: string[]) => T, how: { source: string; summary: string }): Promise<{ board: Board; made: T }>;
+  replaceFrom<T extends { config: BoardConfig }>(id: string, make: (board: Board, locked: string[]) => T, how: { source: string; summary: string; check?: (before: BoardConfig, after: BoardConfig) => Promise<string | null> }): Promise<{ board: Board; made: T }>;
   /** Drops a board whose dashboard is gone (deleted): its links and its versions here. */
   forget(id: string): Promise<void>;
   /**
@@ -124,7 +129,7 @@ export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
       try {
         const waiting = hintsFor(id);
         const owners = await opts.ownersOf?.(id);
-        states[id] = await pushBoard(client, before.config, result.config, pack, binding, states[id]!, { hints: Object.fromEntries(waiting), moves: o.moves, written: (p) => positions.set(id, p), log: (s) => log(`${id}: ${s}`), ...(owners ? { owners } : {}) });
+        states[id] = await pushBoard(client, before.config, result.config, pack, binding, states[id]!, { hints: Object.fromEntries(waiting), moves: o.moves, written: (p) => positions.set(id, p), log: (s) => log(`${id}: ${s}`), ...(owners ? { owners } : {}), ...(opts.protectedTabs ? { protectedTabs: (b: BoardConfig) => opts.protectedTabs!(id, b) } : {}) });
         for (const w of Object.keys(result.config.widgets)) if (!before.config.widgets[w]) waiting.delete(w);
         save();
         lastCheck.set(id, Date.now());
@@ -212,6 +217,8 @@ export function supersetBoards(opts: SupersetBoardsOptions): SupersetBoards {
         const current = await inner.get(id);
         if (!current) throw new Error(`no board ${id}`);
         made = make(current, [...(states[id]?.locked ?? [])]);
+        const refused = await how.check?.(current.config, made.config);
+        if (refused) throw new Error(refused);
         return inner.replaceConfig({ id, config: made.config, source: how.source as never, summary: how.summary });
       });
       return { board: board as Board, made: made! };

@@ -196,6 +196,16 @@ curl -s -X POST -H "$AUTH" -H 'content-type: application/json' -d '{"version": 0
 Each change is checked against Superset's datasets as at start-up, and refused with nothing changed if it adds a
 problem. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md) for every route and what can't change.
 
+**Protect tabs, turn on the playground, and list or delete tabs made through the chat** (see
+[Tabs on dashboards](../features/tabs.md)):
+
+```sh
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"protected": {"12": ["TAB-k3Jd9"]}}' $LP/settings/tabs
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"playground": true}' $LP/settings/features
+curl -s -H "$AUTH" $LP/tabs
+curl -s -X DELETE -H "$AUTH" "$LP/tabs/12/TAB-lp-abc123?confirm=1"
+```
+
 **Read the audit log** (newest first; `?month=2026-11`, `?limit=`), **and recent turns and their cost:**
 
 ```sh
