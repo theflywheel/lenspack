@@ -294,6 +294,16 @@ describe("changing the pack on a running Superset-mode server", () => {
     expect((await call("/_superset/settings/pack", { key: CI })).body.version).toBe(2);
   });
 
+  it("changes the query limits with an admin API key through the admin passthrough, audited as the key", async () => {
+    const r = await call("/_admin/settings/query-safety", { method: "PUT", key: CI, body: { maxQueriesPerTurn: 30 } });
+    expect(r).toMatchObject({ status: 200, body: { ok: true, querySafety: { server: { maxQueriesPerTurn: 30 }, source: "settings" } } });
+    expect((await call("/_admin/settings", { key: CI })).body.querySafety.server.maxQueriesPerTurn).toBe(30);
+    // Looser than the deployment's own needs confirm, with a key as with a person.
+    expect((await call("/_admin/settings/query-safety", { method: "PUT", key: CI, body: { maxQueriesPerTurn: 500 } })).status).toBe(409);
+    expect((await audit()).find((e) => e.action === "settings query-safety" && e.user === "api:ci" && e.outcome === "ok")).toMatchObject({ detail: '{"maxQueriesPerTurn":30}' });
+    expect((await call("/_admin/settings/query-safety", { method: "PUT", key: CI, body: { maxQueriesPerTurn: null } })).body.querySafety.source).toBe("deployment");
+  });
+
   it("adds exclusions, takes back its own, never the deploy config's", async () => {
     const add = await admin("", { method: "PUT", body: { fields: { exclude: { columns: ["customer_name", "status"] } } } });
     expect(add.body.version).toMatchObject({ version: 3, changed: ["exclude"] });
