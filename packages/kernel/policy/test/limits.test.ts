@@ -1,7 +1,7 @@
 // Per-person question limits: a daily quota and sliding minute and hour windows, decided from the counts a host keeps.
 import { describe, expect, it } from "vitest";
 
-import { decideQuestion, limitLanguage, limitMessage, limitsFor, limitsOn, perUserLimitsFrom } from "../src";
+import { decideQuestion, limitLanguage, limitMessage, questionLimitsFor, limitsOn, perUserLimitsFrom } from "../src";
 
 const now = Date.parse("2026-11-27T10:00:00Z");
 const facts = (o: Partial<Parameters<typeof decideQuestion>[1]> = {}) => ({ user: "olu", admin: false, today: 0, recent: [], now, ...o });
@@ -45,9 +45,9 @@ describe("per-person limits", () => {
 
   it("a named person's own limits replace everyone's, field by field", () => {
     const l = { questionsPerDay: 10, perMinute: 2, users: { ada: { questionsPerDay: 100 } } };
-    expect(limitsFor(l, "ada")).toEqual({ questionsPerDay: 100, perMinute: 2, perHour: 0 });
-    expect(limitsFor(l, "olu")).toEqual({ questionsPerDay: 10, perMinute: 2, perHour: 0 });
-    expect(limitsFor(l, "constructor")).toEqual({ questionsPerDay: 10, perMinute: 2, perHour: 0 });
+    expect(questionLimitsFor(l, "ada")).toEqual({ questionsPerDay: 100, perMinute: 2, perHour: 0 });
+    expect(questionLimitsFor(l, "olu")).toEqual({ questionsPerDay: 10, perMinute: 2, perHour: 0 });
+    expect(questionLimitsFor(l, "constructor")).toEqual({ questionsPerDay: 10, perMinute: 2, perHour: 0 });
     expect(decideQuestion(l, facts({ user: "ada", today: 50 }))).toEqual({ ok: true });
   });
 

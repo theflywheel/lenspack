@@ -36,7 +36,7 @@ const WINDOW_MS: Record<Exclude<LimitKey, "questionsPerDay">, number> = { perMin
 export const limitsOn = (l: PerUserLimits) => LIMIT_KEYS.some((k) => (l[k] ?? 0) > 0) || Object.values(l.users ?? {}).some((u) => LIMIT_KEYS.some((k) => (u[k] ?? 0) > 0));
 
 /** One person's limits: everyone's, with their own entry's fields in place of those. */
-export function limitsFor(l: PerUserLimits, user: string): Required<QuestionLimits> {
+export function questionLimitsFor(l: PerUserLimits, user: string): Required<QuestionLimits> {
   const own = Object.hasOwn(l.users ?? {}, user) ? l.users![user]! : {};
   const pick = (k: LimitKey) => own[k] ?? l[k] ?? 0;
   return { questionsPerDay: pick("questionsPerDay"), perMinute: pick("perMinute"), perHour: pick("perHour") };
@@ -79,7 +79,7 @@ const nextUtcMidnight = (now: number) => {
  */
 export function decideQuestion(limits: PerUserLimits, f: LimitFacts): LimitDecision {
   if (f.admin && limits.adminsExempt) return { ok: true };
-  const mine = limitsFor(limits, f.user);
+  const mine = questionLimitsFor(limits, f.user);
   const refusals: LimitRefusal[] = [];
   const refuse = (limit: LimitKey, max: number, at: number) => {
     const secs = Math.max(1, Math.ceil((at - f.now) / 1000));

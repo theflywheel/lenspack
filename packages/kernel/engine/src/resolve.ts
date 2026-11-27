@@ -58,7 +58,8 @@ export type ResolveErrorCode =
   | "OUT_OF_SCOPE"
   | "NOT_PERMITTED"
   | "ACCESS_HIDDEN"
-  | "UNAVAILABLE";
+  | "UNAVAILABLE"
+  | "TOO_HEAVY";
 
 /** What a backend can do. Resolution refuses the rest up front. */
 export type Capabilities = {
@@ -168,6 +169,11 @@ export type BoundPlan = {
    * more tells the engine the answer was cut).
    */
   base?: { rows: number };
+  /**
+   * The most rows the deployment lets one query return (query safety): a series or a split breakdown is cut to it,
+   * and the answer says so. Absent: the engine's own caps.
+   */
+  rowLimit?: number;
 };
 
 type Edge = { to: string; type: "many_to_one" | "one_to_one" | "one_to_many"; step: JoinStep };

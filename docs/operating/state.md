@@ -21,6 +21,7 @@ files in `auth.dir` (default `LENSPACK_STATE_DIR`, else `.lenspack` next to `len
 | `usage.jsonl` | one line per model call (who, which model, tokens, cost), so today's spend and budget survive a restart; only its last 32 MB is read at start, and nothing deletes old lines, so trim it now and then if it grows | Superset |
 | `personal-dashboards.json`, `saved-layouts.json` | which dashboards are someone's own, and people's saved layouts (see [Personal dashboards](../features/personal-dashboards.md#where-it-is-kept)) | Superset |
 | `settings.json` | switches, voice, language, saved-answer and queue settings, personal-dashboard limits, the edit scope, the assistant's name, and the review's settings, as set by an admin | both |
+| `pack-layer.json` | changes admins made to the pack while the server ran, every version with who, when and why (mode 600; see [Changing the pack while it runs](../hosts/superset/pack-runtime.md)) | Superset |
 | `definitions-<pack>.json` | the admins' definitions and their history | both |
 | `open-questions-<pack>.json` | the open-questions log | both |
 | `review-proposals.json` | the daily review's proposals and what became of them | both |
@@ -59,6 +60,7 @@ with `503` and change nothing, and Superset board links are kept in memory until
 | Lenspack's version history of Superset dashboards (the undo list) | **no**: kept in memory today; planned to move to a database |
 | links between widgets and Superset charts | yes (`superset-boards.json`) |
 | settings and switches an admin set | yes (`settings.json`) |
+| changes to the pack made while the server ran | yes (`pack-layer.json`), laid over the deploy config's overlay at start |
 | definitions, open questions, review runs and proposals | yes |
 | saved answers | yes (`reuse.json`) |
 | the queue and anyone waiting in it | **no**: waiting turns are dropped |

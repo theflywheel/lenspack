@@ -56,7 +56,7 @@
       acOwners: "Owners", acOwnerNote: "Change owners in the deployment, then restart.", acGranted: "Granted admins", acNoGranted: "No granted admins.",
       acUser: "User", acBy: "Granted by", acAt: "When", acRemove: "Remove", acAdd: "Add", acAddPh: "Superset user name or id:12",
       acOwnersOnly: "Only owners can add or remove admins.", acRemoveQ: "Remove {0}?", acSeeded: "From the deployment", acPeople: "People granted",
-      acRoster: "Admins roster", acRosterLede: "Everyone who has used admin rights here, and how they qualify. A Superset Admin can give themselves an admin role; this list shows it when they use it.", acHow: "How", acFirst: "First seen", acLast: "Last seen", acNoRoster: "Nobody yet.", acNew: "new", acNewSince: "New admin since your last visit: {0}.", acNewOpen: "See the roster", acPasswords: "Named passwords: {0}", acOwnersN: "Owners: {0}",
+      acRoster: "Admins roster", acRosterLede: "Everyone who has used admin rights here, and how they qualify. A Superset Admin can give themselves an admin role; this list shows it when they use it.", acHow: "How", acFirst: "First seen", acLast: "Last seen", acNoRoster: "Nobody yet.", acNew: "new", acNewSince: "New admin since your last visit: {0}.", acNewOpen: "See the roster", acPasswords: "Named passwords: {0}", acApiKeys: "API keys: {0}", acOwnersN: "Owners: {0}",
       acNoPeople: "Nobody granted yet.", acSearch: "Search", acRange: "{0}–{1} of {2}", acPrev: "Previous", acNext: "Next", acRoles: "Roles: {0}",
       acEveryone: "Everyone signed in", acSignOut: "Sign out", acNoneSet: "Not available on this server.",
     },
@@ -104,7 +104,7 @@
       acOwners: "Propriétaires", acOwnerNote: "Les propriétaires se changent dans le déploiement, puis redémarrage.", acGranted: "Administrateurs ajoutés", acNoGranted: "Aucun administrateur ajouté.",
       acUser: "Utilisateur", acBy: "Ajouté par", acAt: "Quand", acRemove: "Retirer", acAdd: "Ajouter", acAddPh: "Nom d'utilisateur Superset ou id:12",
       acOwnersOnly: "Seuls les propriétaires ajoutent ou retirent des administrateurs.", acRemoveQ: "Retirer {0} ?", acSeeded: "Du déploiement", acPeople: "Personnes ajoutées",
-      acRoster: "Registre des administrateurs", acRosterLede: "Toute personne ayant utilisé des droits d'administration ici, et à quel titre. Un administrateur Superset peut s'attribuer un rôle d'administration ; cette liste le montre dès qu'il s'en sert.", acHow: "À quel titre", acFirst: "Première fois", acLast: "Dernière fois", acNoRoster: "Personne pour l'instant.", acNew: "nouveau", acNewSince: "Nouvel administrateur depuis votre dernière visite : {0}.", acNewOpen: "Voir le registre", acPasswords: "Mots de passe nommés : {0}", acOwnersN: "Propriétaires : {0}",
+      acRoster: "Registre des administrateurs", acRosterLede: "Toute personne ayant utilisé des droits d'administration ici, et à quel titre. Un administrateur Superset peut s'attribuer un rôle d'administration ; cette liste le montre dès qu'il s'en sert.", acHow: "À quel titre", acFirst: "Première fois", acLast: "Dernière fois", acNoRoster: "Personne pour l'instant.", acNew: "nouveau", acNewSince: "Nouvel administrateur depuis votre dernière visite : {0}.", acNewOpen: "Voir le registre", acPasswords: "Mots de passe nommés : {0}", acApiKeys: "Clés d'API : {0}", acOwnersN: "Propriétaires : {0}",
       acNoPeople: "Personne n'est encore ajouté.", acSearch: "Rechercher", acRange: "{0}–{1} sur {2}", acPrev: "Précédent", acNext: "Suivant", acRoles: "Rôles : {0}",
       acEveryone: "Toute personne connectée", acSignOut: "Se déconnecter", acNoneSet: "Indisponible sur ce serveur.",
     },
@@ -144,12 +144,16 @@
     // Cache settings
     cacheSetH: "Saved answer settings", cOn: "Keep and serve saved answers", cTtl: "Drop entries older than (hours)", cRouter: "Match differently worded questions", cMax: "At most (entries)", cFresh: "Show as is for (minutes)", cPw: "Refresh before busy times", cPwTimes: "At (local times, comma-separated)", cPwTop: "Most-asked to refresh", cPwUsd: "Most per refresh (US$)",
     queueH: "Turn queue", qConc: "At once", qWait: "Waiting at most", qSecs: "Longest wait (s)",
+    qsH: "Query limits", qsLede: "Every query sent to the database is checked against these first; one past a limit is refused with a plain message. Tighter is always allowed; looser than the deployment's own values asks you to confirm.",
+    qsRows: "Rows a query", qsGroups: "Groups a breakdown", qsPoints: "Series points", qsWindow: "Longest time range (days, empty: none)", qsTurn: "Queries a question", qsTimeout: "Wait for an answer (s)", qsConc: "At once",
+    qsHeavy: "Heavy (needs a time range, last {0} days by default)", qsDatasets: "Datasets", qsRisks: "Worth a look in the pack",
+    qsLooser: "This lets more through than the deployment's own settings:\n{0}\n\nApply it anyway?", qsDry: "Check every query shape", qsDryDone: "{0} shapes, {1} compiled by Superset (none run): {2} dangerous, {3} warnings, {4} refused by the limits, {5} errors",
     resetDefaults: "Back to the deployment's values", saveB: "Save",
     // Settings
     offH: "Off switches", personalH: "Own dashboards", pOn: "People may keep their own dashboards and layouts", pDash: "Dashboards per person", pLayouts: "Saved layouts per person",
     scopeH: "Where the chat may edit", scopeSuperset: "Any dashboard Superset lets the person edit", scopeOwn: "Only their own dashboards", scopeExempt: "Admins may edit shared ones",
     configH: "From the deployment's config", whereH: "Where to change things", wWhat: "What", wWhere: "Where",
-    budgetDay: "Spend per day", budgetUser: "Spend per person per day", none2: "none", contextN: "{0} context labels", nameHere: "The name and button label are set on the Assistant tab.", nameElsewhere: "The name and button label are set on Superset's settings page.",
+    budgetDay: "Spend per day", budgetUser: "Spend per person per day", none2: "none", contextN: "{0} context labels", nameElsewhere: "The name and button label are set on Superset's settings page.",
     // Assistant (Superset)
     panelH: "Admin panel", panelLede: "Models, voice, costs, logs, switches, review and saved answers.", openPanel: "Open the admin panel", panelPassword: "Admins sign in with the deployment's admin password.",
     whoH: "Who can use it", onOff: "The assistant", isOn: "on", isOff: "off (the Assistant button switch)", hostPolicyL: "Whose data access applies", hostSuperset: "each person's own Superset access", hostOff: "the assistant's own account (off)", editPolicyL: "Who may edit dashboards", editSuperset: "whoever Superset lets edit", editSigned: "anyone signed in", scopeL: "Edit scope",
@@ -189,16 +193,50 @@
     auditH: "Journal d'audit", auditLede: "Gardé {0} jours dans {1}.", aAction: "Action", aOutcome: "Résultat", aDetail: "Détail", aAll: "Tous", aOk: "ok", aDenied: "refusé", search: "Rechercher", noEvents: "Aucun événement.", auditOff: "Le journal d'audit est désactivé (audit : false).",
     cacheSetH: "Réglages des réponses gardées", cOn: "Garder et servir les réponses", cTtl: "Supprimer après (heures)", cRouter: "Rapprocher les questions formulées autrement", cMax: "Au plus (entrées)", cFresh: "Montrer telle quelle pendant (minutes)", cPw: "Actualiser avant les heures chargées", cPwTimes: "À (heures locales, séparées par des virgules)", cPwTop: "Questions les plus posées à actualiser", cPwUsd: "Maximum par actualisation (US$)",
     queueH: "File des réponses", qConc: "En même temps", qWait: "En attente au plus", qSecs: "Attente maximale (s)",
+    qsH: "Limites des requêtes", qsLede: "Chaque requête envoyée à la base est d'abord vérifiée ; celle qui dépasse une limite est refusée avec un message clair. Resserrer est toujours permis ; relâcher au-delà des valeurs du déploiement demande confirmation.",
+    qsRows: "Lignes par requête", qsGroups: "Groupes par répartition", qsPoints: "Points d'une série", qsWindow: "Période la plus longue (jours, vide : aucune)", qsTurn: "Requêtes par question", qsTimeout: "Attente d'une réponse (s)", qsConc: "En même temps",
+    qsHeavy: "Lourd (période requise, {0} derniers jours par défaut)", qsDatasets: "Jeux de données", qsRisks: "À vérifier dans le pack",
+    qsLooser: "Ceci laisse passer plus que les réglages du déploiement :\n{0}\n\nAppliquer quand même ?", qsDry: "Vérifier chaque forme de requête", qsDryDone: "{0} formes, {1} compilées par Superset (aucune exécutée) : {2} dangereuses, {3} avertissements, {4} refusées par les limites, {5} erreurs",
     resetDefaults: "Valeurs du déploiement", saveB: "Enregistrer",
     offH: "Interrupteurs", personalH: "Tableaux personnels", pOn: "Chacun peut garder ses tableaux et dispositions", pDash: "Tableaux par personne", pLayouts: "Dispositions par personne",
     scopeH: "Où la discussion peut modifier", scopeSuperset: "Tout tableau que Superset laisse modifier", scopeOwn: "Seulement ses propres tableaux", scopeExempt: "Les administrateurs modifient les tableaux partagés",
     configH: "Depuis la configuration", whereH: "Où changer quoi", wWhat: "Quoi", wWhere: "Où",
-    budgetDay: "Dépense par jour", budgetUser: "Dépense par personne et par jour", none2: "aucune", contextN: "{0} libellés de contexte", nameHere: "Le nom et le libellé du bouton se règlent dans l'onglet Assistant.", nameElsewhere: "Le nom et le libellé du bouton se règlent sur la page de réglages de Superset.",
+    budgetDay: "Dépense par jour", budgetUser: "Dépense par personne et par jour", none2: "aucune", contextN: "{0} libellés de contexte", nameElsewhere: "Le nom et le libellé du bouton se règlent sur la page de réglages de Superset.",
     panelH: "Panneau d'administration", panelLede: "Modèles, voix, coûts, journaux, interrupteurs, revue et réponses gardées.", openPanel: "Ouvrir le panneau", panelPassword: "Les administrateurs se connectent avec le mot de passe du déploiement.",
     whoH: "Qui peut l'utiliser", onOff: "L'assistant", isOn: "activé", isOff: "désactivé (interrupteur du bouton)", hostPolicyL: "Accès aux données appliqué", hostSuperset: "l'accès Superset de chacun", hostOff: "le compte de l'assistant (désactivé)", editPolicyL: "Qui modifie les tableaux", editSuperset: "qui Superset laisse modifier", editSigned: "toute personne connectée", scopeL: "Portée des modifications",
     connH: "Connexion", cServer: "Serveur", cAccount: "Compte de service", cIdentity: "Clé de signature", cReceived: "reçue", cMissing: "absente : les réglages ne s'enregistrent pas", cChat: "Discussion", cChatOk: "répond", cChatDown: "aucun modèle ne répond", cUrl: "Superset à", cRoles: "Rôles du compte de service", dbH: "Bases de données Superset", dbName: "Base", dbBackend: "Moteur", dbDatasets: "Jeux de données",
     langH: "Langue", lReplies: "Réponses en", lTitles: "Titres des graphiques en", lBoard: "Langue du tableau", lAuto: "la langue de la question", lTitleBoard: "la langue du tableau", lTitleSpeaker: "la langue de la question",
     dataH: "Jeux de données", dPack: "Pack", dEntity: "Lu comme", dTable: "Jeu de données", dWarnings: "Écartés ou renommés", dDashboards: "Tableaux ouverts", dEdit: "Modifier dans Superset",
+  });
+
+  // The Pack tab (a host that lets admins change the pack while it runs: Superset).
+  Object.assign(STRINGS.en, {
+    tabPack: "Pack", lede_pack: "The pack {name} reads: change its words, measures and example questions here, with no redeploy.",
+    pkNow: "As it runs", pkVersion: "Version {0}, by {1}, {2}", pkConfigOnly: "The deploy config alone (version 0).",
+    pkNotApplied: "The changes saved as version {0} no longer build against Superset's datasets, so the deploy config alone is in force: {1}. Fix them below, or reset.",
+    pkPart: "Part", pkFrom: "From", pk_config: "the deploy config", pk_settings: "changed here", "pk_config and settings": "the deploy config, and more here", pk_none: "not set",
+    pkCounts: "{0} datasets, {1} dimensions, {2} measures",
+    pkResetPart: "Back to the config", pkResetAll: "Everything back to the config", pkResetQ: "Hand {0} back to the deploy config?", pkResetAllQ: "Hand every change back to the deploy config?",
+    pkEdit: "Edit", pkEditLede: "The pack's parts that may change while it runs, as YAML. A part you remove follows the deploy config. Validate checks the change against Superset's datasets now; Save also makes it a new version, in force at once.",
+    pkWhy: "Why (kept with the version)", pkValidate: "Validate", pkSave: "Save", pkOk: "The change is valid: {0}.", pkOkNone: "Nothing would change.", pkProblems: "Not changed. Fix these first:", pkWarnings: "Warnings (not blocking):",
+    pkSaved: "Saved as version {0}.", pkConfigOnlyH: "Set in the deploy config only", pkConfigOnlyLede: "These parts, the datasets, the row scope, dashboards, access, budgets and models change only with the deploy config.",
+    pkVersions: "Versions", pkV: "Version", pkWhen: "When", pkBy: "By", pkWhat: "What changed", pkRevert: "Go back to this", pkRevertQ: "Go back to version {0}? It becomes a new version.", pkDiff: "Changes", pkCurrent: "in force",
+    pkExport: "Export as YAML", pkExportLede: "The whole overlay as it runs, to paste as overlay: in superset.yaml. Once it is there, reset the changes here.", pkNoVersions: "No changes yet: the deploy config alone decides.", pkV0: "the deploy config alone",
+    pkWas: "Before", pkIs: "After", pkNotHere: "This host does not let the pack change while it runs.",
+  });
+  Object.assign(STRINGS.fr, {
+    tabPack: "Pack", lede_pack: "Le pack que lit {name} : changez ici ses mots, ses mesures et ses questions d'exemple, sans redéploiement.",
+    pkNow: "Tel qu'il tourne", pkVersion: "Version {0}, par {1}, {2}", pkConfigOnly: "La configuration du déploiement seule (version 0).",
+    pkNotApplied: "Les changements enregistrés en version {0} ne se construisent plus avec les jeux de données de Superset ; la configuration seule s'applique : {1}. Corrigez-les ci-dessous, ou réinitialisez.",
+    pkPart: "Partie", pkFrom: "Origine", pk_config: "la configuration", pk_settings: "changé ici", "pk_config and settings": "la configuration, et plus ici", pk_none: "non défini",
+    pkCounts: "{0} jeux de données, {1} dimensions, {2} mesures",
+    pkResetPart: "Revenir à la configuration", pkResetAll: "Tout revenir à la configuration", pkResetQ: "Rendre {0} à la configuration du déploiement ?", pkResetAllQ: "Rendre tous les changements à la configuration du déploiement ?",
+    pkEdit: "Modifier", pkEditLede: "Les parties du pack modifiables pendant qu'il tourne, en YAML. Une partie retirée suit la configuration. Valider vérifie le changement avec les jeux de données de Superset ; Enregistrer en fait aussi une nouvelle version, appliquée aussitôt.",
+    pkWhy: "Pourquoi (gardé avec la version)", pkValidate: "Valider", pkSave: "Enregistrer", pkOk: "Le changement est valide : {0}.", pkOkNone: "Rien ne changerait.", pkProblems: "Rien n'a changé. À corriger d'abord :", pkWarnings: "Avertissements (non bloquants) :",
+    pkSaved: "Enregistré en version {0}.", pkConfigOnlyH: "Fixé par la configuration seule", pkConfigOnlyLede: "Ces parties, les jeux de données, le périmètre des lignes, les tableaux de bord, les accès, les budgets et les modèles ne changent qu'avec la configuration du déploiement.",
+    pkVersions: "Versions", pkV: "Version", pkWhen: "Quand", pkBy: "Par", pkWhat: "Ce qui a changé", pkRevert: "Revenir à celle-ci", pkRevertQ: "Revenir à la version {0} ? Elle devient une nouvelle version.", pkDiff: "Changements", pkCurrent: "en vigueur",
+    pkExport: "Exporter en YAML", pkExportLede: "Tout l'overlay tel qu'il tourne, à coller sous overlay: dans superset.yaml. Une fois fait, réinitialisez les changements ici.", pkNoVersions: "Aucun changement : la configuration seule décide.", pkV0: "la configuration seule",
+    pkWas: "Avant", pkIs: "Après", pkNotHere: "Cet hôte ne permet pas de changer le pack pendant qu'il tourne.",
   });
 
   // The switches' names and help in French; English comes from the server.
@@ -351,6 +389,8 @@
     { id: "questions", grp: "gAnswers", label: "tabQuestions" },
     { id: "proposals", grp: "gAnswers", label: "tabProposals" },
     { id: "definitions", grp: "gAnswers", label: "tabDefinitions" },
+    // A host's own route, beside the definitions: only where the host offers it (Superset).
+    { id: "pack", grp: "gAnswers", label: "tabPack", host: true },
     { id: "cache", grp: "gAnswers", label: "tabCache" },
     { id: "models", grp: "gConfig", label: "tabModels" },
     { id: "access", grp: "gConfig", label: "tabAccess" },
@@ -360,7 +400,7 @@
     { id: "spend", grp: "gRecords", label: "tabSpend" },
   ];
   const sections = shell.sections || "all";
-  const shownTabs = () => TAB_DEFS.filter((d) => (d.superset ? !!shell.superset : true) && (sections === "all" || (sections === "lenspack" ? !d.superset : d.superset)));
+  const shownTabs = () => TAB_DEFS.filter((d) => (d.superset || d.host ? !!shell.superset : true) && (sections === "all" || (sections === "lenspack" ? !d.superset : d.superset)));
   const markEl = root.querySelector(".mark") || h("span", { class: "mark", "aria-hidden": "true" });
   if (!markEl.classList.contains("icon")) markEl.textContent = Array.from(assistant.trim())[0]?.toLocaleUpperCase() || "L";
   const titleEl = h("h1", {});
@@ -999,8 +1039,10 @@
     });
     const changed = Object.values(features.source).some((s) => s === "settings");
     const host = await hostSettings().catch(() => null);
-    // On a Superset host the name card is on the Assistant tab (here, or on Superset's page in the split surface).
-    const nameCard = !shell.superset ? (brand ? brandCard(brand) : null) : card(t("bTitle"), null, h("p", { class: "row" }, sections === "lenspack" ? t("nameElsewhere") : t("nameHere"), sections === "lenspack" && shell.supersetPage ? h("a", { class: "btn sm quiet", href: shell.supersetPage }, t("tabAssistant")) : sections !== "lenspack" ? h("button", { class: "btn sm quiet", type: "button", onclick: () => go("assistant") }, t("tabAssistant")) : null));
+    // With the Assistant tab on this page there is no name card here; the split surface points to Superset's page.
+    const nameCard = !shell.superset ? (brand ? brandCard(brand) : null)
+      : sections === "lenspack" ? card(t("bTitle"), null, h("p", { class: "row" }, t("nameElsewhere"), shell.supersetPage ? h("a", { class: "btn sm quiet", href: shell.supersetPage }, t("tabAssistant")) : null))
+      : null;
     return [
       card(t("offH"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null),
       nameCard,
@@ -1045,7 +1087,7 @@
     const line = (label, mode, from, extra) => h("div", { class: "kv" }, h("dt", {}, label), h("dd", {}, h("b", {}, mode), " ", h("span", { class: "mute" }, t("acFrom", fromText(from))), extra ? h("div", { class: "mute" }, extra) : null));
     const out = [card(t("acWho"), null,
       h("dl", { class: "kvs" },
-        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, [adm.roles ? t("acRoles", adm.roles.join(", ")) : null, adm.owners ? t("acOwnersN", adm.owners.join(", ") || "—") : null, adm.passwordNames ? t("acPasswords", adm.passwordNames.join(", ") || "—") : null].filter(Boolean).join(" · ") || null) : null,
+        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, [adm.roles ? t("acRoles", adm.roles.join(", ")) : null, adm.owners ? t("acOwnersN", adm.owners.join(", ") || "—") : null, adm.passwordNames ? t("acPasswords", adm.passwordNames.join(", ") || "—") : null, adm.apiKeys && adm.apiKeys.names.length ? t("acApiKeys", adm.apiKeys.names.join(", ")) : null].filter(Boolean).join(" · ") || null) : null,
         usr && usr.modes ? line(t("acUsers"), usr.label, usr.from, usr.everyone ? t("acEveryone") : usr.roles && usr.roles.length ? t("acRoles", usr.roles.join(", ")) : null) : null),
       warn(adm && adm.warnings), warn(usr && usr.warnings),
       shell.signOut ? h("div", { class: "actions" }, h("a", { class: "btn sm quiet", href: shell.signOut }, t("acSignOut"))) : null)];
@@ -1267,6 +1309,7 @@
         h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(() => hostApi("settings/personal", { body: { maxDashboardsPerUser: Number(dash.value), maxSavedConfigsPerUser: Number(lay.value) } }), t("saved")) }, t("saveB")),
           h("button", { class: "btn quiet", type: "button", onclick: put("settings/personal", { maxDashboardsPerUser: null, maxSavedConfigsPerUser: null }) }, t("resetDefaults")))));
     }
+    if (s.querySafety) out.push(querySafetyCard(s.querySafety));
     if (s.editScope) {
       const e = s.editScope;
       const radio = (v, label) => h("label", { class: "row", style: "gap:8px" }, h("input", { type: "radio", name: "lp-scope", value: v, checked: e.scope === v }), label);
@@ -1279,6 +1322,60 @@
           h("button", { class: "btn quiet", type: "button", onclick: put("settings/edit-scope", { scope: null, adminsExempt: null }) }, t("resetDefaults")))));
     }
     return out;
+  }
+  /** The query limits (docs/operating/query-safety.md): the server-wide ones, which datasets are heavy, the pack's warnings, the dry run. */
+  function querySafetyCard(q) {
+    const l = q.limits, sv = q.server;
+    const rows = num(l.maxRows, 1, 1000000), groups = num(l.maxGroups, 1, 10000000), points = num(l.maxSeriesPoints, 1, 1000000), win = num(l.maxWindowDays, 1, 36500);
+    const turn = num(sv.maxQueriesPerTurn, 1, 10000), secs = num(sv.timeoutSeconds, 1, 3600), conc = num(sv.maxConcurrent, 1, 1000);
+    const heavy = Object.entries(q.datasets || {}).map(([key, d]) => [key, d, h("input", { type: "checkbox", checked: !!d.heavy, disabled: !q.writable })]);
+    // PUT, and on 409 (looser than the deployment's own values) ask, then send it again with confirm.
+    const send = async (body) => {
+      const go = async (b) => {
+        const res = await fetch(`${HOST}settings/query-safety`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
+        let data = null;
+        try { data = await res.json(); } catch (e) { /* not JSON */ }
+        return { status: res.status, data };
+      };
+      let r = await go(body);
+      if (r.status === 409 && r.data && r.data.looser && window.confirm(t("qsLooser", r.data.looser.join("\n")))) r = await go({ ...body, confirm: true });
+      if (r.status !== 200) throw new Error((r.data && r.data.error) || `HTTP ${r.status}`);
+    };
+    const save = act(() => send({
+      maxRows: Number(rows.value), maxGroups: Number(groups.value), maxSeriesPoints: Number(points.value), maxWindowDays: win.value === "" ? null : Number(win.value),
+      maxQueriesPerTurn: Number(turn.value), timeoutSeconds: Number(secs.value), maxConcurrent: Number(conc.value),
+      datasets: Object.fromEntries(heavy.filter(([, d, box]) => box.checked !== !!d.heavy).map(([key, , box]) => [key, { heavy: box.checked }])),
+    }), t("saved"));
+    const dryOut = h("p", { class: "mute small" });
+    // Not act(): its page refresh would drop the report just shown.
+    const dry = async (ev) => {
+      const btn = ev && ev.currentTarget;
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch(`${HOST}settings/query-safety/dry-run`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", credentials: "same-origin" });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
+        const danger = r.findings.filter((f) => f.level === "danger").length;
+        dryOut.textContent = t("qsDryDone", nf(r.shapes), nf(r.compiled), nf(danger), nf(r.findings.length - danger), nf(r.refused.length), nf(r.errors.length));
+        const pre = h("pre", { class: "small", style: "white-space:pre-wrap;max-height:320px;overflow:auto" }, r.text);
+        if (dryOut.nextSibling) dryOut.nextSibling.remove();
+        dryOut.after(pre);
+      } catch (e) {
+        toast(e.message, true);
+      } finally {
+        if (btn && btn.isConnected) btn.disabled = false;
+      }
+    };
+    const risks = (q.packRisks || []).concat((q.warnings || []).map((m) => ({ level: "warning", message: m })));
+    return card(t("qsH"), t("qsLede"),
+      h("div", { class: "form" }, fld(t("qsRows"), rows), fld(t("qsGroups"), groups), fld(t("qsPoints"), points), fld(t("qsWindow"), win), fld(t("qsTurn"), turn), fld(t("qsTimeout"), secs), fld(t("qsConc"), conc)),
+      heavy.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "lbl" }, t("qsDatasets")),
+        ...heavy.map(([key, d, box]) => h("label", { class: "switch" }, box, h("div", {}, h("div", { class: "lbl" }, d.table || key), h("div", { class: "help" }, t("qsHeavy", nf(q.heavy && q.heavy.defaultWindowDays || 90))))))) : null,
+      risks.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "lbl" }, t("qsRisks")), ...risks.map((r) => h("p", { class: r.level === "warning" ? "warn-line" : "mute small" }, r.message))) : null,
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: save, disabled: !q.writable }, t("saveB")),
+        q.source === "settings" ? h("button", { class: "btn quiet", type: "button", disabled: !q.writable, onclick: act(() => send({ maxRows: null, maxGroups: null, maxSeriesPoints: null, maxWindowDays: "default", requireTime: null, defaultWindowDays: "default", maxQueriesPerTurn: null, timeoutSeconds: null, maxConcurrent: null, datasets: Object.fromEntries(Object.keys(q.saved.datasets || {}).map((k) => [k, null])) }), t("saved")) }, t("resetDefaults")) : null,
+        h("button", { class: "btn quiet", type: "button", onclick: dry, disabled: !q.writable }, t("qsDry")), sourcePill(q.source)),
+      dryOut);
   }
   function configCards(s) {
     const b = s.budget || {};
@@ -1371,7 +1468,124 @@
     : null;
   const telemetry = tel ? tel.render : async () => [card(t("tabTelemetry"), null, h("p", { class: "empty" }, t("failed", "telemetry.js")))];
   const openField = (id) => (tel ? tel.openField(id) : null);
-  const TABS = { overview, review, questions, proposals, definitions, cache, models, access, settings, assistant: assistantTab, telemetry, spend };
+
+  // ---- Pack -------------------------------------------------------------------------------------
+  // The pack's runtime parts (the host's <prefix>/settings/pack): as YAML, checked and saved as versions.
+  /** A pack route's answer whatever its status, so refusals (with their problems) are shown, not thrown. */
+  async function packApi(path, opts = {}) {
+    const res = await fetch(`${HOST}settings/pack${path}`, {
+      method: opts.method || (opts.body ? "POST" : "GET"),
+      headers: opts.body ? { "content-type": "application/json" } : {},
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      credentials: "same-origin",
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON */ }
+    return { ok: res.ok, status: res.status, data: data || {} };
+  }
+  async function packTab() {
+    const [now, list] = await Promise.all([packApi(""), packApi("/versions?limit=50")]);
+    if (now.status === 404) return card(null, null, h("p", { class: "empty" }, t("pkNotHere")));
+    if (!now.ok) throw new Error(now.data.error || `HTTP ${now.status}`);
+    const p = now.data;
+    const versions = list.ok ? list.data.versions : [];
+    const byOf = (v) => v.by || "—";
+    const result = h("div", { "aria-live": "polite" });
+    const showResult = (r, okText) => {
+      const d = r.data;
+      const problems = d.problems || (r.ok ? [] : [d.error || `HTTP ${r.status}`]);
+      result.replaceChildren(
+        problems.length ? h("div", { class: "bad-line" }, h("b", {}, t("pkProblems")), h("ul", {}, problems.map((x) => h("li", { class: "mono" }, x)))) : h("p", { class: "note" }, okText(d)),
+        d.warnings && d.warnings.length ? h("details", { class: "note" }, h("summary", {}, t("pkWarnings")), h("ul", {}, d.warnings.map((x) => h("li", {}, x)))) : null);
+    };
+    const yaml = h("textarea", { rows: 22, class: "mono", spellcheck: "false", "aria-label": t("pkEdit"), style: "width:100%;min-height:320px" });
+    yaml.value = p.yaml || "";
+    const why = h("input", { type: "text", maxlength: "500" });
+    const changedText = (d) => (d.changed && d.changed.length ? t("pkOk", d.changed.join(", ")) : t("pkOkNone"));
+    const validate = async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try { showResult(await packApi("/validate", { body: { yaml: yaml.value } }), changedText); } finally { b.disabled = false; }
+    };
+    const save = async (ev) => {
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try {
+        const r = await packApi("", { method: "PUT", body: { yaml: yaml.value, why: why.value, version: p.version } });
+        if (!r.ok) return showResult(r, changedText);
+        toast(t("pkSaved", r.data.version.version));
+        await render("pack-edit");
+      } finally { if (b.isConnected) b.disabled = false; }
+    };
+    const post = (path, body, confirmText) => async (ev) => {
+      if (confirmText && !window.confirm(confirmText)) return;
+      const b = ev.currentTarget;
+      b.disabled = true;
+      try {
+        const r = await packApi(path, { body });
+        if (!r.ok) { toast(r.data.error || `HTTP ${r.status}`, true); return; }
+        toast(t("pkSaved", r.data.version.version));
+        await render();
+      } finally { if (b.isConnected) b.disabled = false; }
+    };
+    const head = p.version
+      ? t("pkVersion", p.version, byOf({ by: p.changedBy || "" }), when(p.changedAt))
+      : t("pkConfigOnly");
+    const parts = h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, t("pkPart")), h("th", {}, t("pkFrom")), h("th", {}))),
+      h("tbody", {}, (p.runtimeFields || []).map((f) => {
+        const src = (p.sources || {})[f] || "none";
+        return h("tr", {}, h("td", {}, h("code", {}, f)), h("td", {}, pill(t(`pk_${src}`), src === "settings" || src === "config and settings" ? "acc" : "")),
+          h("td", { style: "text-align:right" }, f in (p.layer || {}) ? h("button", { class: "btn sm quiet", type: "button", onclick: post("/reset", { fields: [f] }, t("pkResetQ", f)) }, t("pkResetPart")) : null));
+      }))));
+    const exportHref = (v) => `${HOST}settings/pack/export?download=1${v === undefined ? "" : `&version=${v}`}`;
+    const diffBox = (v) => {
+      const box = h("div", {});
+      const btn = h("button", { class: "btn sm quiet", type: "button", onclick: async () => {
+        if (box.childNodes.length) return box.replaceChildren();
+        const r = await packApi(`/diff?from=${Math.max(0, v - 1)}&to=${v}`);
+        box.replaceChildren(...(r.ok ? r.data.fields : []).map((x) => h("div", { style: "margin-top:8px" }, h("code", {}, x.field),
+          h("div", { class: "row", style: "gap:8px;align-items:flex-start;flex-wrap:wrap" },
+            h("div", { style: "flex:1;min-width:200px" }, h("div", { class: "mute" }, t("pkWas")), h("pre", {}, x.from === null ? "—" : JSON.stringify(x.from, null, 2))),
+            h("div", { style: "flex:1;min-width:200px" }, h("div", { class: "mute" }, t("pkIs")), h("pre", {}, x.to === null ? "—" : JSON.stringify(x.to, null, 2)))))));
+      } }, t("pkDiff"));
+      return [btn, box];
+    };
+    const versionRows = versions.length
+      ? h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, t("pkV")), h("th", {}, t("pkWhat")), h("th", { class: "hide-s" }, t("pkBy")), h("th", {}))),
+          h("tbody", {}, versions.map((v) => {
+            const [btn, box] = diffBox(v.version);
+            return h("tr", {},
+              h("td", { class: "mono" }, `v${v.version}`, v.version === p.version && !p.notApplied ? h("div", {}, pill(t("pkCurrent"), "ok")) : null),
+              h("td", {}, v.summary, v.why ? h("div", { class: "mute", style: "font-size:12.5px" }, v.why) : null, box),
+              h("td", { class: "hide-s mute", style: "font-size:12.5px;white-space:nowrap" }, `${byOf(v)}, ${when(v.at)}`),
+              h("td", { style: "white-space:nowrap;text-align:right" }, btn, " ",
+                v.version !== p.version ? h("button", { class: "btn sm quiet", type: "button", onclick: post("/revert", { version: v.version }, t("pkRevertQ", v.version)) }, t("pkRevert")) : null, " ",
+                h("a", { class: "btn sm ghost", href: exportHref(v.version) }, "YAML")));
+          }))))
+      : h("p", { class: "empty" }, t("pkNoVersions"));
+    const configOnly = h("div", { class: "scroll" }, h("table", {}, h("tbody", {}, (p.configOnly || []).map((c) => h("tr", {},
+      h("td", {}, h("code", {}, c.field)), h("td", { class: "mono" }, c.value === null || c.value === undefined ? "—" : typeof c.value === "string" ? c.value : JSON.stringify(c.value)), h("td", { class: "mute hide-s", style: "font-size:12.5px" }, c.reason))))));
+    const edit = card(t("pkEdit"), t("pkEditLede"),
+      yaml,
+      h("label", { class: "field", style: "margin-top:10px" }, h("span", {}, t("pkWhy")), why),
+      h("div", { class: "actions" }, h("button", { class: "btn quiet", type: "button", onclick: validate }, t("pkValidate")), h("button", { class: "btn", type: "button", onclick: save }, t("pkSave"))),
+      result);
+    edit.id = "pack-edit";
+    return [
+      card(t("pkNow"), null,
+        h("div", { class: "spread" }, h("b", {}, head), h("span", { class: "mute" }, t("pkCounts", nf(p.pack.datasets), nf(p.pack.dimensions), nf(p.pack.measures)))),
+        p.notApplied ? h("div", { class: "bad-line" }, t("pkNotApplied", p.notApplied.version, p.notApplied.why)) : null,
+        h("div", { style: "margin-top:12px" }, parts),
+        Object.keys(p.layer || {}).length || p.notApplied ? h("div", { class: "actions" }, h("button", { class: "btn sm danger", type: "button", onclick: post("/reset", {}, t("pkResetAllQ")) }, t("pkResetAll"))) : null,
+        p.warnings && p.warnings.length ? h("details", { class: "note" }, h("summary", {}, t("pkWarnings")), h("ul", {}, p.warnings.map((x) => h("li", {}, x)))) : null),
+      edit,
+      card(t("pkVersions"), null, versionRows),
+      card(t("pkExport"), t("pkExportLede"), h("div", { class: "actions" }, h("a", { class: "btn quiet", href: exportHref() }, t("pkExport")))),
+      card(t("pkConfigOnlyH"), t("pkConfigOnlyLede"), configOnly),
+    ];
+  }
+
+  const TABS = { overview, review, questions, proposals, definitions, pack: packTab, cache, models, access, settings, assistant: assistantTab, telemetry, spend };
   let rendering = 0;
   // Who became an admin since this admin's last visit (the admins roster): said at the top of every tab, once loaded.
   let newAdmins = [];

@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, recentRemovals, stagedStore, summarise } from "@lenspack/core";
-import { type Connector, type Ctx, type Notice, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
+import { type Connector, type Ctx, type Notice, ResolveError, budgetedConnector, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseBase, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, type TurnLog, type TurnResult, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, memoryTurnLog, quickReplyOf, selectionsFrom, tabsText, toVercelAI, turnKeyOf, viewFrom, widgetChanges } from "@lenspack/agent";
 import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, adminRights, answerView, boardRights, decide, limitLanguage, limitMessage, mayUse, otherTenant, principalOf, shownConfig, showsStatement, viewerSelections } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
@@ -128,6 +128,11 @@ export type AppOptions = {
   reuse?: Reuse;
   /** How many model turns run at once, and how many wait (@lenspack/agent TurnGate). Absent: a queue with the defaults (8 at a time). */
   queue?: TurnGate;
+  /**
+   * The most queries one chat turn may send (query safety, docs/operating/query-safety.md), read at the start of each
+   * turn, and the words of the refusal past it. Absent: no limit.
+   */
+  queriesPerTurn?: () => { max: number; message: string };
   /**
    * What each chat turn did, under the key its client sent (@lenspack/agent turns.ts): a reply cut off on its way can
    * be recovered (GET turn?key=), and asking again with the same key never runs the turn twice. Absent: kept in the process.
@@ -350,12 +355,16 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   const signOutUrl = opts.auth?.signOutUrl ?? opts.signOutUrl;
   const ledger = opts.ledger ?? usageLedger();
   // Every query a pack runs, from a board load or a chat tool, is counted against it.
-  const byName = new Map(hosts.map((h) => [h.name, { ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) }]));
+  const entry = (h: Host) => ({ ...h, connector: meteredConnector(h.connector, ledger.queriesOf(h.name)), catalogue: h.catalogue ?? catalogueFrom(h.pack) });
+  const byName = new Map(hosts.map((h) => [h.name, entry(h)]));
+  // The hosts as they are now: setHost replaces one here and in byName, never in place, so a turn already running keeps
+  // the host it started with.
+  const live = [...hosts];
   const providers = opts.providers ?? [];
   const queue = opts.queue ?? localTurnGate();
   const turnLog = opts.turns ?? memoryTurnLog();
   // Saved answers refreshed on a schedule or when data changes run as their askers, from these hosts (reuse/index.ts).
-  opts.reuse?.attach(prewarmTurns({ hosts, providers, router: opts.roles?.router, rules: () => opts.language?.(), promptVersion: () => promptVersionFor(opts.brand?.().name), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
+  opts.reuse?.attach(prewarmTurns({ hosts: live, providers, router: opts.roles?.router, rules: () => opts.language?.(), promptVersion: () => promptVersionFor(opts.brand?.().name), sinks: [ledger, ...(opts.usageSinks ?? [])] }), hosts.find((x) => x.pack.timeZone)?.pack.timeZone);
   // What every saved answer of a pack shares on this deployment (the kernel's ReuseBase): the pack as hosted, before any
   // caller's access narrows it, its definitions, the prompt version, the language rules and the pack's own row scope.
   const reuseBase = async (h: Host): Promise<ReuseBase> => ({ pack: h.pack, definitions: await definitionsVersion(opts.definitions, h.name, h.pack), promptVersion: promptVersionFor(opts.brand?.().name), rules: opts.language?.(), scope: h.ctx.scope ?? [] });
@@ -412,7 +421,23 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   // What the client needs to show the mic; null when speech is off.
   const speechInfo = () => (opts.speech?.apiKey ? { maxSeconds: opts.speech.maxSeconds ?? 60 } : null);
 
-  return async function handle(req: IncomingMessage, res: ServerResponse) {
+  /**
+   * A new pack for a hosted pack name (an admin's change to the pack while the server runs): the board API, the chat and
+   * refreshes of saved answers use it from the next request on, and turns already running finish on the one they began
+   * with. Saved answers kept under the old pack are dropped, as at start (their key holds the pack's hash, so none is
+   * served meanwhile).
+   */
+  async function setHost(name: string, next: Pick<Host, "pack" | "packYaml" | "connector"> & { catalogue?: Catalogue }) {
+    const i = live.findIndex((h) => h.name === name);
+    if (i < 0) throw new Error(`no pack ${name}`);
+    const host: Host = { ...live[i]!, ...next, catalogue: next.catalogue };
+    live[i] = host;
+    byName.set(name, entry(host));
+    if (opts.reuse) await opts.reuse.prune({ [name]: await reuseBase(host) }).catch((e) => opts.log?.(`reuse: could not drop stale saved answers: ${e instanceof Error ? e.message : String(e)}`));
+  }
+
+  return Object.assign(handle, { setHost });
+  async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? "/", "http://x");
     const { api, pack: packName, board: boardId, action } = apiRoute(req.url);
     try {
@@ -818,6 +843,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // transcriptions the question was spoken through (already recorded when they ran; counted here, not again).
     const calls: CallRecord[] = claimClips(user, body.speech);
     const queries = emptyQueryMeter();
+    // Every query this turn sends, counted (the meter) and capped (query safety: one question cannot fan out without end).
+    const perTurn = opts.queriesPerTurn?.();
+    const turnConnector = perTurn ? budgetedConnector(meteredConnector(h.connector, queries), perTurn.max, perTurn.message) : meteredConnector(h.connector, queries);
     // The answer card (kernel/agent answer.ts), from the data calls the tools make; policy decides what it shows.
     const shown = answerView(h.ctx, opts.explain?.());
     const name = opts.brand?.().name;
@@ -835,7 +863,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // chat-save line says which versions were saved, if any.
     const personal = opts.personal?.(req, { user, pack: h.name, boardId, readOnly });
     const tools = toVercelAI([
-      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal, onData: card?.onData, view: turnView,
+      ...boardTools({ pack, connector: turnConnector, store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal, onData: card?.onData, view: turnView,
         onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }),
       ...(clarifying && defs ? [clarifyTool({ note: (n) => defs.note(h.name, n), question: instruction })] : []),
     ]);
@@ -883,7 +911,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // A question answered before, by someone with the same access, on the same pack and board: answered from the
     // saved plan without the agent (reuse/, docs/features/saved-answers.md). "Ask fresh" (fresh: true) always runs the agent.
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
-    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: meteredConnector(h.connector, queries), store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, copy: !!personal?.offersCopy, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples, ...(opts.reuse ? { base: await reuseBase(byName.get(h.name) ?? h) } : {}) };
+    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: turnConnector, store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, copy: !!personal?.offersCopy, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples, ...(opts.reuse ? { base: await reuseBase(byName.get(h.name) ?? h) } : {}) };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
     const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections, unusedSelections: viewer.dropped, assistant: name });
     const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) }).catch(async (e) => {

@@ -56,7 +56,8 @@ export type PersonalEvent = {
 export type PersonalOptions = {
   client: SupersetClient;
   store: SupersetBoards;
-  pack: Pack;
+  /** The pack, or how to read the one in force (an admin can change it while the server runs). */
+  pack: Pack | (() => Pack);
   /** Binds a dashboard to a board (reading it from Superset) and returns the board's id. */
   bindBoard: (dashboard: number) => Promise<string>;
   links: RecordStore<PersonalDashboard>;
@@ -82,13 +83,14 @@ const urlOf = (base: string, id: number) => `${base}/superset/dashboard/${id}/`;
 export type SignedRights = { dashboard: number | null; view: boolean; edit: boolean; /** Superset would allow the edit; the edit scope doesn't. */ byScope?: boolean };
 
 export function personalDashboards(o: PersonalOptions) {
-  const { client, store, pack } = o;
+  const { client, store } = o;
+  const packNow = () => (typeof o.pack === "function" ? o.pack() : o.pack);
   const log = o.log ?? (() => {});
   const now = () => (o.now ?? (() => new Date()))().toISOString();
   const newId = o.newId ?? (() => `l_${Math.random().toString(36).slice(2, 10)}`);
   const audit = (who: PersonalActor, action: string, outcome: PersonalAuditEvent["outcome"], board?: string, detail?: string) => {
     try {
-      o.audit?.({ at: now(), user: who.user, pack: pack.pack, ...(board ? { board } : {}), action, outcome, ...(detail ? { detail: detail.slice(0, 300) } : {}) });
+      o.audit?.({ at: now(), user: who.user, pack: packNow().pack, ...(board ? { board } : {}), action, outcome, ...(detail ? { detail: detail.slice(0, 300) } : {}) });
     } catch (e) {
       log(`audit failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -310,7 +312,7 @@ export function personalDashboards(o: PersonalOptions) {
     let previous = 0;
     const { board: saved, made: fit } = await store.replaceFrom(
       target.board,
-      (board, locked) => ((previous = board.version), fitSavedLayout(got.layout.config, board.config, pack, { ctx: target.ctx, capabilities: target.capabilities, savedLocked: got.layout.locked, targetLocked: locked })),
+      (board, locked) => ((previous = board.version), fitSavedLayout(got.layout.config, board.config, packNow(), { ctx: target.ctx, capabilities: target.capabilities, savedLocked: got.layout.locked, targetLocked: locked })),
       { source: "layout", summary: `applied saved layout “${got.layout.name}”` },
     );
     applied(who, got.layout, target.board, { version: saved.version, skipped: fit.skipped.length });

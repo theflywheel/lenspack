@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import { type CacheSettings, type ChecklistInput, fieldNotices, type QueueSettings, type TelemetryLine, type TranscriptLine, type TurnLine, cacheSettings, localTurnGate, queueSettings, reuseLayer, telemetryChecklist, withoutNames } from "@lenspack/agent";
-import { type DeploymentContext, adminRights, adminUsersFrom, deploymentContextSchema, recordRights } from "@lenspack/policy";
+import { type DeploymentContext, adminRights, adminUsersFrom, deploymentContextSchema, mayUse, recordRights } from "@lenspack/policy";
 
 import type { AdminAccessSetup, UserAccessSetup } from "./admin-access";
 
@@ -335,6 +335,11 @@ export function adminRoutes(o: AdminRouteOptions) {
       // consent: the notice this user must acknowledge before the mic records, while recordings are kept; else null.
       const speech = s.speech.apiKey ? { enabled: true, maxSeconds: s.speech.maxSeconds, holdMs: s.holdMs(), consent: await s.audio.consentNeeded(who.user) } : { enabled: false };
       return send(200, { ...o.info?.(url, req), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values(), brand: s.brand.get() });
+    }
+    // Who the caller is here and what they may do, changing nothing: a script checks its admin API key with it.
+    if (path === "/whoami" && req.method === "GET") {
+      const r = adminRights(who, o.access?.state());
+      return send(200, { user: who.user, administer: r.administer, users: r.users, owner: r.owner, via: r.via ?? null, detail: r.detail ?? null, usesAssistant: mayUse(who) });
     }
     if (path === "/settings/speech/models") return send(200, (await speechModels({ baseUrl: s.speech.baseUrl })).models);
     const put = req.method === "PUT";

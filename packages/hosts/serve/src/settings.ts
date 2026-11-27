@@ -33,7 +33,7 @@ export class SettingsSaveError extends Error {
   }
 }
 
-/** Writes a file whole or not at all: a temporary file renamed into place, removed again if the write fails. mode: a private file's (0o600). */
+/** Writes a file whole or not at all: a temporary file renamed into place, removed again if the write fails. `mode` (0o600: the owner only) is set before the rename. */
 export function writeWhole(path: string, text: string, mode?: number) {
   const tmp = `${path}.${process.pid}.tmp`;
   try {

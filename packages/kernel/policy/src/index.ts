@@ -2,7 +2,7 @@ import { type Catalogue, type Ownership, type ScopeClause, filterClauseSchema, q
 import { type Pack, operands, parseExpr } from "@lenspack/pack";
 import { z } from "zod";
 
-import { type AdminAccess, PASSWORD_PREFIX, PASSWORD_ROLE } from "./access";
+import { API_KEY_PREFIX, API_KEY_ROLE, type AdminAccess, PASSWORD_PREFIX, PASSWORD_ROLE } from "./access";
 import { inBoardScope } from "./board-scope";
 import { type EditScopeFacts, inEditScope } from "./personal";
 
@@ -106,8 +106,8 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
   const among = (list: readonly string[]) => list.some((e) => e === "*" || matchesEntry(id, e, given));
   // The one place a host's roles become Lenspack's admin role.
   const admin = among(rights.admins ?? DEFAULT_ADMINS);
-  // The admin sign-in's mark is never a host's to give (passwordAdmin() adds it after this).
-  const own = given.filter((r) => r !== PASSWORD_ROLE);
+  // The admin sign-in's and the API keys' marks are never a host's to give (passwordAdmin() and apiKeyAdmin() add them after this).
+  const own = given.filter((r) => r !== PASSWORD_ROLE && r !== API_KEY_ROLE);
   const roles = admin ? (own.includes(ADMIN_ROLE) ? own : [...own, ADMIN_ROLE]) : own.filter((r) => r !== ADMIN_ROLE);
   const maintain = !!id.maintain || among(rights.maintainers);
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
@@ -429,31 +429,38 @@ export function decide<C extends Scoped>(who: Principal, pack: Pack, o: { name?:
 export type AdminRights = {
   administer: boolean;
   users: boolean;
-  /** May grant admin (superset-users): an owner, or a password admin, the way in when owners are locked out. */
+  /** May grant admin (superset-users): an owner, a password admin (the way in when owners are locked out), or an admin API key. */
   owner: boolean;
-  /** How they qualify, for the admins roster: a role (and which), an owner, a grant, or a named password. */
-  via?: "role" | "owner" | "grant" | "password";
-  /** The role's name, or the password's name. */
+  /** How they qualify, for the admins roster: a role (and which), an owner, a grant, a named password or an admin API key. */
+  via?: "role" | "owner" | "grant" | "password" | "api-key";
+  /** The role's name, the password's name, or the key's name. */
   detail?: string;
 };
 /**
  * With `access` (access.ts), the deployment's way of deciding admins is applied here too: under named users, only the
  * owners and the users they granted administer, and only owners (or a password admin) may grant; under the password,
  * only a password admin whose name is still on the list; under superset-role, the role. Modes combine: any one lets a
- * person in. A host user named like a password admin ("admin:…") never administers. Without `access`, the admin role
+ * person in. An admin API key (apiKeyAdmin, access.ts) administers in every mode while its name is still set, and may
+ * grant. A host user named like a password admin ("admin:…") or a key ("api:…") never administers. Without `access`, the admin role
  * principalOf() settled decides, as for every caller already settled under rightsUnder(access, …).
  */
 export function adminRights(who: { user?: string; userId?: string | number | null; roles?: readonly string[]; usage?: boolean }, access?: AdminAccess): AdminRights {
   const role = !!who.roles?.includes(ADMIN_ROLE);
   const signedIn = !!who.user?.startsWith(PASSWORD_PREFIX) && !!who.roles?.includes(PASSWORD_ROLE);
+  const keyed = !!who.user?.startsWith(API_KEY_PREFIX) && !!who.roles?.includes(API_KEY_ROLE);
   const out = (administer: boolean, owner: boolean, via?: AdminRights["via"], detail?: string): AdminRights => ({ administer, users: administer && !!who.usage, owner: administer && owner, ...(administer && via ? { via } : {}), ...(administer && detail ? { detail } : {}) });
-  if (!access) return out(role, false, signedIn ? "password" : role ? "role" : undefined);
+  if (!access) return out(role, false, signedIn ? "password" : keyed ? "api-key" : role ? "role" : undefined);
   const has = (m: AdminAccess["modes"][number]) => access.modes.includes(m);
+  // An admin API key: the master override, in every mode, while its name is still set; it may grant admins too.
+  if (keyed) {
+    const name = who.user!.slice(API_KEY_PREFIX.length);
+    return out(role && !!access.apiKeys?.includes(name), true, "api-key", name);
+  }
   if (signedIn) {
     const name = who.user!.slice(PASSWORD_PREFIX.length);
     return out(role && has("password") && access.passwords.includes(name), true, "password", name);
   }
-  if (!who.user || who.user.startsWith(PASSWORD_PREFIX)) return out(false, false);
+  if (!who.user || who.user.startsWith(PASSWORD_PREFIX) || who.user.startsWith(API_KEY_PREFIX)) return out(false, false);
   const id = { user: who.user, userId: who.userId ?? undefined };
   if (has("superset-users")) {
     const named = (list: readonly string[]) => list.some((e) => matchesEntry(id, e));
@@ -560,4 +567,7 @@ export * from "./personal";
 export * from "./access";
 export * from "./surface";
 export * from "./board-scope";
+export * from "./pack-layer";
+export * from "./query-safety";
+export * from "./query-checks";
 export * from "./limits";

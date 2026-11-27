@@ -6,7 +6,7 @@ import { type Principal, passwordAdmin, passwordNameOk, passwordUser } from "@le
 
 import type { AuditEvent } from "./audit";
 import { escapeHtml, readBody } from "./http";
-import { addressKey, attemptLimiter, passwordChecker, passwordProblem, sessionKey, stateFolder } from "./password";
+import { type NamedSecret, type NamedSecretKind, addressKey, attemptLimiter, namedSecret, namedSecretsFrom, passwordChecker, sessionKey, stateFolder } from "./password";
 import { cookie, cookies, sameSite, sealer } from "./session";
 
 // The admin pages' own sign-in, for a deployment whose admin access includes "password" (@lenspack/policy, access.ts):
@@ -27,44 +27,19 @@ import { cookie, cookies, sameSite, sealer } from "./session";
 // a person is removing their line and restarting: their session ends, since their name is no longer on the list.
 
 /** One admin password from the deployment: its name, the password or its hash, and where it was set. */
-export type AdminPassword = { name: string; password?: string; passwordHash?: string; from: string };
+export type AdminPassword = NamedSecret;
+
+/** Admin passwords, in words, for namedSecretsFrom: 12 characters or more, named like a password (passwordNameOk). */
+const ADMIN_PASSWORD: NamedSecretKind = { a: "an admin password", noun: "password", nameOk: passwordNameOk };
 
 /**
  * The admin passwords the environment sets, checked. Throws on a line that isn't name:secret, a bad or repeated name, or
  * a secret that can't be used, naming where it is (never the secret), so a mistake stops the server at start.
  */
 export function adminPasswordsFrom(env: NodeJS.ProcessEnv = process.env, read: (path: string) => string = (f) => readFileSync(f, "utf8")): AdminPassword[] {
-  const out: AdminPassword[] = [];
-  const add = (name: string, secret: string, from: string) => {
-    if (!passwordNameOk(name)) throw new Error(`${from}: "${name}" is not a name for an admin password: letters, digits, dot, dash or underscore, up to 40`);
-    if (out.some((p) => p.name === name)) throw new Error(`${from}: the name "${name}" is given twice${name === "password" ? " (LENSPACK_ADMIN_PASSWORD is the name \"password\")" : ""}`);
-    const entry: AdminPassword = secret.startsWith("scrypt$") ? { name, passwordHash: secret, from } : { name, password: secret, from };
-    const problem = passwordProblem(entry);
-    if (problem) throw new Error(`${from}: the password named "${name}": ${problem}`);
-    out.push(entry);
-  };
-  const pairs = (text: string, from: string, split: RegExp) => {
-    text.split(split).forEach((raw, i) => {
-      const line = raw.replace(/\r$/, "");
-      if (!line.trim() || line.trim().startsWith("#")) return;
-      const at = line.indexOf(":");
-      if (at < 1) throw new Error(`${from}, entry ${i + 1}: write name:secret, like ops:a-long-secret`);
-      add(line.slice(0, at).trim(), line.slice(at + 1), from);
-    });
-  };
-  if (env.LENSPACK_ADMIN_PASSWORDS?.trim()) pairs(env.LENSPACK_ADMIN_PASSWORDS, "LENSPACK_ADMIN_PASSWORDS", /[,\n]/);
-  const file = env.LENSPACK_ADMIN_PASSWORDS_FILE?.trim();
-  if (file) {
-    let text: string;
-    try {
-      text = read(file);
-    } catch (e) {
-      throw new Error(`LENSPACK_ADMIN_PASSWORDS_FILE: can't read ${file}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-    pairs(text, "LENSPACK_ADMIN_PASSWORDS_FILE", /\n/);
-  }
-  if (env.LENSPACK_ADMIN_PASSWORD) add("password", env.LENSPACK_ADMIN_PASSWORD, "LENSPACK_ADMIN_PASSWORD");
-  else if (env.LENSPACK_ADMIN_PASSWORD_HASH) add("password", env.LENSPACK_ADMIN_PASSWORD_HASH.trim(), "LENSPACK_ADMIN_PASSWORD_HASH");
+  const out = namedSecretsFrom(env, { ...ADMIN_PASSWORD, list: "LENSPACK_ADMIN_PASSWORDS", file: "LENSPACK_ADMIN_PASSWORDS_FILE", read });
+  const unnamed = env.LENSPACK_ADMIN_PASSWORD ? (["LENSPACK_ADMIN_PASSWORD", env.LENSPACK_ADMIN_PASSWORD] as const) : env.LENSPACK_ADMIN_PASSWORD_HASH ? (["LENSPACK_ADMIN_PASSWORD_HASH", env.LENSPACK_ADMIN_PASSWORD_HASH.trim()] as const) : null;
+  if (unnamed) out.push(namedSecret(out, "password", unnamed[1], unnamed[0], ADMIN_PASSWORD, ' (LENSPACK_ADMIN_PASSWORD is the name "password")'));
   return out;
 }
 

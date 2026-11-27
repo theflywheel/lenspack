@@ -179,6 +179,13 @@ describe("Superset mode's server", () => {
     expect((await call("/_superset/info", { headers: { [IDENTITY_HEADER]: signIdentity({ u: "x", a: true, t: now() }, "z".repeat(64)) } })).status).toBe(401);
   });
 
+  it("ignores an Authorization header when no admin API key is set, as before", async () => {
+    expect(output).toContain("admin API keys: none");
+    const r = await call("/_superset/settings", { headers: { authorization: `Bearer ${"x".repeat(40)}` } });
+    expect([r.status, r.body.error]).toEqual([401, "sign in to Superset first"]);
+    expect((await call("/_admin/whoami", { headers: { authorization: `Bearer ${"x".repeat(40)}` } })).status).toBe(404);
+  });
+
   it("tells any signed-in user what the panel needs", async () => {
     const r = await call("/_superset/info?lang=fr", { as: VIEWER });
     expect(r.status).toBe(200);
@@ -239,7 +246,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "limits", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "limits", "llmFrom", "measures", "pack", "packLayer", "panel", "personal", "providers", "publicPath", "querySafety", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -294,6 +301,25 @@ describe("Superset mode's server", () => {
     expect(await put("/_superset/settings/features", { voice: "off" })).toMatchObject({ status: 400, body: { error: "voice must be true, false or null" } });
     expect((await put("/_superset/settings/features", "{not json")).status).toBe(400);
     expect(await put("/_superset/settings/features", "[1]")).toMatchObject({ status: 400, body: { error: "body must be a JSON object" } });
+  });
+
+  it("shows the query limits to admins, tightens them freely and loosens them only with confirm", async () => {
+    const view = (await call("/_superset/settings", { as: ADMIN })).body.querySafety;
+    expect(view).toMatchObject({ limits: { maxRows: 20_000, maxSeriesPoints: 20_000, requireTime: false }, server: { maxQueriesPerTurn: 100, timeoutSeconds: 30, maxConcurrent: 8 }, source: "deployment", writable: true });
+    expect(view.datasets.visits).toMatchObject({ table: "visits", id: 1, heavy: false });
+    // Tighter: a heavy dataset, fewer queries a turn.
+    const tight = await put("/_superset/settings/query-safety", { maxQueriesPerTurn: 40, datasets: { visits: { heavy: true } } });
+    expect(tight).toMatchObject({ status: 200, body: { ok: true, querySafety: { server: { maxQueriesPerTurn: 40 }, source: "settings", datasets: { visits: { heavy: true, limits: { requireTime: true, defaultWindowDays: 90 } } } } } });
+    // Looser than the deployment's own: refused until confirmed, and the answer says what would loosen.
+    const loose = await put("/_superset/settings/query-safety", { maxRows: 50_000 });
+    expect(loose).toMatchObject({ status: 409, body: { error: expect.stringContaining('"confirm": true'), looser: [{ field: "maxRows", from: 20_000, to: 50_000 }] } });
+    expect(await put("/_superset/settings/query-safety", { maxRows: 50_000, confirm: true })).toMatchObject({ status: 200, body: { loosened: [{ field: "maxRows" }], querySafety: { limits: { maxRows: 50_000 } } } });
+    expect(await put("/_superset/settings/query-safety", { datasets: { nowhere: { heavy: true } } })).toMatchObject({ status: 400, body: { error: "not a dataset of the pack: nowhere" } });
+    expect(await put("/_superset/settings/query-safety", { maxRows: 1 })).toMatchObject({ status: 400 });
+    expect((await put("/_superset/settings/query-safety", { maxRows: 1000 }, VIEWER)).status).toBe(403);
+    // Back to the deployment's own.
+    const back = await put("/_superset/settings/query-safety", { maxRows: null, maxQueriesPerTurn: null, datasets: { visits: null } });
+    expect(back).toMatchObject({ status: 200, body: { querySafety: { source: "deployment", limits: { maxRows: 20_000 }, datasets: { visits: { heavy: false } } } } });
   });
 
   it("changes the saved-answer settings, and shows the saved answers to admins", async () => {

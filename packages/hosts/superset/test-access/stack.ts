@@ -253,6 +253,8 @@ export type Stack = {
   cut: (on: boolean) => void;
   /** Answers this Superset path (below its root) with Superset's own 404 on Lenspack's way to Superset, or no longer (null). */
   missingRoute: (path: string | null) => void;
+  /** Scans (sequential and index) of each data table so far, from Postgres's own statistics: proof of what ran. */
+  tableScans: () => Record<string, number>;
   /** Turns Superset's dashboard roles (DASHBOARD_RBAC) on or off, without a restart (superset_config.py). */
   dashboardRbac: (on: boolean) => void;
   /** A session signed in to Superset as this fixture user. */
@@ -419,6 +421,11 @@ export async function startStack(
       modelCalls: stub.calls,
       cut: way.cut,
       missingRoute: way.missing,
+      tableScans: () => {
+        const r = docker(["exec", containers[0]!, "psql", "-U", "lp", "-d", "data", "-tAF", "\t", "-c", "SELECT relname, seq_scan + coalesce(idx_scan, 0) FROM pg_stat_user_tables ORDER BY relname"]);
+        if (r.status) throw new Error(`could not read Postgres's table statistics: ${r.stderr.trim()}`);
+        return Object.fromEntries(r.stdout.trim().split("\n").filter(Boolean).map((l) => { const [t, n] = l.split("\t"); return [t!, Number(n)]; }));
+      },
       dashboardRbac: (on) => {
         const r = docker(["exec", containers[1]!, "sh", "-c", on ? "rm -f /tmp/lp-dashboard-rbac-off" : "touch /tmp/lp-dashboard-rbac-off"]);
         if (r.status) throw new Error(`could not turn dashboard roles ${on ? "on" : "off"}: ${r.stderr.trim()}`);

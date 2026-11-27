@@ -243,18 +243,21 @@ export function accessFallbackFrom(value: string | undefined): AccessFallback {
 /** Superset's own 404 for the access route (no such route), not the endpoint's (no such user). */
 const routeMissing = (e: unknown) => e instanceof SupersetError && e.status === 404 && (e.body as { message?: string } | undefined)?.message !== "no such user";
 
-export function supersetPolicy(o: { client: SupersetClient; binding: Binding; log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number; fallback?: AccessFallback }): HostPolicy {
+export function supersetPolicy(o: { client: SupersetClient; /** The binding, or how to read the one in force (an admin can change the pack while the server runs). */ binding: Binding | (() => Binding); log: (s: string) => void; dashboards?: () => number[]; ttlMs?: number; now?: () => number; fallback?: AccessFallback }): HostPolicy {
   const ttl = o.ttlMs ?? 60_000;
   const now = o.now ?? Date.now;
-  const datasets = [...o.binding.entityOf.keys()];
-  const cache = new Map<string, { at: number; value: Promise<HostAnswer> }>();
+  const bindingNow = () => (typeof o.binding === "function" ? o.binding() : o.binding);
+  // Datasets are the deploy config's alone: a change to the pack never adds or takes one away.
+  const datasets = [...bindingNow().entityOf.keys()];
+  // An answer is read through the binding it was worked out under: a new pack (a new binding) asks again.
+  const cache = new Map<string, { at: number; value: Promise<HostAnswer>; binding: Binding }>();
   const rlsOnly = o.fallback === "rls-only";
   let rbacSaid: string | undefined;
   const boardsOf = (ids: number[], open: (id: number) => boolean) => {
     const hiddenBoards = ids.filter((id) => !open(id)).map((id) => `superset-${id}`);
     return hiddenBoards.length ? { hiddenBoards } : {};
   };
-  const ask = async (user: string, roles: string[] | undefined): Promise<HostAnswer> => {
+  const ask = async (user: string, roles: string[] | undefined, binding: Binding): Promise<HostAnswer> => {
     const dashboards = o.dashboards?.() ?? [];
     try {
       try {
@@ -269,10 +272,10 @@ export function supersetPolicy(o: { client: SupersetClient; binding: Binding; lo
               : `access: Superset's dashboard roles (DASHBOARD_RBAC) are ${rbac ? "on: a dashboard opened through one reads its charts' datasets there" : "off"}`,
           );
         }
-        const onBoards = boardEntitiesFrom(r.result.datasets, r.result.dashboardDatasets, rbac, o.binding, o.log, user);
+        const onBoards = boardEntitiesFrom(r.result.datasets, r.result.dashboardDatasets, rbac, binding, o.log, user);
         // A plugin from before dashboards were asked about answers none: each counts as kept.
         return {
-          ...identityFrom(r.result.datasets, o.binding, o.log, user),
+          ...identityFrom(r.result.datasets, binding, o.log, user),
           ...boardsOf(dashboards, (id) => r.result.dashboards?.[String(id)] === true),
           ...(Object.keys(onBoards).length ? { boardEntities: onBoards } : {}),
           hiddenReason: SUPERSET_HIDDEN_REASON,
@@ -286,18 +289,19 @@ export function supersetPolicy(o: { client: SupersetClient; binding: Binding; lo
       // A regular rule is matched by role: without the signed roles (an older plugin), it cannot be.
       if (!roles) throw new Error("the identity carries no Superset roles; update lenspack_superset.py");
       // Superset's REST API can't say who may open a dashboard: each counts as kept, but for the one a request is signed for.
-      return { ...identityFrom(await stockAccess(o.client, datasets, roles), o.binding, o.log, user), ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_HIDDEN_REASON };
+      return { ...identityFrom(await stockAccess(o.client, datasets, roles), binding, o.log, user), ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_HIDDEN_REASON };
     } catch (e) {
       o.log(`access: could not ask Superset about ${user} (${e instanceof Error ? e.message : String(e)}); every dataset and dashboard is kept from them for now`);
       cache.delete(user);
-      return { hiddenEntities: [...o.binding.entityOf.values()], ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_UNREACHABLE_REASON };
+      return { hiddenEntities: [...binding.entityOf.values()], ...boardsOf(dashboards, () => false), hiddenReason: SUPERSET_UNREACHABLE_REASON };
     }
   };
   return (user, roles) => {
+    const binding = bindingNow();
     const hit = cache.get(user);
-    if (hit && now() - hit.at < ttl) return hit.value;
-    const value = ask(user, roles);
-    cache.set(user, { at: now(), value });
+    if (hit && hit.binding === binding && now() - hit.at < ttl) return hit.value;
+    const value = ask(user, roles, binding);
+    cache.set(user, { at: now(), value, binding });
     return value;
   };
 }

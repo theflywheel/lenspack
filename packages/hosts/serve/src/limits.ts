@@ -12,7 +12,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { LIMIT_KEYS, type LimitDecision, type LimitKey, type LimitRefusal, type PerUserLimits, type QuestionLimits, decideQuestion, limitsFor, limitsOn, perUserLimitsFrom, questionLimitsFrom } from "@lenspack/policy";
+import { LIMIT_KEYS, type LimitDecision, type LimitKey, type LimitRefusal, type PerUserLimits, type QuestionLimits, decideQuestion, questionLimitsFor, limitsOn, perUserLimitsFrom, questionLimitsFrom } from "@lenspack/policy";
 
 import type { SettingsStore } from "./settings";
 import { writeWhole } from "./settings";
@@ -170,7 +170,7 @@ export function limitCounter(o: { limits: () => PerUserLimits; file?: string; no
       today: counted(user),
       lastMinute: times.filter((t) => t > at - 60_000).length,
       lastHour: times.length,
-      limits: limitsFor(limits, user),
+      limits: questionLimitsFor(limits, user),
       atLimit: d.ok ? null : d.limit,
       refusedToday: p?.refused ?? 0,
       lastRefused: p?.lastRefused ?? null,
