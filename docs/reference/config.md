@@ -271,7 +271,7 @@ deployment's data boundary: a change there may make it narrower, never wider tha
 | `budget` | `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | daily caps | yes: `settings/budget` |
 | `historyTurns` | 8 | how many recent turns the chat sends with each question | yes: `settings/history` |
 | `speech` | `model: mistralai/voxtral-mini-transcribe-3-0`, `maxSeconds: 60`, `holdMs: 2000` | voice: `{ model, baseUrl, maxSeconds, holdMs }`. See [Voice](../features/voice.md) | yes: `settings/speech`, but not `baseUrl` |
-| `language` | `default: auto`, `titles: board`, `board: en` | see [Languages](../features/languages.md) | yes: `settings/language` |
+| `language` | `default: auto`, `titles: board`, `board: en`, `offer: [en, fr, hi, pt]` (`LENSPACK_LANGUAGES=en,fr,pt` overrides `offer`) | see [Languages](../features/languages.md); `default` and `board` must be in `offer` | yes: `settings/language` |
 | `telemetry`, `context` | | as in `lenspack.yaml`; the telemetry sits in the state directory. See [Telemetry](../features/telemetry.md) | yes: `settings/telemetry`, `settings/context` |
 | `features`, `cache`, `queue`, `explain`, `brand` | | as in `lenspack.yaml`. For `brand`, see [Naming the assistant](../features/naming.md) | yes: `settings/<name>`; `explain.sql` at `settings/explain` |
 | `limits` | off | per-person question limits, as in `lenspack.yaml`; `LENSPACK_LIMIT_*` win over it, and the settings page over both. See [Question limits](../features/limits.md) | yes: `settings/limits` |

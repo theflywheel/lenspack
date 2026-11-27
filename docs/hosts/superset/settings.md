@@ -25,7 +25,7 @@ table on [What can change without a redeploy](runtime.md). A page holding an old
 ## Voice and language
 
 `speech.model` (default `mistralai/voxtral-mini-transcribe-3-0`), `speech.holdMs` (2000), `speech.maxSeconds` (60)
-and `language.default` (`auto`), `language.titles` (`board`), `language.board` (`en`) in `superset.yaml` are
+and `language.default` (`auto`), `language.titles` (`board`), `language.board` (`en`), `language.offer` (all four; `LENSPACK_LANGUAGES`) in `superset.yaml` are
 defaults. An admin changes them on the settings page. What they do is in [Voice](../../features/voice.md) and
 [Languages](../../features/languages.md).
 
@@ -35,10 +35,10 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 
 | route | what it does |
 |---|---|
-| `GET /_superset/settings` | everything below, each with its value, default and source. Includes `speech` {enabled, keyFrom, model, defaultModel, source, holdMs, defaultHoldMs, holdMsRange, writable}, `language` {default, titles, board, options, defaults, source, writable} and `features` {values, defaults, source, options, writable} |
+| `GET /_superset/settings` | everything below, each with its value, default and source. Includes `speech` {enabled, keyFrom, model, defaultModel, source, holdMs, defaultHoldMs, holdMsRange, writable}, `language` {default, titles, board, offer, options, defaults, source, writable} and `features` {values, defaults, source, options, writable} |
 | `GET /_superset/settings/speech/models` | the provider's transcription models with a price per minute (cached an hour) |
 | `PUT /_superset/settings/speech` | any of `{model, holdMs, maxSeconds}`; a field left out is kept, `null` puts it back to the default |
-| `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
+| `PUT /_superset/settings/language` | any of `{default, titles, board, offer}`; `null` resets a field. `offer` is a list such as `["en","fr","pt"]`; `default` and `board` must be in it (400 otherwise) |
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}`; `null` drops the admin's value |
 | `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes, prewarm}` for [saved answers](../../features/saved-answers.md); `null` resets a field |
 | `PUT /_superset/settings/queue` | any of `{maxConcurrent, maxWaiting, maxWaitSeconds}` for [busy hours](../../features/busy-hours.md) |

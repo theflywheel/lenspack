@@ -364,6 +364,20 @@ describe("Superset mode's server", () => {
     expect((await put("/_superset/settings/language", { default: null, titles: null })).body).toMatchObject({ default: "auto", titles: "board", source: "default" });
   });
 
+  it("sets the offered languages, and keeps the default and board among them", async () => {
+    const set = await put("/_superset/settings/language", { offer: ["pt", "en", "fr"] });
+    expect(set).toMatchObject({ status: 200, body: { offer: ["en", "fr", "pt"], options: ["auto", "en", "fr", "pt"], source: "settings" } });
+    expect((await call("/_superset/info", { as: VIEWER })).body.language).toMatchObject({ offer: ["en", "fr", "pt"], options: ["auto", "en", "fr", "pt"] });
+    expect(await put("/_superset/settings/language", { default: "hi" })).toMatchObject({ status: 400, body: { error: expect.stringContaining("language.default (hi) must be one of") } });
+    expect(await put("/_superset/settings/language", { board: "hi" })).toMatchObject({ status: 400 });
+    expect(await put("/_superset/settings/language", { offer: ["en", "de"] })).toMatchObject({ status: 400 });
+    expect(await put("/_superset/settings/language", { offer: [] })).toMatchObject({ status: 400 });
+    // Narrowing past the saved default is refused too.
+    await put("/_superset/settings/language", { default: "pt" });
+    expect(await put("/_superset/settings/language", { offer: ["en", "fr"] })).toMatchObject({ status: 400 });
+    expect((await put("/_superset/settings/language", { offer: null, default: null })).body).toMatchObject({ offer: ["en", "fr", "hi", "pt"], source: "default" });
+  });
+
   it("checks a chat model against the providers, and resets it", async () => {
     expect(await put("/_superset/settings/chat", { model: "nope" })).toMatchObject({ status: 400, body: { error: 'unknown model "nope": one of ' } });
     expect(await put("/_superset/settings/chat", { model: null })).toMatchObject({ status: 200, body: { model: null, source: "default", options: [] } });

@@ -715,13 +715,17 @@
     let feat = (opts.features && typeof opts.features === "object") ? opts.features : {};
     const page = pageLocale();
     let adminLang = (opts.language && opts.language.default) || "auto";
+    // The languages the deployment offers (/_superset/info language.offer); all four when it says nothing.
+    let offer = opts.language && Array.isArray(opts.language.offer) ? opts.language.offer : null;
+    const offers = (code) => code === "auto" || !offer || offer.includes(code);
     function effectiveLang() {
-      // With the language menu switched off, a pick saved earlier no longer applies.
-      const p = feat.languageMenu === false ? undefined : prefsNow.lang;
-      const fromSuperset = page !== "en" && STRINGS[page] ? page : null;
+      // With the language menu switched off, a pick saved earlier no longer applies; nor does one that is no longer offered.
+      const saved = feat.languageMenu === false ? undefined : prefsNow.lang;
+      const p = saved && offers(saved) ? saved : undefined;
+      const fromSuperset = page !== "en" && STRINGS[page] && offers(page) ? page : null;
       if (p && p !== "auto") {
         // langPage: Superset's language when the pick was made. Older prefs have none: the pick stands.
-        const changedSince = prefsNow.langPage !== undefined && prefsNow.langPage !== page && STRINGS[page];
+        const changedSince = prefsNow.langPage !== undefined && prefsNow.langPage !== page && STRINGS[page] && offers(page);
         return changedSince ? { code: page, source: "superset" } : { code: p, source: "picked" };
       }
       if (fromSuperset) return { code: fromSuperset, source: "superset" };
@@ -808,6 +812,7 @@
       langBtn.title = followed ? t(eff.source === "superset" ? "followSuperset" : "adminDefault", named) : t("language");
       menu.replaceChildren(el("h6", "", t("language")));
       for (const [code, name] of LANGS) {
+        if (!offers(code)) continue;
         const l = el("label");
         const r = el("input");
         r.type = "radio";
@@ -2044,6 +2049,7 @@
       if (info && info.features && typeof info.features === "object") feat = info.features;
       if (info && info.brand && typeof info.brand === "object") brand = info.brand;
       if (info && info.language && info.language.default) adminLang = info.language.default;
+      if (info && info.language) offer = Array.isArray(info.language.offer) ? info.language.offer : null;
       micState.enabled = !!(info && info.speech && info.speech.enabled) && feat.voice !== false;
       lang.hidden = feat.languageMenu === false;
       newBtn.hidden = feat.newChat === false;

@@ -11,6 +11,11 @@ brought it.
 
 ### 27 November 2026
 
+- **A deployment can offer only some of the chat's languages.** `language.offer: [en, fr, pt]` (default: all four),
+  or `LENSPACK_LANGUAGES=en,fr,pt`, or an admin's `offer` on `PUT /_superset/settings/language`. The menu lists
+  only those (plus Auto); a saved pick or Superset language that is not offered falls back to `language.default`,
+  and so does the speech hint. `language.default` and `language.board` must be offered. Replies still follow the
+  language the person writes or speaks in. See [Languages](docs/features/languages.md).
 - **Question limits on the admin pages.** The Settings tab has a card for the per-person question limits: everyone's,
   admins, other limits for named people (set while the server runs, like every setting), and a table of who was
   counted today, with those at a limit or refused first and a Reset button for each. The limits are also listed among
