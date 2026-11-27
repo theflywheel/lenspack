@@ -78,6 +78,36 @@ export function accessSuite(version: string) {
       });
     });
 
+    describe("query safety", () => {
+      it("dry-runs every query shape the pack allows with Superset compiling the SQL and the database running none", async () => {
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        // Postgres counts a backend's scans when it next goes idle (within about 10 s): first see a real query counted.
+        const before = stack.tableScans();
+        expect((await s.lp_admin.lp("GET", `api/${PACK}/${A}/data`)).status).toBe(200);
+        let after = before;
+        for (let i = 0; i < 30 && (after.visits ?? 0) + (after.stock ?? 0) === (before.visits ?? 0) + (before.stock ?? 0); i++) await sleep(1000), (after = stack.tableScans());
+        expect((after.visits ?? 0) + (after.stock ?? 0)).toBeGreaterThan((before.visits ?? 0) + (before.stock ?? 0));
+        // Settled: nothing else is reading the tables.
+        let quiet = stack.tableScans();
+        for (let i = 0; i < 5; i++) {
+          await sleep(12_000);
+          const again = stack.tableScans();
+          if (JSON.stringify(again) === JSON.stringify(quiet)) break;
+          quiet = again;
+        }
+        const r = await s.lp_admin.lp("POST", "_superset/settings/query-safety/dry-run", {});
+        expect(r.status, r.text).toBe(200);
+        expect(r.json.shapes).toBeGreaterThan(10);
+        expect(r.json.compiled).toBeGreaterThan(10);
+        expect(r.json.errors).toEqual([]);
+        expect(r.json.findings.filter((f: { level: string }) => f.level === "danger").map((f: { what: string; message: string }) => `${f.what}: ${f.message}`)).toEqual([]);
+        await sleep(12_000);
+        expect(stack.tableScans()).toEqual(quiet);
+        // Admins only.
+        expect((await s.lp_viewer.lp("POST", "_superset/settings/query-safety/dry-run", {})).status).toBe(403);
+      }, 240_000);
+    });
+
     describe("viewing", () => {
       it("refuses the chat and the board API on a dashboard the user can't open in Superset (403)", async () => {
         // B has a dashboard role: lp_viewer reads the stock dataset but is not in the role.

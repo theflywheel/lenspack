@@ -144,6 +144,10 @@
     // Cache settings
     cacheSetH: "Saved answer settings", cOn: "Keep and serve saved answers", cTtl: "Drop entries older than (hours)", cRouter: "Match differently worded questions", cMax: "At most (entries)", cFresh: "Show as is for (minutes)", cPw: "Refresh before busy times", cPwTimes: "At (local times, comma-separated)", cPwTop: "Most-asked to refresh", cPwUsd: "Most per refresh (US$)",
     queueH: "Turn queue", qConc: "At once", qWait: "Waiting at most", qSecs: "Longest wait (s)",
+    qsH: "Query limits", qsLede: "Every query sent to the database is checked against these first; one past a limit is refused with a plain message. Tighter is always allowed; looser than the deployment's own values asks you to confirm.",
+    qsRows: "Rows a query", qsGroups: "Groups a breakdown", qsPoints: "Series points", qsWindow: "Longest time range (days, empty: none)", qsTurn: "Queries a question", qsTimeout: "Wait for an answer (s)", qsConc: "At once",
+    qsHeavy: "Heavy (needs a time range, last {0} days by default)", qsDatasets: "Datasets", qsRisks: "Worth a look in the pack",
+    qsLooser: "This lets more through than the deployment's own settings:\n{0}\n\nApply it anyway?", qsDry: "Check every query shape", qsDryDone: "{0} shapes, {1} compiled by Superset (none run): {2} dangerous, {3} warnings, {4} refused by the limits, {5} errors",
     resetDefaults: "Back to the deployment's values", saveB: "Save",
     // Settings
     offH: "Off switches", personalH: "Own dashboards", pOn: "People may keep their own dashboards and layouts", pDash: "Dashboards per person", pLayouts: "Saved layouts per person",
@@ -189,6 +193,10 @@
     auditH: "Journal d'audit", auditLede: "Gardé {0} jours dans {1}.", aAction: "Action", aOutcome: "Résultat", aDetail: "Détail", aAll: "Tous", aOk: "ok", aDenied: "refusé", search: "Rechercher", noEvents: "Aucun événement.", auditOff: "Le journal d'audit est désactivé (audit : false).",
     cacheSetH: "Réglages des réponses gardées", cOn: "Garder et servir les réponses", cTtl: "Supprimer après (heures)", cRouter: "Rapprocher les questions formulées autrement", cMax: "Au plus (entrées)", cFresh: "Montrer telle quelle pendant (minutes)", cPw: "Actualiser avant les heures chargées", cPwTimes: "À (heures locales, séparées par des virgules)", cPwTop: "Questions les plus posées à actualiser", cPwUsd: "Maximum par actualisation (US$)",
     queueH: "File des réponses", qConc: "En même temps", qWait: "En attente au plus", qSecs: "Attente maximale (s)",
+    qsH: "Limites des requêtes", qsLede: "Chaque requête envoyée à la base est d'abord vérifiée ; celle qui dépasse une limite est refusée avec un message clair. Resserrer est toujours permis ; relâcher au-delà des valeurs du déploiement demande confirmation.",
+    qsRows: "Lignes par requête", qsGroups: "Groupes par répartition", qsPoints: "Points d'une série", qsWindow: "Période la plus longue (jours, vide : aucune)", qsTurn: "Requêtes par question", qsTimeout: "Attente d'une réponse (s)", qsConc: "En même temps",
+    qsHeavy: "Lourd (période requise, {0} derniers jours par défaut)", qsDatasets: "Jeux de données", qsRisks: "À vérifier dans le pack",
+    qsLooser: "Ceci laisse passer plus que les réglages du déploiement :\n{0}\n\nAppliquer quand même ?", qsDry: "Vérifier chaque forme de requête", qsDryDone: "{0} formes, {1} compilées par Superset (aucune exécutée) : {2} dangereuses, {3} avertissements, {4} refusées par les limites, {5} erreurs",
     resetDefaults: "Valeurs du déploiement", saveB: "Enregistrer",
     offH: "Interrupteurs", personalH: "Tableaux personnels", pOn: "Chacun peut garder ses tableaux et dispositions", pDash: "Tableaux par personne", pLayouts: "Dispositions par personne",
     scopeH: "Où la discussion peut modifier", scopeSuperset: "Tout tableau que Superset laisse modifier", scopeOwn: "Seulement ses propres tableaux", scopeExempt: "Les administrateurs modifient les tableaux partagés",
@@ -1299,6 +1307,7 @@
         h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(() => hostApi("settings/personal", { body: { maxDashboardsPerUser: Number(dash.value), maxSavedConfigsPerUser: Number(lay.value) } }), t("saved")) }, t("saveB")),
           h("button", { class: "btn quiet", type: "button", onclick: put("settings/personal", { maxDashboardsPerUser: null, maxSavedConfigsPerUser: null }) }, t("resetDefaults")))));
     }
+    if (s.querySafety) out.push(querySafetyCard(s.querySafety));
     if (s.editScope) {
       const e = s.editScope;
       const radio = (v, label) => h("label", { class: "row", style: "gap:8px" }, h("input", { type: "radio", name: "lp-scope", value: v, checked: e.scope === v }), label);
@@ -1311,6 +1320,60 @@
           h("button", { class: "btn quiet", type: "button", onclick: put("settings/edit-scope", { scope: null, adminsExempt: null }) }, t("resetDefaults")))));
     }
     return out;
+  }
+  /** The query limits (docs/operating/query-safety.md): the server-wide ones, which datasets are heavy, the pack's warnings, the dry run. */
+  function querySafetyCard(q) {
+    const l = q.limits, sv = q.server;
+    const rows = num(l.maxRows, 1, 1000000), groups = num(l.maxGroups, 1, 10000000), points = num(l.maxSeriesPoints, 1, 1000000), win = num(l.maxWindowDays, 1, 36500);
+    const turn = num(sv.maxQueriesPerTurn, 1, 10000), secs = num(sv.timeoutSeconds, 1, 3600), conc = num(sv.maxConcurrent, 1, 1000);
+    const heavy = Object.entries(q.datasets || {}).map(([key, d]) => [key, d, h("input", { type: "checkbox", checked: !!d.heavy, disabled: !q.writable })]);
+    // PUT, and on 409 (looser than the deployment's own values) ask, then send it again with confirm.
+    const send = async (body) => {
+      const go = async (b) => {
+        const res = await fetch(`${HOST}settings/query-safety`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
+        let data = null;
+        try { data = await res.json(); } catch (e) { /* not JSON */ }
+        return { status: res.status, data };
+      };
+      let r = await go(body);
+      if (r.status === 409 && r.data && r.data.looser && window.confirm(t("qsLooser", r.data.looser.join("\n")))) r = await go({ ...body, confirm: true });
+      if (r.status !== 200) throw new Error((r.data && r.data.error) || `HTTP ${r.status}`);
+    };
+    const save = act(() => send({
+      maxRows: Number(rows.value), maxGroups: Number(groups.value), maxSeriesPoints: Number(points.value), maxWindowDays: win.value === "" ? null : Number(win.value),
+      maxQueriesPerTurn: Number(turn.value), timeoutSeconds: Number(secs.value), maxConcurrent: Number(conc.value),
+      datasets: Object.fromEntries(heavy.filter(([, d, box]) => box.checked !== !!d.heavy).map(([key, , box]) => [key, { heavy: box.checked }])),
+    }), t("saved"));
+    const dryOut = h("p", { class: "mute small" });
+    // Not act(): its page refresh would drop the report just shown.
+    const dry = async (ev) => {
+      const btn = ev && ev.currentTarget;
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch(`${HOST}settings/query-safety/dry-run`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", credentials: "same-origin" });
+        const r = await res.json();
+        if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
+        const danger = r.findings.filter((f) => f.level === "danger").length;
+        dryOut.textContent = t("qsDryDone", nf(r.shapes), nf(r.compiled), nf(danger), nf(r.findings.length - danger), nf(r.refused.length), nf(r.errors.length));
+        const pre = h("pre", { class: "small", style: "white-space:pre-wrap;max-height:320px;overflow:auto" }, r.text);
+        if (dryOut.nextSibling) dryOut.nextSibling.remove();
+        dryOut.after(pre);
+      } catch (e) {
+        toast(e.message, true);
+      } finally {
+        if (btn && btn.isConnected) btn.disabled = false;
+      }
+    };
+    const risks = (q.packRisks || []).concat((q.warnings || []).map((m) => ({ level: "warning", message: m })));
+    return card(t("qsH"), t("qsLede"),
+      h("div", { class: "form" }, fld(t("qsRows"), rows), fld(t("qsGroups"), groups), fld(t("qsPoints"), points), fld(t("qsWindow"), win), fld(t("qsTurn"), turn), fld(t("qsTimeout"), secs), fld(t("qsConc"), conc)),
+      heavy.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "lbl" }, t("qsDatasets")),
+        ...heavy.map(([key, d, box]) => h("label", { class: "switch" }, box, h("div", {}, h("div", { class: "lbl" }, d.table || key), h("div", { class: "help" }, t("qsHeavy", nf(q.heavy && q.heavy.defaultWindowDays || 90))))))) : null,
+      risks.length ? h("div", { style: "margin-top:8px" }, h("div", { class: "lbl" }, t("qsRisks")), ...risks.map((r) => h("p", { class: r.level === "warning" ? "warn-line" : "mute small" }, r.message))) : null,
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: save, disabled: !q.writable }, t("saveB")),
+        q.source === "settings" ? h("button", { class: "btn quiet", type: "button", disabled: !q.writable, onclick: act(() => send({ maxRows: null, maxGroups: null, maxSeriesPoints: null, maxWindowDays: "default", requireTime: null, defaultWindowDays: "default", maxQueriesPerTurn: null, timeoutSeconds: null, maxConcurrent: null, datasets: Object.fromEntries(Object.keys(q.saved.datasets || {}).map((k) => [k, null])) }), t("saved")) }, t("resetDefaults")) : null,
+        h("button", { class: "btn quiet", type: "button", onclick: dry, disabled: !q.writable }, t("qsDry")), sourcePill(q.source)),
+      dryOut);
   }
   function configCards(s) {
     const b = s.budget || {};
