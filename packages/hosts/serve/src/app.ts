@@ -6,7 +6,7 @@ import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, t
 import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, type WriteCheck, RefusedWrite, applyOps, guardedStore, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, recentRemovals, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, type Notice, ResolveError, budgetedConnector, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
 import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseBase, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, type TurnLog, type TurnResult, type TabPort, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, memoryTurnLog, quickReplyOf, selectionsFrom, tabsText, toVercelAI, turnKeyOf, viewFrom, widgetChanges } from "@lenspack/agent";
-import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement, viewerSelections } from "@lenspack/policy";
+import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, offeredModels, otherTenant, principalOf, shownConfig, showsStatement, viewerSelections } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
 import type { Audit } from "./audit";
@@ -88,14 +88,19 @@ export type AppOptions = {
   rights?: Rights;
   /** How the UI presents itself (lenspack.yaml `ui:`), written into the page it is served in. */
   page?: { title?: string; home?: string; intro?: string };
-  /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. */
-  historyTurns?: number;
+  /** How many of the latest user turns the chat model is sent, with the replies between them. Default 8. Read per turn when a function. */
+  historyTurns?: number | (() => number);
   /** Where each chat turn's cost and each pack's queries are counted (GET /api/_usage), and the budget is checked. One is made if absent. */
   ledger?: UsageLedger;
   /** More sinks for the chat's model calls (the usage file). Process-wide sinks (addUsageSink) receive them anyway. */
   usageSinks?: UsageSink[];
-  /** Daily caps on priced chat spend; over one, chat answers 429 before any model call. */
-  budget?: Budget;
+  /** Daily caps on priced chat spend; over one, chat answers 429 before any model call. Read per turn when a function (an admin may change them). */
+  budget?: Budget | (() => Budget | undefined);
+  /**
+   * An admin's choice among the providers (PUT settings/models): the models offered, by name (null: all), which the
+   * chat menu lists and a turn may use, and the model each role uses over `roles`. Read per turn.
+   */
+  models?: { offered?: () => readonly string[] | null; roles?: () => { reviewer?: string; escalate?: string; router?: string } };
   /**
    * The chat model (a provider name) and effort to use when the client asks for none, read on
    * every turn so a settings page can change them on a running server. Unset, unknown or
@@ -366,6 +371,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   // the host it started with.
   const live = [...hosts];
   const providers = opts.providers ?? [];
+  // The models a turn may use (an admin's choice, else all), the roles over the deployment's, and the budget, read per turn.
+  const offered = () => offeredModels(providers, opts.models?.offered?.());
+  const rolesNow = () => ({ ...opts.roles, ...opts.models?.roles?.() });
+  const budgetNow = () => (typeof opts.budget === "function" ? opts.budget() : opts.budget);
   const queue = opts.queue ?? localTurnGate();
   const turnLog = opts.turns ?? memoryTurnLog();
   // Saved answers refreshed on a schedule or when data changes run as their askers, from these hosts (reuse/index.ts).
@@ -483,13 +492,13 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         );
         // Absent on an open server: there is no one to name.
         const me = access ? { user: who.user, edit: who.edit, maintain: !!who.maintain, usage: who.usage, ...(signOutUrl ? { signOut: signOutUrl } : {}) } : undefined;
-        return json(res, 200, { examples: list, chat: providers.length > 0, models: providers.map(publicView), speech: speechInfo(), ...(me ? { me } : {}) });
+        return json(res, 200, { examples: list, chat: offered().length > 0, models: offered().map(publicView), speech: speechInfo(), ...(me ? { me } : {}) });
       }
       // What chat has cost since the server started: for those given the usage right (maintainers, unless said otherwise), as it names every user.
       if (packName === "_usage" && req.method === "GET") {
         if (!who.usage) return json(res, 403, { error: "usage is not shown to you" });
         // The caps go with it, so whoever watches spend sees how near they are.
-        return json(res, 200, { ...ledger.report(), ...(opts.budget ? { budget: budgetReport(ledger, opts.budget) } : {}) });
+        return json(res, 200, { ...ledger.report(), ...(budgetNow() ? { budget: budgetReport(ledger, budgetNow()!) } : {}) });
       }
       // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
       if (packName === "_stt") {
@@ -505,7 +514,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         // Recordings are kept and this user has not acknowledged the notice yet: nothing is recorded until they do.
         const notice = await opts.audio?.consentNeeded(who.user);
         if (notice) return json(res, 403, { error: "consent_required", notice });
-        const over = overBudget(ledger, opts.budget, who.user);
+        const over = overBudget(ledger, budgetNow(), who.user);
         if (over) return json(res, 429, { error: over });
         const language = url.searchParams.get("language") || undefined;
         const pack = url.searchParams.get("pack") || undefined;
@@ -766,7 +775,9 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
   async function chat(req: IncomingMessage, res: ServerResponse, url: URL, h: Host & { catalogue: Catalogue }, config: BoardConfig, startVersion: number, boardId: string, user: string, readOnly?: string, asker: Asker = { user, roles: [] }) {
     const started = Date.now();
     const fallback = opts.chatDefault?.();
-    const builderModel = pickChatModel(providers, url.searchParams.get("model"), fallback);
+    const models = offered();
+    const roles = rolesNow();
+    const builderModel = pickChatModel(models, url.searchParams.get("model"), fallback);
     if (!builderModel) return json(res, 503, { error: "Chat is not configured on this server (LENSPACK_LLM_PROVIDERS)" });
     if (builderModel.available === false) return json(res, 503, { error: `${builderModel.name} is unavailable: ${builderModel.error}` });
     // ?effort= is for the chosen model; one without an effort setting ignores it.
@@ -777,7 +788,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       return json(res, 400, { error: (e as Error).message });
     }
     // Before any model call: a paid key behind a public demo stops at the cap, not at the invoice.
-    const over = overBudget(ledger, opts.budget, user);
+    const over = overBudget(ledger, budgetNow(), user);
     if (over) {
       audit({ user, pack: h.name, board: boardId, action: "chat", outcome: "denied", detail: "budget" });
       return json(res, 429, { error: over });
@@ -786,8 +797,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // escalation model (used for the fix round) can be larger. ?review=off
     // disables review.
     const reviewWanted = url.searchParams.get("review");
-    const reviewer = reviewWanted === "off" || opts.review?.() === false ? null : (usable(providers, reviewWanted) ?? usable(providers, opts.roles?.reviewer) ?? builderModel);
-    const escalate = usable(providers, url.searchParams.get("escalate")) ?? usable(providers, opts.roles?.escalate) ?? builderModel;
+    const reviewer = reviewWanted === "off" || opts.review?.() === false ? null : (usable(models, reviewWanted) ?? usable(models, roles.reviewer) ?? builderModel);
+    const escalate = usable(models, url.searchParams.get("escalate")) ?? usable(models, roles.escalate) ?? builderModel;
     // With a reviewer, the turn edits a staged copy of the board: its changes are saved when the
     // turn ends, and not at all if the reviewer still finds them misleading after one fix round.
     // Without one, every edit is saved as it is made.
@@ -866,7 +877,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
     const access = accessNote(h.ctx);
     let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView) + tabRules, name, removed, readOnly, copy: !!personal?.offersCopy });
-    const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
+    const modelMessages = await convertToModelMessages(recentTurns(body.messages, (typeof opts.historyTurns === "function" ? opts.historyTurns() : opts.historyTurns) ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
     let before = summarise(config);
@@ -900,7 +911,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // A question answered before, by someone with the same access, on the same pack and board: answered from the
     // saved plan without the agent (reuse/, docs/features/saved-answers.md). "Ask fresh" (fresh: true) always runs the agent.
     // The viewer's dashboard filter selections are part of what is asked (?f_<field>= or the body's selections).
-    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: turnConnector, store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, copy: !!personal?.offersCopy, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(providers, { router: opts.roles?.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples, ...(opts.reuse ? { base: await reuseBase(byName.get(h.name) ?? h) } : {}) };
+    const reuseTurn: ReuseTurn = { packName: h.name, pack, board: boardId, config, ctx: h.ctx, connector: turnConnector, store: h.store, proposals: h.proposals, question: instruction, firstTurn: body.messages.filter((m) => m.role === "user").length <= 1, picked, rules: opts.language?.(), selections, ...(turnView ? { view: turnView } : {}), promptVersion: promptVersionFor(name), readOnly, copy: !!personal?.offersCopy, fresh: body.fresh === true, builder: builderModel.name, small: smallModel(models, { router: roles.router, builder: builderModel.name, meter: scope }), spentUsd: () => calls.reduce((n, c) => n + (c.usd ?? 0), 0), examples: h.pack.examples, ...(opts.reuse ? { base: await reuseBase(byName.get(h.name) ?? h) } : {}) };
     // Its own answer card: a replay that gives up part-way leaves nothing in the full turn's.
     const savedCard = shown && answerCard({ ...shown, pack, dialect: h.connector.kind, selections, unusedSelections: viewer.dropped, assistant: name });
     const reused = await opts.reuse?.serve({ ...reuseTurn, onData: savedCard?.onData, onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `saved plan: ${e.ops.join(",")}${e.version !== undefined ? ` → v${e.version}` : ""}` }) }).catch(async (e) => {

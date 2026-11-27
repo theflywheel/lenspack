@@ -17,7 +17,8 @@ import { SettingsSaveError } from "./settings";
 export type Route = (req: IncomingMessage, res: ServerResponse, url: URL, who: () => Promise<Principal | null>) => void | Promise<void>;
 export type Runtime = {
   providers: Provider[];
-  budget?: Budget;
+  /** The budget in force now (an admin may change it while the server runs). */
+  readonly budget?: Budget;
   ledger?: UsageLedger;
   roles?: { reviewer?: string; escalate?: string };
   /** Hands a hosted pack name a new pack while the server runs (createApp's setHost). */
@@ -52,7 +53,8 @@ export function startRuntime(o: {
   close?: () => Promise<void>;
   /** A JSON line per model call; today's totals are read back at start. */
   usageFile?: string;
-  budget?: Budget;
+  /** The daily caps; a function is read per turn (the settings page's, over the config's). Absent: LENSPACK_BUDGET_*. */
+  budget?: Budget | (() => Budget | undefined);
   routes?: (rt: Runtime) => Route;
   /** Fields beside ok in GET /healthz. */
   health?: () => Record<string, unknown>;
@@ -73,15 +75,25 @@ export function startRuntime(o: {
     ledger.restore(readUsageFile(o.usageFile));
     addUsageSink(jsonlUsageSink(o.usageFile));
   }
-  const budget = o.budget ?? budgetFromEnv(env);
+  const fixed = typeof o.budget === "function" ? undefined : (o.budget ?? budgetFromEnv(env));
+  const budgetNow = typeof o.budget === "function" ? o.budget : () => fixed;
+  const budget = budgetNow();
   const providers = serverProviders(env).map(buildProvider);
   const unpriced = providers.filter((p) => !p.pricing).map((p) => p.name);
   if (budget && unpriced.length) o.log(`budget set, but ${unpriced.join(", ")} has no price, so its spend does not count toward it`);
   void Promise.all(providers.map((p) => probe(p))).then((probed) => probed.forEach((p, i) => (providers[i] = p)));
   const roles = env.LENSPACK_LLM_ROLES ? JSON.parse(env.LENSPACK_LLM_ROLES) : undefined;
-  const api = createApp(o.hosts, { ...o.app, providers, roles, ledger, budget, log: o.log });
+  const api = createApp(o.hosts, { ...o.app, providers, roles, ledger, budget: budgetNow, log: o.log });
   const access = accessOf(o.app ?? {});
-  const rt: Runtime = { providers, budget, ledger, roles, setHost: api.setHost };
+  const rt: Runtime = {
+    providers,
+    get budget() {
+      return budgetNow();
+    },
+    ledger,
+    roles,
+    setHost: api.setHost,
+  };
   const routes = o.routes?.(rt);
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://x");

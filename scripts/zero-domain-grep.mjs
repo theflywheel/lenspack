@@ -18,7 +18,7 @@ const pattern = new RegExp(`\\b(${WORDS.join("|")})\\b`, "i");
 const PLATFORM = [/\bsignal: AbortSignal\./];
 // lenspack's own vocabulary that shares a word with an example: the chat role
 // that takes over a turn is named "escalate" in config (LENSPACK_LLM_ROLES).
-const OWN = { "packages/hosts/serve/src": /\bescalate\b/i };
+const OWN = { "packages/hosts/serve/src": /\bescalate\b/i, "packages/kernel/policy/src": /\bescalate\b/i };
 
 const files = [];
 const walk = (dir) => {

@@ -30,7 +30,7 @@ describe("what a change at runtime may touch", () => {
   it("names the runtime parts, the config-only parts and the data boundary apart", () => {
     expect(PACK_RUNTIME_FIELDS).toEqual(["description", "instructions", "labels", "hints", "measures", "examples", "notDimensions", "hierarchies", "exclude"]);
     for (const f of ["pack", "entities", "timeZone", "geo", "mapStyle", "panel"]) expect(PACK_CONFIG_FIELDS[f]).toBeTruthy();
-    expect(PACK_DATA_BOUNDARY).toEqual(["datasets", "scope", "dashboards", "dashboardScope", "auth", "budget", "models"]);
+    expect(PACK_DATA_BOUNDARY).toEqual(["datasets", "scope", "dashboards", "dashboardScope", "auth"]);
     for (const f of PACK_RUNTIME_FIELDS) expect(PACK_CONFIG_FIELDS[f]).toBeUndefined();
   });
 

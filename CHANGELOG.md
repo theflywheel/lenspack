@@ -22,6 +22,18 @@ brought it.
   settings API (`PUT /_superset/settings/tabs`) and the start-up log; `GET /_superset/tabs` lists the tabs made through
   the chat with their makers. Superset has no per-tab permissions, so these rules bind the chat only. See
   [Tabs on dashboards](docs/features/tabs.md).
+- **Every option that isn't a secret can change without a redeploy.** On a deployment where the deploy config is in
+  another team's hands, the admin pages and the admin API key are now enough. New settings routes: the daily budget
+  caps (`settings/budget`; `0` means no cap), which of the deployment's models answer and which plays each role
+  (`settings/models`, over `LENSPACK_LLM_ROLES`), how long the audit log is kept (`settings/audit`, never less than 30
+  days, so a key can't erase its own trail), how many recent turns the chat sends (`settings/history`), whether
+  answers show their SQL (`settings/explain`), the telemetry labels (`settings/context`), the longest recording
+  (`settings/speech` `maxSeconds`), how the chat opens (`settings/panel`) and where the admin pages are
+  (`settings/admin-surface`). The admin's value wins over `superset.yaml` and the environment, `null` hands it back,
+  each change is audited with who made it (`api:<name>` for a key), and values survive a restart. The Settings and
+  Models tabs edit them, and list every option with whether it changes there. Secrets and keys, how the server
+  reaches Superset and signs in, its port and state directory, the datasets, row scope, dashboards and access stay in
+  the deploy config. See [What can change without a redeploy](docs/hosts/superset/runtime.md).
 - **Checking a pack's queries before go-live.** `lenspack query-check --config superset.yaml` (or, with no server
   access, `POST …/_admin/settings/query-safety/dry-run` with an admin API key) tries every query shape the pack allows
   and has Superset compile each one with `result_type: "query"`, which returns the SQL without running it. The SQL is

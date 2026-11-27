@@ -24,9 +24,9 @@ compared with another, gone back to, or exported as YAML to write back into `sup
 | `instructions` | `entities` (each dataset's key) |
 | `labels`, `hints` (text, or text per language) | `timeZone` |
 | `measures` (base measures from columns) | `geo`, `mapStyle` (maps) |
-| `examples` (the suggested questions and their checked queries) | `panel` (how the chat opens) |
+| `examples` (the suggested questions and their checked queries) | `panel` (how the chat opens: a setting of its own, `settings/panel`) |
 | `notDimensions` | `datasets`, `scope`, `dashboards`, `dashboardScope` |
-| `hierarchies` | who is an admin or a user (`auth`), the budget caps, the models on offer |
+| `hierarchies` | who is an admin or a user (`auth`); the budget caps and the models offered are settings of their own ([What can change without a redeploy](runtime.md)) |
 | `exclude`: **more** exclusions only | `exclude`: the file's own exclusions can't be removed |
 
 Why the right-hand side stays in the file:

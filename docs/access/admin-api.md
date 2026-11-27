@@ -136,6 +136,15 @@ curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"model": "<a 
 curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"name": "Field helper"}' $LP/settings/brand
 ```
 
+**Change the budget, the models that answer, or how long the audit log is kept** (`null` hands a value back to the
+deploy config; every option that can change is on [What can change without a redeploy](../hosts/superset/runtime.md)):
+
+```sh
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"usdPerDay": 20}' $LP/settings/budget
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"offered": ["<a model name>"]}' $LP/settings/models
+curl -s -X PUT -H "$AUTH" -H 'content-type: application/json' -d '{"retentionDays": 180}' $LP/settings/audit
+```
+
 **Add an admin** (under `superset-users`) **or a user** (under `granted`), by Superset user name or `id:<n>`; `remove`
 takes them away:
 
@@ -219,15 +228,17 @@ own. Each wrong key is in the audit log as `api:?` with the address, never the k
 
 ## What still needs a redeploy
 
-These can't be changed with a key (or on the admin pages); they live in `superset.yaml` or the environment:
+Most options can change with a key: the budget caps, which models answer and their roles, the audit log's retention,
+how the chat opens, where the admin pages are, and everything on the settings page. The whole list, option by option,
+is on [What can change without a redeploy](../hosts/superset/runtime.md). These stay in `superset.yaml` or the
+environment:
 
-- the datasets, dashboards and the pack's own row scope, and the overlay's `pack`, `entities`, `timeZone`, `geo`,
-  `mapStyle` and `panel` (the rest of the overlay can change while the server runs: see
-  [Changing the pack while it runs](../hosts/superset/pack-runtime.md)); an exclusion `superset.yaml` makes can't be
-  removed;
-- the models on offer and their keys (`LENSPACK_LLM_PROVIDERS`, speech keys), and the daily budget caps;
+- the datasets, dashboards and the pack's own row scope, and the overlay's `pack`, `entities`, `timeZone`, `geo` and
+  `mapStyle`; an exclusion `superset.yaml` makes can't be removed;
+- the model and speech keys (`LENSPACK_LLM_PROVIDERS`, speech keys) and where spoken questions are sent;
 - who is an admin and who may use the assistant (`auth.adminAccess`, `auth.userAccess`, roles, owners, passwords),
-  the admin API keys themselves, the host policy, the edit policy and where the admin pages are (`admin.surface`).
+  the admin API keys themselves, the host policy and the edit policy;
+- switching the audit log off, how the server reaches Superset, its port and its state directory.
 
 Grants made on the Access tab (admins under `superset-users`, users under `granted`), everything in the definitions and
 changes to the pack are kept in the state directory and survive restarts.

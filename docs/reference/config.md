@@ -9,7 +9,9 @@ file's folder.
 
 ## `lenspack.yaml`
 
-The standalone server's config. The blocks, in brief:
+The standalone server's config. It is read at start; with `state:`, the admin panel changes the switches, the
+assistant's name and the review's settings while the server runs, and everything else needs a restart. (In Superset
+mode most options change while the server runs: see the "runtime?" column [below](#supersetyaml).) The blocks, in brief:
 
 | key | what it is | more |
 |---|---|---|
@@ -223,102 +225,105 @@ Generated from the schema by `pnpm docs:keys`; the text above is written by hand
 
 ## `superset.yaml`
 
-The Superset host's config. Most keys can be left out for their environment variable, then the default.
+The Superset host's config. Most keys can be left out for their environment variable, then the default. The
+"runtime?" column says whether an admin can change the key while the server runs, on the settings routes or with an
+admin API key; see [What can change without a redeploy](../hosts/superset/runtime.md).
 
-| key | default | what it is |
-|---|---|---|
-| `datasets` | (required) | the Superset datasets Lenspack may use, by id or by table name (`schema.table` or `table`) |
-| `dashboards` | `LENSPACK_DASHBOARDS` (comma-separated) wins | dashboard ids to read at start. Under `dashboardScope: listed`, also the only dashboards the assistant is on |
-| `dashboardScope` | `any` (`LENSPACK_DASHBOARD_SCOPE` wins) | which dashboards the assistant is on: `any` (every dashboard the person may open in Superset) or `listed` (only those in `dashboards`, and people's own copies of them). See [Which dashboards the assistant is on](../hosts/superset/datasets-and-dashboards.md#which-dashboards-the-assistant-is-on) |
-| `superset.url` | `LENSPACK_SUPERSET_URL` (required one way or the other) | where this server reaches Superset |
-| `superset.publicUrl` | | where browsers reach Superset, when that differs from `url` |
-| `superset.publicPort` | | Superset's port as browsers see it, when `publicUrl` is not set |
-| `superset.username` | `lenspack` | Lenspack's own Superset account |
-| `superset.passwordEnv`, `superset.password` | `LENSPACK_SUPERSET_PASSWORD` | an account you manage instead: its password's variable, or the password |
-| `editPolicy` | `superset` (`LENSPACK_EDIT_POLICY` wins) | who may change dashboards through the chat: `superset` or `signed-in` |
-| `hostPolicy` | `superset` (`LENSPACK_HOST_POLICY` wins) | whose access narrows what each user sees: `superset` or `off` |
-| `accessFallback` | `none` (`LENSPACK_ACCESS_FALLBACK` wins) | what happens when Superset answers 404 for the plugin's access route: `none` refuses that request; `rls-only`, only for an old plugin without the route, applies Superset's row-level security rules alone and treats every dataset as readable. See [Access inside Superset](../access/superset.md#when-access-cant-be-checked) |
-| `auth.admins` | `["Admin"]` (`LENSPACK_ADMIN_ROLES` wins) | Superset roles whose members are Lenspack admins. See [Who is asking](../hosts/superset/identity.md#who-may-administer) |
-| `auth.usage` | the same roles as `auth.admins` (`LENSPACK_USAGE_ROLES` wins) | Superset roles that also see user names on the usage pages |
-| `auth.users` | everyone signed in (`LENSPACK_USER_ROLES` wins) | Superset roles that may use the assistant at all; admins always may. See [Who is asking](../hosts/superset/identity.md#who-may-use-the-assistant) |
-| `auth.adminAccess` | `superset-role` (`LENSPACK_ADMIN_ACCESS` wins) | who is an admin: `superset-role`, `superset-users` or `password`, or `password` with one of the others (`superset-role,password`). See [Who can use and administer the assistant](../access/admin-access.md) |
-| `admin.surface` | `split` (`LENSPACK_ADMIN_SURFACE` wins) | where the admin pages are: `split`, `superset` or `separate`. See [Where the admin pages are](../features/admin-panel.md#where-the-admin-pages-are) |
-| `auth.adminUsers` | none (`LENSPACK_ADMIN_USERS` wins) | the owners under `superset-users`: Superset user names or `id:<n>` |
-| `auth.userAccess` | `superset-role` (`LENSPACK_USER_ACCESS` wins) | who may use the assistant: `superset-role`, `granted`, `everyone`, or a combination like `superset-role,granted` |
-| `auth.seedUsers` | none (`LENSPACK_USERS` wins) | people always let in under `granted`: Superset user names or `id:<n>` |
-| `editScope` | `superset` (`LENSPACK_EDIT_SCOPE` wins) | where the chat may edit: `superset` (any dashboard Superset lets the person edit) or `own` (their own dashboards only); or `{ scope, adminsExempt }` (admins exempt by default). See [Personal dashboards](../features/personal-dashboards.md#where-the-chat-may-edit-editscope) |
-| `personal` | `maxDashboardsPerUser: 20`, `maxSavedConfigsPerUser: 50` | limits for [personal dashboards and saved layouts](../features/personal-dashboards.md) |
-| `tabs` | `editable: all`, no protected tabs, `maxPerDashboard: 20`, `maxPerUser: 3`, `maxWidgetsPerTab: auto` | which tabs the chat may change (`editable: all` or `own`), tabs it never changes per dashboard id (`protected`), and how many tabs and widgets per tab it may make. The switches are the `chatTabs` and `playground` features, off by default. See [Tabs on dashboards](../features/tabs.md) |
-| `audit` | on, 90 days | `false`, or `{ retentionDays }` (`LENSPACK_AUDIT_RETENTION_DAYS`) |
-| `scope` | | the pack's own row scope: filters every answer carries, for everyone (one campaign: `[{ dimension: campaign, op: eq, value: 2026-spring }]`). See [Row scope and tenancy](../access/scope-and-tenancy.md#pinning-every-answer-in-superset) |
-| `overlay` | | what Superset has no field for: `pack`, `description`, `instructions`, `timeZone`, `entities`, `hints`, `labels`, `hierarchies`, `examples`, `geo`, `mapStyle`, `panel` (`float` or `dock`). See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-overlay). The base for changes admins make while the server runs: `description`, `instructions`, `labels`, `hints`, `measures`, `examples`, `notDimensions`, `hierarchies` and more exclusions can change then; the rest stays in this file. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md) |
-| `overlay.exclude` | | `{ columns, datasets }`: columns (by name, any case, on every dataset) and whole datasets the pack never uses. See [Columns the pack never uses](../hosts/superset/datasets-and-dashboards.md#columns-the-pack-never-uses). A change while the server runs may add exclusions, never remove one of these |
-| `overlay.notDimensions` | | columns Superset lets you group by that are not dimensions (amounts, counts) |
-| `overlay.measures` | | base measures from columns: `{ dataset, name, agg, column, where, label, hint, format }`, `agg` one of `sum`, `count`, `count_distinct`, `min`, `max`. See [Measures from columns](../hosts/superset/datasets-and-dashboards.md#measures-from-columns) |
-| `overlay.labels`, `overlay.hints` | | by key; text, or text per language (`{ en: …, fr: … }`) |
-| `querySafety` | on: 20,000 rows, 20,000 series points and 100 queries a turn; 8 at once, 30 s each | limits on the queries sent to Superset: `maxRows`, `maxGroups`, `maxSeriesPoints`, `maxWindowDays`, `requireTime`, `defaultWindowDays`, `maxQueriesPerTurn`, `timeoutSeconds`, `maxConcurrent`; `heavy` (what a dataset marked heavy starts from) and `datasets` (by table name, id or entity key: `heavy`, `highCardinality`, `cardinality` and any of the limits). An admin can tighten them on a running server. See [Query safety](../operating/query-safety.md) |
-| `host` | `LENSPACK_HOST`, else `127.0.0.1` | where it listens |
-| `port` | `LENSPACK_PORT`, else `8795` | |
-| `publicPath` | `LENSPACK_PUBLIC_PATH`, else `""` | the path Superset forwards (`/lenspack`). A request through Superset's route says its own path, which wins, so Superset under a path (`/superset/lenspack`) needs no change. See [Superset under a path](../hosts/superset/install.md#superset-under-a-path) |
-| `state` | `superset-boards.json` in `LENSPACK_STATE_DIR`, else `state/` | the board bookkeeping file; its folder holds the rest of the state |
-| `budget` | `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | daily caps |
-| `speech` | `model: mistralai/voxtral-mini-transcribe-3-0`, `maxSeconds: 60`, `holdMs: 2000` | voice: `{ model, baseUrl, maxSeconds, holdMs }`. See [Voice](../features/voice.md) |
-| `language` | `default: auto`, `titles: board`, `board: en` | see [Languages](../features/languages.md) |
-| `telemetry`, `context` | | as in `lenspack.yaml`; the telemetry sits in the state directory. See [Telemetry](../features/telemetry.md) |
-| `features`, `cache`, `queue`, `explain`, `brand` | | as in `lenspack.yaml`. For `brand`, see [Naming the assistant](../features/naming.md) |
+| key | default | what it is | runtime? |
+|---|---|---|---|
+| `datasets` | (required) | the Superset datasets Lenspack may use, by id or by table name (`schema.table` or `table`) | no |
+| `dashboards` | `LENSPACK_DASHBOARDS` (comma-separated) wins | dashboard ids to read at start. Under `dashboardScope: listed`, also the only dashboards the assistant is on | no |
+| `dashboardScope` | `any` (`LENSPACK_DASHBOARD_SCOPE` wins) | which dashboards the assistant is on: `any` (every dashboard the person may open in Superset) or `listed` (only those in `dashboards`, and people's own copies of them). See [Which dashboards the assistant is on](../hosts/superset/datasets-and-dashboards.md#which-dashboards-the-assistant-is-on) | no |
+| `superset.url` | `LENSPACK_SUPERSET_URL` (required one way or the other) | where this server reaches Superset | no |
+| `superset.publicUrl` | | where browsers reach Superset, when that differs from `url` | no |
+| `superset.publicPort` | | Superset's port as browsers see it, when `publicUrl` is not set | no |
+| `superset.username` | `lenspack` | Lenspack's own Superset account | no |
+| `superset.passwordEnv`, `superset.password` | `LENSPACK_SUPERSET_PASSWORD` | an account you manage instead: its password's variable, or the password | no |
+| `editPolicy` | `superset` (`LENSPACK_EDIT_POLICY` wins) | who may change dashboards through the chat: `superset` or `signed-in` | no |
+| `hostPolicy` | `superset` (`LENSPACK_HOST_POLICY` wins) | whose access narrows what each user sees: `superset` or `off` | no |
+| `accessFallback` | `none` (`LENSPACK_ACCESS_FALLBACK` wins) | what happens when Superset answers 404 for the plugin's access route: `none` refuses that request; `rls-only`, only for an old plugin without the route, applies Superset's row-level security rules alone and treats every dataset as readable. See [Access inside Superset](../access/superset.md#when-access-cant-be-checked) | no |
+| `auth.admins` | `["Admin"]` (`LENSPACK_ADMIN_ROLES` wins) | Superset roles whose members are Lenspack admins. See [Who is asking](../hosts/superset/identity.md#who-may-administer) | no |
+| `auth.usage` | the same roles as `auth.admins` (`LENSPACK_USAGE_ROLES` wins) | Superset roles that also see user names on the usage pages | no |
+| `auth.users` | everyone signed in (`LENSPACK_USER_ROLES` wins) | Superset roles that may use the assistant at all; admins always may. See [Who is asking](../hosts/superset/identity.md#who-may-use-the-assistant) | no (people are let in on the Access page) |
+| `auth.adminAccess` | `superset-role` (`LENSPACK_ADMIN_ACCESS` wins) | who is an admin: `superset-role`, `superset-users` or `password`, or `password` with one of the others (`superset-role,password`). See [Who can use and administer the assistant](../access/admin-access.md) | no |
+| `admin.surface` | `split` (`LENSPACK_ADMIN_SURFACE` wins) | where the admin pages are: `split`, `superset` or `separate`. See [Where the admin pages are](../features/admin-panel.md#where-the-admin-pages-are) | yes: `settings/admin-surface` |
+| `auth.adminUsers` | none (`LENSPACK_ADMIN_USERS` wins) | the owners under `superset-users`: Superset user names or `id:<n>` | no (owners grant admins on the Access page) |
+| `auth.userAccess` | `superset-role` (`LENSPACK_USER_ACCESS` wins) | who may use the assistant: `superset-role`, `granted`, `everyone`, or a combination like `superset-role,granted` | no |
+| `auth.seedUsers` | none (`LENSPACK_USERS` wins) | people always let in under `granted`: Superset user names or `id:<n>` | no |
+| `editScope` | `superset` (`LENSPACK_EDIT_SCOPE` wins) | where the chat may edit: `superset` (any dashboard Superset lets the person edit) or `own` (their own dashboards only); or `{ scope, adminsExempt }` (admins exempt by default). See [Personal dashboards](../features/personal-dashboards.md#where-the-chat-may-edit-editscope) | yes: `settings/edit-scope` |
+| `personal` | `maxDashboardsPerUser: 20`, `maxSavedConfigsPerUser: 50` | limits for [personal dashboards and saved layouts](../features/personal-dashboards.md) | yes: `settings/personal` |
+| `tabs` | `editable: all`, no protected tabs, `maxPerDashboard: 20`, `maxPerUser: 3`, `maxWidgetsPerTab: auto` | which tabs the chat may change (`editable: all` or `own`), tabs it never changes per dashboard id (`protected`), and how many tabs and widgets per tab it may make. The switches are the `chatTabs` and `playground` features, off by default. See [Tabs on dashboards](../features/tabs.md) | yes: `settings/tabs` |
+| `audit` | on, 90 days | `false`, or `{ retentionDays }` (`LENSPACK_AUDIT_RETENTION_DAYS`) | `retentionDays`: yes, `settings/audit` (30 days at least); `false`: no |
+| `scope` | | the pack's own row scope: filters every answer carries, for everyone (one campaign: `[{ dimension: campaign, op: eq, value: 2026-spring }]`). See [Row scope and tenancy](../access/scope-and-tenancy.md#pinning-every-answer-in-superset) | no |
+| `overlay` | | what Superset has no field for: `pack`, `description`, `instructions`, `timeZone`, `entities`, `hints`, `labels`, `hierarchies`, `examples`, `geo`, `mapStyle`, `panel` (`float` or `dock`). See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-overlay). The base for changes admins make while the server runs: `description`, `instructions`, `labels`, `hints`, `measures`, `examples`, `notDimensions`, `hierarchies` and more exclusions can change then; the rest stays in this file. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md) | most parts: yes, `settings/pack`; `panel`: yes, `settings/panel`; `pack`, `entities`, `timeZone`, `geo`, `mapStyle`: no |
+| `overlay.exclude` | | `{ columns, datasets }`: columns (by name, any case, on every dataset) and whole datasets the pack never uses. See [Columns the pack never uses](../hosts/superset/datasets-and-dashboards.md#columns-the-pack-never-uses). A change while the server runs may add exclusions, never remove one of these | more only: `settings/pack` |
+| `overlay.notDimensions` | | columns Superset lets you group by that are not dimensions (amounts, counts) | yes: `settings/pack` |
+| `overlay.measures` | | base measures from columns: `{ dataset, name, agg, column, where, label, hint, format }`, `agg` one of `sum`, `count`, `count_distinct`, `min`, `max`. See [Measures from columns](../hosts/superset/datasets-and-dashboards.md#measures-from-columns) | yes: `settings/pack` |
+| `overlay.labels`, `overlay.hints` | | by key; text, or text per language (`{ en: …, fr: … }`) | yes: `settings/pack` |
+| `querySafety` | on: 20,000 rows, 20,000 series points and 100 queries a turn; 8 at once, 30 s each | limits on the queries sent to Superset: `maxRows`, `maxGroups`, `maxSeriesPoints`, `maxWindowDays`, `requireTime`, `defaultWindowDays`, `maxQueriesPerTurn`, `timeoutSeconds`, `maxConcurrent`; `heavy` (what a dataset marked heavy starts from) and `datasets` (by table name, id or entity key: `heavy`, `highCardinality`, `cardinality` and any of the limits). An admin can tighten them on a running server. See [Query safety](../operating/query-safety.md) | yes: `settings/query-safety` (looser needs confirm) |
+| `host` | `LENSPACK_HOST`, else `127.0.0.1` | where it listens | no |
+| `port` | `LENSPACK_PORT`, else `8795` | | no |
+| `publicPath` | `LENSPACK_PUBLIC_PATH`, else `""` | the path Superset forwards (`/lenspack`). A request through Superset's route says its own path, which wins, so Superset under a path (`/superset/lenspack`) needs no change. See [Superset under a path](../hosts/superset/install.md#superset-under-a-path) | no |
+| `state` | `superset-boards.json` in `LENSPACK_STATE_DIR`, else `state/` | the board bookkeeping file; its folder holds the rest of the state | no |
+| `budget` | `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | daily caps | yes: `settings/budget` |
+| `historyTurns` | 8 | how many recent turns the chat sends with each question | yes: `settings/history` |
+| `speech` | `model: mistralai/voxtral-mini-transcribe-3-0`, `maxSeconds: 60`, `holdMs: 2000` | voice: `{ model, baseUrl, maxSeconds, holdMs }`. See [Voice](../features/voice.md) | yes: `settings/speech`, but not `baseUrl` |
+| `language` | `default: auto`, `titles: board`, `board: en` | see [Languages](../features/languages.md) | yes: `settings/language` |
+| `telemetry`, `context` | | as in `lenspack.yaml`; the telemetry sits in the state directory. See [Telemetry](../features/telemetry.md) | yes: `settings/telemetry`, `settings/context` |
+| `features`, `cache`, `queue`, `explain`, `brand` | | as in `lenspack.yaml`. For `brand`, see [Naming the assistant](../features/naming.md) | yes: `settings/<name>`; `explain.sql` at `settings/explain` |
 
 ## Environment variables
 
 In the "wins" column: **over the file** means the variable beats the config file's key; **fallback** means it is
 read only when the file leaves the key out; **only source** means there is no key in the file.
 
-| variable | read by | what it does | wins |
-|---|---|---|---|
-| `LENSPACK_AUTH` | serve | overrides `auth.kind` (`none` for a quick local look) | over the file |
-| `LENSPACK_ADMIN_PASSWORD` | serve | the built-in admin's password, at least 12 characters | fallback (when `auth` names no password or hash) |
-| `LENSPACK_ADMIN_PASSWORD_HASH` | serve | a scrypt hash of it (`lenspack hash-password`) | fallback (as above) |
-| `LENSPACK_STATE_DIR` | both | the state folder (`/data` in the image); the password sign-in's default `dir` | fallback (for `state:`, `auth.dir`) |
-| `LENSPACK_UI` | serve | the board app's folder | between: `--ui`, then it, then `ui:` |
-| `LENSPACK_HOST`, `LENSPACK_PORT` | superset | where it listens (the image sets `LENSPACK_HOST=0.0.0.0`) | fallback (for `host`, `port`) |
-| `PORT` | serve | the port, when neither `--port` nor `port:` gives one | fallback (after `--port`, `port:`) |
-| `LENSPACK_FEATURES` | both | switches: `voice=off,maps=on`, `-voice,+maps`, or a JSON object | over the file; an admin's setting wins over it |
-| `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | both | daily caps when the config sets none | fallback (only when the file sets no `budget`) |
-| `LENSPACK_LLM_PROVIDERS` | both | model providers, as a JSON array. See [Chat models](../operating/models.md) | only source |
-| `LENSPACK_LLM_ROLES` | both | which provider plays `reviewer`, `escalate` and `router` | only source |
-| `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`, `LENSPACK_LLM_MODEL`, `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING` | both | a single OpenAI-compatible provider | only source |
-| `LENSPACK_LLM_KEY_SOURCE` | both | what the settings page says the key came from | only source |
-| `ANTHROPIC_API_KEY` | both | the `anthropic` adapter's key when a provider names none | fallback (when a provider names no key) |
-| `LENSPACK_STT_API_KEY`, else `OPENROUTER_API_KEY` | both | speech to text | only source |
-| `LENSPACK_SUPERSET_URL` | superset | `superset.url` | fallback |
-| `LENSPACK_SUPERSET_PASSWORD` | superset | the password of an account you manage | fallback |
-| `SUPERSET_ADMIN_USERNAME`, `SUPERSET_ADMIN_PASSWORD` | superset | the one-time admin sign-in that makes Lenspack's own account (`admin` by default) | only source |
-| `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback |
-| `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
-| `LENSPACK_DASHBOARDS` | superset | `dashboards`, as dashboard ids separated by commas (`25,31`) | over the file |
-| `LENSPACK_DASHBOARD_SCOPE` | superset | `dashboardScope` (`any` or `listed`) | over the file |
-| `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
-| `LENSPACK_ACCESS_FALLBACK` | superset | `accessFallback` | over the file |
-| `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file |
-| `LENSPACK_ADMIN_ACCESS`, `LENSPACK_ADMIN_USERS` | superset | `auth.adminAccess` (one mode, or `password` with another: `superset-role,password`), `auth.adminUsers` (comma-separated) | over the file |
-| `LENSPACK_ADMIN_PASSWORDS`, `LENSPACK_ADMIN_PASSWORDS_FILE` | superset | the named admin passwords when `auth.adminAccess` includes `password`: `name:password` pairs separated by commas, or a file with one per line (12+ characters each; a value starting `scrypt$` is a hash) | only source |
-| `LENSPACK_ADMIN_PASSWORD`, `LENSPACK_ADMIN_PASSWORD_HASH` | superset | one more admin password, named `password` (signed in to with the name left empty), or its scrypt hash | only source |
-| `LENSPACK_ADMIN_API_KEYS`, `LENSPACK_ADMIN_API_KEYS_FILE` | superset | admin API keys, a master override for the admin routes in every admin access mode: `name:key` pairs separated by commas, or a file with one per line (a plain key is 32+ characters; a value starting `scrypt$` is a hash). Sent as `Authorization: Bearer <key>`. See [The admin API key](../access/admin-api.md) | only source |
-| `LENSPACK_ADMIN_SURFACE` | superset | `admin.surface`: where the admin pages are, `split` (default), `superset` or `separate` | over the file |
-| `LENSPACK_ADMIN_SESSION_HOURS`, `LENSPACK_ADMIN_SESSION_SECRET` | superset | how long an admin's password sign-in lasts (8 hours), and the key that signs it (else a file in the state directory) | only source |
-| `LENSPACK_USER_ACCESS`, `LENSPACK_USERS` | superset | `auth.userAccess`, `auth.seedUsers` (comma-separated) | over the file |
-| `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |
-| `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it |
-| `LENSPACK_TABS_EDITABLE`, `LENSPACK_PROTECTED_TABS` | superset | `tabs.editable` (`all` or `own`) and `tabs.protected` (JSON, or `12=TAB-a\|TAB-b;13=TAB-c`) | over the file; an admin's setting wins over it |
-| `LENSPACK_MAX_TABS_PER_DASHBOARD`, `LENSPACK_MAX_TABS_PER_USER`, `LENSPACK_MAX_WIDGETS_PER_TAB` | superset | the `tabs` limits | over the file; an admin's setting wins over it |
-| `LENSPACK_QUERY_MAX_ROWS`, `LENSPACK_QUERY_MAX_GROUPS`, `LENSPACK_QUERY_MAX_SERIES_POINTS`, `LENSPACK_QUERY_MAX_WINDOW_DAYS`, `LENSPACK_QUERY_MAX_PER_TURN`, `LENSPACK_QUERY_TIMEOUT_SECONDS`, `LENSPACK_QUERY_MAX_CONCURRENT` | superset | the `querySafety` limits (`none` for no `maxWindowDays`). See [Query safety](../operating/query-safety.md) | over the file; an admin may tighten them, and loosen them only with confirm |
-| `LENSPACK_HEAVY_DATASETS` | superset | datasets to treat as heavy (table names, ids or entity keys, comma-separated) | over the file |
-| `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file |
-| `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) | over the file; an admin's setting wins over it |
-| `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) | over the file's older `questionText`; an admin's setting wins over it |
-| `LENSPACK_SPEECH_KEEP_AUDIO`, `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE` | both | keeping recordings of spoken questions: whether (off by default), for how long (30 days), how much (1000 MB), and the notice shown | over the file; an admin's setting wins over it |
-| `LENSPACK_BRAND_NAME`, `LENSPACK_BRAND_BUTTON`, `LENSPACK_BRAND_ICON`, `LENSPACK_BRAND_POWERED_BY` | both | the assistant's name, button label, icon and "Powered by" line. See [Naming the assistant](../features/naming.md) | over the file; an admin's setting wins over it |
-| `LENSPACK_MCP_TOKEN` | mcp | the bearer token for `lenspack-mcp --http` | fallback (after `--token`) |
-| `LENSPACK_DATA_DIR` | the demo | where `pnpm demo` looks for `<name>.duckdb` | only source |
+| variable | read by | what it does | wins | runtime? |
+|---|---|---|---|---|
+| `LENSPACK_AUTH` | serve | overrides `auth.kind` (`none` for a quick local look) | over the file | no |
+| `LENSPACK_ADMIN_PASSWORD` | serve | the built-in admin's password, at least 12 characters | fallback (when `auth` names no password or hash) | no |
+| `LENSPACK_ADMIN_PASSWORD_HASH` | serve | a scrypt hash of it (`lenspack hash-password`) | fallback (as above) | no |
+| `LENSPACK_STATE_DIR` | both | the state folder (`/data` in the image); the password sign-in's default `dir` | fallback (for `state:`, `auth.dir`) | no |
+| `LENSPACK_UI` | serve | the board app's folder | between: `--ui`, then it, then `ui:` | no |
+| `LENSPACK_HOST`, `LENSPACK_PORT` | superset | where it listens (the image sets `LENSPACK_HOST=0.0.0.0`) | fallback (for `host`, `port`) | no |
+| `PORT` | serve | the port, when neither `--port` nor `port:` gives one | fallback (after `--port`, `port:`) | no |
+| `LENSPACK_FEATURES` | both | switches: `voice=off,maps=on`, `-voice,+maps`, or a JSON object | over the file; an admin's setting wins over it | yes: `settings/features` |
+| `LENSPACK_BUDGET_USD_PER_DAY`, `LENSPACK_BUDGET_USD_PER_USER_PER_DAY` | both | daily caps when the config sets none | fallback (only when the file sets no `budget`) | yes: `settings/budget` |
+| `LENSPACK_LLM_PROVIDERS` | both | model providers, as a JSON array. See [Chat models](../operating/models.md) | only source | keys: no; which answer: `settings/models` |
+| `LENSPACK_LLM_ROLES` | both | which provider plays `reviewer`, `escalate` and `router` | only source | yes: `settings/models` `roles` |
+| `LENSPACK_LLM_BASE_URL`, `LENSPACK_LLM_API_KEY`, `LENSPACK_LLM_MODEL`, `LENSPACK_LLM_EXTRA_BODY`, `LENSPACK_LLM_PRICING` | both | a single OpenAI-compatible provider | only source | keys: no; which answer: `settings/models` |
+| `LENSPACK_LLM_KEY_SOURCE` | both | what the settings page says the key came from | only source | no |
+| `ANTHROPIC_API_KEY` | both | the `anthropic` adapter's key when a provider names none | fallback (when a provider names no key) | no |
+| `LENSPACK_STT_API_KEY`, else `OPENROUTER_API_KEY` | both | speech to text | only source | no |
+| `LENSPACK_SUPERSET_URL` | superset | `superset.url` | fallback | no |
+| `LENSPACK_SUPERSET_PASSWORD` | superset | the password of an account you manage | fallback | no |
+| `SUPERSET_ADMIN_USERNAME`, `SUPERSET_ADMIN_PASSWORD` | superset | the one-time admin sign-in that makes Lenspack's own account (`admin` by default) | only source | no |
+| `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback | no |
+| `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file | no |
+| `LENSPACK_DASHBOARDS` | superset | `dashboards`, as dashboard ids separated by commas (`25,31`) | over the file | no |
+| `LENSPACK_DASHBOARD_SCOPE` | superset | `dashboardScope` (`any` or `listed`) | over the file | no |
+| `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file | no |
+| `LENSPACK_ACCESS_FALLBACK` | superset | `accessFallback` | over the file | no |
+| `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file | no |
+| `LENSPACK_ADMIN_ACCESS`, `LENSPACK_ADMIN_USERS` | superset | `auth.adminAccess` (one mode, or `password` with another: `superset-role,password`), `auth.adminUsers` (comma-separated) | over the file | no |
+| `LENSPACK_ADMIN_PASSWORDS`, `LENSPACK_ADMIN_PASSWORDS_FILE` | superset | the named admin passwords when `auth.adminAccess` includes `password`: `name:password` pairs separated by commas, or a file with one per line (12+ characters each; a value starting `scrypt$` is a hash) | only source | no |
+| `LENSPACK_ADMIN_PASSWORD`, `LENSPACK_ADMIN_PASSWORD_HASH` | superset | one more admin password, named `password` (signed in to with the name left empty), or its scrypt hash | only source | no |
+| `LENSPACK_ADMIN_API_KEYS`, `LENSPACK_ADMIN_API_KEYS_FILE` | superset | admin API keys, a master override for the admin routes in every admin access mode: `name:key` pairs separated by commas, or a file with one per line (a plain key is 32+ characters; a value starting `scrypt$` is a hash). Sent as `Authorization: Bearer <key>`. See [The admin API key](../access/admin-api.md) | only source | no |
+| `LENSPACK_ADMIN_SURFACE` | superset | `admin.surface`: where the admin pages are, `split` (default), `superset` or `separate` | over the file | yes: `settings/admin-surface` |
+| `LENSPACK_ADMIN_SESSION_HOURS`, `LENSPACK_ADMIN_SESSION_SECRET` | superset | how long an admin's password sign-in lasts (8 hours), and the key that signs it (else a file in the state directory) | only source | no |
+| `LENSPACK_USER_ACCESS`, `LENSPACK_USERS` | superset | `auth.userAccess`, `auth.seedUsers` (comma-separated) | over the file | no |
+| `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it | yes: `settings/edit-scope` |
+| `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it | yes: `settings/personal` |
+| `LENSPACK_TABS_EDITABLE`, `LENSPACK_PROTECTED_TABS` | superset | `tabs.editable` (`all` or `own`) and `tabs.protected` (JSON, or `12=TAB-a\|TAB-b;13=TAB-c`) | over the file; an admin's setting wins over it | yes: `settings/tabs` |
+| `LENSPACK_MAX_TABS_PER_DASHBOARD`, `LENSPACK_MAX_TABS_PER_USER`, `LENSPACK_MAX_WIDGETS_PER_TAB` | superset | the `tabs` limits | over the file; an admin's setting wins over it | yes: `settings/tabs` |
+| `LENSPACK_QUERY_MAX_ROWS`, `LENSPACK_QUERY_MAX_GROUPS`, `LENSPACK_QUERY_MAX_SERIES_POINTS`, `LENSPACK_QUERY_MAX_WINDOW_DAYS`, `LENSPACK_QUERY_MAX_PER_TURN`, `LENSPACK_QUERY_TIMEOUT_SECONDS`, `LENSPACK_QUERY_MAX_CONCURRENT` | superset | the `querySafety` limits (`none` for no `maxWindowDays`). See [Query safety](../operating/query-safety.md) | over the file; an admin may tighten them, and loosen them only with confirm | yes: `settings/query-safety` |
+| `LENSPACK_HEAVY_DATASETS` | superset | datasets to treat as heavy (table names, ids or entity keys, comma-separated) | over the file | yes: `settings/query-safety` |
+| `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file | yes: `settings/audit` |
+| `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) | over the file; an admin's setting wins over it | yes: `settings/telemetry` |
+| `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) | over the file's older `questionText`; an admin's setting wins over it | yes: `settings/telemetry` |
+| `LENSPACK_SPEECH_KEEP_AUDIO`, `LENSPACK_SPEECH_AUDIO_RETENTION_DAYS`, `LENSPACK_SPEECH_MAX_STORED_MB`, `LENSPACK_SPEECH_CONSENT_NOTICE` | both | keeping recordings of spoken questions: whether (off by default), for how long (30 days), how much (1000 MB), and the notice shown | over the file; an admin's setting wins over it | yes: `settings/speech`, `settings/telemetry` |
+| `LENSPACK_BRAND_NAME`, `LENSPACK_BRAND_BUTTON`, `LENSPACK_BRAND_ICON`, `LENSPACK_BRAND_POWERED_BY` | both | the assistant's name, button label, icon and "Powered by" line. See [Naming the assistant](../features/naming.md) | over the file; an admin's setting wins over it | yes: `settings/brand` |
+| `LENSPACK_MCP_TOKEN` | mcp | the bearer token for `lenspack-mcp --http` | fallback (after `--token`) | no |
+| `LENSPACK_DATA_DIR` | the demo | where `pnpm demo` looks for `<name>.duckdb` | only source | no |
 
 Read by the Superset plugin, in Superset's environment:
 
