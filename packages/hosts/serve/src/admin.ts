@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import { type CacheSettings, type ChecklistInput, fieldNotices, type QueueSettings, type TelemetryLine, type TranscriptLine, type TurnLine, cacheSettings, localTurnGate, queueSettings, reuseLayer, telemetryChecklist, withoutNames } from "@lenspack/agent";
-import { type DeploymentContext, adminRights, adminUsersFrom, deploymentContextSchema, mayUse, recordRights } from "@lenspack/policy";
+import { type DeploymentContext, adminRights, adminUsersFrom, deploymentContextSchema, mayUse, offeredModels, recordRights } from "@lenspack/policy";
 
 import type { AdminAccessSetup, UserAccessSetup } from "./admin-access";
 
@@ -11,11 +11,13 @@ import { type AudioSettings, audioManifest, fileAudioStore } from "./audio";
 import { type AuditEvent, type AuditLog, turnRow, turnsReport } from "./audit";
 import { type BrandConfig, brandAuditDetail, brandSettings } from "./brand";
 import type { Principal } from "./auth";
-import { type ExplainConfig, explainFrom } from "./config";
+import type { ExplainConfig } from "./config";
 import { type FeatureValues, features as featureSwitches } from "./features";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, modelLabel, publicView } from "./llm";
 import type { Budget } from "./metering";
+import { budgetFromEnv } from "./runtime";
+import { runtimeConfig } from "./runtime-config";
 import { cacheRoutes } from "./reuse";
 import { type ReviewMountOptions, reviewMount } from "./review/mount";
 import { asSettingsWriter, revisionTag, settingsStore } from "./settings";
@@ -30,12 +32,17 @@ import { type TelemetryConfig, telemetrySwitches } from "./telemetry-switches";
 // a prefix the host picks (/_superset), for its admins only. No secrets: which
 // variable a key came from, never the key.
 
+/** The settings routes for the deploy config's options an admin changes while the server runs (runtime-config.ts). */
+const RUNTIME_AREAS = ["/settings/budget", "/settings/models", "/settings/audit", "/settings/history", "/settings/explain", "/settings/context"];
+
 /** The chat menu's choices (auto: no speech hint, reply in the language used). */
 export const LANGUAGES = ["auto", "en", "fr", "hi", "pt"] as const;
 /** How long Space is held before the mic listens (a shorter press types a space). */
 const HOLD_MS = { min: 500, max: 3000 };
 
-type SpeechSettings = { model?: string; holdMs?: number } & Partial<AudioSettings>;
+type SpeechSettings = { model?: string; holdMs?: number; maxSeconds?: number } & Partial<AudioSettings>;
+/** The longest recording the mic takes, in seconds. */
+const MAX_SECONDS = { min: 5, max: 300 };
 const AUDIO_DAYS = { min: 1, max: 3650 };
 const AUDIO_MB = { min: 1, max: 100_000 };
 const whole = (v: unknown, r: { min: number; max: number }): v is number => typeof v === "number" && Number.isInteger(v) && v >= r.min && v <= r.max;
@@ -82,6 +89,12 @@ export type AdminConfig = {
   explain?: ExplainConfig;
   /** What the assistant is called and its button says (brand.ts); LENSPACK_BRAND_* and the settings page override it. */
   brand?: BrandConfig;
+  /** Daily caps on chat spend (else LENSPACK_BUDGET_*); the settings page overrides them (runtime-config.ts). */
+  budget?: Budget;
+  /** The audit log: false turns it off (deploy config only); retentionDays the settings page may change. */
+  audit?: false | { retentionDays?: number };
+  /** How many recent turns the chat model is sent (8); the settings page overrides it. */
+  historyTurns?: number;
 };
 
 /** Where the LLM key came from, for the settings page. */
@@ -93,11 +106,29 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   const features = featureSwitches({ config: config.features, env: env.LENSPACK_FEATURES, settings });
   const brand = brandSettings({ config: config.brand, env, settings });
   const saved = <T>(section: string) => settings.get<T>(section);
+  // The deploy config's options an admin also changes while the server runs (runtime-config.ts).
+  const configBudget = config.budget ?? budgetFromEnv(env);
+  const roles = (() => {
+    try {
+      return env.LENSPACK_LLM_ROLES ? (JSON.parse(env.LENSPACK_LLM_ROLES) as Record<string, string>) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const runtime = runtimeConfig(settings, {
+    budget: configBudget,
+    budgetFrom: config.budget ? "config" : "env",
+    auditRetentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90,
+    historyTurns: config.historyTurns,
+    explain: config.explain,
+    roles: roles ? { reviewer: roles.reviewer, escalate: roles.escalate, router: roles.router } : undefined,
+  });
   const defaultSpeechModel = config.speech?.model ?? DEFAULT_SPEECH_MODEL;
   const defaultHoldMs = Math.min(HOLD_MS.max, Math.max(HOLD_MS.min, config.speech?.holdMs ?? 2000));
   const speechModel = () => saved<SpeechSettings>("speech")?.model ?? defaultSpeechModel;
   const holdMs = () => saved<SpeechSettings>("speech")?.holdMs ?? defaultHoldMs;
   const speechKey = speechKeyFromEnv(env);
+  const defaultMaxSeconds = config.speech?.maxSeconds ?? 60;
   // With voice switched off the key is withheld, so the mic is hidden and /api/_stt answers 503.
   const speech: SpeechOptions = {
     ...speechKey,
@@ -105,7 +136,10 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       return features.on("voice") ? speechKey.apiKey : undefined;
     },
     baseUrl: config.speech?.baseUrl,
-    maxSeconds: config.speech?.maxSeconds ?? 60,
+    // The longest recording: the config's (60 s), unless an admin set one.
+    get maxSeconds() {
+      return saved<SpeechSettings>("speech")?.maxSeconds ?? defaultMaxSeconds;
+    },
     model: speechModel,
   };
   const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
@@ -127,13 +161,15 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   // The telemetry switchboard (telemetry-switches.ts): telemetry as a whole, and each field group.
   const parsedContext = deploymentContextSchema.safeParse(config.context ?? {});
   if (!parsedContext.success) throw new Error(`context: ${parsedContext.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; ")}`);
-  const context = parsedContext.data;
+  const configContext = parsedContext.data;
+  // The context labels: the config's, unless an admin replaced them (PUT settings/context).
+  const contextNow = (): DeploymentContext => saved<DeploymentContext>("context") ?? configContext;
   const switches = telemetrySwitches({
     settings,
     features,
     config: config.telemetry,
     env,
-    context: () => context,
+    context: contextNow,
     // Kept recordings were speech.keepAudio before they were a field switch: that is still the field's starting value.
     keepAudio: () => saved<SpeechSettings>("speech")?.keepAudio ?? flag(env.LENSPACK_SPEECH_KEEP_AUDIO) ?? cs.keepAudio,
     voiceReady: () => features.on("voice") && !!speechKey.apiKey,
@@ -154,7 +190,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     on: () => features.on("telemetry"),
     fields: () => switches.on(),
     retentionDays: () => switches.retentionDays(),
-    context: () => context,
+    context: contextNow,
   });
   const cache = cacheSettings(settings, config.cache);
   const queue = queueSettings(settings, config.queue);
@@ -164,7 +200,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   const gate = localTurnGate(queue.get);
   // What reads each telemetry field: the usage board's widgets, once the review mount has made it.
   let telemetryUses: (() => Promise<Record<string, { id: string; label: string }[]>>) | null = null;
-  const notices = () => fieldNotices({ switches: switches.values(), features: switches.featureValues(true), context });
+  const notices = () => fieldNotices({ switches: switches.values(), features: switches.featureValues(true), context: contextNow() });
   return {
     settings,
     features,
@@ -181,7 +217,13 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     telemetry,
     telemetryLog,
     switches,
-    context,
+    get context() {
+      return contextNow();
+    },
+    /** The context as the config writes it, for the settings page's reset. */
+    configContext,
+    contextView: (writable: boolean) => ({ context: contextNow(), defaults: configContext, source: saved("context") ? "settings" : "default", writable }),
+    runtime,
     audio,
     audioSettings,
     /** By telemetry field group id, the widgets of the usage board that read it ({} before the board is made). */
@@ -196,8 +238,10 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       audio,
       reuse,
       queue: gate,
-      // The explain switch (settings page, env, config) and the config's explain.sql.
-      explain: () => ({ ...explainFrom(config.explain), ...(features.on("explain") ? {} : { on: false }) }),
+      // The explain switch (settings page, env, config) and explain.sql (the config's, or an admin's).
+      explain: () => ({ ...runtime.explain.get(), ...(features.on("explain") ? {} : { on: false }) }),
+      historyTurns: runtime.history.turns,
+      models: { offered: runtime.models.offered, roles: runtime.models.roles },
       brand: brand.get,
     } satisfies Partial<AppOptions>,
     /** The review system and admin panel over these settings (review/mount.ts), so a host wires it with no more imports. */
@@ -218,6 +262,9 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       holdMs: holdMs(),
       defaultHoldMs,
       holdMsRange: HOLD_MS,
+      maxSeconds: speech.maxSeconds,
+      defaultMaxSeconds,
+      maxSecondsRange: MAX_SECONDS,
       ...audioSettings(),
       audioDefaults,
       audioRetentionRange: AUDIO_DAYS,
@@ -228,7 +275,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       writable,
     }),
     languageView: (writable: boolean) => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: saved("language") ? "settings" : "default", writable }),
-    telemetryView: (writable: boolean) => ({ ...switches.view(writable), file: telemetryLog.file, context: Object.keys(context).length }),
+    telemetryView: (writable: boolean) => ({ ...switches.view(writable), file: telemetryLog.file, context: Object.keys(contextNow()).length }),
   };
 }
 export type AdminSettings = ReturnType<typeof adminSettings>;
@@ -267,10 +314,12 @@ export function adminRoutes(o: AdminRouteOptions) {
   /** The chat section: what runs when the client asks for no model. */
   const chatSettings = () => {
     const saved = s.settings.get<ChatSetting>("chat");
-    const current = pickChatModel(o.providers, null, saved);
+    // Only the models offered (PUT settings/models) answer, the default among them.
+    const offered = offeredModels(o.providers, s.runtime.models.offered());
+    const current = pickChatModel(offered, null, saved);
     // The deployment's default is the first model it configures, whether or not it answers right now; when it is down,
     // another answers in its place, and `fallback` says so. (Before, the default named whichever model answered first.)
-    const configured = o.providers[0] ?? null;
+    const configured = offered[0] ?? null;
     const source = saved?.model && current?.name === saved.model ? "settings" : "default";
     return {
       model: current?.name ?? null,
@@ -281,7 +330,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       fallback: source === "default" && !!current && !!configured && current.name !== configured.name,
       source,
       writable: o.writable(),
-      options: o.providers.map(publicView),
+      options: offered.map(publicView),
     };
   };
   // Saved answers' admin routes (<prefix>/cache…), beside the settings.
@@ -319,8 +368,13 @@ export function adminRoutes(o: AdminRouteOptions) {
       ...o.details?.(),
       providers: o.providers.map(publicView),
       llmFrom: llmKeySource(),
-      budget: o.budget ?? null,
-      audit: o.audit ? { file: o.audit.file, retentionDays: o.audit.retentionDays, months: o.audit.months() } : null,
+      // Each with its value, the deployment's, where it comes from, and whether it can be saved now.
+      budget: s.runtime.budget.view(writable),
+      audit: o.audit ? { file: o.audit.file, months: o.audit.months(), ...s.runtime.audit.view(writable) } : null,
+      models: s.runtime.models.view(o.providers, writable),
+      history: s.runtime.history.view(writable),
+      explain: s.runtime.explain.view(writable),
+      context: s.contextView(writable),
       chat: chatSettings(),
       speech: await s.speechView(writable),
       language: s.languageView(writable),
@@ -441,7 +495,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       }
       return send(405, { error: "not a method this route takes" });
     }
-    if (!["/settings", "/settings/revision", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/telemetry", "/settings/brand"].includes(path))) return;
+    if (!["/settings", "/settings/revision", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/telemetry", "/settings/brand", ...RUNTIME_AREAS].includes(path))) return;
     const may = recordRights(who);
     // The settings and every switch: the admin role (adminRights in @lenspack/policy); the records: recordRights.
     const access = o.access?.state();
@@ -627,6 +681,39 @@ export function adminRoutes(o: AdminRouteOptions) {
     } catch (e) {
       return send(400, { error: e instanceof Error ? e.message : String(e) });
     }
+    // The deploy config's options an admin changes while the server runs (runtime-config.ts): each area's body names the
+    // fields it changes, null hands one back. Applied from the next request on, logged and audited with who did it.
+    if (path === "/settings/budget" || path === "/settings/audit" || path === "/settings/history" || path === "/settings/explain") {
+      const area = path.slice("/settings/".length) as "budget" | "audit" | "history" | "explain";
+      const r = s.runtime[area].update(b);
+      if (!r.ok) return send(400, { error: r.error });
+      if (area === "audit") o.audit?.prune?.();
+      o.log(`${area}: ${r.detail} (by ${who.user})`);
+      audit(`settings ${area}`, r.detail);
+      return send(200, s.runtime[area].view(writable));
+    }
+    if (path === "/settings/models") {
+      const r = s.runtime.models.update(b, o.providers.map((p) => p.name), s.settings.get<ChatSetting>("chat")?.model);
+      if (!r.ok) return send(400, { error: r.error });
+      o.log(`models: ${r.detail} (by ${who.user})`);
+      audit("settings models", r.detail);
+      return send(200, { ...s.runtime.models.view(o.providers, writable), chat: chatSettings() });
+    }
+    // The context labels for telemetry, as a whole: { context: { <board, dataset or role:name>: { campaign, … } } }, or
+    // { context: null } for the config's.
+    if (path === "/settings/context") {
+      if (!("context" in b) || Object.keys(b).length !== 1) return send(400, { error: 'send { "context": { "<board, dataset or role:name>": { "campaign": "…" } } }, or { "context": null } for the deployment\'s' });
+      if (b.context === null) s.settings.set("context", undefined);
+      else {
+        const parsed = deploymentContextSchema.safeParse(b.context);
+        if (!parsed.success) return send(400, { error: `context: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; ")}` });
+        s.settings.set("context", parsed.data);
+      }
+      const n = Object.keys(s.context).length;
+      o.log(`context: ${n} label${n === 1 ? "" : "s"}${b.context === null ? " (the deployment's)" : ""} (by ${who.user})`);
+      audit("settings context", b.context === null ? "reset" : `${n} labels`);
+      return send(200, s.contextView(writable));
+    }
     // Off switches: any of {feature: true|false|null}; null puts a switch back to the deployment's value.
     if (path === "/settings/features") {
       const r = s.features.update(b);
@@ -684,6 +771,12 @@ export function adminRoutes(o: AdminRouteOptions) {
         else if (typeof v !== "string" || v.length > 2000) return send(400, { error: "consentNotice is a text of at most 2000 characters" });
         else next.consentNotice = v.trim();
       }
+      if ("maxSeconds" in b) {
+        const v = b.maxSeconds;
+        if (v === null || v === "") delete next.maxSeconds;
+        else if (!whole(v, MAX_SECONDS)) return send(400, { error: `maxSeconds is a whole number of seconds from ${MAX_SECONDS.min} to ${MAX_SECONDS.max}` });
+        else next.maxSeconds = v;
+      }
       if ("holdMs" in b) {
         const v = b.holdMs;
         if (v === null || v === "") delete next.holdMs;
@@ -733,8 +826,9 @@ export function adminRoutes(o: AdminRouteOptions) {
       audit("settings chat", "reset");
       return send(200, chatSettings());
     }
-    const p = o.providers.find((x) => x.name === b.model);
-    if (!p) return send(400, { error: `unknown model "${String(b.model)}": one of ${o.providers.map((x) => x.name).join(", ")}` });
+    const offered = offeredModels(o.providers, s.runtime.models.offered());
+    const p = offered.find((x) => x.name === b.model);
+    if (!p) return send(400, { error: o.providers.some((x) => x.name === b.model) ? `"${String(b.model)}" is not offered: offer it first (PUT settings/models)` : `unknown model "${String(b.model)}": one of ${offered.map((x) => x.name).join(", ")}` });
     const effort = b.effort == null || b.effort === "" ? undefined : String(b.effort);
     if (effort && !p.efforts?.levels.includes(effort)) return send(400, { error: p.efforts ? `effort "${effort}" is not one ${p.name} takes: ${p.efforts.levels.join(", ")}` : `${p.name} has no effort setting` });
     s.settings.set("chat", { model: p.name, ...(effort ? { effort } : {}) });

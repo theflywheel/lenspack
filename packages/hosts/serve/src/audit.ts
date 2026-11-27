@@ -49,6 +49,8 @@ export type AuditLog = {
   /** The file the current month is written to. */
   file: string;
   retentionDays: number;
+  /** Deletes the months older than the retention now (after an admin shortens it). */
+  prune?(): void;
 };
 
 /** A JSON-lines file kept by month, with old months deleted: the audit log's way, and the telemetry file's. */
@@ -172,9 +174,20 @@ export function rotatingLog<T extends { at: string }>(dir: string, base: string,
   };
 }
 
-export function rotatingAudit(dir: string, opts: { retentionDays?: number; now?: () => Date } = {}): AuditLog {
+/** The audit log by month. retentionDays may be a function, read at each prune: an admin may change it while the server runs. */
+export function rotatingAudit(dir: string, opts: { retentionDays?: number | (() => number); now?: () => Date } = {}): AuditLog {
   const log = rotatingLog<AuditEvent>(dir, "audit", opts);
-  return { audit: log.append, file: log.file, retentionDays: log.retentionDays, months: log.months, since: log.since, read: log.read };
+  return {
+    audit: log.append,
+    file: log.file,
+    get retentionDays() {
+      return log.retentionDays;
+    },
+    months: log.months,
+    since: log.since,
+    read: log.read,
+    prune: log.prune,
+  };
 }
 
 // What chat has cost, from the audit log: each chat-turn line carries the turn's cost (an estimate

@@ -154,6 +154,14 @@
     scopeH: "Where the chat may edit", scopeSuperset: "Any dashboard Superset lets the person edit", scopeOwn: "Only their own dashboards", scopeExempt: "Admins may edit shared ones",
     configH: "From the deployment's config", whereH: "Where to change things", wWhat: "What", wWhere: "Where",
     budgetDay: "Spend per day", budgetUser: "Spend per person per day", none2: "none", contextN: "{0} context labels", nameElsewhere: "The name and button label are set on Superset's settings page.",
+    // Runtime options (runtime-config.ts): what changes here with no redeploy
+    budgetH: "Budget", budgetLede: "Daily caps on what chat may spend, in US dollars. 0 means no cap.", sttMax: "Longest recording (s)",
+    offeredH: "Models offered", offeredLede: "Which of the deployment's models answer, and which plays each role. The deployment's keys decide which exist.", roleReviewer: "Reviewer", roleEscalate: "Fix round", roleRouter: "Matching saved answers", roleDefault: "the deployment's",
+    auditKeepH: "Audit log", auditKeep: "Keep for (days)", auditKeepLede: "From {0} to {1} days, so what any admin did stays on record.",
+    answersH: "Answers", historyL: "Recent turns sent with each question", sqlL: "Show the SQL under “How this was worked out”",
+    pagesH: "Pages", panelL: "The chat opens", panelFloat: "floating", panelDock: "docked", surfaceL: "Admin pages", surface_split: "split: Superset's page and this panel", surface_superset: "all on Superset's page", surface_separate: "all on this panel",
+    runtimeH: "What can change without a redeploy", runtimeLede: "Every option of this deployment: changed here at once, narrowed only, or set in the deploy config.", rKey: "Option", rHow: "Here", rNote: "Note",
+    r_yes: "changes here", r_narrow: "narrows only", r_no: "deploy config",
     // Assistant (Superset)
     panelH: "Admin panel", panelLede: "Models, voice, costs, logs, switches, review and saved answers.", openPanel: "Open the admin panel", panelPassword: "Admins sign in with the deployment's admin password.",
     whoH: "Who can use it", onOff: "The assistant", isOn: "on", isOff: "off (the Assistant button switch)", hostPolicyL: "Whose data access applies", hostSuperset: "each person's own Superset access", hostOff: "the assistant's own account (off)", editPolicyL: "Who may edit dashboards", editSuperset: "whoever Superset lets edit", editSigned: "anyone signed in", scopeL: "Edit scope",
@@ -202,6 +210,13 @@
     scopeH: "Où la discussion peut modifier", scopeSuperset: "Tout tableau que Superset laisse modifier", scopeOwn: "Seulement ses propres tableaux", scopeExempt: "Les administrateurs modifient les tableaux partagés",
     configH: "Depuis la configuration", whereH: "Où changer quoi", wWhat: "Quoi", wWhere: "Où",
     budgetDay: "Dépense par jour", budgetUser: "Dépense par personne et par jour", none2: "aucune", contextN: "{0} libellés de contexte", nameElsewhere: "Le nom et le libellé du bouton se règlent sur la page de réglages de Superset.",
+    budgetH: "Budget", budgetLede: "Plafonds quotidiens des dépenses de discussion, en dollars US. 0 : sans plafond.", sttMax: "Enregistrement le plus long (s)",
+    offeredH: "Modèles proposés", offeredLede: "Quels modèles du déploiement répondent, et lequel tient chaque rôle. Les clés du déploiement décident lesquels existent.", roleReviewer: "Relecteur", roleEscalate: "Tour de correction", roleRouter: "Rapprochement des réponses gardées", roleDefault: "celui du déploiement",
+    auditKeepH: "Journal d'audit", auditKeep: "Garder pendant (jours)", auditKeepLede: "De {0} à {1} jours, pour que les actions de chaque administrateur restent consignées.",
+    answersH: "Réponses", historyL: "Tours récents envoyés avec chaque question", sqlL: "Montrer le SQL sous « Comment c'est calculé »",
+    pagesH: "Pages", panelL: "La discussion s'ouvre", panelFloat: "flottante", panelDock: "ancrée", surfaceL: "Pages d'administration", surface_split: "partagées : page Superset et ce panneau", surface_superset: "toutes sur la page Superset", surface_separate: "toutes dans ce panneau",
+    runtimeH: "Ce qui change sans redéploiement", runtimeLede: "Chaque option de ce déploiement : changée ici aussitôt, seulement restreinte, ou fixée par la configuration.", rKey: "Option", rHow: "Ici", rNote: "Note",
+    r_yes: "se change ici", r_narrow: "se restreint seulement", r_no: "configuration",
     panelH: "Panneau d'administration", panelLede: "Modèles, voix, coûts, journaux, interrupteurs, revue et réponses gardées.", openPanel: "Ouvrir le panneau", panelPassword: "Les administrateurs se connectent avec le mot de passe du déploiement.",
     whoH: "Qui peut l'utiliser", onOff: "L'assistant", isOn: "activé", isOff: "désactivé (interrupteur du bouton)", hostPolicyL: "Accès aux données appliqué", hostSuperset: "l'accès Superset de chacun", hostOff: "le compte de l'assistant (désactivé)", editPolicyL: "Qui modifie les tableaux", editSuperset: "qui Superset laisse modifier", editSigned: "toute personne connectée", scopeL: "Portée des modifications",
     connH: "Connexion", cServer: "Serveur", cAccount: "Compte de service", cIdentity: "Clé de signature", cReceived: "reçue", cMissing: "absente : les réglages ne s'enregistrent pas", cChat: "Discussion", cChatOk: "répond", cChatDown: "aucun modèle ne répond", cUrl: "Superset à", cRoles: "Rôles du compte de service", dbH: "Bases de données Superset", dbName: "Base", dbBackend: "Moteur", dbDatasets: "Jeux de données",
@@ -219,7 +234,7 @@
     pkResetPart: "Back to the config", pkResetAll: "Everything back to the config", pkResetQ: "Hand {0} back to the deploy config?", pkResetAllQ: "Hand every change back to the deploy config?",
     pkEdit: "Edit", pkEditLede: "The pack's parts that may change while it runs, as YAML. A part you remove follows the deploy config. Validate checks the change against Superset's datasets now; Save also makes it a new version, in force at once.",
     pkWhy: "Why (kept with the version)", pkValidate: "Validate", pkSave: "Save", pkOk: "The change is valid: {0}.", pkOkNone: "Nothing would change.", pkProblems: "Not changed. Fix these first:", pkWarnings: "Warnings (not blocking):",
-    pkSaved: "Saved as version {0}.", pkConfigOnlyH: "Set in the deploy config only", pkConfigOnlyLede: "These parts, the datasets, the row scope, dashboards, access, budgets and models change only with the deploy config.",
+    pkSaved: "Saved as version {0}.", pkConfigOnlyH: "Set in the deploy config only", pkConfigOnlyLede: "These parts, the datasets, the row scope, dashboards and access change only with the deploy config. The budget is on the Settings tab, the models offered on Models & voice.",
     pkVersions: "Versions", pkV: "Version", pkWhen: "When", pkBy: "By", pkWhat: "What changed", pkRevert: "Go back to this", pkRevertQ: "Go back to version {0}? It becomes a new version.", pkDiff: "Changes", pkCurrent: "in force",
     pkExport: "Export as YAML", pkExportLede: "The whole overlay as it runs, to paste as overlay: in superset.yaml. Once it is there, reset the changes here.", pkNoVersions: "No changes yet: the deploy config alone decides.", pkV0: "the deploy config alone",
     pkWas: "Before", pkIs: "After", pkNotHere: "This host does not let the pack change while it runs.",
@@ -236,7 +251,7 @@
     pkResetPart: "Revenir à la configuration", pkResetAll: "Tout revenir à la configuration", pkResetQ: "Rendre {0} à la configuration du déploiement ?", pkResetAllQ: "Rendre tous les changements à la configuration du déploiement ?",
     pkEdit: "Modifier", pkEditLede: "Les parties du pack modifiables pendant qu'il tourne, en YAML. Une partie retirée suit la configuration. Valider vérifie le changement avec les jeux de données de Superset ; Enregistrer en fait aussi une nouvelle version, appliquée aussitôt.",
     pkWhy: "Pourquoi (gardé avec la version)", pkValidate: "Valider", pkSave: "Enregistrer", pkOk: "Le changement est valide : {0}.", pkOkNone: "Rien ne changerait.", pkProblems: "Rien n'a changé. À corriger d'abord :", pkWarnings: "Avertissements (non bloquants) :",
-    pkSaved: "Enregistré en version {0}.", pkConfigOnlyH: "Fixé par la configuration seule", pkConfigOnlyLede: "Ces parties, les jeux de données, le périmètre des lignes, les tableaux de bord, les accès, les budgets et les modèles ne changent qu'avec la configuration du déploiement.",
+    pkSaved: "Enregistré en version {0}.", pkConfigOnlyH: "Fixé par la configuration seule", pkConfigOnlyLede: "Ces parties, les jeux de données, le périmètre des lignes, les tableaux de bord et les accès ne changent qu'avec la configuration du déploiement. Le budget est dans l'onglet Réglages, les modèles proposés dans Modèles et voix.",
     pkVersions: "Versions", pkV: "Version", pkWhen: "Quand", pkBy: "Par", pkWhat: "Ce qui a changé", pkRevert: "Revenir à celle-ci", pkRevertQ: "Revenir à la version {0} ? Elle devient une nouvelle version.", pkDiff: "Changements", pkCurrent: "en vigueur",
     pkExport: "Exporter en YAML", pkExportLede: "Tout l'overlay tel qu'il tourne, à coller sous overlay: dans superset.yaml. Une fois fait, réinitialisez les changements ici.", pkNoVersions: "Aucun changement : la configuration seule décide.", pkV0: "la configuration seule",
     pkWas: "Avant", pkIs: "Après", pkNotHere: "Cet hôte ne permet pas de changer le pack pendant qu'il tourne.",
@@ -1079,6 +1094,7 @@
       card(t("offH"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null),
       nameCard,
       host ? supersetSettingsCards(host) : null,
+      host ? runtimeCards(host) : null,
       host ? configCards(host) : null,
     ];
   }
@@ -1205,6 +1221,7 @@
       out.push(card(t("modelsH"), null, table([t("mName"), t("mKind"), t("mState"), { t: t("mLatency"), n: true }, t("mPriced")],
         c.options.map((p) => h("tr", {}, h("td", {}, h("b", {}, p.label || p.name), h("div", { class: "mute small mono" }, p.model)), h("td", {}, p.kind), h("td", {}, pill(p.available === false ? t("down") : t("up"), p.available === false ? "bad" : "ok")), h("td", { class: "n" }, p.latencyMs ? `${nf(p.latencyMs)} ms` : "—"), h("td", {}, p.priced ? "✓" : "—"))), t("none"))));
     }
+    if (s.models && s.models.all && s.models.all.length > 1) out.push(offeredCard(s.models));
     // Speech to text: model and hold-to-talk, then the measured table, then kept recordings.
     const sp = s.speech;
     if (sp) {
@@ -1215,9 +1232,10 @@
         if (!opts.includes(sp.model)) opts.unshift(sp.model);
         const sel = h("select", { "aria-label": t("sttModel"), disabled: !sp.writable }, opts.map((m) => h("option", { value: m, selected: m === sp.model ? "" : null }, m)));
         const hold = num(sp.holdMs, sp.holdMsRange && sp.holdMsRange.min, sp.holdMsRange && sp.holdMsRange.max, 50);
+        const maxS = num(sp.maxSeconds, sp.maxSecondsRange && sp.maxSecondsRange.min, sp.maxSecondsRange && sp.maxSecondsRange.max);
         out.push(card(t("sttH"), null,
-          h("div", { class: "form" }, fld(t("sttModel"), sel), fld(t("sttHold"), hold)),
-          h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !sp.writable, onclick: act(() => hostApi("settings/speech", { body: { model: sel.value === sp.defaultModel ? null : sel.value, holdMs: hold.value === "" ? null : Number(hold.value) } }), t("saved")) }, t("sttSave")), sourcePill(sp.source))));
+          h("div", { class: "form" }, fld(t("sttModel"), sel), fld(t("sttHold"), hold), sp.maxSecondsRange ? fld(t("sttMax"), maxS) : null),
+          h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !sp.writable, onclick: act(() => hostApi("settings/speech", { body: { model: sel.value === sp.defaultModel ? null : sel.value, holdMs: hold.value === "" ? null : Number(hold.value), ...(sp.maxSecondsRange ? { maxSeconds: maxS.value === "" || Number(maxS.value) === sp.defaultMaxSeconds ? null : Number(maxS.value) } : {}) } }), t("saved")) }, t("sttSave")), sourcePill(sp.source))));
       }
       const measured = sp.measured && sp.measured.rows ? Object.entries(sp.measured.rows) : [];
       if (measured.length)
@@ -1332,6 +1350,61 @@
     return out;
   }
 
+  // ---- The deploy config's options that change here (PUT <prefix>/settings/<area>, runtime-config.ts) -----------------
+  function offeredCard(m) {
+    const boxes = m.all.map((name) => h("input", { type: "checkbox", value: name, checked: m.offered.includes(name), disabled: !m.writable }));
+    const roleSel = (role) => h("select", { "aria-label": role, disabled: !m.writable }, [h("option", { value: "", selected: m.roles[role] === m.defaultRoles[role] && m.rolesSource[role] !== "settings" ? "" : null }, `${t("roleDefault")}${m.defaultRoles[role] ? ` (${m.defaultRoles[role]})` : ""}`), ...m.all.map((name) => h("option", { value: name, selected: m.rolesSource[role] === "settings" && m.roles[role] === name ? "" : null }, name))]);
+    const roles = { reviewer: roleSel("reviewer"), escalate: roleSel("escalate"), router: roleSel("router") };
+    const save = act(() => hostApi("settings/models", { body: { offered: boxes.filter((b) => b.checked).map((b) => b.value), roles: Object.fromEntries(Object.entries(roles).map(([r, sel]) => [r, sel.value || null])) } }), t("saved"));
+    return card(t("offeredH"), t("offeredLede"),
+      h("div", {}, boxes.map((b) => h("label", { class: "switch" }, b, h("div", {}, h("div", { class: "lbl mono" }, b.value))))),
+      h("div", { class: "form", style: "margin-top:8px" }, fld(t("roleReviewer"), roles.reviewer), fld(t("roleEscalate"), roles.escalate), fld(t("roleRouter"), roles.router)),
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: save, disabled: !m.writable }, t("saveB")),
+        m.source === "settings" || Object.values(m.rolesSource).includes("settings") ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/models", { offered: null, roles: null }) }, t("resetDefaults")) : null, sourcePill(m.source)));
+  }
+  function runtimeCards(s) {
+    const out = [];
+    const b = s.budget;
+    if (b && b.source) {
+      const day = num(b.usdPerDay, 0, b.max, 0.01), user = num(b.usdPerUserPerDay, 0, b.max, 0.01);
+      const src = Object.values(b.source).includes("settings") ? "settings" : Object.values(b.source).find((x) => x !== "none") || "default";
+      out.push(card(t("budgetH"), t("budgetLede"),
+        h("div", { class: "form" }, fld(t("budgetDay"), day), fld(t("budgetUser"), user)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !b.writable, onclick: act(() => hostApi("settings/budget", { body: { usdPerDay: Number(day.value || 0), usdPerUserPerDay: Number(user.value || 0) } }), t("saved")) }, t("saveB")),
+          src === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/budget", { usdPerDay: null, usdPerUserPerDay: null }) }, t("resetDefaults")) : null, sourcePill(src))));
+    }
+    const a = s.audit;
+    if (a && a.max) {
+      const days = num(a.retentionDays, a.min, a.max);
+      out.push(card(t("auditKeepH"), t("auditKeepLede", nf(a.min), nf(a.max)),
+        h("div", { class: "form" }, fld(t("auditKeep"), days)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !a.writable, onclick: act(() => hostApi("settings/audit", { body: { retentionDays: Number(days.value) } }), t("saved")) }, t("saveB")),
+          a.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/audit", { retentionDays: null }) }, t("resetDefaults")) : null, sourcePill(a.source))));
+    }
+    if (s.history && s.explain) {
+      const turns = num(s.history.historyTurns, s.history.range.min, s.history.range.max);
+      const sql = h("input", { type: "checkbox", checked: !!s.explain.sql, disabled: !s.explain.writable });
+      out.push(card(t("answersH"), null,
+        h("div", { class: "form" }, fld(t("historyL"), turns)),
+        h("label", { class: "switch", style: "margin-top:8px" }, sql, h("div", {}, h("div", { class: "lbl" }, t("sqlL")))),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !s.history.writable, onclick: act(async () => { await hostApi("settings/history", { body: { historyTurns: Number(turns.value) } }); return hostApi("settings/explain", { body: { sql: sql.checked } }); }, t("saved")) }, t("saveB")),
+          s.history.source === "settings" || s.explain.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: act(async () => { await hostApi("settings/history", { body: { historyTurns: null } }); return hostApi("settings/explain", { body: { sql: null } }); }, t("saved")) }, t("resetDefaults")) : null)));
+    }
+    if (s.panelSetting && s.adminSurface) {
+      const opt = (v, label, cur) => h("option", { value: v, selected: v === cur ? "" : null }, label);
+      const panelSel = h("select", {}, [opt("float", t("panelFloat"), s.panelSetting.panel), opt("dock", t("panelDock"), s.panelSetting.panel)]);
+      const surfSel = h("select", {}, s.adminSurface.options.map((v) => opt(v, t(`surface_${v}`), s.adminSurface.surface)));
+      out.push(card(t("pagesH"), null,
+        h("div", { class: "form" }, fld(t("panelL"), panelSel), fld(t("surfaceL"), surfSel)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(async () => { await hostApi("settings/panel", { body: { panel: panelSel.value } }); return hostApi("settings/admin-surface", { body: { surface: surfSel.value } }); }, t("saved")) }, t("saveB")),
+          s.panelSetting.source === "settings" || s.adminSurface.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: act(async () => { await hostApi("settings/panel", { body: { panel: null } }); return hostApi("settings/admin-surface", { body: { surface: null } }); }, t("saved")) }, t("resetDefaults")) : null)));
+    }
+    if (Array.isArray(s.runtime) && s.runtime.length)
+      out.push(card(t("runtimeH"), t("runtimeLede"), table([t("rKey"), t("rHow"), t("rNote")],
+        s.runtime.map((r) => h("tr", {}, h("td", { class: "small" }, h("code", {}, r.key)), h("td", {}, pill(t(`r_${r.runtime}`), r.runtime === "yes" ? "ok" : r.runtime === "narrow" ? "warn" : "")), h("td", { class: "small" }, r.note || (r.area ? `settings/${r.area}` : "")))), "")));
+    return out;
+  }
+
   // ---- Settings: own dashboards, edit scope, config, where to change things (Superset host) ----------------------
   function supersetSettingsCards(s) {
     const out = [];
@@ -1418,8 +1491,9 @@
   function configCards(s) {
     const b = s.budget || {};
     const rows = [
-      [t("budgetDay"), b.usdPerDay ? usd(b.usdPerDay) : t("none2")],
-      [t("budgetUser"), b.usdPerUserPerDay ? usd(b.usdPerUserPerDay) : t("none2")],
+      // Shown here only where the budget can't be changed (a host without the runtime options).
+      b.source ? null : [t("budgetDay"), b.usdPerDay ? usd(b.usdPerDay) : t("none2")],
+      b.source ? null : [t("budgetUser"), b.usdPerUserPerDay ? usd(b.usdPerUserPerDay) : t("none2")],
       s.telemetry && s.telemetry.context ? [t("tabTelemetry"), t("contextN", nf(s.telemetry.context))] : null,
       s.hostPolicy ? [t("hostPolicyL"), s.hostPolicy === "superset" ? t("hostSuperset") : t("hostOff")] : null,
       s.editPolicy ? [t("editPolicyL"), s.editPolicy === "superset" ? t("editSuperset") : t("editSigned")] : null,

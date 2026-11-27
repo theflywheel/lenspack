@@ -42,10 +42,12 @@ Superset 6.1 is the version it is built for, and 5.0 is tested the same way. See
    with no redeploy, and what stays in the deploy config.
 4. [Computed charts](computed-charts.md): how rates and changes are saved as Superset charts.
 5. [Who is asking](identity.md): the signed identity, edit rights, Lenspack's own account and the audit log.
-6. [Settings and switches](settings.md): the settings page, voice and language settings, switches, and what
+6. [What can change without a redeploy](runtime.md): every option, and whether an admin changes it while the server
+   runs.
+7. [Settings and switches](settings.md): the settings page, voice and language settings, switches, and what
    happens when storage fails.
-7. [Versions](versions.md): Superset 6.1 and 5.0, the content security policy, and ClickHouse.
-8. [Upgrading](upgrading.md): updating the plugin and server, and what changed.
+8. [Versions](versions.md): Superset 6.1 and 5.0, the content security policy, and ClickHouse.
+9. [Upgrading](upgrading.md): updating the plugin and server, and what changed.
 
 ---
 
