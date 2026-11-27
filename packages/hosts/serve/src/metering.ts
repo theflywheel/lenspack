@@ -6,6 +6,8 @@ import { type LanguageModel, wrapLanguageModel } from "ai";
 
 import { type QueryMeter, emptyQueryMeter } from "@lenspack/engine";
 
+import type { LimitCounter } from "./limits";
+
 // What the models cost. Metered at the model, not at the call site: every
 // provider's model is wrapped when it is built, so every call through any
 // adapter (a chat round, a review, a probe, an eval, the visual judge) is
@@ -438,6 +440,28 @@ export function budgetReport(ledger: UsageLedger, budget: Budget, at = new Date(
   const users: Record<string, number> = {};
   for (const row of ledger.report().turns) if (row.day === dayOf(at) && row.user !== "-") users[row.user] = round((users[row.user] ?? 0) + row.llm.usd);
   return { ...budget, day: dayOf(at), spent: round(ledger.spent({ at })), users };
+}
+
+/**
+ * What chat has cost since the count began, by day, person and pack, with today's caps and who is at a per-person
+ * question limit: GET /api/_usage, and the same for the admin pages and an admin API key (GET <prefix>/usage).
+ */
+export function usageReport(ledger: UsageLedger, budget: Budget | undefined, limits?: Pick<LimitCounter, "on" | "report">, at = new Date()) {
+  return { ...ledger.report(), ...(budget ? { budget: budgetReport(ledger, budget, at) } : {}), ...(limits?.on() ? { limits: limits.report() } : {}) };
+}
+export type UsageReport = ReturnType<typeof usageReport>;
+
+/**
+ * The usage report for an admin the policy does not let see user names: the same totals, with no one named (the
+ * rows' user left out, no per-person spend, no list of who is at a limit).
+ */
+export function usageWithoutNames(r: UsageReport) {
+  return {
+    ...r,
+    turns: r.turns.map(({ user: _u, ...row }) => row),
+    ...(r.budget ? { budget: { ...r.budget, users: {} } } : {}),
+    ...(r.limits ? { limits: { ...r.limits, people: [] } } : {}),
+  };
 }
 
 /** Why chat must wait until tomorrow, or null. Only priced calls count; probes have no user, so never count against one. */

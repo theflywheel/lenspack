@@ -146,6 +146,22 @@ See [Voice](../features/voice.md#the-route).
 `GET /api/_usage`, for callers with the usage right: what chat has cost since the server started, with the budget
 caps when set. See [Costs](../operating/costs.md#metering).
 
+The Superset host answers the same at `GET /_superset/usage`, an admin route, so an
+[admin API key](../access/admin-api.md) can read spend without a Superset session (through Superset:
+`/lenspack/_admin/usage`). It is read-only and for admins only; an admin who may not see user names gets the same
+totals with no one named. `GET /api/_usage` itself stays closed to a key, as the chat and the data are.
+
+What both return:
+
+| field | what it is |
+|---|---|
+| `since` | when the count began (the oldest call read back from today's usage file, else the server's start) |
+| `total` | since then: answers (`turns`), model calls, tokens and priced spend (`usd`), and calls with no price (`unpriced`) |
+| `turns` | one row per day (UTC), person (`user`) and pack: answers, spend (`llm`), spend by model, role and effort, and the queries they ran |
+| `packs` | every query each pack ran, board loads and chat tools alike |
+| `budget` | when a cap is set: the caps (`usdPerDay`, `usdPerUserPerDay`), today (`day`), today's spend (`spent`) and each person's (`users`) |
+| `limits` | when a question limit is set: the limits, who is at one or was refused today (`people`), and how many people were counted today |
+
 ## The admin API
 
 For admins only, under the host's admin prefix: `/_lenspack` on the standalone server, `/_superset` inside Superset
@@ -179,6 +195,7 @@ The Superset host's settings, beside the panel:
 | `GET /_superset/settings/speech/models` | the transcription models on offer |
 | `GET`, `PUT /_superset/settings/pack`; `POST …/pack/validate`, `…/pack/revert`, `…/pack/reset`; `GET …/pack/versions`, `…/pack/versions/<n>`, `…/pack/diff`, `…/pack/export` | the pack's runtime parts (labels, measures, example questions and the rest): read, check, change, go back, reset to the config, compare versions and export as YAML. Admins. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md) |
 | `GET /_superset/turns`, `GET /_superset/audit` | recent turns and the audit log |
+| `GET /_superset/usage` | what chat has cost: today, since the count began, by day and by person, with the caps and question limits; the same as `GET /api/_usage` (see [Usage](#usage)) |
 
 ### Saved answers and the queue
 
