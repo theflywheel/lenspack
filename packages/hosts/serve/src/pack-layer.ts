@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
-import { SettingsSaveError, writeWhole } from "./settings";
+import { SettingsConflictError, SettingsSaveError, writeWhole } from "./settings";
 
 export type PackVersionAction = "edit" | "revert" | "reset";
 
@@ -38,8 +38,13 @@ export type PackLayerStore = {
   versions(): PackVersion[];
   /** One version; 0 is the deploy config alone. */
   get(version: number): PackVersion | undefined;
-  /** Saves a new version, in force at once; throws SettingsSaveError (nothing changed) when the disk refuses. */
-  append(v: Omit<PackVersion, "version" | "at"> & { at?: string }): PackVersion;
+  /**
+   * Saves a new version, in force at once; throws SettingsSaveError (nothing changed) when the disk refuses, and
+   * SettingsConflictError when `ifVersion` (the version the writer read, If-Match) is no longer the one in force.
+   */
+  append(v: Omit<PackVersion, "version" | "at"> & { at?: string }, o?: { ifVersion?: number | null }): PackVersion;
+  /** The conflict a writer that read `ifVersion` would meet now, or null (also for null: no check). */
+  stale(ifVersion: number | null | undefined): SettingsConflictError | null;
   /** Set when the file could not be read at start and was set aside: where it went. */
   setAside?: string;
 };
@@ -71,13 +76,22 @@ export function packLayerStore(stateDir: string, o: { file?: string; log?: (line
     }
   }
   const last = () => versions.at(-1);
+  // The same rule as the settings store's: a writer that read version N may write only while N is still in force.
+  const stale = (ifVersion: number | null | undefined) => {
+    const v = last();
+    const now = v?.version ?? 0;
+    return ifVersion === null || ifVersion === undefined || ifVersion === now ? null : new SettingsConflictError({ section: "pack", revision: now, ...(v?.by ? { by: v.by } : {}), at: v?.at ?? "" }, ifVersion);
+  };
   return {
+    stale,
     path,
     ...(setAside ? { setAside } : {}),
     current: () => ({ version: last()?.version ?? 0, layer: last()?.layer ?? {} }),
     versions: () => versions.slice(),
     get: (version) => (version === 0 ? CONFIG_ONLY : versions.find((v) => v.version === version)),
-    append(v) {
+    append(v, w = {}) {
+      const conflict = stale(w.ifVersion);
+      if (conflict) throw conflict;
       const next: PackVersion = { ...v, version: (last()?.version ?? 0) + 1, at: v.at ?? now().toISOString() };
       const kept = [...versions, next].slice(-PACK_VERSIONS_KEPT);
       try {
