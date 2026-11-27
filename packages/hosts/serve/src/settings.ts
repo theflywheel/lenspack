@@ -5,7 +5,7 @@
 // (full, read-only) changes nothing, in memory or on disk, and throws SettingsSaveError, which the server
 // answers with 503.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type SettingsStore = {
@@ -33,11 +33,12 @@ export class SettingsSaveError extends Error {
   }
 }
 
-/** Writes a file whole or not at all: a temporary file renamed into place, removed again if the write fails. */
-export function writeWhole(path: string, text: string) {
+/** Writes a file whole or not at all: a temporary file renamed into place, removed again if the write fails. `mode` (0o600: the owner only) is set before the rename. */
+export function writeWhole(path: string, text: string, mode?: number) {
   const tmp = `${path}.${process.pid}.tmp`;
   try {
-    writeFileSync(tmp, text);
+    writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
+    if (mode !== undefined) chmodSync(tmp, mode);
     renameSync(tmp, path);
   } catch (e) {
     rmSync(tmp, { force: true });

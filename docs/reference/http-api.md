@@ -173,6 +173,7 @@ The Superset host's settings, beside the panel:
 | `PUT /_superset/settings/brand` | the assistant's name, button label, per-language words, icon and "Powered by" line; `null` hands a field back. See [Naming the assistant](../features/naming.md) |
 | `PUT /_superset/settings/personal`, `…/edit-scope` | personal-dashboard limits and where the chat may edit. See [Personal dashboards](../features/personal-dashboards.md#routes) |
 | `GET /_superset/settings/speech/models` | the transcription models on offer |
+| `GET`, `PUT /_superset/settings/pack`; `POST …/pack/validate`, `…/pack/revert`, `…/pack/reset`; `GET …/pack/versions`, `…/pack/versions/<n>`, `…/pack/diff`, `…/pack/export` | the pack's runtime parts (labels, measures, example questions and the rest): read, check, change, go back, reset to the config, compare versions and export as YAML. Admins. See [Changing the pack while it runs](../hosts/superset/pack-runtime.md) |
 | `GET /_superset/turns`, `GET /_superset/audit` | recent turns and the audit log |
 
 ### Saved answers and the queue

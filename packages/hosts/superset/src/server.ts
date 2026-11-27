@@ -15,18 +15,19 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, type Principal, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
 import { identityKeeper, identityKey, serviceAccount } from "./bootstrap";
-import { type Overlay, fetchDatasets, packFromDatasets, packScope } from "./catalogue";
+import { type Binding, type Overlay, fetchDatasets, packScope } from "./catalogue";
 import { supersetClient } from "./client";
-import { supersetConnector, timeZoneWarnings } from "./connector";
+import { SUPERSET_CAPABILITIES, supersetConnector } from "./connector";
 import { OUT_OF_SCOPE_MESSAGE, dashboardBoard, dashboardLabel, dashboardScopeFrom, madeBoards } from "./dashboard-scope";
 import { examplesByLanguage, examplesFor } from "./examples";
 import { accessFallbackFrom, supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, signedClient, supersetAuth, supersetRights, userIdOf } from "./identity";
+import { type LivePack, packRuntime } from "./pack-runtime";
 import { personalDashboards } from "./personal";
 import { actorOf, personalRoutes } from "./personal-routes";
 import { plainPath, requestPaths } from "./paths";
@@ -210,29 +211,47 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   );
   const client = supersetClient({ url: supersetUrl, username: account.username, password: account.password });
   // Each dataset is retried inside fetchDatasets; the whole build is retried too, so a partial answer under load isn't a crash loop.
-  const datasets = await retried("building the pack", () => fetchDatasets(client, config.datasets, { log }), [2000, 5000, 10_000], log);
-  // A column or metric the pack can't use is left out or renamed with a warning, never a failed start.
-  const built = packFromDatasets(datasets, config.overlay);
-  const { pack, packYaml, binding } = built;
-  // Mistakes in the overlay (a measure on a column that isn't there) leave that part out; they are said like the rest.
-  // In a pack outside UTC, a dataset whose series Superset can't draw in that zone is said now, not found one question at a time.
-  const warnings = [...built.problems, ...built.warnings, ...timeZoneWarnings(pack, binding)];
-  for (const w of warnings) log(`warning: ${w}`);
-  log(`pack ${pack.pack}: ${Object.keys(pack.entities).length} datasets, ${pack.dimensions.length} dimensions, ${pack.measures.length} measures`);
-  // The pack's own context: its row scope, which every query anyone runs carries (decide() adds it to theirs).
-  const scope = packScope(config.scope, pack);
-  for (const w of scope.warnings) log(`warning: ${w}`);
-  const packCtx = scope.clauses.length ? { scope: scope.clauses } : {};
-  if (scope.clauses.length) log(`pack scope: ${scope.clauses.map((c) => `${c.entity ? `${c.entity}.` : ""}${c.dimension} ${c.op} ${JSON.stringify(c.value)}`).join("; ")}`);
+  const fetchNow = () => fetchDatasets(client, config.datasets, { log });
+  const datasets = await retried("building the pack", fetchNow, [2000, 5000, 10_000], log);
   // What differs between Superset 5 and 6 on this side: the default basemap of the maps Lenspack writes.
   const superset = await supersetVersion(client);
-  binding.mapStyle ??= defaultMapStyle(superset.major);
-  log(`Superset ${superset.version ?? "5.x (no version reported)"}${config.overlay?.mapStyle ? "" : `; maps drawn on ${binding.mapStyle}`}`);
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
-  const connector = supersetConnector(client, binding, { log, capabilities: () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) }) });
+  const switchedOff = () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) });
+  // The pack: the deploy config's overlay, with the changes admins made while the server ran laid over it (pack-runtime.ts,
+  // docs/hosts/superset/pack-runtime.md). A column or metric the pack can't use is left out or renamed with a warning,
+  // never a failed start; so are mistakes in the overlay (a measure on a column that isn't there). Saved changes that no
+  // longer build are set aside for the deploy config alone, said in the log and in the settings API.
+  const packs = packRuntime({
+    base: config.overlay ?? {},
+    // The overlay as the file writes it, env: references kept, for the export.
+    raw: (YAML.parse(readFileSync(file, "utf8")) as SupersetConfig | null)?.overlay ?? {},
+    scope: config.scope,
+    store: packLayerStore(stateDir, { log }),
+    fetch: fetchNow,
+    capabilities: () => ({ ...SUPERSET_CAPABILITIES, ...switchedOff() }),
+    mapStyle: defaultMapStyle(superset.major),
+    swap: (l) => swapPack(l),
+    log,
+  });
+  const first = packs.start(datasets);
+  const packName = first.pack.pack;
+  const live = () => packs.live();
+  // In a pack outside UTC, a dataset whose series Superset can't draw in that zone is said now, not found one question at a time.
+  for (const w of first.warnings) log(`warning: ${w}`);
+  log(`pack ${packName}: ${Object.keys(first.pack.entities).length} datasets, ${first.pack.dimensions.length} dimensions, ${first.pack.measures.length} measures`);
+  // The pack's own context: its row scope, which every query anyone runs carries (decide() adds it to theirs). The scope
+  // is the deploy config's alone, so its clauses never change while the server runs.
+  const scope = packScope(config.scope, first.pack);
+  for (const w of scope.warnings) log(`warning: ${w}`);
+  const packCtx = scope.clauses.length ? { scope: scope.clauses } : {};
+  if (scope.clauses.length) log(`pack scope: ${scope.clauses.map((c) => `${c.entity ? `${c.entity}.` : ""}${c.dimension} ${c.op} ${JSON.stringify(c.value)}`).join("; ")}`);
+  log(`Superset ${superset.version ?? "5.x (no version reported)"}${config.overlay?.mapStyle ? "" : `; maps drawn on ${first.binding.mapStyle}`}`);
+  const connectorFor = (binding: Binding) => supersetConnector(client, binding, { log, capabilities: switchedOff });
+  // Replaced whole when the pack changes (swapPack): a turn already running keeps the one it began with.
+  let connector = connectorFor(first.binding);
   const dashboards: Record<string, number> = Object.fromEntries(dashboardScope.dashboards.map((d) => [dashboardBoard(d), d]));
   log(`dashboards: ${boardScopeLine(dashboardScope.scope, dashboardLabel)}`);
   // People's own dashboards and saved layouts: kept in files in the state directory, behind RecordStore.
@@ -241,8 +260,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const store = supersetBoards({
     inner: memoryStore(),
     client,
-    pack,
-    binding,
+    pack: first.pack,
+    binding: first.binding,
     dashboards,
     stateFile: statePath,
     log,
@@ -318,6 +337,17 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     ])
       log(line);
 
+  // Set once the runtime starts (rt.setHost): hands the board API, the chat and saved answers a new pack.
+  let setHost: Runtime["setHost"];
+  /** A change to the pack is in force (pack-runtime.ts): everything that reads the pack gets the new one from the next request on. */
+  async function swapPack(l: LivePack) {
+    connector = connectorFor(l.binding);
+    await setHost?.(packName, { pack: l.pack, packYaml: l.packYaml, connector });
+    // Every bound dashboard is read again under the new pack, in the background: a chart may now match a measure, or no longer.
+    void store.setPack(l.pack, l.binding);
+    for (const w of [...l.warnings, ...l.scopeWarnings]) log(`warning: ${w}`);
+  }
+
   /** Binds a dashboard Lenspack knows the person may use (one they are on, or one just made for them). */
   async function bindId(id: number) {
     const board = `superset-${id}`;
@@ -340,7 +370,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const personal = personalDashboards({
     client,
     store,
-    pack,
+    pack: () => live().pack,
     bindBoard: bindId,
     // "My dashboards" lists only those in the deployment's dashboard scope.
     boardScope: () => dashboardScope.scope,
@@ -350,7 +380,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     audit: auditLog?.audit,
     log,
     // Usage telemetry (docs/features/telemetry.md, item personal-dashboards): one event per action, if that item is on.
-    telemetry: (e) => void admin.app.telemetry?.event({ user: e.user, roles: e.roles, board: e.board ?? null, pack: pack.pack }, { type: e.event, how: e.how, data: e.data }).catch((err: Error) => log(`telemetry: ${err.message}`)),
+    telemetry: (e) => void admin.app.telemetry?.event({ user: e.user, roles: e.roles, board: e.board ?? null, pack: packName }, { type: e.event, how: e.how, data: e.data }).catch((err: Error) => log(`telemetry: ${err.message}`)),
   });
 
   // Where the chat may change dashboards: the config's (or environment's) scope, unless an admin set one.
@@ -437,14 +467,15 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   };
   const supersetPort = config.superset?.publicPort ?? Number(new URL(supersetUrl).port);
   const panel = config.overlay?.panel === "dock" ? "dock" : "float";
-  const examples = examplesByLanguage(config.overlay?.examples);
+  // The suggested questions, from the pack in force (an admin can change them while the server runs).
+  const examples = () => examplesByLanguage(live().overlay.examples);
   // Where browsers reach Superset: the config's publicUrl, else what Superset's route says it was reached as, with
   // Superset's root (/superset when it runs below a path of its host).
   const pageVars = (req: IncomingMessage) => {
     const fwd = (h: string) => String(req.headers[h] ?? "").split(",")[0]!.trim();
     const at = paths(req);
     const derived = fwd("x-forwarded-host") ? `${fwd("x-forwarded-proto") || "http"}://${fwd("x-forwarded-host")}${at.root}` : null;
-    return { pack: pack.pack, panel, supersetPort, supersetUrl: config.superset?.publicUrl?.replace(/\/+$/, "") ?? derived, supersetRoot: at.root, base: at.base, examples };
+    return { pack: packName, panel, supersetPort, supersetUrl: config.superset?.publicUrl?.replace(/\/+$/, "") ?? derived, supersetRoot: at.root, base: at.base, examples: examples() };
   };
   // The overlay runs on Superset's origin and calls this server: allow exactly that origin (publicUrl's, else
   // the same host on Superset's port). Mounted under Superset's own host (publicPath), the calls are same-origin.
@@ -467,15 +498,27 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // directory; the admin panel at /_superset/admin/ (through Superset: /lenspack/_superset/admin/).
   const review = admin.review({
     stateDir,
-    hosts: [{ name: pack.pack, pack, connector, ctx: packCtx }],
+    // Read through the pack in force: the definitions, open questions and the daily review follow a change to the pack.
+    hosts: [
+      {
+        name: packName,
+        get pack() {
+          return live().pack;
+        },
+        get connector() {
+          return connector;
+        },
+        ctx: packCtx,
+      },
+    ],
     events: auditLog ? (from) => auditLog.since(from) : undefined,
     audit: auditLog?.audit,
     prefix: "/_superset",
     adminName,
-    title: pack.pack,
+    title: packName,
     log,
   });
-  const auth = supersetAuth(idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding, log, dashboards: () => Object.values(dashboards), fallback: accessFallback }) : undefined, callerFacts, rights);
+  const auth = supersetAuth(idKey, editPolicy, () => admin.features.on("boardEdits"), hostPolicy === "superset" ? supersetPolicy({ client, binding: () => live().binding, log, dashboards: () => Object.values(dashboards), fallback: accessFallback }) : undefined, callerFacts, rights);
   // The start of a link to a Superset page: Superset's root when this server is reached through Superset's host
   // ("" or "/superset"), else Superset's address.
   const supersetBase = (req: IncomingMessage) => {
@@ -491,7 +534,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     // What the person may use of the pack, decided by policy from what Superset says about them, on the dashboard they are on.
     scope: async (req, board) => {
       const caller = await auth.identify(req);
-      const d = caller && decide(settle(caller), pack, { host: packCtx, board });
+      const d = caller && decide(settle(caller), live().pack, { host: packCtx, board });
       return d ? { ctx: d.ctx, capabilities: connector.capabilities } : null;
     },
     bind: bindId,
@@ -535,7 +578,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     reply: (res, status, body) => json(res, status, body, NO_STORE),
   });
   startRuntime({
-    hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: packCtx, boards: [] }],
+    hosts: [{ name: packName, pack: first.pack, packYaml: first.packYaml, connector, store, ctx: packCtx, boards: [] }],
     app: {
       // Signed in by Superset; its role names read by the deployment's role rules (supersetRights), which auth carries.
       auth,
@@ -554,7 +597,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         const id = identityOf(req, idKey);
         return id ? (id.r ?? []) : undefined;
       },
-      telemetryDataset: (entity) => binding.datasets.get(entity)?.table,
+      telemetryDataset: (entity) => live().binding.datasets.get(entity)?.table,
       definitions: review.turn,
     },
     port,
@@ -568,6 +611,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     ready: () => (idKey() ? { ready: true } : { ready: false, reason: "no identity key from Superset yet: is lenspack_superset.py loaded there?" }),
     routes: (rt) => {
       const { providers, budget } = rt;
+      setHost = rt.setHost;
+      // Changing the pack while it runs (<prefix>/settings/pack…): admins, decided by policy (packEditRights).
+      const packRoutes = packs.routes("/_superset", { access: () => adminAccess.state(), seen: (who) => adminAccess.seen(who), audit: auditLog?.audit, adminName });
       // Superset's settings page, as the admin pages link to it.
       const supersetPage = (req: IncomingMessage) => `${paths(req).root}/ai-assistant/`;
       // The panel's page on each surface: the rest of the settings (split), everything (separate), or Superset's page
@@ -594,14 +640,16 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         },
         // supersetRoot: where Superset runs on its host ("" or "/superset"), for the overlay's links to Superset's pages.
         // admin: how admins sign in, and where the admin pages are, for Superset's settings page (no names, no secrets).
-        info: (url, req) => ({ pack: pack.pack, examples: examplesFor(examples, url.searchParams.get("lang")), examplesByLang: examples, panel, supersetRoot: paths(req).root, admin: { access: adminAccess.modes.join(","), surface: surface.surface, page: surface.hostPage, panel: surface.panel === "none" ? null : `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
+        info: (url, req) => ({ pack: packName, examples: examplesFor(examples(), url.searchParams.get("lang")), examplesByLang: examples(), panel, supersetRoot: paths(req).root, admin: { access: adminAccess.modes.join(","), surface: surface.surface, page: surface.hostPage, panel: surface.panel === "none" ? null : `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
         details: () => ({
-          pack: pack.pack,
-          datasets: datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: binding.entityOf.get(d.id) ?? null })),
-          dimensions: pack.dimensions.length,
-          measures: pack.measures.map((m) => ({ key: m.key, label: m.label, agg: m.agg })),
+          pack: packName,
+          datasets: live().datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: live().binding.entityOf.get(d.id) ?? null })),
+          dimensions: live().pack.dimensions.length,
+          measures: live().pack.measures.map((m) => ({ key: m.key, label: m.label, agg: m.agg })),
           // What the pack left out of Superset's catalogue or renamed, and why.
-          warnings,
+          warnings: live().warnings,
+          // Changes admins made to the pack while the server ran (<prefix>/settings/pack): the version in force, 0 for none.
+          packLayer: { version: live().version, fields: Object.keys(live().layer), ...(live().notApplied ? { notApplied: live().notApplied } : {}) },
           // The pack's own row scope, which every answer carries.
           scope: scope.clauses,
           superset: { url: supersetUrl, username: account.username, account: account.source },
@@ -626,6 +674,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       // The password sign-in's admin pages: the same panel and settings routes under /_admin, for the password admin.
       // Password admins always get every section there, whatever the surface: they have no Superset page to use.
       const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password", surface: "separate", sections: "all", superset: true, supersetPage: supersetPage(req) }) }) : null;
+      const passwordPack = passwordAdmin ? packs.routes("/_admin", { access: () => adminAccess.state(), seen: (who) => adminAccess.seen(who), audit: auditLog?.audit, adminName: "assistant admin" }) : null;
       const passwordSettings = passwordAdmin
         ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess })
         : null;
@@ -646,6 +695,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       /** The admin routes alone, for a caller with no Superset signature (an admin API key): the panel's API, the settings, the records. */
       const adminOnly = async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {
         if (await adminPanel(req, res, url, who)) return true;
+        if (await packRoutes(req, res, url, who)) return true;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return true;
         if (await mine.admin(req, res, url, who)) return true;
@@ -690,6 +740,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
             return json(res, 401, { error: "sign in to the admin pages first" }, NO_STORE);
           }
           if (await passwordPanel!(req, res, url, who)) return;
+          if (await passwordPack!(req, res, url, who)) return;
           await passwordSettings!(req, res, url, who);
           if (res.headersSent) return;
           return json(res, 404, { error: "not found" }, NO_STORE);
@@ -714,6 +765,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         // The users rule: left out, nothing here either (admins always pass, so their pages stay theirs).
         if (!mayUse(who)) return json(res, 403, { error: NOT_TURNED_ON_MESSAGE, code: "not-turned-on" }, NO_STORE);
         if (await adminPanel(req, res, url, who)) return;
+        if (await packRoutes(req, res, url, who)) return;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
         if (await mine(req, res, url)) return;

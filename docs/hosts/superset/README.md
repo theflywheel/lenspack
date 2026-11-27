@@ -38,12 +38,14 @@ Superset 6.1 is the version it is built for, and 5.0 is tested the same way. See
 
 1. [Install](install.md): the plugin, the server, and their settings.
 2. [Datasets and dashboards](datasets-and-dashboards.md): how the pack and boards are built from Superset.
-3. [Computed charts](computed-charts.md): how rates and changes are saved as Superset charts.
-4. [Who is asking](identity.md): the signed identity, edit rights, Lenspack's own account and the audit log.
-5. [Settings and switches](settings.md): the settings page, voice and language settings, switches, and what
+3. [Changing the pack while it runs](pack-runtime.md): labels, measures and example questions changed by an admin,
+   with no redeploy, and what stays in the deploy config.
+4. [Computed charts](computed-charts.md): how rates and changes are saved as Superset charts.
+5. [Who is asking](identity.md): the signed identity, edit rights, Lenspack's own account and the audit log.
+6. [Settings and switches](settings.md): the settings page, voice and language settings, switches, and what
    happens when storage fails.
-6. [Versions](versions.md): Superset 6.1 and 5.0, the content security policy, and ClickHouse.
-7. [Upgrading](upgrading.md): updating the plugin and server, and what changed.
+7. [Versions](versions.md): Superset 6.1 and 5.0, the content security policy, and ClickHouse.
+8. [Upgrading](upgrading.md): updating the plugin and server, and what changed.
 
 ---
 
