@@ -1,5 +1,6 @@
 import { type AdminAccess, type AdminAccessMode, type AdminRights, type Rights, type UserAccess, type UserAccessMode, adminAccessModesFrom, adminMenuHint, adminRights, adminUsersFrom, rightsUnder, userAccessModesFrom, usersUnder } from "@lenspack/policy";
 
+import { adminApiKeys, adminApiKeysFrom } from "./admin-api-key";
 import { type AdminPassword, adminPasswordsFrom } from "./admin-signin";
 import type { AuditEvent } from "./audit";
 import type { SettingsStore } from "./settings";
@@ -95,6 +96,7 @@ export function viaWords(r: Pick<AdminSeen, "via" | "detail">): string {
   if (r.via === "role") return r.detail ? `Superset role ${r.detail}` : "a Superset role";
   if (r.via === "owner") return "owner";
   if (r.via === "grant") return "granted by an owner";
+  if (r.via === "api-key") return `API key ${r.detail ?? ""}`.trim();
   return r.detail && r.detail !== "password" ? `named password ${r.detail}` : "the shared password";
 }
 
@@ -105,7 +107,7 @@ export type AdminAccessSetup = ReturnType<typeof adminAccessSetup>;
  * bad password entry (the server does not start); a mode that leaves nobody an admin (named users with no owner, the
  * password with none set) starts, says so in a warning, and lets nobody in that way.
  */
-export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.ProcessEnv; grants: AdminGrantStore; roster?: AdminRosterStore; adminRoles?: readonly string[]; adminRolesFrom?: string; now?: () => number }) {
+export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.ProcessEnv; grants: AdminGrantStore; roster?: AdminRosterStore; adminRoles?: readonly string[]; adminRolesFrom?: string; now?: () => number; log?: (line: string) => void }) {
   const env = o.env ?? process.env;
   const now = o.now ?? Date.now;
   const fromEnv = !!env.LENSPACK_ADMIN_ACCESS?.trim();
@@ -120,9 +122,12 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
   const passwordSources = [...new Set(passwords.map((p) => p.from))];
   const passwordSet = passwords.length > 0;
   const roles = o.adminRoles ?? ["Admin"];
+  let audit: ((e: AuditEvent) => void) | undefined;
   const roleEntries = roles.map((r) => (r.startsWith("role:") || r === "*" ? r : `role:${r}`));
   const granted = () => (has("superset-users") ? o.grants.list().map((g) => g.user).filter((u) => !owners.includes(u)) : []);
-  const state = (): AdminAccess => ({ modes, roles: roleEntries, owners, granted: granted(), passwords: passwords.map((p) => p.name) });
+  // Admin API keys: beside the modes, read in every one (admin-api-key.ts). A bad entry stops the server at start.
+  const apiKeys = adminApiKeys({ keys: adminApiKeysFrom(env), audit: (e) => audit?.(e), log: o.log, now });
+  const state = (): AdminAccess => ({ modes, roles: roleEntries, owners, granted: granted(), passwords: passwords.map((p) => p.name), apiKeys: apiKeys.names });
   const warnings: string[] = [];
   if (has("superset-users") && !owners.length) warnings.push("admin access includes superset-users, but no owner is named: nobody is an admin that way. Set LENSPACK_ADMIN_USERS (Superset user names or id:<n>, comma-separated).");
   if (has("password") && !passwordSet) warnings.push("admin access includes password, but no admin password is set: nobody signs in that way. Set LENSPACK_ADMIN_PASSWORDS (name:secret pairs) or LENSPACK_ADMIN_PASSWORDS_FILE from the deployment's secrets.");
@@ -131,7 +136,6 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
     warnings.push(`an admin password is set but admin access is ${modes.join(",")}: it has no effect. Add password to LENSPACK_ADMIN_ACCESS to use it.`);
   if (has("superset-role") && roles.length === 1 && roles[0] === "Admin")
     warnings.push("admins are Superset's own Admin role: every Superset Admin is an assistant admin. A role of its own (LENSPACK_ADMIN_ROLES) keeps the two apart; superset-users stops Superset Admins from making themselves admins.");
-  let audit: ((e: AuditEvent) => void) | undefined;
 
   // Each mode's words; the last one's parentheses take the "access …" part, as the single-mode lines always read.
   const lineFor = (m: AdminAccessMode): { text: string; tail?: string } => {
@@ -153,6 +157,8 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
     menuHint: () => adminMenuHint(state()),
     /** The admin passwords, for the admin sign-in (adminSignIn). Their secrets go nowhere else. */
     passwords,
+    /** The admin API keys (admin-api-key.ts): their names, and the check a request's key goes through. */
+    apiKeys,
     /** Whether the admin sign-in is on: the password mode with a password set. */
     passwordSignIn: has("password") && passwordSet,
     /** Where the "first use" audit lines go (the host's audit log, made after this). */
@@ -203,6 +209,8 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
         ...(has("superset-role") ? { roles, rolesFrom: o.adminRolesFrom ?? "default" } : {}),
         ...(has("superset-users") ? { owners, ownersFrom, granted: o.grants.list().filter((g) => !owners.includes(g.user)), canGrant: !!me?.owner } : {}),
         ...(has("password") ? { passwordSet, passwordNames: passwords.map((p) => p.name), passwordsFrom: passwordSources } : {}),
+        // The admin API keys' names and where they are set, in every mode (never a key).
+        apiKeys: { names: apiKeys.names, from: apiKeys.sources },
         roster: roster.map(({ prevVisit: _p, ...e }) => ({ ...e, how: viaWords(e) })),
         // Who first used admin rights after this admin's previous visit ended: news for them.
         newSince: since ? roster.filter((e) => e.user !== me!.user && e.firstSeen > since).map((e) => ({ user: e.user, how: viaWords(e), firstSeen: e.firstSeen })) : [],

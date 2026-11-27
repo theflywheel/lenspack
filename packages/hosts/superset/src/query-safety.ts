@@ -1,5 +1,4 @@
 import type { QueryGuard } from "@lenspack/engine";
-import type { Pack } from "@lenspack/pack";
 import {
   type QuerySafety,
   type QuerySafetyConfig,
@@ -45,12 +44,21 @@ function byEntity(c: QuerySafetyConfig, binding: Binding, warn: (s: string) => v
   return { ...c, datasets };
 }
 
-export function supersetQuerySafety(o: { config: unknown; env: NodeJS.ProcessEnv; binding: Binding; pack: Pack; settings: Settings; log: (s: string) => void }) {
-  const warnings: string[] = [];
-  const warn = (s: string) => warnings.push(s);
-  // The deployment's own settings: the file, then the environment over it. A mistake stops the start.
-  const deployment = mergeQuerySafety(byEntity(querySafetyFrom(o.config), o.binding, warn), byEntity(querySafetyEnv(o.env), o.binding, warn));
-  const entities = [...o.binding.datasets.keys()];
+/**
+ * `binding` is read on every use: the pack can change while the server runs (pack-runtime.ts), and datasets named by
+ * table name or id are matched to its entities again.
+ */
+export function supersetQuerySafety(o: { config: unknown; env: NodeJS.ProcessEnv; binding: () => Binding; settings: Settings; log: (s: string) => void }) {
+  // The deployment's own settings, as written: the file, then the environment over it. A mistake stops the start.
+  const file = querySafetyFrom(o.config);
+  const fromEnv = querySafetyEnv(o.env);
+  const keyed = () => {
+    const warnings: string[] = [];
+    const warn = (s: string) => warnings.push(s);
+    return { deployment: mergeQuerySafety(byEntity(file, o.binding(), warn), byEntity(fromEnv, o.binding(), warn)), warnings };
+  };
+  const deploymentNow = () => keyed().deployment;
+  const entitiesNow = () => [...o.binding().datasets.keys()];
   const saved = (): QuerySafetyConfig => {
     try {
       return querySafetyFrom(o.settings.get("querySafety") ?? {});
@@ -60,9 +68,9 @@ export function supersetQuerySafety(o: { config: unknown; env: NodeJS.ProcessEnv
       return {};
     }
   };
-  const current = (): QuerySafety => querySafety(mergeQuerySafety(deployment, saved()));
+  const current = (): QuerySafety => querySafety(mergeQuerySafety(deploymentNow(), saved()));
   const label = (entity: string) => {
-    const ds = o.binding.datasets.get(entity);
+    const ds = o.binding().datasets.get(entity);
     return ds ? `the dataset "${ds.table}"` : `"${entity}"`;
   };
   const guard: QueryGuard = (bound, pack) => {
@@ -76,12 +84,13 @@ export function supersetQuerySafety(o: { config: unknown; env: NodeJS.ProcessEnv
     const s = current();
     const l = s.limits;
     const h = heavy();
-    return `query safety: at most ${l.maxRows} rows, ${l.maxSeriesPoints} series points and ${l.maxGroups} known groups a query; ${s.server.maxQueriesPerTurn} queries a turn, ${s.server.maxConcurrent} at once, ${s.server.timeoutSeconds} s each; heavy datasets: ${h.length ? h.map((e) => o.binding.datasets.get(e)?.table ?? e).join(", ") : "none"}`;
+    return `query safety: at most ${l.maxRows} rows, ${l.maxSeriesPoints} series points and ${l.maxGroups} known groups a query; ${s.server.maxQueriesPerTurn} queries a turn, ${s.server.maxConcurrent} at once, ${s.server.timeoutSeconds} s each; heavy datasets: ${h.length ? h.map((e) => o.binding().datasets.get(e)?.table ?? e).join(", ") : "none"}`;
   };
   return {
     guard,
     current,
-    warnings,
+    /** Datasets named in the settings that the pack does not have. */
+    warnings: () => keyed().warnings,
     line,
     /** The chat's limit on queries per turn, read each turn. */
     perTurn: () => {
@@ -92,14 +101,16 @@ export function supersetQuerySafety(o: { config: unknown; env: NodeJS.ProcessEnv
     view: (writable: boolean) => {
       const s = current();
       const own = saved();
+      const binding = o.binding();
+      const { deployment, warnings } = keyed();
       return {
         limits: s.limits,
         server: s.server,
         heavy: s.heavy,
         datasets: Object.fromEntries(
-          entities.map((e) => {
+          [...binding.datasets.keys()].map((e) => {
             const d = s.datasets[e] ?? {};
-            return [e, { table: o.binding.datasets.get(e)?.table ?? null, id: o.binding.datasets.get(e)?.id ?? null, heavy: !!d.heavy, highCardinality: d.highCardinality ?? [], cardinality: d.cardinality ?? {}, limits: limitsFor(s, e) }];
+            return [e, { table: binding.datasets.get(e)?.table ?? null, id: binding.datasets.get(e)?.id ?? null, heavy: !!d.heavy, highCardinality: d.highCardinality ?? [], cardinality: d.cardinality ?? {}, limits: limitsFor(s, e) }];
           }),
         ),
         deployment: querySafety(deployment),
@@ -111,10 +122,11 @@ export function supersetQuerySafety(o: { config: unknown; env: NodeJS.ProcessEnv
     },
     /** PUT <prefix>/settings/query-safety: an admin's change, tighter freely, looser only with confirm: true. */
     update(body: Record<string, unknown>): { status: number; body: Record<string, unknown> } {
-      const keyed = body.datasets && typeof body.datasets === "object" && !Array.isArray(body.datasets) ? { ...body, datasets: Object.fromEntries(Object.entries(body.datasets as Record<string, unknown>).map(([k, v]) => [entityFor(k, o.binding) ?? k, v])) } : body;
-      const unknown = Object.keys((keyed.datasets as Record<string, unknown>) ?? {}).filter((k) => !o.binding.datasets.has(k));
+      const binding = o.binding();
+      const change = body.datasets && typeof body.datasets === "object" && !Array.isArray(body.datasets) ? { ...body, datasets: Object.fromEntries(Object.entries(body.datasets as Record<string, unknown>).map(([k, v]) => [entityFor(k, binding) ?? k, v])) } : body;
+      const unknown = Object.keys((change.datasets as Record<string, unknown>) ?? {}).filter((k) => !binding.datasets.has(k));
       if (unknown.length) return { status: 400, body: { error: `not a dataset of the pack: ${unknown.join(", ")}` } };
-      const r = updateQuerySafety(saved(), keyed, deployment, entities);
+      const r = updateQuerySafety(saved(), change, deploymentNow(), entitiesNow());
       if (!r.ok) return { status: r.status, body: { error: r.error, ...(r.looser ? { looser: r.looser } : {}) } };
       o.settings.set("querySafety", Object.keys(r.saved).length ? r.saved : undefined);
       o.log(line());

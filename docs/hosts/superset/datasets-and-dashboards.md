@@ -175,7 +175,9 @@ What it gives:
   `returns`, which has no `campaign` column, refused rather than answered for every campaign;
 - suggested questions in French.
 
-A change to `superset.yaml` takes effect when Lenspack restarts.
+A change to `superset.yaml` takes effect when Lenspack restarts. Admins can change the overlay's description,
+instructions, labels, hints, measures, example questions, `notDimensions` and hierarchies, and add exclusions, while it
+runs, with no restart: see [Changing the pack while it runs](pack-runtime.md).
 
 ## Numbers, from Superset
 
@@ -323,7 +325,7 @@ in a dataset column.
 
 ---
 
-**Next:** [Computed charts](computed-charts.md).
+**Next:** [Changing the pack while it runs](pack-runtime.md).
 
 **Related:** [Charts, maps and heatmaps](../../features/charts.md) · [Packs](../../concepts/packs.md) ·
 [Dashboard edits](../../features/dashboard-edits.md)

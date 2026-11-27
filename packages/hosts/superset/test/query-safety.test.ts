@@ -27,7 +27,7 @@ function setup(config: unknown, env: Record<string, string> = {}) {
   const sent: Sent[] = [];
   const saved: Record<string, unknown> = {};
   const settings = { get: <T,>(k: string) => saved[k] as T, set: (k: string, v: unknown) => void (saved[k] = v) };
-  const safety = supersetQuerySafety({ config, env, binding, pack, settings, log: () => {} });
+  const safety = supersetQuerySafety({ config, env, binding: () => binding, settings, log: () => {} });
   const client = { post: async (_p: string, body: Sent["body"], o?: Sent["o"]) => (sent.push({ body, o }), { result: body.queries.map(() => ({ data: [] })) }) };
   const connector = guardedConnector(supersetConnector(client as never, binding), safety.guard);
   return { sent, safety, connector };

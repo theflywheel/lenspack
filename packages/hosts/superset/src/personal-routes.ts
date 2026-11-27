@@ -6,7 +6,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { Capabilities, Ctx } from "@lenspack/engine";
-import { type PersonalActor, type PersonalLimits, type Rights, adminRights, principalOf } from "@lenspack/policy";
+import { type PersonalActor, type PersonalLimits, type Principal, type Rights, adminRights, principalOf } from "@lenspack/policy";
 
 import { OUT_OF_SCOPE_MESSAGE } from "./dashboard-scope";
 import { type Identity, rolesOf, supersetRights } from "./identity";
@@ -88,30 +88,44 @@ export function personalRoutes(o: PersonalRoutesOptions) {
   const unsigned = { error: "Superset did not check your access to this dashboard. Reload the page; if it keeps happening, lenspack_superset.py in Superset needs updating.", code: "unsigned" };
   const status = (r: { ok: boolean; code?: string }) => (r.ok ? 200 : r.code === "not-yours" || r.code === "no-view" || r.code === "no-edit" || r.code === "no-write" || r.code === "no-user-id" ? 403 : r.code === "missing" ? 404 : r.code === "limit" || r.code === "off" ? 409 : 400);
 
-  /** Handles the request when it is one of these routes; false otherwise. */
-  return async function handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  const ADMIN_PATHS = ["/_superset/personal", "/_superset/settings/personal", "/_superset/settings/edit-scope"];
+  /** The admin's routes (everyone's own dashboards, the limits, the edit scope) for a person already settled. */
+  async function forAdmin(req: IncomingMessage, res: ServerResponse, url: URL, who: PersonalActor): Promise<boolean> {
     const path = url.pathname;
-    if (path !== "/_superset/personal" && path !== "/_superset/settings/personal" && path !== "/_superset/settings/edit-scope" && path !== "/_superset/my" && !path.startsWith("/_superset/my/")) return false;
+    const base = o.base(req);
+    const send = (r: { ok: boolean; code?: string }) => o.reply(res, status(r), r);
+    if (path === "/_superset/personal" && req.method === "GET") {
+      const r = await personal.everyone(who, base);
+      return send(r.ok ? r : { ...r, code: "not-yours" }), true;
+    }
+    if ((path === "/_superset/settings/personal" || path === "/_superset/settings/edit-scope") && req.method === "PUT") {
+      const action = `PUT ${path}`;
+      const admins = o.adminName ?? "Superset admin";
+      if (!adminRights(who).administer) return audited(who, action, "denied", `not a ${admins}`), o.reply(res, 403, { error: `only ${admins}s can change this` }), true;
+      const b = await body(req);
+      const r = path === "/_superset/settings/personal" ? o.setLimits(b) : o.setEditScope(b);
+      audited(who, action, r.ok ? "ok" : "refused", r.ok ? JSON.stringify(b) : r.error);
+      if (!r.ok) return o.reply(res, 400, r), true;
+      return o.reply(res, 200, path === "/_superset/settings/personal" ? { ok: true, limits: o.limits() } : { ok: true, editScope: o.editScope() }), true;
+    }
+    return false;
+  }
+  const failed = (res: ServerResponse, e: unknown) => {
+    const s = (e as { status?: number }).status;
+    return o.reply(res, s === 413 ? 413 : e instanceof SyntaxError ? 400 : 502, { error: e instanceof Error ? e.message.slice(0, 300) : String(e) }), true;
+  };
+
+  /** Handles the request when it is one of these routes; false otherwise. */
+  async function handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    const path = url.pathname;
+    if (!ADMIN_PATHS.includes(path) && path !== "/_superset/my" && !path.startsWith("/_superset/my/")) return false;
     const id = o.identity(req);
     if (!id) return o.reply(res, 401, { error: "sign in to Superset first" }), true;
     const who = actorOf(id, o.rights);
     const base = o.base(req);
     const send = (r: { ok: boolean; code?: string }) => o.reply(res, status(r), r);
     try {
-      if (path === "/_superset/personal" && req.method === "GET") {
-        const r = await personal.everyone(who, base);
-        return send(r.ok ? r : { ...r, code: "not-yours" }), true;
-      }
-      if ((path === "/_superset/settings/personal" || path === "/_superset/settings/edit-scope") && req.method === "PUT") {
-        const action = `PUT ${path}`;
-        const admins = o.adminName ?? "Superset admin";
-        if (!adminRights(who).administer) return audited(who, action, "denied", `not a ${admins}`), o.reply(res, 403, { error: `only ${admins}s can change this` }), true;
-        const b = await body(req);
-        const r = path === "/_superset/settings/personal" ? o.setLimits(b) : o.setEditScope(b);
-        audited(who, action, r.ok ? "ok" : "refused", r.ok ? JSON.stringify(b) : r.error);
-        if (!r.ok) return o.reply(res, 400, r), true;
-        return o.reply(res, 200, path === "/_superset/settings/personal" ? { ok: true, limits: o.limits() } : { ok: true, editScope: o.editScope() }), true;
-      }
+      if (await forAdmin(req, res, url, who)) return true;
       if (path === "/_superset/my" && req.method === "GET") {
         const signedHere = url.searchParams.has("dashboard") ? await signedFor(id, url) : null;
         // Off the deployment's dashboards, nothing is offered for the page the person is on.
@@ -160,8 +174,20 @@ export function personalRoutes(o: PersonalRoutesOptions) {
       }
       return o.reply(res, 404, { error: "not found" }), true;
     } catch (e) {
-      const s = (e as { status?: number }).status;
-      return o.reply(res, s === 413 ? 413 : e instanceof SyntaxError ? 400 : 502, { error: e instanceof Error ? e.message.slice(0, 300) : String(e) }), true;
+      return failed(res, e);
+    }
+  }
+  /**
+   * The admin's routes alone, for a caller settled without Superset's signature (an admin API key): false for any other
+   * path, so nothing about a person's own dashboards is reached this way.
+   */
+  handle.admin = async (req: IncomingMessage, res: ServerResponse, url: URL, who: Pick<Principal, "user" | "roles">): Promise<boolean> => {
+    if (!ADMIN_PATHS.includes(url.pathname)) return false;
+    try {
+      return (await forAdmin(req, res, url, { user: who.user, userId: null, roles: who.roles, writes: false, hostRoles: [] })) || (o.reply(res, 405, { error: "not a method this route takes" }), true);
+    } catch (e) {
+      return failed(res, e);
     }
   };
+  return handle;
 }

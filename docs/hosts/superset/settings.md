@@ -17,7 +17,9 @@ entry and heading say the assistant's name once it has one (see
 frame with a link back to Superset, light or dark as Superset is; on 5.0 it sits inside Superset's server-drawn page.
 
 Values set here are kept in `settings.json` beside the board state and win over the config file and the
-environment. A page holding an old copy picks up a change on its next dashboard load.
+environment. A page holding an old copy picks up a change on its next dashboard load. Changes to the pack itself
+(labels, measures, example questions and the rest of the overlay's runtime parts) are kept as versions in
+`pack-layer.json`; see [Changing the pack while it runs](pack-runtime.md).
 
 ## Voice and language
 
@@ -46,6 +48,11 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/brand` | any of `{name, buttonLabel, i18n, icon, poweredBy}` ([naming the assistant](../../features/naming.md)); `null` hands a field back to the deployment |
 | `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}` for [personal dashboards](../../features/personal-dashboards.md); `null` resets |
 | `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
+| `GET /_superset/settings/pack` | the pack's runtime parts as they run (description, instructions, labels, hints, measures, examples, notDimensions, hierarchies, exclusions), the version in force and where each part comes from. See [Changing the pack while it runs](pack-runtime.md) |
+| `POST /_superset/settings/pack/validate`, `PUT /_superset/settings/pack` | check, or save, a change: `{ yaml }` (all the runtime parts) or `{ fields }` (only those named; `null` hands one back to the config), with an optional `why` and the `version` read. A change that adds a problem is refused with nothing changed |
+| `GET /_superset/settings/pack/versions`, `…/versions/<n>`, `…/diff?from=&to=` | the pack's versions, newest first, one of them, or what differs between two |
+| `POST /_superset/settings/pack/revert`, `POST /_superset/settings/pack/reset` | `{ version }`: go back to a version; `{ fields }` (or `{}` for all): hand parts back to the config |
+| `GET /_superset/settings/pack/export` | the whole overlay as it runs, as YAML for `superset.yaml` |
 | `GET /_superset/turns?limit=N` | the newest chat turns with their cost, and the totals for today and the last 7 days |
 | `GET /_superset/audit?month=YYYY-MM&limit=N` | the audit log |
 | `GET /_superset/telemetry`, `GET /_superset/telemetry/checklist` | the usage records and the switchboard. See [Telemetry](../../features/telemetry.md#reading-it) |

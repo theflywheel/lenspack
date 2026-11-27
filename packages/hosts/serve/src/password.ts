@@ -40,8 +40,8 @@ function parseHash(stored: string) {
 }
 
 /** Why a password from the deployment can't be used (too short, or a hash that doesn't parse), or null when it can. */
-export function passwordProblem(o: { password?: string; passwordHash?: string }): string | null {
-  if (o.password !== undefined) return o.password.length < MIN_LENGTH ? `a password must be at least ${MIN_LENGTH} characters` : null;
+export function passwordProblem(o: { password?: string; passwordHash?: string }, minLength = MIN_LENGTH, what = "a password"): string | null {
+  if (o.password !== undefined) return o.password.length < minLength ? `${what} must be at least ${minLength} characters` : null;
   try {
     parseHash(o.passwordHash ?? "");
     return null;
@@ -56,6 +56,59 @@ function verifyHash(password: string, stored: ReturnType<typeof parseHash>): Pro
       resolve(!err && key.length === stored.hash.length && timingSafeEqual(key, stored.hash)),
     ),
   );
+}
+
+/** One named secret from the deployment (an admin password, an admin API key): its name, the secret or its hash, and where it was set. */
+export type NamedSecret = { name: string; password?: string; passwordHash?: string; from: string };
+
+/**
+ * Named secrets from the environment, checked: `<list>` holds name:secret pairs separated by commas or new lines (a
+ * secret there can't hold a comma), `<file>` names a file with one name:secret per line, any characters (a Kubernetes
+ * Secret mounted as a file); blank lines and lines starting with # are skipped. A secret that starts with "scrypt$" is a
+ * hash (`lenspack hash-password`), else it must be `minLength` characters or more. Throws on a line that isn't
+ * name:secret, a bad or repeated name, or a secret that can't be used, naming where it is (never the secret), so a
+ * mistake stops the server at start. `seen` are entries already taken (a name can't be given twice across them).
+ */
+export function namedSecretsFrom(
+  env: NodeJS.ProcessEnv,
+  o: NamedSecretKind & { list: string; file: string; read?: (path: string) => string },
+): NamedSecret[] {
+  const read = o.read ?? ((f: string) => readFileSync(f, "utf8"));
+  const out: NamedSecret[] = [];
+  const pairs = (text: string, from: string, split: RegExp) => {
+    text.split(split).forEach((raw, i) => {
+      const line = raw.replace(/\r$/, "");
+      if (!line.trim() || line.trim().startsWith("#")) return;
+      const at = line.indexOf(":");
+      if (at < 1) throw new Error(`${from}, entry ${i + 1}: write name:secret, like ops:a-long-secret`);
+      out.push(namedSecret(out, line.slice(0, at).trim(), line.slice(at + 1), from, o));
+    });
+  };
+  if (env[o.list]?.trim()) pairs(env[o.list]!, o.list, /[,\n]/);
+  const file = env[o.file]?.trim();
+  if (file) {
+    let text: string;
+    try {
+      text = read(file);
+    } catch (e) {
+      throw new Error(`${o.file}: can't read ${file}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    pairs(text, o.file, /\n/);
+  }
+  return out;
+}
+
+/** What kind of named secret, in words: "an admin password" (`a`), "password" (`noun`); its shortest length and name rule. */
+export type NamedSecretKind = { a: string; noun: string; minLength?: number; nameOk: (name: string) => boolean };
+
+/** One entry, checked against those already taken: a good name, given once, and a secret that can be used. */
+export function namedSecret(taken: readonly NamedSecret[], name: string, secret: string, from: string, o: NamedSecretKind, twice = ""): NamedSecret {
+  if (!o.nameOk(name)) throw new Error(`${from}: "${name}" is not a name for ${o.a}: letters, digits, dot, dash or underscore, up to 40`);
+  if (taken.some((p) => p.name === name)) throw new Error(`${from}: the name "${name}" is given twice${twice}`);
+  const entry: NamedSecret = secret.startsWith("scrypt$") ? { name, passwordHash: secret, from } : { name, password: secret, from };
+  const problem = passwordProblem(entry, o.minLength, `${/^[aeiou]/i.test(o.noun) ? "an" : "a"} ${o.noun}`);
+  if (problem) throw new Error(`${from}: the ${o.noun} named "${name}": ${problem}`);
+  return entry;
 }
 
 const digest = (s: string) => createHash("sha256").update(s).digest();
