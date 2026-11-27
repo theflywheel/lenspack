@@ -17,7 +17,8 @@ describe("settingsStore", () => {
     expect(b.get("speech")).toEqual({ model: "mistralai/voxtral-mini-transcribe-3-0" });
     expect(b.get("language")).toEqual({ default: "fr" });
     b.set("speech", undefined);
-    expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"))).toEqual({ language: { default: "fr" } });
+    // Beside the sections, the revision and each section's last change (settings.ts).
+    expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"))).toEqual({ language: { default: "fr" }, _revisions: { revision: 3, sections: { language: expect.objectContaining({ revision: 2 }), speech: expect.objectContaining({ revision: 3 }) } } });
     // Written by rename: no temporary file is left behind.
     expect(readdirSync(dir)).toEqual(["settings.json"]);
     expect(existsSync(b.path)).toBe(true);

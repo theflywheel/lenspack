@@ -168,7 +168,8 @@ The Superset host's settings, beside the panel:
 | route | what it does |
 |---|---|
 | `GET /_superset/info` | what the chat panel needs to know: speech, languages, switches (any signed-in person) |
-| `GET /_superset/settings` | every setting, for admins |
+| `GET /_superset/settings` | every setting, for admins, with the `revision` they are at (also the `ETag`). Every settings change takes `If-Match` with it, and answers `409` (`code: "changed-elsewhere"`) when what it changes moved since. See [Changes made elsewhere](../hosts/superset/settings.md#changes-made-elsewhere) |
+| `GET /_superset/settings/revision` | the settings' revision, the last change (section, who, when) and the pack's version, for an open admin page to notice changes made elsewhere |
 | `PUT /_superset/settings/features`, `…/cache`, `…/queue`, `…/speech`, `…/language`, `…/chat`, `…/telemetry` | changes those settings. What each one takes is in [Settings and switches](../hosts/superset/settings.md#the-routes-behind-it) |
 | `PUT /_superset/settings/brand` | the assistant's name, button label, per-language words, icon and "Powered by" line; `null` hands a field back. See [Naming the assistant](../features/naming.md) |
 | `PUT /_superset/settings/personal`, `…/edit-scope` | personal-dashboard limits and where the chat may edit. See [Personal dashboards](../features/personal-dashboards.md#routes) |

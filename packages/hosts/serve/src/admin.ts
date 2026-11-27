@@ -19,7 +19,7 @@ import { type Provider, effortFor, modelLabel, publicView } from "./llm";
 import type { Budget } from "./metering";
 import { cacheRoutes } from "./reuse";
 import { type ReviewMountOptions, reviewMount } from "./review/mount";
-import { settingsStore } from "./settings";
+import { asSettingsWriter, revisionTag, settingsStore } from "./settings";
 import { DEFAULT_SPEECH_MODEL, SPEECH_MEASURED, type SpeechOptions, speechKeyFromEnv, speechModelAllowed, speechModels } from "./speech";
 import { PageError, pageAsk, pageFrom, pageOf, pagedAsk } from "./paging";
 import { fileTelemetry } from "./telemetry";
@@ -271,7 +271,10 @@ export type AdminRouteOptions = {
   access?: AdminAccessSetup;
   /** Who may use the assistant (admin-access.ts): shown on the settings, and under granted, the people admins let in (<prefix>/settings/users). */
   users?: UserAccessSetup;
+  /** More in <prefix>/settings/revision, for an open admin page to notice a change made elsewhere (the pack's version). */
+  revisionExtras?: () => Record<string, unknown>;
 };
+
 
 /** The settings page's routes, answering by responding. A caller who is not signed in never reaches them: the host answers 401 first. */
 export function adminRoutes(o: AdminRouteOptions) {
@@ -322,12 +325,46 @@ export function adminRoutes(o: AdminRouteOptions) {
       uses: await s.telemetryUses?.(),
     });
   }
+  /** Every setting, as GET <prefix>/settings answers (and a refused write's `current`). */
+  async function settingsView(who: Principal) {
+    const writable = o.writable();
+    const rights = adminRights(who, o.access?.state());
+    const me = { ...rights, user: who.user };
+    return {
+      ...o.details?.(),
+      providers: o.providers.map(publicView),
+      llmFrom: llmKeySource(),
+      budget: o.budget ?? null,
+      audit: o.audit ? { file: o.audit.file, retentionDays: o.audit.retentionDays, months: o.audit.months() } : null,
+      chat: chatSettings(),
+      speech: await s.speechView(writable),
+      language: s.languageView(writable),
+      features: s.features.view(writable),
+      brand: s.brand.view(writable),
+      telemetry: s.telemetryView(writable),
+      cache: s.cache.view(writable),
+      queue: s.queue.view(writable),
+      limits: s.limits.view(writable),
+      ...(o.access ? { adminAccess: o.access.view(me) } : {}),
+      ...(o.users ? { userAccess: o.users.view() } : {}),
+      // The revision these values are at (also the ETag): send it back as If-Match on a change.
+      revision: s.settings.revision(),
+      lastChange: s.settings.lastChange(),
+    };
+  }
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<void> => {
     if (!url.pathname.startsWith(`${o.prefix}/`)) return;
     await cachePage(req, res, url, who);
     if (res.headersSent) return;
     const path = url.pathname.slice(o.prefix.length);
-    const send = (status: number, body: unknown) => json(res, status, body, NO_STORE);
+    // A write that says which revision it was made on (If-Match) is refused when the setting it changes moved since
+    // (settings.ts); one that doesn't writes as before. Every write is attributed to the caller.
+    if (!path.startsWith("/settings")) return handle(req, res, url, who, path);
+    return asSettingsWriter(s.settings, req, res, who, () => handle(req, res, url, who, path), () => settingsView(who));
+  };
+  async function handle(req: IncomingMessage, res: ServerResponse, url: URL, who: Principal, path: string): Promise<void> {
+    // The settings' answers carry the revision they are at, so a page can send it back (If-Match).
+    const send = (status: number, body: unknown) => json(res, status, body, path.startsWith("/settings") ? { ...NO_STORE, ETag: revisionTag(s.settings.revision()) } : NO_STORE);
     const audit = (action: string, detail?: string, outcome: "ok" | "denied" = "ok") => o.audit?.audit({ at: new Date().toISOString(), user: who.user, action, outcome, ...(detail !== undefined ? { detail } : {}) });
     const writable = o.writable();
 
@@ -420,7 +457,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       }
       return send(405, { error: "not a method this route takes" });
     }
-    if (!["/settings", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist", "/limits"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/limits", "/settings/telemetry", "/settings/brand"].includes(path))) return;
+    if (!["/settings", "/settings/revision", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist", "/limits"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/limits", "/settings/telemetry", "/settings/brand"].includes(path))) return;
     const may = recordRights(who);
     // The settings and every switch: the admin role (adminRights in @lenspack/policy); the records: recordRights.
     const access = o.access?.state();
@@ -433,25 +470,9 @@ export function adminRoutes(o: AdminRouteOptions) {
     if (rights.administer) o.access?.seen(who);
     const me = { ...rights, user: who.user };
 
-    if (path === "/settings")
-      return send(200, {
-        ...o.details?.(),
-        providers: o.providers.map(publicView),
-        llmFrom: llmKeySource(),
-        budget: o.budget ?? null,
-        audit: o.audit ? { file: o.audit.file, retentionDays: o.audit.retentionDays, months: o.audit.months() } : null,
-        chat: chatSettings(),
-        speech: await s.speechView(writable),
-        language: s.languageView(writable),
-        features: s.features.view(writable),
-        brand: s.brand.view(writable),
-        telemetry: s.telemetryView(writable),
-        cache: s.cache.view(writable),
-        queue: s.queue.view(writable),
-        limits: s.limits.view(writable),
-        ...(o.access ? { adminAccess: o.access.view(me) } : {}),
-        ...(o.users ? { userAccess: o.users.view() } : {}),
-      });
+    if (path === "/settings") return send(200, await settingsView(who));
+    // Cheap enough to ask every few seconds: an open admin page reloads what changed elsewhere.
+    if (path === "/settings/revision") return send(200, { revision: s.settings.revision(), lastChange: s.settings.lastChange(), ...o.revisionExtras?.() });
     // Who is at a per-person limit now or was refused today (GET; ?all=1: everyone counted today), and one person's
     // counts for today back to zero (DELETE ?user=<name>). Admins only, the clearing audited.
     if (path === "/limits") {
