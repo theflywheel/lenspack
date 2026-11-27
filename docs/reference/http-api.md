@@ -148,7 +148,10 @@ caps when set. See [Costs](../operating/costs.md#metering).
 
 For admins only, under the host's admin prefix: `/_lenspack` on the standalone server, `/_superset` inside Superset
 (through Superset: `/lenspack/_superset`). A person who is not an admin gets `403`, and the attempt is written to the
-audit log. The admin panel itself is at `<prefix>/admin/`; see [The admin panel](../features/admin-panel.md).
+audit log. Inside Superset, an [admin API key](../access/admin-api.md) (`Authorization: Bearer <key>`) reaches the
+same routes at `/lenspack/_admin/<route>` through Superset with no Superset session, or at `/_admin/<route>` and
+`/_superset/<route>` on Lenspack's own address. `GET <prefix>/whoami` says who the caller is and what they may do,
+changing nothing. The admin panel itself is at `<prefix>/admin/`; see [The admin panel](../features/admin-panel.md).
 
 The panel's own data, on both hosts:
 

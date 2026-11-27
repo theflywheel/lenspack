@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { PASSWORD_ADMIN, type Rights, adminRights, mayUse, passwordAdmin, principalOf, rightsUnder } from "@lenspack/policy";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { accessRights, adminAccessSetup, adminPasswordsFrom, adminRoutes, adminSettings, adminSignIn, settingsGrants, settingsRoster, userAccessSetup } from "../src";
+import { accessRights, adminAccessSetup, adminApiKeys, adminApiKeysFrom, adminPasswordsFrom, hashPassword, presentedKey, adminRoutes, adminSettings, adminSignIn, settingsGrants, settingsRoster, userAccessSetup } from "../src";
 import { settingsStore } from "../src/settings";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "lp-access-"));
@@ -341,5 +341,72 @@ describe("the admins roster", () => {
     // The roster survives a restart: it is in the state directory's settings.
     const again = adminAccessSetup({ env: { LENSPACK_ADMIN_ACCESS: "superset-role" }, grants: settingsGrants(store), roster: settingsRoster(store), adminRoles: ["Lenspack admin"] });
     expect(again.view().roster).toHaveLength(3);
+  });
+});
+
+describe("admin API keys: reading them and checking one", () => {
+  const CI = "test-only-ci-key-0123456789abcdefghij";
+  const req = (authorization?: string, address = "192.0.2.4") => ({ headers: authorization === undefined ? {} : { authorization }, socket: { remoteAddress: address } }) as never;
+
+  it("reads name:key pairs and a mounted file, plain keys 32 characters or more, or scrypt hashes; refuses the rest without echoing them", () => {
+    const file = join(tmp(), "keys");
+    writeFileSync(file, `# keys\nops:${hashPassword("test-only-ops-key")}\n`);
+    const keys = adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: `ci:${CI}`, LENSPACK_ADMIN_API_KEYS_FILE: file });
+    expect(keys.map((k) => [k.name, k.from, !!k.password, !!k.passwordHash])).toEqual([["ci", "LENSPACK_ADMIN_API_KEYS", true, false], ["ops", "LENSPACK_ADMIN_API_KEYS_FILE", false, true]]);
+    expect(adminApiKeysFrom({})).toEqual([]);
+    const short = "a-key-of-only-thirty-one-chars!";
+    expect(() => adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: `ci:${short}` })).toThrow(/LENSPACK_ADMIN_API_KEYS: the admin API key named "ci": an admin API key must be at least 32 characters/);
+    expect(() => adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: "ci:scrypt$bad" })).toThrow(/a password hash must be scrypt/);
+    expect(() => adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: `ci:${CI},ci:${CI}y` })).toThrow(/given twice/);
+    expect(() => adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: `ci deploy:${CI}` })).toThrow(/not a name for an admin API key/);
+    expect(() => adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: CI })).toThrow(/write name:secret/);
+    try {
+      adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: `ci:${short}` });
+    } catch (e) {
+      expect(String(e)).not.toContain(short);
+    }
+    // Read in every admin access mode, and named on the settings, never shown.
+    const a = adminAccessSetup({ env: { LENSPACK_ADMIN_API_KEYS: `ci:${CI}` }, grants: settingsGrants(settingsStore(tmp())) });
+    expect(a.state().apiKeys).toEqual(["ci"]);
+    expect(a.view().apiKeys).toEqual({ names: ["ci"], from: ["LENSPACK_ADMIN_API_KEYS"] });
+    expect(a.apiKeys.line()).toBe("admin API keys: 1 (ci) from LENSPACK_ADMIN_API_KEYS; admin routes only (through Superset: <root>/lenspack/_admin/…)");
+    expect(JSON.stringify(a.view())).not.toContain(CI);
+    expect(adminAccessSetup({ env: {}, grants: settingsGrants(settingsStore(tmp())) }).apiKeys).toMatchObject({ on: false, names: [] });
+  });
+
+  it("reads the key from Authorization: Bearer only", () => {
+    expect(presentedKey(req(`Bearer ${CI}`))).toBe(CI);
+    expect(presentedKey(req(`bearer   ${CI} `))).toBe(CI);
+    expect(presentedKey(req())).toBeNull();
+    expect(presentedKey(req(`Basic ${CI}`))).toBe("");
+    expect(presentedKey(req(`Bearer a b`))).toBe("");
+  });
+
+  it("checks plain and hashed keys, remembering a hashed one that passed; audits wrong ones without the key", async () => {
+    const events: { user: string; action: string; outcome: string; detail?: string }[] = [];
+    const k = adminApiKeys({ keys: adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: `ci:${CI},ops:${hashPassword("test-only-ops-key-0123456789abcdef")}` }), audit: (e) => events.push(e) });
+    const ok = await k.check(req(), CI);
+    expect("who" in ok && ok.who).toMatchObject({ user: "api:ci", uses: false });
+    const hashed = await k.check(req(), "test-only-ops-key-0123456789abcdef");
+    expect("who" in hashed && hashed.who.user).toBe("api:ops");
+    // The second time is remembered: well under a scrypt check.
+    const t = Date.now();
+    await k.check(req(), "test-only-ops-key-0123456789abcdef");
+    expect(Date.now() - t).toBeLessThan(15);
+    expect(await k.check(req(), "nope")).toEqual({ status: 401, error: "not a valid admin API key" });
+    expect(await k.check(req(), "")).toMatchObject({ status: 401, error: expect.stringMatching(/Authorization: Bearer/) });
+    expect(events).toEqual([expect.objectContaining({ user: "api:?", action: "admin API key", outcome: "denied", detail: "wrong key (192.0.2.4)" }), expect.objectContaining({ outcome: "denied", detail: expect.stringMatching(/^no key/) })]);
+    expect(JSON.stringify(events)).not.toContain(CI);
+  });
+
+  it("holds an address after five wrong keys, a right key included, and counts the caller a host vouches for", async () => {
+    let t = 1_000_000;
+    const k = adminApiKeys({ keys: adminApiKeysFrom({ LENSPACK_ADMIN_API_KEYS: `ci:${CI}` }), now: () => t });
+    for (let i = 0; i < 5; i++) expect(await k.check(req(undefined, "10.0.0.1"), `wrong-${i}`)).toMatchObject({ status: 401 });
+    expect(await k.check(req(undefined, "10.0.0.1"), CI)).toMatchObject({ status: 429, retryAfterS: 1 });
+    // The same socket, but a signed caller address: another caller.
+    expect("who" in (await k.check(req(undefined, "10.0.0.1"), CI, "198.51.100.2"))).toBe(true);
+    t += 2000;
+    expect("who" in (await k.check(req(undefined, "10.0.0.1"), CI))).toBe(true);
   });
 });

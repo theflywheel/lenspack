@@ -9,6 +9,18 @@ brought it.
 
 ## Not yet released
 
+### 27 November 2026
+
+- **An admin API key, for scripts and for deployments with no server access.** Set `LENSPACK_ADMIN_API_KEYS` (one
+  `name:key` per key, or a mounted file with `LENSPACK_ADMIN_API_KEYS_FILE`; best as a `scrypt$` hash from
+  `lenspack hash-password`, so the Secret holds only the hash) and send `Authorization: Bearer <key>` to
+  `https://<your Superset>/lenspack/_admin/<route>`: no Superset session needed. A key is a master override: an admin
+  in every admin access mode, who may also add admins, on the admin routes only; never the chat or data. Everything
+  done with it is in the audit log as `api:<name>`, and the Access tab lists it as "API key <name>" once used.
+  `GET …/_admin/whoami` checks a key without changing anything. Wrong keys are limited per caller and audited without
+  the key. Off by default; update the plugin file with the server, since it now passes the header on for
+  `/lenspack/_admin/` only. See [The admin API key](docs/access/admin-api.md).
+
 ### 26 November 2026
 
 - **Choose where the admin pages are.** `admin.surface` / `LENSPACK_ADMIN_SURFACE`: `split` (the default: Superset's AI

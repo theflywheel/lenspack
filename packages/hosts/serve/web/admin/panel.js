@@ -56,7 +56,7 @@
       acOwners: "Owners", acOwnerNote: "Change owners in the deployment, then restart.", acGranted: "Granted admins", acNoGranted: "No granted admins.",
       acUser: "User", acBy: "Granted by", acAt: "When", acRemove: "Remove", acAdd: "Add", acAddPh: "Superset user name or id:12",
       acOwnersOnly: "Only owners can add or remove admins.", acRemoveQ: "Remove {0}?", acSeeded: "From the deployment", acPeople: "People granted",
-      acRoster: "Admins roster", acRosterLede: "Everyone who has used admin rights here, and how they qualify. A Superset Admin can give themselves an admin role; this list shows it when they use it.", acHow: "How", acFirst: "First seen", acLast: "Last seen", acNoRoster: "Nobody yet.", acNew: "new", acNewSince: "New admin since your last visit: {0}.", acNewOpen: "See the roster", acPasswords: "Named passwords: {0}", acOwnersN: "Owners: {0}",
+      acRoster: "Admins roster", acRosterLede: "Everyone who has used admin rights here, and how they qualify. A Superset Admin can give themselves an admin role; this list shows it when they use it.", acHow: "How", acFirst: "First seen", acLast: "Last seen", acNoRoster: "Nobody yet.", acNew: "new", acNewSince: "New admin since your last visit: {0}.", acNewOpen: "See the roster", acPasswords: "Named passwords: {0}", acApiKeys: "API keys: {0}", acOwnersN: "Owners: {0}",
       acNoPeople: "Nobody granted yet.", acSearch: "Search", acRange: "{0}–{1} of {2}", acPrev: "Previous", acNext: "Next", acRoles: "Roles: {0}",
       acEveryone: "Everyone signed in", acSignOut: "Sign out", acNoneSet: "Not available on this server.",
     },
@@ -104,7 +104,7 @@
       acOwners: "Propriétaires", acOwnerNote: "Les propriétaires se changent dans le déploiement, puis redémarrage.", acGranted: "Administrateurs ajoutés", acNoGranted: "Aucun administrateur ajouté.",
       acUser: "Utilisateur", acBy: "Ajouté par", acAt: "Quand", acRemove: "Retirer", acAdd: "Ajouter", acAddPh: "Nom d'utilisateur Superset ou id:12",
       acOwnersOnly: "Seuls les propriétaires ajoutent ou retirent des administrateurs.", acRemoveQ: "Retirer {0} ?", acSeeded: "Du déploiement", acPeople: "Personnes ajoutées",
-      acRoster: "Registre des administrateurs", acRosterLede: "Toute personne ayant utilisé des droits d'administration ici, et à quel titre. Un administrateur Superset peut s'attribuer un rôle d'administration ; cette liste le montre dès qu'il s'en sert.", acHow: "À quel titre", acFirst: "Première fois", acLast: "Dernière fois", acNoRoster: "Personne pour l'instant.", acNew: "nouveau", acNewSince: "Nouvel administrateur depuis votre dernière visite : {0}.", acNewOpen: "Voir le registre", acPasswords: "Mots de passe nommés : {0}", acOwnersN: "Propriétaires : {0}",
+      acRoster: "Registre des administrateurs", acRosterLede: "Toute personne ayant utilisé des droits d'administration ici, et à quel titre. Un administrateur Superset peut s'attribuer un rôle d'administration ; cette liste le montre dès qu'il s'en sert.", acHow: "À quel titre", acFirst: "Première fois", acLast: "Dernière fois", acNoRoster: "Personne pour l'instant.", acNew: "nouveau", acNewSince: "Nouvel administrateur depuis votre dernière visite : {0}.", acNewOpen: "Voir le registre", acPasswords: "Mots de passe nommés : {0}", acApiKeys: "Clés d'API : {0}", acOwnersN: "Propriétaires : {0}",
       acNoPeople: "Personne n'est encore ajouté.", acSearch: "Rechercher", acRange: "{0}–{1} sur {2}", acPrev: "Précédent", acNext: "Suivant", acRoles: "Rôles : {0}",
       acEveryone: "Toute personne connectée", acSignOut: "Se déconnecter", acNoneSet: "Indisponible sur ce serveur.",
     },
@@ -1045,7 +1045,7 @@
     const line = (label, mode, from, extra) => h("div", { class: "kv" }, h("dt", {}, label), h("dd", {}, h("b", {}, mode), " ", h("span", { class: "mute" }, t("acFrom", fromText(from))), extra ? h("div", { class: "mute" }, extra) : null));
     const out = [card(t("acWho"), null,
       h("dl", { class: "kvs" },
-        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, [adm.roles ? t("acRoles", adm.roles.join(", ")) : null, adm.owners ? t("acOwnersN", adm.owners.join(", ") || "—") : null, adm.passwordNames ? t("acPasswords", adm.passwordNames.join(", ") || "—") : null].filter(Boolean).join(" · ") || null) : null,
+        adm && adm.mode ? line(t("acAdmins"), adm.label, adm.from, [adm.roles ? t("acRoles", adm.roles.join(", ")) : null, adm.owners ? t("acOwnersN", adm.owners.join(", ") || "—") : null, adm.passwordNames ? t("acPasswords", adm.passwordNames.join(", ") || "—") : null, adm.apiKeys && adm.apiKeys.names.length ? t("acApiKeys", adm.apiKeys.names.join(", ")) : null].filter(Boolean).join(" · ") || null) : null,
         usr && usr.modes ? line(t("acUsers"), usr.label, usr.from, usr.everyone ? t("acEveryone") : usr.roles && usr.roles.length ? t("acRoles", usr.roles.join(", ")) : null) : null),
       warn(adm && adm.warnings), warn(usr && usr.warnings),
       shell.signOut ? h("div", { class: "actions" }, h("a", { class: "btn sm quiet", href: shell.signOut }, t("acSignOut"))) : null)];

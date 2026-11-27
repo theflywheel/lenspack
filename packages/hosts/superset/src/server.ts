@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, adminSurfaceFrom, boardRights, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
-import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
+import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
+import { NOT_TURNED_ON_MESSAGE, type Principal, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
 import { identityKeeper, identityKey, serviceAccount } from "./bootstrap";
@@ -160,6 +160,8 @@ async function retried<T>(what: string, f: () => Promise<T>, waits: number[], lo
 }
 
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
+/** The admin routes an admin API key may call (docs/access/admin-api.md); every other path refuses a key. */
+const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal)(\/|$)/;
 
 export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = process.env) {
   const file = resolve(path);
@@ -245,7 +247,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const hostRights = supersetRights(roleRules);
   // Who is an admin and who may use the assistant, each one of three ways (docs/access/admin-access.md); policy decides
   // (rightsUnder, usersUnder, adminRights), these read the settings and keep the grants admins make.
-  const adminAccess = adminAccessSetup({ config: config.auth, env, grants: settingsGrants(admin.settings, "adminGrants"), roster: settingsRoster(admin.settings), adminRoles: roleRules.admins ?? DEFAULT_SUPERSET_ADMINS, adminRolesFrom: env.LENSPACK_ADMIN_ROLES?.trim() ? "LENSPACK_ADMIN_ROLES" : config.auth?.admins ? "auth.admins" : undefined });
+  const adminAccess = adminAccessSetup({ config: config.auth, env, grants: settingsGrants(admin.settings, "adminGrants"), roster: settingsRoster(admin.settings), adminRoles: roleRules.admins ?? DEFAULT_SUPERSET_ADMINS, adminRolesFrom: env.LENSPACK_ADMIN_ROLES?.trim() ? "LENSPACK_ADMIN_ROLES" : config.auth?.admins ? "auth.admins" : undefined, log });
   const userAccess = userAccessSetup({ config: config.auth, env, grants: settingsGrants(admin.settings, "userGrants"), roles: hostRights.users, rolesFrom: env.LENSPACK_USER_ROLES?.trim() ? "LENSPACK_USER_ROLES" : config.auth?.users ? "auth.users" : undefined });
   // Read on every request: a grant or a revoke applies to the next one.
   const rights = accessRights(hostRights, adminAccess, userAccess);
@@ -272,6 +274,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   adminAccess.auditTo(auditLog?.audit);
   log(`${adminAccess.line()}${adminAccess.has("superset-role") && roleRules.usage ? `; user names on the usage board: ${roleRules.usage.join(", ") || "(none)"}` : ""}`);
   log(userAccess.line());
+  // Admin API keys (docs/access/admin-api.md): how many and their names, never a key.
+  log(adminAccess.apiKeys.line());
   // Where the admin pages are: the surface asked for, unless the password mode puts them on a page of their own.
   const surfaceFrom = env.LENSPACK_ADMIN_SURFACE?.trim() ? "LENSPACK_ADMIN_SURFACE" : config.admin?.surface ? "admin.surface" : null;
   const surface = surfacePlan(adminSurfaceFrom(config.admin?.surface, env.LENSPACK_ADMIN_SURFACE), adminAccess.modes);
@@ -590,13 +594,53 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       const passwordSettings = passwordAdmin
         ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess })
         : null;
+      /** Exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (admins only). */
+      const actionLog = async (res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {
+        if (url.pathname !== "/_superset/telemetry/superset-actions" || res.req.method !== "GET") return false;
+        if (!recordRights(who).telemetry) return json(res, 403, { error: `only ${adminName}s can do this` }, NO_STORE), true;
+        const day = (k: string, fallback: Date) => {
+          const v = url.searchParams.get(k);
+          const d = v ? new Date(v) : fallback;
+          return Number.isNaN(d.getTime()) ? null : d;
+        };
+        const to = day("to", new Date());
+        const from = to && day("from", new Date(to.getTime() - 7 * 86_400_000));
+        if (!to || !from) return json(res, 400, { error: "from and to must be dates, like 2026-11-01" }, NO_STORE), true;
+        return json(res, 200, { from: from.toISOString(), to: to.toISOString(), ...(await supersetActions(client, { dashboards: Object.values(dashboards), from, to })) }, NO_STORE), true;
+      };
+      /** The admin routes alone, for a caller with no Superset signature (an admin API key): the panel's API, the settings, the records. */
+      const adminOnly = async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {
+        if (await adminPanel(req, res, url, who)) return true;
+        await settingsPage(req, res, url, who);
+        if (res.headersSent) return true;
+        if (await mine.admin(req, res, url, who)) return true;
+        return actionLog(res, url, who);
+      };
       return async (req, res, url, signedIn) => {
         cors(req, res);
         if (req.method === "OPTIONS") return send(res, 204, "", "application/json");
         // Before the path is read at all: URL would resolve "..", so what the route acts on could differ from what Superset checked.
         const bad = pathRefusal(req.url);
         if (bad) return json(res, 400, { error: bad }, NO_STORE);
-        if (url.pathname.startsWith("/api/") || url.pathname === "/healthz" || url.pathname === "/readyz") return;
+        if (url.pathname === "/healthz" || url.pathname === "/readyz") return;
+        // An admin API key (docs/access/admin-api.md), read only when the deployment sets one: on the admin routes it is the
+        // caller, whatever else the request carries; anywhere else (the chat, the data, a person's own pages) the request is
+        // refused without the key being checked. Through Superset, a key reaches this server only by
+        // the admin passthrough: Superset's plugin passes the header on for <root>/lenspack/_admin/… only, with the caller's
+        // address signed, and on no other route. Directly on this server's address, /_superset/<route> takes it too.
+        const key = adminAccess.apiKeys.on ? presentedKey(req) : null;
+        if (key !== null) {
+          if (!KEY_ROUTE.test(url.pathname))
+            return json(res, 403, { error: "an admin API key works on the admin routes only (/_admin/whoami, /_admin/settings, /_admin/admin/api/…, /_admin/audit, …), not on the chat or the data", code: "api-key-admin-only" }, NO_STORE);
+          const checked = await adminAccess.apiKeys.check(req, key, signedClient(req, idKey()));
+          if ("status" in checked) return json(res, checked.status, { error: checked.error }, { ...NO_STORE, ...(checked.retryAfterS ? { "retry-after": String(checked.retryAfterS) } : {}) });
+          // /_admin/<route> (the way through Superset's admin passthrough) is the same route as /_superset/<route>.
+          const at = url.pathname.startsWith("/_admin/") ? new URL(`/_superset/${url.pathname.slice("/_admin/".length)}${url.search}`, url) : url;
+          if (await adminOnly(req, res, at, checked.who)) return;
+          if (res.headersSent) return;
+          return json(res, 404, { error: "not found" }, NO_STORE);
+        }
+        if (url.pathname.startsWith("/api/")) return;
         // The password sign-in's admin pages, before Superset's signature is asked for: they carry none.
         if (url.pathname === "/_admin" || url.pathname.startsWith("/_admin/")) {
           if (!adminAccess.has("password")) return json(res, 404, { error: "not found: admins sign in through Superset on this deployment" }, NO_STORE);
@@ -638,19 +682,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
         if (await mine(req, res, url)) return;
-        // Exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (admins only).
-        if (url.pathname === "/_superset/telemetry/superset-actions" && req.method === "GET") {
-          if (!recordRights(who).telemetry) return json(res, 403, { error: `only ${adminName}s can do this` }, NO_STORE);
-          const day = (k: string, fallback: Date) => {
-            const v = url.searchParams.get(k);
-            const d = v ? new Date(v) : fallback;
-            return Number.isNaN(d.getTime()) ? null : d;
-          };
-          const to = day("to", new Date());
-          const from = to && day("from", new Date(to.getTime() - 7 * 86_400_000));
-          if (!to || !from) return json(res, 400, { error: "from and to must be dates, like 2026-11-01" }, NO_STORE);
-          return json(res, 200, { from: from.toISOString(), to: to.toISOString(), ...(await supersetActions(client, { dashboards: Object.values(dashboards), from, to })) }, NO_STORE);
-        }
+        if (await actionLog(res, url, who)) return;
         if (url.pathname === "/_superset/bind") {
           const bound = await bind(url.searchParams.get("dashboard") ?? "", identityOf(req, idKey)?.d);
           return bound ? json(res, 200, bound, NO_STORE) : json(res, 403, { error: "Superset did not check your access to this dashboard." }, NO_STORE);
