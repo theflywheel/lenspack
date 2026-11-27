@@ -96,6 +96,16 @@ and `GET …/settings/pack` shows the version that was set aside and why (`notAp
 When you change the file's overlay, the layer still applies over it. A part the layer sets keeps winning over the
 file's until it is reset.
 
+## On the admin pages
+
+The **Pack** tab, beside Definitions, shows the pack as it runs: the version in force and who made it, where each part
+comes from (the deploy config, or changed here) with a **Back to the config** button for each changed part, and the
+parts set in the deploy config only. Its box holds the runtime parts as YAML: **Validate** checks them and changes
+nothing, **Save** makes them a new version; a refused change lists each problem under the box. Below are the versions,
+each with what it changed, **Go back to this** and its YAML, and **Export as YAML** for the whole overlay. The tab is
+on whichever admin pages hold the Lenspack sections: Superset's own page, or Lenspack's panel (see
+[Where the admin pages are](../../features/admin-panel.md#where-the-admin-pages-are)).
+
 ## The routes
 
 Admins only, decided by Lenspack's policy as for every setting (any Lenspack admin, or an admin API key). On the

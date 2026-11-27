@@ -22,7 +22,9 @@ brought it.
   and saved answers kept under the old pack are not served. Datasets, the row scope, dashboards, access, budgets,
   models, the pack's name, entity keys and time zone stay in `superset.yaml`, and an exclusion it makes can't be
   removed. Each change is audited as `pack edit`, `pack revert` or `pack reset` with who made it. Nothing changes
-  until an admin makes a change. See [Changing the pack while it runs](docs/hosts/superset/pack-runtime.md).
+  until an admin makes a change. The admin pages have a **Pack** tab for it: the YAML with Validate and Save,
+  problems shown inline, and the versions with Go back and Export. See
+  [Changing the pack while it runs](docs/hosts/superset/pack-runtime.md).
 - **An admin API key, for scripts and for deployments with no server access.** Set `LENSPACK_ADMIN_API_KEYS` (one
   `name:key` per key, or a mounted file with `LENSPACK_ADMIN_API_KEYS_FILE`; best as a `scrypt$` hash from
   `lenspack hash-password`, so the Secret holds only the hash) and send `Authorization: Bearer <key>` to
