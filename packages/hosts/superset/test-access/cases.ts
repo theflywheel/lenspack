@@ -1130,5 +1130,52 @@ export function accessSuite(version: string) {
         expect(listed.json.board.config.widgets.summed_c.kind).toBe("chart");
       });
     });
+
+    // Last, as it restarts Lenspack once more: the assistant on the listed dashboards only, as on a Superset shared by
+    // several projects (dashboardScope: listed, dashboards: [A]).
+    describe("on the listed dashboards only (dashboardScope: listed)", () => {
+      const dashboards = async (who: User) => sorted(((await s[who].lp("GET", "_superset/dashboards")).json as { id: number }[]).map((d) => `superset-${d.id}`));
+      const boards = async (who: User) => sorted(((await s[who].lp("GET", `api/${PACK}`)).json.boards as { id: string }[]).map((b) => b.id));
+      beforeAll(async () => {
+        await stack.restartLenspack([`dashboards: [${stack.fixtures.dashboards.a}]`, "dashboardScope: listed"]);
+        expect(stack.log()).toContain(`dashboards: listed (${stack.fixtures.dashboards.a})`);
+      }, 300_000);
+
+      it("binds the listed dashboard and refuses the others, admins too, so the overlay shows no button there", async () => {
+        expect((await s.lp_admin.lp("GET", `_superset/bind?dashboard=${stack.fixtures.dashboards.a}`)).status).toBe(200);
+        expect((await s.lp_viewer.lp("GET", `_superset/bind?dashboard=${stack.fixtures.dashboards.a}`)).status).toBe(200);
+        for (const [who, d] of [["lp_admin", stack.fixtures.dashboards.b], ["lp_admin", stack.fixtures.dashboards.c], ["lp_rbac", stack.fixtures.dashboards.b]] as const) {
+          const r = await s[who].lp("GET", `_superset/bind?dashboard=${d}`);
+          expect([who, d, r.status, r.json?.code]).toEqual([who, d, 403, "out-of-scope"]);
+        }
+        expect((await s.lp_admin.lp("GET", "_superset/settings")).json.dashboardScope).toEqual({ scope: "listed", dashboards: [stack.fixtures.dashboards.a] });
+      });
+
+      it("lists only the listed dashboard, and refuses the board API and the chat on the others", async () => {
+        expect(await dashboards("lp_admin")).toEqual([A]);
+        expect(await dashboards("lp_rbac")).toEqual([]);
+        expect(await boards("lp_admin")).toEqual([A]);
+        expect((await s.lp_admin.lp("GET", `api/${PACK}/${A}`)).status).toBe(200);
+        for (const path of [`api/${PACK}/${B}`, `api/${PACK}/${B}/data`, `api/${PACK}/${C}/options?field=region`]) expect([path, (await s.lp_admin.lp("GET", path)).status]).toEqual([path, 404]);
+        const r = await s.lp_rbac.lp("POST", `api/${PACK}/${B}/chat?review=off`, { messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: `TOOL query ${JSON.stringify(BREAKDOWN("stock_total"))}` }] }] });
+        expect(r.status).toBe(404);
+      });
+
+      it("keeps a personal copy of the listed dashboard usable, and copies no other", async () => {
+        const refused = await s.lp_admin.lp("POST", `_superset/my/dashboards?dashboard=${stack.fixtures.dashboards.b}`, { copy: true });
+        expect([refused.status, refused.json?.code]).toEqual([403, "out-of-scope"]);
+        const copied = await s.lp_admin.lp("POST", `_superset/my/dashboards?dashboard=${stack.fixtures.dashboards.a}`, { copy: true });
+        expect(copied.status, copied.text).toBe(200);
+        const copy = copied.json.dashboard as number;
+        try {
+          expect(await mine("lp_admin")).toContain(copy);
+          expect((await s.lp_admin.lp("GET", `_superset/bind?dashboard=${copy}`)).status).toBe(200);
+          expect((await s.lp_admin.lp("GET", `api/${PACK}/superset-${copy}`)).status).toBe(200);
+          expect(await dashboards("lp_admin")).toContain(`superset-${copy}`);
+        } finally {
+          expect((await s.lp_admin.lp("POST", "_superset/my/dashboards/delete", { dashboard: copy })).status).toBe(200);
+        }
+      });
+    });
   });
 }

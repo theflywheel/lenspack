@@ -193,6 +193,9 @@
   function failed(e, key) {
     if (seen !== key) return;
     if (e.kind === "signedout") { signedOut = true; return hideAll(); }
+    // Refused for this dashboard (not one the assistant is on, or not checked by Superset): no button, no panel,
+    // even when the last dashboard had them open.
+    if (e.kind === "stop") return hideAll();
     if (e.kind !== "retry") return;
     if (!down) setDown(true);
     if (panel.style.display !== "block") btn.style.display = "inline-flex";

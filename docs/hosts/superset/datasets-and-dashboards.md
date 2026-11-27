@@ -191,6 +191,39 @@ refused, and the refusal says what works: a date column, or a pack that keeps UT
 too: a warning in the log and in the settings API's `warnings` names each dataset and column it affects, so it is
 not found one question at a time.
 
+## Which dashboards the assistant is on
+
+By default the assistant's button shows on every dashboard a person may open in Superset (`dashboardScope: any`).
+`dashboards:` then only lists the dashboards Lenspack reads when it starts; any other is read the first time someone
+opens the chat on it.
+
+On a Superset shared by several projects, you may want the assistant on your own dashboards only. Set
+`dashboardScope: listed`, and list them by id:
+
+```yaml
+dashboards: [25, 31]
+dashboardScope: listed
+```
+
+Or in the environment: `LENSPACK_DASHBOARDS=25,31` and `LENSPACK_DASHBOARD_SCOPE=listed`, which win over the file.
+
+With `listed`:
+
+- the button shows on dashboards 25 and 31 only. On any other dashboard there is no button;
+- every route that takes a dashboard refuses the others: the chat, the board and its data, the filter menus,
+  copying and saving layouts. The dashboard list and the pack's list of boards name only the listed ones. Asked by
+  its slug, a dashboard is looked up by its id first;
+- it holds for everyone, admins too. It only narrows what Superset allows: a listed dashboard still opens only for
+  people Superset lets view it;
+- [personal dashboards](../../features/personal-dashboards.md) stay usable while that feature is on: a copy of a
+  listed dashboard (or a copy of that copy) and a blank one made through the assistant are in scope too. A copy of
+  a dashboard outside the list is not, and "My dashboards" leaves it out (it still counts toward the person's limit,
+  and the admin's list of everyone's dashboards still shows it).
+
+The start-up log says the scope (`dashboards: listed (25, 31)` or `dashboards: any`), and so does the settings API
+(`dashboardScope`). A value other than `any` or `listed`, or `listed` with no dashboards listed, stops Lenspack at
+start with a message saying so.
+
 ## Dashboards are boards
 
 Lenspack reads a dashboard as a board: charts become widgets, markdown blocks become text widgets, and the layout

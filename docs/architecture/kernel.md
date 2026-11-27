@@ -71,8 +71,11 @@ return a decision; the engine enforces it.
 - `principalOf`: an identity from the host, settled into a principal with rights.
 - `decide`: what a caller may use of one pack: the pack and catalogue as they see it, their row scope, their
   hidden keys and kept entities.
-- `boardRights`: whether a caller may view or edit a board. It also applies `editScope` and hides people's own
-  dashboards from everyone but their owner and admins (`hiddenPersonalBoards`).
+- `boardRights`: whether a caller may view or edit a board. It also applies `editScope`, hides people's own
+  dashboards from everyone but their owner and admins (`hiddenPersonalBoards`), and refuses any board outside the
+  deployment's board scope (`onlyBoards`).
+- `boardScopeFrom`, `boardsInScope` and `inBoardScope`: which boards the assistant is on at all. Under `listed`, the
+  deployment's listed boards and people's own copies of them; the host puts the result in `Identity.onlyBoards`.
 - `adminRights` and `mayAdminister`: whether a caller may use the admin pages and see user names. `principalOf`
   gives Lenspack's admin role by the deployment's `admins` rule, the one place a host's roles become it.
 - `mayUse`: whether the deployment's `users` rule lets a caller use the assistant at all (admins always may).
