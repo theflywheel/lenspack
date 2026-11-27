@@ -14,7 +14,7 @@ import { type Access, type AuthAdapter, NO_RIGHTS, type PackRule, type Rights, w
 import type { LimitCounter, LimitPlace } from "./limits";
 import { BodyTooLarge, escapeHtml, json, readBody, readJson as read, scriptJson, serveStatic } from "./http";
 import { type Provider, effortFor, publicView, shapeCall, stopOnRepeatedRefusals } from "./llm";
-import { type Budget, type CallRecord, type UsageLedger, type UsageSink, budgetReport, overBudget, recordCall, turnCost, turnSummary, usageLedger, withMeter } from "./metering";
+import { type Budget, type CallRecord, type UsageLedger, type UsageSink, overBudget, recordCall, turnCost, turnSummary, usageLedger, usageReport, withMeter } from "./metering";
 import { type Brand, DEFAULT_BRAND_NAME } from "./brand";
 import { type LanguagePolicy, catalogueText, promptVersionFor, systemParts } from "./prompt";
 import { waitForTurn, withRetryWindow } from "./queue";
@@ -504,7 +504,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       if (packName === "_usage" && req.method === "GET") {
         if (!who.usage) return json(res, 403, { error: "usage is not shown to you" });
         // The caps go with it, so whoever watches spend sees how near they are, and who is at a per-person limit or was refused today.
-        return json(res, 200, { ...ledger.report(), ...(budgetNow() ? { budget: budgetReport(ledger, budgetNow()!) } : {}), ...(opts.limits?.on() ? { limits: opts.limits.report() } : {}) });
+        return json(res, 200, usageReport(ledger, budgetNow(), opts.limits));
       }
       // Speech to text for the mic: a raw audio body in, the text out, for the user to check before sending.
       if (packName === "_stt") {

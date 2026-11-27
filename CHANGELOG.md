@@ -16,6 +16,13 @@ brought it.
   one to protect it, see who made each chat tab with each person's count against the limits, and delete one (asking
   again when email reports are sent from it). `GET /_superset/tabs` now also returns each dashboard's tabs. See
   [Tabs on dashboards](docs/features/tabs.md#on-the-settings-page).
+- **An admin API key can read what chat has cost.** `GET …/lenspack/_admin/usage` (on Lenspack's own address,
+  `/_superset/usage`) answers what the usage page shows: today's spend and since the count began, totals per day,
+  each person's spend and number of answers, the budget caps and the question limits, the same as `GET /api/_usage`.
+  Before, a key got `403` there, so watching spend needed a Superset login. The route is read-only and for admins
+  only (a Superset session that is an admin reads it too); an admin who may not see user names gets the totals with
+  no one named. The key is still refused on the chat and the data, `GET /api/_usage` included. See
+  [The admin API key](docs/access/admin-api.md#what-you-can-do-with-it).
 - **The chat's step lines follow the panel's language.** Under a question, lines such as "ran a query" showed in
   English while the rest of the panel was in French, Hindi or Portuguese. They now use the panel's language, for
   every tool the assistant can call (charts, filters, tabs, saved layouts, your own dashboards), and a tool with no

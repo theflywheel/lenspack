@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, type TabActor, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, readJson as readJsonBody, presentedKey, asSettingsWriter, revisionTag, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, startingServer, userAccessSetup } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, readJson as readJsonBody, presentedKey, asSettingsWriter, revisionTag, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, startingServer, usageReport, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, type PackLayer, type PackRisk, applyPackLayer, type Principal, type QuerySafetyConfig, RUNTIME_CONFIG, type Rights, adminRights, mayUse, narrowRights, packRisks, recordRights } from "@lenspack/policy";
 import { guardedConnector, querySlots } from "@lenspack/engine";
 import YAML from "yaml";
@@ -183,7 +183,7 @@ export type SupersetConfig = AdminConfig & {
 
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 /** The admin routes an admin API key may call (docs/access/admin-api.md); every other path refuses a key. */
-const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal|limits|tabs)(\/|$)/;
+const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal|limits|tabs|usage)(\/|$)/;
 
 export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = process.env) {
   const file = resolve(path);
@@ -863,6 +863,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     routes: (rt) => {
       const { providers, budget } = rt;
       setHost = rt.setHost;
+      // What chat has cost, as GET /api/_usage reports it, for the admin route /_superset/usage (and /_admin/usage): the
+      // budget read now, the question limits the chat counts with.
+      const usage = rt.ledger ? () => usageReport(rt.ledger!, rt.budget, admin.limitCounts) : undefined;
       // Changing the pack while it runs (<prefix>/settings/pack…): admins, decided by policy (packEditRights).
       const packRoutes = packs.routes("/_superset", { access: () => adminAccess.state(), seen: (who) => adminAccess.seen(who), audit: auditLog?.audit, adminName });
       // Superset's settings page, as the admin pages link to it.
@@ -936,13 +939,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         access: adminAccess,
         users: userAccess,
         revisionExtras: packRevision,
+        usage,
       });
       // The password sign-in's admin pages: the same panel and settings routes under /_admin, for the password admin.
       // Password admins always get every section there, whatever the surface: they have no Superset page to use.
       const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password", surface: "separate", sections: "all", superset: true, supersetPage: supersetPage(req) }) }) : null;
       const passwordPack = passwordAdmin ? packs.routes("/_admin", { access: () => adminAccess.state(), seen: (who) => adminAccess.seen(who), audit: auditLog?.audit, adminName: "assistant admin" }) : null;
       const passwordSettings = passwordAdmin
-        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, details: () => ({ querySafety: { ...safety.view(true), packRisks: [...risksNow(), ...exampleRisks] } }), revisionExtras: packRevision })
+        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, details: () => ({ querySafety: { ...safety.view(true), packRisks: [...risksNow(), ...exampleRisks] } }), revisionExtras: packRevision, usage })
         : null;
       /**
        * PUT <prefix>/settings/query-safety: an admin changes the query limits on a running server. Tighter than the
@@ -1033,7 +1037,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         const key = adminAccess.apiKeys.on ? presentedKey(req) : null;
         if (key !== null) {
           if (!KEY_ROUTE.test(url.pathname))
-            return json(res, 403, { error: "an admin API key works on the admin routes only (/_admin/whoami, /_admin/settings, /_admin/admin/api/…, /_admin/audit, …), not on the chat or the data", code: "api-key-admin-only" }, NO_STORE);
+            return json(res, 403, { error: "an admin API key works on the admin routes only (/_admin/whoami, /_admin/settings, /_admin/admin/api/…, /_admin/audit, /_admin/usage, …), not on the chat or the data", code: "api-key-admin-only" }, NO_STORE);
           const checked = await adminAccess.apiKeys.check(req, key, signedClient(req, idKey()));
           if ("status" in checked) return json(res, checked.status, { error: checked.error }, { ...NO_STORE, ...(checked.retryAfterS ? { "retry-after": String(checked.retryAfterS) } : {}) });
           // /_admin/<route> (the way through Superset's admin passthrough) is the same route as /_superset/<route>.

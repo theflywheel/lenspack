@@ -3,7 +3,7 @@
 // user (superset-users), so the key is seen to override the mode. Called over HTTP the way a script would.
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { type Server, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -97,10 +97,13 @@ describe("admin API keys on the Superset-mode server", () => {
     // The ops key as a Kubernetes Secret would hold it: only its hash, in a mounted file.
     const keys = join(dir, "api-keys");
     writeFileSync(keys, `# admin API keys\nops:${hashPassword(OPS)}\n`);
+    // One model call earlier today, by a made-up person, in the usage file the server reads back at start.
+    mkdirSync(join(dir, "state"), { recursive: true });
+    writeFileSync(join(dir, "state", "usage.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), provider: "m", model: "m", kind: "anthropic", role: "build", user: "amira", pack: "visits_pack", turn: "t1", inputTokens: 10, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 5, reasoningTokens: 0, usd: 0.5, priced: true, ms: 1, ok: true })}\n`);
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(LENSPACK_|ANTHROPIC_|OPENROUTER_|SUPERSET_)/.test(k)));
     child = spawn(join(root, "node_modules/.bin/tsx"), ["--tsconfig", join(root, "tsconfig.base.json"), join(root, "packages/hosts/superset/bin/serve.ts"), config], {
       cwd: root,
-      env: { ...env, TEST_SUPERSET_URL: supersetUrl, LENSPACK_SUPERSET_PASSWORD: "service-password", LENSPACK_ADMIN_ACCESS: "superset-users", LENSPACK_ADMIN_USERS: "olga", LENSPACK_ADMIN_API_KEYS: `ci:${CI}`, LENSPACK_ADMIN_API_KEYS_FILE: keys },
+      env: { ...env, TEST_SUPERSET_URL: supersetUrl, LENSPACK_SUPERSET_PASSWORD: "service-password", LENSPACK_ADMIN_ACCESS: "superset-users", LENSPACK_ADMIN_USERS: "olga", LENSPACK_ADMIN_API_KEYS: `ci:${CI}`, LENSPACK_ADMIN_API_KEYS_FILE: keys, LENSPACK_BUDGET_USD_PER_DAY: "20", LENSPACK_BUDGET_USD_PER_USER_PER_DAY: "2" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stdout!.on("data", (c) => (output += c));
@@ -188,6 +191,22 @@ describe("admin API keys on the Superset-mode server", () => {
     expect((await call("/_admin/turns", { key: CI })).status).toBe(200);
     expect((await call("/_admin/telemetry", { key: CI })).status).toBe(200);
     expect((await call("/_admin/admin/api/packs", { key: CI })).status).toBe(200);
+  });
+
+  it("reads what chat has cost, with the caps, on both prefixes, the same as GET /api/_usage, read-only", async () => {
+    const usage = await call("/_admin/usage", { key: CI });
+    expect(usage.status).toBe(200);
+    // The key may see user names: who spent what today, by person.
+    expect(usage.body).toMatchObject({ since: expect.any(String), total: { turns: 1, usd: 0.5 }, packs: expect.any(Object), budget: { usdPerDay: 20, usdPerUserPerDay: 2, day: new Date().toISOString().slice(0, 10), spent: 0.5, users: { amira: 0.5 } } });
+    expect(usage.body.turns).toEqual([expect.objectContaining({ user: "amira", pack: "visits_pack", turns: 1, llm: expect.objectContaining({ calls: 1, usd: 0.5 }) })]);
+    expect((await call("/_superset/usage", { key: CI })).body).toEqual(usage.body);
+    // Read-only: nothing else is taken.
+    expect((await call("/_admin/usage", { method: "POST", key: CI, body: {} })).status).toBe(405);
+    // An admin signed in through Superset reads the same; a Superset Admin who is not an admin in this mode, and anyone else, doesn't.
+    // (Under superset-users a named admin also sees user names; an admin who may not gets no one named: metering.test.ts.)
+    expect((await call("/_superset/usage", { as: { u: "olga", a: false } })).body).toMatchObject({ budget: { spent: 0.5, users: { amira: 0.5 } } });
+    for (const as of [{ u: "ana", a: true, r: ["Admin"] }, { u: "someone", a: false, r: ["Gamma"] }]) expect([as.u, (await call("/_superset/usage", { as })).status]).toEqual([as.u, 403]);
+    expect((await call("/_superset/usage")).status).toBe(401);
   });
 
   it("reads and changes the question limits, and never counts as a question itself", async () => {

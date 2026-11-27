@@ -14,7 +14,7 @@ It is off by default. With no key set, nothing changes.
 ## What a key can and can't do
 
 - **Can:** call every admin route (listed [below](#what-you-can-do-with-it)). It counts as an admin who may also see user
-  names (on the usage board and the Telemetry tab), and as an owner under `superset-users`, so it can add and remove
+  names (on the usage board, in the usage report and on the Telemetry tab), and as an owner under `superset-users`, so it can add and remove
   admins in every mode.
 - **Can't:** use the chat, read boards or data, or open anyone's own dashboards. It is not a Superset user, so it has
   none of Superset's data rights. A request with a key to any route that is not an admin route is refused with `403`
@@ -212,6 +212,27 @@ curl -s -X DELETE -H "$AUTH" "$LP/tabs/12/TAB-lp-abc123?confirm=1"
 curl -s -H "$AUTH" "$LP/audit?limit=50"
 curl -s -H "$AUTH" $LP/turns
 ```
+
+**Read what chat has cost**: today's spend and since the count began, the totals per day, each person's spend and
+number of answers, and the budget caps and question limits, the same numbers as `GET /api/_usage` (fields in the
+[HTTP API](../reference/http-api.md#usage)). It changes nothing:
+
+```sh
+curl -s -H "$AUTH" $LP/usage
+# {"since":"2026-11-27T00:00:04Z","total":{"turns":42,"usd":3.18,…},"turns":[{"day":"2026-11-27","user":"amira","pack":"…","turns":7,"llm":{"usd":0.61,…},…},…],
+#  "budget":{"usdPerDay":20,"usdPerUserPerDay":2,"day":"2026-11-27","spent":3.18,"users":{"amira":0.61,…}}}
+```
+
+Each day's spend and answers per person, and (when a cap is set) today's spend against it, with `jq`:
+
+```sh
+curl -s -H "$AUTH" $LP/usage | jq '[.turns[] | {day, user, pack, answers: .turns, usd: .llm.usd}]'
+curl -s -H "$AUTH" $LP/usage | jq '.budget | {day, spent, cap: .usdPerDay, perPerson: .users}'
+```
+
+`budget` is there only when a cap is set, and `limits` only when a question limit is.
+
+`$LP/admin/api/usage` is something else: the definition of the usage board drawn on the admin panel, not the spend.
 
 **Clear saved answers, or tell Lenspack the data changed** (after a load):
 
