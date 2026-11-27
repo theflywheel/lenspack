@@ -11,6 +11,11 @@ brought it.
 
 ### 27 November 2026
 
+- **Tabs on the settings page.** The admin pages' Settings tab has the tab rules (which tabs the chat may change, the
+  `chatTabs` and `playground` switches, the limits) and, for each dashboard the assistant has opened, its tabs: tick
+  one to protect it, see who made each chat tab with each person's count against the limits, and delete one (asking
+  again when email reports are sent from it). `GET /_superset/tabs` now also returns each dashboard's tabs. See
+  [Tabs on dashboards](docs/features/tabs.md#on-the-settings-page).
 - **Tabs: protected tabs, tabs made through the chat, limits, and playground tabs.** On a Superset dashboard in tabs, a
   deployment can protect tabs (`tabs.protected`, by tab id per dashboard) so the chat never changes them, for admins
   too, or let the chat change only tabs it made (`tabs.editable: own`). With the `chatTabs` switch, people who may
