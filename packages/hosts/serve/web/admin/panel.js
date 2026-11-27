@@ -153,7 +153,7 @@
     offH: "Off switches", personalH: "Own dashboards", pOn: "People may keep their own dashboards and layouts", pDash: "Dashboards per person", pLayouts: "Saved layouts per person",
     scopeH: "Where the chat may edit", scopeSuperset: "Any dashboard Superset lets the person edit", scopeOwn: "Only their own dashboards", scopeExempt: "Admins may edit shared ones",
     configH: "From the deployment's config", whereH: "Where to change things", wWhat: "What", wWhere: "Where",
-    budgetDay: "Spend per day", budgetUser: "Spend per person per day", none2: "none", contextN: "{0} context labels", nameHere: "The name and button label are set on the Assistant tab.", nameElsewhere: "The name and button label are set on Superset's settings page.",
+    budgetDay: "Spend per day", budgetUser: "Spend per person per day", none2: "none", contextN: "{0} context labels", nameElsewhere: "The name and button label are set on Superset's settings page.",
     // Assistant (Superset)
     panelH: "Admin panel", panelLede: "Models, voice, costs, logs, switches, review and saved answers.", openPanel: "Open the admin panel", panelPassword: "Admins sign in with the deployment's admin password.",
     whoH: "Who can use it", onOff: "The assistant", isOn: "on", isOff: "off (the Assistant button switch)", hostPolicyL: "Whose data access applies", hostSuperset: "each person's own Superset access", hostOff: "the assistant's own account (off)", editPolicyL: "Who may edit dashboards", editSuperset: "whoever Superset lets edit", editSigned: "anyone signed in", scopeL: "Edit scope",
@@ -201,7 +201,7 @@
     offH: "Interrupteurs", personalH: "Tableaux personnels", pOn: "Chacun peut garder ses tableaux et dispositions", pDash: "Tableaux par personne", pLayouts: "Dispositions par personne",
     scopeH: "Où la discussion peut modifier", scopeSuperset: "Tout tableau que Superset laisse modifier", scopeOwn: "Seulement ses propres tableaux", scopeExempt: "Les administrateurs modifient les tableaux partagés",
     configH: "Depuis la configuration", whereH: "Où changer quoi", wWhat: "Quoi", wWhere: "Où",
-    budgetDay: "Dépense par jour", budgetUser: "Dépense par personne et par jour", none2: "aucune", contextN: "{0} libellés de contexte", nameHere: "Le nom et le libellé du bouton se règlent dans l'onglet Assistant.", nameElsewhere: "Le nom et le libellé du bouton se règlent sur la page de réglages de Superset.",
+    budgetDay: "Dépense par jour", budgetUser: "Dépense par personne et par jour", none2: "aucune", contextN: "{0} libellés de contexte", nameElsewhere: "Le nom et le libellé du bouton se règlent sur la page de réglages de Superset.",
     panelH: "Panneau d'administration", panelLede: "Modèles, voix, coûts, journaux, interrupteurs, revue et réponses gardées.", openPanel: "Ouvrir le panneau", panelPassword: "Les administrateurs se connectent avec le mot de passe du déploiement.",
     whoH: "Qui peut l'utiliser", onOff: "L'assistant", isOn: "activé", isOff: "désactivé (interrupteur du bouton)", hostPolicyL: "Accès aux données appliqué", hostSuperset: "l'accès Superset de chacun", hostOff: "le compte de l'assistant (désactivé)", editPolicyL: "Qui modifie les tableaux", editSuperset: "qui Superset laisse modifier", editSigned: "toute personne connectée", scopeL: "Portée des modifications",
     connH: "Connexion", cServer: "Serveur", cAccount: "Compte de service", cIdentity: "Clé de signature", cReceived: "reçue", cMissing: "absente : les réglages ne s'enregistrent pas", cChat: "Discussion", cChatOk: "répond", cChatDown: "aucun modèle ne répond", cUrl: "Superset à", cRoles: "Rôles du compte de service", dbH: "Bases de données Superset", dbName: "Base", dbBackend: "Moteur", dbDatasets: "Jeux de données",
@@ -1039,8 +1039,10 @@
     });
     const changed = Object.values(features.source).some((s) => s === "settings");
     const host = await hostSettings().catch(() => null);
-    // On a Superset host the name card is on the Assistant tab (here, or on Superset's page in the split surface).
-    const nameCard = !shell.superset ? (brand ? brandCard(brand) : null) : card(t("bTitle"), null, h("p", { class: "row" }, sections === "lenspack" ? t("nameElsewhere") : t("nameHere"), sections === "lenspack" && shell.supersetPage ? h("a", { class: "btn sm quiet", href: shell.supersetPage }, t("tabAssistant")) : sections !== "lenspack" ? h("button", { class: "btn sm quiet", type: "button", onclick: () => go("assistant") }, t("tabAssistant")) : null));
+    // With the Assistant tab on this page there is no name card here; the split surface points to Superset's page.
+    const nameCard = !shell.superset ? (brand ? brandCard(brand) : null)
+      : sections === "lenspack" ? card(t("bTitle"), null, h("p", { class: "row" }, t("nameElsewhere"), shell.supersetPage ? h("a", { class: "btn sm quiet", href: shell.supersetPage }, t("tabAssistant")) : null))
+      : null;
     return [
       card(t("offH"), t("sLede"), rows, changed ? h("div", { class: "actions" }, h("button", { class: "btn sm quiet", type: "button", onclick: act(() => api("settings/features", { body: Object.fromEntries(features.options.map((o) => [o.key, null])) })) }, t("reset"))) : null),
       nameCard,
