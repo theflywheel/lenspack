@@ -46,7 +46,7 @@ export type BuiltPack = Pick<LivePack, "pack" | "packYaml" | "binding" | "warnin
  * deploy config's scope clauses on dimensions the pack lacks, and example questions the pack would refuse. Throws when
  * the pack can't be built at all (an example naming a key the pack doesn't have, a hierarchy over a time dimension).
  */
-export function buildPack(datasets: SupersetDataset[], overlay: Overlay, o: { scope?: unknown; capabilities?: Capabilities; mapStyle?: string } = {}): BuiltPack {
+export function buildPack(datasets: SupersetDataset[], overlay: Overlay, o: { scope?: unknown; capabilities?: Capabilities; mapStyle?: string; scopeWords?: (warning: string) => string } = {}): BuiltPack {
   let built: ReturnType<typeof packFromDatasets>;
   try {
     built = packFromDatasets(datasets, overlay);
@@ -76,7 +76,7 @@ export function buildPack(datasets: SupersetDataset[], overlay: Overlay, o: { sc
     const missing = (Array.isArray(levels) ? levels : []).filter((l) => !pack.dimensions.some((d) => d.key === l));
     if (missing.length) findings.push(`hierarchies.${name}: ${missing.map((l) => `"${l}"`).join(", ")} ${missing.length === 1 ? "is not a dimension" : "are not dimensions"} of the pack, so the hierarchy is left out`);
   }
-  findings.push(...scope.warnings.map((w) => `the deploy config's ${w}`));
+  findings.push(...scope.warnings.map(o.scopeWords ?? ((w) => `the deploy config's ${w}`)));
   for (const [i, ex] of pack.examples.entries()) {
     try {
       check(ex.query, pack, { ctx: scope.clauses.length ? { scope: scope.clauses } : {}, ...(o.capabilities ? { capabilities: o.capabilities } : {}) });
@@ -133,8 +133,10 @@ export type PackRuntimeOptions = {
   base: Overlay;
   /** The same overlay as the file writes it (env: references kept), for the export. Else the base. */
   raw?: Overlay;
-  /** The deploy config's scope (config only): the pack is checked against it. */
-  scope?: unknown;
+  /** The scope in force (the deploy config's, with any clauses an admin added): the pack is checked against it. */
+  scope?: unknown | (() => unknown);
+  /** How a scope warning reads in a finding (which clauses are the deploy config's and which an admin added). */
+  scopeWords?: (warning: string) => string;
   store: PackLayerStore;
   /** Superset's datasets as they are now, fetched as at start (each one retried). */
   fetch: () => Promise<SupersetDataset[]>;
@@ -169,7 +171,7 @@ export function packRuntime(o: PackRuntimeOptions) {
     queue = next;
     return next;
   };
-  const opts = () => ({ scope: o.scope, capabilities: o.capabilities?.(), mapStyle: o.mapStyle });
+  const opts = () => ({ scope: typeof o.scope === "function" ? (o.scope as () => unknown)() : o.scope, capabilities: o.capabilities?.(), mapStyle: o.mapStyle, ...(o.scopeWords ? { scopeWords: o.scopeWords } : {}) });
   const now = (): LivePack => {
     if (!live) throw new Error("the pack is not built yet");
     return live;
@@ -470,7 +472,46 @@ export function packRuntime(o: PackRuntimeOptions) {
     };
   }
 
-  return { start, live: now, check: checkLayer, change, routes, exportYaml };
+  /**
+   * The pack built again over other datasets or another scope (an admin narrowing the deployment's boundary), with the
+   * layer in force: checked as any change is, against Superset's datasets as they are now. A rebuild that adds a problem
+   * (a measure or an example on a dataset no longer kept, a scope clause on a dimension the pack lacks) is refused with
+   * nothing changed; one that passes calls `commit` (which saves the narrowing), then swaps the pack in.
+   */
+  function rebuild(candidate: { fetch: () => Promise<SupersetDataset[]>; scope: unknown }, commit: () => void) {
+    return serial(async (): Promise<{ ok: true; warnings: string[] } | { ok: false; status: number; problems: string[] }> => {
+      const current = now();
+      let datasets: SupersetDataset[];
+      let before: SupersetDataset[];
+      try {
+        [datasets, before] = await Promise.all([candidate.fetch(), o.fetch()]);
+      } catch (e) {
+        return { ok: false, status: 502, problems: [`Superset's datasets could not be read to check the change: ${e instanceof Error ? e.message : String(e)}`] };
+      }
+      const overlay = applyPackLayer(base, current.layer);
+      let built: BuiltPack;
+      try {
+        built = buildPack(datasets, overlay, { ...opts(), scope: candidate.scope });
+      } catch (e) {
+        return { ok: false, status: 400, problems: e instanceof PackBuildError ? e.problems : [e instanceof Error ? e.message : String(e)] };
+      }
+      let was: string[] = [];
+      try {
+        was = buildPack(before, overlay, opts()).findings;
+      } catch {
+        /* the pack in force no longer builds: every finding is the change's to answer for */
+      }
+      const added = built.findings.filter((f) => !was.includes(f));
+      if (added.length) return { ok: false, status: 400, problems: added };
+      commit();
+      live = { ...built, datasets, overlay, version: current.version, layer: current.layer, ...(current.notApplied ? { notApplied: current.notApplied } : {}) };
+      await o.swap(live);
+      o.log(`pack: built again for the narrowed boundary; ${plural(Object.keys(live.pack.entities).length, "dataset")}, ${plural(live.pack.dimensions.length, "dimension")}, ${plural(live.pack.measures.length, "measure")}`);
+      return { ok: true, warnings: [...built.warnings, ...built.scopeWarnings] };
+    });
+  }
+
+  return { start, live: now, check: checkLayer, change, rebuild, routes, exportYaml };
 }
 
 export type PackRuntime = ReturnType<typeof packRuntime>;

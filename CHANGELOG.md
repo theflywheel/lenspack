@@ -11,6 +11,15 @@ brought it.
 
 ### 27 November 2026
 
+- **The data boundary can be narrowed while the server runs, never widened.** With an admin API key or on the Settings
+  tab (`PUT /_superset/settings/boundary`), an admin can keep fewer datasets, add filters every answer carries, keep
+  fewer dashboards, turn each person's own Superset access on, make the edit policy stricter, and keep fewer admin and
+  user access modes, roles, owners and seeded people. Anything that would widen the boundary past `superset.yaml` is
+  refused with the reason, so a leaked key can make the assistant reach less, never more; widening needs the deploy
+  config. A change to the datasets or the filters has the pack built again and checked first, and is refused with
+  nothing changed if the new pack has a problem. Changes are audited, kept across restarts, and set aside (and said)
+  if the deploy config later stops allowing them. See
+  [The boundary narrows only](docs/hosts/superset/runtime.md#the-boundary-narrows-only).
 - **Every option that isn't a secret can change without a redeploy.** On a deployment where the deploy config is in
   another team's hands, the admin pages and the admin API key are now enough. New settings routes: the daily budget
   caps (`settings/budget`; `0` means no cap), which of the deployment's models answer and which plays each role
