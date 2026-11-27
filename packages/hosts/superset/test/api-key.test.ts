@@ -182,6 +182,17 @@ describe("admin API keys on the Superset-mode server", () => {
     expect((await call("/_admin/admin/api/packs", { key: CI })).status).toBe(200);
   });
 
+  it("reads and changes the question limits, and never counts as a question itself", async () => {
+    const put = await call("/_admin/settings/limits", { method: "PUT", key: CI, body: { perMinute: 3, questionsPerDay: 100 } });
+    expect([put.status, put.body]).toEqual([200, expect.objectContaining({ perMinute: 3, questionsPerDay: 100, on: true, source: "settings" })]);
+    expect((await call("/_admin/settings", { key: CI })).body.limits).toMatchObject({ perMinute: 3, questionsPerDay: 100 });
+    // The key may not chat, so it is never counted: nobody is at a limit or counted today.
+    expect((await call("/api/visits_pack/overview/chat", { method: "POST", key: CI, body: { messages: [] } })).body.code).toBe("api-key-admin-only");
+    expect((await call("/_admin/limits?all=1", { key: CI })).body).toMatchObject({ on: true, people: [] });
+    expect(await audit()).toContainEqual(expect.objectContaining({ user: "api:ci", action: "settings limits", outcome: "ok" }));
+    expect((await call("/_admin/settings/limits", { method: "PUT", key: CI, body: { perMinute: null, questionsPerDay: null } })).body).toMatchObject({ on: false, source: "default" });
+  });
+
   it("works on the admin routes only: not the chat, the data, or a person's own pages, and the key isn't even checked there", async () => {
     for (const [method, path] of [
       ["POST", "/api/visits_pack/overview/chat"],

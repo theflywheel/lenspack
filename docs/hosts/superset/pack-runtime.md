@@ -25,15 +25,16 @@ compared with another, gone back to, or exported as YAML to write back into `sup
 | `labels`, `hints` (text, or text per language) | `timeZone` |
 | `measures` (base measures from columns) | `geo`, `mapStyle` (maps) |
 | `examples` (the suggested questions and their checked queries) | `panel` (how the chat opens: a setting of its own, `settings/panel`) |
-| `notDimensions` | `datasets`, `scope`, `dashboards`, `dashboardScope` |
-| `hierarchies` | who is an admin or a user (`auth`); the budget caps and the models offered are settings of their own ([What can change without a redeploy](runtime.md)) |
+| `notDimensions` | `datasets`, `scope`, `dashboards`, `dashboardScope`: narrowed only, on `settings/boundary` |
+| `hierarchies` | who is an admin or a user (`auth`): narrowed only, on `settings/boundary`; the budget caps and the models offered are settings of their own ([What can change without a redeploy](runtime.md)) |
 | `exclude`: **more** exclusions only | `exclude`: the file's own exclusions can't be removed |
 
 Why the right-hand side stays in the file:
 
-- **The data boundary.** Which datasets Lenspack reads, the pack's row scope, which dashboards it works on, who may
-  use it and what it may spend decide what data anyone can reach and at what cost. They change only with a reviewed
-  change to the deploy config.
+- **The data boundary.** Which datasets Lenspack reads, the pack's row scope, which dashboards it works on and who may
+  use it decide what data anyone can reach. They are not part of the pack. An admin can narrow them while the server
+  runs, never widen them past the deploy config
+  ([The boundary narrows only](runtime.md#the-boundary-narrows-only)).
 - **Exclusions only grow.** A change here can exclude more columns or datasets, never fewer than the file does. You can
   take back an exclusion added here; you can't take away one the file makes.
 - **`entities`** gives each dataset its key. The file's `scope` names those keys, and row-count measures are named after

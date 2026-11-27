@@ -42,6 +42,9 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}`; `null` drops the admin's value |
 | `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes, prewarm}` for [saved answers](../../features/saved-answers.md); `null` resets a field |
 | `PUT /_superset/settings/queue` | any of `{maxConcurrent, maxWaiting, maxWaitSeconds}` for [busy hours](../../features/busy-hours.md) |
+| `PUT /_superset/settings/limits` | any of `{questionsPerDay, perMinute, perHour, adminsExempt, users}` for [question limits](../../features/limits.md) (`0`: no limit); `null` puts a field back to the deployment's value. `GET /_superset/settings` shows them as `limits` |
+| `GET /_superset/limits` | who is at a question limit now or was refused today (`?all=1`: everyone counted today) |
+| `DELETE /_superset/limits?user=<name>` | sets one person's counts for today back to zero; audited |
 | `PUT /_superset/settings/chat` | `{model, effort}`: the chat model used when the panel asks for none, and its reasoning effort; `{model: null}` goes back to the default |
 | `PUT /_superset/settings/telemetry` | any of `{"telemetry", "fields.<field>": true \| false \| null, "categories.<category>": true \| false, "retentionDays": n}`; turning on a privacy-sensitive field also needs `"confirm": true`, or the answer is `409` and nothing changes. See [Telemetry](../../features/telemetry.md#privacy-sensitive-fields) |
 | `GET /_superset/cache` and below | saved answers: stats, queue, last refresh, entries, pin, unpin, evict, suggestions, chart candidates, settled boards |
@@ -57,6 +60,7 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/context` | `{context: {…}}`: the telemetry labels as a whole, or `{context: null}` for the deploy config's |
 | `PUT /_superset/settings/panel` | `{panel: "float" \| "dock" \| null}`: how the chat opens |
 | `PUT /_superset/settings/admin-surface` | `{surface: "split" \| "superset" \| "separate" \| null}`: where the admin pages are |
+| `PUT /_superset/settings/boundary` | narrows the data boundary: `{datasets, scope, dashboards, hostPolicy, accessFallback, editPolicy, adminAccess, adminRoles, usageRoles, adminUsers, userAccess, userRoles, seedUsers}`, any of them, `null` to hand one back. Never wider than the deploy config. See [The boundary narrows only](runtime.md#the-boundary-narrows-only) |
 | `GET /_superset/settings/pack` | the pack's runtime parts as they run (description, instructions, labels, hints, measures, examples, notDimensions, hierarchies, exclusions), the version in force and where each part comes from. See [Changing the pack while it runs](pack-runtime.md) |
 | `POST /_superset/settings/pack/validate`, `PUT /_superset/settings/pack` | check, or save, a change: `{ yaml }` (all the runtime parts) or `{ fields }` (only those named; `null` hands one back to the config), with an optional `why` and the `version` read. A change that adds a problem is refused with nothing changed |
 | `GET /_superset/settings/pack/versions`, `…/versions/<n>`, `…/diff?from=&to=` | the pack's versions, newest first, one of them, or what differs between two |

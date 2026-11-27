@@ -1400,7 +1400,7 @@
       try {
         const spoken = clips.slice();
         // speech: the transcript ids (clip ids) of the words this question was spoken through; client: device and network classes.
-        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken, transcriptIds: spoken } : {}), ...selectionsNow(), ...(fresh ? { fresh: true } : {}), ...(extra && extra.quickReply && extra.quickReply.question ? { quickReply: extra.quickReply } : {}), turnKey, client: tel.client() }) });
+        const res = await fetch(`${base}/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: history, language: pickedLang(), uiLanguage: uiLang(), ...(typeof since === "number" ? { since } : {}), ...(spoken.length ? { speech: spoken, transcriptIds: spoken } : {}), ...selectionsNow(), ...(fresh ? { fresh: true } : {}), ...(extra && extra.quickReply && extra.quickReply.question ? { quickReply: extra.quickReply } : {}), turnKey, client: tel.client() }) });
         const turnId = (res.headers && res.headers.get && res.headers.get("x-lenspack-turn")) || null;
         tel.started(turnId);
         // Words heard by a server that gave no transcript id: their correction is reported from here instead.
@@ -1619,6 +1619,18 @@
             scroll();
             return;
           }
+        }
+        // Over a per-person limit or a spend cap (429): the server's own words say which and when it frees up, in the
+        // panel's language. The question leaves the history and stays in the box, to send again later.
+        if (e.status === 429) {
+          const lastQ = history[history.length - 1];
+          if (lastQ && lastQ.role === "user") history.pop();
+          persist();
+          userB.remove();
+          if (!input.value) input.value = text;
+          log.append(el("div", "lpc-note bad", e.message));
+          scroll();
+          return;
         }
         // The question leaves the history; Retry asks it again (and the overlay checks whether Lenspack is back).
         const last = history[history.length - 1];

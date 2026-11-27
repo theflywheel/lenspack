@@ -162,6 +162,8 @@
     pagesH: "Pages", panelL: "The chat opens", panelFloat: "floating", panelDock: "docked", surfaceL: "Admin pages", surface_split: "split: Superset's page and this panel", surface_superset: "all on Superset's page", surface_separate: "all on this panel",
     runtimeH: "What can change without a redeploy", runtimeLede: "Every option of this deployment: changed here at once, narrowed only, or set in the deploy config.", rKey: "Option", rHow: "Here", rNote: "Note",
     r_yes: "changes here", r_narrow: "narrows only", r_no: "deploy config",
+    boundaryH: "Data boundary", boundaryLede: "What the assistant may read, and for whom. You can narrow it here (fewer datasets, more filters, fewer dashboards, stricter access), never widen it past the deploy config: widening needs the deploy config and a restart.",
+    bField: "Setting", bDeploy: "Deploy config", bNow: "In force", bNarrowL: "Narrowing (JSON: only the settings you narrow; null hands one back)", bNotApplied: "Set aside, as the deploy config changed:", bReset: "Back to the deploy config",
     // Assistant (Superset)
     panelH: "Admin panel", panelLede: "Models, voice, costs, logs, switches, review and saved answers.", openPanel: "Open the admin panel", panelPassword: "Admins sign in with the deployment's admin password.",
     whoH: "Who can use it", onOff: "The assistant", isOn: "on", isOff: "off (the Assistant button switch)", hostPolicyL: "Whose data access applies", hostSuperset: "each person's own Superset access", hostOff: "the assistant's own account (off)", editPolicyL: "Who may edit dashboards", editSuperset: "whoever Superset lets edit", editSigned: "anyone signed in", scopeL: "Edit scope",
@@ -217,6 +219,8 @@
     pagesH: "Pages", panelL: "La discussion s'ouvre", panelFloat: "flottante", panelDock: "ancrée", surfaceL: "Pages d'administration", surface_split: "partagées : page Superset et ce panneau", surface_superset: "toutes sur la page Superset", surface_separate: "toutes dans ce panneau",
     runtimeH: "Ce qui change sans redéploiement", runtimeLede: "Chaque option de ce déploiement : changée ici aussitôt, seulement restreinte, ou fixée par la configuration.", rKey: "Option", rHow: "Ici", rNote: "Note",
     r_yes: "se change ici", r_narrow: "se restreint seulement", r_no: "configuration",
+    boundaryH: "Périmètre des données", boundaryLede: "Ce que l'assistant peut lire, et pour qui. Vous pouvez le restreindre ici (moins de jeux de données, plus de filtres, moins de tableaux de bord, un accès plus strict), jamais l'élargir au-delà de la configuration : l'élargir demande la configuration et un redémarrage.",
+    bField: "Réglage", bDeploy: "Configuration", bNow: "En vigueur", bNarrowL: "Restriction (JSON : seulement les réglages restreints ; null en rend un)", bNotApplied: "Mis de côté, la configuration ayant changé :", bReset: "Revenir à la configuration",
     panelH: "Panneau d'administration", panelLede: "Modèles, voix, coûts, journaux, interrupteurs, revue et réponses gardées.", openPanel: "Ouvrir le panneau", panelPassword: "Les administrateurs se connectent avec le mot de passe du déploiement.",
     whoH: "Qui peut l'utiliser", onOff: "L'assistant", isOn: "activé", isOff: "désactivé (interrupteur du bouton)", hostPolicyL: "Accès aux données appliqué", hostSuperset: "l'accès Superset de chacun", hostOff: "le compte de l'assistant (désactivé)", editPolicyL: "Qui modifie les tableaux", editSuperset: "qui Superset laisse modifier", editSigned: "toute personne connectée", scopeL: "Portée des modifications",
     connH: "Connexion", cServer: "Serveur", cAccount: "Compte de service", cIdentity: "Clé de signature", cReceived: "reçue", cMissing: "absente : les réglages ne s'enregistrent pas", cChat: "Discussion", cChatOk: "répond", cChatDown: "aucun modèle ne répond", cUrl: "Superset à", cRoles: "Rôles du compte de service", dbH: "Bases de données Superset", dbName: "Base", dbBackend: "Moteur", dbDatasets: "Jeux de données",
@@ -1398,6 +1402,17 @@
         h("div", { class: "form" }, fld(t("panelL"), panelSel), fld(t("surfaceL"), surfSel)),
         h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: act(async () => { await hostApi("settings/panel", { body: { panel: panelSel.value } }); return hostApi("settings/admin-surface", { body: { surface: surfSel.value } }); }, t("saved")) }, t("saveB")),
           s.panelSetting.source === "settings" || s.adminSurface.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: act(async () => { await hostApi("settings/panel", { body: { panel: null } }); return hostApi("settings/admin-surface", { body: { surface: null } }); }, t("saved")) }, t("resetDefaults")) : null)));
+    }
+    if (s.boundary && s.boundary.fields) {
+      const b = s.boundary;
+      const show = (v) => (v === undefined ? "—" : typeof v === "string" ? v : JSON.stringify(v));
+      const box = h("textarea", { rows: "6", spellcheck: "false", class: "mono", disabled: !b.writable }, JSON.stringify(b.narrowed || {}, null, 2));
+      out.push(card(t("boundaryH"), t("boundaryLede"),
+        table([t("bField"), t("bDeploy"), t("bNow")], b.fields.map((f) => h("tr", {}, h("td", { class: "small" }, h("code", {}, f)), h("td", { class: "small" }, show(b.deploy[f])), h("td", { class: "small" }, show(b.now[f]), b.narrowed && f in b.narrowed ? pill(t("source_settings"), "acc") : null))), ""),
+        b.notApplied && b.notApplied.length ? h("p", { class: "warn-line" }, `${t("bNotApplied")} ${b.notApplied.join("; ")}`) : null,
+        h("div", { class: "form", style: "margin-top:8px" }, fld(t("bNarrowL"), box, true)),
+        h("div", { class: "actions" }, h("button", { class: "btn", type: "button", disabled: !b.writable, onclick: act(() => { let body; try { body = JSON.parse(box.value || "{}"); } catch (e) { throw new Error(e.message); } return hostApi("settings/boundary", { body }); }, t("saved")) }, t("saveB")),
+          b.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/boundary", Object.fromEntries(Object.keys(b.narrowed || {}).map((k) => [k, null]))) }, t("bReset")) : null, sourcePill(b.source))));
     }
     if (Array.isArray(s.runtime) && s.runtime.length)
       out.push(card(t("runtimeH"), t("runtimeLede"), table([t("rKey"), t("rHow"), t("rNote")],

@@ -13,6 +13,7 @@ import { type BrandConfig, brandAuditDetail, brandSettings } from "./brand";
 import type { Principal } from "./auth";
 import type { ExplainConfig } from "./config";
 import { type FeatureValues, features as featureSwitches } from "./features";
+import { limitCounter, limitSettings } from "./limits";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, modelLabel, publicView } from "./llm";
 import type { Budget } from "./metering";
@@ -109,6 +110,11 @@ export type AdminConfig = {
   audit?: false | { retentionDays?: number };
   /** How many recent turns the chat model is sent (8); the settings page overrides it. */
   historyTurns?: number;
+  /**
+   * Per-person question limits (docs/features/limits.md): `perUser: { questionsPerDay, perMinute, perHour, adminsExempt,
+   * users }`. Off unless set; LENSPACK_LIMIT_* override it, and the settings page overrides both.
+   */
+  limits?: { perUser?: unknown };
 };
 
 /** Where the LLM key came from, for the settings page. */
@@ -221,6 +227,10 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
   // Saved answers beside settings.json, and the turn gate, both read their settings on every turn (docs/features/saved-answers.md).
   const reuse = reuseLayer({ store: join(stateDir, "reuse.json"), settings: cacheNow, log: (m) => console.error(`lenspack: ${m}`) });
   const gate = localTurnGate(queue.get);
+  // Per-person question limits: the settings, and today's counts in limits.json beside settings.json (limits.ts).
+  if (config.limits !== undefined && (typeof config.limits !== "object" || config.limits === null || Object.keys(config.limits).some((k) => k !== "perUser"))) throw new Error("limits takes perUser: { questionsPerDay, perMinute, perHour, adminsExempt, users }");
+  const limits = limitSettings(settings, config.limits?.perUser, env);
+  const limitCounts = limitCounter({ limits: limits.get, file: join(stateDir, "limits.json"), log: (m) => console.error(`lenspack: ${m}`) });
   // What reads each telemetry field: the usage board's widgets, once the review mount has made it.
   let telemetryUses: (() => Promise<Record<string, { id: string; label: string }[]>>) | null = null;
   const notices = () => fieldNotices({ switches: switches.values(), features: switches.featureValues(true), context: contextNow() });
@@ -234,6 +244,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     queue,
     reuse,
     gate,
+    limits,
+    limitCounts,
     speech,
     holdMs,
     language,
@@ -261,6 +273,7 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       audio,
       reuse,
       queue: gate,
+      limits: limitCounts,
       // The explain switch (settings page, env, config) and explain.sql (the config's, or an admin's).
       explain: () => ({ ...runtime.explain.get(), ...(features.on("explain") ? {} : { on: false }) }),
       historyTurns: runtime.history.turns,
@@ -275,6 +288,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       );
     },
     featuresLine: () => `features: ${off().length ? `off: ${off().join(", ")}` : "all on"}`,
+    /** For the start-up log: the per-person limits, and where today's counts are kept. */
+    limitsLine: () => `${limits.line()}${limitCounts.on() ? `; today's counts in ${limitCounts.file}` : ""}`,
     speechView: async (writable: boolean) => ({
       enabled: !!speechKey.apiKey,
       keyFrom: speechKey.keyFrom,
@@ -407,6 +422,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       telemetry: s.telemetryView(writable),
       cache: s.cache.view(writable),
       queue: s.queue.view(writable),
+      limits: s.limits.view(writable),
       ...(o.access ? { adminAccess: o.access.view(me) } : {}),
       ...(o.users ? { userAccess: o.users.view() } : {}),
       // The revision these values are at (also the ETag): send it back as If-Match on a change.
@@ -519,7 +535,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       }
       return send(405, { error: "not a method this route takes" });
     }
-    if (!["/settings", "/settings/revision", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/telemetry", "/settings/brand", ...RUNTIME_AREAS].includes(path))) return;
+    if (!["/settings", "/settings/revision", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist", "/limits"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/limits", "/settings/telemetry", "/settings/brand", ...RUNTIME_AREAS].includes(path))) return;
     const may = recordRights(who);
     // The settings and every switch: the admin role (adminRights in @lenspack/policy); the records: recordRights.
     const access = o.access?.state();
@@ -535,6 +551,20 @@ export function adminRoutes(o: AdminRouteOptions) {
     if (path === "/settings") return send(200, await settingsView(who));
     // Cheap enough to ask every few seconds: an open admin page reloads what changed elsewhere.
     if (path === "/settings/revision") return send(200, { revision: s.settings.revision(), lastChange: s.settings.lastChange(), ...o.revisionExtras?.() });
+    // Who is at a per-person limit now or was refused today (GET; ?all=1: everyone counted today), and one person's
+    // counts for today back to zero (DELETE ?user=<name>). Admins only, the clearing audited.
+    if (path === "/limits") {
+      if (req.method === "GET") return send(200, s.limitCounts.report({ all: url.searchParams.get("all") === "1" }));
+      if (req.method === "DELETE") {
+        const user = url.searchParams.get("user")?.trim();
+        if (!user) return send(400, { error: "name the person: ?user=<name>" });
+        const had = s.limitCounts.clear(user);
+        audit("limits clear", user);
+        o.log(`limits: ${who.user} cleared today's counts for ${user}`);
+        return send(200, { cleared: had, user });
+      }
+      return send(405, { error: "GET, or DELETE ?user=<name>" });
+    }
     // Who may use the assistant. GET: the modes, and under granted the people let in, newest first, ?q= to search, paged
     // (?cursor=, ?limit=). PUT { add } or { remove }: any admin, under granted; seeded people stay.
     if (path === "/settings/users" && !put) {
@@ -769,6 +799,15 @@ export function adminRoutes(o: AdminRouteOptions) {
       o.log(`queue: ${JSON.stringify(s.queue.get())}`);
       audit("settings queue", JSON.stringify(b));
       return send(200, s.queue.view(writable));
+    }
+    // Per-person limits: any of questionsPerDay, perMinute, perHour (0: no limit), adminsExempt, users; null puts one
+    // back to the deployment's value. Read on every question.
+    if (path === "/settings/limits") {
+      const r = s.limits.update(b);
+      if (!r.ok) return send(400, { error: r.error });
+      o.log(s.limits.line());
+      audit("settings limits", JSON.stringify(b));
+      return send(200, s.limits.view(writable));
     }
     // Any of model, holdMs; a field left out is kept, and null or "" puts it back to the default.
     if (path === "/settings/speech") {

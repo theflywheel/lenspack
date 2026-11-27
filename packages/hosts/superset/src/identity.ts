@@ -272,7 +272,7 @@ const decodePart = (s: string | undefined) => {
  * With a host policy (hostPolicy: superset), the user's own Superset roles, dataset access and row-level security
  * come with them, and policy narrows every query by those rather than by the service account's.
  */
-export function supersetAuth(key: () => string | null, policy: EditPolicy, editsOn: () => boolean = () => true, host?: HostPolicy, extra?: CallerFacts, rights: Rights = supersetRights()): AuthAdapter {
+export function supersetAuth(key: () => string | null, policy: EditPolicy | (() => EditPolicy), editsOn: () => boolean = () => true, host?: HostPolicy | { current: () => HostPolicy | undefined }, extra?: CallerFacts, rights: Rights = supersetRights()): AuthAdapter {
   return {
     kind: "superset",
     // Superset's role names, read by the deployment's role rules: the admin role and the usage right.
@@ -289,14 +289,17 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
       if (!id) return null;
       const check = boardCheck(id, req.url);
       if (check.refused) return null;
-      let caller = callerOf(check.onBoard ? id : { ...id, e: false }, policy, editsOn());
+      // The edit policy in force (an admin may narrow signed-in to superset while the server runs).
+      let caller = callerOf(check.onBoard ? id : { ...id, e: false }, typeof policy === "function" ? policy() : policy, editsOn());
       // The deployment's own facts for policy (boardRights narrows by them, never widens): read per request.
       const facts = extra ? await extra(id, { edit: !!caller.edit }) : {};
       if (facts.editScope) caller = { ...caller, editScope: facts.editScope };
       if (facts.onlyBoards) caller = { ...caller, onlyBoards: facts.onlyBoards };
       const ownHidden = facts.hiddenBoards ?? [];
-      if (!host) return ownHidden.length ? { ...caller, hiddenBoards: ownHidden } : caller;
-      const access = await host(id.u, id.r);
+      // The host policy in force (an admin may turn it on while the server runs, never off).
+      const hostNow = host && typeof host === "object" ? host.current() : host;
+      if (!hostNow) return ownHidden.length ? { ...caller, hiddenBoards: ownHidden } : caller;
+      const access = await hostNow(id.u, id.r);
       // The dashboard Superset just checked this user may view opens, whatever an older answer said.
       const signed = check.onBoard ? signedBoard(id) : null;
       const fromHost = access.hiddenBoards?.filter((b) => b !== signed);
