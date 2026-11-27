@@ -26,7 +26,8 @@ export class SupersetError extends Error {
 export type SupersetClient = {
   readonly url: string;
   get<T = any>(path: string): Promise<T>;
-  post<T = any>(path: string, body: unknown): Promise<T>;
+  /** timeoutMs: how long to wait for this answer (default the client's own, 30 s). */
+  post<T = any>(path: string, body: unknown, o?: { timeoutMs?: number }): Promise<T>;
   put<T = any>(path: string, body: unknown): Promise<T>;
   delete<T = any>(path: string): Promise<T>;
 };
@@ -62,13 +63,13 @@ export function supersetClient(opts: SupersetOptions): SupersetClient {
   };
   const cookieHeader = () => [...cookies].map(([k, v]) => `${k}=${v}`).join("; ");
 
-  async function raw(method: string, path: string, body?: unknown, auth = true): Promise<Response> {
+  async function raw(method: string, path: string, body?: unknown, auth = true, timeoutMs?: number): Promise<Response> {
     const headers: Record<string, string> = { accept: "application/json", referer: base };
     if (body !== undefined) headers["content-type"] = "application/json";
     if (auth && token) headers.authorization = `Bearer ${token}`;
     if (auth && csrf && method !== "GET") headers["x-csrftoken"] = csrf;
     if (cookies.size) headers.cookie = cookieHeader();
-    const res = await doFetch(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000) });
+    const res = await doFetch(`${base}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs ?? opts.timeoutMs ?? 30_000) });
     keepCookies(res);
     return res;
   }
@@ -83,15 +84,15 @@ export function supersetClient(opts: SupersetOptions): SupersetClient {
     csrf = ((await c.json()) as { result: string }).result;
   }
 
-  async function call<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {
+  async function call<T>(method: string, path: string, body?: unknown, retried = false, timeoutMs?: number): Promise<T> {
     if (!token) await (signingIn ??= signIn().finally(() => (signingIn = null)));
-    const res = await raw(method, path, body);
+    const res = await raw(method, path, body, true, timeoutMs);
     // An expired token or a lost CSRF session: sign in once more and retry.
     if ((res.status === 401 || (res.status === 400 && method !== "GET")) && !retried) {
       const text = await res.clone().text();
       if (res.status === 401 || /csrf/i.test(text)) {
         token = null;
-        return call(method, path, body, true);
+        return call(method, path, body, true, timeoutMs);
       }
     }
     const text = await res.text();
@@ -111,7 +112,7 @@ export function supersetClient(opts: SupersetOptions): SupersetClient {
   return {
     url: base,
     get: (path) => call("GET", path),
-    post: (path, body) => call("POST", path, body),
+    post: (path, body, o) => call("POST", path, body, false, o?.timeoutMs),
     put: (path, body) => call("PUT", path, body),
     delete: (path) => call("DELETE", path),
   };

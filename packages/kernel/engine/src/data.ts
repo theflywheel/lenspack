@@ -147,9 +147,9 @@ export const SERIES_ROWS = 20_000;
  * An unsplit breakdown's limit is its top N, not a cut, so it has none.
  */
 export function rowCap(bound: BoundPlan): number | undefined {
-  if (bound.query.kind === "series") return bound.base?.rows ?? SERIES_ROWS;
-  if (bound.query.kind === "breakdown" && bound.split) return SPLIT_ROWS;
-  return undefined;
+  const cap = bound.query.kind === "series" ? (bound.base?.rows ?? SERIES_ROWS) : bound.query.kind === "breakdown" && bound.split ? SPLIT_ROWS : undefined;
+  // A deployment's row limit (query safety) cuts it further.
+  return cap !== undefined && bound.rowLimit !== undefined ? Math.min(cap, bound.rowLimit) : cap;
 }
 
 /**

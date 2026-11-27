@@ -16,7 +16,8 @@ import { fileURLToPath } from "node:url";
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
-import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
+import { NOT_TURNED_ON_MESSAGE, type Principal, type QuerySafetyConfig, adminRights, mayUse, recordRights } from "@lenspack/policy";
+import { guardedConnector, querySlots } from "@lenspack/engine";
 import YAML from "yaml";
 
 import { identityKeeper, identityKey, serviceAccount } from "./bootstrap";
@@ -28,6 +29,7 @@ import { examplesByLanguage, examplesFor } from "./examples";
 import { accessFallbackFrom, supersetPolicy, viewableDashboards } from "./access";
 import { type CallerFacts, DEFAULT_SUPERSET_ADMINS, type Identity, callerOf, canEdit, editPolicyFrom, hostPolicyFrom, identityOf, pathRefusal, roleRulesFrom, rolesOf, signedClient, supersetAuth, supersetRights, userIdOf } from "./identity";
 import { personalDashboards } from "./personal";
+import { supersetQuerySafety } from "./query-safety";
 import { actorOf, personalRoutes } from "./personal-routes";
 import { plainPath, requestPaths } from "./paths";
 import { fileRecords } from "./records";
@@ -145,6 +147,13 @@ export type SupersetConfig = AdminConfig & {
    * LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT win; an admin can change it on a running server.
    */
   editScope?: "superset" | "own" | { scope?: "superset" | "own"; adminsExempt?: boolean };
+  /**
+   * Limits on the queries Lenspack sends to Superset (docs/operating/query-safety.md): rows, groups and series points per
+   * query, time ranges, queries per turn, at once and how long each may take; `heavy` for the limits of a dataset marked
+   * heavy, and `datasets` (by id, table name or entity key) for one dataset's own. LENSPACK_QUERY_* and
+   * LENSPACK_HEAVY_DATASETS win; an admin can tighten them on a running server (loosen only with confirm).
+   */
+  querySafety?: QuerySafetyConfig;
   /** Else LENSPACK_HOST, else 127.0.0.1. */
   host?: string;
   /** Else LENSPACK_PORT, else 8795. */
@@ -230,7 +239,23 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   log(admin.featuresLine());
   // A switched-off heatmap or map is refused by the connector's capabilities, read on every check.
   const on = (f: "heatmap" | "maps") => admin.features.on(f);
-  const connector = supersetConnector(client, binding, { log, capabilities: () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) }) });
+  // Query safety: every query any caller sends (a board, the chat, the review) is checked against the deployment's
+  // limits first, waits for one of maxConcurrent places, and is waited for at most timeoutSeconds.
+  const safety = (() => {
+    try {
+      return supersetQuerySafety({ config: config.querySafety, env, binding, pack, settings: admin.settings, log });
+    } catch (e) {
+      throw new Error(`${file}: ${(e as Error).message}`);
+    }
+  })();
+  for (const w of safety.warnings) log(`warning: ${w}`);
+  log(safety.line());
+  const slots = querySlots(() => safety.current().server.maxConcurrent);
+  const connector = guardedConnector(
+    supersetConnector(client, binding, { log, capabilities: () => ({ ...(on("heatmap") ? {} : { heatmap: false }), ...(on("maps") ? {} : { points: false }) }) }),
+    safety.guard,
+    { slots },
+  );
   const dashboards: Record<string, number> = Object.fromEntries(dashboardScope.dashboards.map((d) => [dashboardBoard(d), d]));
   log(`dashboards: ${boardScopeLine(dashboardScope.scope, dashboardLabel)}`);
   // People's own dashboards and saved layouts: kept in files in the state directory, behind RecordStore.
@@ -552,6 +577,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       },
       telemetryDataset: (entity) => binding.datasets.get(entity)?.table,
       definitions: review.turn,
+      // The most queries one chat turn may send (query safety).
+      queriesPerTurn: safety.perTurn,
     },
     port,
     host,
@@ -615,6 +642,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           panel,
           // Where the admin pages are (admin.surface), and what each page shows.
           adminPages: surface,
+          // Limits on the queries sent to Superset (PUT /_superset/settings/query-safety).
+          querySafety: safety.view(!!idKey()),
         }),
         access: adminAccess,
         users: userAccess,
@@ -623,8 +652,31 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       // Password admins always get every section there, whatever the surface: they have no Superset page to use.
       const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password", surface: "separate", sections: "all", superset: true, supersetPage: supersetPage(req) }) }) : null;
       const passwordSettings = passwordAdmin
-        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess })
+        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, details: () => ({ querySafety: safety.view(true) }) })
         : null;
+      /**
+       * PUT <prefix>/settings/query-safety: an admin changes the query limits on a running server. Tighter than the
+       * deployment's own settings is always allowed; looser answers 409 with what would loosen, unless the request
+       * says "confirm": true. Audited either way.
+       */
+      const querySafetyRoute = async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal, prefix: string, name: string): Promise<boolean> => {
+        if (url.pathname !== `${prefix}/settings/query-safety`) return false;
+        const audit = (outcome: "ok" | "denied" | "refused", detail: string) => auditLog?.audit({ at: new Date().toISOString(), user: who.user, action: "settings query-safety", outcome, detail: detail.slice(0, 500) });
+        if (req.method !== "PUT") return json(res, 405, { error: "PUT" }, NO_STORE), true;
+        if (!adminRights(who, adminAccess.state()).administer) return audit("denied", `not a ${name}`), json(res, 403, { error: `only ${name}s can do this` }, NO_STORE), true;
+        let body: unknown;
+        try {
+          const chunks: Buffer[] = [];
+          for await (const c of req) chunks.push(c as Buffer);
+          body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+        } catch {
+          return json(res, 400, { error: "send the change as JSON" }, NO_STORE), true;
+        }
+        if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "send the change as a JSON object" }, NO_STORE), true;
+        const r = safety.update(body as Record<string, unknown>);
+        audit(r.status === 200 ? "ok" : "refused", r.status === 200 ? JSON.stringify(body) : String(r.body.error));
+        return json(res, r.status, r.status === 200 ? { ...r.body, querySafety: safety.view(true) } : r.body, NO_STORE), true;
+      };
       return async (req, res, url, signedIn) => {
         cors(req, res);
         if (req.method === "OPTIONS") return send(res, 204, "", "application/json");
@@ -646,6 +698,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
             return json(res, 401, { error: "sign in to the admin pages first" }, NO_STORE);
           }
           if (await passwordPanel!(req, res, url, who)) return;
+          if (await querySafetyRoute(req, res, url, who, "/_admin", "assistant admin")) return;
           await passwordSettings!(req, res, url, who);
           if (res.headersSent) return;
           return json(res, 404, { error: "not found" }, NO_STORE);
@@ -670,6 +723,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         // The users rule: left out, nothing here either (admins always pass, so their pages stay theirs).
         if (!mayUse(who)) return json(res, 403, { error: NOT_TURNED_ON_MESSAGE, code: "not-turned-on" }, NO_STORE);
         if (await adminPanel(req, res, url, who)) return;
+        if (await querySafetyRoute(req, res, url, who, "/_superset", adminName)) return;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
         if (await mine(req, res, url)) return;
