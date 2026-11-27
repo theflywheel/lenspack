@@ -19,6 +19,8 @@ import { retrying } from "./queue";
 
 export type ProviderConfig = {
   name: string;
+  /** What admins read for it ("Claude Sonnet 5.5"); absent, one is made from the model id (modelLabel). */
+  label?: string;
   /** Which adapter builds it. Default "openai-compatible". */
   kind?: string;
   /** Required unless the adapter has a default endpoint. */
@@ -204,8 +206,21 @@ export async function probe(p: Provider, timeoutMs = 20_000): Promise<Provider> 
   }
 }
 
+/**
+ * A model's plain name for people: its configured label, else one read from the model id ("claude-sonnet-5-5" →
+ * "Claude Sonnet 5.5", "anthropic/claude-opus-4.5" → "Claude Opus 4.5", "openai/gpt-5-mini" → "GPT 5 mini").
+ */
+export function modelLabel(p: Pick<ProviderConfig, "name" | "model" | "label">): string {
+  if (p.label?.trim()) return p.label.trim();
+  const id = (p.model || p.name).split("/").pop()!.replace(/:.*$/, "");
+  const words = id.replace(/(\d)-(\d)/g, "$1.$2").split(/[-_\s]+/).filter(Boolean);
+  const known: Record<string, string> = { gpt: "GPT", claude: "Claude", gemini: "Gemini", llama: "Llama", mistral: "Mistral", qwen: "Qwen", deepseek: "DeepSeek", opus: "Opus", sonnet: "Sonnet", haiku: "Haiku", grok: "Grok" };
+  if (!words.length) return p.name;
+  return words.map((w, i) => known[w.toLowerCase()] ?? (i === 0 ? w[0]!.toUpperCase() + w.slice(1) : w)).join(" ");
+}
+
 export function publicView(p: Provider) {
-  return { name: p.name, kind: p.kind, model: p.model, available: p.available, latencyMs: p.latencyMs, error: p.error, priced: !!p.pricing, ...(p.efforts ? { efforts: p.efforts } : {}) };
+  return { name: p.name, label: modelLabel(p), kind: p.kind, model: p.model, available: p.available, latencyMs: p.latencyMs, error: p.error, priced: !!p.pricing, ...(p.efforts ? { efforts: p.efforts } : {}) };
 }
 
 /**

@@ -6,7 +6,8 @@ import { type Principal, adminRights } from "@lenspack/policy";
 
 import { type BrandSettings, DEFAULT_BRAND_NAME, brandAuditDetail } from "../brand";
 import type { Features } from "../features";
-import { BodyTooLarge, NO_STORE, TYPES, escapeHtml, json, readJson } from "../http";
+import { BodyTooLarge, NO_STORE, TYPES, escapeHtml, json, readJson, scriptJson } from "../http";
+import { PageError, pageFrom, pagedAsk } from "../paging";
 import { publicView } from "../llm";
 import type { Provider } from "../llm";
 import { SettingsSaveError } from "../settings";
@@ -45,6 +46,17 @@ export type PanelOptions = {
   log?: (line: string) => void;
   /** The usage pack and its board (review/usage.ts): the Overview tab, and the chat about usage. Absent, the tab shows plain counts. */
   usage?: UsageBoard | null | Promise<UsageBoard | null>;
+  /** Where the page itself is: <prefix>/admin by default. A host whose admin pages have a prefix of their own (/_admin) puts it there. */
+  base?: string;
+  /**
+   * What the page's script needs to know from the host, for this request: the surface, the sections it shows, the
+   * sign-out address. Written into the page (window.__lpAdmin) and answered by GET api/packs as `shell`.
+   */
+  shell?: (req: IncomingMessage) => Record<string, unknown>;
+  /** Someone used admin rights here: the host's admins roster (admin-access.ts seen()). */
+  seen?: (who: Principal) => void;
+  /** Where a page request goes instead of the page (the superset surface: Superset's own settings page; the password sign-in's pages). Null: the page. */
+  pageRedirect?: (req: IncomingMessage) => string | null;
 };
 
 // board.js and board.css are the board renderer (@lenspack/react) bundled for a page with no build: its build writes them here.
@@ -52,11 +64,31 @@ const ASSETS: Record<string, string> = { "panel.js": "panel.js", "checklist.js":
 
 export function panelRoutes(o: PanelOptions) {
   const dir = webDir();
-  const base = `${o.prefix}/admin`;
+  const base = o.base ?? `${o.prefix}/admin`;
+  // Sharing the host's prefix (base === prefix), the panel answers only its own paths and leaves the rest to the host's routes.
+  const own = (rest: string) => rest === "" || rest === "index.html" || !!ASSETS[rest] || rest === "api" || rest.startsWith("api/");
   const s = o.system;
   return async (req: IncomingMessage, res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {
     if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) return false;
+    if (base === o.prefix && url.pathname !== base && !own(url.pathname.slice(base.length + 1))) return false;
     const send = (status: number, body: unknown) => (json(res, status, body, NO_STORE), true);
+    // The admin pages are elsewhere for this deployment (its own sign-in): a page request goes there, whoever asks.
+    const page = url.pathname === base || url.pathname === `${base}/` || url.pathname === `${base}/index.html`;
+    const elsewhere = page ? o.pageRedirect?.(req) : null;
+    if (elsewhere) {
+      res.writeHead(302, { location: elsewhere, ...NO_STORE });
+      res.end();
+      return true;
+    }
+    // The page's scripts and styles are plain files with no data in them: served to anyone who reaches this route, so a
+    // host's own page (Superset's settings page) can draw the admin pages, or a link to them, from the same files.
+    const asset = url.pathname.slice(base.length + 1);
+    if (ASSETS[asset]) {
+      if (!existsSync(`${dir}${ASSETS[asset]}`)) return send(404, { error: `${asset} is not built in this install` });
+      res.writeHead(200, { "content-type": TYPES[asset.slice(asset.lastIndexOf("."))]!, ...NO_STORE });
+      res.end(readFileSync(`${dir}${ASSETS[asset]}`, "utf8"));
+      return true;
+    }
     const rights = adminRights(who);
     if (!rights.administer) {
       s.audit(who.user, `${req.method} ${url.pathname}`, `not a ${o.adminName}`, undefined, "denied");
@@ -66,9 +98,10 @@ export function panelRoutes(o: PanelOptions) {
       res.end(`<!doctype html><meta charset="utf-8"><title>${name} admin</title><p style="font:15px system-ui;margin:40px">Only ${o.adminName}s can open the ${name} admin panel.</p>`);
       return true;
     }
+    o.seen?.(who);
     // The page's own address ends in a slash, so its relative calls (api/…, panel.js, ../cache) land under the prefix.
     if (url.pathname === base) {
-      res.writeHead(302, { location: "admin/", ...NO_STORE });
+      res.writeHead(302, { location: `${base.slice(base.lastIndexOf("/") + 1)}/`, ...NO_STORE });
       res.end();
       return true;
     }
@@ -79,14 +112,10 @@ export function panelRoutes(o: PanelOptions) {
       let html = readFileSync(`${dir}index.html`, "utf8").replace("__TITLE__", o.title ? o.title.replace(/[<>&"]/g, "") : name).replaceAll("__NAME__", name);
       // The deployment's icon in the header's mark, as an image's address (checked in brand.ts, escaped here).
       if (brand?.icon) html = html.replace('<span class="mark" aria-hidden="true"></span>', `<span class="mark icon" aria-hidden="true"><img src="${escapeHtml(brand.icon)}" alt=""></span>`);
+      // The page's own address ends in a slash, so its calls go to api/… and the host's routes one level up (../).
+      html = html.replace("/*__ADMIN__*/", `window.__lpAdmin=${scriptJson({ shell: "panel", host: base === o.prefix ? "" : "../", api: { panel: "api/", host: base === o.prefix ? "" : "../" }, ...o.shell?.(req) })};`);
       res.writeHead(200, { "content-type": TYPES[".html"]!, ...NO_STORE });
       res.end(html);
-      return true;
-    }
-    if (ASSETS[rest]) {
-      if (!existsSync(`${dir}${ASSETS[rest]}`)) return send(404, { error: `${rest} is not built in this install` });
-      res.writeHead(200, { "content-type": TYPES[rest.slice(rest.lastIndexOf("."))]!, ...NO_STORE });
-      res.end(readFileSync(`${dir}${ASSETS[rest]}`, "utf8"));
       return true;
     }
     if (!rest.startsWith("api/")) return send(404, { error: "not found" });
@@ -116,13 +145,20 @@ export function panelRoutes(o: PanelOptions) {
       switch (a) {
         case "packs": {
           const usage = await o.usage;
-          return send(200, { me: { user: who.user }, usage: usage ? { board: "overview", telemetryBoard: TELEMETRY_BOARD, source: usage.source() } : null, packs: await Promise.all(s.packs().map(async (p) => ({ ...p, definitionsVersion: await s.definitionsVersion(p.name) }))) });
+          return send(200, { me: { user: who.user, usernames: rights.users }, shell: o.shell?.(req) ?? null, usage: usage ? { board: "overview", telemetryBoard: TELEMETRY_BOARD, source: usage.source() } : null, packs: await Promise.all(s.packs().map(async (p) => ({ ...p, definitionsVersion: await s.definitionsVersion(p.name) }))) });
         }
         case "overview":
           return send(200, await s.overview(Math.max(1, Math.min(Number(url.searchParams.get("days")) || 14, 90))));
         case "definitions": {
           const ov = s.overlay(packName);
           const h = s.host(packName);
+          if (id === "history" && !post) {
+            // The history alone, newest first, a page at a time.
+            const doc = await ov.doc();
+            const all = [...doc.history].reverse().map(({ before: _b, after, ...c }) => ({ ...c, entries: after.length }));
+            const { items, page } = pageFrom(all, url, { limit: 20 });
+            return send(200, { pack: packName, version: doc.version, history: items, page });
+          }
           if (!id && !post) {
             const doc = await ov.doc();
             return send(200, { pack: packName, entries: doc.entries, history: [...doc.history].reverse().map(({ before: _b, after, ...c }) => ({ ...c, entries: after.length })), size: overlaySize(doc.entries), budget: ov.budget, version: doc.version, definitionsVersion: await s.definitionsVersion(packName), packInstructions: h.pack.instructions ?? "", keys: [...h.pack.measures.map((m) => ({ key: m.key, kind: "measure", label: m.label ?? m.key })), ...h.pack.dimensions.map((d) => ({ key: d.key, kind: "dimension", label: d.label ?? d.key }))] });
@@ -158,7 +194,12 @@ export function panelRoutes(o: PanelOptions) {
         case "questions": {
           if (!id && !post) {
             const status = url.searchParams.get("status");
-            return send(200, { pack: packName, questions: await s.questions(packName).list(status === "open" || status === "answered" || status === "dismissed" ? status : undefined) });
+            const list = await s.questions(packName).list(status === "open" || status === "answered" || status === "dismissed" ? status : undefined);
+            if (!pagedAsk(url)) return send(200, { pack: packName, questions: list });
+            // "decided": answered and dismissed together, newest decision first.
+            const shown = status === "decided" ? (await s.questions(packName).list()).filter((q) => q.status !== "open").sort((a, b) => String(b.answeredAt ?? "").localeCompare(String(a.answeredAt ?? ""))) : list;
+            const { items, page } = pageFrom(shown, url, { limit: 10 });
+            return send(200, { pack: packName, questions: items, page });
           }
           if (!post) return id ? send(200, await s.questions(packName).get(id)) : send(404, { error: "not found" });
           if (!id) return send(200, await s.addQuestion(packName, body, by));
@@ -172,14 +213,27 @@ export function panelRoutes(o: PanelOptions) {
         case "proposals": {
           if (!id && !post) {
             const status = url.searchParams.get("status");
-            return send(200, { proposals: await s.proposals(status === "pending" || status === "accepted" || status === "rejected" ? status : undefined) });
+            if (status === "decided") {
+              const decided = (await s.proposals()).filter((p) => p.status !== "pending").sort((a, b) => String(b.decidedAt ?? "").localeCompare(String(a.decidedAt ?? "")));
+              const { items, page } = pageFrom(decided, url, { limit: 10 });
+              return send(200, { proposals: items, page });
+            }
+            const list = await s.proposals(status === "pending" || status === "accepted" || status === "rejected" ? status : undefined);
+            if (!pagedAsk(url)) return send(200, { proposals: list });
+            const { items, page } = pageFrom(list, url, { limit: 10 });
+            return send(200, { proposals: items, page });
           }
           if (action === "accept") return send(200, await s.acceptProposal(id!, by, (body.edit && typeof body.edit === "object" ? body.edit : {}) as never, why));
           if (action === "reject") return send(200, await s.rejectProposal(id!, by, why));
           break;
         }
         case "runs":
-          if (!id) return send(200, { runs: (await s.runs()).map(({ packs, ...r }) => ({ ...r, packs: packs.map((p) => ({ pack: p.pack, turns: p.turns, status: p.status, reason: p.reason, usd: p.usd, findings: p.report?.findings.length ?? 0, proposals: p.proposals?.length ?? 0, questions: p.questions?.length ?? 0 })) })) });
+          if (!id) {
+            const runs = (await s.runs()).map(({ packs, ...r }) => ({ ...r, packs: packs.map((p) => ({ pack: p.pack, turns: p.turns, status: p.status, reason: p.reason, usd: p.usd, findings: p.report?.findings.length ?? 0, proposals: p.proposals?.length ?? 0, questions: p.questions?.length ?? 0 })) }));
+            if (!pagedAsk(url)) return send(200, { runs });
+            const { items, page } = pageFrom(runs, url, { limit: 10 });
+            return send(200, { runs: items, page });
+          }
           {
             const run = await s.run(id);
             if (!run) return send(404, { error: `no run ${id}` });
@@ -226,7 +280,7 @@ export function panelRoutes(o: PanelOptions) {
       }
       return send(404, { error: "not found" });
     } catch (e) {
-      if (e instanceof OverlayError || e instanceof QuestionError) return send(400, { error: e.message });
+      if (e instanceof OverlayError || e instanceof QuestionError || e instanceof PageError) return send(400, { error: e.message });
       if (e instanceof ReviewBusy) return send(409, { error: e.message });
       if (e instanceof SettingsSaveError) return send(503, { error: e.message });
       throw e;

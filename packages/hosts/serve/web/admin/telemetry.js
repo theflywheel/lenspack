@@ -110,16 +110,20 @@
    * The tab, given what the panel lends it: h (an element), t (the panel's words), nf, when, store, toast, card and
    * pill; render() to draw the current tab again; lang(), tab() and usageInfo() as they stand; goTab(name);
    * usageBoardView(board, options), the board and chat Overview uses; assistant, the assistant's name; and field, a
-   * field to open at first (from #telemetry/field/<id>).
+   * field to open at first (from #telemetry/field/<id>); host, where the host's own routes are from this page ("../"
+   * when not given).
    */
   function create(p) {
     const { h, t, nf, when, store, toast, card, pill, assistant } = p;
     const render = () => p.render();
     let pendingField = p.field || null;
+    const HOST = typeof p.host === "string" ? p.host : "../";
+    // Dialogs and tooltips go inside the admin pages' frame, so its styles and colours apply (in Superset's page too).
+    const frame = () => document.getElementById("lp-admin") || document.body;
 
     /** The telemetry checklist (GET <prefix>/telemetry/checklist), if the server has it: null when it does not (404). */
     async function telemetryApi() {
-      const res = await fetch("../telemetry/checklist", { credentials: "same-origin" });
+      const res = await fetch(`${HOST}telemetry/checklist`, { credentials: "same-origin" });
       if (res.status === 404) return null;
       let data = null;
       try { data = await res.json(); } catch (e) { return null; }
@@ -131,7 +135,7 @@
      * A privacy-sensitive field the server wants confirmed (409 with confirm) opens the confirm step, then goes again.
      */
     async function setTelemetrySwitch(body) {
-      const put = (b) => fetch("../settings/telemetry", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
+      const put = (b) => fetch(`${HOST}settings/telemetry`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b), credentials: "same-origin" });
       let res = await put(body);
       if (res.status === 404) throw new Error(t("tlSwitchAbsent"));
       let data = null;
@@ -181,7 +185,7 @@
             h("button", { class: "btn quiet", type: "button", onclick: () => { d.close(); resolve(false); } }, t("cancel")),
             yes));
         d.addEventListener("cancel", () => resolve(false));
-        document.body.append(d);
+        frame().append(d);
         d.showModal();
         yes.focus();
         d.addEventListener("close", () => d.remove());
@@ -195,7 +199,7 @@
       if (!text) return;
       if (!tlPop) tlPop = h("div", { class: "tl-pop", role: "tooltip", id: "tl-pop" });
       tlPop.textContent = text;
-      document.body.append(tlPop);
+      frame().append(tlPop);
       const r = el.getBoundingClientRect();
       const w = Math.min(340, window.innerWidth - 24);
       tlPop.style.maxWidth = `${w}px`;

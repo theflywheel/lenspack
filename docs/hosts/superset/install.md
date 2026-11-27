@@ -37,7 +37,8 @@ The plugin adds:
 - the **Ask Lenspack** button on every page, through `tail_js_custom_extra.html`, a template
   Superset documents as one a deployment may replace;
 - **Settings → Manage → AI assistant** for admins: chat and speech models, languages, switches, spend, cost per
-  answer and the audit log (see [Settings and switches](settings.md));
+  answer and the audit log (see [Settings and switches](settings.md)). The menu entry shows to Superset's Admins and
+  to the people the assistant calls admins (see [The menu entry](../../features/admin-panel.md#the-menu-entry));
 - `GET /api/v1/lenspack/identity-key` and `POST /api/v1/lenspack/bootstrap`, which the Lenspack server calls on
   start to fetch the signing key and to make its own account;
 - `GET /api/v1/lenspack/access?user=&datasets=&dashboards=`, which the server calls for each user's Superset access:
@@ -57,6 +58,7 @@ Superset's environment, for the plugin:
 | `LENSPACK_SERVICE_USER` | `lenspack` | the Lenspack server's Superset account (`superset.username` in its config) |
 | `LENSPACK_PATH` | `/lenspack` | where browsers reach the assistant, below Superset's own path, such as `/assistant` (see [Naming the assistant](../../features/naming.md#superset)) |
 | `LENSPACK_BRAND_NAME` | none | the settings page's menu entry and heading, when `superset_config.py` names none; without either, the server's own name |
+| `LENSPACK_MENU_REFRESH_SECONDS` | `300` | how often the menu entry asks the server for its name and who its admins are (see [The menu entry](../../features/admin-panel.md#the-menu-entry)) |
 | `LENSPACK_TEMPLATES` | none | a folder whose `tail_js_custom_extra.html` or `lenspack/settings.html` replaces the built-in one |
 | `LENSPACK_CLICKHOUSE_LABEL_SUFFIX` | `on` | `off` keeps Superset 6.1's own ClickHouse column names (see [Versions](versions.md#clickhouse-column-names-on-superset-61)) |
 
@@ -148,6 +150,10 @@ It is the same server runtime as `lenspack serve` (models, metering, budget, aud
 SIGTERM), with Superset as its host. On Kubernetes, point the readiness probe at `/readyz` and the liveness probe at
 `/healthz`: the server is not ready until Superset gives it the identity key, which it keeps asking for (see
 [Health and shutdown](../../operating/deploying.md#health-and-shutdown)).
+
+**Who is an admin, and who may use it.** By default Superset's admins run the assistant and everyone signed in may use
+it. On a shared Superset, name the admins or give them a password, and choose users one by one: see
+[Who can use and administer the assistant](../../access/admin-access.md).
 
 **Its own Superset account.** On first start the server signs in once as a Superset admin
 (`SUPERSET_ADMIN_USERNAME`, default `admin`, and `SUPERSET_ADMIN_PASSWORD`) and calls the plugin's bootstrap route,

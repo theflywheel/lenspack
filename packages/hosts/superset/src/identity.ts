@@ -107,7 +107,9 @@ export function editPolicyFrom(value: string | undefined): EditPolicy {
 export function roleRulesFrom(auth: unknown, env: Record<string, string | undefined> = {}): SupersetRoleRules {
   if (auth !== undefined && auth !== null && (typeof auth !== "object" || Array.isArray(auth))) throw new Error("auth must be a map, like auth: { admins: [Admin] }");
   const given = (auth ?? {}) as Record<string, unknown>;
-  for (const k of Object.keys(given)) if (k !== "admins" && k !== "usage" && k !== "users") throw new Error(`auth.${k} is not a setting in Superset mode, where Superset signs people in: auth takes admins, usage and users (lists of Superset role names)`);
+  // adminAccess, adminUsers, userAccess and seedUsers are read by admin-access.ts (@lenspack/serve).
+  const known = ["admins", "usage", "users", "adminAccess", "adminUsers", "userAccess", "seedUsers"];
+  for (const k of Object.keys(given)) if (!known.includes(k)) throw new Error(`auth.${k} is not a setting in Superset mode, where Superset signs people in: auth takes admins, usage and users (lists of Superset role names), adminAccess and adminUsers, userAccess and seedUsers`);
   const list = (key: "admins" | "usage" | "users", envName: string): readonly string[] | undefined => {
     const fromEnv = env[envName];
     if (fromEnv !== undefined && fromEnv.trim() !== "") return fromEnv.split(",").map((r) => r.trim()).filter(Boolean);
@@ -172,10 +174,41 @@ export function supersetRights(o: SupersetRoleRules = {}): Rights {
  */
 export function callerOf(id: Identity, policy: EditPolicy, editsOn = true): Caller {
   const roles = rolesOf(id);
-  if (!editsOn) return { user: id.u, roles, readOnly: EDITS_OFF_MESSAGE };
-  if (canEdit(id, policy)) return { user: id.u, roles, edit: true, maintain: true };
+  // Superset's user id, so rules may name someone as id:<n> (admin and user access), which survives a rename.
+  const who = { user: id.u, roles, ...(userIdOf(id) !== undefined ? { userId: userIdOf(id) } : {}) };
+  if (!editsOn) return { ...who, readOnly: EDITS_OFF_MESSAGE };
+  if (canEdit(id, policy)) return { ...who, edit: true, maintain: true };
   // Asks are fine; every edit tool answers with the refusal, which the model passes on.
-  return { user: id.u, roles, readOnly: READ_ONLY_MESSAGE };
+  return { ...who, readOnly: READ_ONLY_MESSAGE };
+}
+
+/** The signed Superset user id, when the plugin signs one (i); older plugins do not, and then only names match. */
+export const userIdOf = (id: Identity): number | undefined => (typeof id.i === "number" && Number.isSafeInteger(id.i) && id.i > 0 ? id.i : undefined);
+
+export const CLIENT_HEADER = "x-lenspack-client";
+
+/**
+ * The caller's address as Superset's route saw it, signed with the identity key so nobody else can claim one: the
+ * plugin sends it on requests to the admin pages' own sign-in (which attach no identity), so failed tries count per
+ * person rather than against Superset's own address. base64url(JSON {c, t}) "." hex HMAC-SHA256 of "client:" + body.
+ */
+export function signedClient(req: IncomingMessage, key: string | null, now = Date.now() / 1000): string | undefined {
+  const raw = req.headers[CLIENT_HEADER];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value || !key) return undefined;
+  const dot = value.lastIndexOf(".");
+  if (dot <= 0) return undefined;
+  const body = value.slice(0, dot);
+  const sig = Buffer.from(value.slice(dot + 1), "hex");
+  const want = createHmac("sha256", key).update(`client:${body}`).digest();
+  if (sig.length !== want.length || !timingSafeEqual(sig, want)) return undefined;
+  try {
+    const c = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { c?: unknown; t?: unknown };
+    if (typeof c.c !== "string" || !c.c || c.c.length > 64 || typeof c.t !== "number" || Math.abs(now - c.t) > 300) return undefined;
+    return c.c;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

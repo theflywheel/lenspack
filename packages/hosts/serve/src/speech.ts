@@ -170,6 +170,28 @@ export function speechRecord(t: Pick<Transcript, "model" | "usd" | "ms"> & { ok?
   };
 }
 
+/**
+ * Speech-to-text models measured over OpenRouter with a language hint: word error rate on two sets of French field
+ * recordings and on FLEURS French and Hindi, and median latency (evals/speech). The admin pages show it beside the
+ * model picker. Replace it with your own measurements in a fork, or leave it: it is help text only.
+ */
+export const SPEECH_MEASURED: { columns: string[]; rows: Record<string, [string, string, string, string, string]> } = {
+  columns: ["Field fr A", "Field fr B", "FLEURS fr", "FLEURS hi", "Latency"],
+  rows: {
+    "mistralai/voxtral-mini-transcribe-3-0": ["6.4%", "9.1%", "3.5%", "8.2%", "0.67 s"],
+    "assemblyai/universal-3-6-pro": ["6.6%", "8.5%", "3.9%", "9.4%", "0.37 s"],
+    "deepgram/nova-3": ["5.1%", "8.6%", "7.5%", "14.0%", "0.65 s"],
+    "elevenlabs/scribe-v2": ["7.5%", "8.6%", "3.0%", "11.7%", "0.75 s"],
+    "google/chirp-3": ["6.4%", "9.6%", "3.9%", "7.8%", "1.91 s"],
+    "google/gemini-3.5-transcribe": ["7.7%", "8.6%", "3.4%", "7.4%", "2.31 s"],
+    "nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b": ["7.5%", "11.1%", "12.1%", "13.3%", "1.33 s"],
+    "openai/gpt-4o-mini-transcribe": ["10.3%", "14.6%", "4.2%", "13.6%", "0.85 s"],
+    "openai/gpt-transcribe": ["5.5%", "8.2%", "3.7%", "10.4%", "0.84 s"],
+    "openai/whisper-large-v3-turbo": ["9.2%", "13.9%", "7.9%", "61.9%", "1.41 s"],
+    "qwen/qwen3-asr-1.7b": ["4.0%", "8.6%", "4.2%", "13.7%", "0.80 s"],
+  },
+};
+
 export type SpeechModel = { id: string; name: string; usdPerMinute: number | null };
 
 /** Used when the provider's list cannot be fetched: the models measured for fr/en/hi. */
