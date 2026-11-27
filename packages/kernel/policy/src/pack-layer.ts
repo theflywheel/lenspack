@@ -8,9 +8,10 @@ import { adminRights } from "./index";
 //
 //   may change at runtime   the pack's words and its reading of the data: description, instructions, labels, hints,
 //                           measures, example questions, notDimensions, hierarchies, and more exclusions.
-//   config only             the pack's identity and keys (pack, entities), where it is (timeZone), maps (geo, mapStyle),
-//                           the chat's starting form (panel), and the data boundary: datasets, scope, dashboards,
-//                           dashboardScope, access, budget caps, the models offered. None of these is in the overlay's
+//   not in the layer        the pack's identity and keys (pack, entities), where it is (timeZone), maps (geo, mapStyle),
+//                           the chat's starting form (panel: a setting of its own, settings/panel), and the data
+//                           boundary: datasets, scope, dashboards, dashboardScope, access. The budget caps and the models
+//                           offered are settings of their own too (runtime-config.ts). None of these is in the overlay's
 //                           runtime part; the ones outside the overlay are never read from the layer at all.
 //
 // Exclusions are the one part of the data boundary inside the overlay. The layer may add exclusions, never remove one:
@@ -27,11 +28,17 @@ export const PACK_CONFIG_FIELDS: Readonly<Record<string, string>> = {
   timeZone: "where the deployment is: it decides what today and last month mean for everyone, and the schedules are set from it at start",
   geo: "which columns are a dataset's coordinates, which can be people's locations",
   mapStyle: "the map tiles browsers fetch, from a server outside the deployment",
-  panel: "how the chat opens, a deployment setting rather than part of the pack",
+  panel: "how the chat opens: a deployment setting, changed on the settings page (settings/panel) rather than in the pack",
 };
 
 /** The deployment's data boundary outside the overlay: never part of the layer. */
-export const PACK_DATA_BOUNDARY = ["datasets", "scope", "dashboards", "dashboardScope", "auth", "budget", "models"] as const;
+export const PACK_DATA_BOUNDARY = ["datasets", "scope", "dashboards", "dashboardScope", "auth"] as const;
+
+/** Deployment settings that are not part of the pack, and where they change instead. */
+export const PACK_ELSEWHERE: Readonly<Record<string, string>> = {
+  budget: "the budget caps change on the settings page (settings/budget), not in the pack",
+  models: "the models offered change on the settings page (settings/models), not in the pack",
+};
 
 /** An admin's changes over the deploy config's overlay: a value per runtime field it changes, `exclude` the added exclusions only. */
 export type PackLayer = Partial<Record<PackRuntimeField, unknown>>;
@@ -93,6 +100,7 @@ export function packChangeRefusals(change: Record<string, unknown>, base: Overla
     if (RUNTIME.has(k)) continue;
     if (PACK_CONFIG_FIELDS[k]) out.push(`${k} is set in the deploy config only (${PACK_CONFIG_FIELDS[k]})`);
     else if ((PACK_DATA_BOUNDARY as readonly string[]).includes(k)) out.push(`${k} is part of the deployment's data boundary and is set in the deploy config only`);
+    else if (PACK_ELSEWHERE[k]) out.push(`${k}: ${PACK_ELSEWHERE[k]}`);
     else out.push(`${k} is not a part of the pack that can be changed here (${PACK_RUNTIME_FIELDS.join(", ")})`);
   }
   const ex = change.exclude;

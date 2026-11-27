@@ -22,6 +22,7 @@ export * from "./admin-access";
 export * from "./admin-signin";
 export * from "./paging";
 export * from "./runtime";
+export * from "./runtime-config";
 export * from "./telemetry";
 export * from "./telemetry-switches";
 export * from "./audio";
