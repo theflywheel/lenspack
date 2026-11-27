@@ -39,8 +39,8 @@ describe("what a change at runtime may touch", () => {
     expect(r).toEqual([
       expect.stringMatching(/^entities is set in the deploy config only \(each dataset's key/),
       expect.stringMatching(/^timeZone is set in the deploy config only/),
-      "datasets is part of the deployment's data boundary and is set in the deploy config only",
-      "scope is part of the deployment's data boundary and is set in the deploy config only",
+      "datasets is part of the deployment's data boundary, never part of the pack: the deploy config sets it, and an admin may only narrow it (settings/boundary)",
+      "scope is part of the deployment's data boundary, never part of the pack: the deploy config sets it, and an admin may only narrow it (settings/boundary)",
       expect.stringMatching(/^colour is not a part of the pack that can be changed here/),
     ]);
   });

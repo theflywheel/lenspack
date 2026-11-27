@@ -16,6 +16,15 @@ brought it.
   counted today, with those at a limit or refused first and a Reset button for each. The limits are also listed among
   the options that change without a redeploy. See [Question limits](docs/features/limits.md#who-reached-a-limit).
 
+- **The data boundary can be narrowed while the server runs, never widened.** With an admin API key or on the Settings
+  tab (`PUT /_superset/settings/boundary`), an admin can keep fewer datasets, add filters every answer carries, keep
+  fewer dashboards, turn each person's own Superset access on, make the edit policy stricter, and keep fewer admin and
+  user access modes, roles, owners and seeded people. Anything that would widen the boundary past `superset.yaml` is
+  refused with the reason, so a leaked key can make the assistant reach less, never more; widening needs the deploy
+  config. A change to the datasets or the filters has the pack built again and checked first, and is refused with
+  nothing changed if the new pack has a problem. Changes are audited, kept across restarts, and set aside (and said)
+  if the deploy config later stops allowing them. See
+  [The boundary narrows only](docs/hosts/superset/runtime.md#the-boundary-narrows-only).
 - **Question limits per person.** A deployment can now limit how many questions each person asks: a number per day
   (UTC, kept in `limits.json` in the state folder so a restart does not reset it), and a number in any minute and in
   any hour. Over a limit, the chat answers `429` with `Retry-After` before any model call or data read, and says which

@@ -1,4 +1,4 @@
-import { type AdminAccess, type AdminAccessMode, type AdminRights, type Rights, type UserAccess, type UserAccessMode, adminAccessModesFrom, adminMenuHint, adminRights, adminUsersFrom, rightsUnder, userAccessModesFrom, usersUnder } from "@lenspack/policy";
+import { type AdminAccess, type AdminAccessMode, type AdminRights, type Boundary, type Rights, type UserAccess, type UserAccessMode, adminAccessModesFrom, adminMenuHint, adminRights, adminUsersFrom, narrowAdminAccess, narrowUserAccess, rightsUnder, userAccessModesFrom, usersUnder } from "@lenspack/policy";
 
 import { adminApiKeys, adminApiKeysFrom } from "./admin-api-key";
 import { type AdminPassword, adminPasswordsFrom } from "./admin-signin";
@@ -107,7 +107,18 @@ export type AdminAccessSetup = ReturnType<typeof adminAccessSetup>;
  * bad password entry (the server does not start); a mode that leaves nobody an admin (named users with no owner, the
  * password with none set) starts, says so in a warning, and lets nobody in that way.
  */
-export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.ProcessEnv; grants: AdminGrantStore; roster?: AdminRosterStore; adminRoles?: readonly string[]; adminRolesFrom?: string; now?: () => number; log?: (line: string) => void }) {
+export function adminAccessSetup(o: {
+  config?: AdminAccessConfig;
+  env?: NodeJS.ProcessEnv;
+  grants: AdminGrantStore;
+  roster?: AdminRosterStore;
+  adminRoles?: readonly string[];
+  adminRolesFrom?: string;
+  now?: () => number;
+  log?: (line: string) => void;
+  /** The boundary an admin narrowed the deploy config's to (@lenspack/policy boundary.ts), read on every decision: fewer modes, owners or roles. */
+  narrow?: () => Pick<Boundary, "adminAccess" | "adminUsers" | "adminRoles"> | undefined;
+}) {
   const env = o.env ?? process.env;
   const now = o.now ?? Date.now;
   const fromEnv = !!env.LENSPACK_ADMIN_ACCESS?.trim();
@@ -127,7 +138,12 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
   const granted = () => (has("superset-users") ? o.grants.list().map((g) => g.user).filter((u) => !owners.includes(u)) : []);
   // Admin API keys: beside the modes, read in every one (admin-api-key.ts). A bad entry stops the server at start.
   const apiKeys = adminApiKeys({ keys: adminApiKeysFrom(env), audit: (e) => audit?.(e), log: o.log, now });
-  const state = (): AdminAccess => ({ modes, roles: roleEntries, owners, granted: granted(), passwords: passwords.map((p) => p.name), apiKeys: apiKeys.names });
+  // What every decision reads: the deploy config's access, narrowed by an admin when they did (never widened).
+  const state = (): AdminAccess => {
+    const s: AdminAccess = { modes, roles: roleEntries, owners, granted: granted(), passwords: passwords.map((p) => p.name), apiKeys: apiKeys.names };
+    const n = o.narrow?.();
+    return n ? narrowAdminAccess(s, n) : s;
+  };
   const warnings: string[] = [];
   if (has("superset-users") && !owners.length) warnings.push("admin access includes superset-users, but no owner is named: nobody is an admin that way. Set LENSPACK_ADMIN_USERS (Superset user names or id:<n>, comma-separated).");
   if (has("password") && !passwordSet) warnings.push("admin access includes password, but no admin password is set: nobody signs in that way. Set LENSPACK_ADMIN_PASSWORDS (name:secret pairs) or LENSPACK_ADMIN_PASSWORDS_FILE from the deployment's secrets.");
@@ -145,8 +161,10 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
   };
 
   return {
+    /** The deploy config's modes. What is in force (narrowed by an admin, never widened) is state().modes, and has(). */
     modes,
-    has,
+    /** Whether a mode is in force now. */
+    has: (m: AdminAccessMode) => state().modes.includes(m),
     modeFrom,
     owners,
     ownersFrom,
@@ -160,7 +178,9 @@ export function adminAccessSetup(o: { config?: AdminAccessConfig; env?: NodeJS.P
     /** The admin API keys (admin-api-key.ts): their names, and the check a request's key goes through. */
     apiKeys,
     /** Whether the admin sign-in is on: the password mode with a password set. */
-    passwordSignIn: has("password") && passwordSet,
+    get passwordSignIn() {
+      return state().modes.includes("password") && passwordSet;
+    },
     /** Where the "first use" audit lines go (the host's audit log, made after this). */
     auditTo(fn: ((e: AuditEvent) => void) | undefined) {
       audit = fn;
@@ -241,7 +261,15 @@ export type UserAccessSetup = ReturnType<typeof userAccessSetup>;
  * undefined), the seeded people and the grants. Throws on an unknown mode; "granted" with nobody granted starts, says so
  * and lets nobody in but admins.
  */
-export function userAccessSetup(o: { config?: UserAccessConfig; env?: NodeJS.ProcessEnv; grants: AdminGrantStore; roles?: readonly string[]; rolesFrom?: string }) {
+export function userAccessSetup(o: {
+  config?: UserAccessConfig;
+  env?: NodeJS.ProcessEnv;
+  grants: AdminGrantStore;
+  roles?: readonly string[];
+  rolesFrom?: string;
+  /** The boundary an admin narrowed the deploy config's to (@lenspack/policy boundary.ts), read on every decision: other modes, fewer seeded people, fewer roles. */
+  narrow?: () => Pick<Boundary, "userAccess" | "seedUsers" | "userRoles"> | undefined;
+}) {
   const env = o.env ?? process.env;
   const modes = userAccessModesFrom(o.config?.userAccess, env.LENSPACK_USER_ACCESS);
   const modesFrom = env.LENSPACK_USER_ACCESS?.trim() ? "LENSPACK_USER_ACCESS" : o.config?.userAccess !== undefined ? "auth.userAccess" : "default";
@@ -249,8 +277,18 @@ export function userAccessSetup(o: { config?: UserAccessConfig; env?: NodeJS.Pro
   const seedEnv = env.LENSPACK_USERS?.trim();
   const seeded = has("granted") ? adminUsersFrom(seedEnv ? seedEnv : o.config?.seedUsers) : [];
   const seededFrom = seedEnv ? "LENSPACK_USERS" : o.config?.seedUsers !== undefined ? "auth.seedUsers" : null;
-  const granted = () => (has("granted") ? o.grants.list().map((g) => g.user).filter((u) => !seeded.includes(u)) : []);
-  const state = (): UserAccess => ({ modes, seeded, granted: granted() });
+  // Grants count while the granted mode is in force: the deploy config's, or the modes an admin narrowed it to.
+  const granted = () => ((o.narrow?.()?.userAccess ?? modes).includes("granted") ? o.grants.list().map((g) => g.user).filter((u) => !seeded.includes(u)) : []);
+  const state = (): UserAccess => {
+    const s: UserAccess = { modes, seeded, granted: granted() };
+    const n = o.narrow?.();
+    return n ? narrowUserAccess(s, n) : s;
+  };
+  // The users rule's roles: the deploy config's, or the ones an admin narrowed them to.
+  const rolesNow = (): readonly string[] | undefined => {
+    const n = o.narrow?.()?.userRoles;
+    return n !== undefined ? n.map((r) => (r.startsWith("role:") ? r : `role:${r}`)) : o.roles;
+  };
   const roles = o.roles;
   const warnings: string[] = [];
   if (has("everyone")) warnings.push("user access is everyone: anyone signed in to Superset may use the assistant. Use it on a dedicated instance, not a shared one.");
@@ -263,11 +301,14 @@ export function userAccessSetup(o: { config?: UserAccessConfig; env?: NodeJS.Pro
     seeded,
     seededFrom,
     grants: o.grants,
-    granting: has("granted"),
+    /** Whether admins may let people in now: the granted mode, unless an admin narrowed it away. */
+    get granting() {
+      return state().modes.includes("granted");
+    },
     state,
     warnings,
     /** The users rule now (undefined: everyone signed in). */
-    rule: () => usersUnder(state(), roles),
+    rule: () => usersUnder(state(), rolesNow()),
     line(): string {
       const how = `access ${modes.join(",")}, ${modesFrom === "default" ? "the default" : `from ${modesFrom}`}`;
       const rule = usersUnder(state(), roles);

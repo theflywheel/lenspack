@@ -11,7 +11,8 @@ import { type AuditEvent, NO_STORE, type SettingsStore, SettingsSaveError, json,
 export const PANELS = ["float", "dock"] as const;
 export type Panel = (typeof PANELS)[number];
 
-type Area = { name: string; view: (writable: boolean) => Record<string, unknown>; update: (b: Record<string, unknown>) => { ok: true; detail: string } | { ok: false; error: string } };
+type Outcome = { ok: true; detail: string } | { ok: false; error: string; status?: number };
+export type Area = { name: string; view: (writable: boolean) => Record<string, unknown>; update: (b: Record<string, unknown>) => Outcome | Promise<Outcome> };
 
 /** One setting held in a settings.json section, over the deployment's value: `value` reads it, `area` answers its route. */
 function choice<T extends string>(settings: SettingsStore, o: { section: string; field: string; options: readonly T[]; deploy: T; from: string | null }) {
@@ -80,16 +81,16 @@ export function supersetSettingsRoutes(o: {
     }
     if (!b || typeof b !== "object" || Array.isArray(b)) return send(400, { error: "the body is a JSON object" });
     const change = async () => {
-      let r: ReturnType<Area["update"]>;
+      let r: Outcome;
       try {
-        r = area.update(b as Record<string, unknown>);
+        r = await area.update(b as Record<string, unknown>);
       } catch (e) {
         if (e instanceof SettingsSaveError) return send(503, { error: e.message });
         throw e;
       }
       if (!r.ok) {
         audit("refused", r.error);
-        return send(400, { error: r.error });
+        return send(r.status ?? 400, { error: r.error });
       }
       o.log(`${m![1]}: ${r.detail} (by ${who.user})`);
       audit("ok", r.detail);
