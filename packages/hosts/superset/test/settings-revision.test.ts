@@ -190,6 +190,13 @@ describe("settings changed in two places at once", () => {
     expect((await call("/_superset/settings", { as: ANA })).body.personal).toMatchObject({ maxDashboardsPerUser: 4 });
     const ok = await put("/_superset/settings/personal", { maxDashboardsPerUser: null }, { ifMatch: stale.tag });
     expect([ok.status, ok.tag]).toEqual([200, `"settings-${stale.body.revision + 1}"`]);
+
+    // The query limits too.
+    const q = await call("/_superset/settings", { as: ANA });
+    expect((await put("/_superset/settings/query-safety", { maxQueriesPerTurn: 30 }, { as: BEN })).status).toBe(200);
+    const qs = await put("/_admin/settings/query-safety", { maxQueriesPerTurn: 20 }, { key: CI, ifMatch: q.tag });
+    expect([qs.status, qs.body.by]).toEqual([409, "ben"]);
+    expect((await put("/_superset/settings/query-safety", { maxQueriesPerTurn: null }, { ifMatch: qs.tag })).status).toBe(200);
   });
 
   it("the pack's changes too: its version is its tag, and an old one is refused with the pack as it is now", async () => {

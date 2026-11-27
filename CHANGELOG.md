@@ -11,6 +11,15 @@ brought it.
 
 ### 27 November 2026
 
+- **Limits on the queries sent to the database.** Lenspack now checks every query it sends to Superset before
+  sending it, and refuses one that is too heavy with a plain message the assistant passes on or acts on ("use a
+  coarser grain", "pick a coarser level"). On by default, with no change to any answer: at most 20,000 rows and
+  20,000 series points a query, 100 queries a question, 8 at once, 30 seconds each. Mark a large row-level dataset
+  `heavy: true` and its questions need a time range (the last 90 days when none is asked, at most 400 days), and list
+  columns with a value per record in `highCardinality` so nothing groups by them. Set them under `querySafety:` in
+  `superset.yaml` or `LENSPACK_QUERY_*`; admins see them in `GET /_superset/settings` and change them with
+  `PUT /_superset/settings/query-safety`: tighter freely, looser only with `"confirm": true`. Ask your database team to
+  limit Superset's reader user too. See [Query safety](docs/operating/query-safety.md).
 - **Settings changed in two places don't undo each other.** Every settings answer now says the revision it is at
   (`revision`, and the `ETag` header), and every settings change, including who is an admin or a user and the pack,
   takes it back as `If-Match`: a change to something changed since is refused with `409`, nothing changed, naming who

@@ -86,7 +86,7 @@ undoing someone else's change:
   tab again when something changed, or, while you are typing in it, say so with a **Reload** button.
 
 The same holds for every settings route: the switches, voice, language, saved answers, the queue, the name, telemetry,
-personal-dashboard limits, the edit scope, who is an admin or a user, the review's settings on the admin panel, and the
+the query limits, personal-dashboard limits, the edit scope, who is an admin or a user, the review's settings on the admin panel, and the
 pack, whose `ETag` is its version (`"pack-3"`; see [Changing the pack while it runs](pack-runtime.md)).
 
 ## Switches

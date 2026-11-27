@@ -94,7 +94,8 @@ export function supersetConnector(client: SupersetClient, binding: Binding, opts
       const bound = plan.bound;
       const q = bound.query;
       const body = { datasource: { id: datasetId, type: "table" }, force: false, queries, result_format: "json", result_type: "full" };
-      const res = await client.post<{ result: ChartResult[] }>("/api/v1/chart/data", body).catch((e: unknown) => {
+      // Superset's chart-data API takes no timeout of its own: this is how long Lenspack waits (the database user's limit stops the query).
+      const res = await (o?.timeoutMs ? client.post<{ result: ChartResult[] }>("/api/v1/chart/data", body, { timeoutMs: o.timeoutMs }) : client.post<{ result: ChartResult[] }>("/api/v1/chart/data", body)).catch((e: unknown) => {
         throw sourceError(e, opts.log);
       });
       // Only when asked (a chat answer's explanation): the SQL Superset compiled and ran, from this same answer.

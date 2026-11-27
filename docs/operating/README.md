@@ -7,6 +7,7 @@ deploying, upgrading, privacy and fixing problems. It is for operators.
 |---|---|
 | [Configuration](configuration.md) | the config files, `env:` references, the environment, and what wins over what |
 | [Chat models](models.md) | providers, roles in a turn, and the two adapters |
+| [Query safety](query-safety.md) | the limits on the queries Lenspack sends, heavy datasets, and limits to set on the database user |
 | [Costs and budgets](costs.md) | metering, the usage ledger and file, daily caps, prompt caching |
 | [Feature switches](switches.md) | every switch, its default, and where it can be set |
 | [Deploying](deploying.md) | the Docker image, ports, volumes, health checks, several copies |
