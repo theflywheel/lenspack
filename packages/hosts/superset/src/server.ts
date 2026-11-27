@@ -185,7 +185,7 @@ async function retried<T>(what: string, f: () => Promise<T>, waits: number[], lo
 
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 /** The admin routes an admin API key may call (docs/access/admin-api.md); every other path refuses a key. */
-const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal)(\/|$)/;
+const KEY_ROUTE = /^\/_(superset|admin)\/(whoami|admin|settings|turns|audit|telemetry|audio|cache|personal|limits)(\/|$)/;
 
 export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = process.env) {
   const file = resolve(path);
@@ -224,6 +224,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const client = supersetClient({ url: supersetUrl, username: account.username, password: account.password });
   const admin = adminSettings(stateDir, config, env);
   log(admin.featuresLine());
+  log(admin.limitsLine());
   // The deployment's data boundary (@lenspack/policy boundary.ts, docs/hosts/superset/runtime.md): the deploy config's,
   // which an admin may narrow while the server runs (PUT settings/boundary), never widen. Everything below that reads
   // the datasets, the scope, the dashboards, the host and edit policies or the access modes reads it through boundary.

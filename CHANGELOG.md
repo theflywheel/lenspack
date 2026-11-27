@@ -20,6 +20,16 @@ brought it.
   nothing changed if the new pack has a problem. Changes are audited, kept across restarts, and set aside (and said)
   if the deploy config later stops allowing them. See
   [The boundary narrows only](docs/hosts/superset/runtime.md#the-boundary-narrows-only).
+- **Question limits per person.** A deployment can now limit how many questions each person asks: a number per day
+  (UTC, kept in `limits.json` in the state folder so a restart does not reset it), and a number in any minute and in
+  any hour. Over a limit, the chat answers `429` with `Retry-After` before any model call or data read, and says which
+  limit was reached and when the person can ask again, in English, French, Hindi or Portuguese. A saved answer counts
+  toward the minute and hour limits but not the daily one. Admins are held to the limits unless `adminsExempt` is on.
+  Off by default. Set `limits.perUser` in `superset.yaml` or `lenspack.yaml`, or `LENSPACK_LIMIT_*`; admins change
+  them with `PUT /_superset/settings/limits`, see who reached one with `GET /_superset/limits`, and clear a person's
+  count with `DELETE /_superset/limits?user=`. Refusals are in the audit log. See
+  [Question limits](docs/features/limits.md).
+
 - **Every option that isn't a secret can change without a redeploy.** On a deployment where the deploy config is in
   another team's hands, the admin pages and the admin API key are now enough. New settings routes: the daily budget
   caps (`settings/budget`; `0` means no cap), which of the deployment's models answer and which plays each role
