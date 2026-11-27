@@ -345,7 +345,7 @@ describe.sequential("Superset 6.1.0: admin and user access modes", () => {
     });
 
     it("changes the pack through /lenspack/_admin/settings/pack: checked against Superset's datasets, used by the chat at once, then reset", async () => {
-      const send = (method: string, path: string, body?: unknown) => script().send(method, `/lenspack/_admin/settings/pack${path}`, { headers: bearer(), ...(body === undefined ? {} : { body }) });
+      const send = (method: string, path: string, body?: object) => script().send(method, `/lenspack/_admin/settings/pack${path}`, { headers: bearer(), ...(body === undefined ? {} : { body }) });
       // A measure on a column the dataset doesn't have: refused, as Superset describes the dataset, nothing changed.
       const bad = await send("PUT", "", { fields: { measures: [{ dataset: "visits", name: "weight", agg: "sum", column: "weight_kg" }] } });
       expect([bad.status, bad.json?.error]).toEqual([400, expect.stringMatching(/column "weight_kg" is not a column of Superset dataset "visits"/)]);
