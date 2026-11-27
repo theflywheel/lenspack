@@ -16,7 +16,7 @@ import { type FeatureValues, features as featureSwitches } from "./features";
 import { limitCounter, limitSettings } from "./limits";
 import { NO_STORE, json, readJson } from "./http";
 import { type Provider, effortFor, modelLabel, publicView } from "./llm";
-import type { Budget } from "./metering";
+import { type Budget, type UsageReport, usageWithoutNames } from "./metering";
 import { budgetFromEnv } from "./runtime";
 import { runtimeConfig } from "./runtime-config";
 import { cacheRoutes } from "./reuse";
@@ -344,6 +344,8 @@ export type AdminRouteOptions = {
   users?: UserAccessSetup;
   /** More in <prefix>/settings/revision, for an open admin page to notice a change made elsewhere (the pack's version). */
   revisionExtras?: () => Record<string, unknown>;
+  /** What chat has cost, as GET /api/_usage reports it (usageReport), for <prefix>/usage. Absent: no such route. */
+  usage?: () => UsageReport;
 };
 
 
@@ -535,7 +537,7 @@ export function adminRoutes(o: AdminRouteOptions) {
       }
       return send(405, { error: "not a method this route takes" });
     }
-    if (!["/settings", "/settings/revision", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist", "/limits"].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/limits", "/settings/telemetry", "/settings/brand", ...RUNTIME_AREAS].includes(path))) return;
+    if (!["/settings", "/settings/revision", "/settings/admins", "/settings/users", "/turns", "/audit", "/telemetry", "/telemetry/checklist", "/limits", ...(o.usage ? ["/usage"] : [])].includes(path) && !(put && ["/settings/admins", "/settings/users", "/settings/features", "/settings/speech", "/settings/language", "/settings/chat", "/settings/cache", "/settings/queue", "/settings/limits", "/settings/telemetry", "/settings/brand", ...RUNTIME_AREAS].includes(path))) return;
     const may = recordRights(who);
     // The settings and every switch: the admin role (adminRights in @lenspack/policy); the records: recordRights.
     const access = o.access?.state();
@@ -551,6 +553,14 @@ export function adminRoutes(o: AdminRouteOptions) {
     if (path === "/settings") return send(200, await settingsView(who));
     // Cheap enough to ask every few seconds: an open admin page reloads what changed elsewhere.
     if (path === "/settings/revision") return send(200, { revision: s.settings.revision(), lastChange: s.settings.lastChange(), ...o.revisionExtras?.() });
+    // What chat has cost since the count began (today, by day, by person and pack, the caps): the same as GET /api/_usage,
+    // read-only, for any admin, so a script with an admin API key can watch spend. User names only for those the policy
+    // lets see them (adminRights' users), as on the usage board.
+    if (path === "/usage") {
+      if (req.method !== "GET") return send(405, { error: "GET only" });
+      const report = o.usage!();
+      return send(200, rights.users ? report : usageWithoutNames(report));
+    }
     // Who is at a per-person limit now or was refused today (GET; ?all=1: everyone counted today), and one person's
     // counts for today back to zero (DELETE ?user=<name>). Admins only, the clearing audited.
     if (path === "/limits") {

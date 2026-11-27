@@ -26,6 +26,8 @@ import {
   registerLlmAdapter,
   turnCost,
   usageLedger,
+  usageReport,
+  usageWithoutNames,
   withMeter,
 } from "../src";
 
@@ -188,6 +190,23 @@ describe("the budget", () => {
     const a = ledger.report().turns.find((t) => t.user === "a")!;
     expect(a.byEffort).toEqual({ sonnet: { high: expect.objectContaining({ calls: 2, usd: 1.75 }) } });
     expect(ledger.report().turns.find((t) => t.user === "b")!.byEffort).toEqual({});
+  });
+
+  it("reports usage the same way for GET /api/_usage and the admin route, and names no one for an admin who may not see names", () => {
+    const ledger = usageLedger();
+    ledger.record(record({ user: "a", usd: 1.5, pack: "p", turn: "t1" }));
+    ledger.record(record({ user: "b", usd: 2, pack: "p", turn: "t2" }));
+    const limits = { on: () => true, report: () => ({ day: "d", on: true, people: [{ user: "a", today: 3 }], counted: 2 }) } as never;
+    const r = usageReport(ledger, { usdPerDay: 25, usdPerUserPerDay: 10 }, limits);
+    expect(r).toMatchObject({ total: { turns: 2, usd: 3.5 }, budget: { usdPerDay: 25, usdPerUserPerDay: 10, spent: 3.5, users: { a: 1.5, b: 2 } }, limits: { people: [{ user: "a" }], counted: 2 } });
+    expect(r.turns.map((t) => [t.user, t.turns])).toEqual([["b", 1], ["a", 1]]);
+    // No budget, no limits: neither is there.
+    const bare = usageReport(ledger, undefined, { on: () => false, report: () => ({}) } as never);
+    expect("budget" in bare || "limits" in bare).toBe(false);
+    const hidden = usageWithoutNames(r);
+    expect(hidden).toMatchObject({ total: { turns: 2, usd: 3.5 }, budget: { spent: 3.5, users: {} }, limits: { people: [], counted: 2 } });
+    expect(hidden.turns.map((t) => t.llm.usd)).toEqual([2, 1.5]);
+    expect(JSON.stringify(hidden)).not.toMatch(/"user"/);
   });
 
   const tickets = fileURLToPath(new URL("../../../../examples/tickets/pack.yaml", import.meta.url));
