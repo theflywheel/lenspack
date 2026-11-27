@@ -22,7 +22,10 @@ const model = () =>
       return {
         stream: new ReadableStream({
           start(c) {
-            for (const p of [{ type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "Done." }, { type: "text-end", id: "t" }, { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage }]) c.enqueue(p);
+            c.enqueue({ type: "text-start", id: "t" });
+            c.enqueue({ type: "text-delta", id: "t", delta: "Done." });
+            c.enqueue({ type: "text-end", id: "t" });
+            c.enqueue({ type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage });
             c.close();
           },
         }),
@@ -83,7 +86,7 @@ describe("per-person question limits", () => {
       method: "POST",
       headers: { "x-user": o.user ?? "olu", ...(o.admin ? { "x-admin": "1" } : {}) },
       body: JSON.stringify({ messages: [{ id: "u", role: "user", parts: [{ type: "text", text: o.text ?? "how many tickets?" }] }], ...(o.uiLanguage ? { uiLanguage: o.uiLanguage } : {}), ...(o.language ? { language: o.language } : {}) }),
-    }).then(async (r) => ({ status: r.status, retryAfter: r.headers.get("retry-after"), body: r.status === 429 ? ((await r.json()) as Record<string, unknown>) : await r.text() }));
+    }).then(async (r) => ({ status: r.status, retryAfter: r.headers.get("retry-after"), body: (r.status === 429 ? await r.json() : { text: await r.text() }) as Record<string, string> }));
 
   it("off: no limits set, every question goes through", async () => {
     limits = {};
