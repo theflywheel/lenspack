@@ -41,6 +41,9 @@ describe("serve with sign-in", () => {
     elsewhere: { user: "elsewhere", packs: ["another"] },
     elsewhere_b: { user: "eve", tenant: "b", packs: ["campaign"] },
     switched_off: { user: "sam", edit: true, uses: false },
+    // The deployment puts the assistant on some boards only (a host's board scope): on "overview", or on none of these.
+    limited: { user: "lim", edit: true, maintain: true, onlyBoards: ["overview"] },
+    outside: { user: "out", edit: true, maintain: true, onlyBoards: ["somewhere-else"] },
   };
   const access = (req: IncomingMessage) => people[String(req.headers["x-user"] ?? "")] ?? null;
   const call = async (who: string | null, path: string, init: RequestInit = {}) => {
@@ -190,6 +193,27 @@ describe("serve with sign-in", () => {
     expect(events.at(-1)).toMatchObject({ user: "alice", pack: "pinned", action: "open", outcome: "denied", detail: "tenant" });
     // Kept from the caller for another reason as well: not there at all.
     expect((await call("elsewhere_b", "/pinned")).status).toBe(404);
+  });
+
+  it("opens no board outside the caller's board scope, by any route, and does not list it", async () => {
+    const chat = { method: "POST", body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "how many?" }] }] }) };
+    const boards = async (who: string) => ((await call(who, "/campaign")).body.boards as { id: string }[]).map((b) => b.id);
+    // In scope: read, and the chat gets as far as the model (none here: 503).
+    expect((await call("limited", "/campaign/overview/data")).status).toBe(200);
+    expect((await call("limited", "/campaign/overview/chat", chat)).status).toBe(503);
+    // A board of their own made here is not one of the deployment's boards: not listed, not opened.
+    const made = await call("limited", "/campaign/boards", { method: "POST", body: JSON.stringify({ title: "Mine" }) });
+    expect(made.status).toBe(200);
+    expect(await boards("limited")).toEqual(["overview"]);
+    for (const [who, board] of [["limited", made.body.id], ["outside", "overview"]] as const) {
+      for (const [path, init] of [["", {}], ["/data", {}], ["/versions", {}], ["/chat", chat], ["/ops", { method: "POST", body: JSON.stringify({ ops: [{ op: "set_title", title: "x" }] }) }]] as const) {
+        const r = await call(who, `/campaign/${board}${path}`, init);
+        expect([who, path, r.status]).toEqual([who, path, 404]);
+      }
+    }
+    expect(await boards("outside")).toEqual([]);
+    // Maintainers both, so the refusal is the scope's, not the edit right's.
+    expect((await call("maintainer", "/campaign/overview/data")).status).toBe(200);
   });
 });
 

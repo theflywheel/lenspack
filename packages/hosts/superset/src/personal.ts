@@ -12,6 +12,7 @@ import { type BoardConfig, type PersonalDashboard, type PersonalDashboardRef, ty
 import { type Capabilities, type Ctx, type FittedLayout, fitSavedLayout } from "@lenspack/engine";
 import type { Pack } from "@lenspack/pack";
 import {
+  type BoardScope,
   type PersonalActor,
   type PersonalLimits,
   type Verdict,
@@ -23,9 +24,11 @@ import {
   mayManageLayout,
   maySaveLayout,
   mayViewAllPersonal,
+  boardsInScope,
 } from "@lenspack/policy";
 
 import type { SupersetClient } from "./client";
+import { madeBoards } from "./dashboard-scope";
 import { type Position as LayoutPosition, layoutProblems, placeCharts, withRoot } from "./layout";
 import type { SupersetBoards } from "./store";
 
@@ -60,6 +63,8 @@ export type PersonalOptions = {
   layouts: RecordStore<SavedLayout>;
   /** Read on every request, so an admin's change applies at once. */
   limits: () => PersonalLimits;
+  /** The deployment's dashboard scope: the person's own dashboards are listed to them only when in it. Absent: any. */
+  boardScope?: () => BoardScope;
   audit?: (e: PersonalAuditEvent) => void;
   telemetry?: (e: PersonalEvent) => void;
   log?: (line: string) => void;
@@ -117,6 +122,14 @@ export function personalDashboards(o: PersonalOptions) {
       }
     }
     return live.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  /** The person's own dashboards as listed to them: those the deployment's dashboard scope covers (boardsInScope). */
+  async function shownOf(mine: PersonalDashboard[]): Promise<PersonalDashboard[]> {
+    const scope = o.boardScope?.();
+    if (!scope || scope.scope === "any") return mine;
+    const ok = new Set(boardsInScope(scope, madeBoards(await o.links.list()), { personalOn: true }));
+    return mine.filter((d) => ok.has(d.board));
   }
 
   async function record(who: PersonalActor, dashboard: number, title: string, from: number | null, charts: number[]) {
@@ -352,7 +365,7 @@ export function personalDashboards(o: PersonalOptions) {
       canCreate: mayCreateDashboard(who, limits, mine.length).ok,
       // Superset lets them write dashboards at all: without it the panel offers no create, copy or apply.
       canWrite: !!who.writes,
-      dashboards: mine.map((d) => dashboardView(d, base)),
+      dashboards: (await shownOf(mine)).map((d) => dashboardView(d, base)),
       layouts: layoutsShownTo(who, layouts).map(layoutView),
       ownLayouts: own.length,
       here: here?.dashboard
@@ -393,7 +406,7 @@ export function personalDashboards(o: PersonalOptions) {
       offersCopy: mayCopyDashboard(who, o.limits(), 0, here).ok,
       ownOnly: !!here.byScope,
       async mine() {
-        const [d, l] = await Promise.all([mineOf(who), o.layouts.list()]);
+        const [d, l] = await Promise.all([mineOf(who).then(shownOf), o.layouts.list()]);
         return { dashboards: d.map((x) => ({ dashboard: x.dashboard, board: x.board, title: x.title, url: urlOf(base, x.dashboard) })), layouts: layoutsShownTo(who, l).map((x) => ({ id: x.id, name: x.name, from: x.source.title, savedAt: x.savedAt })) };
       },
       createDashboard: (title) => create(who, title, base),

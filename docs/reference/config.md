@@ -228,7 +228,8 @@ The Superset host's config. Most keys can be left out for their environment vari
 | key | default | what it is |
 |---|---|---|
 | `datasets` | (required) | the Superset datasets Lenspack may use, by id or by table name (`schema.table` or `table`) |
-| `dashboards` | | dashboard ids to read at start |
+| `dashboards` | `LENSPACK_DASHBOARDS` (comma-separated) wins | dashboard ids to read at start. Under `dashboardScope: listed`, also the only dashboards the assistant is on |
+| `dashboardScope` | `any` (`LENSPACK_DASHBOARD_SCOPE` wins) | which dashboards the assistant is on: `any` (every dashboard the person may open in Superset) or `listed` (only those in `dashboards`, and people's own copies of them). See [Which dashboards the assistant is on](../hosts/superset/datasets-and-dashboards.md#which-dashboards-the-assistant-is-on) |
 | `superset.url` | `LENSPACK_SUPERSET_URL` (required one way or the other) | where this server reaches Superset |
 | `superset.publicUrl` | | where browsers reach Superset, when that differs from `url` |
 | `superset.publicPort` | | Superset's port as browsers see it, when `publicUrl` is not set |
@@ -291,6 +292,8 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `SUPERSET_ADMIN_USERNAME`, `SUPERSET_ADMIN_PASSWORD` | superset | the one-time admin sign-in that makes Lenspack's own account (`admin` by default) | only source |
 | `LENSPACK_PUBLIC_PATH` | superset | `publicPath` | fallback |
 | `LENSPACK_EDIT_POLICY` | superset | `editPolicy` | over the file |
+| `LENSPACK_DASHBOARDS` | superset | `dashboards`, as dashboard ids separated by commas (`25,31`) | over the file |
+| `LENSPACK_DASHBOARD_SCOPE` | superset | `dashboardScope` (`any` or `listed`) | over the file |
 | `LENSPACK_HOST_POLICY` | superset | `hostPolicy` | over the file |
 | `LENSPACK_ACCESS_FALLBACK` | superset | `accessFallback` | over the file |
 | `LENSPACK_ADMIN_ROLES`, `LENSPACK_USAGE_ROLES`, `LENSPACK_USER_ROLES` | superset | `auth.admins`, `auth.usage`, `auth.users`, comma-separated Superset role names | over the file |

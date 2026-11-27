@@ -24,7 +24,8 @@ describe("/_superset/my", () => {
     const handle = personalRoutes({
       personal: fake,
       identity: (req) => identityOf(req, () => KEY),
-      rightsOn: async (id) => ({ view: id.v === true, ...(!canEdit(id, "superset") ? { edit: false } : scopeOwn && !id.a ? { edit: false, byScope: true } : { edit: true }) }),
+      // Dashboard 9 is outside the deployment's dashboard scope (dashboardScope: listed).
+      rightsOn: async (id) => ({ view: id.v === true, ...(!canEdit(id, "superset") ? { edit: false } : scopeOwn && !id.a ? { edit: false, byScope: true } : { edit: true }), ...(id.d === 9 ? { outOfScope: true } : {}) }),
       scope: async () => ({ ctx: {} }),
       bind: async (d) => `superset-${d}`,
       shownBoard: async () => ({ config: emptyBoard({ pack: "p", version: 1 }, "T"), title: "T" }),
@@ -71,6 +72,17 @@ describe("/_superset/my", () => {
     expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { board: "superset-3", edit: false }, ""] });
     await post("/_superset/my/layouts/l_1/apply?dashboard=3", { d: 3, v: true, e: true });
     expect(calls.at(-1)).toMatchObject({ fn: "applyLayout", args: ["l_1", { edit: true }, ""] });
+  });
+
+  it("copies, saves and applies nothing on a dashboard outside the deployment's scope, and offers nothing there", async () => {
+    calls.length = 0;
+    for (const path of ["/_superset/my/dashboards?dashboard=9", "/_superset/my/layouts?dashboard=9", "/_superset/my/layouts/l_1/apply?dashboard=9"]) {
+      const r = await post(path, { d: 9, v: true, e: true }, { copy: true, name: "x" });
+      expect([path, r.status, ((await r.json()) as { code?: string }).code]).toEqual([path, 403, "out-of-scope"]);
+    }
+    expect(calls).toEqual([]);
+    await fetch(`${base}/_superset/my?dashboard=9`, { headers: as({ d: 9, v: true, e: true }) });
+    expect(calls.at(-1)).toMatchObject({ fn: "overview", args: [null, ""] });
   });
 
   it("makes, deletes, renames and lists for the signed person; the everyone view is the admin's", async () => {

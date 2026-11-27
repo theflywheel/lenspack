@@ -160,6 +160,11 @@ A dashboard someone made directly in Superset, not through Lenspack, counts as s
 Switched off, the two buttons are hidden, the chat tools refuse, and the routes answer 409. Dashboards already
 made stay in Superset.
 
+Where the assistant is limited to some dashboards (`dashboardScope: listed`), a copy of a listed dashboard and a blank
+dashboard made through the assistant stay usable; a dashboard outside the list can't be copied, and a copy of one
+made earlier is left out of "My dashboards". See
+[Which dashboards the assistant is on](../hosts/superset/datasets-and-dashboards.md#which-dashboards-the-assistant-is-on).
+
 ## Routes
 
 All are under Superset's `/lenspack/` and need the signed identity Superset adds (see

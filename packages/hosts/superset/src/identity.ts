@@ -212,10 +212,11 @@ export function signedClient(req: IncomingMessage, key: string | null, now = Dat
 }
 
 /**
- * What the deployment adds about one identity, as facts for policy: its edit scope (for one Superset lets edit) and
- * boards it may not open (other people's own dashboards). Both only narrow.
+ * What the deployment adds about one identity, as facts for policy: its edit scope (for one Superset lets edit),
+ * boards it may not open (other people's own dashboards) and, under dashboardScope: listed, the only boards the
+ * assistant is on (onlyBoards). All only narrow.
  */
-export type CallerFacts = (id: Identity, o: { edit: boolean }) => Promise<{ editScope?: EditScopeFacts; hiddenBoards?: string[] }>;
+export type CallerFacts = (id: Identity, o: { edit: boolean }) => Promise<{ editScope?: EditScopeFacts; hiddenBoards?: string[]; onlyBoards?: string[] }>;
 
 /** Lenspack's name for a Superset dashboard's board. */
 const DASHBOARD_BOARD = /^superset-\d+$/;
@@ -292,6 +293,7 @@ export function supersetAuth(key: () => string | null, policy: EditPolicy, edits
       // The deployment's own facts for policy (boardRights narrows by them, never widens): read per request.
       const facts = extra ? await extra(id, { edit: !!caller.edit }) : {};
       if (facts.editScope) caller = { ...caller, editScope: facts.editScope };
+      if (facts.onlyBoards) caller = { ...caller, onlyBoards: facts.onlyBoards };
       const ownHidden = facts.hiddenBoards ?? [];
       if (!host) return ownHidden.length ? { ...caller, hiddenBoards: ownHidden } : caller;
       const access = await host(id.u, id.r);

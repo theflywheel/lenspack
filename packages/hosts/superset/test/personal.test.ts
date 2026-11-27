@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import { type BoardConfig, type PersonalDashboard, type SavedLayout, memoryRecords, memoryStore } from "@lenspack/core";
 import { catalogueFrom } from "@lenspack/pack";
-import { NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, type PersonalLimits, decide, principalOf } from "@lenspack/policy";
+import { type BoardScope, NOT_OWN_MESSAGE, PERSONAL_DEFAULTS, type PersonalLimits, decide, principalOf } from "@lenspack/policy";
 import { type Host, type Provider, buildProvider, createApp, registerLlmAdapter } from "@lenspack/serve";
 import { MockLanguageModelV4 } from "ai/test";
 import { afterAll, describe, expect, it } from "vitest";
@@ -161,7 +161,7 @@ function fakeSuperset() {
   return { client, writes, dashes, charts, official };
 }
 
-function setup(limits: Partial<PersonalLimits> = {}) {
+function setup(limits: Partial<PersonalLimits> = {}, boardScope?: BoardScope) {
   const superset = fakeSuperset();
   const dashboards: Record<string, number> = {};
   const links = memoryRecords<PersonalDashboard>();
@@ -189,7 +189,7 @@ function setup(limits: Partial<PersonalLimits> = {}) {
   const audit: { user: string; action: string; outcome: string; detail?: string }[] = [];
   let n = 0;
   const events: PersonalEvent[] = [];
-  const personal = personalDashboards({ client: superset.client, store, pack, bindBoard, links, layouts, limits: () => ({ ...PERSONAL_DEFAULTS, ...limits }), audit: (e) => audit.push(e), newId: () => `l_${++n}`, telemetry: (e) => events.push(e) });
+  const personal = personalDashboards({ client: superset.client, store, pack, bindBoard, links, layouts, limits: () => ({ ...PERSONAL_DEFAULTS, ...limits }), audit: (e) => audit.push(e), newId: () => `l_${++n}`, telemetry: (e) => events.push(e), ...(boardScope ? { boardScope: () => boardScope } : {}) });
   return { superset, store, dashboards, links, layouts, personal, audit, bindBoard, events };
 }
 
@@ -337,6 +337,25 @@ describe("a dashboard of one's own", () => {
     const [first] = await t.personal.mineOf(OWNER);
     await t.superset.client.delete(`/api/v1/dashboard/${first!.dashboard}`);
     expect((await t.personal.create(OWNER, "c")).ok).toBe(true);
+  });
+
+  it("is listed only when the deployment's dashboard scope covers it: a copy of a listed dashboard, or a blank one", async () => {
+    const t = setup({}, { scope: "any" });
+    const listed = t.superset.official("Campaign", [ADMIN.userId], [KPI]);
+    const other = t.superset.official("Elsewhere", [ADMIN.userId], [KPI]);
+    const copy = await t.personal.copy(OWNER, { dashboard: listed.id, view: true, edit: false });
+    const copyOfOther = await t.personal.copy(OWNER, { dashboard: other.id, view: true, edit: false });
+    const blank = await t.personal.create(OWNER, "Blank");
+    if (!copy.ok || !copyOfOther.ok || !blank.ok) throw new Error("setup");
+    const titles = async (o: ReturnType<typeof setup>) => (await o.personal.overview(OWNER, null)).dashboards.map((d) => d.title).sort();
+    const chat = async (o: ReturnType<typeof setup>) => (await o.personal.port(OWNER, { dashboard: listed.id, board: `superset-${listed.id}`, view: true, edit: false }).mine()).dashboards.map((d) => d.title).sort();
+    expect(await titles(t)).toEqual(["Blank", "Campaign (my copy)", "Elsewhere (my copy)"]);
+    // The same records under "listed": the copy of the dashboard outside it is not listed, in the panel or the chat.
+    const limited = { ...t, personal: personalDashboards({ client: t.superset.client, store: t.store, pack, bindBoard: t.bindBoard, links: t.links, layouts: t.layouts, limits: () => PERSONAL_DEFAULTS, boardScope: () => ({ scope: "listed", boards: [`superset-${listed.id}`] }) }) };
+    expect(await titles(limited)).toEqual(["Blank", "Campaign (my copy)"]);
+    expect(await chat(limited)).toEqual(["Blank", "Campaign (my copy)"]);
+    // Still theirs, and still counted against the limit.
+    expect((await limited.personal.mineOf(OWNER)).length).toBe(3);
   });
 
   it("is refused everything when switched off", async () => {

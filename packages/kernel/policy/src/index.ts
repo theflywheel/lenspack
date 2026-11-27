@@ -3,6 +3,7 @@ import { type Pack, operands, parseExpr } from "@lenspack/pack";
 import { z } from "zod";
 
 import { type AdminAccess, PASSWORD_PREFIX, PASSWORD_ROLE } from "./access";
+import { inBoardScope } from "./board-scope";
 import { type EditScopeFacts, inEditScope } from "./personal";
 
 // Who may see and change what, as one pure function of the caller, the pack
@@ -30,6 +31,12 @@ export type Identity = {
   hiddenEntities?: string[];
   /** Boards the host does not let this caller open (a host dashboard they may not view): not listed, and opened as if absent. */
   hiddenBoards?: string[];
+  /**
+   * The only boards the deployment puts the assistant on, for this caller: its listed boards and the copies of them
+   * people made (boardScope "listed", boardsInScope()). Any other board is neither listed nor opened, as if absent.
+   * Absent: every board. Like hiddenBoards, it only narrows.
+   */
+  onlyBoards?: string[];
   /**
    * Entities the host lets this caller read on one board only, by board id, with the row scope on each (Superset's
    * dashboard roles: a dashboard opened through one reads its charts' datasets, there and nowhere else). They stay
@@ -106,7 +113,7 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
   const usage = id.usage ?? (rights.usage ? among(rights.usage) : maintain);
   // The users rule switches the assistant on per person; admins always pass. Once settled "no", it stays no.
   const uses = id.uses !== false && (admin || !rights.users || among(rights.users));
-  const { user, userId, tenant, scope, hidden, hiddenEntities, hiddenBoards, boardEntities, hiddenReason, packs, grants, readOnly, editScope } = id;
+  const { user, userId, tenant, scope, hidden, hiddenEntities, hiddenBoards, onlyBoards, boardEntities, hiddenReason, packs, grants, readOnly, editScope } = id;
   // Only what is set, so a principal compares equal to the one it was built from.
   return {
     user,
@@ -120,6 +127,7 @@ export function principalOf(id: Identity, rights: Rights = NO_RIGHTS): Principal
     hidden,
     hiddenEntities,
     ...(hiddenBoards ? { hiddenBoards } : {}),
+    ...(onlyBoards ? { onlyBoards } : {}),
     ...(boardEntities ? { boardEntities } : {}),
     ...(hiddenReason ? { hiddenReason } : {}),
     ...(editScope ? { editScope } : {}),
@@ -351,8 +359,8 @@ export type Decision<C extends Scoped = Scoped> = {
  * caller may not open the board (boardRights), or when the host grants nothing there. A grant can't open an entity
  * the host doesn't keep from the caller in the first place, and its scope only ever covers the entities it opens.
  */
-export function boardGrant(who: Pick<Identity, "hiddenEntities" | "hiddenBoards" | "boardEntities">, board?: string): { entities: string[]; scope: ScopeClause[] } | null {
-  if (board === undefined || who.hiddenBoards?.includes(board)) return null;
+export function boardGrant(who: Pick<Identity, "hiddenEntities" | "hiddenBoards" | "onlyBoards" | "boardEntities">, board?: string): { entities: string[]; scope: ScopeClause[] } | null {
+  if (board === undefined || who.hiddenBoards?.includes(board) || !inBoardScope(who, board)) return null;
   const grant = Object.hasOwn(who.boardEntities ?? {}, board) ? who.boardEntities![board] : undefined;
   const kept = new Set(who.hiddenEntities ?? []);
   const entities = [...new Set(grant?.entities ?? [])].filter((e) => kept.has(e)).sort();
@@ -478,10 +486,11 @@ export const mayAdminister = (who: { roles?: readonly string[] }) => adminRights
 // to change. A board someone made is theirs to change, and everyone's to read
 // once they share it: everyone in their tenant, as one user name may sign in
 // under two tenants. A board the host keeps from the caller (a dashboard they
-// may not view in Superset) is neither read nor changed, whatever else holds. Where the deployment keeps edits to
+// may not view in Superset), or one outside the deployment's board scope (onlyBoards), is neither read nor changed,
+// whatever else holds. Where the deployment keeps edits to
 // people's own boards (editScope), any other board is read-only to them, and `readOnly` says why.
 export function boardRights(who: Principal, b: Ownership & { id?: string }): { view: boolean; edit: boolean; readOnly?: string } {
-  if (b.id !== undefined && who.hiddenBoards?.includes(b.id)) return { view: false, edit: false };
+  if (b.id !== undefined && (who.hiddenBoards?.includes(b.id) || !inBoardScope(who, b.id))) return { view: false, edit: false };
   const sameTenant = (b.tenant ?? "") === (who.tenant ?? "");
   const edit = b.owner ? b.owner === who.user && sameTenant && who.edit : !!who.maintain;
   const outOfScope = edit && !inEditScope(who, b.id);
@@ -550,3 +559,4 @@ export function contextFor(map: DeploymentContext, at: { board?: string | null; 
 export * from "./personal";
 export * from "./access";
 export * from "./surface";
+export * from "./board-scope";
