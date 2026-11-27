@@ -256,6 +256,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `overlay.notDimensions` | | columns Superset lets you group by that are not dimensions (amounts, counts) |
 | `overlay.measures` | | base measures from columns: `{ dataset, name, agg, column, where, label, hint, format }`, `agg` one of `sum`, `count`, `count_distinct`, `min`, `max`. See [Measures from columns](../hosts/superset/datasets-and-dashboards.md#measures-from-columns) |
 | `overlay.labels`, `overlay.hints` | | by key; text, or text per language (`{ en: …, fr: … }`) |
+| `querySafety` | on: 20,000 rows, 20,000 series points and 100 queries a turn; 8 at once, 30 s each | limits on the queries sent to Superset: `maxRows`, `maxGroups`, `maxSeriesPoints`, `maxWindowDays`, `requireTime`, `defaultWindowDays`, `maxQueriesPerTurn`, `timeoutSeconds`, `maxConcurrent`; `heavy` (what a dataset marked heavy starts from) and `datasets` (by table name, id or entity key: `heavy`, `highCardinality`, `cardinality` and any of the limits). An admin can tighten them on a running server. See [Query safety](../operating/query-safety.md) |
 | `host` | `LENSPACK_HOST`, else `127.0.0.1` | where it listens |
 | `port` | `LENSPACK_PORT`, else `8795` | |
 | `publicPath` | `LENSPACK_PUBLIC_PATH`, else `""` | the path Superset forwards (`/lenspack`). A request through Superset's route says its own path, which wins, so Superset under a path (`/superset/lenspack`) needs no change. See [Superset under a path](../hosts/superset/install.md#superset-under-a-path) |
@@ -309,6 +310,8 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it |
 | `LENSPACK_TABS_EDITABLE`, `LENSPACK_PROTECTED_TABS` | superset | `tabs.editable` (`all` or `own`) and `tabs.protected` (JSON, or `12=TAB-a\|TAB-b;13=TAB-c`) | over the file; an admin's setting wins over it |
 | `LENSPACK_MAX_TABS_PER_DASHBOARD`, `LENSPACK_MAX_TABS_PER_USER`, `LENSPACK_MAX_WIDGETS_PER_TAB` | superset | the `tabs` limits | over the file; an admin's setting wins over it |
+| `LENSPACK_QUERY_MAX_ROWS`, `LENSPACK_QUERY_MAX_GROUPS`, `LENSPACK_QUERY_MAX_SERIES_POINTS`, `LENSPACK_QUERY_MAX_WINDOW_DAYS`, `LENSPACK_QUERY_MAX_PER_TURN`, `LENSPACK_QUERY_TIMEOUT_SECONDS`, `LENSPACK_QUERY_MAX_CONCURRENT` | superset | the `querySafety` limits (`none` for no `maxWindowDays`). See [Query safety](../operating/query-safety.md) | over the file; an admin may tighten them, and loosen them only with confirm |
+| `LENSPACK_HEAVY_DATASETS` | superset | datasets to treat as heavy (table names, ids or entity keys, comma-separated) | over the file |
 | `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file |
 | `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) | over the file; an admin's setting wins over it |
 | `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) | over the file's older `questionText`; an admin's setting wins over it |

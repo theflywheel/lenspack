@@ -10,3 +10,4 @@ export * from "./source-errors";
 export * from "./trace";
 export * from "./describe";
 export * from "./layouts";
+export * from "./guard";
