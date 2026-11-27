@@ -19,6 +19,7 @@ brought it.
   the chat shows "restarting, reconnecting". Superset closing the connection while the dashboards are read at start
   no longer fails the start either. Mistakes no wait fixes (bad YAML, a wrong setting, a dataset or dashboard
   Superset doesn't have) still stop it at once. See [Health and shutdown](docs/operating/deploying.md#health-and-shutdown).
+  ([#133](https://github.com/theflywheel/lenspack/pull/133))
 - **Tabs: protected tabs, tabs made through the chat, limits, and playground tabs.** On a Superset dashboard in tabs, a
   deployment can protect tabs (`tabs.protected`, by tab id per dashboard) so the chat never changes them, for admins
   too, or let the chat change only tabs it made (`tabs.editable: own`). With the `chatTabs` switch, people who may
