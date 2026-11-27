@@ -30,6 +30,11 @@ The host callbacks (`BoardHost`):
 | `loadFilterOptions(field)` | no | the values for a filter control |
 | `loadVersions()`, `revertTo(version)` | no | the version history and restoring from it |
 
+A widget's data with an `error` shows the error in the widget, and the rest of the board still draws. Data with a
+`notice` (`{ text, action?: { label, href } }`) shows that text and link in place of the figure: it is for a widget
+the source can't answer right now, such as one that needs a field that is not collected, and comes from
+`resolveBoard()` when the server passes `ctx.unavailable`.
+
 Leave out the write callbacks and the board is read-only. `useBoard()`, `useBoardOps()`, `useFilters()` and
 `useVersions()` give your own components the same state.
 

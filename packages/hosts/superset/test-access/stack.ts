@@ -7,7 +7,7 @@
 //   - a stub chat model, OpenAI-compatible, which calls the one tool a message names ("TOOL query {...}") and
 //     then says "done", so the chat's tools run exactly as asked without a real model;
 //   - a cut-off switch on the way from Lenspack to Superset (Lenspack's superset.url points at it), for the
-//     outage case.
+//     outage case, which can also answer Superset's own 404 for one route (a pod without the plugin, a misroute).
 //
 // Secrets (Superset's SECRET_KEY, the database and user passwords) are made fresh per run, handed to docker
 // through its environment (never on a command line), kept in a 0700 temporary folder, and removed with the
@@ -209,12 +209,21 @@ function stubModel(): { server: Server; calls: () => number } {
   return { server, calls: () => calls };
 }
 
-/** Lenspack's way to Superset, with a switch that cuts it (every request's connection reset), for the outage case. */
-function cutOff(target: string): { server: Server; cut: (on: boolean) => void } {
+/**
+ * Lenspack's way to Superset, with a switch that cuts it (every request's connection reset), for the outage case, and
+ * one that answers a path as Superset answers a route it doesn't have (404, "Not found").
+ */
+function cutOff(target: string): { server: Server; cut: (on: boolean) => void; missing: (path: string | null) => void } {
   let down = false;
+  let gone: string | null = null;
   const { hostname, port } = new URL(target);
   const server = createServer((req, res) => {
     if (down) return req.socket.destroy();
+    if (gone && new URL(req.url ?? "/", "http://x").pathname.endsWith(gone)) {
+      req.resume();
+      res.writeHead(404, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ message: "Not found" }));
+    }
     const up = request({ hostname, port, path: req.url, method: req.method, headers: req.headers }, (r) => {
       res.writeHead(r.statusCode ?? 502, r.headers);
       r.pipe(res);
@@ -222,7 +231,7 @@ function cutOff(target: string): { server: Server; cut: (on: boolean) => void } 
     up.on("error", () => res.destroy());
     req.pipe(up);
   });
-  return { server, cut: (on) => (down = on) };
+  return { server, cut: (on) => (down = on), missing: (path) => (gone = path) };
 }
 
 const listen = (s: Server) => new Promise<number>((resolve) => s.listen(0, "127.0.0.1", () => resolve((s.address() as AddressInfo).port)));
@@ -242,6 +251,8 @@ export type Stack = {
   modelCalls: () => number;
   /** Cuts (true) or restores (false) Lenspack's way to Superset. */
   cut: (on: boolean) => void;
+  /** Answers this Superset path (below its root) with Superset's own 404 on Lenspack's way to Superset, or no longer (null). */
+  missingRoute: (path: string | null) => void;
   /** Turns Superset's dashboard roles (DASHBOARD_RBAC) on or off, without a restart (superset_config.py). */
   dashboardRbac: (on: boolean) => void;
   /** A session signed in to Superset as this fixture user. */
@@ -371,7 +382,8 @@ export async function startStack(
           HOME: dir,
           SUPERSET_ADMIN_USERNAME: "lp_admin",
           SUPERSET_ADMIN_PASSWORD: secrets.LP_USER_PASSWORD,
-          LENSPACK_LLM_PROVIDERS: JSON.stringify([{ name: "stub", model: "stub", baseUrl: `http://127.0.0.1:${stubPort}/v1`, apiKey: "stub" }]),
+          // Priced (per million tokens, high enough to show in cents), so spend and the budget can be checked.
+          LENSPACK_LLM_PROVIDERS: JSON.stringify([{ name: "stub", model: "stub", baseUrl: `http://127.0.0.1:${stubPort}/v1`, apiKey: "stub", pricing: { input: 1000, output: 1000 } }]),
           ...o.lenspackEnv,
         },
       });
@@ -406,6 +418,7 @@ export async function startStack(
       log,
       modelCalls: stub.calls,
       cut: way.cut,
+      missingRoute: way.missing,
       dashboardRbac: (on) => {
         const r = docker(["exec", containers[1]!, "sh", "-c", on ? "rm -f /tmp/lp-dashboard-rbac-off" : "touch /tmp/lp-dashboard-rbac-off"]);
         if (r.status) throw new Error(`could not turn dashboard roles ${on ? "on" : "off"}: ${r.stderr.trim()}`);

@@ -92,7 +92,7 @@ export function print(ast: Ast, rules: DialectRules): Printed {
         return spelled ? spelled(expr(e.l), expr(e.r)) : `(${expr(e.l)} ${e.op} ${expr(e.r)})`;
       }
       case "in":
-        return `(${expr(e.l)} IN (${e.values.map(expr).join(", ")}))`;
+        return `(${expr(e.l)} ${e.not ? "NOT IN" : "IN"} (${e.values.map(expr).join(", ")}))`;
       case "case":
         return `CASE WHEN ${expr(e.when)} THEN ${expr(e.then)} END`;
       case "trunc":

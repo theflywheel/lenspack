@@ -10,7 +10,9 @@ caller may not open answers `404`, the same as one that is not there.
 ## Health
 
 `GET /healthz` answers `{ "ok": true, … }` without sign-in, on `lenspack serve` and the Superset host (the demo has
-none). Use it for liveness checks.
+none). Use it for liveness checks. `GET /readyz` answers `200 { "ready": true }` when the server can answer requests,
+else `503 { "ready": false, "reason": "…" }` (the Superset host, until Superset has given it the identity key). Use it
+for readiness checks.
 
 ## The board API
 
@@ -133,8 +135,8 @@ See [Voice](../features/voice.md#the-route).
 ## Telemetry
 
 `POST /api/_telemetry` takes the browser's events (a thumbs up or down, an answer left early); it answers 404 when the
-`telemetry` switch is off. Admins read the records at `<prefix>/telemetry` and the switchboard at
-`<prefix>/telemetry/checklist`, changed with `PUT <prefix>/settings/telemetry`. Every route and its rules are in
+`telemetry` switch is off. Admins read the records at `<prefix>/telemetry`, and what's recorded and the metrics worked out from it at
+`<prefix>/telemetry/checklist`; fields are switched with `PUT <prefix>/settings/telemetry`. Every route and its rules are in
 [Telemetry](../features/telemetry.md).
 
 ## Usage
@@ -174,10 +176,12 @@ The Superset host's settings, beside the panel:
 
 `GET <prefix>/cache`: totals since the store was started, the queue right now, the last refresh, and every entry.
 `t1` to `t4` count answers by [tier](../features/saved-answers.md#the-tiers-cheapest-first): exact replay, plan
-replay, slots and router.
+replay, slots and router. While saved answers are switched off, `on` is `false` and `entries` is empty; `stored`
+still says how many are on disk, so they can be cleared.
 
 ```jsonc
 {
+  "on": true, "stored": 1,
   "stats": { "since": "2026-11-26T08:00:00.000Z", "turns": 120, "hits": { "t1": 40, "t2": 31, "t3": 9, "t4": 12 }, "misses": 28, "savedUsd": 1.92 },
   "queue": { "running": 3, "waiting": 0, "editsWaiting": 0, "turnSeconds": 11.5 },  // turnSeconds: recent average model turn
   "prewarm": { "at": "2026-11-26T06:30:04.000Z", "reason": "schedule", "pack": null, "entries": 24, "refreshed": 21, "rewritten": 2, "skipped": 1, "failed": 0, "spentUsd": 0.0011, "modelCalls": 2 },  // or null
@@ -197,8 +201,11 @@ replay, slots and router.
 - `POST <prefix>/cache/<id>/pin`, `/unpin`, `/evict`: answers `{ "ok": true, "id": "<id>", "action": "pin" }`, or
   `404` for an unknown id. Each is written to the audit log. A pinned entry does not expire and is never pushed out
   when the store is full.
+- `POST <prefix>/cache/clear`: removes every saved answer at once and writes the file straight away, whether saved
+  answers are on or off: `{ "ok": true, "removed": 12 }`. Written to the audit log (`cache clear`).
 - `GET <prefix>/cache/suggestions?board=<id>`: the most-asked questions on a board, across every scope:
-  `{ "board": "<id>", "suggestions": ["…"] }`. Optional `lang` and `limit` (8 by default).
+  `{ "board": "<id>", "suggestions": ["…"] }`. Optional `lang` and `limit` (8 by default). Empty while saved answers
+  are off, as are `chart-candidates` and `boards`.
 - `GET <prefix>/cache/chart-candidates`: questions asked often that no chart on their board answers: `{ "candidates": [{
   "id", "board", "question", "variants", "asks", "lastHit", "query": { "kind": "value", "measure": "…" } }] }`, most
   asked first. Optional `minAsks` (3) and `days` (14).

@@ -357,6 +357,9 @@ function filterExpr(ref: Expr, op: BoundFilter["op"], value: unknown): Expr {
       return { t: "bin", op: "<=", l: ref, r: one(v) };
     case "in":
       return { t: "in", l: ref, values: (Array.isArray(v) ? v : [v]).map(one) };
+    case "not_in":
+      // As <> does, NOT IN leaves out rows where the column is NULL.
+      return { t: "in", not: true, l: ref, values: (Array.isArray(v) ? v : [v]).map(one) };
     case "between": {
       const [a, b] = Array.isArray(v) ? v : [v, v];
       return { t: "bin", op: "AND", l: { t: "bin", op: ">=", l: ref, r: one(a) }, r: { t: "bin", op: "<=", l: ref, r: one(b) } };

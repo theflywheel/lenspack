@@ -202,7 +202,7 @@ scope, is written to the audit log with the Superset user and the outcome (`ok`,
 ### Usage telemetry
 
 With [usage telemetry](telemetry.md) on, each action that succeeds is also one event (`personal-dashboard` or
-`saved-layout`), switched by the `personal-dashboards` item. Events carry ids and counts only, never titles or
+`saved-layout`), switched by the `personal-dashboards` field. Events carry ids and counts only, never titles or
 layout names. The fields are in [Telemetry records](../reference/telemetry-records.md).
 
 ---

@@ -1,4 +1,4 @@
-import { type BoundPlan, type Capabilities, type Connector, type ExecuteOptions, type Plan, type Row, type SourceStatement, shapeBound } from "@lenspack/engine";
+import { type BoundPlan, type Capabilities, type Connector, type ExecuteOptions, type Plan, type Row, type SourceStatement, shapeBound, zonedSeriesWarnings } from "@lenspack/engine";
 import type { Pack } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
@@ -28,6 +28,17 @@ export const SUPERSET_CAPABILITIES: Capabilities = {
   points: true,
   savedCompute: computeRefusalForSuperset,
 };
+
+/**
+ * The start-up warnings for a pack outside UTC: each dataset whose time column has a time of day, which Superset cannot
+ * cut into days in the pack's zone, so every series over it is refused (the kernel decides which: zonedSeriesGaps).
+ */
+export function timeZoneWarnings(pack: Pack, binding: Binding): string[] {
+  return zonedSeriesWarnings(pack, SUPERSET_CAPABILITIES, (entity) => {
+    const ds = binding.datasets.get(entity);
+    return ds ? `Superset dataset "${ds.table}" (${ds.id})` : `"${entity}"`;
+  });
+}
 
 type Native = { datasetId: number; queries: ReturnType<typeof queryObjects>["queries"]; metric: Metric | null };
 

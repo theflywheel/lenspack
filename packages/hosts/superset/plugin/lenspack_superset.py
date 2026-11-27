@@ -818,7 +818,7 @@ def lenspack_app_mutator(app):
             return saved("Space-bar hold", call("PUT", "/_superset/settings/speech", {"holdMs": hold}))
 
         # Kept recordings of spoken questions: how long, how much, and the consent notice. Whether they are kept at all is
-        # the voice-audio item on the admin panel's Telemetry tab, which asks the admin to confirm first.
+        # the voice-audio field on the admin panel's Telemetry tab, which asks the admin to confirm first.
         @expose("/speech-audio", methods=["POST"])
         @has_access
         def speech_audio(self):

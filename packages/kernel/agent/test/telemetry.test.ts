@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { type EventRecord, type TelemetryLine, type TelemetryStore, type ToolFact, type TranscriptRecord, type TurnRecord, type TurnStart, TELEMETRY_ITEMS, classifyKind, classifyOutcome, factsFromSteps, scriptLanguage, switchable, textSimilarity, turnTelemetry, wordEditDistance } from "../src";
+import { type EventRecord, type TelemetryLine, type TelemetryStore, type ToolFact, type TranscriptRecord, type TurnRecord, type TurnStart, FIELD_GROUPS, classifyKind, classifyOutcome, factsFromSteps, scriptLanguage, switchable, textSimilarity, turnTelemetry, wordEditDistance } from "../src";
 
 function memoryStore(clock: () => number): TelemetryStore & { lines: TelemetryLine[] } {
   const lines: TelemetryLine[] = [];
@@ -35,13 +35,13 @@ function memoryStore(clock: () => number): TelemetryStore & { lines: TelemetryLi
 const hash = (t: string) => createHash("sha256").update(`test-key:${t}`).digest("hex").slice(0, 24);
 const ana = { user: "ana", roles: ["Gamma"] };
 // Every item on, so each test sees every field; the switches have their own tests (switchboard.test.ts).
-const ALL: ReadonlySet<string> = new Set(TELEMETRY_ITEMS.filter(switchable).map((s) => s.id));
+const ALL: ReadonlySet<string> = new Set(FIELD_GROUPS.filter(switchable).map((s) => s.id));
 const NO_TEXT: ReadonlySet<string> = new Set([...ALL].filter((id) => id !== "question-text" && id !== "transcript-text"));
 
-function recorder(opts: { items?: () => ReadonlySet<string>; transcriptWaitMs?: number } = {}) {
+function recorder(opts: { fields?: () => ReadonlySet<string>; transcriptWaitMs?: number } = {}) {
   let t = Date.parse("2026-11-20T10:00:00Z");
   const store = memoryStore(() => t);
-  const tel = turnTelemetry({ store, hash, now: () => new Date(t), context: () => ({ b1: { campaign: "Round 1" }, "role:Gamma": { country: "A" } }), items: () => ALL, ...opts });
+  const tel = turnTelemetry({ store, hash, now: () => new Date(t), context: () => ({ b1: { campaign: "Round 1" }, "role:Gamma": { country: "A" } }), fields: () => ALL, ...opts });
   let n = 0;
   const start = (question: string, o: Partial<TurnStart> = {}): TurnStart => ({ turnId: `t${++n}`, who: ana, board: "b1", pack: "p", question, transcriptIds: [], newConversation: false, languagePicked: "auto", client: { device: "mobile", network: "3g", viewport: "narrow", userAgent: "Mozilla/5.0 (should not be kept)" }, builder: "m", effort: null, readOnly: false, datasetOf: () => undefined, ...o });
   const ask = async (question: string, o: Partial<TurnStart> = {}) => {
@@ -153,7 +153,7 @@ describe("repeats and sessions", () => {
 
   it("keeps the viewer's dashboard selections as the turn's context, hashed when question text is off", async () => {
     let keep = true;
-    const { ask, turns } = recorder({ items: () => (keep ? ALL : NO_TEXT) });
+    const { ask, turns } = recorder({ fields: () => (keep ? ALL : NO_TEXT) });
     await ask("visits here", { selections: { Region: "North" } });
     keep = false;
     await ask("visits here", { selections: { Region: "North" } });
@@ -209,7 +209,7 @@ describe("a spoken question", () => {
 describe("question text off", () => {
   it("keeps a keyed hash of questions and transcripts instead of their words, and still counts edits and repeats", async () => {
     let keep = true;
-    const { ask, heard, move, store, turns } = recorder({ items: () => (keep ? ALL : NO_TEXT) });
+    const { ask, heard, move, store, turns } = recorder({ fields: () => (keep ? ALL : NO_TEXT) });
     await ask("How many visits?");
     keep = false;
     await heard("clip-h", "how many visit");

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { rotatingAudit } from "@lenspack/serve";
-import { serviceAccount } from "../src/bootstrap";
+import { identityKeeper, serviceAccount } from "../src/bootstrap";
 import type { SupersetClient } from "../src/client";
 import { adminRights, mayUse } from "@lenspack/policy";
 import { CLIENT_HEADER, IDENTITY_HEADER, signedClient, type Identity, READ_ONLY_MESSAGE, editPolicyFrom, callerOf, roleRulesFrom, signIdentity, supersetAccess, supersetRights, verifyIdentity } from "../src/identity";
@@ -111,6 +111,39 @@ describe("the audit log", () => {
     log.audit(event("2026-10-01T00:00:00Z", "new"));
     expect(existsSync(join(dir, "audit-2026-09.jsonl"))).toBe(true);
     expect(log.read().map((e) => e.user)).toEqual(["new"]);
+  });
+});
+
+describe("the identity key from Superset", () => {
+  it("keeps trying until Superset gives it, never giving up, and accepts signed requests from then on", async () => {
+    const logs: string[] = [];
+    let tries = 0;
+    // Superset without the plugin (404) for the first five tries, past every short wait, then with it.
+    const keeper = identityKeeper({
+      fetch: async () => {
+        if (++tries <= 5) throw new Error("Superset GET /api/v1/lenspack/identity-key → 404");
+        return KEY;
+      },
+      log: (s) => logs.push(s),
+      waits: [1, 2, 5],
+    });
+    expect(keeper.key()).toBeNull();
+    await keeper.first;
+    expect(keeper.key()).toBe(KEY);
+    expect(tries).toBe(6);
+    expect(logs.filter((l) => /every request is refused until it works; trying again/.test(l))).toHaveLength(5);
+    expect(logs.at(-1)).toMatch(/fetched from Superset after 6 tries/);
+    // A request Superset signed is accepted with the key the keeper holds.
+    const header = signIdentity({ u: "ana", a: false, t: Math.floor(Date.now() / 1000) }, KEY);
+    expect(verifyIdentity(header, keeper.key()!)).toMatchObject({ u: "ana" });
+  });
+
+  it("stops trying when told to, without a key", async () => {
+    const keeper = identityKeeper({ fetch: async () => Promise.reject(new Error("down")), log: () => {}, waits: [60_000] });
+    await new Promise((r) => setTimeout(r, 10));
+    keeper.stop();
+    await keeper.first;
+    expect(keeper.key()).toBeNull();
   });
 });
 

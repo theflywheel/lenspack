@@ -22,9 +22,11 @@ adds a header, `x-lenspack-identity`: base64url JSON `{u, i, a, r, w, d, b, p, e
 | `t` | when it was signed |
 
 The key is derived from Superset's `SECRET_KEY` on the Superset side; the Lenspack server fetches it on start
-(`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). A request without a valid signature
-less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `mine.js`, `chat.css` and
-`/healthz` are public.
+(`GET /api/v1/lenspack/identity-key`, allowed to admins and its own account). If Superset can't give it yet (not up,
+or the plugin not loaded), the server keeps asking with backoff (up to once a minute) and signs people in as soon as
+it has the key; until then every request is refused and `/readyz` answers 503. A request without a valid signature
+less than five minutes old is not signed in (401). Only `overlay.js`, `chat.js`, `mine.js`, `chat.css`, `/healthz`
+and `/readyz` are public.
 
 ## One dashboard per request
 
@@ -130,7 +132,8 @@ JSON line each in `audit.jsonl` in the state directory.
 
 - On the first write of a month, the previous month moves to `audit-YYYY-MM.jsonl`; months older than 90 days are
   deleted (`audit.retentionDays`, or `LENSPACK_AUDIT_RETENTION_DAYS`). `audit: false` turns it off.
-- It is the durable record: the usage figures (`GET /api/_usage`) are kept in memory and reset on restart.
+- The usage figures (`GET /api/_usage`) and the day's budget come from `usage.jsonl` beside it; a restart reads
+  today's calls back.
 - Admins read it with `GET /_superset/audit?month=YYYY-MM&limit=N`, and on the AI assistant page.
 
 ---

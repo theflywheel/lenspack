@@ -105,7 +105,7 @@ export function ExplainBlock({ x, onOpen }: { x: AnswerCardData; onOpen?: () => 
               <span className="mr-1.5 inline-grid size-4 place-items-center rounded-full bg-muted font-mono text-[10px] text-muted-foreground">{i + 1}</span>
               {c.description}
             </p>
-            {c.saved && <p className="text-[11px] text-muted-foreground">Saved answer, data as of {when(c.saved.asOf)}</p>}
+            {c.saved && <p className="text-[11px] text-muted-foreground">Saved answer · numbers read at {when(c.saved.asOf)}</p>}
             {!c.saved && c.statements?.find((s) => s.cachedAt) && <p className="text-[11px] text-muted-foreground">Answered from the source's cache, data as of {when(c.statements.find((s) => s.cachedAt)!.cachedAt!)}</p>}
             {c.statements?.map((s, k) => <StatementBlock key={k} s={s} />)}
             {c.after && <p className="text-[11px] text-muted-foreground">{c.after}</p>}

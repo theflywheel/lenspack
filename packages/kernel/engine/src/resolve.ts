@@ -1,5 +1,5 @@
 import { type Query, type ScopeClause, type Widget, nearest, queryKeys } from "@lenspack/core";
-import { type MeasureExpr, type Pack, type PackDimension, type PackEntity, type PackMeasure, datedTime, expandedExpr, operands, parseJoinOn } from "@lenspack/pack";
+import { type MeasureExpr, type Pack, type PackDimension, type PackEntity, type PackMeasure, datedTime, expandedExpr, operands, parseJoinOn, timeFieldOf } from "@lenspack/pack";
 
 import { addDays, bucketZone, calendarRange, dayStartFrom, localDate, startOfLocalDay, writtenDayStart } from "./calendar";
 
@@ -31,7 +31,16 @@ export type Ctx = {
    * in words for them: a refusal of one is ACCESS_HIDDEN and says why, so it is not read as "not in the pack".
    */
   accessHidden?: { keys: ReadonlySet<string>; reason: string };
+  /**
+   * Keys the source can't answer right now, though the caller may use them: what they read is not being collected
+   * or not set up. A query naming one is refused (UNAVAILABLE) with the host's notice, which says why in words for
+   * the reader and may point at where to fix it, so a board shows that instead of a wrong or empty figure.
+   */
+  unavailable?: ReadonlyMap<string, Notice>;
 };
+
+/** Why a key can't be answered now, in words for the reader, and optionally where to fix it. */
+export type Notice = { text: string; action?: { label: string; href: string } };
 
 export type ResolveErrorCode =
   | "UNKNOWN_MEASURE"
@@ -48,7 +57,8 @@ export type ResolveErrorCode =
   | "NOT_SUPPORTED"
   | "OUT_OF_SCOPE"
   | "NOT_PERMITTED"
-  | "ACCESS_HIDDEN";
+  | "ACCESS_HIDDEN"
+  | "UNAVAILABLE";
 
 /** What a backend can do. Resolution refuses the rest up front. */
 export type Capabilities = {
@@ -90,12 +100,14 @@ export class ResolveError extends Error {
     message: string,
     public readonly key?: string,
     public readonly nearest?: string,
+    /** For UNAVAILABLE: the host's notice, drawn by a board in place of the widget. */
+    public readonly notice?: Notice,
   ) {
     super(message);
     this.name = "ResolveError";
   }
   toJSON() {
-    return { code: this.code, error: this.message, key: this.key, nearest: this.nearest };
+    return { code: this.code, error: this.message, key: this.key, nearest: this.nearest, ...(this.notice ? { notice: this.notice } : {}) };
   }
 }
 
@@ -105,10 +117,15 @@ export class ResolveError extends Error {
  * filter menu or compiled statement is ever built over a hidden key.
  */
 export function notPermitted(query: Query, ctx: Ctx = {}): ResolveError | null {
-  if (!ctx.hidden?.size) return null;
+  if (!ctx.hidden?.size && !ctx.unavailable?.size) return null;
   const k = queryKeys(query);
-  const key = [...k.measures, ...k.dimensions].find((x) => ctx.hidden!.has(x));
-  return key ? refusedKey(key, ctx) : null;
+  const keys = [...k.measures, ...k.dimensions];
+  const key = ctx.hidden?.size ? keys.find((x) => ctx.hidden!.has(x)) : undefined;
+  if (key) return refusedKey(key, ctx);
+  const gone = ctx.unavailable?.size ? keys.find((x) => ctx.unavailable!.has(x)) : undefined;
+  if (!gone) return null;
+  const notice = ctx.unavailable!.get(gone)!;
+  return new ResolveError("UNAVAILABLE", `"${gone}" can't be answered right now: ${notice.text}`, gone, undefined, notice);
 }
 
 /** The refusal of a key or entity the caller may not use: the host's own reason when the host keeps it (ACCESS_HIDDEN). */
@@ -274,6 +291,27 @@ export const timeWindowOf = (query: Query, pack: Pack, ctx: Ctx = {}): TimeWindo
  */
 export const bucketZoneOf = (pack: Pack, entity: PackEntity | undefined): string | undefined => (datedTime(entity) ? undefined : bucketZone(pack.timeZone));
 
+/**
+ * The entities a source cannot draw a series of: in a pack outside UTC, on a source that cuts time into UTC days only
+ * (zonedBuckets false), each entity whose time column keeps a time of day. A series over one is refused at question
+ * time (resolve); a host says so at start-up with zonedSeriesWarnings, so it is not found one question at a time.
+ */
+export function zonedSeriesGaps(pack: Pack, caps: Pick<Capabilities, "zonedBuckets">): { entity: string; column: string; zone: string }[] {
+  if (caps.zonedBuckets !== false) return [];
+  return Object.entries(pack.entities).flatMap(([entity, e]) => {
+    const zone = e.time ? bucketZoneOf(pack, e) : undefined;
+    return zone ? [{ entity, column: timeFieldOf(e) ?? "(an expression)", zone }] : [];
+  });
+}
+
+/** zonedSeriesGaps as start-up warnings, one per entity: which column, and what to do. nameOf names an entity as the host does (a dataset). */
+export function zonedSeriesWarnings(pack: Pack, caps: Pick<Capabilities, "zonedBuckets">, nameOf: (entity: string) => string = (e) => `"${e}"`): string[] {
+  return zonedSeriesGaps(pack, caps).map(
+    (g) =>
+      `${nameOf(g.entity)}: its time column "${g.column}" has a time of day, and the pack's timeZone is ${g.zone}, which this source cannot cut days in, so every series over it (by hour, day, week or month) is refused. Use a date column for its time, or keep the pack in UTC.`,
+  );
+}
+
 // The clock to the minute: a widget drawn twice in that minute is the same statement, so a cache can answer it.
 export const nowOf = (ctx: Ctx = {}) => ctx.now ?? new Date(Math.floor(Date.now() / 60e3) * 60e3);
 
@@ -389,7 +427,7 @@ export function resolve(query: Query, pack: Pack, ctx: Ctx = {}, caps: Capabilit
     if (caps.zonedBuckets === false && bucketZoneOf(pack, rootEntity))
       throw new ResolveError(
         "NOT_SUPPORTED",
-        `Pack "${pack.pack}" starts its days in ${pack.timeZone}, and this source can only bucket time by UTC days. "${root}" keeps a time of day, so a series of it is not drawn here. A series works when the time column holds calendar dates only (a DATE column), or when the pack keeps time in UTC`,
+        `No series of "${root}" can be drawn on this deployment, at any grain: its time column has a time of day, and this source cannot cut it into days in ${pack.timeZone}, the pack's time zone. Do not try another series, grain or window on "${root}". Answer with a plain value or breakdown instead, with no grain or compute over time (a time window still works), and tell the user plainly that over-time charts of this data are not available here. The fix is the deployment's: a date column for its time, or a pack kept in UTC`,
         query.measure,
       );
     if (query.by) dimension = bind(query.by);

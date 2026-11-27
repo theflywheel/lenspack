@@ -2,10 +2,11 @@ import { createHmac, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { type TelemetryLine, type TelemetryOptions, type TelemetryQuery, type TelemetryStore, switchDefaults, itemsOn, turnTelemetry } from "@lenspack/agent";
+import { type TelemetryLine, type TelemetryOptions, type TelemetryQuery, type TelemetryStore, fieldsOn, resolveFields, turnTelemetry } from "@lenspack/agent";
 
 import { rotatingLog } from "./audit";
 import { writeWhole } from "./settings";
+import { type TelemetryConfig, checkedTelemetryConfig } from "./telemetry-switches";
 
 // Usage telemetry's storage on one machine: the log in telemetry.jsonl in the state directory, kept by month like
 // the audit log, and working state in telemetry-state.json beside it. What is recorded, and when, is
@@ -112,13 +113,13 @@ export function fileTelemetry(dir: string, opts: Omit<TelemetryOptions, "store" 
 }
 
 /**
- * The items a config's telemetry section turns on, for a server with no settings page to change them: the
- * catalogue's defaults, then telemetry.groups and telemetry.items. Unknown names are refused.
+ * The field groups a config's telemetry section turns on, for a server with no settings page to change them: the
+ * catalogue's defaults, then the older telemetry.groups and telemetry.items, then telemetry.fields. Unknown names are
+ * refused.
  */
-export function staticItems(c: { groups?: Record<string, boolean>; items?: Record<string, boolean>; questionText?: boolean }): () => ReadonlySet<string> {
-  const d = switchDefaults();
-  for (const k of Object.keys(c.groups ?? {})) if (!(k in d.groups)) throw new Error(`telemetry.groups.${k} is not a telemetry section; see docs/features/telemetry.md`);
-  for (const k of Object.keys(c.items ?? {})) if (!(k in d.items)) throw new Error(`telemetry.items.${k} is not a telemetry item with a switch; see docs/features/telemetry.md`);
-  const on = itemsOn({ telemetry: true, groups: { ...d.groups, ...c.groups }, items: { ...d.items, ...(c.questionText !== undefined ? { "question-text": c.questionText } : {}), ...c.items } }, { voice: true, cache: true, clarify: true });
+export function staticFields(c: TelemetryConfig): () => ReadonlySet<string> {
+  const checked = checkedTelemetryConfig(c);
+  const items = { ...(c.questionText !== undefined && checked.items["question-text"] === undefined ? { "question-text": c.questionText } : {}), ...checked.items };
+  const on = fieldsOn({ telemetry: true, fields: resolveFields({ groups: checked.groups, items, fields: checked.fields }).values }, { voice: true, cache: true, clarify: true });
   return () => on;
 }

@@ -506,9 +506,9 @@
     return out;
   }
   // The charts the saved dashboard draws: those reached from its root in Superset's own layout (position_json),
-  // read as the viewer through Superset's API.
+  // read as the viewer through Superset's API, below Superset's root ("/superset" when it runs under a path).
   function savedCharts(key) {
-    return fetch("/api/v1/dashboard/" + encodeURIComponent(key), { credentials: "same-origin", headers: { accept: "application/json" } })
+    return fetch(((current && current.supersetRoot) || "") + "/api/v1/dashboard/" + encodeURIComponent(key), { credentials: "same-origin", headers: { accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.result) return null;

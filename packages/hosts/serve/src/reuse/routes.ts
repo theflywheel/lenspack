@@ -1,6 +1,7 @@
 // The answer store's admin API, under a host's admin prefix (/_superset), for admins only:
-//   GET  <prefix>/cache                     stats and every entry
+//   GET  <prefix>/cache                     stats and every entry (no entry while the cache switch is off: on, stored)
 //   POST <prefix>/cache/<id>/pin | unpin | evict
+//   POST <prefix>/cache/clear               remove every saved answer now ("Clear saved answers"), on or off
 //   GET  <prefix>/cache/suggestions?board=  the most-asked questions on a board (every scope)
 //   GET  <prefix>/cache/chart-candidates    questions asked often that no chart on their board answers
 //   GET  <prefix>/cache/boards              how often each board changes; settled boards
@@ -37,6 +38,11 @@ export function cacheRoutes(o: { prefix: string; reuse: Reuse; queue?: TurnGate;
       if (rest === "/chart-candidates") return send(200, { candidates: await o.reuse.chartCandidates({ minAsks: Number(url.searchParams.get("minAsks")) || undefined, days: Number(url.searchParams.get("days")) || undefined }) });
       if (rest === "/boards") return send(200, { boards: await o.reuse.boards() });
       return send(404, { error: "not found" });
+    }
+    if (req.method === "POST" && rest === "/clear") {
+      const removed = await o.reuse.clear();
+      o.audit?.audit({ at: new Date().toISOString(), user: who.user, action: "cache clear", outcome: "ok", detail: `${removed} removed` });
+      return send(200, { ok: true, removed });
     }
     if (req.method === "POST" && (rest === "/prewarm" || rest === "/data-changed")) {
       const body = rest === "/data-changed" ? ((await readJson(req).catch(() => ({}))) as { pack?: unknown }) : {};

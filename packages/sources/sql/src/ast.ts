@@ -20,7 +20,7 @@ export type Expr =
   | { t: "segment"; arg: Expr; values: Expr[] } // one of values is a whole "|"-separated segment of arg
   | { t: "isnull"; arg: Expr }
   | { t: "epoch"; unit: "epoch_ms" | "epoch_s"; arg: Expr } // a number of (milli)seconds since 1970, as a naive UTC timestamp
-  | { t: "in"; l: Expr; values: Expr[] }
+  | { t: "in"; l: Expr; values: Expr[]; not?: boolean }
   | { t: "case"; when: Expr; then: Expr } // CASE WHEN when THEN then END (else NULL)
   | { t: "trunc"; grain: Grain; arg: Expr; zone?: string }
   | { t: "cast"; arg: Expr; to: "double" | "text" | "timestamp" }

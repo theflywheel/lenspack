@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { type BoardStore, memoryStore } from "@lenspack/core";
 import { elasticsearchConnector } from "@lenspack/elasticsearch";
-import { type Connector, check } from "@lenspack/engine";
+import { type Connector, check, zonedSeriesWarnings } from "@lenspack/engine";
 import { fileProposals } from "@lenspack/agent";
 import { parsePackText } from "@lenspack/pack";
 import { type Executor, type Writer, driverFor, filePath, openSource, sqlStore } from "@lenspack/sql";
@@ -96,14 +96,15 @@ export const configSchema = z.object({
   /** Append a JSON line per change, refusal and denial to this file. */
   audit: z.string().optional(),
   /**
-   * Usage telemetry (docs/features/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. groups and
-   * items switch sections and items on or off (every key and its default are in docs/features/telemetry.md); questionText is
-   * the older name of items.question-text.
+   * Usage telemetry (docs/features/telemetry.md): telemetry.jsonl in dir (relative to this file), kept retentionDays. fields
+   * switches each field group on or off (every key and its default are in docs/features/telemetry.md); groups and items are
+   * the older metric and section switches, still read; questionText is the older name of fields.question-text.
    */
   telemetry: z
     .object({
       dir: z.string().min(1),
       retentionDays: z.number().int().min(1).max(3650).default(90),
+      fields: z.record(z.string(), z.boolean()).optional(),
       groups: z.record(z.string(), z.boolean()).optional(),
       items: z.record(z.string(), z.boolean()).optional(),
       questionText: z.boolean().optional(),
@@ -258,6 +259,8 @@ export async function openConfig(config: LenspackConfig, dir: string, env = proc
     // A rule naming a key the pack does not have stops the server here, not at the first request.
     for (const rule of p.access ?? []) hiddenKeys(pack, rule);
     const name = p.name ?? pack.pack;
+    // A source that cuts days in UTC only (MySQL, SQLite), under a pack outside UTC: said now, by entity and column.
+    for (const w of zonedSeriesWarnings(pack, connector.capabilities)) console.warn(`lenspack: pack ${name}: ${w}`);
     hosts.push({
       name,
       pack,

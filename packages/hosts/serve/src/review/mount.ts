@@ -1,3 +1,5 @@
+import type { FieldNotice } from "@lenspack/agent";
+
 import type { Audit, AuditEvent } from "../audit";
 import type { BrandSettings } from "../brand";
 import type { Features } from "../features";
@@ -30,7 +32,19 @@ export type ReviewMountOptions = {
  * its audit log, gives the chat `turn` (AppOptions.definitions), mounts `routes(...)` once the runtime has
  * its models, and calls `start()` when it is listening.
  */
-export function reviewMount(admin: { features: Features; settings: SettingsStore; brand?: BrandSettings; app: { review: () => boolean; chatDefault: () => { model?: string; effort?: string } | undefined } }, o: ReviewMountOptions) {
+/**
+ * The telemetry switches as the usage board needs them: why each field group that is not recording is not, and
+ * where to tell the Telemetry tab which widgets read each field group.
+ */
+export type TelemetryLink = {
+  notices: () => Record<string, FieldNotice>;
+  setUses: (uses: () => Promise<Record<string, { id: string; label: string }[]>>) => void;
+};
+
+export function reviewMount(
+  admin: { features: Features; settings: SettingsStore; brand?: BrandSettings; app: { review: () => boolean; chatDefault: () => { model?: string; effort?: string } | undefined }; telemetry?: TelemetryLink },
+  o: ReviewMountOptions,
+) {
   let models: Provider[] = [];
   let usageOnce: Promise<UsageBoard | null> | undefined;
   const system = reviewSystem({ stateDir: o.stateDir, docs: o.docs, hosts: o.hosts, features: admin.features, settings: admin.settings, providers: () => models, events: o.events, audit: o.audit, log: o.log });
@@ -45,10 +59,12 @@ export function reviewMount(admin: { features: Features; settings: SettingsStore
     routes(rt: { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } }, more: Partial<Pick<PanelOptions, "prefix" | "base" | "shell" | "pageRedirect" | "adminName" | "seen">> = {}) {
       models = rt.providers;
       // Usage as a board of its own (the panel's Overview), over the turn telemetry when it is written, the audit log otherwise. Made once.
-      const usage = (usageOnce ??= usageBoard({ stateDir: o.stateDir, events: o.events, providers: () => rt.providers, ledger: rt.ledger, budget: rt.budget, roles: rt.roles, audit: o.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log: o.log }).catch((e) => {
+      const usage = (usageOnce ??= usageBoard({ stateDir: o.stateDir, events: o.events, providers: () => rt.providers, ledger: rt.ledger, budget: rt.budget, roles: rt.roles, audit: o.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log: o.log, notices: admin.telemetry?.notices }).catch((e) => {
         o.log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
         return null;
       }));
+      // The Telemetry tab's "Used by": the widgets of the usage board that read each field.
+      admin.telemetry?.setUses(async () => ((await usage)?.fieldUses() ?? {}));
       return panelRoutes({ prefix: o.prefix, system, features: admin.features, brand: admin.brand, providers: () => rt.providers, adminName: o.adminName, title: o.title, log: o.log, usage, ...more });
     },
   };

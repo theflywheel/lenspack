@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { fieldForEvent, fieldOfRecord } from "@lenspack/agent";
 import type { Connector } from "@lenspack/engine";
+import type { Pack } from "@lenspack/pack";
 
 import type { AuditEvent } from "../audit";
 
@@ -15,13 +17,19 @@ export const USAGE_HOST = "usage";
 // in-process DuckDB database, read again from the record at most every so often (on the next query after
 // that). What the adapter gives is an ordinary Connector and board store; the pack and its boards are plain
 // files (packs/usage), so the usage board is assembled like any other.
+//
+// Each column says which record field it is read from (COLUMNS below). A record leaves out the fields whose
+// telemetry switch is off, so a column read from one is empty or a default while it is off; keyFields finds, for
+// each key of the pack, the field groups its columns come from, so the host can say the key is unavailable then
+// rather than let a board draw a wrong figure.
 
 export type UsageRow = {
   id: string;
   chat_session: string | null;
   at: string;
   hour: number;
-  user_name: string;
+  /** null when the record carries no user name (that field switched off). */
+  user_name: string | null;
   board: string | null;
   pack: string | null;
   datasets: string | null;
@@ -36,6 +44,10 @@ export type UsageRow = {
   outcome: "answered" | "declined" | "failed" | "clarify";
   cache_tier: string | null;
   question: string;
+  /** A keyed hash of the question: the same question, asked again, has the same one. */
+  question_hash: string | null;
+  question_words: number | null;
+  outcome_reason: string | null;
   device: string | null;
   network: string | null;
   usd: number;
@@ -56,15 +68,26 @@ export type UsageRow = {
   reply_s: number | null;
   first_token_s: number | null;
   speech_s: number | null;
+  /** The reader left before the answer finished. */
+  abandoned: number;
+  /** Seconds waited for a free slot before the turn started, and whether it waited at all. */
+  queue_s: number | null;
+  waited: number;
+  /** Words changed in the transcript before a spoken question was sent, and whether any were. */
+  transcript_edits: number | null;
+  edited: number;
   internal: number;
 };
+export type TranscriptRow = { transcript_id: string; at: string; user_name: string | null; model: string | null; language: string | null; seconds: number | null; usd: number; ms: number | null; words: number | null };
+export type EventRow = { turn_id: string | null; event: string; value: string | null; reason: string | null; stage: string | null; at: string; user_name: string | null };
 export type UsageTables = {
   turns: UsageRow[];
   features: { turn_id: string; feature: string; at: string }[];
-  roles: { turn_id: string; role: string; user_name: string; at: string }[];
-  events: { turn_id: string; event: string; value: string | null; reason: string | null; at: string; user_name: string | null }[];
+  roles: { turn_id: string; role: string; user_name: string | null; at: string }[];
+  events: EventRow[];
+  transcripts: TranscriptRow[];
 };
-const emptyTables = (): UsageTables => ({ turns: [], features: [], roles: [], events: [] });
+const emptyTables = (): UsageTables => ({ turns: [], features: [], roles: [], events: [], transcripts: [] });
 
 const EDIT_TOOLS = /^(add_widget|update_widget|move_widget|resize_widget|remove_widget|add_filter|update_filter|remove_filter|set_layout_mode|rename_board|restore_version)$/;
 const tidy = (s: unknown, n: number) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, n) : "");
@@ -142,6 +165,9 @@ export function usageFromAudit(events: AuditEvent[]): UsageTables {
       outcome: d.clarify?.asked ? "clarify" : declined ? "declined" : failed ? "failed" : "answered",
       cache_tier: tier,
       question: tidy(d.instruction, 200),
+      question_hash: null,
+      question_words: null,
+      outcome_reason: null,
       device: null,
       network: null,
       usd,
@@ -162,6 +188,11 @@ export function usageFromAudit(events: AuditEvent[]): UsageTables {
       reply_s: secs(d.ms),
       first_token_s: null,
       speech_s: null,
+      abandoned: 0,
+      queue_s: null,
+      waited: 0,
+      transcript_edits: null,
+      edited: 0,
       internal: flag(e.internal),
     };
     t.turns.push(row);
@@ -173,7 +204,7 @@ export function usageFromAudit(events: AuditEvent[]): UsageTables {
     if (d.clarify) used.add("clarify");
     if (d.quickReply) {
       used.add("quick reply");
-      t.events.push({ turn_id: id, event: "quick-reply", value: "chosen", reason: null, at: e.at, user_name: e.user });
+      t.events.push({ turn_id: id, event: "quick-reply", value: "chosen", reason: null, stage: null, at: e.at, user_name: e.user });
     }
     if (row.cache_hit) used.add("saved answer");
     if (derived) used.add("compute");
@@ -238,7 +269,23 @@ export type TelemetryLine = {
   speechSeconds?: number;
   saved?: boolean;
   internal?: boolean;
+  questionHash?: string;
+  questionWords?: number;
+  outcomeReason?: string | null;
+  abandoned?: boolean;
+  transcriptEditDistance?: number | null;
+  reuseSavedUsd?: number | null;
+  // transcripts
+  transcriptId?: string;
+  model?: string;
+  languageDetected?: string | null;
+  seconds?: number | null;
+  usd?: number | null;
+  ms?: number;
+  words?: number;
   // events
+  how?: string | null;
+  stage?: string | null;
   thumbs?: "up" | "down";
   rating?: "up" | "down" | null;
   value?: string;
@@ -248,12 +295,18 @@ export type TelemetryLine = {
 
 const isTurn = (l: TelemetryLine) => (l.type ? l.type === "turn" : !l.event && typeof l.question === "string");
 
-/** Telemetry lines → the usage tables. Events whose turn is not in the window are kept, unjoined. */
+/** Telemetry lines → the usage tables. Events whose turn is not in the window, or that are about no turn, are kept, unjoined. */
 export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
   const t = emptyTables();
   for (const l of lines) {
-    if (!l.turnId || !l.at) continue;
+    if (!l.at) continue;
+    if (l.type === "transcript") {
+      if (!l.transcriptId) continue;
+      t.transcripts.push({ transcript_id: l.transcriptId, at: l.at, user_name: str(l.user), model: str(l.model), language: str(l.languageDetected), seconds: typeof l.seconds === "number" ? l.seconds : null, usd: num(l.usd), ms: typeof l.ms === "number" ? l.ms : null, words: typeof l.words === "number" ? l.words : null });
+      continue;
+    }
     if (isTurn(l)) {
+      if (!l.turnId) continue;
       const total = typeof l.costUsd === "object" && l.costUsd ? l.costUsd : { total: l.costUsd, model: l.modelUsd, speech: l.speechUsd, review: l.reviewUsd, ...l.cost };
       const review = l.review ?? { ran: l.reviewRan, material: l.reviewMaterial, fixRound: l.fixRound };
       const tier = typeof l.reuse === "string" ? l.reuse : l.reuse?.tier !== undefined ? String(l.reuse.tier) : null;
@@ -263,7 +316,7 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
         chat_session: str(l.sessionId),
         at: l.at,
         hour: new Date(l.at).getUTCHours(),
-        user_name: l.user ?? "unknown",
+        user_name: str(l.user),
         board: str(l.board),
         pack: str(l.pack),
         datasets: Array.isArray(l.datasets) ? l.datasets.join(", ").slice(0, 200) || null : str(l.datasets),
@@ -278,6 +331,9 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
         outcome: l.outcome ?? "answered",
         cache_tier: tier && tier !== "miss" ? tier : null,
         question: tidy(l.question, 200),
+        question_hash: str(l.questionHash),
+        question_words: typeof l.questionWords === "number" ? l.questionWords : null,
+        outcome_reason: str(l.outcomeReason),
         device: str(l.client?.device ?? l.device),
         network: str(l.client?.network ?? l.network),
         usd: num(total.total),
@@ -286,7 +342,7 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
         speech_usd: num(total.speech),
         tokens_in: num(l.tokens?.in ?? l.tokensIn),
         tokens_out: num(l.tokens?.out ?? l.tokensOut),
-        saved_usd: typeof l.reuse === "object" && l.reuse ? num(l.reuse.savedUsd) : 0,
+        saved_usd: typeof l.reuse === "object" && l.reuse ? num(l.reuse.savedUsd) : num(l.reuseSavedUsd),
         refused: 0,
         reviewed: flag(review.ran),
         material: typeof review.material === "number" ? review.material : flag(review.material),
@@ -298,10 +354,16 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
         reply_s: secs(l.totalMs),
         first_token_s: secs(l.firstTokenMs),
         speech_s: typeof l.speechSeconds === "number" ? l.speechSeconds : null,
+        abandoned: flag(l.abandoned),
+        queue_s: secs(l.queueMs),
+        waited: flag(typeof l.queueMs === "number" && l.queueMs > 0),
+        transcript_edits: typeof l.transcriptEditDistance === "number" ? l.transcriptEditDistance : null,
+        edited: flag(typeof l.transcriptEditDistance === "number" && l.transcriptEditDistance > 0),
         internal: flag(l.internal || l.pack === USAGE_HOST),
       };
       t.turns.push(row);
-      for (const role of l.roles?.length ? l.roles : ["(none)"]) t.roles.push({ turn_id: l.turnId, role: String(role).slice(0, 80), user_name: row.user_name, at: l.at });
+      // No roles field (switched off): no rows, rather than one "(none)" row that would read as a role.
+      if (l.roles) for (const role of l.roles.length ? l.roles : ["(none)"]) t.roles.push({ turn_id: l.turnId, role: String(role).slice(0, 80), user_name: row.user_name, at: l.at });
       const used = new Set<string>([kind]);
       if (row.input === "spoken") used.add("voice");
       if (row.reviewed) used.add("reviewer");
@@ -311,7 +373,7 @@ export function usageFromTelemetry(lines: TelemetryLine[]): UsageTables {
       for (const f of used) t.features.push({ turn_id: l.turnId, feature: f, at: l.at });
     } else {
       const event = l.event ?? l.type ?? "event";
-      t.events.push({ turn_id: l.turnId, event: event.slice(0, 60), value: str(l.thumbs ?? l.rating ?? l.value ?? l.choice), reason: str(l.reason), at: l.at, user_name: str(l.user) });
+      t.events.push({ turn_id: str(l.turnId), event: event.slice(0, 60), value: str(l.thumbs ?? l.rating ?? l.value ?? l.choice ?? l.how), reason: str(l.reason), stage: str(l.stage), at: l.at, user_name: str(l.user) });
     }
   }
   return t;
@@ -359,14 +421,90 @@ const TURN_COLUMNS: [keyof UsageRow, string][] = [
   ["device", "VARCHAR"], ["network", "VARCHAR"], ["usd", "DOUBLE"], ["model_usd", "DOUBLE"], ["review_usd", "DOUBLE"], ["speech_usd", "DOUBLE"],
   ["tokens_in", "BIGINT"], ["tokens_out", "BIGINT"], ["saved_usd", "DOUBLE"], ["refused", "INTEGER"], ["reviewed", "INTEGER"], ["material", "INTEGER"],
   ["fix_round", "INTEGER"], ["logged", "INTEGER"], ["cache_hit", "INTEGER"], ["rephrase", "INTEGER"], ["reask_voice", "INTEGER"], ["reply_s", "DOUBLE"],
-  ["first_token_s", "DOUBLE"], ["speech_s", "DOUBLE"], ["internal", "INTEGER"],
+  ["first_token_s", "DOUBLE"], ["speech_s", "DOUBLE"], ["question_hash", "VARCHAR"], ["question_words", "INTEGER"], ["outcome_reason", "VARCHAR"],
+  ["abandoned", "INTEGER"], ["queue_s", "DOUBLE"], ["waited", "INTEGER"], ["transcript_edits", "INTEGER"], ["edited", "INTEGER"], ["internal", "INTEGER"],
 ];
 const TABLES: { name: string; columns: [string, string][]; rows: (t: UsageTables) => Record<string, unknown>[] }[] = [
   { name: "usage_turns", columns: TURN_COLUMNS, rows: (t) => t.turns },
   { name: "usage_features", columns: [["turn_id", "VARCHAR"], ["feature", "VARCHAR"], ["at", "TIMESTAMP"]], rows: (t) => t.features },
   { name: "usage_roles", columns: [["turn_id", "VARCHAR"], ["role", "VARCHAR"], ["user_name", "VARCHAR"], ["at", "TIMESTAMP"]], rows: (t) => t.roles },
-  { name: "usage_events", columns: [["turn_id", "VARCHAR"], ["event", "VARCHAR"], ["value", "VARCHAR"], ["reason", "VARCHAR"], ["at", "TIMESTAMP"], ["user_name", "VARCHAR"]], rows: (t) => t.events },
+  { name: "usage_events", columns: [["turn_id", "VARCHAR"], ["event", "VARCHAR"], ["value", "VARCHAR"], ["reason", "VARCHAR"], ["stage", "VARCHAR"], ["at", "TIMESTAMP"], ["user_name", "VARCHAR"]], rows: (t) => t.events },
+  {
+    name: "usage_transcripts",
+    columns: [["transcript_id", "VARCHAR"], ["at", "TIMESTAMP"], ["user_name", "VARCHAR"], ["model", "VARCHAR"], ["language", "VARCHAR"], ["seconds", "DOUBLE"], ["usd", "DOUBLE"], ["ms", "INTEGER"], ["words", "INTEGER"]],
+    rows: (t) => t.transcripts,
+  },
 ];
+
+// --- where each column comes from -----------------------------------------------
+
+type From = { kind: "turn" | "transcript" | "event"; field: string };
+const turn = (field: string): From => ({ kind: "turn", field });
+/**
+ * The record field each column is read from, per table. A column left out (ids, times, the board and pack, the event's
+ * name) is on every record. The event table's rows belong to the field group of their event, which a measure names
+ * in its filter (event = 'feedback'); keyFields reads that too.
+ */
+export const COLUMNS: Record<string, Record<string, From>> = {
+  usage_turns: {
+    user_name: turn("user"), chat_session: turn("sessionId"), campaign: turn("campaign"), campaign_type: turn("campaignType"), country: turn("country"),
+    model: turn("models"), language: turn("questionLanguage"), input: turn("input"), kind: turn("kind"), answer_kind: turn("kind"), outcome: turn("outcome"),
+    cache_tier: turn("reuse"), question: turn("question"), question_hash: turn("questionHash"), question_words: turn("questionWords"), outcome_reason: turn("outcomeReason"),
+    device: turn("device"), network: turn("network"), usd: turn("costUsd"), model_usd: turn("modelUsd"), review_usd: turn("reviewUsd"), speech_usd: turn("speechUsd"),
+    tokens_in: turn("tokensIn"), tokens_out: turn("tokensOut"), saved_usd: turn("reuseSavedUsd"), reviewed: turn("reviewRan"), material: turn("reviewMaterial"),
+    fix_round: turn("fixRound"), logged: turn("outcome"), cache_hit: turn("reuse"), rephrase: turn("rephraseOf"), reask_voice: turn("reAskAfterVoice"),
+    reply_s: turn("totalMs"), first_token_s: turn("firstTokenMs"), abandoned: turn("abandoned"), queue_s: turn("queueMs"), waited: turn("queueMs"),
+    transcript_edits: turn("transcriptEditDistance"), edited: turn("transcriptEditDistance"),
+  },
+  usage_features: {},
+  usage_roles: { role: turn("roles"), user_name: turn("user") },
+  usage_events: { user_name: { kind: "event", field: "user" }, reason: { kind: "event", field: "reason" } },
+  usage_transcripts: {
+    user_name: { kind: "transcript", field: "user" }, model: { kind: "transcript", field: "model" }, language: { kind: "transcript", field: "languageDetected" },
+    seconds: { kind: "transcript", field: "seconds" }, usd: { kind: "transcript", field: "usd" }, ms: { kind: "transcript", field: "ms" }, words: { kind: "transcript", field: "words" },
+  },
+};
+
+/** Tables that have rows only while a field is recorded. */
+const ROWS_FROM: Record<string, From> = { usage_roles: turn("roles") };
+
+/**
+ * For each key of the usage pack, the telemetry field groups it reads: those of the columns named in its SQL and
+ * filter, those of the events its filter names, and for a measure built from others, theirs. A key with none reads
+ * only what every record keeps. The host turns these into the unavailable keys while a field group is off.
+ */
+export function keyFields(pack: Pack): Record<string, string[]> {
+  const table = (entity: string) => pack.entities[entity]?.source ?? entity;
+  const read = (entity: string, ...text: (string | undefined)[]) => {
+    const cols = COLUMNS[table(entity)] ?? {};
+    const src = text.filter(Boolean).join(" ");
+    const out = new Set<string>();
+    // A table whose rows come from one field (a role row per role a turn's user had) needs that field for any key on it.
+    const whole = ROWS_FROM[table(entity)];
+    if (whole) out.add(fieldOfRecord(whole.kind, whole.field)!.id);
+    for (const [col, from] of Object.entries(cols)) if (new RegExp(`\\b${col}\\b`).test(src)) { const f = fieldOfRecord(from.kind, from.field); if (f) out.add(f.id); }
+    for (const m of src.matchAll(/\bevent\s*(?:=|IN\s*\()\s*'([^']+)'(?:\s*,\s*'([^']+)')*/gi)) {
+      for (const name of m.slice(1).filter(Boolean)) {
+        const f = fieldForEvent(name, /stage\s*=\s*'after-transcription'/.test(src) ? "after-transcription" : null);
+        if (f) out.add(f.id);
+      }
+    }
+    return out;
+  };
+  // What a key reads, as text: its SQL, field, filter and conditions (not its label or hint).
+  const text = (x: unknown) => (x === undefined ? undefined : typeof x === "string" ? x : JSON.stringify(x));
+  const out: Record<string, Set<string>> = {};
+  for (const d of pack.dimensions) out[d.key] = read(d.entity, text(d.sql), text(d.field));
+  for (const m of pack.measures) out[m.key] = read(m.entity, text(m.sql), text(m.field), text(m.filter), text(m.where));
+  // A measure derived from others reads what they read.
+  const keys = pack.measures.map((m) => m.key);
+  for (const m of pack.measures) {
+    const d = text(m.derived);
+    if (!d) continue;
+    for (const k of keys) if (k !== m.key && new RegExp(`\\b${k}\\b`).test(d)) for (const f of out[k] ?? []) out[m.key]!.add(f);
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, [...v].sort()]));
+}
 const stamp = (iso: string) => new Date(iso).toISOString().replace("T", " ").replace("Z", "");
 
 type Db = { writer: { exec(sql: string, params?: unknown[]): Promise<unknown> } };
