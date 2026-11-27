@@ -248,6 +248,7 @@ The Superset host's config. Most keys can be left out for their environment vari
 | `auth.seedUsers` | none (`LENSPACK_USERS` wins) | people always let in under `granted`: Superset user names or `id:<n>` |
 | `editScope` | `superset` (`LENSPACK_EDIT_SCOPE` wins) | where the chat may edit: `superset` (any dashboard Superset lets the person edit) or `own` (their own dashboards only); or `{ scope, adminsExempt }` (admins exempt by default). See [Personal dashboards](../features/personal-dashboards.md#where-the-chat-may-edit-editscope) |
 | `personal` | `maxDashboardsPerUser: 20`, `maxSavedConfigsPerUser: 50` | limits for [personal dashboards and saved layouts](../features/personal-dashboards.md) |
+| `tabs` | `editable: all`, no protected tabs, `maxPerDashboard: 20`, `maxPerUser: 3`, `maxWidgetsPerTab: auto` | which tabs the chat may change (`editable: all` or `own`), tabs it never changes per dashboard id (`protected`), and how many tabs and widgets per tab it may make. The switches are the `chatTabs` and `playground` features, off by default. See [Tabs on dashboards](../features/tabs.md) |
 | `audit` | on, 90 days | `false`, or `{ retentionDays }` (`LENSPACK_AUDIT_RETENTION_DAYS`) |
 | `scope` | | the pack's own row scope: filters every answer carries, for everyone (one campaign: `[{ dimension: campaign, op: eq, value: 2026-spring }]`). See [Row scope and tenancy](../access/scope-and-tenancy.md#pinning-every-answer-in-superset) |
 | `overlay` | | what Superset has no field for: `pack`, `description`, `instructions`, `timeZone`, `entities`, `hints`, `labels`, `hierarchies`, `examples`, `geo`, `mapStyle`, `panel` (`float` or `dock`). See [Datasets and dashboards](../hosts/superset/datasets-and-dashboards.md#the-overlay) |
@@ -305,6 +306,8 @@ read only when the file leaves the key out; **only source** means there is no ke
 | `LENSPACK_USER_ACCESS`, `LENSPACK_USERS` | superset | `auth.userAccess`, `auth.seedUsers` (comma-separated) | over the file |
 | `LENSPACK_EDIT_SCOPE`, `LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT` | superset | `editScope` and its `adminsExempt` | over the file; an admin's setting wins over it |
 | `LENSPACK_MAX_DASHBOARDS_PER_USER`, `LENSPACK_MAX_SAVED_CONFIGS_PER_USER` | superset | the `personal` limits | over the file; an admin's setting wins over it |
+| `LENSPACK_TABS_EDITABLE`, `LENSPACK_PROTECTED_TABS` | superset | `tabs.editable` (`all` or `own`) and `tabs.protected` (JSON, or `12=TAB-a\|TAB-b;13=TAB-c`) | over the file; an admin's setting wins over it |
+| `LENSPACK_MAX_TABS_PER_DASHBOARD`, `LENSPACK_MAX_TABS_PER_USER`, `LENSPACK_MAX_WIDGETS_PER_TAB` | superset | the `tabs` limits | over the file; an admin's setting wins over it |
 | `LENSPACK_AUDIT_RETENTION_DAYS` | superset | how long audit months are kept | over the file |
 | `LENSPACK_TELEMETRY_RETENTION_DAYS` | both | how long usage records are kept (90 days) | over the file; an admin's setting wins over it |
 | `LENSPACK_TELEMETRY_QUESTION_TEXT` | both | the older switch for keeping question text; see [Telemetry](../features/telemetry.md) | over the file's older `questionText`; an admin's setting wins over it |

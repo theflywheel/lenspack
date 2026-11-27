@@ -1,11 +1,11 @@
-import { type BoardConfig, type LayoutItem, type Widget, boardConfigSchema } from "@lenspack/core";
+import { type BoardConfig, type LayoutItem, type TabDef, type Widget, boardConfigSchema } from "@lenspack/core";
 import type { Pack } from "@lenspack/pack";
 
 import type { Binding } from "./catalogue";
 import type { SupersetClient } from "./client";
 import { type PlacedChart, filtersFromNative, nativeFiltersAfter } from "./filters";
 import { plainNote } from "./note";
-import { type Component, type Position, COLUMNS, componentAt, defaultContainer, freshId, insertInRow, insertRow, isComponent, layoutProblems, locate, nestedLayout, openTab, parentMap, reachable, removeComponent, rowWidth, wrapRow } from "./layout";
+import { type Component, type Position, COLUMNS, componentAt, defaultContainer, freshId, hasTabs, insertInRow, insertRow, isComponent, layoutProblems, locate, nestedLayout, openTab, parentMap, reachable, removeComponent, rowWidth, tabDefs, wrapRow, writeTabs } from "./layout";
 import { chartToWidget, queryContextOf, widgetToChart } from "./query";
 
 // A Superset dashboard is the board. Reading one: its charts become widgets
@@ -132,6 +132,13 @@ export function dashboardToBoard(read: Awaited<ReturnType<typeof readDashboard>>
     return k;
   };
   const chartById = new Map(charts.map((c) => [c.id, c]));
+  // On a layout with tabs: each tab, and the tab each chart or note sits directly on.
+  const tabbed = hasTabs(position) ? tabDefs(position) : null;
+  const tabAt = (componentId: string) => tabbed?.of.get(componentId);
+  const at = (id: string, componentId: string, x: number, y: number, w: number, h: number): LayoutItem => {
+    const tab = tabAt(componentId);
+    return { i: id, x, y, w, h, ...(tab ? { tab } : {}) };
+  };
   const place = (c: Component, x: number, y: number): number => {
     const w = Math.max(1, Math.min(12, c.meta?.width ?? 4));
     const h = toLensH(c.meta?.height ?? 50);
@@ -139,7 +146,7 @@ export function dashboardToBoard(read: Awaited<ReturnType<typeof readDashboard>>
       const id = unique(byMarkdown.get(c.id) ?? widgetIdFor(`md-${c.id.replace(/^MARKDOWN-/, "")}`));
       widgets[id] = { kind: "text", title: "Note", body: String(c.meta?.code ?? "").slice(0, 2000) };
       state.markdown[id] = c.id;
-      layout.push({ i: id, x, y, w, h });
+      layout.push(at(id, c.id, x, y, w, h));
       return h;
     }
     const chart = chartById.get(c.meta?.chartId);
@@ -155,7 +162,7 @@ export function dashboardToBoard(read: Awaited<ReturnType<typeof readDashboard>>
     }
     state.charts[id] = chart.id;
     if (position[c.id] === c) state.placements![id] = c.id;
-    layout.push({ i: id, x, y, w, h });
+    layout.push(at(id, c.id, x, y, w, h));
     return h;
   };
   let y = 0;
@@ -194,7 +201,7 @@ export function dashboardToBoard(read: Awaited<ReturnType<typeof readDashboard>>
   }
   const widgetOf = new Map(Object.entries(state.charts).map(([w, c]) => [c, w]));
   const filters = filtersFromNative(metadata(dash.json_metadata), binding, placedCharts(position, charts.map((c) => c.id)), widgetOf);
-  const config = boardConfigSchema.parse({ version: 2, pack: pack.pack, packVersion: pack.version, title: dash.dashboard_title.slice(0, 160) || `Dashboard ${dash.id}`, grid: { cols: 12, rowHeight: 40, fill: true }, layout, widgets, filters });
+  const config = boardConfigSchema.parse({ version: 2, pack: pack.pack, packVersion: pack.version, title: dash.dashboard_title.slice(0, 160) || `Dashboard ${dash.id}`, grid: { cols: 12, rowHeight: 40, fill: true }, layout, widgets, filters, ...(tabbed?.tabs.length ? { tabs: tabbed.tabs } : {}) });
   return { config, state, notes };
 }
 
@@ -247,7 +254,15 @@ export type PushOptions = {
   log?: (s: string) => void;
   /** Owners for the charts it makes (a person's own dashboard: that person); absent, Lenspack's account. */
   owners?: number[];
+  /**
+   * Tabs nobody changes through Lenspack (policy's protectedTabIds, for everyone): checked last, against Superset's
+   * layout as it is now, before anything is written. A change that would touch one, its charts, or its place is refused.
+   */
+  protectedTabs?: (before: BoardConfig) => readonly string[] | Promise<readonly string[]>;
 };
+
+/** Said when the last check before saving finds a protected tab would change. */
+export const PROTECTED_REFUSAL = "This change would alter a protected tab, so nothing was saved.";
 
 /** Sends what changed between two board configs to the dashboard. Returns the updated state. */
 export async function pushBoard(client: SupersetClient, before: BoardConfig, after: BoardConfig, pack: Pack, binding: Binding, given: DashboardState, logOrOptions: ((s: string) => void) | PushOptions = {}): Promise<DashboardState> {
@@ -262,6 +277,19 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
   const { dash, position: old } = await readDashboard(client, dashId);
   const nested = nestedLayout(old);
   if (nested && o.moves !== "keep" && onlyMoved(before, after)) throw new Error(MOVE_REFUSAL);
+  // The last line: no chart on a protected tab is rewritten or deleted, whichever widget stands for it.
+  const guarded = (await o.protectedTabs?.(before)) ?? [];
+  const guardedCharts = guarded.length ? chartsOnTabs(old, guarded) : new Set<number>();
+  if (guardedCharts.size)
+    for (const id of new Set([...Object.keys(before.widgets), ...Object.keys(after.widgets)])) {
+      const chartId = given.charts[id];
+      if (chartId === undefined || !guardedCharts.has(chartId)) continue;
+      const was = before.widgets[id];
+      const now = after.widgets[id];
+      const sharedElsewhere = !now && Object.entries(given.charts).some(([w, c]) => c === chartId && w !== id && after.widgets[w]);
+      if (!now && given.created.includes(chartId) && !sharedElsewhere) throw new Error(`${PROTECTED_REFUSAL} (a chart on it would be deleted)`);
+      if (was && now && !same(was, now)) throw new Error(`${PROTECTED_REFUSAL} (a chart on it would be changed)`);
+    }
   const ids = new Set([...Object.keys(before.widgets), ...Object.keys(after.widgets)]);
   const dropped: string[] = [];
   const restored: Record<string, Removed> = {};
@@ -360,10 +388,11 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
   const position = nested ? patchedPosition(old, before, drawn, state, { dropped, restored, hints: o.hints ?? {}, known: new Set(Object.values(given.charts)), knownMarkdown: new Set(Object.values(given.markdown)) }) : gridPosition(old, drawn, state, restored);
   // Never a layout Superset can't draw. Problems it already had are left as they were.
   const had = new Set(layoutProblems(old));
-  const wrong = layoutProblems(position).filter((p) => !had.has(p));
+  const wrong = [...layoutProblems(position).filter((p) => !had.has(p)), ...protectedProblems(old, position, guarded)];
   if (wrong.length) {
     for (const c of made) await client.delete(`/api/v1/chart/${c}`).catch(() => {});
     log(`layout refused: ${wrong.join("; ")}`);
+    if (wrong.some((p) => p.startsWith("protected tab"))) throw new Error(`${PROTECTED_REFUSAL} (${wrong.filter((p) => p.startsWith("protected tab")).slice(0, 2).join("; ")})`);
     throw new Error(`the dashboard layout this change would save is not valid (${wrong.slice(0, 3).join("; ")}), so nothing was saved to the layout`);
   }
   for (const p of had) log(`layout already had a problem, left as it is: ${p}`);
@@ -379,6 +408,52 @@ export async function pushBoard(client: SupersetClient, before: BoardConfig, aft
   const fresh = await client.get<{ result: { changed_on: string } }>(`/api/v1/dashboard/${dashId}`);
   state.changedOn = fresh.result.changed_on;
   return state;
+}
+
+/** The charts anywhere inside these tabs (nested tabs included), by chart id. */
+function chartsOnTabs(pos: Position, tabs: readonly string[]): Set<number> {
+  const out = new Set<number>();
+  const walk = (id: string, seen: Set<string>) => {
+    const c = componentAt(pos, id);
+    if (!c || seen.has(id)) return;
+    seen.add(id);
+    if (c.type === "CHART" && typeof c.meta?.chartId === "number") out.add(c.meta.chartId);
+    for (const k of c.children ?? []) walk(k, seen);
+  };
+  for (const t of tabs) walk(t, new Set());
+  return out;
+}
+
+/** A tab's subtree as Superset draws it, without the parents lists (they follow from the tree): to tell whether it changed. */
+function subtree(pos: Position, id: string): unknown {
+  const c = componentAt(pos, id);
+  if (!c) return null;
+  const { parents: _p, children, ...rest } = c;
+  return { ...rest, children: (children ?? []).map((k) => subtree(pos, k)) };
+}
+
+/**
+ * How a new layout would change protected tabs: one line each, empty when it leaves them as they are. A protected tab
+ * keeps its existence, its place in its set, its title and everything inside it.
+ */
+export function protectedProblems(old: Position, next: Position, tabs: readonly string[]): string[] {
+  const out: string[] = [];
+  const parentOld = parentMap(old);
+  const parentNew = parentMap(next);
+  for (const id of tabs) {
+    if (!parentOld.has(id)) continue; // not drawn now: nothing to keep
+    if (!parentNew.has(id)) {
+      out.push(`protected tab ${id} would be removed`);
+      continue;
+    }
+    const holderOld = parentOld.get(id)!;
+    const holderNew = parentNew.get(id)!;
+    // Its place among the tabs beside it that are there before and after: a tab made or removed beside it doesn't move it.
+    const kept = (pos: Position, holder: string) => (componentAt(pos, holder)?.children ?? []).filter((k) => parentOld.has(k) && parentNew.has(k));
+    if (holderOld !== holderNew || kept(old, holderOld).indexOf(id) !== kept(next, holderNew).indexOf(id)) out.push(`protected tab ${id} would move`);
+    else if (JSON.stringify(subtree(old, id)) !== JSON.stringify(subtree(next, id))) out.push(`protected tab ${id} would change`);
+  }
+  return out;
 }
 
 /** Whether Superset still has this chart (a removed widget's chart, before it is put back). */
@@ -489,6 +564,8 @@ type PatchInputs = {
 export function patchedPosition(old: Position, before: BoardConfig, after: BoardConfig, state: DashboardState, o: PatchInputs): Position {
   const pos: Position = structuredClone(old);
   const placements = (state.placements ??= {});
+  // Tabs first: made, renamed, put back (a restore) and removed, so widgets can be placed on them.
+  if (before.tabs || after.tabs) writeTabs(pos, before.tabs ?? [], after.tabs ?? []);
   const componentOf = (w: string): string | undefined => placements[w] ?? state.markdown[w];
   const kept = new Set(Object.keys(after.widgets).map(componentOf).filter((c): c is string => !!c));
   const keptCharts = new Set(Object.entries(state.charts).filter(([w]) => after.widgets[w]).map(([, c]) => c));
@@ -537,7 +614,7 @@ export function patchedPosition(old: Position, before: BoardConfig, after: Board
     const c = widgetComponent(l.i, after, state, old, [], { w: ownWidth(l), h: l.h }, back);
     if (!c) continue;
     if (c.id in pos) c.id = freshId(pos, c.id);
-    placeComponent(pos, c, back, o.hints[l.i], componentOf);
+    placeComponent(pos, c, back, o.hints[l.i], componentOf, l.tab);
     if (state.charts[l.i]) placements[l.i] = c.id;
   }
   if (isComponent(pos.HEADER_ID)) pos.HEADER_ID.meta = { ...(pos.HEADER_ID.meta ?? {}), text: after.title };
@@ -545,11 +622,22 @@ export function patchedPosition(old: Position, before: BoardConfig, after: Board
 }
 
 /** Puts a widget's component into the layout (see patchedPosition for the order of preference). */
-function placeComponent(pos: Position, c: Component, back: Removed | undefined, hint: PlacementHint | undefined, componentOf: (w: string) => string | undefined) {
+function placeComponent(pos: Position, c: Component, back: Removed | undefined, hint: PlacementHint | undefined, componentOf: (w: string) => string | undefined, tab?: string) {
   const width = Number(c.meta?.width ?? 4);
   const drawn = reachable(pos);
   if (back?.row && drawn.has(back.row) && rowWidth(pos, back.row) + width <= COLUMNS) return insertInRow(pos, back.row, c, back.index);
   if (back?.container && drawn.has(back.container)) return void insertRow(pos, back.container, [c], back.blockIndex);
+  // The tab the board puts it on, when that tab is drawn: after or below its anchor when that is on the same tab, else at its top or bottom.
+  if (tab && drawn.has(tab) && componentAt(pos, tab)?.type === "TAB") {
+    const m = /^(after|below):(.+)$/.exec(hint?.place ?? "");
+    const anchor = m ? componentOf(m[2]!) : undefined;
+    const where = anchor && drawn.has(anchor) ? locate(pos, anchor) : null;
+    if (m && where && where.container === tab) {
+      if (m[1] === "after" && where.row && rowWidth(pos, where.row) + width <= COLUMNS) return insertInRow(pos, where.row, c, (where.index ?? -1) + 1);
+      return void insertRow(pos, tab, [c], where.blockIndex + 1);
+    }
+    return void insertRow(pos, tab, [c], hint?.place === "top" ? 0 : undefined);
+  }
   const m = /^(after|below):(.+)$/.exec(hint?.place ?? "");
   const anchor = m ? componentOf(m[2]!) : undefined;
   const at = anchor && drawn.has(anchor) ? locate(pos, anchor) : null;

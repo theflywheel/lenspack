@@ -175,6 +175,8 @@ export const placementSchema = z.object({
   place: z.union([z.enum(["top", "bottom"]), z.string().regex(/^(after|below):.+$/)]).default("bottom"),
   width: placementWidth.default("half"),
   height: z.number().int().min(1).max(20).optional(),
+  /** On a board laid out in tabs: the tab the new widget goes on (its id). Absent: an anchor's tab, else the host decides. */
+  tab: z.string().min(1).max(80).optional(),
 });
 export type Placement = z.infer<typeof placementSchema>;
 
@@ -191,6 +193,8 @@ export const layoutItemSchema = z.object({
    * still sit beside it; the widget gives the room back and the new last one is widened.
    */
   fw: z.number().int().min(1).optional(),
+  /** On a board laid out in tabs: the tab the widget sits directly on (innermost), by the host's tab id. */
+  tab: z.string().min(1).max(80).optional(),
 });
 export type LayoutItem = z.infer<typeof layoutItemSchema>;
 
@@ -288,6 +292,17 @@ export const filterSchema = z.object({
 });
 export type Filter = z.infer<typeof filterSchema>;
 
+/** A tab id: the host's own ("TAB-k3Jd9"), or one Lenspack made ("TAB-lp-…"). */
+export const TAB_ID = /^TAB-[A-Za-z0-9_-]{1,60}$/;
+
+/** One tab of a host's layout: its id, its own title (not its parents'), and the tab it sits in, if any. */
+export const tabSchema = z.object({
+  id: z.string().regex(TAB_ID, "a tab id looks like TAB-abc123"),
+  title: z.string().min(1).max(80),
+  parent: z.string().regex(TAB_ID).optional(),
+});
+export type TabDef = z.infer<typeof tabSchema>;
+
 export const boardConfigSchema = z.object({
   version: z.literal(2),
   pack: z.string().min(1),
@@ -308,6 +323,11 @@ export const boardConfigSchema = z.object({
   layout: z.array(layoutItemSchema).default([]),
   widgets: z.record(z.string(), widgetSchema).default({}),
   filters: z.array(filterSchema).default([]),
+  /**
+   * A host's tabs, when its layout has them (Superset's TAB components), in reading order: outer before inner, each
+   * set of tabs left to right. Each widget's layout item names the tab it sits on. Absent: the board has no tabs.
+   */
+  tabs: z.array(tabSchema).optional(),
 });
 export type BoardConfig = z.infer<typeof boardConfigSchema>;
 

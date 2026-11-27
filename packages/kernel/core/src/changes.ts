@@ -38,6 +38,14 @@ function outOfOrder(a: string[], b: string[]): Set<string> {
 export function describeChanges(before: BoardConfig, after: BoardConfig): string[] {
   const out: string[] = [];
   if (before.title !== after.title) out.push(`renamed the board to “${after.title}”`);
+  const tabsBefore = new Map((before.tabs ?? []).map((t) => [t.id, t]));
+  const tabsAfter = new Map((after.tabs ?? []).map((t) => [t.id, t]));
+  for (const [id, t] of tabsAfter) {
+    const was = tabsBefore.get(id);
+    if (!was) out.push(`added the tab “${t.title}”`);
+    else if (was.title !== t.title) out.push(`renamed the tab “${was.title}” to “${t.title}”`);
+  }
+  for (const [id, t] of tabsBefore) if (!tabsAfter.has(id)) out.push(`removed the tab “${t.title}”`);
   const was = new Map(before.layout.map((l) => [l.i, l]));
   const now = new Map(after.layout.map((l) => [l.i, l]));
   const added = after.layout.filter((l) => !was.has(l.i) && after.widgets[l.i]);

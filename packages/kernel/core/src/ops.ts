@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { Catalogue } from "./catalogue";
 import { checkWidget, filterProblem, nearest } from "./check";
 import { compact, defaultHeight, makeRoom, minWidth, pack, place, pushDown, roomInRow, widthUnits } from "./layout";
-import { type BoardConfig, type LayoutItem, type Problem, boardConfigSchema, filterSchema, placementSchema, widgetSchema } from "./schema";
+import { type BoardConfig, type LayoutItem, type Problem, TAB_ID, boardConfigSchema, filterSchema, placementSchema, widgetSchema } from "./schema";
+import { NO_TABS_MESSAGE, tabAndInside, tabSiblings } from "./tabs";
 
 // Domain operations rather than JSON Patch. Each one validates against its own
 // narrow schema, each one reads as a sentence in an audit log, and none of them
@@ -39,6 +40,11 @@ export const opSchema = z.discriminatedUnion("op", [
     density: z.enum(["comfortable", "compact"]).optional(),
     fill: z.boolean().optional(),
   }),
+  // Tabs, on a board whose host lays it out in tabs. A new tab goes at the end of the outermost set of tabs.
+  z.object({ op: z.literal("add_tab"), id: z.string().regex(TAB_ID, "a tab id looks like TAB-abc123"), title: z.string().trim().min(1).max(80) }),
+  z.object({ op: z.literal("rename_tab"), id: z.string(), title: z.string().trim().min(1).max(80) }),
+  // Takes the tab off with everything on it: its widgets, the tabs inside it and theirs.
+  z.object({ op: z.literal("remove_tab"), id: z.string() }),
 ]);
 export type BoardOp = z.infer<typeof opSchema>;
 
@@ -80,6 +86,15 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
         const w = widthUnits(placement.width, cols);
         const h = placement.height ?? defaultHeight(op.widget.kind === "chart" ? op.widget.chart : op.widget.kind);
         const item = place(draft.layout, op.id, w, h, placement, cols, floors);
+        // On a board in tabs: the tab asked for, else the tab of the widget it goes after or below.
+        if (placement.tab !== undefined) {
+          if (!draft.tabs?.some((t) => t.id === placement.tab)) return fail(`No tab "${placement.tab}" on this board`, nearest(placement.tab, (draft.tabs ?? []).map((t) => t.id)) ?? undefined);
+          item.tab = placement.tab;
+        } else if (draft.tabs?.length) {
+          const anchor = /^(?:after|below):(.+)$/.exec(placement.place)?.[1];
+          const tab = anchor ? draft.layout.find((l) => l.i === anchor)?.tab : undefined;
+          if (tab) item.tab = tab;
+        }
         draft.layout.push(item);
         touched.add(op.id);
         added.add(op.id);
@@ -205,6 +220,43 @@ export function applyOps(config: BoardConfig, ops: BoardOp[], catalogue: Catalog
         if (op.density) draft.grid.density = op.density;
         if (op.fill !== undefined) draft.grid.fill = op.fill;
         if (op.fill) repack = true;
+        break;
+      }
+
+      case "add_tab": {
+        if (!draft.tabs?.length) return fail(NO_TABS_MESSAGE);
+        if (draft.tabs.some((t) => t.id === op.id)) return fail(`A tab with the id "${op.id}" already exists`);
+        if (draft.tabs.some((t) => t.title.toLowerCase() === op.title.toLowerCase())) return fail(`A tab called “${op.title}” already exists: pick another title`);
+        // After the last outermost tab and everything inside it, so the list stays in reading order.
+        const outer = draft.tabs.filter((t) => t.parent === undefined);
+        const last = outer.at(-1)!;
+        const inside = tabAndInside(draft.tabs, last.id);
+        const at = Math.max(...inside.map((id) => draft.tabs!.findIndex((t) => t.id === id))) + 1;
+        draft.tabs.splice(at, 0, { id: op.id, title: op.title });
+        break;
+      }
+
+      case "rename_tab": {
+        const tab = draft.tabs?.find((t) => t.id === op.id);
+        if (!tab) return fail(`No tab "${op.id}" on this board`, nearest(op.id, (draft.tabs ?? []).map((t) => t.id)) ?? undefined);
+        if (draft.tabs!.some((t) => t.id !== op.id && t.title.toLowerCase() === op.title.toLowerCase())) return fail(`A tab called “${op.title}” already exists: pick another title`);
+        tab.title = op.title;
+        break;
+      }
+
+      case "remove_tab": {
+        const tab = draft.tabs?.find((t) => t.id === op.id);
+        if (!tab) return fail(`No tab "${op.id}" on this board`, nearest(op.id, (draft.tabs ?? []).map((t) => t.id)) ?? undefined);
+        if (tabSiblings(draft.tabs!, op.id).length <= 1) return fail(`“${tab.title}” is the only tab in its set, so it can't be removed`);
+        const gone = new Set(tabAndInside(draft.tabs!, op.id));
+        const widgets = draft.layout.filter((l) => l.tab !== undefined && gone.has(l.tab)).map((l) => l.i);
+        for (const id of widgets) delete draft.widgets[id];
+        draft.layout = draft.layout.filter((l) => !widgets.includes(l.i));
+        // As for a widget: no filter is left pointing at something that is gone.
+        draft.filters = draft.filters
+          .map((filter) => ({ ...filter, applies: filter.applies.filter((target) => !widgets.includes(target)) }))
+          .filter((filter) => filter.applies.length > 0);
+        draft.tabs = draft.tabs!.filter((t) => !gone.has(t.id));
         break;
       }
     }

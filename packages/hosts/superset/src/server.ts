@@ -14,8 +14,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
-import { type EditScope, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
+import { type EditScope, type TabActor, adminRights, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
+import { type AdminConfig, type Budget, NO_STORE, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, readJson as readJsonBody, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, mayUse, recordRights } from "@lenspack/policy";
 import YAML from "yaml";
 
@@ -33,6 +33,9 @@ import { plainPath, requestPaths } from "./paths";
 import { fileRecords } from "./records";
 import { supersetBoards } from "./store";
 import { supersetActions } from "./actions";
+import { type TabRecord, type TabsConfig, type TabsSaved, reportsOnTab, supersetTabs, tabsConfigFrom, tabsLine, tabsSettingsChange } from "./tabs";
+import { catalogueFrom } from "@lenspack/pack";
+import { type BoardConfig, guardedStore } from "@lenspack/core";
 import { defaultMapStyle, supersetVersion } from "./version";
 
 /**
@@ -145,6 +148,13 @@ export type SupersetConfig = AdminConfig & {
    * LENSPACK_EDIT_SCOPE_ADMINS_EXEMPT win; an admin can change it on a running server.
    */
   editScope?: "superset" | "own" | { scope?: "superset" | "own"; adminsExempt?: boolean };
+  /**
+   * Tabs on dashboards (docs/features/tabs.md): which tabs the chat may change (editable: all or own), tabs it never
+   * changes per dashboard id (protected), and how many tabs and widgets per tab the chat may make. The switches are
+   * the chatTabs and playground features. LENSPACK_TABS_EDITABLE, LENSPACK_PROTECTED_TABS, LENSPACK_MAX_TABS_PER_DASHBOARD,
+   * LENSPACK_MAX_TABS_PER_USER and LENSPACK_MAX_WIDGETS_PER_TAB win; an admin's value on the settings page wins over both.
+   */
+  tabs?: TabsConfig;
   /** Else LENSPACK_HOST, else 127.0.0.1. */
   host?: string;
   /** Else LENSPACK_PORT, else 8795. */
@@ -183,6 +193,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   const dashboardScope = (() => {
     try {
       return dashboardScopeFrom(config, env);
+    } catch (e) {
+      throw new Error(`${file}: ${(e as Error).message}`);
+    }
+  })();
+  // The tab rules: checked now, so a mistake stops the start.
+  const configuredTabs = (() => {
+    try {
+      return tabsConfigFrom(config.tabs, env);
     } catch (e) {
       throw new Error(`${file}: ${(e as Error).message}`);
     }
@@ -236,6 +254,18 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // People's own dashboards and saved layouts: kept in files in the state directory, behind RecordStore.
   const links = fileRecords<PersonalDashboard>(join(stateDir, "personal-dashboards.json"), log);
   const layouts = fileRecords<SavedLayout>(join(stateDir, "saved-layouts.json"), log);
+  // Tabs made through the chat, and who made each: kept in the state directory, behind RecordStore.
+  const tabs = supersetTabs({
+    records: fileRecords<TabRecord>(join(stateDir, "chat-tabs.json"), log),
+    configured: configuredTabs,
+    saved: () => admin.settings.get<TabsSaved>("tabs") ?? {},
+    // Both need chat edits on: with them off, nobody changes a dashboard through the chat.
+    switches: () => ({ create: admin.features.on("chatTabs") && admin.features.on("boardEdits"), playground: admin.features.on("playground") && admin.features.on("boardEdits") }),
+    client,
+    dashboardOf: (board) => dashboards[board],
+    log,
+  });
+  log(tabsLine(tabs.rules()));
   const store = supersetBoards({
     inner: memoryStore(),
     client,
@@ -244,6 +274,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     dashboards,
     stateFile: statePath,
     log,
+    // The last check before saving: protected tabs as Superset has them now stay as they are.
+    protectedTabs: (board, before) => tabs.protectedFor(board, before),
     // A chart Lenspack adds to someone's own dashboard is theirs in Superset.
     ownersOf: async (board) => {
       const link = dashboards[board] === undefined ? null : await links.get(String(dashboards[board]));
@@ -347,6 +379,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     log,
     // Usage telemetry (docs/features/telemetry.md, item personal-dashboards): one event per action, if that item is on.
     telemetry: (e) => void admin.app.telemetry?.event({ user: e.user, roles: e.roles, board: e.board ?? null, pack: pack.pack }, { type: e.event, how: e.how, data: e.data }).catch((err: Error) => log(`telemetry: ${err.message}`)),
+    // Applying a saved layout keeps to the tab rules (applyLayout already needs the edit right).
+    tabCheck: (who, board, before, after) => tabs.check({ user: who.user, userId: who.userId ?? undefined, admin: adminRights(who).administer, edits: true }, board, before, after),
   });
 
   // Where the chat may change dashboards: the config's (or environment's) scope, unless an admin set one.
@@ -530,6 +564,71 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     base: supersetBase,
     reply: (res, status, body) => json(res, status, body, NO_STORE),
   });
+  /** Who is writing, for the tab rules: their names, admin role and edit right on this board, as policy settled them. */
+  const tabActor = (who: ReturnType<typeof settle>, board: string): TabActor => ({ user: who.user, ...(who.userId !== undefined ? { userId: who.userId } : {}), admin: adminRights(who).administer, edits: boardRights(who, { id: board }).edit });
+  const tabSettings = () => {
+    const r = tabs.rules();
+    // Protected tabs by dashboard id, as the config and the settings page name them.
+    const protectedTabs = Object.fromEntries(Object.entries(r.protected).map(([b, ids]) => [b.replace(/^superset-/, ""), ids]));
+    return { ...r, protected: protectedTabs, defaults: configuredTabs, saved: admin.settings.get<TabsSaved>("tabs") ?? {} };
+  };
+  /**
+   * The admin routes for tabs: GET and PUT /_superset/settings/tabs (the rules), GET /_superset/tabs (every tab made
+   * through the chat, on dashboards Lenspack has open, with its maker), DELETE /_superset/tabs/<dashboard>/<tab> (an
+   * admin deletes one; ?confirm=1 when email reports are sent from it). Admins only.
+   */
+  async function tabRoutes(req: IncomingMessage, res: ServerResponse, url: URL, who: ReturnType<typeof settle>): Promise<boolean> {
+    const settingsPath = url.pathname === "/_superset/settings/tabs";
+    const listPath = url.pathname === "/_superset/tabs";
+    const one = /^\/_superset\/tabs\/(\d+)\/(TAB-[A-Za-z0-9_-]{1,60})$/.exec(url.pathname);
+    if (!settingsPath && !listPath && !one) return false;
+    const audited = (action: string, outcome: "ok" | "refused" | "denied", detail = "") => auditLog?.audit({ at: new Date().toISOString(), user: who.user, action, outcome, ...(detail ? { detail: detail.slice(0, 300) } : {}) });
+    if (!recordRights(who).settings) {
+      if (req.method !== "GET") audited(`${req.method} ${url.pathname}`, "denied");
+      return void json(res, 403, { error: `only ${adminName}s can do this` }, NO_STORE), true;
+    }
+    if (settingsPath && req.method === "GET") return void json(res, 200, tabSettings(), NO_STORE), true;
+    if (settingsPath && req.method === "PUT") {
+      if (!idKey()) return void json(res, 503, { error: "settings can't be changed until Superset gives the identity key" }, NO_STORE), true;
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return void json(res, 400, { error: "body must be JSON" }, NO_STORE), true;
+      }
+      if (!body || typeof body !== "object" || Array.isArray(body)) return void json(res, 400, { error: "body must be a JSON object" }, NO_STORE), true;
+      const r = tabsSettingsChange(admin.settings.get<TabsSaved>("tabs") ?? {}, body as Record<string, unknown>);
+      if (!r.ok) return void json(res, 400, { error: r.error }, NO_STORE), true;
+      admin.settings.set("tabs", Object.keys(r.next).length ? r.next : undefined);
+      audited("PUT /_superset/settings/tabs", "ok", JSON.stringify(body));
+      log(tabsLine(tabs.rules()));
+      return void json(res, 200, { ok: true, ...tabSettings() }, NO_STORE), true;
+    }
+    if (listPath && req.method === "GET") {
+      const boards: Record<string, BoardConfig | null> = {};
+      for (const b of Object.keys(dashboards)) boards[b] = (await store.get(b))?.config ?? null;
+      return void json(res, 200, { tabs: await tabs.list(boards) }, NO_STORE), true;
+    }
+    if (one && req.method === "DELETE") {
+      const board = `superset-${one[1]}`;
+      const tab = one[2]!;
+      if (dashboards[board] === undefined) return void json(res, 404, { error: `the assistant has not opened dashboard ${one[1]}` }, NO_STORE), true;
+      const current = await store.get(board);
+      if (!current?.config.tabs?.some((t) => t.id === tab)) return void json(res, 404, { error: `dashboard ${one[1]} has no tab ${tab}` }, NO_STORE), true;
+      if (url.searchParams.get("confirm") !== "1") {
+        const reports = await reportsOn(board, tab);
+        if (reports === null || reports.length) return void json(res, 409, { error: reports === null ? "The email reports on this dashboard could not be checked; deleting the tab stops any sent from it. Send ?confirm=1 to delete it anyway." : `Email reports or alerts are sent from this tab (${reports.join(", ")}); deleting it stops them. Send ?confirm=1 to delete it anyway.`, reports }, NO_STORE), true;
+      }
+      // Through the same rules as any write: an admin deletes a tab made through the chat, never a protected one.
+      const guarded = guardedStore(store, (b, before, after) => tabs.check({ ...tabActor(who, b), admin: true, edits: true }, b, before, after));
+      const r = await guarded.patch({ id: board, ops: [{ op: "remove_tab", id: tab }], catalogue: catalogueFrom(pack), source: "admin" });
+      audited(`DELETE ${url.pathname}`, r.ok ? "ok" : "refused", r.ok ? "" : r.error);
+      return void json(res, r.ok ? 200 : 403, r.ok ? { ok: true, version: r.board.version } : { error: r.error }, NO_STORE), true;
+    }
+    return void json(res, 405, { error: "method not allowed" }, NO_STORE), true;
+  }
+  const reportsOn = (board: string, tab: string) => reportsOnTab(client, dashboards[board], tab);
+
   startRuntime({
     hosts: [{ name: pack.pack, pack, packYaml, connector, store, ctx: packCtx, boards: [] }],
     app: {
@@ -545,6 +644,17 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         const byScope = !!turn.readOnly && canEdit(id, editPolicy, admin.features.on("boardEdits"));
         return personal.port(actorOf(id, rights), { dashboard: id.d, board: turn.boardId, view: id.v !== false, edit: !turn.readOnly, byScope }, supersetBase(req));
       },
+      // The tab rules on the dashboard Superset signed for: the chat's tab tools and the check before each edit.
+      tabs: async (req, turn) => {
+        const id = identityOf(req, idKey);
+        if (!id || typeof id.d !== "number" || turn.boardId !== `superset-${id.d}`) return undefined;
+        const caller = await auth.identify(req);
+        if (!caller) return undefined;
+        const who = settle(caller);
+        return tabs.port({ user: who.user, ...(who.userId !== undefined ? { userId: who.userId } : {}), admin: adminRights(who).administer, edits: !turn.readOnly }, turn.boardId);
+      },
+      // Every write by this caller (the chat, the board API, a restore) keeps to the tab rules.
+      boardGuard: (_req, who) => (board, before, after) => tabs.check(tabActor(who, board), board, before, after),
       // Telemetry records the user's Superset role names as Superset signed them (none signed: none), and datasets by name.
       telemetryRoles: (req) => {
         const id = identityOf(req, idKey);
@@ -611,6 +721,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           personal: limits(),
           // Where the chat may change dashboards (PUT /_superset/settings/edit-scope), with a warning when no one can.
           editScope: { ...editScope(), defaults: configScope, warning: scopeWarning() },
+          // The tab rules in force (PUT /_superset/settings/tabs), what the config and environment say, and what an admin saved.
+          tabs: { ...tabSettings() },
           publicPath: base,
           panel,
           // Where the admin pages are (admin.surface), and what each page shows.
@@ -673,6 +785,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
         if (await mine(req, res, url)) return;
+        if (await tabRoutes(req, res, url, who)) return;
         // Exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (admins only).
         if (url.pathname === "/_superset/telemetry/superset-actions" && req.method === "GET") {
           if (!recordRights(who).telemetry) return json(res, 403, { error: `only ${adminName}s can do this` }, NO_STORE);

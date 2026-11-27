@@ -19,6 +19,9 @@ import { MOVE_REFUSAL } from "../src/dashboard";
 import { type SupersetDataset, packFromDatasets } from "../src/index";
 import { type Position, layoutProblems, placeCharts, reachable } from "../src/layout";
 import { supersetBoards } from "../src/store";
+import { type TabRecord, supersetTabs } from "../src/tabs";
+import { TAB_DEFAULTS } from "@lenspack/policy";
+import type { RecordStore } from "@lenspack/core";
 
 const DATASETS: SupersetDataset[] = [
   { id: 3, table_name: "households", main_dttm_col: "registered_at", columns: [{ column_name: "registered_at", is_dttm: true, type: "DATE" }, { column_name: "lga", groupby: true, type: "TEXT" }], metrics: [{ metric_name: "count", expression: "COUNT(*)" }] },
@@ -501,5 +504,134 @@ describe("the chat on a dashboard with tabs", () => {
     expect(prompts[1]).toContain("can't move charts on it yet");
     expect(prompts[0]).toContain("Which tab the viewer is on is not known.");
     expect(b.puts).toEqual([]);
+  });
+});
+
+describe("tabs as board edits", () => {
+  it("the board carries the tabs and each widget's tab, nested tabs by their own contents", async () => {
+    const b = await board(topLevel());
+    const c = await b.config();
+    expect(c.tabs).toEqual([
+      { id: "TAB-ov", title: "Overview" },
+      { id: "TAB-lga", title: "By LGA", parent: "TAB-ov" },
+      { id: "TAB-trend", title: "Trend", parent: "TAB-ov" },
+      { id: "TAB-stock", title: "Stock" },
+    ]);
+    expect(Object.fromEntries(c.layout.map((l) => [l.i, l.tab]))).toEqual({ c101: "TAB-ov", c102: "TAB-ov", c103: "TAB-lga", c104: "TAB-trend", c105: "TAB-stock", "c101-2": "TAB-stock" });
+  });
+
+  it("add_tab makes a tab at the end of the outermost tabs, and a widget asked for on it lands there", async () => {
+    const b = await board(topLevel());
+    expect((await b.patch([{ op: "add_tab", id: "TAB-lp-new", title: "olu" }])).ok).toBe(true);
+    expect((await b.patch([{ ...add("k1"), placement: { place: "bottom", width: "quarter", tab: "TAB-lp-new" } } as BoardOp], { tabs: ["TAB-stock"] })).ok).toBe(true);
+    const pos = b.pos();
+    expect((pos["TABS-top"] as any).children).toEqual(["TAB-ov", "TAB-stock", "TAB-lp-new"]);
+    expect((pos["TAB-lp-new"] as any).meta.text).toBe("olu");
+    expect(where(pos, 901)).toEqual(["TAB-lp-new"]);
+    expect(layoutProblems(pos)).toEqual([]);
+    await b.store.pull("b", true);
+    expect((await b.config()).tabs!.at(-1)).toEqual({ id: "TAB-lp-new", title: "olu" });
+  });
+
+  it("rename_tab renames; remove_tab takes the tab off with its charts; a restore brings it back with the same id", async () => {
+    const b = await board(topLevel());
+    await b.patch([{ op: "add_tab", id: "TAB-lp-new", title: "olu" }]);
+    await b.patch([{ ...add("k1"), placement: { place: "bottom", width: "quarter", tab: "TAB-lp-new" } } as BoardOp]);
+    await b.patch([{ op: "rename_tab", id: "TAB-lp-new", title: "olu: trend" }]);
+    expect((b.pos()["TAB-lp-new"] as any).meta.text).toBe("olu: trend");
+    const v = (await b.store.get("b"))!.version;
+    expect((await b.patch([{ op: "remove_tab", id: "TAB-lp-new" }])).ok).toBe(true);
+    expect(b.pos()["TAB-lp-new"]).toBeUndefined();
+    expect(b.linked()).not.toContain(901);
+    expect(layoutProblems(b.pos())).toEqual([]);
+    await b.store.revertTo("b", v);
+    const pos = b.pos();
+    expect((pos["TABS-top"] as any).children).toEqual(["TAB-ov", "TAB-stock", "TAB-lp-new"]);
+    expect(where(pos, 902)).toEqual(["TAB-lp-new"]);
+    expect(layoutProblems(pos)).toEqual([]);
+  });
+
+  it("the only tab of its set is not removed, and a board without tabs gets no first tab", async () => {
+    const b = await board(topLevel());
+    expect(await b.patch([{ op: "remove_tab", id: "TAB-stock" }, { op: "remove_tab", id: "TAB-ov" }])).toMatchObject({ ok: false, error: expect.stringContaining("only tab") });
+    const flat: Position = { DASHBOARD_VERSION_KEY: "v2", ROOT_ID: { id: "ROOT_ID", type: "ROOT", children: ["GRID_ID"] }, GRID_ID: { id: "GRID_ID", type: "GRID", children: ["ROW-1"], parents: ["ROOT_ID"] }, "ROW-1": ROW("ROW-1", ["CHART-x101"], P("ROOT_ID", "GRID_ID")), "CHART-x101": CH("CHART-x101", 101, P("ROOT_ID", "GRID_ID", "ROW-1")) };
+    const f = await board(flat);
+    expect(await f.patch([{ op: "add_tab", id: "TAB-lp-x", title: "x" }])).toMatchObject({ ok: false, error: expect.stringContaining("no tabs") });
+  });
+
+  it("the last check before saving: a protected tab, its charts and its place stay as Superset has them", async () => {
+    const f = fake(topLevel());
+    const store = supersetBoards({ inner: memoryStore(), client: f.client, pack, binding, dashboards: { b: 7 }, stateFile: join(mkdtempSync(join(tmpdir(), "lp-tabs-")), "s.json"), protectedTabs: () => ["TAB-stock"] });
+    await store.seed();
+    const r = await store.patch({ id: "b", ops: [{ op: "resize_widget", id: "c105", width: "third" }], catalogue });
+    expect(r).toMatchObject({ ok: false, error: expect.stringContaining("protected tab") });
+    expect(f.puts).toEqual([]);
+    expect((await store.patch({ id: "b", ops: [{ op: "remove_tab", id: "TAB-stock" }], catalogue })).ok).toBe(false);
+    // Elsewhere is fine.
+    expect((await store.patch({ id: "b", ops: [{ op: "resize_widget", id: "c102", width: "third" }], catalogue })).ok).toBe(true);
+  });
+});
+
+/** Records in memory, as the state directory's file keeps them. */
+function memoryRecords<T>(): RecordStore<T> {
+  const all = new Map<string, T>();
+  return { list: async () => [...all.values()], get: async (id) => all.get(id) ?? null, put: async (id, v) => void all.set(id, v), delete: async (id) => all.delete(id) };
+}
+
+describe("the tab rules through the server", () => {
+  const servers: Server[] = [];
+  afterAll(() => {
+    for (const s of servers) s.close();
+  });
+
+  async function serve(rules: { protected?: Record<string, string[]>; create?: boolean; playground?: boolean }, steps: unknown[][] = []) {
+    const b = await board(topLevel());
+    const records = memoryRecords<TabRecord>();
+    const tabs = supersetTabs({ records, configured: { ...TAB_DEFAULTS, protected: rules.protected ?? {} }, saved: () => ({}), switches: () => ({ create: !!rules.create, playground: !!rules.playground }), client: b.client, dashboardOf: () => 7 });
+    const prompts: string[] = [];
+    let step = 0;
+    const kind = `superset-tab-rules-${Math.random().toString(36).slice(2)}`;
+    const model = new MockLanguageModelV4({
+      doStream: async (call) => {
+        prompts.push(JSON.stringify(call.prompt));
+        return stream(steps[step++] ?? say("Done."));
+      },
+      doGenerate: async () => ({ content: [{ type: "text", text: JSON.stringify({ findings: [] }) }], finishReason: { unified: "stop", raw: "stop" }, usage, warnings: [] }),
+    });
+    registerLlmAdapter({ kind, defaultBaseUrl: "mock:", build: () => model });
+    const providers: Provider[] = [{ ...buildProvider({ name: "m", kind, model: "m" }), available: true }];
+    const who = { user: "ben", admin: false, edits: true };
+    const host: Host = { name: "homes", pack, packYaml, connector: supersetConnector(b.client, binding), store: b.store, ctx: {}, boards: [] };
+    const server = createServer(createApp([host], { providers, tabs: async (_req, turn) => tabs.port(who, turn.boardId), boardGuard: () => (board, before, after) => tabs.check(who, board, before, after) }));
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/homes/b`;
+    const ask = async (text: string) => (await fetch(`${base}/chat?model=m&review=off`, { method: "POST", body: JSON.stringify({ messages: [{ id: "u1", role: "user", parts: [{ type: "text", text }] }] }) })).text();
+    const post = async (path: string, body: unknown) => {
+      const r = await fetch(`${base}/${path}`, { method: "POST", body: JSON.stringify(body) });
+      return { status: r.status, body: (await r.json()) as any };
+    };
+    return { b, ask, post, prompts, records };
+  }
+
+  it("a protected tab: the chat's tool refuses and the prompt says so; the board API and a restore are refused too", async () => {
+    const t = await serve({ protected: { b: ["TAB-stock"] } }, [tool("remove_widget", { id: "c105" }), say("That tab is protected.")]);
+    await t.ask("remove the stock chart");
+    expect(t.prompts[0]).toContain("TAB RULES");
+    expect(t.prompts[0]).toContain("Protected (the chat never changes them");
+    expect(t.prompts[1]).toContain("is protected on this deployment");
+    expect(t.b.puts).toEqual([]);
+    expect((await t.post("ops", { ops: [{ op: "resize_widget", id: "c105", width: "third" }] })).body).toMatchObject({ ok: false, error: expect.stringContaining("protected") });
+    // A change elsewhere goes through; restoring the version before it would not touch Stock either.
+    expect((await t.post("ops", { ops: [{ op: "resize_widget", id: "c102", width: "third" }] })).body).toMatchObject({ ok: true });
+    expect(t.b.puts.length).toBeGreaterThan(0);
+  });
+
+  it("a tab made through the chat is recorded with its maker, and is theirs to fill", async () => {
+    const t = await serve({ create: true }, [tool("add_tab", { title: "Mine" }), tool("add_widget", { id: "homes", title: "Households", kind: "kpi", query_kind: "value", measure: "household_count", tab: "Mine" }), say("Done.")]);
+    await t.ask("make me a tab with a households KPI");
+    const rec = await t.records.list();
+    expect(rec).toEqual([expect.objectContaining({ board: "b", title: "Mine", user: "ben" })]);
+    expect(where(t.b.pos(), 901)).toEqual([rec[0]!.tab]);
   });
 });

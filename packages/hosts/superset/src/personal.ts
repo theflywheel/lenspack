@@ -71,6 +71,11 @@ export type PersonalOptions = {
   now?: () => Date;
   /** For tests: a layout id. */
   newId?: () => string;
+  /**
+   * The deployment's tab rules for a write by this person (policy's checkTabChange, through the host): applying a
+   * saved layout from the panel is refused when it would change a tab they may not change. Absent: no tab rules.
+   */
+  tabCheck?: (who: PersonalActor, board: string, before: BoardConfig, after: BoardConfig) => Promise<string | null>;
 };
 
 type Dash = { id: number; dashboard_title: string; position_json: string | null; json_metadata: string | null; css?: string | null; owners?: { id: number }[] };
@@ -308,11 +313,23 @@ export function personalDashboards(o: PersonalOptions) {
     // Fitted to the board as it is when written (Superset's latest read first), never to an earlier read: a chart
     // removed in Superset in between is left out, not brought back.
     let previous = 0;
-    const { board: saved, made: fit } = await store.replaceFrom(
-      target.board,
-      (board, locked) => ((previous = board.version), fitSavedLayout(got.layout.config, board.config, pack, { ctx: target.ctx, capabilities: target.capabilities, savedLocked: got.layout.locked, targetLocked: locked })),
-      { source: "layout", summary: `applied saved layout “${got.layout.name}”` },
-    );
+    let refused: string | null = null;
+    const check = o.tabCheck;
+    const written = await store
+      .replaceFrom(
+        target.board,
+        (board, locked) => ((previous = board.version), fitSavedLayout(got.layout.config, board.config, pack, { ctx: target.ctx, capabilities: target.capabilities, savedLocked: got.layout.locked, targetLocked: locked })),
+        { source: "layout", summary: `applied saved layout “${got.layout.name}”`, ...(check ? { check: async (before: BoardConfig, after: BoardConfig) => (refused = await check(who, target.board, before, after)) } : {}) },
+      )
+      .catch((e: Error) => {
+        if (refused) return null;
+        throw e;
+      });
+    if (!written) {
+      audit(who, "layout-apply", "denied", target.board, refused!);
+      return { ok: false, error: refused!, code: "tab-rules" };
+    }
+    const { board: saved, made: fit } = written;
     applied(who, got.layout, target.board, { version: saved.version, skipped: fit.skipped.length });
     const src = got.layout.source;
     return { ok: true, version: saved.version, previous, name: got.layout.name, skipped: fit.skipped, skippedFilters: fit.skippedFilters, packChanged: fit.packChanged, carried: fit.carried, from: { dashboard: src.dashboard ?? null, title: src.title, url: src.dashboard ? urlOf(base, src.dashboard) : null } };

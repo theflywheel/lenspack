@@ -293,3 +293,59 @@ export function layoutProblems(pos: Position): string[] {
   for (const [k, c] of Object.entries(pos)) if (isComponent(c) && c.type === "CHART" && !drawn.has(k)) out.push(`${k} (chart ${c.meta?.chartId}) is not under ROOT_ID, so Superset would not show it`);
   return out;
 }
+
+/** A tab id the board can carry (BoardConfig.tabs): Superset's own are TAB- and a short random id. */
+const BOARD_TAB_ID = /^TAB-[A-Za-z0-9_-]{1,60}$/;
+
+/**
+ * The layout's tabs as the board carries them (each its own title and the tab it sits in), and the tab each chart or
+ * note sits directly on. A tab whose id the board can't carry is left out, and what is on it counts as on no tab.
+ */
+export function tabDefs(pos: Position): { tabs: { id: string; title: string; parent?: string }[]; of: Map<string, string> } {
+  const tabs: { id: string; title: string; parent?: string }[] = [];
+  const of = new Map<string, string>();
+  for (const t of tabsOf(pos)) {
+    if (!BOARD_TAB_ID.test(t.id)) continue;
+    const parent = [...t.path.slice(0, -1)].reverse().find((p) => BOARD_TAB_ID.test(p));
+    tabs.push({ id: t.id, title: t.titles.at(-1)!, ...(parent ? { parent } : {}) });
+    for (const c of t.components) of.set(c, t.id);
+  }
+  return { tabs, of };
+}
+
+/**
+ * Makes the layout's tabs what the board says, from what it said before: a tab the board dropped is taken out with
+ * everything in it, a renamed one takes its new title, and one the board has that the layout doesn't (made through
+ * the chat, or brought back by a restore) is made, in its set (its parent tab's, else the outermost) after the tab
+ * before it. A tab someone renamed in Superset meanwhile keeps their title unless the board renames it too.
+ */
+export function writeTabs(pos: Position, before: readonly { id: string; title: string; parent?: string }[], after: readonly { id: string; title: string; parent?: string }[]) {
+  const now = new Set(after.map((t) => t.id));
+  for (const t of before) if (!now.has(t.id) && componentAt(pos, t.id)?.type === "TAB") removeComponent(pos, t.id);
+  for (const [i, t] of after.entries()) {
+    const c = componentAt(pos, t.id);
+    const was = before.find((b) => b.id === t.id);
+    if (c) {
+      if (c.type === "TAB" && was && was.title !== t.title) c.meta = { ...(c.meta ?? {}), text: t.title };
+      continue;
+    }
+    // Its set: where a tab beside it already is, else (a nested tab) the set inside its parent.
+    const siblings = after.filter((x) => x.parent === t.parent && x.id !== t.id);
+    const drawnParent = parentMap(pos);
+    const holderOf = (id: string) => {
+      const h = componentAt(pos, drawnParent.get(id) ?? undefined);
+      return h?.type === "TABS" ? h : undefined;
+    };
+    let holder = siblings.map((s) => (drawnParent.has(s.id) ? holderOf(s.id) : undefined)).find(Boolean);
+    if (!holder && t.parent) holder = componentAt(pos, componentAt(pos, t.parent)?.children.find((k) => componentAt(pos, k)?.type === "TABS"));
+    if (!holder) continue;
+    const previous = after
+      .slice(0, i)
+      .reverse()
+      .find((x) => x.parent === t.parent && holder!.children.includes(x.id));
+    const at = previous ? holder.children.indexOf(previous.id) + 1 : 0;
+    pos[t.id] = { id: t.id, type: "TAB", children: [], meta: { text: t.title, defaultText: "Tab title", placeholder: "Tab title" } };
+    holder.children.splice(at, 0, t.id);
+    reparent(pos, t.id, [...chainAbove(pos, holder.id), holder.id]);
+  }
+}

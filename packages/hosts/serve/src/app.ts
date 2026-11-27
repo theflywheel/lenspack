@@ -3,9 +3,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { type ModelMessage, type ToolSet, type UIMessage, type UIMessageChunk, type UIMessageStreamWriter, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, stepCountIs, streamText } from "ai";
 
-import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, applyOps, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, recentRemovals, stagedStore, summarise } from "@lenspack/core";
+import { type BoardConfig, type BoardOp, type BoardStore, type Catalogue, type Ownership, type PersonalPort, type WriteCheck, RefusedWrite, applyOps, guardedStore, boardConfigSchema, changesSince, describeChanges, emptyBoard, opSchema, querySchema, recentRemovals, stagedStore, summarise } from "@lenspack/core";
 import { type Connector, type Ctx, type Notice, ResolveError, checkOps, dimensionValues, emptyQueryMeter, explain, meteredConnector, resolveBoard, widgetPage } from "@lenspack/engine";
-import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseBase, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, type TurnLog, type TurnResult, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, memoryTurnLog, quickReplyOf, selectionsFrom, tabsText, toVercelAI, turnKeyOf, viewFrom, widgetChanges } from "@lenspack/agent";
+import { type AnswerCard, type Asker, type ProposalStore, type Reuse, type ReuseBase, type ReuseTurn, type TurnDefinitions, type Telemetry, type TurnCapture, type TurnGate, type TurnLog, type TurnResult, type TabPort, answerCard, boardTools, clarifyOf, clarifyTool, definitionsKey, localTurnGate, looksLikeEdit, memoryTurnLog, quickReplyOf, selectionsFrom, tabsText, toVercelAI, turnKeyOf, viewFrom, widgetChanges } from "@lenspack/agent";
 import { NOT_TURNED_ON_MESSAGE, type Principal, accessNote, answerView, boardRights, decide, mayUse, otherTenant, principalOf, shownConfig, showsStatement, viewerSelections } from "@lenspack/policy";
 import { type Pack, catalogueFrom } from "@lenspack/pack";
 
@@ -137,6 +137,17 @@ export type AppOptions = {
    * make, copy and delete one and to save and apply layouts. Absent, or undefined for a request, the tools are not offered.
    */
   personal?: (req: IncomingMessage, turn: { user: string; pack: string; boardId: string; readOnly?: string }) => PersonalPort | undefined;
+  /**
+   * The deployment's tab rules for this person on this board (a host with tabs, policy's tabRights through it): the
+   * chat's tab tools, the check every chat edit passes before it is queued, and lines for the prompt. Absent, or
+   * undefined for a request: no tab tools, and edits are checked by nothing but the host's rights.
+   */
+  tabs?: (req: IncomingMessage, turn: { user: string; pack: string; boardId: string; readOnly?: string }) => Promise<TabPort | undefined>;
+  /**
+   * Asked before every write to a board by this caller, whatever starts it (the chat, the board API, a restore, a
+   * dragged layout): the host wires it to policy (the tab rules). Absent, or undefined for a request: nothing is asked.
+   */
+  boardGuard?: (req: IncomingMessage, who: Principal) => WriteCheck | undefined;
   /**
    * What the deployment allows of the answer card ("How this was worked out"), read per turn: on
    * unless `on` is false; the statements shown unless `sql` is false. Policy only narrows it.
@@ -548,7 +559,10 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         const r = await opts.telemetry.event(asker, body as Record<string, unknown>);
         return r.ok ? json(res, 202, { ok: true, recorded: r.recorded }) : json(res, r.status, { error: r.error });
       }
-      const h = byName.get(packName);
+      const host = byName.get(packName);
+      // Every write this request makes goes through the host's guard (the deployment's tab rules), the chat's included.
+      const guard = host ? opts.boardGuard?.(req, who) : undefined;
+      const h = host && guard ? { ...host, store: guardedStore(host.store, guard) } : host;
       // On a board, what the host lets the caller read there only (a Superset dashboard role) is read there too.
       const d = h ? decide(who, h.pack, { name: h.name, rules: access ? h.access : undefined, host: h.ctx, board: boardId }) : null;
       // Another tenant's pack is refused outright, not hidden, when nothing else keeps it from the caller.
@@ -717,7 +731,8 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
       }
       return json(res, 404, { error: "not found" });
     } catch (e) {
-      return json(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      // A write the host's guard refuses (the tab rules) is a refusal, not a failure.
+      return json(res, e instanceof RefusedWrite ? 403 : 500, { error: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -805,8 +820,11 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     // A staged edit is a draft until the turn ends: its audit line says so, and the turn's
     // chat-save line says which versions were saved, if any.
     const personal = opts.personal?.(req, { user, pack: h.name, boardId, readOnly });
+    // The tab rules: tools, the check before each edit, and what the prompt says about each tab.
+    const tabPort = await opts.tabs?.(req, { user, pack: h.name, boardId, readOnly }).catch(() => undefined);
+    const tabRules = tabPort ? await tabPort.describe(config).catch(() => "") : "";
     const tools = toVercelAI([
-      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal, onData: card?.onData, view: turnView,
+      ...boardTools({ pack, connector: meteredConnector(h.connector, queries), store, boardId, ctx: h.ctx, proposals: h.proposals, readOnly, held: !!staged, personal, onData: card?.onData, view: turnView, ...(tabPort ? { tabs: tabPort } : {}),
         onEdit: (e) => audit({ user, pack: h.name, board: boardId, action: "chat-edit", outcome: e.outcome, detail: `${e.ops.join(",") || "edit"}${e.version !== undefined ? ` → ${e.held ? "draft " : ""}v${e.version}` : ""}${e.error ? `: ${e.error.slice(0, 200)}` : ""}` }) }),
       ...(clarifying && defs ? [clarifyTool({ note: (n) => defs.note(h.name, n), question: instruction })] : []),
     ]);
@@ -819,7 +837,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     const picked = typeof body.language === "string" && (body.language === "auto" || LANGUAGE.test(body.language)) ? body.language : undefined;
     const language = opts.language || picked ? { ...opts.language?.(), reply: picked ?? null } : undefined;
     const access = accessNote(h.ctx);
-    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed, readOnly, copy: !!personal?.offersCopy });
+    let system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView) + tabRules, name, removed, readOnly, copy: !!personal?.offersCopy });
     const modelMessages = await convertToModelMessages(recentTurns(body.messages, opts.historyTurns ?? 8));
     // No reply line in a script this user neither wrote in nor picked (Latin always passes): reply-script.ts.
     const replyGuard = keepReplyScripts(replyScripts(userTexts(body.messages), picked));
@@ -880,7 +898,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
     }
 
     // A model turn waits for a place (and an edit for the edit before it on this board), told its place meanwhile (queue.ts).
-    const place = await waitForTurn(res, queue, { board: boardId, edit: !readOnly && looksLikeEdit(instruction), name }).catch(async (e) => {
+    const place = await waitForTurn(res, queue, { board: boardId, edit: (!readOnly || !!tabPort?.playground) && looksLikeEdit(instruction), name }).catch(async (e) => {
       await endTurn(undefined, true);
       throw e;
     });
@@ -899,7 +917,7 @@ export function createApp(hosts: Host[], opts: AppOptions = {}) {
         config = view(now.config);
         startVersion = now.version;
         tabs = (await h.store.tabs?.(boardId).catch(() => [])) ?? [];
-        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView), name, removed, readOnly, copy: !!personal?.offersCopy });
+        system = systemParts(pack, turnCatalogue, config, h.ctx.now, changes, language, { clarify: clarifying, access, layout: tabsText(tabs, turnView) + tabRules, name, removed, readOnly, copy: !!personal?.offersCopy });
         before = summarise(config);
         reuseTurn.config = config;
       }

@@ -188,9 +188,9 @@ describe("Superset mode's server", () => {
     expect(r.body.examples).toEqual(["Visites par région"]);
     expect(r.body.examplesByLang).toMatchObject({ en: ["Visits by region"], fr: ["Visites par région"] });
     expect(r.body.language.options).toEqual(expect.arrayContaining(["auto", "en", "fr", "hi"]));
-    // Every switch is on by default but the daily review, which costs money.
-    const { "review.daily": daily, ...rest } = r.body.features;
-    expect(daily).toBe(false);
+    // Every switch is on by default but the daily review, which costs money, and the two tab switches.
+    const { "review.daily": daily, chatTabs, playground, ...rest } = r.body.features;
+    expect([daily, chatTabs, playground]).toEqual([false, false, false]);
     expect(Object.values(rest).every((v) => v === true)).toBe(true);
   });
 
@@ -239,7 +239,7 @@ describe("Superset mode's server", () => {
   it("shows an admin every setting, with no secrets", async () => {
     const r = await call("/_superset/settings", { as: ADMIN });
     expect(r.status).toBe(200);
-    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "telemetry", "userAccess", "warnings"]);
+    expect(Object.keys(r.body).sort()).toEqual(["accessFallback", "adminAccess", "adminPages", "audit", "brand", "budget", "cache", "chat", "dashboardScope", "dashboards", "datasets", "dimensions", "editPolicy", "editScope", "features", "hostPolicy", "language", "llmFrom", "measures", "pack", "panel", "personal", "providers", "publicPath", "queue", "scope", "speech", "superset", "tabs", "telemetry", "userAccess", "warnings"]);
     expect(r.body).toMatchObject({
       pack: "visits_pack",
       datasets: [{ id: 1, table: "visits", schema: "public", entity: expect.any(String) }],
@@ -403,6 +403,31 @@ describe("Superset mode's server", () => {
     const audit = await call("/_superset/audit", { as: ADMIN });
     expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "boss", action: "PUT /_superset/settings/edit-scope", outcome: "ok", detail: '{"scope":"own"}' }));
     expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "viewer", action: "PUT /_superset/settings/edit-scope", outcome: "denied" }));
+  });
+
+  it("reads and changes the tab rules through the admin API, off by default, and audits it", async () => {
+    expect(output).toMatch(/tabs: chat changes any tab not protected; protected none; chat tabs off; playground off; at most 3 per person and 20 per dashboard; widgets per tab auto/);
+    const first = await call("/_superset/settings/tabs", { as: ADMIN });
+    expect(first).toMatchObject({ status: 200, body: { editable: "all", protected: {}, maxPerDashboard: 20, maxPerUser: 3, maxWidgetsPerTab: "auto", create: false, playground: false, saved: {} } });
+    expect((await call("/_superset/settings/tabs", { as: VIEWER })).status).toBe(403);
+    expect((await put("/_superset/settings/tabs", { editable: "own" }, VIEWER)).status).toBe(403);
+    expect(await put("/_superset/settings/tabs", { editable: "mine" })).toMatchObject({ status: 400, body: { error: expect.stringMatching(/"all" or "own"/) } });
+    expect(await put("/_superset/settings/tabs", { protected: { "7": ["Official"] } })).toMatchObject({ status: 400, body: { error: expect.stringMatching(/not a tab id/) } });
+    const set = await put("/_superset/settings/tabs", { editable: "own", protected: { "7": ["TAB-abc"] }, maxPerUser: 2, maxWidgetsPerTab: 6 });
+    expect(set).toMatchObject({ status: 200, body: { editable: "own", protected: { "7": ["TAB-abc"] }, maxPerUser: 2, maxWidgetsPerTab: 6 } });
+    expect((await call("/_superset/settings", { as: ADMIN })).body.tabs).toMatchObject({ editable: "own", protected: { "7": ["TAB-abc"] }, defaults: { editable: "all" } });
+    expect(await put("/_superset/settings/features", { chatTabs: true, playground: true })).toMatchObject({ status: 200 });
+    expect((await call("/_superset/settings/tabs", { as: ADMIN })).body).toMatchObject({ create: true, playground: true });
+    // The tabs made through the chat: none yet; deleting one on a dashboard without it says so.
+    expect(await call("/_superset/tabs", { as: ADMIN })).toMatchObject({ status: 200, body: { tabs: [] } });
+    expect((await call("/_superset/tabs", { as: VIEWER })).status).toBe(403);
+    expect((await call("/_superset/tabs/7/TAB-nope", { method: "DELETE", as: ADMIN })).status).toBe(404);
+    // Back to the deployment's values.
+    await put("/_superset/settings/features", { chatTabs: null, playground: null });
+    expect(await put("/_superset/settings/tabs", { editable: null, protected: null, maxPerUser: null, maxWidgetsPerTab: null })).toMatchObject({ status: 200, body: { editable: "all", protected: {}, saved: {} } });
+    const audit = await call("/_superset/audit", { as: ADMIN });
+    expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "boss", action: "PUT /_superset/settings/tabs", outcome: "ok" }));
+    expect(audit.body.events).toContainEqual(expect.objectContaining({ user: "viewer", action: "PUT /_superset/settings/tabs", outcome: "denied" }));
   });
 
   it("refuses a dot segment or an encoded slash in the path before reading it", async () => {

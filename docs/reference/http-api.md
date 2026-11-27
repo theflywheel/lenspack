@@ -169,6 +169,7 @@ The Superset host's settings, beside the panel:
 | `PUT /_superset/settings/features`, `…/cache`, `…/queue`, `…/speech`, `…/language`, `…/chat`, `…/telemetry` | changes those settings. What each one takes is in [Settings and switches](../hosts/superset/settings.md#the-routes-behind-it) |
 | `PUT /_superset/settings/brand` | the assistant's name, button label, per-language words, icon and "Powered by" line; `null` hands a field back. See [Naming the assistant](../features/naming.md) |
 | `PUT /_superset/settings/personal`, `…/edit-scope` | personal-dashboard limits and where the chat may edit. See [Personal dashboards](../features/personal-dashboards.md#routes) |
+| `GET`, `PUT /_superset/settings/tabs`; `GET /_superset/tabs`; `DELETE /_superset/tabs/<dashboard>/<tab>` | the tab rules, the tabs made through the chat with their makers, and an admin deleting one. See [Tabs on dashboards](../features/tabs.md#routes) |
 | `GET /_superset/settings/speech/models` | the transcription models on offer |
 | `GET /_superset/turns`, `GET /_superset/audit` | recent turns and the audit log |
 

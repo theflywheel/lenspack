@@ -71,6 +71,12 @@ export function describeOps(ops: BoardOp[], board?: BoardConfig) {
           return `removed filter ${gone?.label || gone?.field || op.id}`;
         }
         case "set_layout_mode": return [op.density ? `density ${op.density}` : "", op.fill === undefined ? "" : op.fill ? "packed" : "unpacked"].filter(Boolean).join(", ") || "layout mode";
+        case "add_tab": return `added tab “${op.title}”`;
+        case "rename_tab": return `renamed tab ${board?.tabs?.find((t) => t.id === op.id)?.title ? `“${board.tabs.find((t) => t.id === op.id)!.title}” ` : ""}to “${op.title}”`;
+        case "remove_tab": {
+          const gone = board?.tabs?.find((t) => t.id === op.id);
+          return `removed tab ${gone ? `“${gone.title}”` : op.id}`;
+        }
       }
     })
     .join(", ");

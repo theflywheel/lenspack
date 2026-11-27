@@ -46,6 +46,8 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/brand` | any of `{name, buttonLabel, i18n, icon, poweredBy}` ([naming the assistant](../../features/naming.md)); `null` hands a field back to the deployment |
 | `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}` for [personal dashboards](../../features/personal-dashboards.md); `null` resets |
 | `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
+| `GET`, `PUT /_superset/settings/tabs` | the tab rules: any of `{editable: "all" \| "own", protected: {<dashboard id>: [TAB-…]}, maxPerDashboard, maxPerUser, maxWidgetsPerTab: "auto" \| n}`; `null` resets. See [Tabs on dashboards](../../features/tabs.md) |
+| `GET /_superset/tabs`, `DELETE /_superset/tabs/<dashboard>/<tab>` | the tabs made through the chat, with their makers; an admin deletes one (`?confirm=1` when email reports are sent from it) |
 | `GET /_superset/turns?limit=N` | the newest chat turns with their cost, and the totals for today and the last 7 days |
 | `GET /_superset/audit?month=YYYY-MM&limit=N` | the audit log |
 | `GET /_superset/telemetry`, `GET /_superset/telemetry/checklist` | the usage records and the switchboard. See [Telemetry](../../features/telemetry.md#reading-it) |

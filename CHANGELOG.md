@@ -11,6 +11,17 @@ brought it.
 
 ### 27 November 2026
 
+- **Tabs: protected tabs, tabs made through the chat, limits, and playground tabs.** On a Superset dashboard in tabs, a
+  deployment can protect tabs (`tabs.protected`, by tab id per dashboard) so the chat never changes them, for admins
+  too, or let the chat change only tabs it made (`tabs.editable: own`). With the `chatTabs` switch, people who may
+  edit a dashboard can ask for a new tab, rename it and delete it; with the `playground` switch, people who may only
+  view it can have tabs of their own, named after them, and change only those. The chat makes at most 3 tabs per
+  person and 20 per dashboard, and puts at most 1.5 times the fullest tab's widgets on one tab (all configurable).
+  Every write is checked: the chat's tools, the board API, restores and saved layouts, and a last check before
+  Superset is sent the layout. Everything is off by default; settings are in `superset.yaml`, the environment, the
+  settings API (`PUT /_superset/settings/tabs`) and the start-up log; `GET /_superset/tabs` lists the tabs made through
+  the chat with their makers. Superset has no per-tab permissions, so these rules bind the chat only. See
+  [Tabs on dashboards](docs/features/tabs.md).
 - **The assistant can be limited to some Superset dashboards.** On a Superset shared by several projects, set
   `dashboardScope: listed` (or `LENSPACK_DASHBOARD_SCOPE=listed`) and list the dashboards in `dashboards:` (or
   `LENSPACK_DASHBOARDS=25,31`). The button then shows on those dashboards only, and every route that takes a
