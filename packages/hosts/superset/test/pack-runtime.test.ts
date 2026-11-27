@@ -188,7 +188,7 @@ describe("changing the pack on a running Superset-mode server", () => {
     expect(r.body.sources).toMatchObject({ description: "config", labels: "config", hints: "none", exclude: "config" });
     expect(r.body.configOnly.map((c: { field: string }) => c.field)).toEqual(["pack", "entities", "timeZone", "geo", "mapStyle", "panel"]);
     expect(r.body.configOnly[0]).toMatchObject({ field: "pack", value: "shop" });
-    expect(r.body.dataBoundary).toEqual(["datasets", "scope", "dashboards", "dashboardScope", "auth", "budget", "models"]);
+    expect(r.body.dataBoundary).toEqual(["datasets", "scope", "dashboards", "dashboardScope", "auth"]);
     expect((await call("/_superset/settings", { as: ADMIN })).body.packLayer).toEqual({ version: 0, fields: [] });
   });
 

@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
 import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, startRuntime, userAccessSetup } from "@lenspack/serve";
-import { NOT_TURNED_ON_MESSAGE, type Principal, type QuerySafetyConfig, adminRights, mayUse, recordRights } from "@lenspack/policy";
+import { NOT_TURNED_ON_MESSAGE, type Principal, type QuerySafetyConfig, RUNTIME_CONFIG, adminRights, mayUse, recordRights } from "@lenspack/policy";
 import { guardedConnector, querySlots } from "@lenspack/engine";
 import YAML from "yaml";
 
@@ -34,6 +34,7 @@ import { supersetQuerySafety } from "./query-safety";
 import { actorOf, personalRoutes } from "./personal-routes";
 import { plainPath, requestPaths } from "./paths";
 import { fileRecords } from "./records";
+import { panelSetting, supersetSettingsRoutes, surfaceSetting } from "./runtime-settings";
 import { supersetBoards } from "./store";
 import { supersetActions } from "./actions";
 import { defaultMapStyle, supersetVersion } from "./version";
@@ -327,7 +328,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   };
   const hostPolicy = hostPolicyFrom(env.LENSPACK_HOST_POLICY ?? config.hostPolicy);
   const accessFallback = accessFallbackFrom(env.LENSPACK_ACCESS_FALLBACK ?? config.accessFallback);
-  const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: Number(env.LENSPACK_AUDIT_RETENTION_DAYS) || (config.audit ? config.audit.retentionDays : undefined) || 90 });
+  const auditLog = config.audit === false ? null : rotatingAudit(stateDir, { retentionDays: () => admin.runtime.audit.retentionDays() });
   log(`identity: ${idKey() ? "signed by Superset" : "NO KEY (still trying)"}; edit policy ${editPolicy}; host policy ${hostPolicy}${hostPolicy === "superset" && accessFallback === "rls-only" ? " (rls-only fallback on a missing access route)" : ""}; audit ${auditLog ? `${auditLog.file} (${auditLog.retentionDays} days)` : "off"}; Superset account ${account.username} (${account.source})`);
   // Who is an admin and who may use it, in one line each, with where each setting came from (never the password).
   // First uses of admin rights go to the audit log (the admins roster).
@@ -338,7 +339,10 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   log(adminAccess.apiKeys.line());
   // Where the admin pages are: the surface asked for, unless the password mode puts them on a page of their own.
   const surfaceFrom = env.LENSPACK_ADMIN_SURFACE?.trim() ? "LENSPACK_ADMIN_SURFACE" : config.admin?.surface ? "admin.surface" : null;
-  const surface = surfacePlan(adminSurfaceFrom(config.admin?.surface, env.LENSPACK_ADMIN_SURFACE), adminAccess.modes);
+  // An admin may move them while the server runs (PUT settings/admin-surface); every reader asks surfaceNow().
+  const surfaceChoice = surfaceSetting(admin.settings, adminSurfaceFrom(config.admin?.surface, env.LENSPACK_ADMIN_SURFACE), surfaceFrom);
+  const surfaceNow = () => surfacePlan(surfaceChoice.value(), adminAccess.modes);
+  const surface = surfaceNow();
   const surfaceWords = { split: "split (Superset's settings page holds what Superset needs; the admin panel the rest)", superset: "superset (everything on Superset's settings page)", separate: "separate (everything on the admin panel; Superset's settings page links to it)" };
   log(`admin pages: ${surfaceWords[surface.surface]} (${surfaceFrom ? `from ${surfaceFrom}` : "the default"})`);
   const surfaceWarnings = surface.asked ? [`admin pages: ${surfaceFrom} asks for ${surface.asked}, but admins sign in with a password (access password), so the admin pages are on their own (separate)`] : [];
@@ -487,7 +491,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     return readFileSync(join(web, name), "utf8").replaceAll("__BASE__", vars.base).replaceAll("__NAME__", text(brand.name)).replaceAll("__BUTTON__", text(brand.buttonLabel)).replace("/*__VARS__*/", `window.__lp=${scriptJson({ ...vars, brand })};`);
   };
   const supersetPort = config.superset?.publicPort ?? Number(new URL(supersetUrl).port);
-  const panel = config.overlay?.panel === "dock" ? "dock" : "float";
+  // How the chat opens: the config's overlay.panel, unless an admin set one (PUT settings/panel).
+  const panelChoice = panelSetting(admin.settings, config.overlay?.panel);
+  const panelNow = panelChoice.value;
   // The suggested questions, from the pack in force (an admin can change them while the server runs).
   const examples = () => examplesByLanguage(live().overlay.examples);
   // Where browsers reach Superset: the config's publicUrl, else what Superset's route says it was reached as, with
@@ -496,7 +502,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     const fwd = (h: string) => String(req.headers[h] ?? "").split(",")[0]!.trim();
     const at = paths(req);
     const derived = fwd("x-forwarded-host") ? `${fwd("x-forwarded-proto") || "http"}://${fwd("x-forwarded-host")}${at.root}` : null;
-    return { pack: packName, panel, supersetPort, supersetUrl: config.superset?.publicUrl?.replace(/\/+$/, "") ?? derived, supersetRoot: at.root, base: at.base, examples: examples() };
+    return { pack: packName, panel: panelNow(), supersetPort, supersetUrl: config.superset?.publicUrl?.replace(/\/+$/, "") ?? derived, supersetRoot: at.root, base: at.base, examples: examples() };
   };
   // The overlay runs on Superset's origin and calls this server: allow exactly that origin (publicUrl's, else
   // the same host on Superset's port). Mounted under Superset's own host (publicPath), the calls are same-origin.
@@ -598,6 +604,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     base: supersetBase,
     reply: (res, status, body) => json(res, status, body, NO_STORE),
   });
+  // The host's own options an admin changes while the server runs: how the chat opens, where the admin pages are.
+  const hostSettings = supersetSettingsRoutes({ areas: { panel: panelChoice.area, "admin-surface": surfaceChoice.area }, access: () => adminAccess.state(), audit: auditLog?.audit, log, writable: () => !!idKey() });
   startRuntime({
     hosts: [{ name: packName, pack: first.pack, packYaml: first.packYaml, connector, store, ctx: packCtx, boards: [] }],
     app: {
@@ -627,7 +635,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     host,
     // Every model call, one JSON line in the state directory: today's spend (the budget, GET /api/_usage) is read back at start.
     usageFile: join(stateDir, "usage.jsonl"),
-    budget: config.budget,
+    // The config's caps (else LENSPACK_BUDGET_*), with an admin's over them (PUT settings/budget), read per turn.
+    budget: admin.runtime.budget.get,
     log,
     health: () => ({ identity: !!idKey() }),
     // Not ready while there is no identity key: every request would be refused. /healthz stays 200 (liveness).
@@ -645,8 +654,11 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       const passwordOnly = adminAccess.modes.join(",") === "password";
       const adminPanel = review.routes(rt, {
         seen: adminAccess.seen,
-        shell: (req) => ({ surface: surface.surface, sections: surface.panel === "none" ? "all" : surface.panel, superset: true, supersetPage: supersetPage(req) }),
-        ...(passwordOnly ? { pageRedirect: (req: IncomingMessage) => `${paths(req).base}/_admin/` } : surface.panel === "none" ? { pageRedirect: supersetPage } : {}),
+        shell: (req) => {
+          const now = surfaceNow();
+          return { surface: now.surface, sections: now.panel === "none" ? "all" : now.panel, superset: true, supersetPage: supersetPage(req) };
+        },
+        pageRedirect: (req: IncomingMessage) => (passwordOnly ? `${paths(req).base}/_admin/` : surfaceNow().panel === "none" ? supersetPage(req) : null),
       });
       const settingsPage = adminRoutes({
         prefix: "/_superset",
@@ -663,7 +675,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         },
         // supersetRoot: where Superset runs on its host ("" or "/superset"), for the overlay's links to Superset's pages.
         // admin: how admins sign in, and where the admin pages are, for Superset's settings page (no names, no secrets).
-        info: (url, req) => ({ pack: packName, examples: examplesFor(examples(), url.searchParams.get("lang")), examplesByLang: examples(), panel, supersetRoot: paths(req).root, admin: { access: adminAccess.modes.join(","), surface: surface.surface, page: surface.hostPage, panel: surface.panel === "none" ? null : `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
+        info: (url, req) => ({ pack: packName, examples: examplesFor(examples(), url.searchParams.get("lang")), examplesByLang: examples(), panel: panelNow(), supersetRoot: paths(req).root, admin: { access: adminAccess.modes.join(","), surface: surfaceNow().surface, page: surfaceNow().hostPage, panel: surfaceNow().panel === "none" ? null : `${paths(req).base}${passwordOnly ? "/_admin/" : "/_superset/admin/"}`, signIn: adminAccess.has("password") ? `${paths(req).base}/_admin/` : null } }),
         details: () => ({
           pack: packName,
           datasets: live().datasets.map((d) => ({ id: d.id, table: d.table_name, schema: d.schema ?? null, entity: live().binding.entityOf.get(d.id) ?? null })),
@@ -687,9 +699,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           // Where the chat may change dashboards (PUT /_superset/settings/edit-scope), with a warning when no one can.
           editScope: { ...editScope(), defaults: configScope, warning: scopeWarning() },
           publicPath: base,
-          panel,
-          // Where the admin pages are (admin.surface), and what each page shows.
-          adminPages: surface,
+          // How the chat opens (PUT /_superset/settings/panel).
+          panel: panelNow(),
+          panelSetting: panelChoice.area.view(!!idKey()),
+          // Where the admin pages are (admin.surface; PUT /_superset/settings/admin-surface), and what each page shows.
+          adminPages: surfaceNow(),
+          adminSurface: surfaceChoice.area.view(!!idKey()),
+          // What can change while the server runs and what stays in the deploy config (@lenspack/policy runtime-config.ts).
+          runtime: RUNTIME_CONFIG,
           // Limits on the queries sent to Superset (PUT /_superset/settings/query-safety).
           querySafety: safety.view(!!idKey()),
         }),
@@ -745,6 +762,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (await adminPanel(req, res, url, who)) return true;
         if (await packRoutes(req, res, url, who)) return true;
         if (await querySafetyRoute(req, res, url, who, "/_superset", adminName)) return true;
+        if (await hostSettings(req, res, url, who, "/_superset", adminName)) return true;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return true;
         if (await mine.admin(req, res, url, who)) return true;
@@ -791,6 +809,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           if (await passwordPanel!(req, res, url, who)) return;
           if (await passwordPack!(req, res, url, who)) return;
           if (await querySafetyRoute(req, res, url, who, "/_admin", "assistant admin")) return;
+          if (await hostSettings(req, res, url, who, "/_admin", "assistant admin")) return;
           await passwordSettings!(req, res, url, who);
           if (res.headersSent) return;
           return json(res, 404, { error: "not found" }, NO_STORE);
@@ -817,6 +836,7 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         if (await adminPanel(req, res, url, who)) return;
         if (await packRoutes(req, res, url, who)) return;
         if (await querySafetyRoute(req, res, url, who, "/_superset", adminName)) return;
+        if (await hostSettings(req, res, url, who, "/_superset", adminName)) return;
         await settingsPage(req, res, url, who);
         if (res.headersSent) return;
         if (await mine(req, res, url)) return;

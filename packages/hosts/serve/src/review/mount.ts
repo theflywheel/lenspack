@@ -59,7 +59,7 @@ export function reviewMount(
     routes(rt: { providers: Provider[]; budget?: Budget; ledger?: UsageLedger; roles?: { reviewer?: string; escalate?: string } }, more: Partial<Pick<PanelOptions, "prefix" | "base" | "shell" | "pageRedirect" | "adminName" | "seen">> = {}) {
       models = rt.providers;
       // Usage as a board of its own (the panel's Overview), over the turn telemetry when it is written, the audit log otherwise. Made once.
-      const usage = (usageOnce ??= usageBoard({ stateDir: o.stateDir, events: o.events, providers: () => rt.providers, ledger: rt.ledger, budget: rt.budget, roles: rt.roles, audit: o.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log: o.log, notices: admin.telemetry?.notices }).catch((e) => {
+      const usage = (usageOnce ??= usageBoard({ stateDir: o.stateDir, events: o.events, providers: () => rt.providers, ledger: rt.ledger, budget: () => rt.budget, roles: rt.roles, audit: o.audit, review: admin.app.review, chatDefault: admin.app.chatDefault, log: o.log, notices: admin.telemetry?.notices }).catch((e) => {
         o.log(`usage board off: ${e instanceof Error ? e.message : String(e)}`);
         return null;
       }));

@@ -114,6 +114,10 @@ When today's metered spend reaches a cap, the chat answers **429** with a messag
 (00:00 UTC). It answers before any model call, and the refusal is audited. Both caps are optional, and there is no
 budget unless one is set.
 
+In Superset mode an admin can change both caps while the server runs, on the Settings tab or with
+`PUT /_superset/settings/budget` (`0` means no cap, `null` goes back to the config's); the next turn checks the new
+caps. See [What can change without a redeploy](../hosts/superset/runtime.md).
+
 - **What counts:** only priced spend. At startup the server warns if a provider has no price, because its calls cannot
   count toward the budget.
 - **Probes:** they have no user, so they count toward the server's cap but never toward a user's.

@@ -46,7 +46,7 @@ export type UsageBoardOptions = {
   events?: (from: Date) => AuditEvent[];
   providers: () => Provider[];
   ledger?: UsageLedger;
-  budget?: Budget;
+  budget?: Budget | (() => Budget | undefined);
   roles?: { reviewer?: string; escalate?: string };
   /** The deployment's audit log: the usage chat's lines go there, marked internal. */
   audit?: Audit;

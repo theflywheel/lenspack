@@ -17,7 +17,8 @@ entry and heading say the assistant's name once it has one (see
 frame with a link back to Superset, light or dark as Superset is; on 5.0 it sits inside Superset's server-drawn page.
 
 Values set here are kept in `settings.json` beside the board state and win over the config file and the
-environment. A page holding an old copy picks up a change on its next dashboard load. Changes to the pack itself
+environment. Which options can change here, which can only be narrowed and which stay in the deploy config is in one
+table on [What can change without a redeploy](runtime.md). A page holding an old copy picks up a change on its next dashboard load. Changes to the pack itself
 (labels, measures, example questions and the rest of the overlay's runtime parts) are kept as versions in
 `pack-layer.json`; see [Changing the pack while it runs](pack-runtime.md).
 
@@ -36,7 +37,7 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 |---|---|
 | `GET /_superset/settings` | everything below, each with its value, default and source. Includes `speech` {enabled, keyFrom, model, defaultModel, source, holdMs, defaultHoldMs, holdMsRange, writable}, `language` {default, titles, board, options, defaults, source, writable} and `features` {values, defaults, source, options, writable} |
 | `GET /_superset/settings/speech/models` | the provider's transcription models with a price per minute (cached an hour) |
-| `PUT /_superset/settings/speech` | any of `{model, holdMs}`; a field left out is kept, `null` puts it back to the default |
+| `PUT /_superset/settings/speech` | any of `{model, holdMs, maxSeconds}`; a field left out is kept, `null` puts it back to the default |
 | `PUT /_superset/settings/language` | any of `{default, titles, board}`; `null` resets a field |
 | `PUT /_superset/settings/features` | any of `{<switch>: true \| false \| null}`; `null` drops the admin's value |
 | `PUT /_superset/settings/cache` | any of `{enabled, ttlHours, router, maxEntries, freshMinutes, prewarm}` for [saved answers](../../features/saved-answers.md); `null` resets a field |
@@ -48,6 +49,14 @@ Reads and writes need an admin's signed identity, by the `auth.admins` rule (see
 | `PUT /_superset/settings/brand` | any of `{name, buttonLabel, i18n, icon, poweredBy}` ([naming the assistant](../../features/naming.md)); `null` hands a field back to the deployment |
 | `PUT /_superset/settings/personal` | any of `{maxDashboardsPerUser, maxSavedConfigsPerUser}` for [personal dashboards](../../features/personal-dashboards.md); `null` resets |
 | `PUT /_superset/settings/edit-scope` | any of `{scope: "superset" \| "own", adminsExempt}`; `null` resets |
+| `PUT /_superset/settings/budget` | any of `{usdPerDay, usdPerUserPerDay}` in US dollars (`0`: no cap); `null` hands a cap back to the deploy config |
+| `PUT /_superset/settings/models` | `{offered: [<model names>], roles: {reviewer, escalate, router}}`: which of the deployment's models answer, and which plays each role; `null` resets |
+| `PUT /_superset/settings/audit` | `{retentionDays}`: from 30 (or the deploy config's own, if shorter) to 3650; `null` resets |
+| `PUT /_superset/settings/history` | `{historyTurns}`: 1 to 50; `null` resets |
+| `PUT /_superset/settings/explain` | `{sql: true \| false \| null}`: whether "How this was worked out" shows the SQL |
+| `PUT /_superset/settings/context` | `{context: {…}}`: the telemetry labels as a whole, or `{context: null}` for the deploy config's |
+| `PUT /_superset/settings/panel` | `{panel: "float" \| "dock" \| null}`: how the chat opens |
+| `PUT /_superset/settings/admin-surface` | `{surface: "split" \| "superset" \| "separate" \| null}`: where the admin pages are |
 | `GET /_superset/settings/pack` | the pack's runtime parts as they run (description, instructions, labels, hints, measures, examples, notDimensions, hierarchies, exclusions), the version in force and where each part comes from. See [Changing the pack while it runs](pack-runtime.md) |
 | `POST /_superset/settings/pack/validate`, `PUT /_superset/settings/pack` | check, or save, a change: `{ yaml }` (all the runtime parts) or `{ fields }` (only those named; `null` hands one back to the config), with an optional `why` and the `version` read. A change that adds a problem is refused with nothing changed |
 | `GET /_superset/settings/pack/versions`, `…/versions/<n>`, `…/diff?from=&to=` | the pack's versions, newest first, one of them, or what differs between two |
@@ -114,4 +123,5 @@ hosts, ports and IP addresses taken out. The raw error goes to the server log.
 
 **Next:** [Versions](versions.md).
 
-**Related:** [Feature switches](../../operating/switches.md) · [The admin panel](../../features/admin-panel.md)
+**Related:** [What can change without a redeploy](runtime.md) · [Feature switches](../../operating/switches.md) ·
+[The admin panel](../../features/admin-panel.md)
