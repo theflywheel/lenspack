@@ -37,6 +37,20 @@ const RUNTIME_AREAS = ["/settings/budget", "/settings/models", "/settings/audit"
 
 /** The chat menu's choices (auto: no speech hint, reply in the language used). */
 export const LANGUAGES = ["auto", "en", "fr", "hi", "pt"] as const;
+/** The languages a deployment can offer in the menu (all four unless language.offer narrows them). */
+export const OFFERABLE = ["en", "fr", "hi", "pt"] as const;
+
+/** A list of offered languages, from the config or LENSPACK_LANGUAGES ("en,fr,pt"): known, no repeats, at least one; else the reason it is refused. */
+export function parseOffer(v: unknown, from: string): { offer: string[] } | { error: string } {
+  const list = typeof v === "string" ? v.split(/[\s,]+/).filter(Boolean) : v;
+  if (!Array.isArray(list) || !list.length) return { error: `${from} needs at least one of ${OFFERABLE.join(", ")}` };
+  const bad = list.find((x) => !OFFERABLE.includes(x as never));
+  if (bad !== undefined) return { error: `${from}: ${String(bad)} is not one of ${OFFERABLE.join(", ")}` };
+  return { offer: OFFERABLE.filter((l) => list.includes(l)) };
+}
+/** Why a default and a board language can't go with this offer, or null. */
+const offerProblem = (l: { default: string; board: string }, offer: string[]) =>
+  l.default !== "auto" && !offer.includes(l.default) ? `language.default (${l.default}) must be one of the offered languages: ${offer.join(", ")}` : !offer.includes(l.board) ? `language.board (${l.board}) must be one of the offered languages: ${offer.join(", ")}` : null;
 /** How long Space is held before the mic listens (a shorter press types a space). */
 const HOLD_MS = { min: 500, max: 3000 };
 
@@ -46,7 +60,7 @@ const MAX_SECONDS = { min: 5, max: 300 };
 const AUDIO_DAYS = { min: 1, max: 3650 };
 const AUDIO_MB = { min: 1, max: 100_000 };
 const whole = (v: unknown, r: { min: number; max: number }): v is number => typeof v === "number" && Number.isInteger(v) && v >= r.min && v <= r.max;
-type LanguageSettings = { default?: string; titles?: "board" | "speaker"; board?: string };
+type LanguageSettings = { default?: string; titles?: "board" | "speaker"; board?: string; offer?: string[] };
 type ChatSetting = { model?: string; effort?: string };
 
 /** A deployment's defaults for what the settings page can change. */
@@ -142,7 +156,16 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
     },
     model: speechModel,
   };
-  const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en" };
+  const offered = (() => {
+    const [given, from] = env.LENSPACK_LANGUAGES?.trim() ? [env.LENSPACK_LANGUAGES, "LENSPACK_LANGUAGES"] : config.language?.offer !== undefined ? [config.language.offer, "language.offer"] : [undefined, ""];
+    if (given === undefined) return [...OFFERABLE] as string[];
+    const r = parseOffer(given, from);
+    if ("error" in r) throw new Error(r.error);
+    return r.offer;
+  })();
+  const languageDefaults: Required<LanguageSettings> = { default: config.language?.default ?? "auto", titles: config.language?.titles ?? "board", board: config.language?.board ?? "en", offer: offered };
+  const startProblem = offerProblem(languageDefaults, offered);
+  if (startProblem) throw new Error(startProblem);
   const language = (): Required<LanguageSettings> => ({ ...languageDefaults, ...saved<LanguageSettings>("language") });
   const off = () => Object.entries(features.values()).filter(([, on]) => !on).map(([f]) => f);
   // Kept recordings: off unless the config, the environment or the settings page turns them on.
@@ -274,7 +297,8 @@ export function adminSettings(stateDir: string, config: AdminConfig = {}, env: N
       measured: SPEECH_MEASURED,
       writable,
     }),
-    languageView: (writable: boolean) => ({ ...language(), options: LANGUAGES, defaults: languageDefaults, source: saved("language") ? "settings" : "default", writable }),
+    languageDefaults,
+    languageView: (writable: boolean) => ({ ...language(), options: ["auto", ...language().offer], defaults: languageDefaults, source: saved("language") ? "settings" : "default", writable }),
     telemetryView: (writable: boolean) => ({ ...switches.view(writable), file: telemetryLog.file, context: Object.keys(contextNow()).length }),
   };
 }
@@ -409,7 +433,7 @@ export function adminRoutes(o: AdminRouteOptions) {
     if (path === "/info") {
       // consent: the notice this user must acknowledge before the mic records, while recordings are kept; else null.
       const speech = s.speech.apiKey ? { enabled: true, maxSeconds: s.speech.maxSeconds, holdMs: s.holdMs(), consent: await s.audio.consentNeeded(who.user) } : { enabled: false };
-      return send(200, { ...o.info?.(url, req), speech, language: { default: s.language().default, options: LANGUAGES }, features: s.features.values(), brand: s.brand.get() });
+      return send(200, { ...o.info?.(url, req), speech, language: { default: s.language().default, offer: s.language().offer, options: ["auto", ...s.language().offer] }, features: s.features.values(), brand: s.brand.get() });
     }
     // Who the caller is here and what they may do, changing nothing: a script checks its admin API key with it.
     if (path === "/whoami" && req.method === "GET") {
@@ -789,16 +813,19 @@ export function adminRoutes(o: AdminRouteOptions) {
       audit("settings speech", JSON.stringify(next));
       return send(200, await s.speechView(writable));
     }
-    // Any of default, titles, board; null resets the field.
+    // Any of default, titles, board, offer; null resets the field. Default and board must be offered.
     if (path === "/settings/language") {
       const next: LanguageSettings = { ...s.settings.get<LanguageSettings>("language") };
-      for (const [k, ok] of [["default", (v: unknown) => LANGUAGES.includes(v as never)], ["titles", (v: unknown) => v === "board" || v === "speaker"], ["board", (v: unknown) => LANGUAGES.includes(v as never) && v !== "auto"]] as const) {
+      for (const [k, ok] of [["default", (v: unknown) => LANGUAGES.includes(v as never)], ["titles", (v: unknown) => v === "board" || v === "speaker"], ["board", (v: unknown) => LANGUAGES.includes(v as never) && v !== "auto"], ["offer", (v: unknown) => Array.isArray(v) && "offer" in parseOffer(v, "offer")]] as const) {
         if (!(k in b)) continue;
         const v = b[k];
         if (v === null) delete next[k];
         else if (!ok(v)) return send(400, { error: `bad ${k}: ${String(v)}` });
-        else (next as Record<string, unknown>)[k] = v;
+        else (next as Record<string, unknown>)[k] = k === "offer" ? (parseOffer(v, "offer") as { offer: string[] }).offer : v;
       }
+      const now = { ...s.languageDefaults, ...next } as Required<LanguageSettings>;
+      const problem = offerProblem(now, now.offer);
+      if (problem) return send(400, { error: problem });
       s.settings.set("language", Object.keys(next).length ? next : undefined);
       o.log(`language: ${JSON.stringify(s.language())}`);
       audit("settings language", JSON.stringify(next));

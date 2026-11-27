@@ -11,6 +11,11 @@ brought it.
 
 ### 27 November 2026
 
+- **A deployment can offer only some of the chat's languages.** `language.offer: [en, fr, pt]` (default: all four),
+  or `LENSPACK_LANGUAGES=en,fr,pt`, or an admin's `offer` on `PUT /_superset/settings/language`. The menu lists
+  only those (plus Auto); a saved pick or Superset language that is not offered falls back to `language.default`,
+  and so does the speech hint. `language.default` and `language.board` must be offered. Replies still follow the
+  language the person writes or speaks in. See [Languages](docs/features/languages.md).
 - **Every option that isn't a secret can change without a redeploy.** On a deployment where the deploy config is in
   another team's hands, the admin pages and the admin API key are now enough. New settings routes: the daily budget
   caps (`settings/budget`; `0` means no cap), which of the deployment's models answer and which plays each role

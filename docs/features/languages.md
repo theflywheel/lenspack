@@ -25,6 +25,21 @@ questions follow the pick.
 
 The admin panel is in English and French.
 
+## Offering only some languages
+
+A deployment can offer fewer than the four: `language.offer: [en, fr, pt]` in `superset.yaml` (default: all four), or
+`LENSPACK_LANGUAGES=en,fr,pt`, which wins over the file. An admin can change it on a running server
+(`PUT /_superset/settings/language` with `offer`; `null` goes back to the deployment's value).
+
+- The menu lists the offered languages, plus Auto.
+- A pick saved earlier, or a Superset language, that is not offered is ignored, and `language.default` applies.
+- The speech hint follows the same rule: it is never a language that is not offered.
+- `language.default` (unless `auto`) and `language.board` must be offered. The server refuses to start otherwise,
+  and a change at runtime is refused with a 400.
+
+The offer only shapes the menu and the hint. Replies still follow the language the person actually writes or speaks
+in, so someone who writes Hindi to a deployment that does not offer it is still answered in Hindi.
+
 The `languageMenu` switch hides the picker; the deployment's default language then applies, and a pick saved
 earlier is ignored.
 
@@ -52,7 +67,7 @@ query ([Saved answers](saved-answers.md#the-tiers-cheapest-first)).
 
 ## Settings
 
-`language.default` (`auto`), `language.titles` (`board`) and `language.board` (`en`) in `superset.yaml` are
+`language.default` (`auto`), `language.titles` (`board`), `language.board` (`en`) and `language.offer` (all four) in `superset.yaml` are
 defaults; an admin can change them on a running server. See
 [Settings and switches in Superset](../hosts/superset/settings.md#voice-and-language).
 
