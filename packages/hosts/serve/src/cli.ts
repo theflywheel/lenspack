@@ -22,6 +22,9 @@ const USAGE = `lenspack <command>
   serve  --config lenspack.yaml [--port 8787]   the board API (and --ui dir, LENSPACK_UI, or ui: in the config);
                                                 the command may be left out: lenspack --config lenspack.yaml
   superset --config superset.yaml               the chat inside Apache Superset (@lenspack/superset)
+  query-check --config superset.yaml [--cap 300] [--url …] [--username …] [--json]
+                                                before go-live: every query shape the pack allows, compiled by
+                                                Superset WITHOUT running it, read for risky SQL; exit 1 on danger
   check  --config lenspack.yaml                 draw every board against its source; exit 1 on any error
   sources --config lenspack.yaml [--source s]   what each source holds: tables or indexes, fields, types, rows
   hash-password                                 a scrypt hash of the password on stdin, for LENSPACK_ADMIN_PASSWORD_HASH
@@ -117,6 +120,16 @@ async function main() {
           void review?.start();
         },
       });
+      return;
+    }
+    case "query-check": {
+      const superset = "@lenspack/superset/server";
+      const { querySafetyCheck } = (await import(superset)) as { querySafetyCheck(file: string, o: { cap?: number; url?: string; username?: string }): Promise<{ report: unknown; text: string; dangerous: boolean }> };
+      const cap = flag("cap") ? Number(flag("cap")) : undefined;
+      if (cap !== undefined && (!Number.isInteger(cap) || cap < 1)) throw new Error("--cap is a whole number of query shapes");
+      const r = await querySafetyCheck(flag("config") ?? "superset.yaml", { cap, url: flag("url"), username: flag("username") });
+      console.log(args.includes("--json") ? JSON.stringify(r.report, null, 2) : r.text);
+      process.exitCode = r.dangerous ? 1 : 0;
       return;
     }
     case "superset": {

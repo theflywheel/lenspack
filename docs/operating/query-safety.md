@@ -19,6 +19,25 @@ time range". Nothing reaches the database.
 These limits are the first line of defence. The guarantee is the database user Superset reads with: give it its own
 limits too (see [Limits on the database side](#limits-on-the-database-side)).
 
+## What Lenspack can send
+
+Every question becomes one or more of these query shapes. There is no other way for the assistant to reach the
+database.
+
+| shape | what the database does | already bounded by | checked by the limits | the risk left |
+|---|---|---|---|---|
+| a value (one number) | one aggregate over the rows in range | one row back | time range rules on heavy datasets | a full scan when no time range narrows it |
+| a value compared with the previous period, or a ratio of two measures | the same, two or three times | one row each | the same, and `maxQueriesPerTurn` | as above, times the number of queries |
+| a breakdown (top N by one dimension) | GROUP BY one column, sorted, top N | N at most 500 | `highCardinality`, `maxGroups`, time range rules | grouping by a column with a value per record builds one group per record before the top N is kept |
+| a breakdown split by a second dimension | GROUP BY two columns | 10,000 rows | `maxRows`, `maxGroups` (the product), `highCardinality` | groups multiply |
+| a series (over time, optionally one line per group) | GROUP BY a time bucket (and a column) | 20,000 rows | `maxSeriesPoints` (range ÷ grain × series), `maxWindowDays`, `highCardinality` | an hourly series over years |
+| a computed answer (a change, a rolling mean, a running total, a total over time) | a series or breakdown underneath, computed by Lenspack | 20,000 rows | the same as its base query | as its base query |
+| a list of rows | raw rows, filtered and sorted, with an offset | 1,000 rows, offset at most 10,000 | `maxRows`, time range rules | sorting a large table to page through it |
+| a map | points or counts per area | 5,000 points | `maxRows`, time range rules | as a list |
+| a board load, a dashboard filter's options | the same shapes, one per chart | as above | the same limits, and `maxConcurrent` | many charts at once on a busy morning |
+
+The chat's tools and a board's charts go through the same check, so a limit applies to both.
+
 ## The limits
 
 | limit | default | what it does |
@@ -103,6 +122,61 @@ limits, the deployment's own values, and what an admin changed) and change them 
   `"confirm": true` to apply it anyway.
 - Every change, refused or not, is in the audit log.
 
+## Checking a pack before go-live
+
+### Warnings about the pack
+
+At start, and each time an admin changes the pack while it runs, Lenspack reads the pack against the limits and the
+datasets' columns (no query is sent) and logs what looks risky:
+
+- a dimension that reads like one value per record (an id, a phone number, a coordinate) that grouping is allowed on;
+- a distinct count on a heavy dataset that no time range narrows;
+- a dataset marked heavy that has no time column, so no time range can narrow it;
+- a hierarchy that drills down to a column with a value per record;
+- a dataset that looks like one row per record but is not marked heavy (a note, not a warning);
+- an example question the limits would refuse, so its button would answer with a refusal;
+- a dataset named in `querySafety.datasets` that the pack does not have.
+
+They are in `GET /_superset/settings` too, as `querySafety.packRisks`. They change nothing; they say where to look.
+
+### The dry run
+
+The dry run tries every query shape the pack allows (each measure as one number, by each dimension, split by a second
+one, over time at each grain, as a list and as a map), up to a cap. Each goes through the same limits as a live
+question, and the ones that pass are sent to Superset's chart-data API with `result_type: "query"`, which turns the
+query into SQL and returns the SQL **without running it**. Lenspack then reads the SQL for:
+
+- no `LIMIT` (dangerous: the database would return every row);
+- `GROUP BY` over a column listed in `highCardinality` (dangerous);
+- no condition on the time column on a heavy dataset (dangerous: it reads every row);
+- `GROUP BY` over four or more columns (a warning).
+
+It also lists the shapes Lenspack's own limits refuse (a live question would be refused the same way), the shapes
+Superset could not compile, and the warnings about the pack.
+
+From a terminal, with the deployment's `superset.yaml` and the same environment as the server:
+
+```sh
+lenspack query-check --config superset.yaml            # a report; exit code 1 if anything is dangerous
+lenspack query-check --config superset.yaml --cap 50   # fewer shapes
+lenspack query-check --config superset.yaml --json     # the report as JSON
+```
+
+With no server access, an admin runs it on the running server:
+
+```sh
+curl -X POST -H "Authorization: Bearer $LENSPACK_ADMIN_KEY" -H 'content-type: application/json' \
+  -d '{"cap": 200}' https://<your Superset>/lenspack/_admin/settings/query-safety/dry-run
+```
+
+The route is `POST /_superset/settings/query-safety/dry-run` (or `/_admin/…` with the password sign-in or an admin
+API key), admins only, audited as `query-safety dry run`. The answer is the report as JSON, with `text` holding the same
+report as lines.
+
+Superset compiles each query, which touches its own metadata database but not yours. Run the dry run after any change
+to the pack, the datasets or the limits, and before go-live. Fix what is dangerous by marking the dataset heavy,
+listing the column in `highCardinality` or `overlay.notDimensions`, or changing the dataset in Superset.
+
 ## Limits on the database side
 
 Lenspack's checks cover the queries Lenspack sends. Superset's own charts, SQL Lab and anyone else using the same
@@ -118,9 +192,28 @@ the user's settings profile:
 | `max_concurrent_queries_for_user` | 20 | caps how many queries the user runs at once |
 | `readonly` | 1 (or 2 if Superset needs to set settings) | the user can only read |
 
-Other databases have the same ideas under other names: PostgreSQL's `statement_timeout` and `work_mem` on the role,
-MySQL's `max_execution_time`, BigQuery's maximum bytes billed. In Superset itself, set `SQLLAB_TIMEOUT`,
-`SUPERSET_WEBSERVER_TIMEOUT` and `ROW_LIMIT` in `superset_config.py`.
+For PostgreSQL, on the role:
+
+```sql
+ALTER ROLE superset_reader SET statement_timeout = '60s';
+ALTER ROLE superset_reader SET work_mem = '64MB';
+ALTER ROLE superset_reader SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE superset_reader CONNECTION LIMIT 20;
+ALTER ROLE superset_reader SET default_transaction_read_only = on;
+```
+
+MySQL has `max_execution_time`; BigQuery has the maximum bytes billed per query. In Superset itself, set
+`SQLLAB_TIMEOUT`, `SUPERSET_WEBSERVER_TIMEOUT` and `ROW_LIMIT` in `superset_config.py`, and give the database
+connection a pool size close to `maxConcurrent` times the number of Lenspack copies.
+
+A short checklist before go-live:
+
+1. The database user Superset reads with has a time limit, a memory limit and a concurrency limit, and can only read.
+2. Every large row-level dataset is marked `heavy: true`, and every column with a value per record is in
+   `highCardinality` (or `overlay.notDimensions`).
+3. The dry run reports nothing dangerous, and no warning about the pack is left unexplained.
+4. Large tables have an index (or, in ClickHouse, an order key) starting with the time column, so a time range reads
+   only its part.
 
 ---
 

@@ -569,3 +569,4 @@ export * from "./surface";
 export * from "./board-scope";
 export * from "./pack-layer";
 export * from "./query-safety";
+export * from "./query-checks";
