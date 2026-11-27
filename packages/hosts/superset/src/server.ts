@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { type PersonalDashboard, type SavedLayout, type ScopeClause, memoryStore } from "@lenspack/core";
 import { type EditScope, type TabActor, adminSurfaceFrom, boardRights, boardScopeLine, boardsInScope, surfacePlan, decide, editScopeFacts, editScopeFrom, editScopeWarning, hiddenPersonalBoards, inBoardScope, personalLimitsFrom, principalOf, shownConfig } from "@lenspack/policy";
-import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, readJson as readJsonBody, presentedKey, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, userAccessSetup } from "@lenspack/serve";
+import { type AdminConfig, type Budget, NO_STORE, type Runtime, TYPES, accessRights, adminAccessSetup, adminRoutes, adminSettings, adminSignIn, json, packLayerStore, readJson as readJsonBody, presentedKey, asSettingsWriter, revisionTag, resolveSecrets, rotatingAudit, scriptJson, settingsGrants, settingsRoster, settingsStore, startRuntime, userAccessSetup } from "@lenspack/serve";
 import { NOT_TURNED_ON_MESSAGE, type PackLayer, type PackRisk, applyPackLayer, type Principal, type QuerySafetyConfig, adminRights, mayUse, packRisks, recordRights } from "@lenspack/policy";
 import { guardedConnector, querySlots } from "@lenspack/engine";
 import YAML from "yaml";
@@ -252,12 +252,19 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
   // docs/hosts/superset/pack-runtime.md). A column or metric the pack can't use is left out or renamed with a warning,
   // never a failed start; so are mistakes in the overlay (a measure on a column that isn't there). Saved changes that no
   // longer build are set aside for the deploy config alone, said in the log and in the settings API.
+  const packStore = packLayerStore(stateDir, { log });
+  /** The pack's version in force and who made it, for an open admin page to notice a change made elsewhere. */
+  const packRevision = () => {
+    const v = live().version;
+    const by = packStore.get(v);
+    return { pack: { version: v, ...(v && by ? { by: by.by, at: by.at } : {}) } };
+  };
   const packs = packRuntime({
     base: config.overlay ?? {},
     // The overlay as the file writes it, env: references kept, for the export.
     raw: (YAML.parse(readFileSync(file, "utf8")) as SupersetConfig | null)?.overlay ?? {},
     scope: config.scope,
-    store: packLayerStore(stateDir, { log }),
+    store: packStore,
     fetch: fetchNow,
     capabilities: () => ({ ...SUPERSET_CAPABILITIES, ...switchedOff() }),
     mapStyle: defaultMapStyle(superset.major),
@@ -643,7 +650,9 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     },
     audit: auditLog?.audit,
     base: supersetBase,
-    reply: (res, status, body) => json(res, status, body, NO_STORE),
+    // Every answer says the settings' revision, so a page that just changed the limits holds the new one.
+    reply: (res, status, body) => json(res, status, body, { ...NO_STORE, ETag: revisionTag(admin.settings.revision()) }),
+    settingsWriter: (req, res, who, run) => asSettingsWriter(admin.settings, req, res, who, run),
   });
   /** Who is writing, for the tab rules: their names, admin role and edit right on this board, as policy settled them. */
   const tabActor = (who: ReturnType<typeof settle>, board: string): TabActor => ({ user: who.user, ...(who.userId !== undefined ? { userId: who.userId } : {}), admin: adminRights(who).administer, edits: boardRights(who, { id: board }).edit });
@@ -668,7 +677,8 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
       if (req.method !== "GET") audited(`${req.method} ${url.pathname}`, "denied");
       return void json(res, 403, { error: `only ${adminName}s can do this` }, NO_STORE), true;
     }
-    if (settingsPath && req.method === "GET") return void json(res, 200, tabSettings(), NO_STORE), true;
+    const tagged = () => ({ ...NO_STORE, ETag: revisionTag(admin.settings.revision()) });
+    if (settingsPath && req.method === "GET") return void json(res, 200, tabSettings(), tagged()), true;
     if (settingsPath && req.method === "PUT") {
       if (!idKey()) return void json(res, 503, { error: "settings can't be changed until Superset gives the identity key" }, NO_STORE), true;
       let body: unknown;
@@ -678,12 +688,16 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         return void json(res, 400, { error: "body must be JSON" }, NO_STORE), true;
       }
       if (!body || typeof body !== "object" || Array.isArray(body)) return void json(res, 400, { error: "body must be a JSON object" }, NO_STORE), true;
-      const r = tabsSettingsChange(admin.settings.get<TabsSaved>("tabs") ?? {}, body as Record<string, unknown>);
-      if (!r.ok) return void json(res, 400, { error: r.error }, NO_STORE), true;
-      admin.settings.set("tabs", Object.keys(r.next).length ? r.next : undefined);
-      audited("PUT /_superset/settings/tabs", "ok", JSON.stringify(body));
-      log(tabsLine(tabs.rules()));
-      return void json(res, 200, { ok: true, ...tabSettings() }, NO_STORE), true;
+      // As one writer of the settings store: a change made on an older revision (If-Match) is refused there with 409.
+      await asSettingsWriter(admin.settings, req, res, who, async () => {
+        const r = tabsSettingsChange(admin.settings.get<TabsSaved>("tabs") ?? {}, body as Record<string, unknown>);
+        if (!r.ok) return void json(res, 400, { error: r.error }, NO_STORE);
+        admin.settings.set("tabs", Object.keys(r.next).length ? r.next : undefined);
+        audited("PUT /_superset/settings/tabs", "ok", JSON.stringify(body));
+        log(tabsLine(tabs.rules()));
+        json(res, 200, { ok: true, ...tabSettings() }, tagged());
+      }, tabSettings);
+      return true;
     }
     if (listPath && req.method === "GET") {
       const boards: Record<string, BoardConfig | null> = {};
@@ -820,13 +834,14 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
         }),
         access: adminAccess,
         users: userAccess,
+        revisionExtras: packRevision,
       });
       // The password sign-in's admin pages: the same panel and settings routes under /_admin, for the password admin.
       // Password admins always get every section there, whatever the surface: they have no Superset page to use.
       const passwordPanel = passwordAdmin ? review.routes(rt, { prefix: "/_admin", base: "/_admin", adminName: "assistant admin", seen: adminAccess.seen, shell: (req) => ({ signOut: passwordAdmin.signOutPath(req), access: "password", surface: "separate", sections: "all", superset: true, supersetPage: supersetPage(req) }) }) : null;
       const passwordPack = passwordAdmin ? packs.routes("/_admin", { access: () => adminAccess.state(), seen: (who) => adminAccess.seen(who), audit: auditLog?.audit, adminName: "assistant admin" }) : null;
       const passwordSettings = passwordAdmin
-        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, details: () => ({ querySafety: { ...safety.view(true), packRisks: [...risksNow(), ...exampleRisks] } }) })
+        ? adminRoutes({ prefix: "/_admin", settings: admin, providers, budget, audit: auditLog, log, adminName: "assistant admin", writable: () => true, access: adminAccess, users: userAccess, details: () => ({ querySafety: { ...safety.view(true), packRisks: [...risksNow(), ...exampleRisks] } }), revisionExtras: packRevision })
         : null;
       /**
        * PUT <prefix>/settings/query-safety: an admin changes the query limits on a running server. Tighter than the
@@ -868,9 +883,13 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
           return json(res, 400, { error: "send the change as JSON" }, NO_STORE), true;
         }
         if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "send the change as a JSON object" }, NO_STORE), true;
-        const r = safety.update(body as Record<string, unknown>);
-        audit(r.status === 200 ? "ok" : "refused", r.status === 200 ? JSON.stringify(body) : String(r.body.error));
-        return json(res, r.status, r.status === 200 ? { ...r.body, querySafety: safety.view(true) } : r.body, NO_STORE), true;
+        // As one writer of the settings store: a change made on an older revision (If-Match) is refused there with 409.
+        await asSettingsWriter(admin.settings, req, res, who, async () => {
+          const r = safety.update(body as Record<string, unknown>);
+          audit(r.status === 200 ? "ok" : "refused", r.status === 200 ? JSON.stringify(body) : String(r.body.error));
+          json(res, r.status, r.status === 200 ? { ...r.body, querySafety: safety.view(true) } : r.body, { ...NO_STORE, ETag: revisionTag(admin.settings.revision()) });
+        });
+        return true;
       };
       /** Exports and shares done in Superset itself on the dashboards Lenspack works on, from Superset's action log (admins only). */
       const actionLog = async (res: ServerResponse, url: URL, who: Principal): Promise<boolean> => {

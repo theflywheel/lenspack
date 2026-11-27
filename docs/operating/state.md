@@ -20,7 +20,7 @@ files in `auth.dir` (default `LENSPACK_STATE_DIR`, else `.lenspack` next to `len
 | `superset-account.json` | Lenspack's own Superset account password (mode 600) | Superset |
 | `usage.jsonl` | one line per model call (who, which model, tokens, cost), so today's spend and budget survive a restart; only its last 32 MB is read at start, and nothing deletes old lines, so trim it now and then if it grows | Superset |
 | `personal-dashboards.json`, `saved-layouts.json` | which dashboards are someone's own, and people's saved layouts (see [Personal dashboards](../features/personal-dashboards.md#where-it-is-kept)) | Superset |
-| `settings.json` | switches, voice, language, saved-answer and queue settings, personal-dashboard limits, the edit scope, the assistant's name, and the review's settings, as set by an admin | both |
+| `settings.json` | switches, voice, language, saved-answer and queue settings, personal-dashboard limits, the edit scope, the assistant's name, and the review's settings, as set by an admin, with the settings' revision and who made each part's last change (`_revisions`) | both |
 | `pack-layer.json` | changes admins made to the pack while the server ran, every version with who, when and why (mode 600; see [Changing the pack while it runs](../hosts/superset/pack-runtime.md)) | Superset |
 | `definitions-<pack>.json` | the admins' definitions and their history | both |
 | `open-questions-<pack>.json` | the open-questions log | both |

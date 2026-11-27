@@ -9,7 +9,7 @@
 import { type Capabilities, check } from "@lenspack/engine";
 import { type Pack, PackError } from "@lenspack/pack";
 import { type AdminAccess, PACK_CONFIG_FIELDS, PACK_DATA_BOUNDARY, PACK_RUNTIME_FIELDS, type PackLayer, type Principal, applyPackLayer, packChangeRefusals, packEditRights, packFieldsChanged, packLayerFrom, packLayerWith, packRuntimeView, sameValue } from "@lenspack/policy";
-import { type AuditEvent, NO_STORE, type PackLayerStore, type PackVersion, type PackVersionAction, SettingsSaveError, json, readJson } from "@lenspack/serve";
+import { type AuditEvent, NO_STORE, type PackLayerStore, type PackVersion, type PackVersionAction, SettingsConflictError, SettingsSaveError, conflictAnswer, ifMatchRevision, json, readJson, revisionTag } from "@lenspack/serve";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import YAML from "yaml";
 
@@ -226,19 +226,18 @@ export function packRuntime(o: PackRuntimeOptions) {
   }
 
   /** Checks, saves as a version and swaps; or refuses with nothing changed. */
-  function change(layer: PackLayer, meta: { by: string; action: PackVersionAction; why?: string; reverts?: number; ifVersion?: number }) {
+  function change(layer: PackLayer, meta: { by: string; action: PackVersionAction; why?: string; reverts?: number; ifVersion?: number | null }) {
     return serial(async (): Promise<{ ok: true; version: PackVersion; warnings: string[] } | { ok: false; status: number; problems: string[] }> => {
       const current = now();
-      if (meta.ifVersion !== undefined && meta.ifVersion !== current.version) {
-        const v = o.store.get(current.version);
-        return { ok: false, status: 409, problems: [`the pack was changed since this page read it (now version ${current.version}${v?.by ? `, by ${v.by}` : ""}); read it again and make the change on that`] };
-      }
+      // Changed since the writer read it: refused before the pack is built again (the store refuses it too).
+      const conflict = o.store.stale(meta.ifVersion);
+      if (conflict) throw conflict;
       const c = await checkLayer(layer);
       if (!c.ok) return c;
       if (!c.changed.length && sameValue(layer, current.layer) && !current.notApplied) return { ok: false, status: 409, problems: ["nothing would change: the pack already reads this way"] };
       const summary =
         meta.action === "revert" ? `back to version ${meta.reverts}${c.changed.length ? ` (${fieldList(c.changed)})` : ""}` : meta.action === "reset" ? (Object.keys(layer).length ? `${fieldList(c.changed)} back to the deploy config` : "everything back to the deploy config") : fieldList(c.changed);
-      const version = o.store.append({ by: meta.by, action: meta.action, summary, changed: c.changed, layer: layer as Record<string, unknown>, ...(meta.why ? { why: meta.why } : {}), ...(meta.reverts !== undefined ? { reverts: meta.reverts } : {}) });
+      const version = o.store.append({ by: meta.by, action: meta.action, summary, changed: c.changed, layer: layer as Record<string, unknown>, ...(meta.why ? { why: meta.why } : {}), ...(meta.reverts !== undefined ? { reverts: meta.reverts } : {}) }, { ifVersion: meta.ifVersion });
       const overlay = applyPackLayer(base, layer);
       live = { ...c.built, datasets: c.datasets, overlay, version: version.version, layer };
       await o.swap(live);
@@ -313,7 +312,8 @@ export function packRuntime(o: PackRuntimeOptions) {
       const root = `${prefix}/settings/pack`;
       if (url.pathname !== root && !url.pathname.startsWith(`${root}/`)) return false;
       const path = url.pathname.slice(root.length) || "/";
-      const send = (status: number, body: unknown) => (json(res, status, body, NO_STORE), true);
+      // Every answer carries the version in force as its ETag ("pack-3"): send it back as If-Match on a change.
+      const send = (status: number, body: unknown) => (json(res, status, body, { ...NO_STORE, ETag: revisionTag(now().version, "pack") }), true);
       const audit = (action: string, detail: string, outcome: AuditEvent["outcome"] = "ok") => {
         try {
           r.audit?.({ at: new Date().toISOString(), user: who.user, pack: now().pack.pack, action, outcome, detail: detail.slice(0, 1000) });
@@ -346,12 +346,20 @@ export function packRuntime(o: PackRuntimeOptions) {
       const done = (x: { version: PackVersion; warnings: string[] }) => send(200, { ok: true, version: versionView(x.version), warnings: x.warnings, pack: { dimensions: now().pack.dimensions.length, measures: now().pack.measures.length } });
       const saveError = (e: unknown) => {
         if (e instanceof SettingsSaveError) return send(503, { error: e.message });
+        // Changed since the writer read it: who changed it, and the pack as it is now, to make the change on.
+        if (e instanceof SettingsConflictError) return send(409, conflictAnswer(e, view()));
         throw e;
       };
+      // The version the writer read: If-Match ("pack-3"), else the body's `version`; neither, no check (the last write wins).
+      const header = ifMatchRevision(req.headers["if-match"], "pack");
+      if (header instanceof Error) return send(400, { error: header.message });
+      const ifVersion = (b: Record<string, unknown>) => header ?? (Number.isInteger(b.version) ? (b.version as number) : null);
 
       // The pack as it runs: its runtime parts as YAML (what the page edits), where each comes from, and what stays in the config.
-      if (path === "/" && req.method === "GET")
-        return send(200, {
+      if (path === "/" && req.method === "GET") return send(200, view());
+      function view() {
+        const current = now();
+        return {
           version: current.version,
           ...(current.version ? { changedBy: o.store.get(current.version)?.by, changedAt: o.store.get(current.version)?.at } : {}),
           ...(current.notApplied ? { notApplied: current.notApplied } : {}),
@@ -365,7 +373,8 @@ export function packRuntime(o: PackRuntimeOptions) {
           pack: { name: current.pack.pack, datasets: Object.keys(current.pack.entities).length, dimensions: current.pack.dimensions.length, measures: current.pack.measures.length },
           warnings: [...current.warnings, ...current.scopeWarnings],
           versions: o.store.versions().length,
-        });
+        };
+      }
       // Checks a change as Save would, changing nothing.
       if (path === "/validate" && req.method === "POST") {
         const b = await body();
@@ -382,7 +391,7 @@ export function packRuntime(o: PackRuntimeOptions) {
         const asked = layerFromBody(b);
         if ("problems" in asked) return refused("edit", { status: 400, problems: asked.problems });
         try {
-          const result = await change(asked.layer, { by: who.user, action: "edit", why: why(b), ...(Number.isInteger(b.version) ? { ifVersion: b.version as number } : {}) });
+          const result = await change(asked.layer, { by: who.user, action: "edit", why: why(b), ifVersion: ifVersion(b) });
           if (!result.ok) return refused("edit", result);
           audit("pack edit", `version ${result.version.version}: ${result.version.summary}${result.version.why ? ` (${result.version.why})` : ""}`);
           return done(result);
@@ -421,7 +430,7 @@ export function packRuntime(o: PackRuntimeOptions) {
         const target = Number.isInteger(b.version) ? o.store.get(b.version as number) : undefined;
         if (!target) return send(Number.isInteger(b.version) ? 404 : 400, { error: Number.isInteger(b.version) ? `no version ${String(b.version)}` : 'send { "version": <n> } (0: the deploy config alone)' });
         try {
-          const result = await change(target.layer as PackLayer, { by: who.user, action: "revert", why: why(b), reverts: target.version });
+          const result = await change(target.layer as PackLayer, { by: who.user, action: "revert", why: why(b), reverts: target.version, ifVersion: header });
           if (!result.ok) return refused("revert", result);
           audit("pack revert", `version ${result.version.version}: ${result.version.summary}${result.version.why ? ` (${result.version.why})` : ""}`);
           return done(result);
@@ -439,7 +448,7 @@ export function packRuntime(o: PackRuntimeOptions) {
         if (unknown.length) return refused("reset", { status: 400, problems: unknown.map((f) => (PACK_CONFIG_FIELDS[f] ? `${f} is set in the deploy config only (${PACK_CONFIG_FIELDS[f]})` : `${f} is not a part of the pack that can be changed here (${PACK_RUNTIME_FIELDS.join(", ")})`)) });
         const layer = fields ? (Object.fromEntries(Object.entries(current.layer).filter(([k]) => !fields.includes(k))) as PackLayer) : {};
         try {
-          const result = await change(layer, { by: who.user, action: "reset", why: why(b) });
+          const result = await change(layer, { by: who.user, action: "reset", why: why(b), ifVersion: header });
           if (!result.ok) return refused("reset", result);
           audit("pack reset", `version ${result.version.version}: ${result.version.summary}${result.version.why ? ` (${result.version.why})` : ""}`);
           return done(result);
