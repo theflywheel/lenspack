@@ -11,6 +11,11 @@ brought it.
 
 ### 27 November 2026
 
+- **Tabs on the settings page.** The admin pages' Settings tab has the tab rules (which tabs the chat may change, the
+  `chatTabs` and `playground` switches, the limits) and, for each dashboard the assistant has opened, its tabs: tick
+  one to protect it, see who made each chat tab with each person's count against the limits, and delete one (asking
+  again when email reports are sent from it). `GET /_superset/tabs` now also returns each dashboard's tabs. See
+  [Tabs on dashboards](docs/features/tabs.md#on-the-settings-page).
 - **An admin API key can read what chat has cost.** `GET …/lenspack/_admin/usage` (on Lenspack's own address,
   `/_superset/usage`) answers what the usage page shows: today's spend and since the count began, totals per day,
   each person's spend and number of answers, the budget caps and the question limits, the same as `GET /api/_usage`.

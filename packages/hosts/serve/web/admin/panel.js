@@ -144,6 +144,16 @@
     // Cache settings
     cacheSetH: "Saved answer settings", cOn: "Keep and serve saved answers", cTtl: "Drop entries older than (hours)", cRouter: "Match differently worded questions", cMax: "At most (entries)", cFresh: "Show as is for (minutes)", cPw: "Refresh before busy times", cPwTimes: "At (local times, comma-separated)", cPwTop: "Most-asked to refresh", cPwUsd: "Most per refresh (US$)",
     queueH: "Turn queue", qConc: "At once", qWait: "Waiting at most", qSecs: "Longest wait (s)",
+    // Tabs on dashboards (docs/features/tabs.md)
+    tabsH: "Tabs on dashboards", tabsLede: "Which tabs the chat may change, how many tabs it may make, and playground tabs for people who may only view. Superset's own edit mode can still change any tab.",
+    tabsMode: "The chat may change", tabsAll: "Any tab that isn't protected", tabsOwn: "Only tabs made through the chat (every other tab is protected)",
+    tabsChat: "People who may edit a dashboard can ask for new tabs", tabsPlay: "Playground: people who may only view a dashboard can have tabs of their own",
+    tabsPerUser: "Tabs per person per dashboard", tabsPerDash: "Tabs per dashboard", tabsWidgets: "Widgets per tab (empty: 1.5 × the fullest tab, at least 4)",
+    tabsBoardsH: "Tabs on each dashboard", tabsBoardsLede: "Tick a tab to protect it: the chat never changes it, for anyone. Only dashboards the assistant has opened are listed.",
+    tabsNone: "The assistant hasn't opened a dashboard with tabs yet.", tabsNoTabs: "No tabs on this dashboard.",
+    tabsTab: "Tab", tabsProt: "Protected", tabsMaker: "Made through the chat by", tabsWidgetsN: "Widgets", tabsInside: "inside a protected tab", tabsOwnOnly: "protected: only chat tabs change",
+    tabsPlayPill: "playground", tabsCounts: "Chat tabs: {0} of {1}. Widget limit per tab: {2}.", tabsByUser: "By person: {0}", tabsMissing: "Protected ids no longer on this dashboard: {0}",
+    tabsSaveProt: "Save protected tabs", tabsDelete: "Delete", tabsDeleteQ: "Delete the tab “{0}” and the widgets on it?", tabsReportsQ: "{0}\n\nDelete it anyway?",
     limH: "Question limits per person", limLede: "How many questions each person may ask. 0 means no limit. A day ends at midnight UTC; the minute and hour are rolling.",
     limDay: "Questions per day", limHour: "Questions per hour", limMinute: "Questions per minute", limExempt: "Admins are not held to the limits",
     limPeople: "Other limits for named people (an empty box uses everyone's)", limName: "Superset user name", limAdd: "Add a person", limRemove: "Remove",
@@ -209,6 +219,15 @@
     auditH: "Journal d'audit", auditLede: "Gardé {0} jours dans {1}.", aAction: "Action", aOutcome: "Résultat", aDetail: "Détail", aAll: "Tous", aOk: "ok", aDenied: "refusé", search: "Rechercher", noEvents: "Aucun événement.", auditOff: "Le journal d'audit est désactivé (audit : false).",
     cacheSetH: "Réglages des réponses gardées", cOn: "Garder et servir les réponses", cTtl: "Supprimer après (heures)", cRouter: "Rapprocher les questions formulées autrement", cMax: "Au plus (entrées)", cFresh: "Montrer telle quelle pendant (minutes)", cPw: "Actualiser avant les heures chargées", cPwTimes: "À (heures locales, séparées par des virgules)", cPwTop: "Questions les plus posées à actualiser", cPwUsd: "Maximum par actualisation (US$)",
     queueH: "File des réponses", qConc: "En même temps", qWait: "En attente au plus", qSecs: "Attente maximale (s)",
+    tabsH: "Onglets des tableaux", tabsLede: "Les onglets que la discussion peut modifier, combien elle peut en créer, et des onglets à soi pour qui ne peut que consulter. Le mode édition de Superset peut toujours modifier tout onglet.",
+    tabsMode: "La discussion peut modifier", tabsAll: "Tout onglet non protégé", tabsOwn: "Seulement les onglets créés par la discussion (les autres sont protégés)",
+    tabsChat: "Qui peut modifier un tableau peut demander de nouveaux onglets", tabsPlay: "Bac à sable : qui ne peut que consulter un tableau peut y avoir ses propres onglets",
+    tabsPerUser: "Onglets par personne et par tableau", tabsPerDash: "Onglets par tableau", tabsWidgets: "Éléments par onglet (vide : 1,5 × l'onglet le plus rempli, au moins 4)",
+    tabsBoardsH: "Les onglets de chaque tableau", tabsBoardsLede: "Cochez un onglet pour le protéger : la discussion ne le modifie jamais, pour personne. Seuls les tableaux déjà ouverts par l'assistant figurent ici.",
+    tabsNone: "L'assistant n'a encore ouvert aucun tableau à onglets.", tabsNoTabs: "Pas d'onglets sur ce tableau.",
+    tabsTab: "Onglet", tabsProt: "Protégé", tabsMaker: "Créé par la discussion pour", tabsWidgetsN: "Éléments", tabsInside: "dans un onglet protégé", tabsOwnOnly: "protégé : seuls les onglets de la discussion changent",
+    tabsPlayPill: "bac à sable", tabsCounts: "Onglets de la discussion : {0} sur {1}. Limite d'éléments par onglet : {2}.", tabsByUser: "Par personne : {0}", tabsMissing: "Identifiants protégés absents de ce tableau : {0}",
+    tabsSaveProt: "Enregistrer les onglets protégés", tabsDelete: "Supprimer", tabsDeleteQ: "Supprimer l'onglet « {0} » et ses éléments ?", tabsReportsQ: "{0}\n\nLe supprimer quand même ?",
     limH: "Limites de questions par personne", limLede: "Combien de questions chacun peut poser. 0 : sans limite. La journée finit à minuit UTC ; la minute et l'heure sont glissantes.",
     limDay: "Questions par jour", limHour: "Questions par heure", limMinute: "Questions par minute", limExempt: "Les administrateurs ne sont pas limités",
     limPeople: "Autres limites pour des personnes nommées (une case vide reprend celle de tous)", limName: "Nom d'utilisateur Superset", limAdd: "Ajouter une personne", limRemove: "Retirer",
@@ -1380,6 +1399,86 @@
   }
   // Question limits per person (docs/features/limits.md): everyone's, admins, named people's own (PUT settings/limits,
   // with the settings' revision like every change), and who was counted today with a reset each (GET and DELETE limits).
+  /** Tabs on dashboards (docs/features/tabs.md): the rules and switches, then each open dashboard's tabs. */
+  function tabsCards(s) {
+    const tb = s.tabs;
+    const radio = (v, label) => h("label", { class: "row", style: "gap:8px" }, h("input", { type: "radio", name: "lp-tabs-mode", value: v, checked: tb.editable === v }), label);
+    const mode = h("div", {}, radio("all", t("tabsAll")), radio("own", t("tabsOwn")));
+    const chatTabs = h("input", { type: "checkbox", checked: !!tb.create });
+    const playground = h("input", { type: "checkbox", checked: !!tb.playground });
+    const perUser = num(tb.maxPerUser, 0, 1000), perDash = num(tb.maxPerDashboard, 0, 1000);
+    const widgets = num(tb.maxWidgetsPerTab === "auto" ? "" : tb.maxWidgetsPerTab, 1, 1000);
+    const features = s.features && s.features.values ? s.features.values : {};
+    const save = act(async () => {
+      await hostApi("settings/tabs", { body: { editable: mode.querySelector("input:checked").value, maxPerUser: Number(perUser.value || 0), maxPerDashboard: Number(perDash.value || 0), maxWidgetsPerTab: widgets.value === "" ? "auto" : Number(widgets.value) } });
+      // The two switches are features like any other; sent only when they change.
+      const sw = {};
+      if (chatTabs.checked !== !!features.chatTabs) sw.chatTabs = chatTabs.checked;
+      if (playground.checked !== !!features.playground) sw.playground = playground.checked;
+      if (Object.keys(sw).length) await hostApi("settings/features", { body: sw });
+    }, t("saved"));
+    const changed = tb.saved && Object.keys(tb.saved).length;
+    const rules = card(t("tabsH"), t("tabsLede"),
+      h("h3", { class: "sub-h" }, t("tabsMode")), mode,
+      h("label", { class: "switch", style: "margin-top:8px" }, chatTabs, h("div", {}, h("div", { class: "lbl" }, t("tabsChat")), h("code", {}, "chatTabs"))),
+      h("label", { class: "switch" }, playground, h("div", {}, h("div", { class: "lbl" }, t("tabsPlay")), h("code", {}, "playground"))),
+      h("div", { class: "form", style: "margin-top:8px" }, fld(t("tabsPerUser"), perUser), fld(t("tabsPerDash"), perDash), fld(t("tabsWidgets"), widgets, true)),
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "button", onclick: save }, t("saveB")),
+        changed ? h("button", { class: "btn quiet", type: "button", onclick: put("settings/tabs", { editable: null, protected: null, maxPerDashboard: null, maxPerUser: null, maxWidgetsPerTab: null }) }, t("resetDefaults")) : null));
+    // Each dashboard's tabs, drawn once they arrive.
+    const boards = h("div", {}, h("p", { class: "mute" }, t("loading")));
+    hostApi("tabs").then((r) => {
+      const list = ((r && r.dashboards) || []).filter((d) => d.dashboard !== null && (d.tabs.length || d.missing.length));
+      if (!list.length) return boards.replaceChildren(h("p", { class: "mute" }, t("tabsNone")));
+      boards.replaceChildren(...list.map((d) => boardTabs(d, tb, r.limits)));
+    }).catch((e) => boards.replaceChildren(h("p", { class: "bad-line" }, e.message)));
+    return [rules, card(t("tabsBoardsH"), t("tabsBoardsLede"), boards)];
+  }
+  /** One dashboard's tabs: protect by ticking (saved as TAB ids), chat-made tabs with their makers, delete one. */
+  function boardTabs(d, tb, limits) {
+    const depth = (tab) => { let n = 0; let p = tab.parent; while (p && n < 10) { n++; p = (d.tabs.find((x) => x.id === p) || {}).parent; } return n; };
+    const boxes = [];
+    const remove = (tab) => async (ev) => {
+      if (!confirm(t("tabsDeleteQ", tab.title))) return;
+      return act(async () => {
+        const go = async (confirmed) => {
+          const res = await fetch(`${HOST}tabs/${d.dashboard}/${encodeURIComponent(tab.id)}${confirmed ? "?confirm=1" : ""}`, { method: "DELETE", credentials: "same-origin" });
+          let data = null;
+          try { data = await res.json(); } catch (e) { /* not JSON */ }
+          if (res.status === 409 && !confirmed) { if (confirm(t("tabsReportsQ", (data && data.error) || ""))) return go(true); return null; }
+          if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+          return data;
+        };
+        return go(false);
+      }, t("done"))(ev);
+    };
+    const rows = d.tabs.map((tab) => {
+      const box = h("input", { type: "checkbox", checked: tab.protected, disabled: tab.inherited, "aria-label": `${t("tabsProt")}: ${tab.title}` });
+      box.dataset.tab = tab.id;
+      boxes.push(box);
+      return h("tr", {},
+        h("td", {}, h("span", { style: `padding-left:${depth(tab) * 16}px` }, tab.title), " ", h("code", { class: "small mute" }, tab.id)),
+        h("td", {}, box, tab.inherited ? h("span", { class: "mute small" }, ` ${t("tabsInside")}`) : null, tab.ownOnly && !tab.protected ? pill(t("tabsOwnOnly"), "") : null),
+        h("td", {}, tab.chat ? [h("b", {}, tab.chat.user), tab.chat.playground ? pill(t("tabsPlayPill"), "acc") : null] : "—"),
+        h("td", { class: "n" }, nf(tab.widgets)),
+        h("td", { class: "end" }, tab.chat ? h("button", { class: "btn sm quiet", type: "button", onclick: remove(tab) }, t("tabsDelete")) : null));
+    });
+    const saveProt = act(() => {
+      const keep = boxes.filter((b) => b.checked).map((b) => b.dataset.tab);
+      const all = { ...(tb.protected || {}) };
+      // Ids this dashboard no longer has are dropped on save; other dashboards' lists stay as they are.
+      if (keep.length) all[String(d.dashboard)] = keep;
+      else delete all[String(d.dashboard)];
+      return hostApi("settings/tabs", { body: { protected: all } });
+    }, t("saved"));
+    const users = Object.entries(d.byUser || {}).map(([u, n]) => `${u} ${nf(n)}/${nf(limits.maxPerUser)}`).join(", ");
+    return h("div", { class: "board-tabs", style: "margin-top:14px" },
+      h("h3", { class: "sub-h" }, `${d.title} · #${d.dashboard}`),
+      h("p", { class: "mute small" }, t("tabsCounts", nf(d.chatTabs), nf(limits.maxPerDashboard), d.widgetLimit === null ? "—" : nf(d.widgetLimit)), users ? ` ${t("tabsByUser", users)}` : ""),
+      d.missing.length ? h("p", { class: "warn-line" }, t("tabsMissing", d.missing.join(", "))) : null,
+      d.tabs.length ? table([t("tabsTab"), t("tabsProt"), t("tabsMaker"), { t: t("tabsWidgetsN"), n: true }, ""], rows, "") : h("p", { class: "mute" }, t("tabsNoTabs")),
+      h("div", { class: "actions" }, h("button", { class: "btn sm", type: "button", onclick: saveProt }, t("tabsSaveProt"))));
+  }
   function limitsCard(l) {
     const off = !l.writable;
     const day = num(l.questionsPerDay, 0, 100000), hour = num(l.perHour, 0, 10000), minute = num(l.perMinute, 0, 1000);
@@ -1463,6 +1562,7 @@
           s.panelSetting.source === "settings" || s.adminSurface.source === "settings" ? h("button", { class: "btn quiet", type: "button", onclick: act(async () => { await hostApi("settings/panel", { body: { panel: null } }); return hostApi("settings/admin-surface", { body: { surface: null } }); }, t("saved")) }, t("resetDefaults")) : null)));
     }
     if (s.limits) out.push(limitsCard(s.limits));
+    if (s.tabs) out.push(...tabsCards(s));
     if (s.boundary && s.boundary.fields) {
       const b = s.boundary;
       const show = (v) => (v === undefined ? "—" : typeof v === "string" ? v : JSON.stringify(v));

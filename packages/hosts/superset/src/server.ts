@@ -771,8 +771,15 @@ export async function serveSuperset(path: string, env: NodeJS.ProcessEnv = proce
     }
     if (listPath && req.method === "GET") {
       const boards: Record<string, BoardConfig | null> = {};
-      for (const b of Object.keys(dashboards)) boards[b] = (await store.get(b))?.config ?? null;
-      return void json(res, 200, { tabs: await tabs.list(boards) }, NO_STORE), true;
+      const shown: Record<string, { title?: string; config: BoardConfig | null }> = {};
+      for (const b of Object.keys(dashboards)) {
+        const got = await store.get(b);
+        boards[b] = got?.config ?? null;
+        shown[b] = { title: got?.config.title, config: got?.config ?? null };
+      }
+      // tabs: the chat-made ones (as before); dashboards: every open dashboard's tabs for the settings page.
+      const r = tabs.rules();
+      return void json(res, 200, { tabs: await tabs.list(boards), dashboards: await tabs.overview(shown), limits: { maxPerDashboard: r.maxPerDashboard, maxPerUser: r.maxPerUser, maxWidgetsPerTab: r.maxWidgetsPerTab } }, NO_STORE), true;
     }
     if (one && req.method === "DELETE") {
       const board = `superset-${one[1]}`;

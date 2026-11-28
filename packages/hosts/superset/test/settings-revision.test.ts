@@ -145,6 +145,17 @@ describe("settings changed in two places at once", () => {
     expect((await call("/_superset/settings", { as: ANA })).body.lastChange).toMatchObject({ section: "language", by: "ana" });
   });
 
+  it("holds for the tab rules too: a change on an old copy of them is refused, naming who changed them", async () => {
+    const read = await call("/_superset/settings/tabs", { as: ANA });
+    expect(read.tag).toMatch(/^"settings-\d+"$/);
+    expect((await put("/_superset/settings/tabs", { maxPerUser: 2 }, { as: BEN, ifMatch: read.tag })).status).toBe(200);
+    const ana = await put("/_superset/settings/tabs", { maxPerUser: 5 }, { ifMatch: read.tag });
+    expect(ana.status).toBe(409);
+    expect(ana.body).toMatchObject({ code: "changed-elsewhere", section: "tabs", by: "ben", current: { maxPerUser: 2 } });
+    expect((await call("/_superset/settings/tabs", { as: ANA })).body.maxPerUser).toBe(2);
+    expect((await put("/_superset/settings/tabs", { maxPerUser: null })).status).toBe(200);
+  });
+
   it("lets a change without If-Match through, as before: the last write wins", async () => {
     expect((await put("/_superset/settings/language", { default: "fr" }, { as: BEN })).status).toBe(200);
     expect((await put("/_superset/settings/language", { default: "en" })).status).toBe(200);

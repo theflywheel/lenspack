@@ -119,7 +119,51 @@ export function supersetTabs(o: SupersetTabsOptions) {
     );
   }
 
-  return { rules, facts, check, protectedFor, port, list };
+  /**
+   * Each board's tabs for the settings page: every tab with its title and parent, whether an admin protected it (or
+   * the tab above it), whether it is protected because only chat-made tabs may change, who made it through the chat,
+   * and how many widgets sit on it; with the board's counts against the limits and the widget limit in force.
+   */
+  async function overview(boards: Record<string, { title?: string; config: BoardConfig | null }>) {
+    const r = rules();
+    return Promise.all(
+      Object.entries(boards).map(async ([board, { title, config }]) => {
+        const tabs = config?.tabs ?? [];
+        const f = await facts(board);
+        const listed = new Set((r.protected[board] ?? []).filter((id) => tabs.some((t) => t.id === id)));
+        const guarded = new Set(config ? protectedTabIds(config, board, f, { ...r, editable: "all" }) : []);
+        const byUser: Record<string, number> = {};
+        const rows = tabs.map((t) => {
+          const maker = f.made[t.id];
+          if (maker) byUser[maker.user] = (byUser[maker.user] ?? 0) + 1;
+          return {
+            id: t.id,
+            title: t.title,
+            parent: t.parent ?? null,
+            protected: listed.has(t.id),
+            inherited: !listed.has(t.id) && guarded.has(t.id),
+            ownOnly: r.editable === "own" && !maker,
+            chat: maker ? { user: maker.user, playground: !!(maker as { playground?: boolean }).playground } : null,
+            widgets: config!.layout.filter((l) => l.tab === t.id && config!.widgets[l.i]).length,
+          };
+        });
+        // Protected ids this board no longer has (deleted or made again in Superset): shown so they can be dropped.
+        const missing = (r.protected[board] ?? []).filter((id) => !tabs.some((t) => t.id === id));
+        return {
+          board,
+          dashboard: o.dashboardOf(board) ?? null,
+          title: title ?? config?.title ?? board,
+          tabs: rows,
+          missing,
+          chatTabs: rows.filter((t) => t.chat).length,
+          byUser,
+          widgetLimit: config && tabs.length ? widgetLimit(config, f, r) : null,
+        };
+      }),
+    );
+  }
+
+  return { rules, facts, check, protectedFor, port, list, overview };
 }
 
 /** The prompt's lines on the tab rules for this person on this board. */

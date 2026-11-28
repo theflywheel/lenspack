@@ -635,3 +635,22 @@ describe("the tab rules through the server", () => {
     expect(where(t.b.pos(), 901)).toEqual([rec[0]!.tab]);
   });
 });
+
+describe("each dashboard's tabs for the settings page", () => {
+  it("says which tabs are protected (or inside one), who made the chat's, the counts and the widget limit", async () => {
+    const b = await board(topLevel());
+    const records = memoryRecords<TabRecord>();
+    await records.put("b|TAB-stock", { board: "b", tab: "TAB-stock", title: "Stock", user: "olu", playground: true, at: "2026-11-27T00:00:00Z" });
+    const tabs = supersetTabs({ records, configured: { ...TAB_DEFAULTS, protected: { b: ["TAB-ov", "TAB-gone"] } }, saved: () => ({}), switches: () => ({ create: true, playground: true }), client: b.client, dashboardOf: () => 7 });
+    const [d] = await tabs.overview({ b: { title: "Homes", config: await b.config() } });
+    expect(d).toMatchObject({ board: "b", dashboard: 7, title: "Homes", missing: ["TAB-gone"], chatTabs: 1, byUser: { olu: 1 } });
+    expect(Object.fromEntries(d!.tabs.map((t) => [t.id, [t.protected, t.inherited, t.chat?.user ?? null, t.widgets]]))).toEqual({
+      "TAB-ov": [true, false, null, 2],
+      "TAB-lga": [false, true, null, 1],
+      "TAB-trend": [false, true, null, 1],
+      "TAB-stock": [false, false, "olu", 2],
+    });
+    // auto: 1.5 × the fullest tab not made through the chat (Overview, 2), at least 4.
+    expect(d!.widgetLimit).toBe(4);
+  });
+});

@@ -117,6 +117,21 @@ the settings page wins over both, as for `editScope`. The start-up log has one l
 
 Both switches need `boardEdits` on.
 
+## On the settings page
+
+The Settings tab of the admin pages, on Superset's AI assistant page and on the admin panel alike, has two cards:
+
+- **Tabs on dashboards**: which tabs the chat may change, the `chatTabs` and `playground` switches, and the limits.
+  Leave the widget box empty for `auto`.
+- **Tabs on each dashboard**: for each dashboard the assistant has opened, its tabs by title, nested ones indented.
+  Tick a tab to protect it; a tab inside a protected one is protected with it. Each chat-made tab shows who made it
+  (and whether it is a playground tab), with a Delete button. The line above says how many chat tabs the dashboard
+  has against its limit, each person's count, and the widget limit in force. Protected ids the dashboard no longer has
+  are named, and dropped when that dashboard is saved.
+
+Saving sends the settings' revision like every settings change: if another admin changed the tab rules since the
+page was read, nothing is changed and the page shows theirs.
+
 ## Routes
 
 Admins only, like every settings route.
@@ -127,7 +142,7 @@ Admins only, like every settings route.
 | `GET /_superset/settings/tabs` | the same, alone |
 | `PUT /_superset/settings/tabs` | any of `{editable, protected, maxPerDashboard, maxPerUser, maxWidgetsPerTab}`; `null` hands a value back to the config. `protected` is a map of dashboard id to tab ids. Audited |
 | `PUT /_superset/settings/features` | `{chatTabs, playground}`, like any switch |
-| `GET /_superset/tabs` | every tab made through the chat on the dashboards Lenspack has open: dashboard, tab id, title, maker, whether it is a playground tab, when, how many widgets |
+| `GET /_superset/tabs` | `tabs`: every tab made through the chat on the dashboards Lenspack has open (dashboard, tab id, title, maker, whether it is a playground tab, when, how many widgets); `dashboards`: each open dashboard's tabs, what is protected, who made which, the counts and the widget limit; `limits` |
 | `DELETE /_superset/tabs/<dashboard>/<tab>` | an admin deletes a tab made through the chat. When email reports are sent from it, the answer is 409 naming them; add `?confirm=1` to delete it anyway. Audited |
 
 ## How it is enforced
